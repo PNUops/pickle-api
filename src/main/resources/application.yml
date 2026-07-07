@@ -12,12 +12,12 @@ spring:
   flyway:
     enabled: true
 
-org:
-  jobrunr:
-    background-job-server:
-      enabled: true
-    dashboard:
-      enabled: false
+# JobRunr 8 spring starter reads the `jobrunr.*` prefix (NOT `org.jobrunr.*`).
+jobrunr:
+  background-job-server:
+    enabled: true
+  dashboard:
+    enabled: false
 
 management:
   endpoints:

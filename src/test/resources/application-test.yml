@@ -1,9 +1,11 @@
-org:
-  jobrunr:
-    background-job-server:
-      enabled: false
-    job-scheduler:
-      enabled: true
+# JobRunr 8 spring starter reads the `jobrunr.*` prefix (NOT `org.jobrunr.*`).
+# The background job server stays off for regular tests (enqueues are asserted
+# on the jobrunr tables); M2EndToEndTest switches it on via test properties.
+jobrunr:
+  background-job-server:
+    enabled: false
+  job-scheduler:
+    enabled: true
 
 spring:
   flyway:
