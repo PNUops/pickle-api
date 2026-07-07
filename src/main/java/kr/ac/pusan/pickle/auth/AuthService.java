@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.auth.dto.SignupRequest;
 import kr.ac.pusan.pickle.auth.dto.UserSummaryResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.AuthProperties;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.mail.MailSender;
@@ -243,7 +244,7 @@ public class AuthService {
     }
 
     private static String normalize(String email) {
-        return email.strip().toLowerCase(Locale.ROOT);
+        return Texts.normalizeEmail(email);
     }
 
     private static ApiException verificationTokenGone() {

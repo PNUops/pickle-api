@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.auth.dto.UserSummaryResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -137,7 +138,7 @@ public class AdminService {
     }
 
     private static String normalize(String description) {
-        return description == null || description.isBlank() ? null : description.strip();
+        return Texts.blankToNull(description);
     }
 
     private static ApiException orgSlugDuplicate(String slug) {

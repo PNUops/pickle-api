@@ -1,7 +1,6 @@
 package kr.ac.pusan.pickle.group;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -9,6 +8,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.group.dto.AddGroupMemberRequest;
 import kr.ac.pusan.pickle.group.dto.CreateGroupRequest;
 import kr.ac.pusan.pickle.group.dto.GroupDetailResponse;
@@ -130,7 +130,7 @@ public class GroupService {
                     "OWNER 역할은 멤버 추가로 부여할 수 없습니다. 역할 변경(소유권 이전)을 사용해 주세요.")));
         }
 
-        User target = userRepository.findByEmail(request.email().strip().toLowerCase(Locale.ROOT))
+        User target = userRepository.findByEmail(Texts.normalizeEmail(request.email()))
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.GROUP_MEMBER_USER_NOT_FOUND, "사용자를 찾을 수 없습니다",
@@ -249,7 +249,7 @@ public class GroupService {
     }
 
     private static String normalize(String description) {
-        return description == null || description.isBlank() ? null : description.strip();
+        return Texts.blankToNull(description);
     }
 
     private static ApiException memberNotFound() {
