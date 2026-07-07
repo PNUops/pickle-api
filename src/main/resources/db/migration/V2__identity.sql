@@ -91,9 +91,12 @@ create index refresh_tokens_rotated_from_idx on refresh_tokens (rotated_from);
 
 -- Append-only audit trail (07: the app DB role gets no UPDATE/DELETE grant on
 -- this table; grants are applied by ops on managed environments).
+-- actor_id is intentionally NOT a foreign key: audit rows are written from
+-- independent transactions (they must not depend on uncommitted business rows)
+-- and keep the opaque user id even after account anonymization (02).
 create table audit_logs (
     id          bigint generated always as identity primary key,
-    actor_id    bigint references users (id),
+    actor_id    bigint,
     actor_role  text,
     action      text not null,
     target_type text,

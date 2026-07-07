@@ -41,7 +41,9 @@ public class MaskingMessageConverter extends MessageConverter {
         if (message == null || message.isEmpty()) {
             return message;
         }
-        String masked = KEY_VALUE.matcher(message).replaceAll("$1" + MASK);
-        return BEARER.matcher(masked).replaceAll("$1" + MASK);
+        // Bearer first: "Authorization: Bearer <jwt>" would otherwise have only
+        // the word "Bearer" swallowed by the key-value rule, leaving the JWT.
+        String masked = BEARER.matcher(message).replaceAll("$1" + MASK);
+        return KEY_VALUE.matcher(masked).replaceAll("$1" + MASK);
     }
 }

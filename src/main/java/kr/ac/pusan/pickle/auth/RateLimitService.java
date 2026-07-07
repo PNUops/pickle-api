@@ -34,6 +34,9 @@ public class RateLimitService {
     private static final Duration BUCKET = Duration.ofSeconds(15);
     private static final String LOGIN_FAIL_SCOPE = "login_fail";
 
+    private record WindowState(long total, OffsetDateTime oldest) {
+    }
+
     private final JdbcTemplate jdbcTemplate;
 
     public RateLimitService(JdbcTemplate jdbcTemplate) {
@@ -56,14 +59,16 @@ public class RateLimitService {
                 on conflict (scope, subject, window_start)
                 do update set request_count = auth_rate_limits.request_count + 1, updated_at = now()
                 """, scope, subject);
-        var row = jdbcTemplate.queryForMap("""
+        WindowState window = jdbcTemplate.queryForObject("""
                 select coalesce(sum(request_count), 0) as total, min(window_start) as oldest
                   from auth_rate_limits
                  where scope = ? and subject = ? and window_start > now() - interval '60 seconds'
-                """, scope, subject);
-        long total = ((Number) row.get("total")).longValue();
-        if (total > limitPerMinute) {
-            Instant oldest = ((OffsetDateTime) row.get("oldest")).toInstant();
+                """,
+                (rs, rowNum) -> new WindowState(rs.getLong("total"),
+                        rs.getObject("oldest", OffsetDateTime.class)),
+                scope, subject);
+        if (window.total() > limitPerMinute) {
+            Instant oldest = window.oldest().toInstant();
             long retryAfter = Math.max(1,
                     Duration.between(Instant.now(), oldest.plus(WINDOW).plus(BUCKET)).toSeconds());
             throw ApiException.rateLimited(retryAfter);
