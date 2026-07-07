@@ -8,3 +8,7 @@ org:
 spring:
   flyway:
     enabled: true
+
+pickle:
+  jwt:
+    secret: pickle-test-jwt-secret-0123456789abcdef-test
