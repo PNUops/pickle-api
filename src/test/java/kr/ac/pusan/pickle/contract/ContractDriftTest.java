@@ -24,13 +24,13 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * v0.2.1) and the springdoc runtime spec.
+ * v0.2.3) and the springdoc runtime spec.
  *
- * <p>WP-B1/WP-B2 scope: only the endpoints implemented so far are compared —
- * extend {@link #IMPLEMENTED} as work packages land. WP-B3 will assert full
- * path+method set equality. Within the covered prefixes the test fails when an
- * implemented endpoint is missing from either side, or when either side has an
- * endpoint that is not implemented.</p>
+ * <p>Since WP-B3 the whole M2 surface is implemented, so the comparison is
+ * bidirectional over the full path+method sets: every contract endpoint must
+ * exist at runtime and the runtime must expose nothing beyond the contract.
+ * {@link #IMPLEMENTED} names the expected set explicitly so a drift failure
+ * points at the exact endpoint instead of a set diff of unknown origin.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,7 +44,7 @@ class ContractDriftTest {
     /** Contract server prefix stripped from runtime paths before comparison. */
     private static final String SERVER_PREFIX = "/api/v1";
 
-    /** Endpoints implemented so far ("METHOD path"). Extend per work package. */
+    /** The full contract v0.2.3 surface ("METHOD path"). */
     private static final Set<String> IMPLEMENTED = Set.of(
             "POST /auth/signup",
             "POST /auth/verify-email",
@@ -63,21 +63,20 @@ class ContractDriftTest {
             "POST /groups/{groupId}/members",
             "PATCH /groups/{groupId}/members/{userId}",
             "DELETE /groups/{groupId}/members/{userId}",
+            "POST /vm-requests",
+            "GET /vm-requests",
+            "GET /vm-requests/{requestId}",
+            "POST /vm-requests/{requestId}/cancel",
+            "GET /vms",
+            "GET /vms/{vmId}",
+            "GET /admin/vm-requests",
+            "GET /admin/vm-requests/{requestId}",
+            "GET /admin/vm-requests/{requestId}/context",
+            "POST /admin/vm-requests/{requestId}/approve",
+            "POST /admin/vm-requests/{requestId}/reject",
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}");
-
-    /**
-     * Path roots covered by the subset comparison: a path is covered when it
-     * equals a root or lives beneath it ("/me" covers "/me" and "/me/…" but
-     * not "/meta/…").
-     */
-    /**
-     * {@code /admin} is covered per sub-root because the vm-requests admin
-     * endpoints land with WP-B3.
-     */
-    private static final Set<String> COVERED_ROOTS =
-            Set.of("/auth", "/me", "/orgs", "/templates", "/meta", "/groups", "/admin/orgs", "/admin/users");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
@@ -86,7 +85,7 @@ class ContractDriftTest {
     private MockMvc mockMvc;
 
     @Test
-    void implementedEndpointsMatchContractAndRuntimeSpec() throws Exception {
+    void fullContractSurfaceMatchesRuntimeSpecBidirectionally() throws Exception {
         assertThat(CONTRACT).as("contract file docs/api/openapi.yaml").exists();
         JsonNode contract = new YAMLMapper().readTree(Files.readString(CONTRACT));
 
@@ -95,14 +94,11 @@ class ContractDriftTest {
                 .andReturn().getResponse().getContentAsString();
         JsonNode runtime = new com.fasterxml.jackson.databind.ObjectMapper().readTree(runtimeJson);
 
-        Set<String> contractSubset = coveredSubset(endpointsOf(contract, ""));
-        Set<String> runtimeSubset = coveredSubset(endpointsOf(runtime, SERVER_PREFIX));
-
-        assertThat(contractSubset)
-                .as("contract (auth + /me) vs endpoints implemented in WP-B1")
+        assertThat(endpointsOf(contract, ""))
+                .as("contract v0.2.3 path+method set vs the implemented set")
                 .isEqualTo(new TreeSet<>(IMPLEMENTED));
-        assertThat(runtimeSubset)
-                .as("springdoc runtime spec (auth + /me) vs endpoints implemented in WP-B1")
+        assertThat(endpointsOf(runtime, SERVER_PREFIX))
+                .as("springdoc runtime spec path+method set vs the implemented set")
                 .isEqualTo(new TreeSet<>(IMPLEMENTED));
     }
 
@@ -124,18 +120,5 @@ class ContractDriftTest {
             }
         }
         return endpoints;
-    }
-
-    private static Set<String> coveredSubset(Set<String> endpoints) {
-        Set<String> subset = new TreeSet<>();
-        for (String endpoint : endpoints) {
-            String path = endpoint.split(" ", 2)[1];
-            boolean covered = COVERED_ROOTS.stream()
-                    .anyMatch(root -> path.equals(root) || path.startsWith(root + "/"));
-            if (covered) {
-                subset.add(endpoint);
-            }
-        }
-        return subset;
     }
 }

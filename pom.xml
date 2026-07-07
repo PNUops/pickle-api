@@ -144,6 +144,14 @@
 			<version>${zonky-postgres.version}</version>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<!-- M2EndToEndTest: waits for the JobRunr-processed mock provisioning
+			     to reach RUNNING. Version managed by the Spring Boot BOM (4.3.0,
+			     which is also the Central latest release as of 2026-07). -->
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
