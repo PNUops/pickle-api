@@ -16,7 +16,9 @@ public final class ErrorCodes {
     public static final String GROUP_MEMBER_USER_NOT_FOUND = "GROUP_MEMBER_USER_NOT_FOUND";
     public static final String GROUP_MEMBER_ALREADY_EXISTS = "GROUP_MEMBER_ALREADY_EXISTS";
     public static final String GROUP_SOLE_OWNER_REMOVAL = "GROUP_SOLE_OWNER_REMOVAL";
+    public static final String GROUP_ROLE_INSUFFICIENT = "GROUP_ROLE_INSUFFICIENT";
     public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
+    public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

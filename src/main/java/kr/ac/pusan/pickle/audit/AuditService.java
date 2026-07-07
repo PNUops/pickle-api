@@ -26,6 +26,10 @@ public class AuditService {
     public static final String GROUP_MEMBER_ADD = "group.member_add";
     public static final String GROUP_MEMBER_UPDATE = "group.member_update";
     public static final String GROUP_MEMBER_REMOVE = "group.member_remove";
+    public static final String REQUEST_CREATE = "request.create";
+    public static final String REQUEST_CANCEL = "request.cancel";
+    public static final String REQUEST_APPROVE = "request.approve";
+    public static final String REQUEST_REJECT = "request.reject";
     public static final String ORG_CREATE = "org.create";
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
