@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.auth;
 
+import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Duration;
@@ -103,14 +105,5 @@ public class AuthController {
                 .secure(true)
                 .sameSite("Lax")
                 .build();
-    }
-
-    /** Behind nginx: first X-Forwarded-For hop, else the socket address. */
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",", 2)[0].strip();
-        }
-        return request.getRemoteAddr();
     }
 }

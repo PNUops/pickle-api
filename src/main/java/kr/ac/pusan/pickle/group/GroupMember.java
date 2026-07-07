@@ -70,4 +70,8 @@ public class GroupMember {
     public GroupMemberRole getRole() {
         return role;
     }
+
+    public void setRole(GroupMemberRole role) {
+        this.role = role;
+    }
 }

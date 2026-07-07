@@ -55,14 +55,22 @@ class ContractDriftTest {
             "GET /me",
             "GET /orgs",
             "GET /templates",
-            "GET /meta/request-options");
+            "GET /meta/request-options",
+            "GET /groups",
+            "POST /groups",
+            "GET /groups/{groupId}",
+            "PATCH /groups/{groupId}",
+            "POST /groups/{groupId}/members",
+            "PATCH /groups/{groupId}/members/{userId}",
+            "DELETE /groups/{groupId}/members/{userId}");
 
     /**
      * Path roots covered by the subset comparison: a path is covered when it
      * equals a root or lives beneath it ("/me" covers "/me" and "/me/…" but
      * not "/meta/…").
      */
-    private static final Set<String> COVERED_ROOTS = Set.of("/auth", "/me", "/orgs", "/templates", "/meta");
+    private static final Set<String> COVERED_ROOTS =
+            Set.of("/auth", "/me", "/orgs", "/templates", "/meta", "/groups");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
