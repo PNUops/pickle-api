@@ -78,15 +78,7 @@ public class EmailVerification {
         return usedAt;
     }
 
-    public boolean isUsed() {
-        return usedAt != null;
-    }
-
     public boolean isExpired(Instant now) {
         return expiresAt.isBefore(now);
-    }
-
-    public void markUsed(Instant now) {
-        this.usedAt = now;
     }
 }

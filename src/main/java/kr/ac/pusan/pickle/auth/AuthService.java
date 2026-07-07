@@ -105,13 +105,17 @@ public class AuthService {
                 .findByTokenHashAndPurpose(TokenHasher.sha256Hex(rawToken), VerificationPurpose.SIGNUP)
                 .orElseThrow(AuthService::verificationTokenGone);
         Instant now = Instant.now();
-        if (verification.isUsed() || verification.isExpired(now)) {
+        if (verification.isExpired(now)) {
+            throw verificationTokenGone();
+        }
+        // Conditional consume: a concurrent (or repeated) use of the same
+        // token loses the UPDATE and gets 410, so activation runs only once.
+        if (emailVerificationRepository.consume(verification.getId(), now) == 0) {
             throw verificationTokenGone();
         }
 
         User user = userRepository.findById(verification.getUserId())
                 .orElseThrow(AuthService::verificationTokenGone);
-        verification.markUsed(now);
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(now);
