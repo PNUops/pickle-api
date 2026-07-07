@@ -10,10 +10,13 @@ import org.springframework.stereotype.Component;
 /**
  * Dev/test mail sender: logs the full message (including the verification
  * link) at INFO and records messages in memory for tests. This logger is
- * exempted from log masking — the bean never exists in staging/prod.
+ * exempted from log masking — the bean only exists under an explicit dev/test
+ * profile. An unprofiled launch has no {@link MailSender} bean at all and
+ * fails fast at startup instead of silently mocking mail and logging raw
+ * verification tokens.
  */
 @Component
-@Profile({"dev", "test", "default"})
+@Profile({"dev", "test"})
 public class MockMailSender implements MailSender {
 
     private static final Logger log = LoggerFactory.getLogger(MockMailSender.class);
