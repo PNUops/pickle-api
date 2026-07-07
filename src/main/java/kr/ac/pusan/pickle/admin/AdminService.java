@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,11 +43,15 @@ public class AdminService {
     @Transactional
     public OrgDetailResponse createOrg(AuthenticatedUser actor, CreateOrgRequest request, String ip) {
         if (orgRepository.existsBySlug(request.slug())) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ORG_SLUG_DUPLICATE,
-                    "이미 사용 중인 slug입니다", "'" + request.slug() + "'은(는) 이미 다른 기관이 사용 중입니다.");
+            throw orgSlugDuplicate(request.slug());
         }
-        Org org = orgRepository.save(new Org(request.name().strip(), request.slug(),
-                normalize(request.description())));
+        Org org;
+        try {
+            org = orgRepository.save(new Org(request.name().strip(), request.slug(),
+                    normalize(request.description())));
+        } catch (DataIntegrityViolationException raceWithConcurrentCreate) {
+            throw orgSlugDuplicate(request.slug());
+        }
         auditService.record(actor.id(), actor.role().name(), AuditService.ORG_CREATE,
                 "org", org.getId(), Map.of("name", org.getName(), "slug", org.getSlug()), ip);
         return OrgDetailResponse.from(org);
@@ -133,5 +138,10 @@ public class AdminService {
 
     private static String normalize(String description) {
         return description == null || description.isBlank() ? null : description.strip();
+    }
+
+    private static ApiException orgSlugDuplicate(String slug) {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.ORG_SLUG_DUPLICATE,
+                "이미 사용 중인 slug입니다", "'" + slug + "'은(는) 이미 다른 기관이 사용 중입니다.");
     }
 }

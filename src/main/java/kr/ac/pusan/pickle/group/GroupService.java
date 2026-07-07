@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,8 +72,13 @@ public class GroupService {
         if (groupRepository.existsBySlug(request.slug())) {
             throw slugDuplicate(request.slug());
         }
-        Group group = groupRepository.save(new Group(request.kind(), request.name().strip(),
-                request.slug(), normalize(request.description())));
+        Group group;
+        try {
+            group = groupRepository.save(new Group(request.kind(), request.name().strip(),
+                    request.slug(), normalize(request.description())));
+        } catch (DataIntegrityViolationException raceWithConcurrentCreate) {
+            throw slugDuplicate(request.slug());
+        }
         groupMemberRepository.save(new GroupMember(group, actor.id(), GroupMemberRole.OWNER));
         auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_CREATE,
                 "group", group.getId(),
@@ -134,7 +140,13 @@ public class GroupService {
                     "이미 그룹 멤버입니다", "해당 사용자는 이미 이 그룹의 멤버입니다.");
         }
 
-        GroupMember member = groupMemberRepository.save(new GroupMember(group, target.getId(), request.role()));
+        GroupMember member;
+        try {
+            member = groupMemberRepository.save(new GroupMember(group, target.getId(), request.role()));
+        } catch (DataIntegrityViolationException raceWithConcurrentAdd) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_MEMBER_ALREADY_EXISTS,
+                    "이미 그룹 멤버입니다", "해당 사용자는 이미 이 그룹의 멤버입니다.");
+        }
         auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_ADD,
                 "group", groupId,
                 Map.of("userId", target.getId(), "email", target.getEmail(), "role", member.getRole().name()), ip);
@@ -167,11 +179,13 @@ public class GroupService {
             target.setRole(request.role());
         }
 
+        // Load the response projection before the REQUIRES_NEW audit write so a
+        // failure here cannot leave an audit row for a rolled-back change.
+        User targetUser = userRepository.findById(targetUserId).orElseThrow(GroupService::memberNotFound);
         auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_UPDATE,
                 "group", groupId,
                 Map.of("userId", targetUserId, "previousRole", previousRole.name(),
                         "role", target.getRole().name(), "ownershipTransfer", ownershipTransfer), ip);
-        User targetUser = userRepository.findById(targetUserId).orElseThrow(GroupService::memberNotFound);
         return GroupMemberResponse.from(target, targetUser);
     }
 
@@ -181,7 +195,7 @@ public class GroupService {
         if (group.getKind() == GroupKind.PERSONAL) {
             throw memberManageForbidden("멤버를 관리할 권한이 없습니다", "PERSONAL 그룹의 멤버 구성은 변경할 수 없습니다.");
         }
-        GroupMember actorMembership = groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
+        GroupMember actorMembership = groupMemberRepository.findWithLockByGroupIdAndUserId(groupId, actor.id())
                 .orElseThrow(() -> memberManageForbidden("멤버를 제거할 권한이 없습니다",
                         "그룹 OWNER만 다른 멤버를 제거할 수 있습니다."));
         boolean selfLeave = targetUserId == actor.id();
@@ -213,7 +227,7 @@ public class GroupService {
         if (group.getKind() == GroupKind.PERSONAL) {
             throw memberManageForbidden("멤버를 관리할 권한이 없습니다", personalDetail);
         }
-        return groupMemberRepository.findByGroupIdAndUserId(group.getId(), actor.id())
+        return groupMemberRepository.findWithLockByGroupIdAndUserId(group.getId(), actor.id())
                 .filter(membership -> membership.getRole() == GroupMemberRole.OWNER)
                 .orElseThrow(() -> memberManageForbidden("멤버를 관리할 권한이 없습니다", notOwnerDetail));
     }
