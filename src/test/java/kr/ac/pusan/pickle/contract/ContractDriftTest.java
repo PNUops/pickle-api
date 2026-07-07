@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * v0.2.0) and the springdoc runtime spec.
+ * v0.2.1) and the springdoc runtime spec.
  *
  * <p>WP-B1/WP-B2 scope: only the endpoints implemented so far are compared —
  * extend {@link #IMPLEMENTED} as work packages land. WP-B3 will assert full
