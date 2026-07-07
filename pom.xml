@@ -106,6 +106,14 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
+			<!-- ContractDriftTest: parses docs/api/openapi.yaml. Version managed
+			     by the Spring Boot BOM (2.21.x line; Central latest 2.22.0 —
+			     kept on the BOM version for Jackson 2 convergence). -->
+			<groupId>com.fasterxml.jackson.dataformat</groupId>
+			<artifactId>jackson-dataformat-yaml</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
 			<scope>test</scope>
