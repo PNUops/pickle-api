@@ -60,6 +60,10 @@ public class Org {
         return name;
     }
 
+    public void setName(String name) {
+        this.name = name;
+    }
+
     public String getSlug() {
         return slug;
     }
@@ -68,8 +72,16 @@ public class Org {
         return description;
     }
 
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     public OrgStatus getStatus() {
         return status;
+    }
+
+    public void setStatus(OrgStatus status) {
+        this.status = status;
     }
 
     public Instant getCreatedAt() {

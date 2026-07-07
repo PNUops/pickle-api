@@ -26,11 +26,11 @@ import org.springframework.test.web.servlet.MockMvc;
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
  * v0.2.0) and the springdoc runtime spec.
  *
- * <p>WP-B1 scope: only the endpoints implemented so far (auth + /me) are
- * compared — extend {@link #IMPLEMENTED} as work packages land. WP-B3 will
- * assert full path+method set equality. Within the covered prefixes the test
- * fails when an implemented endpoint is missing from either side, or when
- * either side has an endpoint that is not implemented.</p>
+ * <p>WP-B1/WP-B2 scope: only the endpoints implemented so far are compared —
+ * extend {@link #IMPLEMENTED} as work packages land. WP-B3 will assert full
+ * path+method set equality. Within the covered prefixes the test fails when an
+ * implemented endpoint is missing from either side, or when either side has an
+ * endpoint that is not implemented.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -52,14 +52,17 @@ class ContractDriftTest {
             "POST /auth/login",
             "POST /auth/refresh",
             "POST /auth/logout",
-            "GET /me");
+            "GET /me",
+            "GET /orgs",
+            "GET /templates",
+            "GET /meta/request-options");
 
     /**
-     * Path roots covered by the WP-B1 subset comparison: a path is covered
-     * when it equals a root or lives beneath it ("/me" covers "/me" and
-     * "/me/…" but not "/meta/…").
+     * Path roots covered by the subset comparison: a path is covered when it
+     * equals a root or lives beneath it ("/me" covers "/me" and "/me/…" but
+     * not "/meta/…").
      */
-    private static final Set<String> COVERED_ROOTS = Set.of("/auth", "/me");
+    private static final Set<String> COVERED_ROOTS = Set.of("/auth", "/me", "/orgs", "/templates", "/meta");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
