@@ -28,8 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * TEAM/PROJECT group management (contract tag {@code groups}). Authorization
  * is resolved in this layer from a single membership row per request
- * (docs/plan/07): OWNER manages members and transfers ownership;
- * OWNER/MANAGER edit group info; PERSONAL groups have immutable membership.
+ * (docs/plan/07): OWNER edits group info, manages members and transfers
+ * ownership; PERSONAL groups have immutable membership.
  */
 @Service
 public class GroupService {
@@ -98,9 +98,9 @@ public class GroupService {
     public GroupDetailResponse update(AuthenticatedUser actor, long groupId, UpdateGroupRequest request) {
         Group group = findGroup(groupId);
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
-                .orElseThrow(() -> accessDenied("그룹 OWNER 또는 MANAGER만 수정할 수 있습니다."));
-        if (membership.getRole() != GroupMemberRole.OWNER && membership.getRole() != GroupMemberRole.MANAGER) {
-            throw accessDenied("그룹 OWNER 또는 MANAGER만 수정할 수 있습니다.");
+                .orElseThrow(() -> accessDenied("그룹 OWNER만 수정할 수 있습니다."));
+        if (membership.getRole() != GroupMemberRole.OWNER) {
+            throw accessDenied("그룹 OWNER만 수정할 수 있습니다.");
         }
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(

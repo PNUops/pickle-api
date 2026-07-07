@@ -187,8 +187,8 @@ class GroupsTest {
         addMember(ownerToken, groupId, manager.getEmail(), "MANAGER").andExpect(status().isCreated());
         addMember(ownerToken, groupId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
-        // MANAGER may edit name/description
-        patchJson("/api/v1/groups/" + groupId, managerToken, Map.of("name", "새 이름"))
+        // OWNER may edit name/description
+        patchJson("/api/v1/groups/" + groupId, ownerToken, Map.of("name", "새 이름"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("새 이름"));
 
@@ -199,7 +199,10 @@ class GroupsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.description").value((Object) null));
 
-        // MEMBER / outsider → 403, empty patch → 422
+        // MANAGER / MEMBER / outsider → 403, empty patch → 422 (contract: OWNER only)
+        patchJson("/api/v1/groups/" + groupId, managerToken, Map.of("name", "몰래 수정"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         patchJson("/api/v1/groups/" + groupId, memberToken, Map.of("name", "몰래 수정"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
