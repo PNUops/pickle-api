@@ -62,15 +62,22 @@ class ContractDriftTest {
             "PATCH /groups/{groupId}",
             "POST /groups/{groupId}/members",
             "PATCH /groups/{groupId}/members/{userId}",
-            "DELETE /groups/{groupId}/members/{userId}");
+            "DELETE /groups/{groupId}/members/{userId}",
+            "POST /admin/orgs",
+            "PATCH /admin/orgs/{orgId}",
+            "PATCH /admin/users/{userId}");
 
     /**
      * Path roots covered by the subset comparison: a path is covered when it
      * equals a root or lives beneath it ("/me" covers "/me" and "/me/…" but
      * not "/meta/…").
      */
+    /**
+     * {@code /admin} is covered per sub-root because the vm-requests admin
+     * endpoints land with WP-B3.
+     */
     private static final Set<String> COVERED_ROOTS =
-            Set.of("/auth", "/me", "/orgs", "/templates", "/meta", "/groups");
+            Set.of("/auth", "/me", "/orgs", "/templates", "/meta", "/groups", "/admin/orgs", "/admin/users");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

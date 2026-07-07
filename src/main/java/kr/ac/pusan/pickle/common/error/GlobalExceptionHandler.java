@@ -67,6 +67,18 @@ public class GlobalExceptionHandler {
         return validationProblem(List.of(), request);
     }
 
+    /**
+     * Method-security denials ({@code @PreAuthorize}) surface here instead of
+     * the filter-chain {@code AccessDeniedHandler}; render the same problem
+     * (contract: components/responses/Forbidden).
+     */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDenied(HttpServletRequest request) {
+        ProblemDetail problem = problem(HttpStatus.FORBIDDEN, "접근 권한이 없습니다",
+                "이 작업을 수행할 권한이 없습니다.", ErrorCodes.ACCESS_DENIED, request);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ProblemDetail> handleNotFound(NoResourceFoundException ex, HttpServletRequest request) {
         ProblemDetail problem = problem(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다",
