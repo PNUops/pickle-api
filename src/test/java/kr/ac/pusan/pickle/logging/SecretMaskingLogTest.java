@@ -61,10 +61,10 @@ class SecretMaskingLogTest {
         rootLogger.addAppender(listAppender);
 
         // Same conversion word wiring as logback-spring.xml (conversionRule
-        // registers %maskedMsg on the shared LoggerContext).
+        // registers %maskedMsg / %maskedEx on the shared LoggerContext).
         maskedLayout = new PatternLayout();
         maskedLayout.setContext(loggerContext);
-        maskedLayout.setPattern("%logger %maskedMsg%n");
+        maskedLayout.setPattern("%logger %maskedMsg%n%maskedEx");
         maskedLayout.start();
     }
 
@@ -115,5 +115,27 @@ class SecretMaskingLogTest {
                 .contains("password=" + MaskingMessageConverter.MASK)
                 .contains("token=" + MaskingMessageConverter.MASK)
                 .contains("cipassword=" + MaskingMessageConverter.MASK);
+    }
+
+    @Test
+    void stackTracesAreMaskedToo() {
+        // Exception messages routinely carry request context; %maskedEx must
+        // scrub them exactly like %maskedMsg scrubs regular messages.
+        var probe = LoggerFactory.getLogger("masking.probe.ex");
+        var cause = new IllegalStateException("upstream rejected token=tok-exc-1234567890");
+        probe.error("proxmox call failed",
+                new RuntimeException("clone failed for cipassword=vm-exc-secret! at node pve1", cause));
+
+        String rendered = listAppender.list.stream().map(maskedLayout::doLayout)
+                .reduce("", String::concat);
+
+        assertThat(rendered)
+                .contains("proxmox call failed")
+                .contains("RuntimeException")
+                .contains("Caused by")
+                .doesNotContain("vm-exc-secret!")
+                .doesNotContain("tok-exc-1234567890")
+                .contains("cipassword=" + MaskingMessageConverter.MASK)
+                .contains("token=" + MaskingMessageConverter.MASK);
     }
 }
