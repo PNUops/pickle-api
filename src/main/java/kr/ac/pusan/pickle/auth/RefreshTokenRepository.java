@@ -10,6 +10,15 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+    /** Returns 0 when the token was already revoked (concurrent rotation ⇒ reuse). */
+    @Modifying
+    @Query(value = """
+            update refresh_tokens
+               set revoked_at = now(), updated_at = now()
+             where id = :id and revoked_at is null
+            """, nativeQuery = true)
+    int revokeIfActive(@Param("id") Long id);
+
     /**
      * Revokes the given token and every descendant in its rotation chain
      * (theft signal on reuse, docs/plan/07).
