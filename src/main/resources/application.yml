@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: pickle-api
+  datasource:
+    url: ${PICKLE_DB_URL:jdbc:postgresql://localhost:5432/pickle_dev}
+    username: ${PICKLE_DB_USER:pickle}
+    password: ${PICKLE_DB_PASSWORD:pickle}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+org:
+  jobrunr:
+    background-job-server:
+      enabled: true
+    dashboard:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /api/v1/openapi

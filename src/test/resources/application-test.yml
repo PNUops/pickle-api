@@ -1,0 +1,10 @@
+org:
+  jobrunr:
+    background-job-server:
+      enabled: false
+    job-scheduler:
+      enabled: true
+
+spring:
+  flyway:
+    enabled: true
