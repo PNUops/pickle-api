@@ -24,13 +24,18 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * v0.2.3) and the springdoc runtime spec.
+ * v0.3.0) and the springdoc runtime spec.
  *
- * <p>Since WP-B3 the whole M2 surface is implemented, so the comparison is
- * bidirectional over the full path+method sets: every contract endpoint must
- * exist at runtime and the runtime must expose nothing beyond the contract.
- * {@link #IMPLEMENTED} names the expected set explicitly so a drift failure
- * points at the exact endpoint instead of a set diff of unknown origin.</p>
+ * <p>The comparison is bidirectional over path+method sets: the contract must
+ * equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}, and the runtime must expose
+ * exactly {@link #IMPLEMENTED} — nothing more, nothing less. Both sets are
+ * named explicitly so a drift failure points at the exact endpoint instead of
+ * a set diff of unknown origin.</p>
+ *
+ * <p>{@link #PLANNED} holds contract v0.3.0 operations not yet implemented,
+ * enabling parallel M3 development against a frozen contract. As each endpoint
+ * lands, move its entry from PLANNED to IMPLEMENTED. <b>PLANNED must be empty
+ * by the end of M3.</b></p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,7 +49,7 @@ class ContractDriftTest {
     /** Contract server prefix stripped from runtime paths before comparison. */
     private static final String SERVER_PREFIX = "/api/v1";
 
-    /** The full contract v0.2.3 surface ("METHOD path"). */
+    /** The implemented surface ("METHOD path") — the full contract v0.2.3 set. */
     private static final Set<String> IMPLEMENTED = Set.of(
             "POST /auth/signup",
             "POST /auth/verify-email",
@@ -78,6 +83,26 @@ class ContractDriftTest {
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}");
 
+    /**
+     * Contract v0.3.0 operations not implemented yet (M3 VM lifecycle).
+     * Must be empty by the end of M3 — every entry moves to
+     * {@link #IMPLEMENTED} as the endpoint lands.
+     */
+    private static final Set<String> PLANNED = Set.of(
+            "POST /vms/{vmId}/start",
+            "POST /vms/{vmId}/shutdown",
+            "POST /vms/{vmId}/reboot",
+            "POST /vms/{vmId}/force-stop",
+            "DELETE /vms/{vmId}",
+            "POST /vms/{vmId}/cancel-deletion",
+            "POST /vms/{vmId}/initial-password",
+            "GET /vms/{vmId}/events",
+            "GET /admin/nodes",
+            "GET /admin/vms",
+            "POST /admin/vms/{vmId}/schedule-delete",
+            "POST /admin/vms/{vmId}/cancel-scheduled-delete",
+            "POST /admin/vms/{vmId}/emergency-delete");
+
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
 
@@ -94,9 +119,17 @@ class ContractDriftTest {
                 .andReturn().getResponse().getContentAsString();
         JsonNode runtime = new com.fasterxml.jackson.databind.ObjectMapper().readTree(runtimeJson);
 
+        assertThat(IMPLEMENTED)
+                .as("IMPLEMENTED and PLANNED must be disjoint — an endpoint that "
+                        + "landed must leave PLANNED")
+                .doesNotContainAnyElementsOf(PLANNED);
+
+        Set<String> contractSurface = new TreeSet<>(IMPLEMENTED);
+        contractSurface.addAll(PLANNED);
         assertThat(endpointsOf(contract, ""))
-                .as("contract v0.2.3 path+method set vs the implemented set")
-                .isEqualTo(new TreeSet<>(IMPLEMENTED));
+                .as("contract v0.3.0 path+method set vs IMPLEMENTED ∪ PLANNED")
+                .isEqualTo(contractSurface);
+
         assertThat(endpointsOf(runtime, SERVER_PREFIX))
                 .as("springdoc runtime spec path+method set vs the implemented set")
                 .isEqualTo(new TreeSet<>(IMPLEMENTED));
