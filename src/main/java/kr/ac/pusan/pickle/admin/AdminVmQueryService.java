@@ -1,8 +1,12 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.util.Map;
+import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.group.Group;
+import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -28,9 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminVmQueryService {
 
     private final VmRepository vmRepository;
+    private final GroupRepository groupRepository;
 
-    public AdminVmQueryService(VmRepository vmRepository) {
+    public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository) {
         this.vmRepository = vmRepository;
+        this.groupRepository = groupRepository;
     }
 
     @Transactional(readOnly = true)
@@ -49,8 +55,12 @@ public class AdminVmQueryService {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
         }
         Page<Vm> result = vmRepository.findAll(spec, pageable);
-        return PageResponse.of(result.getContent().stream().map(VmSummaryResponse::from).toList(),
-                result);
+        Map<Long, String> groupNames = groupRepository.findAllById(
+                        result.getContent().stream().map(Vm::getGroupId).distinct().toList())
+                .stream().collect(Collectors.toMap(Group::getId, Group::getName));
+        return PageResponse.of(result.getContent().stream()
+                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), "")))
+                .toList(), result);
     }
 
     /** ORG_ADMIN is pinned to their own org; another org's id answers 404. */
