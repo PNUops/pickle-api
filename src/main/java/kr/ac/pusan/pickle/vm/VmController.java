@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.dto.InitialPasswordResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
+import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -84,6 +85,15 @@ public class VmController {
     public ResponseEntity<MessageResponse> forceStopVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
         return ResponseEntity.accepted().body(vmLifecycleService.forceStop(principal, vmId));
+    }
+
+    @GetMapping("/{vmId}/events")
+    public PageResponse<VmEventResponse> listVmEvents(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return vmQueryService.events(principal, vmId, page, size);
     }
 
     /** One-shot reveal (POST — consuming side effect); response must never cache. */
