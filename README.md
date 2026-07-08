@@ -13,7 +13,7 @@ mvn spring-boot:run      # needs local PostgreSQL (see docs/plan/08)
 scripts/verify.sh        # build + all tests (embedded PostgreSQL, no Docker needed)
 ```
 
-Tests boot Zonky embedded-postgres; Proxmox calls are stubbed with WireMock.
+Tests boot Zonky embedded-postgres. Provisioning in M2 is an in-process mock (MockProvisionVmJob); WireMock stubs for the real Proxmox client arrive with M3.
 The OpenAPI document is exposed at `/api/v1/openapi` and is the contract for the
 `pickle-console` frontend (frozen source: `docs/api/openapi.yaml` in pickle-docs;
 `ContractDriftTest` compares the implemented subset against it).
