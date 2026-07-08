@@ -108,14 +108,14 @@ class IpamServiceTest {
         IpAllocation allocation = ipamService.allocate(poolId, firstVm);
         assertThat(allocation.getIp()).isEqualTo("10.92.0.2");
 
-        ipamService.release(allocation.getId());
+        assertThat(ipamService.release(allocation.getId(), firstVm)).isTrue();
         var afterFirstRelease = jdbcTemplate.queryForMap(
                 "select status, released_at from ip_allocations where id = ?", allocation.getId());
         assertThat(afterFirstRelease.get("status")).hasToString("RELEASED");
         assertThat(afterFirstRelease.get("released_at")).isNotNull();
 
         // idempotent: repeat release neither fails nor resets the quarantine clock
-        ipamService.release(allocation.getId());
+        assertThat(ipamService.release(allocation.getId(), firstVm)).isFalse();
         var afterSecondRelease = jdbcTemplate.queryForMap(
                 "select status, released_at from ip_allocations where id = ?", allocation.getId());
         assertThat(afterSecondRelease.get("released_at")).isEqualTo(afterFirstRelease.get("released_at"));
@@ -134,6 +134,32 @@ class IpamServiceTest {
         assertThat(reused.getStatus()).isEqualTo(AllocationStatus.ALLOCATED);
         assertThat(reused.getVmId()).isEqualTo(secondVm);
         assertThat(reused.getReleasedAt()).isNull();
+    }
+
+    @Test
+    void staleReleaseCannotTouchAReallocatedIp() {
+        // /30 with .1 as gateway leaves exactly one usable address
+        long poolId = createPool("ipam-stale", "10.95.0.0/30", "10.95.0.1", "[]");
+        long firstVm = createVm();
+        IpAllocation allocation = ipamService.allocate(poolId, firstVm);
+        assertThat(ipamService.release(allocation.getId(), firstVm)).isTrue();
+
+        // quarantine ages out and another VM reclaims the same allocation row
+        jdbcTemplate.update("update ip_allocations set released_at = now() - interval '25 hours'"
+                + " where id = ?", allocation.getId());
+        long secondVm = createVm();
+        IpAllocation reused = ipamService.allocate(poolId, secondVm);
+        assertThat(reused.getId()).isEqualTo(allocation.getId());
+        assertThat(reused.getVmId()).isEqualTo(secondVm);
+
+        // a stale delayed release from the first VM must be a no-op
+        assertThat(ipamService.release(allocation.getId(), firstVm)).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from ip_allocations where id = ?", String.class,
+                allocation.getId())).isEqualTo("ALLOCATED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select vm_id from ip_allocations where id = ?", Long.class,
+                allocation.getId())).isEqualTo(secondVm);
     }
 
     @Test

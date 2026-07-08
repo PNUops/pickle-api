@@ -147,8 +147,9 @@ public class DeleteVmJob {
         }
         try {
             destroyOnProxmox(vm);
-            if (vm.getIpAllocationId() != null) {
-                ipamService.release(vm.getIpAllocationId());
+            if (vm.getIpAllocationId() != null
+                    && ipamService.release(vm.getIpAllocationId(), vmId)) {
+                vmRepository.clearIpAllocation(vmId, vm.getIpAllocationId(), Instant.now());
             }
             Instant now = Instant.now();
             int updated = vmRepository.markDeleted(vmId, vm.getDeleteRequestedBy(), now);

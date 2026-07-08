@@ -182,6 +182,21 @@ class VmUserSurfaceTest {
     }
 
     @Test
+    void vmDetailHidesIpReallocatedToAnotherVm() throws Exception {
+        // a stale ip_allocation_id pointer left by a crashed release: the
+        // allocation row now belongs to another VM and must not be shown
+        long vmId = createVm();
+        long otherVmId = createVm();
+        long allocationId = allocateIp(otherVmId);
+        jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocationId, vmId);
+
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ipAddress").value((Object) null));
+    }
+
+    @Test
     void vmListCarriesGroupName() throws Exception {
         long vmId = createVm();
         mockMvc.perform(get("/api/v1/vms?groupId=" + groupId)

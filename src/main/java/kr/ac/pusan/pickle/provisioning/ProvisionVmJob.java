@@ -524,8 +524,8 @@ public class ProvisionVmJob implements ProvisioningService {
                     .findFirstByVmIdAndStatusOrderByIdDesc(vmId, AllocationStatus.ALLOCATED)
                     .map(IpAllocation::getId).orElse(null);
         }
-        if (allocationId != null) {
-            ipamService.release(allocationId);
+        if (allocationId != null && ipamService.release(allocationId, vmId)) {
+            vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
         }
     }
 

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.vm;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -121,13 +122,18 @@ public class VmQueryService {
         return vm;
     }
 
-    /** The live address only: released/quarantined allocations show as null. */
+    /**
+     * The live address only: released/quarantined allocations show as null,
+     * and an allocation re-claimed by another VM (stale pointer left by a
+     * crashed release) is never shown as this VM's address.
+     */
     private String liveIpAddress(Vm vm) {
         if (vm.getIpAllocationId() == null) {
             return null;
         }
         return ipAllocationRepository.findById(vm.getIpAllocationId())
                 .filter(allocation -> allocation.getStatus() == AllocationStatus.ALLOCATED)
+                .filter(allocation -> Objects.equals(allocation.getVmId(), vm.getId()))
                 .map(IpAllocation::getIp)
                 .map(ip -> {
                     int slash = ip.indexOf('/');

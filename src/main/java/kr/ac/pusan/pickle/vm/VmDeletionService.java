@@ -140,8 +140,9 @@ public class VmDeletionService {
         if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
             throw alreadyPendingDeletion();
         }
-        if (vm.getIpAllocationId() != null) {
-            ipamService.release(vm.getIpAllocationId());
+        if (vm.getIpAllocationId() != null
+                && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
+            vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);
         }
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
                 "생성 실패(ERROR) 상태 VM 즉시 삭제 — 유예 없음"));

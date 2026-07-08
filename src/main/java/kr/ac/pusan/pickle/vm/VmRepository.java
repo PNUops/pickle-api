@@ -102,6 +102,20 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             """)
     int assignProxmoxVmid(@Param("id") Long id, @Param("vmid") Integer vmid, @Param("now") Instant now);
 
+    /**
+     * Clears the IP pointer after a successful release, guarded by the
+     * allocation id so a re-allocated pointer is never wiped by a stale run.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.ipAllocationId = null, v.updatedAt = :now
+             where v.id = :id and v.ipAllocationId = :allocationId
+            """)
+    int clearIpAllocation(@Param("id") Long id, @Param("allocationId") Long allocationId,
+            @Param("now") Instant now);
+
     /** Compensation after steps 3–5 failed: the half-created VM is gone. */
     @Transactional
     @Modifying(clearAutomatically = true)

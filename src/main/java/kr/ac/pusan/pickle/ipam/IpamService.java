@@ -88,15 +88,20 @@ public class IpamService {
     }
 
     /**
-     * Releases the allocation, starting the quarantine clock. Idempotent: a
-     * repeat call is a no-op and does not reset {@code released_at}.
+     * Releases the allocation, starting the quarantine clock — but only while
+     * it still belongs to the given VM. A stale caller (e.g. a delayed delete
+     * retry) whose allocation was already released and reclaimed by another
+     * VM is a no-op instead of yanking someone else's live address. Idempotent:
+     * a repeat call does not reset {@code released_at}.
+     *
+     * @return true when this call actually released the allocation
      */
-    public void release(long allocationId) {
-        jdbcTemplate.update("""
+    public boolean release(long allocationId, long vmId) {
+        return jdbcTemplate.update("""
                 update ip_allocations
                    set status = 'RELEASED', released_at = now()
-                 where id = ? and status = 'ALLOCATED'
-                """, allocationId);
+                 where id = ? and vm_id = ? and status = 'ALLOCATED'
+                """, allocationId, vmId) == 1;
     }
 
     /**
