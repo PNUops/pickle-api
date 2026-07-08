@@ -1,0 +1,1 @@
+{"data":{"node":"pve1","type":"qmshutdown","id":"102","status":"stopped","tokenid":"pickle-api","user":"pickle@pve","pid":449631,"exitstatus":"VM quit/powerdown failed - got timeout","pstart":5548631,"starttime":1783508225,"upid":"UPID:pve1:0006DC5F:0054AA57:6A4E2D01:qmshutdown:102:pickle@pve!pickle-api:"}}

@@ -153,6 +153,17 @@
 			<artifactId>awaitility</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<!-- Proxmox API stub harness (docs/plan/03): serves responses captured
+			     from the real pve1 (src/test/resources/wiremock/proxmox). 3.13.2 is
+			     the latest stable on Maven Central as of 2026-07-08; the 4.x line is
+			     still beta (4.0.0-beta.38) and therefore excluded. The standalone
+			     (shaded) jar avoids Jetty/servlet clashes with the Boot 4 stack. -->
+			<groupId>org.wiremock</groupId>
+			<artifactId>wiremock-standalone</artifactId>
+			<version>3.13.2</version>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
