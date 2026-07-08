@@ -2,26 +2,31 @@ package kr.ac.pusan.pickle.vm;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code vms}, read-only in M2 (openapi.yaml v0.2.3, server /api/v1). */
+/** Contract tag {@code vms} (openapi.yaml v0.3.1, server /api/v1). */
 @RestController
 @RequestMapping("/api/v1/vms")
 public class VmController {
 
     private final VmQueryService vmQueryService;
+    private final VmLifecycleService vmLifecycleService;
 
-    public VmController(VmQueryService vmQueryService) {
+    public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService) {
         this.vmQueryService = vmQueryService;
+        this.vmLifecycleService = vmLifecycleService;
     }
 
     @GetMapping
@@ -37,5 +42,29 @@ public class VmController {
     public VmDetailResponse getVm(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
         return vmQueryService.get(principal, vmId);
+    }
+
+    @PostMapping("/{vmId}/start")
+    public ResponseEntity<MessageResponse> startVm(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+        return ResponseEntity.accepted().body(vmLifecycleService.start(principal, vmId));
+    }
+
+    @PostMapping("/{vmId}/shutdown")
+    public ResponseEntity<MessageResponse> shutdownVm(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+        return ResponseEntity.accepted().body(vmLifecycleService.shutdown(principal, vmId));
+    }
+
+    @PostMapping("/{vmId}/reboot")
+    public ResponseEntity<MessageResponse> rebootVm(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+        return ResponseEntity.accepted().body(vmLifecycleService.reboot(principal, vmId));
+    }
+
+    @PostMapping("/{vmId}/force-stop")
+    public ResponseEntity<MessageResponse> forceStopVm(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+        return ResponseEntity.accepted().body(vmLifecycleService.forceStop(principal, vmId));
     }
 }

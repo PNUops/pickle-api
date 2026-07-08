@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface VmRepository extends JpaRepository<Vm, Long> {
 
@@ -39,6 +40,7 @@ public interface VmRepository extends JpaRepository<Vm, Long> {
      * Compare-and-set status transition; the {@code from} guard makes job
      * re-runs idempotent (0 rows updated when the VM already moved on).
      */
+    @Transactional
     @Modifying(clearAutomatically = true)
     @Query("""
             update Vm v
@@ -47,4 +49,15 @@ public interface VmRepository extends JpaRepository<Vm, Long> {
             """)
     int transitionStatus(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("statusDetail") String statusDetail, @Param("now") Instant now);
+
+    /** Records a failure/drift note without touching the status (power jobs). */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.statusDetail = :statusDetail, v.updatedAt = :now
+             where v.id = :id
+            """)
+    int updateStatusDetail(@Param("id") Long id, @Param("statusDetail") String statusDetail,
+            @Param("now") Instant now);
 }
