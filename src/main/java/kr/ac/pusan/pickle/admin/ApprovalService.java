@@ -38,6 +38,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Admin approval flow (contract tag {@code admin}, vm-requests subset).
@@ -153,7 +155,19 @@ public class ApprovalService {
                 form.grantedStartDate(), form.grantedEndDate()));
 
         long vmId = vm.getId();
-        jobScheduler.enqueue(() -> provisioningService.provisionVm(vmId));
+        // The OSS JobRunr storage provider writes with its own connection and
+        // commits immediately, so an in-transaction enqueue could (a) leave an
+        // orphaned durable job if this tx rolls back, or (b) let a worker pick
+        // the job before the vm row is visible. Enqueue after commit instead.
+        // Trade-off: a crash in the tiny window between commit and enqueue
+        // loses the job (VM stays CREATING) — acceptable for M2; the M3
+        // reconciler surfaces stuck-CREATING VMs (docs/plan/03).
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                jobScheduler.enqueue(() -> provisioningService.provisionVm(vmId));
+            }
+        });
 
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
                 "vm_request", request.getId(),

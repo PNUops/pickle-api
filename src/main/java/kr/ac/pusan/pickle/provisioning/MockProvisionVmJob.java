@@ -35,10 +35,10 @@ public class MockProvisionVmJob implements ProvisioningService {
     @Job(name = "mock-provision-vm %0", retries = 5)
     @Transactional
     public void provisionVm(long vmId) {
-        // Missing row → exception → JobRunr retry; covers the (harmless) race
-        // where the worker polls the job before the approve tx is visible.
+        // Enqueue happens after the approve tx commits, so the row must exist;
+        // missing row → exception → JobRunr retry as a defensive backstop.
         Vm vm = vmRepository.findById(vmId)
-                .orElseThrow(() -> new IllegalStateException("VM " + vmId + " not found (approve tx not visible yet?)"));
+                .orElseThrow(() -> new IllegalStateException("VM " + vmId + " not found"));
         if (vm.getStatus() != VmStatus.CREATING) {
             log.info("Mock provisioning skipped for vm {} (status {})", vmId, vm.getStatus());
             return;

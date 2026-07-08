@@ -213,8 +213,10 @@ class ApprovalTest {
         assertThat(vm.getProxmoxVmid()).isNull();
         assertThat(vm.getOrgId()).isEqualTo(org.getId());
 
-        // a mock-provisioning job was enqueued through the ProvisioningService seam
-        assertThat(jobRunrJobCount()).isGreaterThan(jobsBefore);
+        // a mock-provisioning job was enqueued through the ProvisioningService
+        // seam; the enqueue runs afterCommit (completed by the time MockMvc
+        // returns) and the earlier failed (422) approves enqueued nothing
+        assertThat(jobRunrJobCount()).isEqualTo(jobsBefore + 1);
 
         // approval is audit-logged
         Long audits = jdbcTemplate.queryForObject(
@@ -239,6 +241,9 @@ class ApprovalTest {
         postJson("/api/v1/vm-requests/" + requestId + "/cancel", studentToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
+
+        // the rejected double decisions rolled back without enqueuing anything
+        assertThat(jobRunrJobCount()).isEqualTo(jobsBefore + 1);
     }
 
     @Test
