@@ -18,6 +18,7 @@ public class SettingsService {
     public static final String RESERVED_SUBDOMAINS = "reserved_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
+    public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -42,6 +43,12 @@ public class SettingsService {
     public double decimal(String key, double fallback) {
         JsonNode node = read(key);
         return node != null && node.isNumber() ? node.asDouble() : fallback;
+    }
+
+    /** The setting as an integer, or {@code fallback} when missing. */
+    public int integer(String key, int fallback) {
+        JsonNode node = read(key);
+        return node != null && node.isNumber() ? node.asInt() : fallback;
     }
 
     private JsonNode read(String key) {
