@@ -1,0 +1,701 @@
+package kr.ac.pusan.pickle.vm;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.github.tomakehurst.wiremock.client.WireMock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.pusan.pickle.mail.MailMessage;
+import kr.ac.pusan.pickle.mail.MockMailSender;
+import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
+import kr.ac.pusan.pickle.provisioning.DeletionSweeper;
+import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.user.UserStatus;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * B5 deletion flows per contract v0.3.1: self-delete grace scheduling (168 h)
+ * with the backup/cancellation-policy mails, the ERROR immediate path,
+ * admin scheduled deletes (min-notice 422), kind-aware admin cancellation,
+ * name-confirmed emergency deletes, the {@link DeleteVmJob} destroy pipeline
+ * against real pve1 captures (incl. the ACPI-timeout → force-stop fallback,
+ * fixture 61), retry-then-park, and the sweeper's due selection.
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Import(EmbeddedPostgresConfig.class)
+class VmDeletionTest {
+
+    private static final String NODE_NAME = "wm-delete";
+
+    private static final AtomicInteger VMID_SEQ = new AtomicInteger(920_000);
+    private static final AtomicInteger IP_SEQ = new AtomicInteger(0);
+
+    private static final String SHUTDOWN_UPID =
+            "UPID:pve1:0006DC5F:0054AA57:6A4E2D01:qmshutdown:102:pickle@pve!pickle-api:";
+    private static final String STOP_UPID =
+            "UPID:pve1:0006E033:0054C3AA:6A4E2D42:qmstop:102:pickle@pve!pickle-api:";
+    private static final String DELETE_UPID =
+            "UPID:pve1:0006E08C:0054C47B:6A4E2D44:qmdestroy:102:pickle@pve!pickle-api:";
+
+    private static ProxmoxWireMockSupport wm;
+
+    @DynamicPropertySource
+    static void proxmoxProperties(DynamicPropertyRegistry registry) {
+        registry.add("pickle.proxmox.token-id", () -> "pickle@pve!pickle-api");
+        registry.add("pickle.proxmox.token-secret", () -> "wiremock-test-secret");
+        registry.add("pickle.proxmox.task-poll-interval", () -> "50ms");
+        registry.add("pickle.proxmox.task-poll-timeout", () -> "5s");
+    }
+
+    @BeforeAll
+    static void startServer() {
+        wm = ProxmoxWireMockSupport.start();
+    }
+
+    @AfterAll
+    static void stopServer() {
+        wm.close();
+    }
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private JwtService jwtService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private DeleteVmJob deleteVmJob;
+
+    @Autowired
+    private DeletionSweeper deletionSweeper;
+
+    @Autowired
+    private VmRepository vmRepository;
+
+    @Autowired
+    private MockMailSender mockMailSender;
+
+    private User owner;
+    private User member;
+    private User outsider;
+    private String ownerToken;
+    private String memberToken;
+    private String outsiderToken;
+    private String sysAdminToken;
+    private String orgAdminToken;
+    private long orgId;
+    private long nodeId;
+    private long templateId;
+    private long groupId;
+    private long poolId;
+    private int proxmoxVmid;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        wm.reset();
+        mockMailSender.clear();
+        owner = ensureUser("vmdel.owner@pusan.ac.kr", "삭제소유자");
+        member = ensureUser("vmdel.member@pusan.ac.kr", "삭제멤버");
+        outsider = ensureUser("vmdel.outsider@pusan.ac.kr", "삭제외부인");
+        ownerToken = jwtService.createAccessToken(owner);
+        memberToken = jwtService.createAccessToken(member);
+        outsiderToken = jwtService.createAccessToken(outsider);
+        sysAdminToken = jwtService.createAccessToken(
+                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+        orgAdminToken = jwtService.createAccessToken(
+                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        poolId = jdbcTemplate.queryForObject(
+                "select id from ip_pools where name = 'student-vmbr2'", Long.class);
+        nodeId = ensureWireMockNode();
+        groupId = createTeam("vmdel-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(groupId, member.getEmail(), "MEMBER");
+    }
+
+    // ── self-delete ────────────────────────────────────────────────────────
+
+    @Test
+    void selfDeleteSchedulesGraceShutdownAndMails() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        Instant before = Instant.now();
+
+        String body = mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.kind").value("SELF"))
+                .andExpect(jsonPath("$.requestedById").value(owner.getId()))
+                .andExpect(jsonPath("$.reason").value((Object) null))
+                .andExpect(jsonPath("$.cancelable").value(true))
+                .andReturn().getResponse().getContentAsString();
+
+        // grace = settings.vm_delete_grace_hours (seeded 168 h = 7 days)
+        Instant scheduledFor = Instant.parse(
+                objectMapper.readTree(body).get("scheduledFor").asString());
+        assertThat(scheduledFor).isAfterOrEqualTo(before.plus(Duration.ofHours(167)))
+                .isBeforeOrEqualTo(Instant.now().plus(Duration.ofHours(169)));
+
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(column(vmId, "delete_kind")).isEqualTo("SELF");
+        assertThat(eventTypes(vmId)).contains("DELETE");
+
+        // graceful-shutdown job enqueued after commit
+        Long enqueued = jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.gracefulShutdown(%'",
+                Long.class);
+        assertThat(enqueued).isPositive();
+
+        // mail: group members + org admins, with both policy notices
+        List<MailMessage> mails = mockMailSender.getMessages();
+        assertThat(mails).extracting(MailMessage::to)
+                .contains(owner.getEmail(), member.getEmail(), "orgadmin@pickle.local");
+        assertThat(mails.getFirst().body())
+                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
+                .contains("삭제 취소는 관리자만 가능합니다");
+
+        // stacking another deletion on top → 409
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
+                .andExpect(jsonPath("$.detail").value("이미 삭제가 예약되었거나 진행 중인 VM입니다."));
+    }
+
+    @Test
+    void selfDeleteAuthorizationAndStateGuards() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+
+        // MEMBER → 403 (owner-only), non-member → 404 (masked)
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isNotFound());
+
+        // ORG_ADMIN of another org → 404 (existence masked)
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + otherOrgAdminToken()))
+                .andExpect(status().isNotFound());
+
+        // state guards: CREATING / NEEDS_ADMIN / DELETED → 409
+        for (VmStatus status : List.of(VmStatus.CREATING, VmStatus.NEEDS_ADMIN, VmStatus.DELETED)) {
+            setStatus(vmId, status);
+            mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+        }
+
+        // ORG_ADMIN of the VM's org may delete
+        setStatus(vmId, VmStatus.STOPPED);
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void errorVmIsDeletedImmediatelyWithIpRelease() throws Exception {
+        long vmId = createVm(VmStatus.ERROR);
+        long allocationId = allocateIp(vmId);
+
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.kind").value("SELF"))
+                .andExpect(jsonPath("$.cancelable").value(false));
+
+        assertThat(statusOf(vmId)).isEqualTo("DELETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select deleted_at is not null from vms where id = ?", Boolean.class, vmId)).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from ip_allocations where id = ?", String.class, allocationId))
+                .isEqualTo("RELEASED");
+        assertThat(eventTypes(vmId)).contains("DELETE");
+        // no pipeline: nothing enqueued for this VM
+        Long tasks = jdbcTemplate.queryForObject(
+                "select count(*) from provisioning_tasks where vm_id = ?", Long.class, vmId);
+        assertThat(tasks).isZero();
+    }
+
+    // ── admin scheduled delete ─────────────────────────────────────────────
+
+    @Test
+    void adminScheduleDeleteEnforcesNoticeAndMailsReason() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+
+        // below the 7-day minimum notice → 422 with errors[]
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", Instant.now().plus(Duration.ofDays(3)).toString(),
+                                "reason", "종료일 경과"))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("scheduledFor"));
+
+        // blank reason → 422 (bean validation)
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", Instant.now().plus(Duration.ofDays(8)).toString(),
+                                "reason", " "))))
+                .andExpect(status().isUnprocessableContent());
+
+        Instant scheduledFor = Instant.now().plus(Duration.ofDays(8));
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", scheduledFor.toString(),
+                                "reason", "사용 종료일이 지난 VM 정리"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.kind").value("ADMIN"))
+                .andExpect(jsonPath("$.reason").value("사용 종료일이 지난 VM 정리"))
+                .andExpect(jsonPath("$.cancelable").value(true));
+
+        // the power state is untouched; intent + event + user mail recorded
+        assertThat(statusOf(vmId)).isEqualTo("RUNNING");
+        assertThat(column(vmId, "delete_kind")).isEqualTo("ADMIN");
+        assertThat(eventTypes(vmId)).contains("SCHEDULE_DELETE");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
+                .contains("사용 종료일이 지난 VM 정리")
+                .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
+
+        // double-schedule and student access → 409 / 403
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", scheduledFor.toString(), "reason", "중복"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", scheduledFor.toString(), "reason", "학생"))))
+                .andExpect(status().isForbidden());
+
+        // self-delete grace in progress (DELETING) can not be re-scheduled
+        long deletingVm = createVm(VmStatus.DELETING);
+        mockMvc.perform(post("/api/v1/admin/vms/" + deletingVm + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", scheduledFor.toString(), "reason", "유예 중"))))
+                .andExpect(status().isConflict());
+    }
+
+    // ── admin cancel ───────────────────────────────────────────────────────
+
+    @Test
+    void cancelIsKindAwareAndAdminOnly() throws Exception {
+        // SELF: pending grace → cancel returns the VM to STOPPED
+        long selfVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(selfVm, "SELF", Instant.now().plus(Duration.ofDays(5)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + selfVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("삭제 예약이 취소되었습니다."));
+        assertThat(statusOf(selfVm)).isEqualTo("STOPPED");
+        assertThat(column(selfVm, "delete_kind")).isNull();
+        assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("취소");
+
+        // ADMIN: schedule only — the power state is preserved
+        long adminVm = createVm(VmStatus.RUNNING);
+        markPendingDeletion(adminVm, "ADMIN", Instant.now().plus(Duration.ofDays(8)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        assertThat(statusOf(adminVm)).isEqualTo("RUNNING");
+        assertThat(column(adminVm, "delete_kind")).isNull();
+
+        // EMERGENCY / no pending deletion / grace elapsed → 409
+        long emergencyVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(emergencyVm, "EMERGENCY", Instant.now());
+        mockMvc.perform(post("/api/v1/admin/vms/" + emergencyVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+        long plainVm = createVm(VmStatus.RUNNING);
+        mockMvc.perform(post("/api/v1/admin/vms/" + plainVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isConflict());
+        long elapsedVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(elapsedVm, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + elapsedVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isConflict());
+
+        // students cannot cancel (403 via method security), other org → 404
+        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden());
+        markPendingDeletion(adminVm, "ADMIN", Instant.now().plus(Duration.ofDays(8)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + otherOrgAdminToken()))
+                .andExpect(status().isNotFound());
+    }
+
+    // ── emergency delete ───────────────────────────────────────────────────
+
+    @Test
+    void emergencyDeleteConfirmsNameAuditsAndEnqueues() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
+                String.class, vmId);
+
+        // ORG_ADMIN → 403 (SYS_ADMIN only)
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
+                .andExpect(status().isForbidden());
+
+        // wrong confirm name → 409 VM_CONFIRM_NAME_MISMATCH
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", "wrong-name"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_CONFIRM_NAME_MISMATCH"));
+
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").value(
+                        "긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다."));
+
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(column(vmId, "delete_kind")).isEqualTo("EMERGENCY");
+        assertThat(eventTypes(vmId)).contains("EMERGENCY_DELETE");
+        Long audits = jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = 'vm.emergency_delete' and target_id = ?",
+                Long.class, vmId);
+        assertThat(audits).isEqualTo(1);
+        Long enqueued = jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
+                Long.class);
+        assertThat(enqueued).isPositive();
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("긴급");
+
+        // already destroyed → 409
+        setStatus(vmId, VmStatus.DELETED);
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+    }
+
+    // ── the destroy pipeline (WireMock, real pve1 captures) ───────────────
+
+    @Test
+    void deleteJobShutsDownWithForceFallbackDestroysAndReleases() {
+        long vmId = createVm(VmStatus.DELETING);
+        long allocationId = allocateIp(vmId);
+        markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+
+        stubClusterResourcesRunning();
+        // ACPI shutdown fails with the captured timeout exitstatus → force stop
+        wm.server().stubFor(WireMock.post(urlPathEqualTo(qemuPath("status/shutdown")))
+                .willReturn(okFixture("61-shutdown")));
+        wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(SHUTDOWN_UPID)))
+                .willReturn(okFixture("61-shutdown-status")));
+        wm.server().stubFor(WireMock.post(urlPathEqualTo(qemuPath("status/stop")))
+                .willReturn(okFixture("63-stop")));
+        wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(STOP_UPID)))
+                .willReturn(okFixture("63-stop-status")));
+        wm.server().stubFor(WireMock.delete(urlPathEqualTo(qemuBasePath()))
+                .willReturn(okFixture("70-delete")));
+        wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(DELETE_UPID)))
+                .willReturn(okFixture("70-delete-status")));
+
+        deleteVmJob.deleteVm(vmId);
+
+        assertThat(statusOf(vmId)).isEqualTo("DELETED");
+        assertThat(jdbcTemplate.queryForObject("select deleted_at is not null from vms where id = ?",
+                Boolean.class, vmId)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select status from ip_allocations where id = ?",
+                String.class, allocationId)).isEqualTo("RELEASED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from provisioning_tasks where vm_id = ? and kind = 'DELETE'
+                """, String.class, vmId)).isEqualTo("DONE");
+        assertThat(eventTypes(vmId)).contains("DELETE");
+        // graceful attempt used the 120 s guest timeout, destroy purged
+        wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath("status/shutdown")))
+                .withRequestBody(containing("timeout=120")));
+        wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath("status/stop"))));
+        wm.server().verify(deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
+        // org admin notified of the final destruction
+        assertThat(mockMailSender.lastMessageTo("orgadmin@pickle.local").body()).contains("파기");
+    }
+
+    @Test
+    void deleteJobRetriesWithBackoffThenParksNeedsAdmin() {
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+        // every Proxmox call answers 500 → each attempt fails
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(500).withBody("{\"data\":null}")));
+
+        deleteVmJob.deleteVm(vmId);
+        assertThat(taskState(vmId)).containsExactly("RETRYING", 1);
+        Long retryScheduled = jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
+                Long.class);
+        assertThat(retryScheduled).isPositive();
+
+        deleteVmJob.deleteVm(vmId);
+        assertThat(taskState(vmId)).containsExactly("RETRYING", 2);
+
+        deleteVmJob.deleteVm(vmId);
+        assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 3);
+        // the VM stays DELETING for the operator; a further run is a no-op
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(statusDetailOf(vmId)).contains("관리자");
+        deleteVmJob.deleteVm(vmId);
+        assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 3);
+    }
+
+    // ── sweeper ────────────────────────────────────────────────────────────
+
+    @Test
+    void sweeperSelectsOnlyDuePendingDeletions() {
+        long dueSelf = createVm(VmStatus.DELETING);
+        markPendingDeletion(dueSelf, "SELF", Instant.now().minus(Duration.ofMinutes(5)));
+        long futureSelf = createVm(VmStatus.DELETING);
+        markPendingDeletion(futureSelf, "SELF", Instant.now().plus(Duration.ofDays(6)));
+        long dueAdmin = createVm(VmStatus.RUNNING);
+        markPendingDeletion(dueAdmin, "ADMIN", Instant.now().minus(Duration.ofMinutes(5)));
+        long parked = createVm(VmStatus.NEEDS_ADMIN);
+        markPendingDeletion(parked, "SELF", Instant.now().minus(Duration.ofMinutes(5)));
+        long plain = createVm(VmStatus.RUNNING);
+        // isolate from pending deletions left over by other tests in this DB
+        jdbcTemplate.update("""
+                update vms set delete_scheduled_for = now() + interval '30 days'
+                 where delete_scheduled_for <= now() and id not in (?, ?, ?, ?, ?)
+                """, dueSelf, futureSelf, dueAdmin, parked, plain);
+
+        List<Long> due = vmRepository.findDueForDeletion(Instant.now(),
+                java.util.Set.of(VmStatus.DELETING, VmStatus.RUNNING, VmStatus.STOPPED,
+                        VmStatus.REBOOTING))
+                .stream().map(Vm::getId)
+                .filter(id -> List.of(dueSelf, futureSelf, dueAdmin, parked, plain).contains(id))
+                .toList();
+        assertThat(due).containsExactly(dueSelf, dueAdmin);
+
+        Long before = deleteJobCount();
+        deletionSweeper.sweep();
+        assertThat(deleteJobCount() - before).isEqualTo(2);
+    }
+
+    // ── helpers ────────────────────────────────────────────────────────────
+
+    private Long deleteJobCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
+                Long.class);
+    }
+
+    private List<Object> taskState(long vmId) {
+        return jdbcTemplate.queryForObject("""
+                select status, attempts from provisioning_tasks
+                 where vm_id = ? and kind = 'DELETE' order by id desc limit 1
+                """, (rs, i) -> List.of(rs.getString(1), rs.getInt(2)), vmId);
+    }
+
+    private void stubClusterResourcesRunning() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("""
+                                {"data":[{"vmid":%d,"type":"qemu","status":"running",
+                                          "node":"%s","name":"test"}]}
+                                """.formatted(proxmoxVmid, NODE_NAME))));
+    }
+
+    private String qemuBasePath() {
+        return "/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid;
+    }
+
+    private String qemuPath(String suffix) {
+        return qemuBasePath() + "/" + suffix;
+    }
+
+    private static String taskStatusPath(String upid) {
+        return "/api2/json/nodes/" + NODE_NAME + "/tasks/" + upid + "/status";
+    }
+
+    private String otherOrgAdminToken() {
+        Long otherOrgId = jdbcTemplate.query("select id from orgs where slug = 'vmdel-other'",
+                rs -> rs.next() ? rs.getLong(1) : null);
+        if (otherOrgId == null) {
+            otherOrgId = jdbcTemplate.queryForObject("""
+                    insert into orgs (name, slug) values ('삭제테스트 타기관', 'vmdel-other') returning id
+                    """, Long.class);
+        }
+        User otherAdmin = ensureUser("vmdel.otheradmin@pusan.ac.kr", "타기관관리자");
+        otherAdmin.setRole(UserRole.ORG_ADMIN);
+        otherAdmin.setOrgId(otherOrgId);
+        userRepository.save(otherAdmin);
+        return jwtService.createAccessToken(otherAdmin);
+    }
+
+    private String statusOf(long vmId) {
+        return jdbcTemplate.queryForObject("select status from vms where id = ?", String.class, vmId);
+    }
+
+    private String statusDetailOf(long vmId) {
+        return jdbcTemplate.queryForObject("select status_detail from vms where id = ?",
+                String.class, vmId);
+    }
+
+    private String column(long vmId, String column) {
+        return jdbcTemplate.queryForObject(
+                "select " + column + "::text from vms where id = ?", String.class, vmId);
+    }
+
+    private List<String> eventTypes(long vmId) {
+        return jdbcTemplate.queryForList(
+                "select type from vm_events where vm_id = ? order by id", String.class, vmId);
+    }
+
+    private void setStatus(long vmId, VmStatus status) {
+        jdbcTemplate.update("update vms set status = ?::vm_status where id = ?", status.name(), vmId);
+    }
+
+    private void markPendingDeletion(long vmId, String kind, Instant scheduledFor) {
+        jdbcTemplate.update("""
+                update vms
+                   set delete_kind = ?::vm_delete_kind, delete_scheduled_for = ?,
+                       delete_requested_at = now(), delete_requested_by = ?
+                 where id = ?
+                """, kind, java.sql.Timestamp.from(scheduledFor), owner.getId(), vmId);
+    }
+
+    private long allocateIp(long vmId) {
+        String ip = "172.29.77." + (IP_SEQ.incrementAndGet() % 250 + 1);
+        long allocationId = jdbcTemplate.queryForObject("""
+                insert into ip_allocations (pool_id, ip, vm_id, status)
+                values (?, ?::inet, ?, 'ALLOCATED')
+                on conflict (ip) do update set vm_id = excluded.vm_id, status = 'ALLOCATED',
+                                               released_at = null
+                returning id
+                """, Long.class, poolId, ip, vmId);
+        jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocationId, vmId);
+        return allocationId;
+    }
+
+    private long ensureWireMockNode() {
+        Long existing = jdbcTemplate.query("select id from nodes where name = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, NODE_NAME);
+        if (existing != null) {
+            jdbcTemplate.update("update nodes set api_host = ? where id = ?", wm.apiHost(), existing);
+            return existing;
+        }
+        return jdbcTemplate.queryForObject("""
+                insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)
+                values (?, ?, 8, 16384, 'vmbr2', 'local-lvm') returning id
+                """, Long.class, NODE_NAME, wm.apiHost());
+    }
+
+    private long createVm(VmStatus status) {
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb,
+                                         need_ssh, need_http, need_public)
+                values (?, ?, ?, '삭제 테스트', ?, 1, 1024, 10, true, false, false)
+                returning id
+                """, Long.class, groupId, orgId, owner.getId(), templateId);
+        String hostname = "vmdel-" + UUID.randomUUID().toString().substring(0, 12);
+        proxmoxVmid = VMID_SEQ.incrementAndGet();
+        return jdbcTemplate.queryForObject("""
+                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                                 template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
+                returning id
+                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                templateId, proxmoxVmid, status.name());
+    }
+
+    private long createTeam(String slug) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/groups")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("kind", "TEAM", "name", "삭제 테스트 " + slug, "slug", slug))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(body).get("id").asLong();
+    }
+
+    private void addMember(long groupId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
+                .andExpect(status().isCreated());
+    }
+
+    private User ensureUser(String email, String name) {
+        return userRepository.findByEmail(email).orElseGet(() -> {
+            User user = new User(email, "{test-no-login}", name);
+            user.setStatus(UserStatus.ACTIVE);
+            user.setEmailVerifiedAt(Instant.now());
+            return userRepository.save(user);
+        });
+    }
+}

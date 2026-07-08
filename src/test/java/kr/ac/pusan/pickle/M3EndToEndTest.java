@@ -214,9 +214,9 @@ class M3EndToEndTest {
                 .andExpect(jsonPath("$.orgId").value(orgId))
                 .andExpect(jsonPath("$.ipAddress").value(EXPECTED_IP))
                 .andExpect(jsonPath("$.initialPasswordAvailable").value(true))
-                .andExpect(jsonPath("$.provisioning.kind").value("PROVISION"))
-                .andExpect(jsonPath("$.provisioning.status").value("DONE"))
-                .andExpect(jsonPath("$.provisioning.currentStep").value(9));
+                // contract v0.3.1: provisioning surfaces only in-flight or
+                // last-failed tasks — a cleanly finished pipeline shows null
+                .andExpect(jsonPath("$.provisioning").value(org.hamcrest.Matchers.nullValue()));
 
         // 11. pipeline side effects: vmid/ip persisted, CREATE event, owner mail
         assertThat(jdbcTemplate.queryForObject(

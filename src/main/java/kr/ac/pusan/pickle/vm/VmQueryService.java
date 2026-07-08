@@ -1,18 +1,24 @@
 package kr.ac.pusan.pickle.vm;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.group.Group;
+import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.AllocationStatus;
 import kr.ac.pusan.pickle.ipam.IpAllocation;
 import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
-import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskView;
+import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
+import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,32 +29,46 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Read-only VM views (contract tag {@code vms} — M2 has no lifecycle actions).
- * Visibility: members (VIEWER+) of the owning group. The contract defines no
- * 403 for the list, so a groupId filter outside my groups yields an empty page.
+ * Read-only VM views (contract tag {@code vms}). Visibility: members
+ * (VIEWER+) of the owning group. The contract defines no 403 for the list,
+ * so a groupId filter outside my groups yields an empty page; detail and
+ * events answer 403 for non-members of an existing VM.
+ *
+ * <p>The detail view assembles the M3 lifecycle surface: {@code provisioning}
+ * is the newest task unless it finished cleanly (contract: in-flight or
+ * last-failed; DONE → null), {@code deletion} maps the delete_* intent,
+ * {@code initialPasswordAvailable} mirrors the one-shot plaintext column and
+ * {@code ipAddress} resolves the IPAM allocation.</p>
  */
 @Service
 public class VmQueryService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
-    private final IpAllocationRepository allocationRepository;
-    private final ProvisioningTaskRepository taskRepository;
+    private final GroupRepository groupRepository;
+    private final IpAllocationRepository ipAllocationRepository;
+    private final ProvisioningTaskRepository provisioningTaskRepository;
+    private final VmEventRepository vmEventRepository;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            IpAllocationRepository allocationRepository, ProvisioningTaskRepository taskRepository) {
+            GroupRepository groupRepository, IpAllocationRepository ipAllocationRepository,
+            ProvisioningTaskRepository provisioningTaskRepository,
+            VmEventRepository vmEventRepository) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
-        this.allocationRepository = allocationRepository;
-        this.taskRepository = taskRepository;
+        this.groupRepository = groupRepository;
+        this.ipAllocationRepository = ipAllocationRepository;
+        this.provisioningTaskRepository = provisioningTaskRepository;
+        this.vmEventRepository = vmEventRepository;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long groupId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        List<Long> groupIds = groupMemberRepository.findWithGroupByUserId(actor.id()).stream()
-                .map(m -> m.getGroup().getId())
-                .toList();
+        List<GroupMember> memberships = groupMemberRepository.findWithGroupByUserId(actor.id());
+        Map<Long, String> groupNames = memberships.stream()
+                .collect(Collectors.toMap(m -> m.getGroup().getId(), m -> m.getGroup().getName()));
+        List<Long> groupIds = List.copyOf(groupNames.keySet());
         Page<Vm> result;
         if (groupId != null) {
             result = groupIds.contains(groupId)
@@ -59,11 +79,38 @@ public class VmQueryService {
                     ? Page.empty(pageable)
                     : vmRepository.findByGroupIdIn(groupIds, pageable);
         }
-        return PageResponse.of(result.getContent().stream().map(VmSummaryResponse::from).toList(), result);
+        return PageResponse.of(result.getContent().stream()
+                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), "")))
+                .toList(), result);
     }
 
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
+        Vm vm = requireVisibleVm(actor, vmId);
+        String groupName = groupRepository.findById(vm.getGroupId())
+                .map(Group::getName).orElse("");
+        String ipAddress = liveIpAddress(vm);
+        ProvisioningTaskResponse provisioning = provisioningTaskRepository
+                .findByVmIdOrderByIdDesc(vmId).stream()
+                .findFirst()
+                .filter(task -> task.getStatus() != ProvisioningTaskStatus.DONE)
+                .map(ProvisioningTaskResponse::from)
+                .orElse(null);
+        return VmDetailResponse.from(vm, groupName, ipAddress, provisioning);
+    }
+
+    /** Newest-first lifecycle history (contract op {@code listVmEvents}). */
+    @Transactional(readOnly = true)
+    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, long vmId, int page, int size) {
+        requireVisibleVm(actor, vmId);
+        Page<VmEvent> result = vmEventRepository.findByVmIdOrderByIdDesc(vmId,
+                PageRequest.of(page, size));
+        return PageResponse.of(result.getContent().stream().map(VmEventResponse::from).toList(),
+                result);
+    }
+
+    /** Unknown VM → 404; existing VM outside my groups → 403 (VIEWER+ may read). */
+    private Vm requireVisibleVm(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다."));
@@ -71,15 +118,15 @@ public class VmQueryService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "VM 소유 그룹의 멤버만 조회할 수 있습니다.");
         }
-        return VmDetailResponse.from(vm, ipAddress(vm), provisioning(vm));
+        return vm;
     }
 
     /** The live address only: released/quarantined allocations show as null. */
-    private String ipAddress(Vm vm) {
+    private String liveIpAddress(Vm vm) {
         if (vm.getIpAllocationId() == null) {
             return null;
         }
-        return allocationRepository.findById(vm.getIpAllocationId())
+        return ipAllocationRepository.findById(vm.getIpAllocationId())
                 .filter(allocation -> allocation.getStatus() == AllocationStatus.ALLOCATED)
                 .map(IpAllocation::getIp)
                 .map(ip -> {
@@ -87,11 +134,5 @@ public class VmQueryService {
                     return slash >= 0 ? ip.substring(0, slash) : ip;
                 })
                 .orElse(null);
-    }
-
-    /** The most recent async task of the VM; null when none exists yet. */
-    private ProvisioningTaskView provisioning(Vm vm) {
-        List<ProvisioningTask> tasks = taskRepository.findByVmIdOrderByIdDesc(vm.getId());
-        return tasks.isEmpty() ? null : ProvisioningTaskView.from(tasks.getFirst());
     }
 }

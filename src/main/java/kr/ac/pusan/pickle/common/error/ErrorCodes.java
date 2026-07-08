@@ -20,6 +20,9 @@ public final class ErrorCodes {
     public static final String GROUP_ROLE_INSUFFICIENT = "GROUP_ROLE_INSUFFICIENT";
     public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
     public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
+    public static final String VM_INVALID_STATE = "VM_INVALID_STATE";
+    public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";
+    public static final String VM_PASSWORD_ALREADY_VIEWED = "VM_PASSWORD_ALREADY_VIEWED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

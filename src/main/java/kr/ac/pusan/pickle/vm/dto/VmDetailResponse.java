@@ -6,11 +6,10 @@ import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
 
 /**
- * Contract schema {@code VmDetail} (= VmSummary + org/template/access fields).
- * {@code ipAddress} is the live allocation (null before the pipeline's IP
- * step or after release); {@code provisioning} mirrors the VM's most recent
- * async task; {@code initialPasswordAvailable} says whether the one-shot
- * password is still viewable.
+ * Contract schema {@code VmDetail} (= VmSummary + org/template/access fields
+ * plus the M3 lifecycle surface: in-flight/last-failed async task, pending
+ * deletion, one-shot password availability and the allocated internal IP —
+ * null before the pipeline's IP step or after release).
  */
 public record VmDetailResponse(
         Long id,
@@ -21,6 +20,7 @@ public record VmDetailResponse(
         int memoryMb,
         int diskGb,
         Long groupId,
+        String groupName,
         Long requestId,
         String statusDetail,
         Instant createdAt,
@@ -30,15 +30,18 @@ public record VmDetailResponse(
         String sshUsername,
         LocalDate startDate,
         LocalDate endDate,
-        ProvisioningTaskView provisioning,
+        ProvisioningTaskResponse provisioning,
+        VmDeletionResponse deletion,
         boolean initialPasswordAvailable,
         Instant updatedAt) {
 
-    public static VmDetailResponse from(Vm vm, String ipAddress, ProvisioningTaskView provisioning) {
+    public static VmDetailResponse from(Vm vm, String groupName, String ipAddress,
+            ProvisioningTaskResponse provisioning) {
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), vm.getRequestId(),
-                vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(), vm.getTemplateId(),
-                ipAddress, vm.getSshUsername(), vm.getStartDate(), vm.getEndDate(),
-                provisioning, vm.getInitialPassword() != null, vm.getUpdatedAt());
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName,
+                vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(),
+                vm.getTemplateId(), ipAddress, vm.getSshUsername(), vm.getStartDate(),
+                vm.getEndDate(), provisioning, VmDeletionResponse.from(vm),
+                vm.getInitialPassword() != null, vm.getUpdatedAt());
     }
 }

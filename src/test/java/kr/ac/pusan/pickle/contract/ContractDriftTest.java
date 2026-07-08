@@ -79,6 +79,16 @@ class ContractDriftTest {
             "POST /vm-requests/{requestId}/cancel",
             "GET /vms",
             "GET /vms/{vmId}",
+            "DELETE /vms/{vmId}",
+            "POST /admin/vms/{vmId}/schedule-delete",
+            "POST /admin/vms/{vmId}/cancel-scheduled-delete",
+            "POST /admin/vms/{vmId}/emergency-delete",
+            "POST /vms/{vmId}/start",
+            "POST /vms/{vmId}/shutdown",
+            "POST /vms/{vmId}/reboot",
+            "POST /vms/{vmId}/force-stop",
+            "POST /vms/{vmId}/initial-password",
+            "GET /vms/{vmId}/events",
             "GET /admin/vm-requests",
             "GET /admin/vm-requests/{requestId}",
             "GET /admin/vm-requests/{requestId}/context",
@@ -95,17 +105,7 @@ class ContractDriftTest {
      * Must be empty by the end of M3 — every entry moves to
      * {@link #IMPLEMENTED} as the endpoint lands.
      */
-    private static final Set<String> PLANNED = Set.of(
-            "POST /vms/{vmId}/start",
-            "POST /vms/{vmId}/shutdown",
-            "POST /vms/{vmId}/reboot",
-            "POST /vms/{vmId}/force-stop",
-            "DELETE /vms/{vmId}",
-            "POST /vms/{vmId}/initial-password",
-            "GET /vms/{vmId}/events",
-            "POST /admin/vms/{vmId}/schedule-delete",
-            "POST /admin/vms/{vmId}/cancel-scheduled-delete",
-            "POST /admin/vms/{vmId}/emergency-delete");
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

@@ -83,15 +83,15 @@ public class GroupService {
         auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_CREATE,
                 "group", group.getId(),
                 Map.of("kind", group.getKind().name(), "name", group.getName(), "slug", group.getSlug()), ip);
-        return toDetail(group);
+        return toDetail(group, GroupMemberRole.OWNER);
     }
 
     @Transactional(readOnly = true)
     public GroupDetailResponse get(AuthenticatedUser actor, long groupId) {
         Group group = findGroup(groupId);
-        groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
+        GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
                 .orElseThrow(() -> accessDenied("그룹 멤버만 조회할 수 있습니다."));
-        return toDetail(group);
+        return toDetail(group, membership.getRole());
     }
 
     @Transactional
@@ -116,7 +116,7 @@ public class GroupService {
         if (request.isDescriptionSet()) {
             group.setDescription(normalize(request.getDescription()));
         }
-        return toDetail(group);
+        return toDetail(group, membership.getRole());
     }
 
     @Transactional
@@ -232,12 +232,12 @@ public class GroupService {
                 .orElseThrow(() -> memberManageForbidden("멤버를 관리할 권한이 없습니다", notOwnerDetail));
     }
 
-    private GroupDetailResponse toDetail(Group group) {
+    private GroupDetailResponse toDetail(Group group, GroupMemberRole myRole) {
         List<GroupMember> members = groupMemberRepository.findByGroupIdOrderByIdAsc(group.getId());
         Map<Long, User> users = userRepository
                 .findAllById(members.stream().map(GroupMember::getUserId).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
-        return GroupDetailResponse.from(group, members.stream()
+        return GroupDetailResponse.from(group, myRole, members.stream()
                 .map(member -> GroupMemberResponse.from(member, users.get(member.getUserId())))
                 .toList());
     }

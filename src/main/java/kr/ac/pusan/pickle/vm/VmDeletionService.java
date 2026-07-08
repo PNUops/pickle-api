@@ -1,0 +1,337 @@
+package kr.ac.pusan.pickle.vm;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import kr.ac.pusan.pickle.admin.dto.EmergencyDeleteVmRequest;
+import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
+import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.group.GroupMember;
+import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.ipam.IpamService;
+import kr.ac.pusan.pickle.mail.MailMessage;
+import kr.ac.pusan.pickle.mail.MailSender;
+import kr.ac.pusan.pickle.mail.VmLifecycleMailComposer;
+import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.settings.SettingsService;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
+import org.jobrunr.jobs.lambdas.JobLambda;
+import org.jobrunr.scheduling.JobScheduler;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+/**
+ * The three deletion flows (contract v0.3.1, docs/plan/03):
+ *
+ * <ul>
+ *   <li><b>Self-delete</b> (group OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
+ *       immediate DELETING + async graceful shutdown, hard delete after
+ *       {@code settings.vm_delete_grace_hours}; students cannot cancel.
+ *       ERROR VMs (compensated create failures) collapse to an immediate
+ *       DELETED with the IP released — there is nothing to destroy.</li>
+ *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
+ *       {@code scheduledFor} at least {@code settings.admin_delete_min_notice_days}
+ *       out, reason mandatory and mailed to the group.</li>
+ *   <li><b>Emergency delete</b> (SYS_ADMIN): name-confirmed immediate
+ *       stop+destroy, never cancelable, audited separately.</li>
+ * </ul>
+ *
+ * <p>Cancellation is admin-only and kind-aware: SELF returns the (already
+ * shut down) VM to STOPPED, ADMIN merely clears the schedule, EMERGENCY can
+ * never be canceled. ORG_ADMIN scoping masks other orgs' VMs as 404.</p>
+ */
+@Service
+public class VmDeletionService {
+
+    static final int DEFAULT_GRACE_HOURS = 168;
+    static final int DEFAULT_MIN_NOTICE_DAYS = 7;
+
+    private static final DateTimeFormatter KST =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
+
+    private final VmRepository vmRepository;
+    private final GroupMemberRepository groupMemberRepository;
+    private final UserRepository userRepository;
+    private final VmEventRepository vmEventRepository;
+    private final SettingsService settingsService;
+    private final IpamService ipamService;
+    private final JobScheduler jobScheduler;
+    private final DeleteVmJob deleteVmJob;
+    private final AuditService auditService;
+    private final MailSender mailSender;
+    private final VmLifecycleMailComposer mailComposer;
+
+    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+            UserRepository userRepository, VmEventRepository vmEventRepository,
+            SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
+            DeleteVmJob deleteVmJob, AuditService auditService, MailSender mailSender,
+            VmLifecycleMailComposer mailComposer) {
+        this.vmRepository = vmRepository;
+        this.groupMemberRepository = groupMemberRepository;
+        this.userRepository = userRepository;
+        this.vmEventRepository = vmEventRepository;
+        this.settingsService = settingsService;
+        this.ipamService = ipamService;
+        this.jobScheduler = jobScheduler;
+        this.deleteVmJob = deleteVmJob;
+        this.auditService = auditService;
+        this.mailSender = mailSender;
+        this.mailComposer = mailComposer;
+    }
+
+    // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
+
+    @Transactional
+    public VmDeletionResponse selfDelete(AuthenticatedUser actor, long vmId) {
+        Vm vm = requireDeletableByActor(actor, vmId);
+        requireNoPendingDeletion(vm);
+        if (vm.getStatus() == VmStatus.ERROR) {
+            return deleteErrorVmImmediately(actor, vm);
+        }
+        requireStatusOutside(vm, Set.of(VmStatus.CREATING, VmStatus.DELETING, VmStatus.DELETED,
+                VmStatus.NEEDS_ADMIN), "현재 상태에서는 삭제할 수 없습니다.");
+
+        Instant now = Instant.now();
+        int graceHours = settingsService.integer(SettingsService.VM_DELETE_GRACE_HOURS,
+                DEFAULT_GRACE_HOURS);
+        Instant scheduledFor = now.plus(Duration.ofHours(graceHours));
+        if (vmRepository.beginSelfDeletion(vmId, vm.getStatus(), scheduledFor, actor.id(), now) == 0) {
+            throw alreadyPendingDeletion(); // lost a race with a concurrent transition
+        }
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, actor.id(),
+                "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
+
+        // Best-effort graceful shutdown; its failure never touches the schedule.
+        enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
+        sendAfterCommit(recipients(vm, true),
+                email -> mailComposer.selfDeleteAccepted(email, vm.getName(), scheduledFor));
+        return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.id(), null, true);
+    }
+
+    /** ERROR VM: nothing to destroy — release the IP and finish immediately. */
+    private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor, Vm vm) {
+        Instant now = Instant.now();
+        if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
+            throw alreadyPendingDeletion();
+        }
+        if (vm.getIpAllocationId() != null) {
+            ipamService.release(vm.getIpAllocationId());
+        }
+        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
+                "생성 실패(ERROR) 상태 VM 즉시 삭제 — 유예 없음"));
+        return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.id(), null, false);
+    }
+
+    // ── admin scheduled delete ─────────────────────────────────────────────
+
+    @Transactional
+    public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, long vmId,
+            ScheduleVmDeletionRequest request) {
+        Vm vm = requireOrgScopedVm(actor, vmId);
+        requireNoPendingDeletion(vm);
+        requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
+                VmStatus.ERROR), "현재 상태에서는 삭제를 예약할 수 없습니다.");
+
+        Instant now = Instant.now();
+        int noticeDays = settingsService.integer(SettingsService.ADMIN_DELETE_MIN_NOTICE_DAYS,
+                DEFAULT_MIN_NOTICE_DAYS);
+        if (request.scheduledFor().isBefore(now.plus(Duration.ofDays(noticeDays)))) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("scheduledFor",
+                    "삭제 예정일은 최소 통보 기간(" + noticeDays + "일) 이후여야 합니다.")));
+        }
+        String reason = request.reason().strip();
+        if (vmRepository.scheduleAdminDeletion(vmId, request.scheduledFor(), actor.id(),
+                reason, now) == 0) {
+            throw alreadyPendingDeletion();
+        }
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
+                "관리자 삭제 예약 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
+        sendAfterCommit(recipients(vm, false),
+                email -> mailComposer.adminDeleteScheduled(email, vm.getName(), reason,
+                        request.scheduledFor()));
+        return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.id(),
+                reason, true);
+    }
+
+    // ── admin cancel (the only cancellation path — students have none) ─────
+
+    @Transactional
+    public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId) {
+        Vm vm = requireOrgScopedVm(actor, vmId);
+        Instant now = Instant.now();
+        boolean cancelable = vm.getDeleteKind() != null
+                && vm.getDeleteKind() != VmDeleteKind.EMERGENCY
+                && vm.getStatus() != VmStatus.DELETED
+                && vm.getDeleteScheduledFor() != null
+                && vm.getDeleteScheduledFor().isAfter(now);
+        if (!cancelable) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    "취소할 수 있는 삭제가 없습니다. 유예 기간이 지났다면 이미 파기된 것입니다.");
+        }
+        if (vm.getDeleteKind() == VmDeleteKind.SELF
+                && vmRepository.transitionStatus(vmId, VmStatus.DELETING, VmStatus.STOPPED,
+                        null, now) == 0) {
+            // Lost a race with the sweeper/pipeline — treat as already destroyed.
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    "취소할 수 있는 삭제가 없습니다. 유예 기간이 지났다면 이미 파기된 것입니다.");
+        }
+        vmRepository.clearDeletion(vmId, now);
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(),
+                vm.getDeleteKind() == VmDeleteKind.SELF
+                        ? "셀프 삭제 취소 — VM은 STOPPED 상태로 유지"
+                        : "관리자 삭제 예약 취소"));
+        sendAfterCommit(recipients(vm, false),
+                email -> mailComposer.deleteCanceled(email, vm.getName()));
+        return new MessageResponse("삭제 예약이 취소되었습니다.");
+    }
+
+    // ── emergency delete (SYS_ADMIN, immediate, not cancelable) ────────────
+
+    @Transactional
+    public MessageResponse emergencyDelete(AuthenticatedUser actor, long vmId,
+            EmergencyDeleteVmRequest request, String ip) {
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        if (!vm.getName().equals(request.confirmName())) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
+                    "확인용 이름이 일치하지 않습니다",
+                    "입력한 이름이 VM 이름과 일치하지 않습니다. VM 이름을 정확히 입력해 주세요.");
+        }
+        Instant now = Instant.now();
+        if (vmRepository.beginEmergencyDeletion(vmId, actor.id(), now) == 0) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
+        }
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.EMERGENCY_DELETE, actor.id(),
+                "긴급 삭제 접수 — 즉시 강제 종료 후 파기"));
+        auditService.record(actor.id(), actor.role().name(), AuditService.VM_EMERGENCY_DELETE,
+                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                        "groupId", vm.getGroupId()), ip);
+        enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
+        sendAfterCommit(recipients(vm, true),
+                email -> mailComposer.emergencyDeleteAccepted(email, vm.getName()));
+        return new MessageResponse("긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
+    }
+
+    // ── shared guards ──────────────────────────────────────────────────────
+
+    /**
+     * Self-delete authorization: group OWNER, ORG_ADMIN of the VM's org, or
+     * SYS_ADMIN. Non-members and cross-org admins get 404 (masking); a member
+     * below OWNER gets 403.
+     */
+    private Vm requireDeletableByActor(AuthenticatedUser actor, long vmId) {
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        if (actor.role() == UserRole.SYS_ADMIN) {
+            return vm;
+        }
+        if (actor.role() == UserRole.ORG_ADMIN) {
+            if (!vm.getOrgId().equals(actor.orgId())) {
+                throw vmNotFound();
+            }
+            return vm;
+        }
+        GroupMemberRole role = groupMemberRepository
+                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
+                .map(GroupMember::getRole)
+                .orElseThrow(VmDeletionService::vmNotFound);
+        if (role != GroupMemberRole.OWNER) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+                    "VM을 삭제할 권한이 없습니다", "그룹의 OWNER 또는 관리자만 VM을 삭제할 수 있습니다.");
+        }
+        return vm;
+    }
+
+    /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
+    private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
+            throw vmNotFound();
+        }
+        return vm;
+    }
+
+    private void requireNoPendingDeletion(Vm vm) {
+        if (vm.getDeleteKind() != null) {
+            throw alreadyPendingDeletion();
+        }
+    }
+
+    private void requireStatusOutside(Vm vm, Set<VmStatus> forbidden, String baseDetail) {
+        if (forbidden.contains(vm.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    baseDetail + " (현재 상태 " + vm.getStatus() + ")");
+        }
+    }
+
+    private static ApiException alreadyPendingDeletion() {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                "현재 상태에서는 수행할 수 없는 작업입니다", "이미 삭제가 예약되었거나 진행 중인 VM입니다.");
+    }
+
+    private static ApiException vmNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+    }
+
+    // ── notifications / enqueue ────────────────────────────────────────────
+
+    /** Group members' emails, optionally plus the org's admins (ACTIVE only). */
+    private List<String> recipients(Vm vm, boolean includeOrgAdmins) {
+        Set<String> emails = new LinkedHashSet<>();
+        List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(vm.getGroupId())
+                .stream().map(GroupMember::getUserId).toList();
+        userRepository.findAllById(memberIds).stream()
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .map(User::getEmail)
+                .forEach(emails::add);
+        if (includeOrgAdmins) {
+            userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId()).stream()
+                    .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                    .map(User::getEmail)
+                    .forEach(emails::add);
+        }
+        return List.copyOf(emails);
+    }
+
+    /** Mails go out only if the deletion intent actually committed. */
+    private void sendAfterCommit(List<String> recipients, Function<String, MailMessage> composer) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                recipients.forEach(email -> mailSender.send(composer.apply(email)));
+            }
+        });
+    }
+
+    /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */
+    private void enqueueAfterCommit(JobLambda job) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                jobScheduler.enqueue(job);
+            }
+        });
+    }
+}
