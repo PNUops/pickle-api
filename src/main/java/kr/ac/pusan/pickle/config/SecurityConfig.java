@@ -4,6 +4,7 @@ import jakarta.servlet.DispatcherType;
 import kr.ac.pusan.pickle.security.JwtAuthenticationFilter;
 import kr.ac.pusan.pickle.security.ProblemAccessDeniedHandler;
 import kr.ac.pusan.pickle.security.ProblemAuthenticationEntryPoint;
+import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -16,9 +17,11 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Stateless bearer-token security (docs/plan/07). CSRF is disabled for the
- * pure-Bearer API; the refresh cookie is scoped to /api/v1/auth with
- * SameSite=Lax and refresh-token rotation as the mitigation.
+ * Stateless bearer-token security (docs/plan/07). Spring's session-based CSRF
+ * protection stays disabled for the pure-Bearer API; the two cookie-authed
+ * endpoints (refresh/logout) are instead guarded by {@link RefreshCsrfFilter}
+ * (double-submit cookie), on top of the /api/v1/auth-scoped SameSite=Lax
+ * refresh cookie and refresh-token rotation.
  */
 @Configuration
 @EnableWebSecurity
@@ -28,6 +31,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            RefreshCsrfFilter refreshCsrfFilter,
             ProblemAuthenticationEntryPoint authenticationEntryPoint,
             ProblemAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -43,7 +47,10 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // CSRF check first: refresh/logout requests are rejected before
+                // any authentication work; independent of the JWT filter.
+                .addFilterBefore(refreshCsrfFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 

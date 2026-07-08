@@ -6,6 +6,10 @@ jobrunr:
     enabled: false
   job-scheduler:
     enabled: true
+  dashboard:
+    # Pinned off so a stray PICKLE_JOBRUNR_DASH_ENABLED env var can never start
+    # the dashboard web server inside the test JVM.
+    enabled: false
 
 spring:
   flyway:

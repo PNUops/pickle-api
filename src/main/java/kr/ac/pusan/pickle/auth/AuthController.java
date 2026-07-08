@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.auth.dto.ResendVerificationRequest;
 import kr.ac.pusan.pickle.auth.dto.SignupRequest;
 import kr.ac.pusan.pickle.auth.dto.VerifyEmailRequest;
 import kr.ac.pusan.pickle.config.AuthProperties;
+import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -30,6 +31,8 @@ public class AuthController {
 
     static final String REFRESH_COOKIE = "pickle_refresh";
     static final String REFRESH_COOKIE_PATH = "/api/v1/auth";
+    static final String CSRF_COOKIE = RefreshCsrfFilter.CSRF_COOKIE;
+    static final String CSRF_COOKIE_PATH = "/";
 
     private final AuthService authService;
     private final AuthProperties authProperties;
@@ -83,13 +86,15 @@ public class AuthController {
         authService.logout(refreshToken, clientIp(httpRequest));
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie("", Duration.ZERO).toString())
+                .header(HttpHeaders.SET_COOKIE, csrfCookie("", Duration.ZERO).toString())
                 .build();
     }
 
     private ResponseEntity<AuthTokenResponse> withRefreshCookie(AuthService.AuthResult result) {
-        ResponseCookie cookie = refreshCookie(result.refreshToken(), authProperties.refreshTokenTtl());
+        Duration ttl = authProperties.refreshTokenTtl();
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .header(HttpHeaders.SET_COOKIE, refreshCookie(result.refreshToken(), ttl).toString())
+                .header(HttpHeaders.SET_COOKIE, csrfCookie(TokenHasher.newCsrfToken(), ttl).toString())
                 .body(result.body());
     }
 
@@ -102,6 +107,25 @@ public class AuthController {
                 .path(REFRESH_COOKIE_PATH)
                 .maxAge(maxAge)
                 .httpOnly(true)
+                .secure(true)
+                .sameSite("Lax")
+                .build();
+    }
+
+    /**
+     * CSRF double-submit cookie, reissued on every login/refresh: {@code
+     * pickle_csrf=<128-bit random>; Path=/; Max-Age=1209600; Secure;
+     * SameSite=Lax} per contract. Deliberately NOT HttpOnly — console script
+     * must read it to echo the value in the {@code X-Pickle-Csrf} header
+     * ({@link RefreshCsrfFilter} enforces the match). The value is not bound
+     * to the session; see {@link RefreshCsrfFilter} for why double-submit
+     * needs no server-side state.
+     */
+    private ResponseCookie csrfCookie(String value, Duration maxAge) {
+        return ResponseCookie.from(CSRF_COOKIE, value)
+                .path(CSRF_COOKIE_PATH)
+                .maxAge(maxAge)
+                .httpOnly(false)
                 .secure(true)
                 .sameSite("Lax")
                 .build();
