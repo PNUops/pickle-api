@@ -33,8 +33,9 @@ create table vm_requests (
     updated_at        timestamptz not null default now()
 );
 
--- Admin queue is org-scoped and defaults to status=SUBMITTED.
+-- Admin queue: org-scoped for ORG_ADMIN, status-only for SYS_ADMIN.
 create index vm_requests_org_id_status_idx on vm_requests (org_id, status);
+create index vm_requests_status_idx on vm_requests (status);
 create index vm_requests_group_id_idx on vm_requests (group_id);
 create index vm_requests_requester_id_idx on vm_requests (requester_id);
 
