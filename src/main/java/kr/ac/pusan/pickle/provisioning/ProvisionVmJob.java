@@ -214,6 +214,9 @@ public class ProvisionVmJob implements ProvisioningService {
                 taskRepository.fail(task.getId(), "VM 행이 존재하지 않습니다", Instant.now());
                 throw new PipelineHalted("vm row missing");
             }
+            if (step > ProvisioningStep.GUARD.index()) {
+                vm = requireStillCreating(task, vm);
+            }
             switch (ProvisioningStep.of(step)) {
                 case GUARD -> guard(task, vm);
                 case PLACE -> place(vm);
@@ -236,6 +239,29 @@ public class ProvisionVmJob implements ProvisioningService {
             log.info("provision vm {}: step {} ({}) done", vmId, step,
                     ProvisioningStep.of(step).label());
         }
+    }
+
+    /**
+     * Re-checked before every step after the guard: an emergency delete can
+     * flip the VM to DELETING mid-pipeline, and continuing (clone/start)
+     * would resurrect a guest whose IP is already being freed. NEEDS_ADMIN
+     * re-enters via the same CAS the guard uses, so an admin re-run of a task
+     * parked at {@code current_step > 0} resumes correctly. Anything else
+     * closes the task as FAILED and halts this run.
+     */
+    private Vm requireStillCreating(ProvisioningTask task, Vm vm) {
+        if (vm.getStatus() == VmStatus.CREATING) {
+            return vm;
+        }
+        if (vm.getStatus() == VmStatus.NEEDS_ADMIN
+                && vmRepository.transitionStatus(vm.getId(), VmStatus.NEEDS_ADMIN, VmStatus.CREATING,
+                        "관리자 재실행으로 프로비저닝 재개", Instant.now()) == 1) {
+            return vmRepository.findById(vm.getId()).orElse(vm);
+        }
+        taskRepository.fail(task.getId(),
+                "파이프라인 진행 중 VM 상태가 " + vm.getStatus() + "(으)로 바뀌어 중단했습니다 (삭제 등)",
+                Instant.now());
+        throw new PipelineHalted("vm left CREATING mid-pipeline: " + vm.getStatus());
     }
 
     /** Step 0: only CREATING VMs (or NEEDS_ADMIN on admin re-run) proceed. */

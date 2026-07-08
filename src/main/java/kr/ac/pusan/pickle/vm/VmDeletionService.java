@@ -24,6 +24,10 @@ import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MailSender;
 import kr.ac.pusan.pickle.mail.VmLifecycleMailComposer;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
@@ -79,12 +83,14 @@ public class VmDeletionService {
     private final AuditService auditService;
     private final MailSender mailSender;
     private final VmLifecycleMailComposer mailComposer;
+    private final ProvisioningTaskRepository provisioningTaskRepository;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService, MailSender mailSender,
-            VmLifecycleMailComposer mailComposer) {
+            VmLifecycleMailComposer mailComposer,
+            ProvisioningTaskRepository provisioningTaskRepository) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -96,6 +102,7 @@ public class VmDeletionService {
         this.auditService = auditService;
         this.mailSender = mailSender;
         this.mailComposer = mailComposer;
+        this.provisioningTaskRepository = provisioningTaskRepository;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -222,6 +229,7 @@ public class VmDeletionService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                     "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
         }
+        failLiveProvisionTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.EMERGENCY_DELETE, actor.id(),
                 "긴급 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.record(actor.id(), actor.role().name(), AuditService.VM_EMERGENCY_DELETE,
@@ -231,6 +239,30 @@ public class VmDeletionService {
         sendAfterCommit(recipients(vm, true),
                 email -> mailComposer.emergencyDeleteAccepted(email, vm.getName()));
         return new MessageResponse("긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
+    }
+
+    /**
+     * Parks any live PROVISION task as FAILED before an emergency delete, so
+     * a scheduled backoff retry cannot resume the pipeline and resurrect the
+     * guest. A RUNNING worker mid-step may win a CAS race here — the pipeline
+     * itself re-checks the VM status before every step and halts, so this is
+     * belt-and-braces, not the only guard.
+     */
+    private void failLiveProvisionTask(long vmId) {
+        Instant now = Instant.now();
+        for (int i = 0; i < 3; i++) {
+            ProvisioningTask task = provisioningTaskRepository
+                    .findFirstByVmIdAndKindAndStatusInOrderByIdDesc(vmId,
+                            ProvisioningTaskKind.PROVISION, ProvisioningTaskStatus.live())
+                    .orElse(null);
+            if (task == null) {
+                return;
+            }
+            if (provisioningTaskRepository.transitionStatus(task.getId(), task.getStatus(),
+                    ProvisioningTaskStatus.FAILED, "긴급 삭제로 프로비저닝 중단", now) == 1) {
+                return;
+            }
+        }
     }
 
     // ── shared guards ──────────────────────────────────────────────────────

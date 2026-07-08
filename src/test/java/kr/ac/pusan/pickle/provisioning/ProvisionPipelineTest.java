@@ -355,7 +355,31 @@ class ProvisionPipelineTest {
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
     }
 
-    // ── ⑥ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
+    // ── ⑥ emergency delete mid-pipeline → resumed run halts before any call ──
+
+    @Test
+    void pipelineHaltsWhenVmLeavesCreatingMidFlight() {
+        long vmId = createVm();
+        // a RETRYING task parked at the clone step, waiting for its backoff run
+        jdbc.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'PROVISION', 4, 'RETRYING', 1)
+                """, vmId);
+        // an emergency delete flips the VM to DELETING during the backoff
+        jdbc.update("update vms set status = 'DELETING' where id = ?", vmId);
+
+        job.provisionVm(vmId);
+
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.FAILED);
+        assertThat(task.getLastError()).contains("DELETING").contains("중단");
+        // clone/start were never called — the guest is not resurrected
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+        assertThat(vmRepository.findById(vmId).orElseThrow().getStatus())
+                .isEqualTo(VmStatus.DELETING);
+    }
+
+    // ── ⑦ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
 
     @Test
     void recycledVmidOfDeletedVmCanBeReassigned() {

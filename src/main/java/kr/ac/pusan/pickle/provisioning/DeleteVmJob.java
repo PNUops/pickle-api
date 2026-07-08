@@ -119,6 +119,7 @@ public class DeleteVmJob {
         Vm vm = vmRepository.findById(vmId).orElse(null);
         if (vm == null || vm.getDeleteKind() == null) {
             log.info("Delete job skipped for vm {}: no pending deletion", vmId);
+            closeRacedLiveTask(vmId);
             return;
         }
         if (vm.getStatus() != VmStatus.DELETING) {
@@ -129,11 +130,20 @@ public class DeleteVmJob {
                 log.info("Delete job skipped for vm {} (status {})", vmId, vm.getStatus());
                 return;
             }
-            vm = vmRepository.findById(vmId).orElseThrow();
         }
         ProvisioningTask task = claimTask(vmId);
         if (task == null) {
             return; // another worker runs it, or the task is parked NEEDS_ADMIN
+        }
+        // Re-read after the task claim (TOCTOU guard): an admin cancel may have
+        // raced the eligibility check above — destroying now would break the
+        // cancel's promise, so the task is closed and the run stops.
+        vm = vmRepository.findById(vmId).orElse(null);
+        if (vm == null || vm.getStatus() != VmStatus.DELETING || vm.getDeleteKind() == null) {
+            taskRepository.fail(task.getId(),
+                    "파기 직전 재검증 실패 — 삭제가 취소되었거나 상태가 변경되어 중단합니다", Instant.now());
+            log.info("Delete job aborted for vm {}: cancellation raced the destroy", vmId);
+            return;
         }
         try {
             destroyOnProxmox(vm);
@@ -151,6 +161,21 @@ public class DeleteVmJob {
         } catch (RuntimeException e) {
             handleFailure(task.getId(), vmId, e);
         }
+    }
+
+    /**
+     * A canceled deletion can leave a live DELETE task behind when the cancel
+     * raced an in-flight run (the same TOCTOU as above, seen from the other
+     * side). Closing it here keeps re-enqueues from spinning on a task nobody
+     * will ever complete. NEEDS_ADMIN tasks are left for the operator.
+     */
+    private void closeRacedLiveTask(long vmId) {
+        Instant now = Instant.now();
+        taskRepository.findFirstByVmIdAndKindAndStatusInOrderByIdDesc(vmId,
+                        ProvisioningTaskKind.DELETE,
+                        Set.of(ProvisioningTaskStatus.PENDING, ProvisioningTaskStatus.RETRYING))
+                .ifPresent(task -> taskRepository.transitionStatus(task.getId(), task.getStatus(),
+                        ProvisioningTaskStatus.FAILED, "삭제가 취소되어 파기 태스크를 닫습니다", now));
     }
 
     /**
@@ -238,10 +263,13 @@ public class DeleteVmJob {
         log.warn("Delete pipeline attempt {} failed for vm {}: {}", attempts, vmId, e.getMessage());
         if (attempts >= MAX_ATTEMPTS) {
             taskRepository.park(taskId, error, now);
-            vmRepository.updateStatusDetail(vmId, error + " — 관리자 확인이 필요합니다", now);
+            // status-guarded: a concurrent transition away from DELETING wins
+            vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
+                    error + " — 관리자 확인이 필요합니다", now);
         } else {
             taskRepository.markRetrying(taskId, error, now);
-            vmRepository.updateStatusDetail(vmId, error + " — 자동 재시도 예정", now);
+            vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
+                    error + " — 자동 재시도 예정", now);
             Duration backoff = RETRY_BACKOFFS.get(Math.min(attempts - 1, RETRY_BACKOFFS.size() - 1));
             jobScheduler.schedule(now.plus(backoff), () -> deleteVm(vmId));
         }

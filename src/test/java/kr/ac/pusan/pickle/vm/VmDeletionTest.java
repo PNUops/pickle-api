@@ -440,6 +440,34 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
+    @Test
+    void emergencyDeleteParksLiveProvisionTask() throws Exception {
+        long vmId = createVm(VmStatus.CREATING);
+        jdbcTemplate.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'PROVISION', 5, 'RETRYING', 2)
+                """, vmId);
+        String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
+                String.class, vmId);
+
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
+                .andExpect(status().isAccepted());
+
+        // the pipeline task is closed, so its backoff retry can never resume
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from provisioning_tasks
+                 where vm_id = ? and kind = 'PROVISION' order by id desc limit 1
+                """, String.class, vmId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select last_error from provisioning_tasks
+                 where vm_id = ? and kind = 'PROVISION' order by id desc limit 1
+                """, String.class, vmId)).contains("긴급 삭제");
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+    }
+
     // ── the destroy pipeline (WireMock, real pve1 captures) ───────────────
 
     @Test
@@ -508,6 +536,24 @@ class VmDeletionTest {
         assertThat(statusDetailOf(vmId)).contains("관리자");
         deleteVmJob.deleteVm(vmId);
         assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 3);
+    }
+
+    @Test
+    void deleteJobClosesTaskAndSkipsDestroyWhenCancellationRaced() {
+        // state a raced admin cancel leaves behind: deletion intent cleared,
+        // VM back to STOPPED, but a live DELETE task still pending
+        long vmId = createVm(VmStatus.STOPPED);
+        jdbcTemplate.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'DELETE', 0, 'PENDING', 0)
+                """, vmId);
+
+        deleteVmJob.deleteVm(vmId);
+
+        // no Proxmox call was made and the orphaned task is closed
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+        assertThat(statusOf(vmId)).isEqualTo("STOPPED");
+        assertThat(taskState(vmId)).containsExactly("FAILED", 0);
     }
 
     // ── sweeper ────────────────────────────────────────────────────────────
