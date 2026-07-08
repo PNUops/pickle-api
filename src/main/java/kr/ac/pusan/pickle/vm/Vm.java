@@ -16,9 +16,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Virtual machine (docs/plan/02 vms, M2 subset). Created on approval with the
- * granted spec; {@code proxmox_vmid} and {@code ip_allocation_id} stay null
- * until the real M3 pipeline fills them. Rows are never physically deleted.
+ * Virtual machine (docs/plan/02 vms). Created on approval with the granted
+ * spec; {@code proxmox_vmid} and {@code ip_allocation_id} are filled by the
+ * M3 pipeline, which also manages the initial-credential and scheduled-delete
+ * columns (V6). Rows are never physically deleted.
  */
 @Entity
 @Table(name = "vms")
@@ -87,6 +88,35 @@ public class Vm {
 
     @Column(name = "deleted_by")
     private Long deletedBy;
+
+    /**
+     * Plaintext by design, but only until first view: the one-shot password
+     * endpoint returns it once and nulls it (docs/plan/03 initial credentials).
+     */
+    @Column(name = "initial_password")
+    private String initialPassword;
+
+    /** BCrypt hash kept permanently for support verification. */
+    @Column(name = "initial_password_hash")
+    private String initialPasswordHash;
+
+    @Column(name = "initial_password_viewed_at")
+    private Instant initialPasswordViewedAt;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "delete_kind", columnDefinition = "vm_delete_kind")
+    private VmDeleteKind deleteKind;
+
+    /** When the deletion sweeper may hard-delete (docs/plan/03 grace/notice). */
+    @Column(name = "delete_scheduled_for")
+    private Instant deleteScheduledFor;
+
+    @Column(name = "delete_requested_by")
+    private Long deleteRequestedBy;
+
+    @Column(name = "delete_reason")
+    private String deleteReason;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -193,6 +223,34 @@ public class Vm {
 
     public Long getDeletedBy() {
         return deletedBy;
+    }
+
+    public String getInitialPassword() {
+        return initialPassword;
+    }
+
+    public String getInitialPasswordHash() {
+        return initialPasswordHash;
+    }
+
+    public Instant getInitialPasswordViewedAt() {
+        return initialPasswordViewedAt;
+    }
+
+    public VmDeleteKind getDeleteKind() {
+        return deleteKind;
+    }
+
+    public Instant getDeleteScheduledFor() {
+        return deleteScheduledFor;
+    }
+
+    public Long getDeleteRequestedBy() {
+        return deleteRequestedBy;
+    }
+
+    public String getDeleteReason() {
+        return deleteReason;
     }
 
     public Instant getCreatedAt() {

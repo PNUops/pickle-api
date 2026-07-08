@@ -1,0 +1,115 @@
+package kr.ac.pusan.pickle.provisioning;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * All task state transitions are compare-and-set JPQL updates (same pattern
+ * as {@code VmRepository.transitionStatus}): the {@code from} guard makes
+ * JobRunr job re-runs idempotent — 0 rows updated means the task already
+ * moved on and the caller must stop.
+ */
+public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTask, Long> {
+
+    List<ProvisioningTask> findByVmIdOrderByIdDesc(Long vmId);
+
+    Optional<ProvisioningTask> findFirstByVmIdAndKindAndStatusInOrderByIdDesc(
+            Long vmId, ProvisioningTaskKind kind, Collection<ProvisioningTaskStatus> statuses);
+
+    /** CAS status transition, recording the error (null clears it). */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.status = :to, t.lastError = :lastError, t.updatedAt = :now
+             where t.id = :id and t.status = :from
+            """)
+    int transitionStatus(@Param("id") Long id, @Param("from") ProvisioningTaskStatus from,
+            @Param("to") ProvisioningTaskStatus to, @Param("lastError") String lastError,
+            @Param("now") Instant now);
+
+    /** CAS status transition that also counts the attempt. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.status = :to, t.attempts = t.attempts + 1, t.updatedAt = :now
+             where t.id = :id and t.status = :from
+            """)
+    int transitionStatusCountingAttempt(@Param("id") Long id,
+            @Param("from") ProvisioningTaskStatus from, @Param("to") ProvisioningTaskStatus to,
+            @Param("now") Instant now);
+
+    /**
+     * Advances the step pointer; guarded by the current step and RUNNING so a
+     * concurrent duplicate run cannot double-advance.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.currentStep = :fromStep + 1, t.updatedAt = :now
+             where t.id = :id and t.currentStep = :fromStep and t.status = :status
+            """)
+    int advanceStep(@Param("id") Long id, @Param("fromStep") int fromStep,
+            @Param("status") ProvisioningTaskStatus status, @Param("now") Instant now);
+
+    /** Advances the step pointer of a RUNNING task exactly once. */
+    default int advanceStep(Long id, int fromStep, Instant now) {
+        return advanceStep(id, fromStep, ProvisioningTaskStatus.RUNNING, now);
+    }
+
+    /** Stores the JobRunr job id for console/debug cross-reference. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.jobrunrJobId = :jobrunrJobId, t.updatedAt = :now
+             where t.id = :id
+            """)
+    int attachJobrunrJob(@Param("id") Long id, @Param("jobrunrJobId") String jobrunrJobId,
+            @Param("now") Instant now);
+
+    /** First run: PENDING → RUNNING, counting the attempt. */
+    default int startAttempt(Long id, Instant now) {
+        return transitionStatusCountingAttempt(id, ProvisioningTaskStatus.PENDING,
+                ProvisioningTaskStatus.RUNNING, now);
+    }
+
+    /** Retry run: RETRYING → RUNNING, counting the attempt. */
+    default int resumeAttempt(Long id, Instant now) {
+        return transitionStatusCountingAttempt(id, ProvisioningTaskStatus.RETRYING,
+                ProvisioningTaskStatus.RUNNING, now);
+    }
+
+    /** RUNNING → RETRYING with the failure that caused the backoff. */
+    default int markRetrying(Long id, String lastError, Instant now) {
+        return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
+                ProvisioningTaskStatus.RETRYING, lastError, now);
+    }
+
+    /** Parks the task for an operator, keeping everything known in lastError. */
+    default int park(Long id, String lastError, Instant now) {
+        return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
+                ProvisioningTaskStatus.NEEDS_ADMIN, lastError, now);
+    }
+
+    /** RUNNING → DONE, clearing lastError. */
+    default int complete(Long id, Instant now) {
+        return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
+                ProvisioningTaskStatus.DONE, null, now);
+    }
+
+    /** RUNNING → FAILED (terminal; compensation already ran, docs/plan/03). */
+    default int fail(Long id, String lastError, Instant now) {
+        return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
+                ProvisioningTaskStatus.FAILED, lastError, now);
+    }
+}

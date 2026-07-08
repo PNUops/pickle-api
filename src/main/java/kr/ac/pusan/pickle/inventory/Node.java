@@ -15,9 +15,9 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Proxmox node (docs/plan/02). M2 maps the identity/capacity subset used for
- * VM placement and approval-context headroom; per-node config columns
- * (labels, vm_bridge, storage) stay unmapped until the M3 pipeline needs them.
+ * Proxmox node (docs/plan/02): identity/capacity for placement and headroom,
+ * plus the per-node config the M3 pipeline reads (vm_bridge, storage,
+ * ip_pool_id — never hardcoded). Only {@code labels} stays unmapped for now.
  */
 @Entity
 @Table(name = "nodes")
@@ -43,6 +43,18 @@ public class Node {
 
     @Column(name = "memory_mb", nullable = false)
     private int memoryMb;
+
+    /** Bridge VM NICs attach to, e.g. {@code vmbr2}. */
+    @Column(name = "vm_bridge", nullable = false)
+    private String vmBridge;
+
+    /** Proxmox storage id clones land on, e.g. {@code local-lvm}. */
+    @Column(nullable = false)
+    private String storage;
+
+    /** IP pool VMs on this node allocate from (FK added by V5). */
+    @Column(name = "ip_pool_id")
+    private Long ipPoolId;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -77,5 +89,17 @@ public class Node {
 
     public int getMemoryMb() {
         return memoryMb;
+    }
+
+    public String getVmBridge() {
+        return vmBridge;
+    }
+
+    public String getStorage() {
+        return storage;
+    }
+
+    public Long getIpPoolId() {
+        return ipPoolId;
     }
 }
