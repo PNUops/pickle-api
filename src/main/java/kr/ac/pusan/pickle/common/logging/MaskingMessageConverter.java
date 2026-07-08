@@ -28,6 +28,13 @@ public class MaskingMessageConverter extends MessageConverter {
     /** Authorization: Bearer <jwt> and similar. */
     private static final Pattern BEARER = Pattern.compile("(?i)(Bearer\\s+)[A-Za-z0-9._~+/=-]+");
 
+    /**
+     * Proxmox API token header: {@code PVEAPIToken=<tokenId>=<secret>}. Masked
+     * as a whole (token id included) — must run before KEY_VALUE, which would
+     * otherwise anchor on the embedded "Token=" and leave "PVEAPI" ambiguity.
+     */
+    private static final Pattern PVE_API_TOKEN = Pattern.compile("(?i)(PVEAPIToken=)[^\\s\"']+");
+
     @Override
     public String convert(ILoggingEvent event) {
         String message = super.convert(event);
@@ -44,6 +51,7 @@ public class MaskingMessageConverter extends MessageConverter {
         // Bearer first: "Authorization: Bearer <jwt>" would otherwise have only
         // the word "Bearer" swallowed by the key-value rule, leaving the JWT.
         String masked = BEARER.matcher(message).replaceAll("$1" + MASK);
+        masked = PVE_API_TOKEN.matcher(masked).replaceAll("$1" + MASK);
         return KEY_VALUE.matcher(masked).replaceAll("$1" + MASK);
     }
 }
