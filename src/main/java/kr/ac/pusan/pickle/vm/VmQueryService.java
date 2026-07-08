@@ -5,7 +5,13 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.ipam.AllocationStatus;
+import kr.ac.pusan.pickle.ipam.IpAllocation;
+import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
+import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskView;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.data.domain.Page;
@@ -26,10 +32,15 @@ public class VmQueryService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final IpAllocationRepository allocationRepository;
+    private final ProvisioningTaskRepository taskRepository;
 
-    public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository) {
+    public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+            IpAllocationRepository allocationRepository, ProvisioningTaskRepository taskRepository) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.allocationRepository = allocationRepository;
+        this.taskRepository = taskRepository;
     }
 
     @Transactional(readOnly = true)
@@ -60,6 +71,27 @@ public class VmQueryService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "VM 소유 그룹의 멤버만 조회할 수 있습니다.");
         }
-        return VmDetailResponse.from(vm);
+        return VmDetailResponse.from(vm, ipAddress(vm), provisioning(vm));
+    }
+
+    /** The live address only: released/quarantined allocations show as null. */
+    private String ipAddress(Vm vm) {
+        if (vm.getIpAllocationId() == null) {
+            return null;
+        }
+        return allocationRepository.findById(vm.getIpAllocationId())
+                .filter(allocation -> allocation.getStatus() == AllocationStatus.ALLOCATED)
+                .map(IpAllocation::getIp)
+                .map(ip -> {
+                    int slash = ip.indexOf('/');
+                    return slash >= 0 ? ip.substring(0, slash) : ip;
+                })
+                .orElse(null);
+    }
+
+    /** The most recent async task of the VM; null when none exists yet. */
+    private ProvisioningTaskView provisioning(Vm vm) {
+        List<ProvisioningTask> tasks = taskRepository.findByVmIdOrderByIdDesc(vm.getId());
+        return tasks.isEmpty() ? null : ProvisioningTaskView.from(tasks.getFirst());
     }
 }

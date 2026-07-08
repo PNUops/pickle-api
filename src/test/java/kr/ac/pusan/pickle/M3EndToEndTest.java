@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle;
 
+import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.fixture;
+import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -7,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.github.tomakehurst.wiremock.client.WireMock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -14,6 +17,9 @@ import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,33 +35,55 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * M2 milestone done-when proof in one flow: signup → verify (token from the
+ * M3 milestone done-when proof in one flow: signup → verify (token from the
  * mock mail) → login → TEAM group → vm-request → seeded ORG_ADMIN queue →
- * approval context → approve → the JobRunr background server processes
- * MockProvisionVmJob (CREATING → RUNNING, no Proxmox) → /vms shows RUNNING →
- * audit trail exists.
+ * approval context → approve → the JobRunr background server runs the REAL
+ * provision pipeline against a WireMock Proxmox (pve1 captures, happy path)
+ * → /vms shows RUNNING with the allocated IP, one-shot password availability
+ * and provisioning DONE → vm_events CREATE + owner mail → audit trail exists.
  *
  * <p>The background job server is enabled just for this test (it stays off in
  * application-test.yml), so the enqueued job is genuinely picked up from the
  * jobrunr tables and executed by a worker thread — the test fails if the VM
- * stays CREATING.</p>
+ * never reaches RUNNING.</p>
  */
-@org.junit.jupiter.api.Disabled("MockProvisionVmJob이 실제 파이프라인(ProvisionVmJob)으로 대체됨 — "
-        + "M3EndToEndTest로 개편 예정 (WP-B3 커밋 3)")
 @SpringBootTest(properties = {
         "jobrunr.background-job-server.enabled=true",
-        "jobrunr.background-job-server.poll-interval-in-seconds=5"
+        "jobrunr.background-job-server.poll-interval-in-seconds=5",
+        "pickle.proxmox.token-id=pickle@pve!pickle-api",
+        "pickle.proxmox.token-secret=wiremock-test-secret",
+        "pickle.proxmox.task-poll-interval=100ms",
+        "pickle.proxmox.task-poll-timeout=10s"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class M2EndToEndTest {
+class M3EndToEndTest {
 
     private static final Pattern TOKEN_IN_LINK = Pattern.compile("[?&]token=([A-Za-z0-9_-]+)");
 
-    private static final String STUDENT_EMAIL = "m2.e2e@pusan.ac.kr";
-    private static final String STUDENT_PASSWORD = "M2-e2e-Corr3ct-horse!";
-    private static final String GROUP_SLUG = "m2-e2e-team";
+    private static final String STUDENT_EMAIL = "m3.e2e@pusan.ac.kr";
+    private static final String STUDENT_PASSWORD = "M3-e2e-Corr3ct-horse!";
+    private static final String GROUP_SLUG = "m3-e2e-team";
+
+    /** VMID the stubbed {@code /cluster/nextid} hands out (fixture 02). */
+    private static final int VMID = 102;
+
+    /**
+     * First allocatable address of the seeded student-vmbr2 pool
+     * (172.29.0.0/16 minus the two reserved /24s) — deterministic because this
+     * test class boots its own embedded PostgreSQL and allocates exactly once.
+     */
+    private static final String EXPECTED_IP = "172.29.1.0";
+
+    private static final String CLONE_UPID =
+            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:9000:pickle@pve!pickle-api:";
+    private static final String RESIZE_UPID =
+            "UPID:pve1:0006D8A5:005490E8:6A4E2CC0:resize:102:pickle@pve!pickle-api:";
+    private static final String START_UPID =
+            "UPID:pve1:0006D8F7:005491B8:6A4E2CC2:qmstart:102:pickle@pve!pickle-api:";
+
+    private static ProxmoxWireMockSupport wm;
 
     @Autowired
     private MockMvc mockMvc;
@@ -69,11 +97,25 @@ class M2EndToEndTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @BeforeAll
+    static void startServer() {
+        wm = ProxmoxWireMockSupport.start();
+    }
+
+    @AfterAll
+    static void stopServer() {
+        wm.close();
+    }
+
     @Test
-    void m2FlowFromSignupToRunningVm() throws Exception {
+    void m3FlowFromSignupToProvisionedVm() throws Exception {
+        // 0. the seeded node answers Proxmox calls from WireMock (happy path)
+        jdbcTemplate.update("update nodes set api_host = ? where name = 'pve1'", wm.apiHost());
+        stubProxmoxHappyPath();
+
         // 1. signup + email verification (token comes from the mock mail)
         postJson("/api/v1/auth/signup", null,
-                Map.of("email", STUDENT_EMAIL, "password", STUDENT_PASSWORD, "name", "엠투학생"))
+                Map.of("email", STUDENT_EMAIL, "password", STUDENT_PASSWORD, "name", "엠쓰리학생"))
                 .andExpect(status().isAccepted());
         MailMessage mail = mockMailSender.lastMessageTo(STUDENT_EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
@@ -87,7 +129,7 @@ class M2EndToEndTest {
 
         // 3. create a TEAM group
         MvcResult groupResult = postJson("/api/v1/groups", studentToken,
-                Map.of("kind", "TEAM", "name", "M2 종단 테스트 팀", "slug", GROUP_SLUG))
+                Map.of("kind", "TEAM", "name", "M3 종단 테스트 팀", "slug", GROUP_SLUG))
                 .andExpect(status().isCreated())
                 .andReturn();
         long groupId = objectMapper.readTree(groupResult.getResponse().getContentAsString())
@@ -105,7 +147,7 @@ class M2EndToEndTest {
                 "groupId", groupId,
                 "orgId", orgId,
                 "templateId", templateId,
-                "purpose", "M2 종단 검증용 서버",
+                "purpose", "M3 종단 검증용 서버",
                 "reqVcpu", template.get("defaultVcpu").asInt(),
                 "reqMemoryMb", template.get("defaultMemoryMb").asInt(),
                 "reqDiskGb", template.get("defaultDiskGb").asInt(),
@@ -148,36 +190,87 @@ class M2EndToEndTest {
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));
 
-        // 9. the background job server processes MockProvisionVmJob:
+        // 9. the background job server runs the real pipeline to completion:
         //    /vms must show RUNNING — the test fails if the VM stays CREATING
-        await().atMost(Duration.ofSeconds(90)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() ->
+        await().atMost(Duration.ofSeconds(120)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() ->
                 mockMvc.perform(get("/api/v1/vms?groupId=" + groupId)
                                 .header("Authorization", "Bearer " + studentToken))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.totalElements").value(1))
                         .andExpect(jsonPath("$.content[0].status").value("RUNNING")));
 
-        // 10. VM summary/detail carry the granted spec and the mock status note
+        // 10. VM summary/detail carry the granted spec and the pipeline results
         JsonNode vms = getJson("/api/v1/vms", studentToken);
         JsonNode vm = vms.get("content").get(0);
+        long vmId = vm.get("id").asLong();
         assertThat(vm.get("hostname").asString()).startsWith(GROUP_SLUG + "-");
         assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
-        assertThat(vm.get("statusDetail").asString()).isEqualTo("모의 프로비저닝 완료");
-        mockMvc.perform(get("/api/v1/vms/" + vm.get("id").asLong())
+        assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.sshUsername").value("student"))
                 .andExpect(jsonPath("$.orgId").value(orgId))
-                .andExpect(jsonPath("$.ipAddress").value((Object) null));
+                .andExpect(jsonPath("$.ipAddress").value(EXPECTED_IP))
+                .andExpect(jsonPath("$.initialPasswordAvailable").value(true))
+                .andExpect(jsonPath("$.provisioning.kind").value("PROVISION"))
+                .andExpect(jsonPath("$.provisioning.status").value("DONE"))
+                .andExpect(jsonPath("$.provisioning.currentStep").value(9));
 
-        // 11. the audit trail covers the whole flow
+        // 11. pipeline side effects: vmid/ip persisted, CREATE event, owner mail
+        assertThat(jdbcTemplate.queryForObject(
+                "select proxmox_vmid from vms where id = ?", Integer.class, vmId)).isEqualTo(VMID);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
+                Long.class, vmId)).isEqualTo(1);
+        MailMessage createdMail = mockMailSender.lastMessageTo(STUDENT_EMAIL);
+        assertThat(createdMail.subject()).contains(vm.get("hostname").asString());
+        assertThat(createdMail.body())
+                .contains(EXPECTED_IP)
+                .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
+
+        // 12. the audit trail covers the whole flow
         for (String action : new String[] {"auth.signup", "auth.verify", "auth.login",
                 "group.create", "request.create", "request.approve"}) {
             Long count = jdbcTemplate.queryForObject(
                     "select count(*) from audit_logs where action = ?", Long.class, action);
             assertThat(count).as("audit rows for %s", action).isPositive();
         }
+    }
+
+    /** Happy-path Proxmox stubs from the captured pve1 responses. */
+    private void stubProxmoxHappyPath() {
+        String qemu = "/api2/json/nodes/pve1/qemu/" + VMID;
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo("/api2/json/cluster/nextid"))
+                .willReturn(okFixture("02-nextid")));
+        // no VMID 102 in the capture → the clone-exists guard lets the clone run
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(okFixture("03-cluster-resources")));
+        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/9000/clone"))
+                .willReturn(okFixture("10-clone")));
+        stubTaskStatus(CLONE_UPID, "10-clone-status");
+        wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/config"))
+                .willReturn(okFixture("20-config")));
+        wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/resize"))
+                .willReturn(okFixture("30-resize")));
+        stubTaskStatus(RESIZE_UPID, "30-resize-status");
+        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo(qemu + "/status/start"))
+                .willReturn(okFixture("40-start")));
+        stubTaskStatus(START_UPID, "40-start-status");
+        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo(qemu + "/agent/ping"))
+                .willReturn(okFixture("50-agent-ping")));
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo(qemu + "/agent/network-get-interfaces"))
+                .willReturn(WireMock.aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(fixture("51-agent-netif")
+                                .replace("172.29.255.250", EXPECTED_IP))));
+    }
+
+    private static void stubTaskStatus(String upid, String fixtureName) {
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo(
+                "/api2/json/nodes/pve1/tasks/" + upid + "/status"))
+                .willReturn(okFixture(fixtureName)));
     }
 
     private String login(String email, String password) throws Exception {
