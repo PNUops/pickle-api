@@ -17,7 +17,18 @@ jobrunr:
   background-job-server:
     enabled: true
   dashboard:
-    enabled: false
+    # Off by default; ops enable it per environment via env (planned: dev only).
+    # Property keys verified against jobrunr-spring-boot-4-starter 8.7.1
+    # (META-INF/spring-configuration-metadata.json; JobRunrAutoConfiguration
+    # wires username/password into andBasicAuthentication()). CAUTION: if
+    # username or password is empty, JobRunr starts the dashboard WITHOUT any
+    # auth (createOptionalBasicAuthenticator requires both non-empty) — always
+    # set both env vars when enabling, and keep port 8000 internal-only
+    # (no DNAT; vmbr1/firewall scope) since basic auth goes over plain HTTP.
+    enabled: ${PICKLE_JOBRUNR_DASH_ENABLED:false}
+    port: 8000
+    username: ${PICKLE_JOBRUNR_DASH_USER:}
+    password: ${PICKLE_JOBRUNR_DASH_PASS:}
 
 management:
   endpoints:
