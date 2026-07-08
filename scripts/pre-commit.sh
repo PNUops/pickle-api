@@ -6,9 +6,12 @@ set -euo pipefail
 staged=$(git diff --cached --name-only --diff-filter=ACM | grep -v '^scripts/pre-commit.sh$' || true)
 [ -z "$staged" ] && exit 0
 
+# PVEAPIToken: the literal header name is legitimate source since the M3
+# Proxmox client (header assembly, log masking, tests) — only flag values
+# shaped like a real token: <user@realm>!<name>=<uuid secret>.
 if echo "$staged" | xargs -r grep -lEI \
     -e 'BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY' \
-    -e 'PVEAPIToken=' \
+    -e 'PVEAPIToken=[^ =]+![^ =]+=[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' \
     -e 'ghp_[A-Za-z0-9]{36}' \
     -e 'AKIA[0-9A-Z]{16}' 2>/dev/null; then
   echo "pre-commit: possible secret detected in staged files (above). Aborting." >&2
