@@ -9,6 +9,7 @@ public final class ErrorCodes {
     public static final String AUTH_EMAIL_NOT_VERIFIED = "AUTH_EMAIL_NOT_VERIFIED";
     public static final String AUTH_REFRESH_TOKEN_INVALID = "AUTH_REFRESH_TOKEN_INVALID";
     public static final String AUTH_TOKEN_INVALID = "AUTH_TOKEN_INVALID";
+    public static final String AUTH_CSRF_INVALID = "AUTH_CSRF_INVALID";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
     public static final String GROUP_SLUG_DUPLICATE = "GROUP_SLUG_DUPLICATE";
