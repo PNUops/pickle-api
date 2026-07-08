@@ -86,7 +86,9 @@ class ContractDriftTest {
             "POST /admin/vm-requests/{requestId}/reject",
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",
-            "PATCH /admin/users/{userId}");
+            "PATCH /admin/users/{userId}",
+            "GET /admin/nodes",
+            "GET /admin/vms");
 
     /**
      * Contract v0.3.1 operations not implemented yet (M3 VM lifecycle).
@@ -101,8 +103,6 @@ class ContractDriftTest {
             "DELETE /vms/{vmId}",
             "POST /vms/{vmId}/initial-password",
             "GET /vms/{vmId}/events",
-            "GET /admin/nodes",
-            "GET /admin/vms",
             "POST /admin/vms/{vmId}/schedule-delete",
             "POST /admin/vms/{vmId}/cancel-scheduled-delete",
             "POST /admin/vms/{vmId}/emergency-delete");
