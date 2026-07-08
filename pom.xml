@@ -106,12 +106,13 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<!-- ContractDriftTest: parses docs/api/openapi.yaml. Version managed
-			     by the Spring Boot BOM (2.21.x line; Central latest 2.22.0 —
-			     kept on the BOM version for Jackson 2 convergence). -->
+			<!-- Runtime scope: springdoc's ObjectMapperProvider requires YAMLFactory
+			     at startup (NoClassDefFoundError in the packaged jar when test-scoped
+			     — found at first dev deploy). Also used by ContractDriftTest to parse
+			     docs/api/openapi.yaml. Version managed by the Spring Boot BOM
+			     (2.21.x line; Central latest 2.22.0 — kept for Jackson 2 convergence). -->
 			<groupId>com.fasterxml.jackson.dataformat</groupId>
 			<artifactId>jackson-dataformat-yaml</artifactId>
-			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
