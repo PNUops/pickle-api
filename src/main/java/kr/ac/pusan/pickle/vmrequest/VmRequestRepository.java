@@ -46,6 +46,14 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
 
     long countByRequesterIdAndStatus(Long requesterId, VmRequestStatus status);
 
+    /**
+     * Duplicate-subdomain guard (contract: 예약어·중복은 서버에서 검증):
+     * a (subdomain, rootDomain) pair is taken while another request holds it
+     * in a non-terminal state (SUBMITTED/APPROVED).
+     */
+    boolean existsByDesiredSubdomainAndRootDomainAndStatusIn(String desiredSubdomain, String rootDomain,
+            Collection<VmRequestStatus> statuses);
+
     /** Approval-context history: prior requests by the same user or group. */
     @Query("""
             select r from VmRequest r

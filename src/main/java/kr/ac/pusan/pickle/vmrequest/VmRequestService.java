@@ -231,6 +231,16 @@ public class VmRequestService {
             errors.add(new FieldValidationError("rootDomain",
                     "'" + rootDomain + "'은(는) 허용된 루트 도메인이 아닙니다."));
         }
+        // Contract: duplicates are validated server-side — a pair is taken
+        // while another request holds it in a non-terminal state. (M4 domain
+        // issuance re-checks against actually published domains.)
+        if (request.desiredSubdomain() != null && rootDomain != null
+                && requestRepository.existsByDesiredSubdomainAndRootDomainAndStatusIn(
+                        request.desiredSubdomain(), rootDomain,
+                        List.of(VmRequestStatus.SUBMITTED, VmRequestStatus.APPROVED))) {
+            errors.add(new FieldValidationError("desiredSubdomain",
+                    "이미 사용 중이거나 신청된 서브도메인입니다."));
+        }
     }
 
     private static ApiException notFound(String detail) {

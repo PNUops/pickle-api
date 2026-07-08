@@ -182,10 +182,26 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
 
         // valid http publication request → 201
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+        String httpResponse = postJson("/api/v1/vm-requests", requesterToken,
+                httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value("vmr-svc-x1"))
-                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"));
+                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"))
+                .andReturn().getResponse().getContentAsString();
+        long httpRequestId = objectMapper.readTree(httpResponse).get("id").asLong();
+
+        // duplicate (subdomain, rootDomain) held by a non-terminal request → 422
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
+                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중이거나 신청된 서브도메인입니다."));
+
+        // a terminal state (CANCELED) frees the pair for a new request
+        postJson("/api/v1/vm-requests/" + httpRequestId + "/cancel", requesterToken, Map.of())
+                .andExpect(status().isOk());
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+                .andExpect(status().isCreated());
 
         // missing purpose → 422
         Map<String, Object> noPurpose = validBody(groupId);
