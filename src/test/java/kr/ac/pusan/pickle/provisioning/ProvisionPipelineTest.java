@@ -355,6 +355,42 @@ class ProvisionPipelineTest {
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
     }
 
+    // ── ⑥ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
+
+    @Test
+    void recycledVmidOfDeletedVmCanBeReassigned() {
+        // a destroyed VM keeps its vmid on the DELETED row (V9 partial unique)
+        int vmid = 116;
+        long deletedVmId = createVm();
+        jdbc.update("""
+                update vms set proxmox_vmid = ?, status = 'DELETED', deleted_at = now()
+                 where id = ?
+                """, vmid, deletedVmId);
+
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        // Proxmox re-issued the destroyed guest's vmid
+        stubNextId(vmid);
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(okFixture("03-cluster-resources")));
+        stubClone();
+        stubConfig(vmid);
+        stubResize(vmid);
+        stubStart(vmid);
+        stubAgent(vmid, ip);
+
+        job.provisionVm(vmId);
+
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertThat(vm.getProxmoxVmid()).isEqualTo(vmid);
+        // the DELETED row still carries the vmid for the audit trail
+        assertThat(jdbc.queryForObject("select proxmox_vmid from vms where id = ?",
+                Integer.class, deletedVmId)).isEqualTo(vmid);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /** Minimal request→vm graph, mirroring what an approval writes. */
