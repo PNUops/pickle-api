@@ -79,6 +79,10 @@ class ContractDriftTest {
             "POST /vm-requests/{requestId}/cancel",
             "GET /vms",
             "GET /vms/{vmId}",
+            "DELETE /vms/{vmId}",
+            "POST /admin/vms/{vmId}/schedule-delete",
+            "POST /admin/vms/{vmId}/cancel-scheduled-delete",
+            "POST /admin/vms/{vmId}/emergency-delete",
             "POST /vms/{vmId}/start",
             "POST /vms/{vmId}/shutdown",
             "POST /vms/{vmId}/reboot",
@@ -98,14 +102,10 @@ class ContractDriftTest {
      * {@link #IMPLEMENTED} as the endpoint lands.
      */
     private static final Set<String> PLANNED = Set.of(
-            "DELETE /vms/{vmId}",
             "POST /vms/{vmId}/initial-password",
             "GET /vms/{vmId}/events",
             "GET /admin/nodes",
-            "GET /admin/vms",
-            "POST /admin/vms/{vmId}/schedule-delete",
-            "POST /admin/vms/{vmId}/cancel-scheduled-delete",
-            "POST /admin/vms/{vmId}/emergency-delete");
+            "GET /admin/vms");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

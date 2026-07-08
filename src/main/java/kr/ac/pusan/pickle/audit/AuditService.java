@@ -33,6 +33,7 @@ public class AuditService {
     public static final String ORG_CREATE = "org.create";
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
+    public static final String VM_EMERGENCY_DELETE = "vm.emergency_delete";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

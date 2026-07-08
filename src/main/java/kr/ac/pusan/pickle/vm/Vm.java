@@ -112,6 +112,10 @@ public class Vm {
     @Column(name = "delete_scheduled_for")
     private Instant deleteScheduledFor;
 
+    /** When the pending deletion was accepted (contract VmDeletion.requestedAt). */
+    @Column(name = "delete_requested_at")
+    private Instant deleteRequestedAt;
+
     @Column(name = "delete_requested_by")
     private Long deleteRequestedBy;
 
@@ -243,6 +247,10 @@ public class Vm {
 
     public Instant getDeleteScheduledFor() {
         return deleteScheduledFor;
+    }
+
+    public Instant getDeleteRequestedAt() {
+        return deleteRequestedAt;
     }
 
     public Long getDeleteRequestedBy() {

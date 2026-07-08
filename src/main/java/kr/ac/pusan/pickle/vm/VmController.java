@@ -5,10 +5,12 @@ import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,10 +25,13 @@ public class VmController {
 
     private final VmQueryService vmQueryService;
     private final VmLifecycleService vmLifecycleService;
+    private final VmDeletionService vmDeletionService;
 
-    public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService) {
+    public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService,
+            VmDeletionService vmDeletionService) {
         this.vmQueryService = vmQueryService;
         this.vmLifecycleService = vmLifecycleService;
+        this.vmDeletionService = vmDeletionService;
     }
 
     @GetMapping
@@ -42,6 +47,12 @@ public class VmController {
     public VmDetailResponse getVm(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
         return vmQueryService.get(principal, vmId);
+    }
+
+    @DeleteMapping("/{vmId}")
+    public ResponseEntity<VmDeletionResponse> deleteVm(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+        return ResponseEntity.accepted().body(vmDeletionService.selfDelete(principal, vmId));
     }
 
     @PostMapping("/{vmId}/start")
