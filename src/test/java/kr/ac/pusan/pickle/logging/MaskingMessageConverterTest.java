@@ -31,4 +31,19 @@ class MaskingMessageConverterTest {
         String bare = MaskingMessageConverter.mask("curl -H 'PVEAPIToken=root@pam!ops=" + secret + "'");
         assertThat(bare).doesNotContain(secret).contains("PVEAPIToken=" + MaskingMessageConverter.MASK);
     }
+
+    @Test
+    void masksInitialPasswordKeyInEveryForm() {
+        String secret = "one-shot-plaintext-pw";
+        for (String form : new String[] {
+                "initialPassword=" + secret,
+                "initial_password: " + secret,
+                "\"initialPassword\":\"" + secret + "\"",
+                "vm row initial-password => " + secret}) {
+            assertThat(MaskingMessageConverter.mask(form))
+                    .as(form)
+                    .doesNotContain(secret)
+                    .contains(MaskingMessageConverter.MASK);
+        }
+    }
 }

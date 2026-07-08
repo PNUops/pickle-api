@@ -33,7 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
  * Read-only VM views (contract tag {@code vms}). Visibility: members
  * (VIEWER+) of the owning group. The contract defines no 403 for the list,
  * so a groupId filter outside my groups yields an empty page; detail and
- * events answer 403 for non-members of an existing VM.
+ * events mask a VM's existence from non-members as 404 (contract v0.3.2,
+ * same policy as the power/delete paths).
  *
  * <p>The detail view assembles the M3 lifecycle surface: {@code provisioning}
  * is the newest task unless it finished cleanly (contract: in-flight or
@@ -110,16 +111,23 @@ public class VmQueryService {
                 result);
     }
 
-    /** Unknown VM → 404; existing VM outside my groups → 403 (VIEWER+ may read). */
+    /**
+     * Unknown VM and existing-but-invisible VM both answer 404, so a
+     * non-member cannot probe which VM ids exist (masking, contract v0.3.2 —
+     * consistent with the power/delete paths).
+     */
     private Vm requireVisibleVm(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                        "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다."));
+                .orElseThrow(VmQueryService::vmNotFound);
         if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "VM 소유 그룹의 멤버만 조회할 수 있습니다.");
+            throw vmNotFound();
         }
         return vm;
+    }
+
+    private static ApiException vmNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
     /**

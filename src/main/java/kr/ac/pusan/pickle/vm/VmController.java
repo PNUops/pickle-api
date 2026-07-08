@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code vms} (openapi.yaml v0.3.1, server /api/v1). */
+/** Contract tag {@code vms} (openapi.yaml v0.3.2, server /api/v1). */
 @RestController
 @RequestMapping("/api/v1/vms")
 public class VmController {
@@ -59,8 +59,10 @@ public class VmController {
 
     @DeleteMapping("/{vmId}")
     public ResponseEntity<VmDeletionResponse> deleteVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return ResponseEntity.accepted().body(vmDeletionService.selfDelete(principal, vmId));
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            HttpServletRequest httpRequest) {
+        return ResponseEntity.accepted()
+                .body(vmDeletionService.selfDelete(principal, vmId, clientIp(httpRequest)));
     }
 
     @PostMapping("/{vmId}/start")

@@ -183,6 +183,7 @@ class VmDeletionTest {
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
         assertThat(column(vmId, "delete_kind")).isEqualTo("SELF");
         assertThat(eventTypes(vmId)).contains("DELETE");
+        assertThat(auditCount("vm.self_delete", vmId)).isEqualTo(1);
 
         // graceful-shutdown job enqueued after commit
         Long enqueued = jdbcTemplate.queryForObject(
@@ -258,6 +259,7 @@ class VmDeletionTest {
                 "select status from ip_allocations where id = ?", String.class, allocationId))
                 .isEqualTo("RELEASED");
         assertThat(eventTypes(vmId)).contains("DELETE");
+        assertThat(auditCount("vm.self_delete", vmId)).isEqualTo(1);
         // no pipeline: nothing enqueued for this VM
         Long tasks = jdbcTemplate.queryForObject(
                 "select count(*) from provisioning_tasks where vm_id = ?", Long.class, vmId);
@@ -301,10 +303,11 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.reason").value("사용 종료일이 지난 VM 정리"))
                 .andExpect(jsonPath("$.cancelable").value(true));
 
-        // the power state is untouched; intent + event + user mail recorded
+        // the power state is untouched; intent + event + audit + user mail recorded
         assertThat(statusOf(vmId)).isEqualTo("RUNNING");
         assertThat(column(vmId, "delete_kind")).isEqualTo("ADMIN");
         assertThat(eventTypes(vmId)).contains("SCHEDULE_DELETE");
+        assertThat(auditCount("vm.schedule_delete", vmId)).isEqualTo(1);
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
                 .contains("사용 종료일이 지난 VM 정리")
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
@@ -348,6 +351,7 @@ class VmDeletionTest {
         assertThat(statusOf(selfVm)).isEqualTo("STOPPED");
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
+        assertThat(auditCount("vm.cancel_scheduled_delete", selfVm)).isEqualTo(1);
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("취소");
 
         // ADMIN: schedule only — the power state is preserved
@@ -475,6 +479,10 @@ class VmDeletionTest {
         long vmId = createVm(VmStatus.DELETING);
         long allocationId = allocateIp(vmId);
         markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+        // an unviewed plaintext initial password must not survive destruction
+        jdbcTemplate.update(
+                "update vms set initial_password = 'pw-unviewed', initial_password_hash = 'h'"
+                        + " where id = ?", vmId);
 
         stubClusterResourcesRunning();
         // ACPI shutdown fails with the captured timeout exitstatus → force stop
@@ -496,6 +504,9 @@ class VmDeletionTest {
         assertThat(statusOf(vmId)).isEqualTo("DELETED");
         assertThat(jdbcTemplate.queryForObject("select deleted_at is not null from vms where id = ?",
                 Boolean.class, vmId)).isTrue();
+        // plaintext wiped, hash kept for support verification
+        assertThat(column(vmId, "initial_password")).isNull();
+        assertThat(column(vmId, "initial_password_hash")).isEqualTo("h");
         assertThat(jdbcTemplate.queryForObject("select status from ip_allocations where id = ?",
                 String.class, allocationId)).isEqualTo("RELEASED");
         assertThat(jdbcTemplate.queryForObject("""
@@ -645,6 +656,12 @@ class VmDeletionTest {
         return jdbcTemplate.queryForObject(
                 "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
                 Long.class);
+    }
+
+    private Long auditCount(String action, long vmId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = ? and target_id = ?",
+                Long.class, action, vmId);
     }
 
     private List<Object> taskState(long vmId) {

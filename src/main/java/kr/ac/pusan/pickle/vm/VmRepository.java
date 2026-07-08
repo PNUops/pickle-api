@@ -192,7 +192,8 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * ERROR VMs have no substrate to destroy (compensation already ran):
-     * the self-delete collapses to an immediate DELETED, no pipeline.
+     * the self-delete collapses to an immediate DELETED, no pipeline. The
+     * plaintext initial password is wiped like in {@link #markDeleted}.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -201,6 +202,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                set status = 'DELETED', status_detail = null, delete_kind = 'SELF',
                    delete_scheduled_for = :now, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null,
+                   initial_password = null,
                    deleted_at = :now, deleted_by = :requestedBy, updated_at = :now
              where id = :id and status = 'ERROR' and delete_kind is null
             """)
@@ -249,12 +251,16 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             """)
     int clearDeletion(@Param("id") Long id, @Param("now") Instant now);
 
-    /** Final destruction: DELETING → DELETED, keeping the row forever. */
+    /**
+     * Final destruction: DELETING → DELETED, keeping the row forever — except
+     * the plaintext initial password: an unviewed one must not outlive the VM
+     * (the BCrypt hash stays for support verification).
+     */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
             update vms
-               set status = 'DELETED', status_detail = null,
+               set status = 'DELETED', status_detail = null, initial_password = null,
                    deleted_at = :now, deleted_by = :deletedBy, updated_at = :now
              where id = :id and status = 'DELETING'
             """)

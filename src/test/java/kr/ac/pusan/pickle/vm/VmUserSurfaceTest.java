@@ -115,10 +115,14 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.totalPages").value(2));
 
-        // non-member → 403, unknown VM → 404, unauthenticated → 401
+        // non-member → 404 (existence masked, v0.3.2), unknown VM → 404,
+        // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/events")
                         .header("Authorization", "Bearer " + outsiderToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/vms/999999/events")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());

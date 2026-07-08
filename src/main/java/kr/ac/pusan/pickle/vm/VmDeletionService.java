@@ -108,11 +108,11 @@ public class VmDeletionService {
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
 
     @Transactional
-    public VmDeletionResponse selfDelete(AuthenticatedUser actor, long vmId) {
+    public VmDeletionResponse selfDelete(AuthenticatedUser actor, long vmId, String ip) {
         Vm vm = requireDeletableByActor(actor, vmId);
         requireNoPendingDeletion(vm);
         if (vm.getStatus() == VmStatus.ERROR) {
-            return deleteErrorVmImmediately(actor, vm);
+            return deleteErrorVmImmediately(actor, vm, ip);
         }
         requireStatusOutside(vm, Set.of(VmStatus.CREATING, VmStatus.DELETING, VmStatus.DELETED,
                 VmStatus.NEEDS_ADMIN), "현재 상태에서는 삭제할 수 없습니다.");
@@ -126,6 +126,9 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, actor.id(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
+        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
+                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                        "groupId", vm.getGroupId(), "scheduledFor", scheduledFor.toString()), ip);
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
@@ -135,7 +138,7 @@ public class VmDeletionService {
     }
 
     /** ERROR VM: nothing to destroy — release the IP and finish immediately. */
-    private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor, Vm vm) {
+    private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor, Vm vm, String ip) {
         Instant now = Instant.now();
         if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
             throw alreadyPendingDeletion();
@@ -146,6 +149,9 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
                 "생성 실패(ERROR) 상태 VM 즉시 삭제 — 유예 없음"));
+        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
+                "vm", vm.getId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                        "groupId", vm.getGroupId(), "immediate", true), ip);
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.id(), null, false);
     }
 
@@ -153,7 +159,7 @@ public class VmDeletionService {
 
     @Transactional
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, long vmId,
-            ScheduleVmDeletionRequest request) {
+            ScheduleVmDeletionRequest request, String ip) {
         Vm vm = requireOrgScopedVm(actor, vmId);
         requireNoPendingDeletion(vm);
         requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
@@ -173,6 +179,10 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
                 "관리자 삭제 예약 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
+        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
+                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                        "groupId", vm.getGroupId(),
+                        "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
         sendAfterCommit(recipients(vm, false),
                 email -> mailComposer.adminDeleteScheduled(email, vm.getName(), reason,
                         request.scheduledFor()));
@@ -183,7 +193,7 @@ public class VmDeletionService {
     // ── admin cancel (the only cancellation path — students have none) ─────
 
     @Transactional
-    public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId) {
+    public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId, String ip) {
         Vm vm = requireOrgScopedVm(actor, vmId);
         Instant now = Instant.now();
         boolean cancelable = vm.getDeleteKind() != null
@@ -209,6 +219,10 @@ public class VmDeletionService {
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "셀프 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 예약 취소"));
+        auditService.record(actor.id(), actor.role().name(),
+                AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
+                Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                        "groupId", vm.getGroupId(), "canceledKind", vm.getDeleteKind().name()), ip);
         sendAfterCommit(recipients(vm, false),
                 email -> mailComposer.deleteCanceled(email, vm.getName()));
         return new MessageResponse("삭제 예약이 취소되었습니다.");

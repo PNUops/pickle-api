@@ -62,15 +62,18 @@ public class AdminVmController {
     public ResponseEntity<VmDeletionResponse> scheduleVmDeletion(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
-            @Valid @RequestBody ScheduleVmDeletionRequest request) {
+            @Valid @RequestBody ScheduleVmDeletionRequest request,
+            HttpServletRequest httpRequest) {
         return ResponseEntity.accepted()
-                .body(vmDeletionService.scheduleDeletion(principal, vmId, request));
+                .body(vmDeletionService.scheduleDeletion(principal, vmId, request,
+                        clientIp(httpRequest)));
     }
 
     @PostMapping("/{vmId}/cancel-scheduled-delete")
     public MessageResponse cancelScheduledVmDeletion(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return vmDeletionService.cancelScheduledDeletion(principal, vmId);
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            HttpServletRequest httpRequest) {
+        return vmDeletionService.cancelScheduledDeletion(principal, vmId, clientIp(httpRequest));
     }
 
     @PostMapping("/{vmId}/emergency-delete")

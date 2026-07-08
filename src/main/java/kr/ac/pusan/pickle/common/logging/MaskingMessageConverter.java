@@ -21,7 +21,8 @@ public class MaskingMessageConverter extends MessageConverter {
 
     /** key = value / key: value / "key":"value" / key=>value forms. */
     private static final Pattern KEY_VALUE = Pattern.compile(
-            "(?i)([\"']?(?:password|passwd|pwd|secret|token|cipassword|authorization|api[_-]?key|pickle_refresh)"
+            "(?i)([\"']?(?:initial[_-]?password|password|passwd|pwd|secret|token|cipassword"
+                    + "|authorization|api[_-]?key|pickle_refresh)"
                     + "[a-z0-9_-]*[\"']?\\s*(?:=>|[:=])\\s*[\"']?)"
                     + "([^\\s,;&\"'}\\])]+)");
 
