@@ -34,6 +34,8 @@ public class AuditService {
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
     public static final String VM_EMERGENCY_DELETE = "vm.emergency_delete";
+    /** One-shot initial-password reveal — the fact only, never the value. */
+    public static final String VM_PASSWORD_REVEAL = "vm.password.reveal";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

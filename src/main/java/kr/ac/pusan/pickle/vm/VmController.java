@@ -1,13 +1,18 @@
 package kr.ac.pusan.pickle.vm;
 
+import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
+
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.dto.InitialPasswordResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,12 +31,14 @@ public class VmController {
     private final VmQueryService vmQueryService;
     private final VmLifecycleService vmLifecycleService;
     private final VmDeletionService vmDeletionService;
+    private final InitialPasswordService initialPasswordService;
 
     public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService,
-            VmDeletionService vmDeletionService) {
+            VmDeletionService vmDeletionService, InitialPasswordService initialPasswordService) {
         this.vmQueryService = vmQueryService;
         this.vmLifecycleService = vmLifecycleService;
         this.vmDeletionService = vmDeletionService;
+        this.initialPasswordService = initialPasswordService;
     }
 
     @GetMapping
@@ -77,5 +84,17 @@ public class VmController {
     public ResponseEntity<MessageResponse> forceStopVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
         return ResponseEntity.accepted().body(vmLifecycleService.forceStop(principal, vmId));
+    }
+
+    /** One-shot reveal (POST — consuming side effect); response must never cache. */
+    @PostMapping("/{vmId}/initial-password")
+    public ResponseEntity<InitialPasswordResponse> revealInitialPassword(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            HttpServletRequest httpRequest) {
+        InitialPasswordResponse response =
+                initialPasswordService.reveal(principal, vmId, clientIp(httpRequest));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(response);
     }
 }

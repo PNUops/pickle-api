@@ -87,6 +87,7 @@ class ContractDriftTest {
             "POST /vms/{vmId}/shutdown",
             "POST /vms/{vmId}/reboot",
             "POST /vms/{vmId}/force-stop",
+            "POST /vms/{vmId}/initial-password",
             "GET /admin/vm-requests",
             "GET /admin/vm-requests/{requestId}",
             "GET /admin/vm-requests/{requestId}/context",
@@ -102,7 +103,6 @@ class ContractDriftTest {
      * {@link #IMPLEMENTED} as the endpoint lands.
      */
     private static final Set<String> PLANNED = Set.of(
-            "POST /vms/{vmId}/initial-password",
             "GET /vms/{vmId}/events",
             "GET /admin/nodes",
             "GET /admin/vms");
