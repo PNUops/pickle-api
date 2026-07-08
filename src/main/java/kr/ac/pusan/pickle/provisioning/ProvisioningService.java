@@ -12,5 +12,10 @@ package kr.ac.pusan.pickle.provisioning;
  */
 public interface ProvisioningService {
 
+    // NOTE: put @Job(name/retries) on the *implementation* method, not here.
+    // JobRunr stores the runtime class of the captured bean (verified against
+    // 8.7.1: jobsignature = MockProvisionVmJob.provisionVm(long)) and reads
+    // the annotation from that class — an @Job placed on this interface
+    // method is silently ignored.
     void provisionVm(long vmId);
 }
