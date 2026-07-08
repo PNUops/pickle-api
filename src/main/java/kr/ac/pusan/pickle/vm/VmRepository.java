@@ -6,12 +6,13 @@ import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
-public interface VmRepository extends JpaRepository<Vm, Long> {
+public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationExecutor<Vm> {
 
     boolean existsByHostname(String hostname);
 
@@ -50,9 +51,17 @@ public interface VmRepository extends JpaRepository<Vm, Long> {
         long getMemoryMb();
     }
 
+    /** VMs the status poller may look at: a Proxmox identity and a pollable status. */
+    List<Vm> findByProxmoxVmidIsNotNullAndStatusIn(Collection<VmStatus> statuses);
+
+    /** All VMs with a Proxmox identity (drift-reconciler working set). */
+    List<Vm> findByProxmoxVmidIsNotNull();
+
     /**
      * Compare-and-set status transition; the {@code from} guard makes job
      * re-runs idempotent (0 rows updated when the VM already moved on).
+     * {@code @Transactional} lets transactionless callers (recurring jobs)
+     * use it directly; transactional callers simply join.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -114,4 +123,19 @@ public interface VmRepository extends JpaRepository<Vm, Long> {
             """)
     int storeInitialCredentials(@Param("id") Long id, @Param("password") String password,
             @Param("passwordHash") String passwordHash, @Param("now") Instant now);
+
+    /**
+     * Sets the informational {@code status_detail} without a state transition
+     * (drift class ③). Guarded by the current status so a concurrent pipeline
+     * transition wins and the note is dropped instead of clobbering.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.statusDetail = :statusDetail, v.updatedAt = :now
+             where v.id = :id and v.status = :status
+            """)
+    int updateStatusDetail(@Param("id") Long id, @Param("status") VmStatus status,
+            @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 }

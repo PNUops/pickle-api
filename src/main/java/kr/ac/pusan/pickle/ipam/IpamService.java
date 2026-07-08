@@ -99,6 +99,49 @@ public class IpamService {
                 """, allocationId);
     }
 
+    /**
+     * Point-in-time occupancy of the pool for admin views ({@code GET
+     * /admin/nodes}). {@code freeCount} is what {@link #allocate} could still
+     * hand out right now: usable addresses (CIDR minus network/broadcast,
+     * gateway and reserved ranges) minus ALLOCATED rows and RELEASED rows
+     * still inside the quarantine window.
+     */
+    public PoolUsage poolUsage(long poolId) {
+        IpPool pool = poolRepository.findById(poolId)
+                .orElseThrow(() -> new IllegalArgumentException("unknown ip pool: " + poolId));
+        Ipv4.Cidr cidr = Ipv4.parseCidr(pool.getCidr());
+        long gateway = Ipv4.toLong(pool.getGateway());
+        List<ReservedRange> reserved = parseReservedRanges(pool.getReservedRanges());
+        long usable = cidr.lastUsable() - cidr.firstUsable() + 1;
+        // Reserved ranges are operator-seeded and non-overlapping (docs/plan/03).
+        for (ReservedRange range : reserved) {
+            long from = Math.max(range.from(), cidr.firstUsable());
+            long to = Math.min(range.to(), cidr.lastUsable());
+            if (from <= to) {
+                usable -= to - from + 1;
+            }
+        }
+        if (gateway >= cidr.firstUsable() && gateway <= cidr.lastUsable()
+                && !isReserved(gateway, reserved)) {
+            usable--;
+        }
+        int quarantineHours = settingsService.integer(SettingsService.IP_QUARANTINE_HOURS,
+                DEFAULT_QUARANTINE_HOURS);
+        long allocated = jdbcTemplate.queryForObject(
+                "select count(*) from ip_allocations where pool_id = ? and status = 'ALLOCATED'",
+                Long.class, poolId);
+        long quarantined = jdbcTemplate.queryForObject("""
+                select count(*) from ip_allocations
+                 where pool_id = ? and status = 'RELEASED'
+                   and released_at > now() - make_interval(hours => ?)
+                """, Long.class, poolId, quarantineHours);
+        return new PoolUsage(pool, allocated, Math.max(0, usable - allocated - quarantined));
+    }
+
+    /** Occupancy snapshot for the contract {@code IpPoolSummary}. */
+    public record PoolUsage(IpPool pool, long allocatedCount, long freeCount) {
+    }
+
     /** Claims a never-allocated address; null when a concurrent insert won. */
     private Long tryInsert(long poolId, long candidate, long vmId) {
         return jdbcTemplate.query("""

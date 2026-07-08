@@ -1,0 +1,72 @@
+package kr.ac.pusan.pickle.admin;
+
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Contract {@code GET /admin/vms}: ORG_ADMIN hard-scoped to their own org,
+ * SYS_ADMIN across orgs with the optional {@code orgId} filter. An ORG_ADMIN
+ * naming another org answers 404 so cross-org existence stays private
+ * (same convention as the vm-requests queue).
+ */
+@Service
+public class AdminVmQueryService {
+
+    private final VmRepository vmRepository;
+
+    public AdminVmQueryService(VmRepository vmRepository) {
+        this.vmRepository = vmRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long groupId,
+            VmStatus status, int page, int size) {
+        Long scopedOrgId = scopeOrgId(actor, orgId);
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
+        if (scopedOrgId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
+        }
+        if (groupId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("groupId"), groupId));
+        }
+        if (status != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        Page<Vm> result = vmRepository.findAll(spec, pageable);
+        return PageResponse.of(result.getContent().stream().map(VmSummaryResponse::from).toList(),
+                result);
+    }
+
+    /** ORG_ADMIN is pinned to their own org; another org's id answers 404. */
+    private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
+        if (actor.role() != UserRole.ORG_ADMIN) {
+            return orgId;
+        }
+        if (actor.orgId() == null) {
+            // Defensive: an ORG_ADMIN without a managed org sees nothing.
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
+        }
+        if (orgId != null && !orgId.equals(actor.orgId())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+        }
+        return actor.orgId();
+    }
+}

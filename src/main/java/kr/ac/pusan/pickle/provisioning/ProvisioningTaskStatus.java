@@ -11,5 +11,13 @@ public enum ProvisioningTaskStatus {
     DONE,
     FAILED,
     RETRYING,
-    NEEDS_ADMIN
+    NEEDS_ADMIN;
+
+    private static final java.util.Set<ProvisioningTaskStatus> LIVE =
+            java.util.Set.of(PENDING, RUNNING, RETRYING, NEEDS_ADMIN);
+
+    /** The "live" statuses — a VM with a live task is owned by the pipeline. */
+    public static java.util.Set<ProvisioningTaskStatus> live() {
+        return LIVE;
+    }
 }
