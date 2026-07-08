@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -85,12 +86,17 @@ public class AuthService {
         passwordPolicy.validate(request.password(), email);
 
         if (userRepository.existsByEmail(email)) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_EMAIL_ALREADY_REGISTERED,
-                    "이미 가입된 이메일입니다", "해당 이메일로 가입된 계정이 이미 존재합니다.");
+            throw emailAlreadyRegistered();
         }
 
-        User user = userRepository.save(
-                new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
+        User user;
+        try {
+            user = userRepository.save(
+                    new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
+        } catch (DataIntegrityViolationException raceWithConcurrentSignup) {
+            // Concurrent signup lost the unique-email race → same 409 as above.
+            throw emailAlreadyRegistered();
+        }
         sendVerificationMail(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_SIGNUP,
                 "user", user.getId(), Map.of("email", user.getEmail()), ip);
@@ -249,6 +255,11 @@ public class AuthService {
 
     private static String normalize(String email) {
         return Texts.normalizeEmail(email);
+    }
+
+    private static ApiException emailAlreadyRegistered() {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_EMAIL_ALREADY_REGISTERED,
+                "이미 가입된 이메일입니다", "해당 이메일로 가입된 계정이 이미 존재합니다.");
     }
 
     private static ApiException verificationTokenGone() {
