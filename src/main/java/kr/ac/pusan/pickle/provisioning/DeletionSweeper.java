@@ -31,12 +31,14 @@ public class DeletionSweeper {
             VmStatus.DELETING, VmStatus.RUNNING, VmStatus.STOPPED, VmStatus.REBOOTING);
 
     private final VmRepository vmRepository;
+    private final ProvisioningTaskRepository taskRepository;
     private final JobScheduler jobScheduler;
     private final DeleteVmJob deleteVmJob;
 
-    public DeletionSweeper(VmRepository vmRepository, JobScheduler jobScheduler,
-            DeleteVmJob deleteVmJob) {
+    public DeletionSweeper(VmRepository vmRepository, ProvisioningTaskRepository taskRepository,
+            JobScheduler jobScheduler, DeleteVmJob deleteVmJob) {
         this.vmRepository = vmRepository;
+        this.taskRepository = taskRepository;
         this.jobScheduler = jobScheduler;
         this.deleteVmJob = deleteVmJob;
     }
@@ -44,14 +46,32 @@ public class DeletionSweeper {
     @Recurring(id = "deletion-sweeper", cron = "*/5 * * * *")
     @Job(name = "deletion-sweeper", retries = 0)
     public void sweep() {
-        List<Vm> due = vmRepository.findDueForDeletion(Instant.now(), SWEEPABLE_STATUSES);
+        Instant now = Instant.now();
+        List<Vm> due = vmRepository.findDueForDeletion(now, SWEEPABLE_STATUSES);
         if (due.isEmpty()) {
             return;
         }
         log.info("Deletion sweeper: {} VM(s) due for destruction", due.size());
         for (Vm vm : due) {
             long vmId = vm.getId();
+            if (inRetryBackoff(vmId, now)) {
+                continue; // the failed run scheduled its own retry — don't bypass it
+            }
             jobScheduler.enqueue(() -> deleteVmJob.deleteVm(vmId));
         }
+    }
+
+    /**
+     * True while a RETRYING DELETE task is still inside the backoff window its
+     * failing run scheduled — sweeping it now would resume the task early and
+     * defeat the backoff. Once the window passed, sweeping again is the crash
+     * recovery for a lost scheduled run.
+     */
+    private boolean inRetryBackoff(long vmId, Instant now) {
+        return taskRepository.findFirstByVmIdAndKindAndStatusInOrderByIdDesc(vmId,
+                        ProvisioningTaskKind.DELETE, Set.of(ProvisioningTaskStatus.RETRYING))
+                .map(task -> now.isBefore(task.getUpdatedAt()
+                        .plus(DeleteVmJob.backoffAfterAttempt(task.getAttempts()))))
+                .orElse(false);
     }
 }

@@ -160,8 +160,10 @@ public class ApprovalService {
         // orphaned durable job if this tx rolls back, or (b) let a worker pick
         // the job before the vm row is visible. Enqueue after commit instead.
         // Trade-off: a crash in the tiny window between commit and enqueue
-        // loses the job (VM stays CREATING) — acceptable for M2; the M3
-        // reconciler surfaces stuck-CREATING VMs (docs/plan/03).
+        // loses the job (VM stays CREATING) — recovered by StaleTaskRecoveryJob,
+        // which re-enqueues stuck-CREATING VMs without a PROVISION task
+        // (every 10 min; the drift reconciler does NOT see them — its working
+        // set is vmid-bearing rows only, and these have no vmid yet).
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {

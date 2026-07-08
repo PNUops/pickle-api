@@ -28,6 +28,10 @@ public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTa
     Optional<ProvisioningTask> findFirstByVmIdAndKindAndStatusInOrderByIdDesc(
             Long vmId, ProvisioningTaskKind kind, Collection<ProvisioningTaskStatus> statuses);
 
+    /** Stale-task recovery scan: tasks that stopped moving before the cutoff. */
+    List<ProvisioningTask> findByStatusInAndUpdatedAtBefore(
+            Collection<ProvisioningTaskStatus> statuses, Instant cutoff);
+
     /** CAS status transition, recording the error (null clears it). */
     @Transactional
     @Modifying(clearAutomatically = true)

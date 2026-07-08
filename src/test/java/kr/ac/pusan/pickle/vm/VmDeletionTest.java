@@ -588,6 +588,34 @@ class VmDeletionTest {
         assertThat(deleteJobCount() - before).isEqualTo(2);
     }
 
+    @Test
+    void sweeperSkipsRetryingDeleteTaskInsideBackoffWindow() {
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(5)));
+        // a failed run left the task RETRYING moments ago (attempts 3 → 5 min backoff)
+        jdbcTemplate.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'DELETE', 0, 'RETRYING', 3)
+                """, vmId);
+        // isolate from pending deletions left over by other tests in this DB
+        jdbcTemplate.update("""
+                update vms set delete_scheduled_for = now() + interval '30 days'
+                 where delete_scheduled_for <= now() and id <> ?
+                """, vmId);
+
+        Long before = deleteJobCount();
+        deletionSweeper.sweep();
+        // inside the backoff window the sweeper must not resume the task early
+        assertThat(deleteJobCount() - before).isZero();
+
+        // window elapsed (scheduled run lost) → the sweeper is the recovery
+        jdbcTemplate.update(
+                "update provisioning_tasks set updated_at = now() - interval '6 minutes'"
+                        + " where vm_id = ?", vmId);
+        deletionSweeper.sweep();
+        assertThat(deleteJobCount() - before).isEqualTo(1);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private Long deleteJobCount() {

@@ -41,8 +41,11 @@ import org.springframework.stereotype.Component;
  * claim (PENDING/RETRYING → RUNNING) makes concurrent or duplicated enqueues
  * (sweeper every 5 min + direct emergency enqueue) no-ops. Retries are
  * self-scheduled with backoff; after {@value #MAX_ATTEMPTS} attempts the task
- * parks as NEEDS_ADMIN while the VM stays DELETING, so an operator fix lets
- * the sweeper resume a fresh task later.</p>
+ * parks as NEEDS_ADMIN while the VM stays DELETING. A parked task is a dead
+ * end for automation: {@link #claimTask} never claims NEEDS_ADMIN and the
+ * live-task unique index blocks a fresh task, so recovery is currently DB
+ * surgery (flip the task to RETRYING or FAILED by hand); an admin re-run API
+ * is planned for M4+.</p>
  */
 @Component
 public class DeleteVmJob {
@@ -271,9 +274,17 @@ public class DeleteVmJob {
             taskRepository.markRetrying(taskId, error, now);
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
                     error + " — 자동 재시도 예정", now);
-            Duration backoff = RETRY_BACKOFFS.get(Math.min(attempts - 1, RETRY_BACKOFFS.size() - 1));
-            jobScheduler.schedule(now.plus(backoff), () -> deleteVm(vmId));
+            jobScheduler.schedule(now.plus(backoffAfterAttempt(attempts)), () -> deleteVm(vmId));
         }
+    }
+
+    /**
+     * The backoff {@link #handleFailure} schedules after the given attempt.
+     * The sweeper uses it to leave RETRYING tasks alone while their scheduled
+     * backoff run is still pending.
+     */
+    static Duration backoffAfterAttempt(int attempts) {
+        return RETRY_BACKOFFS.get(Math.clamp(attempts - 1, 0, RETRY_BACKOFFS.size() - 1));
     }
 
     /** Contract: the final destruction is notified to the org's admins. */

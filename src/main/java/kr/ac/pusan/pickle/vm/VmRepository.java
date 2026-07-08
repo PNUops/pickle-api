@@ -57,6 +57,9 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /** All VMs with a Proxmox identity (drift-reconciler working set). */
     List<Vm> findByProxmoxVmidIsNotNull();
 
+    /** Stale-recovery scan, e.g. stuck-CREATING VMs whose enqueue was lost. */
+    List<Vm> findByStatusAndUpdatedAtBefore(VmStatus status, Instant cutoff);
+
     /**
      * Compare-and-set status transition; the {@code from} guard makes job
      * re-runs idempotent (0 rows updated when the VM already moved on).
