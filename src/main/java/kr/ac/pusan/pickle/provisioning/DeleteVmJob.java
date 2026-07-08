@@ -162,6 +162,13 @@ public class DeleteVmJob {
                 notifyOrgAdmins(vm);
                 log.info("Delete pipeline completed for vm {} (vmid {})", vmId, vm.getProxmoxVmid());
             }
+        } catch (DestroyTargetMismatchException e) {
+            // not retryable — park straight away for an operator to inspect
+            Instant now = Instant.now();
+            log.error("Delete pipeline parked for vm {}: {}", vmId, e.getMessage());
+            taskRepository.park(task.getId(), e.getMessage(), now);
+            vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
+                    e.getMessage() + " — 관리자 확인이 필요합니다", now);
         } catch (RuntimeException e) {
             handleFailure(task.getId(), vmId, e);
         }
@@ -210,7 +217,10 @@ public class DeleteVmJob {
     /**
      * Destroys the Proxmox guest if it still exists. Idempotent: a VM without
      * a vmid (mock-provisioned / pre-clone crash) or already absent from the
-     * cluster skips straight through.
+     * cluster skips straight through. Before destroying, the guest's identity
+     * is verified ({@link ManagedGuestIdentity}) — Proxmox recycles vmids, so
+     * a mismatching guest means the number no longer belongs to this VM and
+     * destroying it would kill a foreign machine.
      */
     private void destroyOnProxmox(Vm vm) {
         Integer vmid = vm.getProxmoxVmid();
@@ -220,16 +230,30 @@ public class DeleteVmJob {
         Node node = nodeRepository.findById(vm.getNodeId())
                 .orElseThrow(() -> new IllegalStateException(
                         "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
-        boolean exists = proxmoxClient.clusterResources(node.getApiHost(), "vm").stream()
-                .anyMatch(resource -> vmid.equals(resource.vmid()));
-        if (!exists) {
+        ClusterResource resource = proxmoxClient.clusterResources(node.getApiHost(), "vm").stream()
+                .filter(r -> vmid.equals(r.vmid()))
+                .findFirst().orElse(null);
+        if (resource == null) {
             log.info("VM {} (vmid {}) already absent from Proxmox — destroy skipped",
                     vm.getId(), vmid);
             return;
         }
+        if (!ManagedGuestIdentity.matches(vm, resource)) {
+            throw new DestroyTargetMismatchException(
+                    "파기 대상 불일치: vmid " + vmid + "의 게스트 이름 '" + resource.name()
+                            + "'이(가) 호스트명 '" + vm.getHostname()
+                            + "'과 다르고 pickle 태그도 없습니다");
+        }
         shutdownIfRunning(node, vmid);
         String upid = proxmoxClient.delete(node.getApiHost(), node.getName(), vmid);
         proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
+    }
+
+    /** The guest at the stored vmid does not look like ours — never retried. */
+    static final class DestroyTargetMismatchException extends RuntimeException {
+        DestroyTargetMismatchException(String message) {
+            super(message);
+        }
     }
 
     /**

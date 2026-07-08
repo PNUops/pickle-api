@@ -46,9 +46,6 @@ public class DriftReconciler {
     static final String DETAIL_MISSING = "Proxmox에 VM 없음(드리프트)";
     static final String SPEC_DRIFT_PREFIX = "사양 불일치(드리프트)";
 
-    /** Tag marking a Proxmox guest as pickle-managed (set by the provisioning pipeline). */
-    static final String MANAGED_TAG = "pickle";
-
     private static final Logger log = LoggerFactory.getLogger(DriftReconciler.class);
 
     private static final long MIB = 1024L * 1024L;
@@ -131,7 +128,8 @@ public class DriftReconciler {
         // Drift ②: pickle-tagged guests nobody in the DB claims. Log only —
         // the monthly drift report is M5; auto-destroying is forbidden.
         for (ClusterResource resource : qemuByVmid.values()) {
-            if (!knownVmids.contains(resource.vmid()) && hasManagedTag(resource.tags())) {
+            if (!knownVmids.contains(resource.vmid())
+                    && ManagedGuestIdentity.hasManagedTag(resource.tags())) {
                 log.warn("unmanaged pickle-tagged VM on Proxmox: vmid {} name '{}' node {} status {}"
                                 + " — not in DB, leaving untouched (docs/plan/03)",
                         resource.vmid(), resource.name(), resource.node(), resource.status());
@@ -176,16 +174,4 @@ public class DriftReconciler {
         }
     }
 
-    /** True when the semicolon/comma-separated PVE tag list contains {@code pickle}. */
-    private static boolean hasManagedTag(String tags) {
-        if (tags == null || tags.isBlank()) {
-            return false;
-        }
-        for (String tag : tags.split("[;,]")) {
-            if (MANAGED_TAG.equalsIgnoreCase(tag.trim())) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

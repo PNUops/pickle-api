@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
+import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -494,7 +495,15 @@ public class ProvisionVmJob implements ProvisioningService {
             Integer vmid = vm != null ? vm.getProxmoxVmid() : null;
             if (vm != null && vmid != null) {
                 Node node = node(vm);
-                if (vmExists(node, vmid)) {
+                ClusterResource resource = findResource(node, vmid);
+                if (resource != null) {
+                    // vmid recycling guard: never destroy a guest that does not
+                    // look like ours (clone names it after the hostname)
+                    if (!ManagedGuestIdentity.matches(vm, resource)) {
+                        throw new IllegalStateException("보상 파기 대상 불일치: vmid " + vmid
+                                + "의 게스트 이름 '" + resource.name() + "'이(가) 호스트명 '"
+                                + vm.getHostname() + "'과 다르고 pickle 태그도 없습니다");
+                    }
                     String upid = proxmox.delete(node.getApiHost(), node.getName(), vmid);
                     proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
                     log.info("provision vm {}: compensation destroyed half-created vmid {}",
@@ -594,10 +603,16 @@ public class ProvisionVmJob implements ProvisioningService {
         return allocationRepository.findById(vm.getIpAllocationId()).orElseThrow();
     }
 
-    /** Does the VMID exist on the cluster? Guards clone and compensation delete. */
+    /** Does the VMID exist on the cluster? Guards the clone-skip check. */
     private boolean vmExists(Node node, int vmid) {
+        return findResource(node, vmid) != null;
+    }
+
+    /** The cluster resource at the vmid, for existence + identity checks. */
+    private ClusterResource findResource(Node node, int vmid) {
         return proxmox.clusterResources(node.getApiHost(), "vm").stream()
-                .anyMatch(resource -> Objects.equals(resource.vmid(), vmid));
+                .filter(resource -> Objects.equals(resource.vmid(), vmid))
+                .findFirst().orElse(null);
     }
 
     private String generatePassword() {

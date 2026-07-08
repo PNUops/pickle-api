@@ -124,6 +124,25 @@ class VmStatusPollerTest {
     }
 
     @Test
+    void convergesStrandedRebootingVms() {
+        // a crashed/failed reboot job leaves REBOOTING behind — the poller
+        // converges it to whatever the guest actually reports
+        long nodeId = createNode(wm.apiHost());
+        long rebootedFine = createVm(nodeId, 61031, "REBOOTING");
+        long diedOnReboot = createVm(nodeId, 61032, "REBOOTING");
+        stubClusterResources(wm,
+                qemu(61031, "running", 1, 1024, null),
+                qemu(61032, "stopped", 1, 1024, null));
+
+        poller.poll();
+
+        assertThat(vmRepository.findById(rebootedFine).orElseThrow().getStatus())
+                .isEqualTo(VmStatus.RUNNING);
+        assertThat(vmRepository.findById(diedOnReboot).orElseThrow().getStatus())
+                .isEqualTo(VmStatus.STOPPED);
+    }
+
+    @Test
     void skipsVmsOwnedByThePipeline() {
         long nodeId = createNode(wm.apiHost());
         long withLiveTask = createVm(nodeId, 61011, "RUNNING");

@@ -25,8 +25,10 @@ import org.springframework.stereotype.Component;
  * {@code GET /cluster/resources?type=vm} per node and mirrors UPID-less power
  * state changes (e.g. {@code poweroff} inside the guest) into {@code vms.status}.
  *
- * <p>Only VMs currently RUNNING or STOPPED are ever touched, and only with the
- * RUNNING↔STOPPED transition; VMs with a live provisioning task are skipped so
+ * <p>Only VMs currently RUNNING, STOPPED or REBOOTING are ever touched, and
+ * only toward the observed RUNNING/STOPPED guest state (REBOOTING converges
+ * once the reboot settles, so a crashed reboot job cannot strand the status);
+ * VMs with a live provisioning task are skipped so
  * the poller never races the pipeline. The transition itself is the
  * {@link VmRepository#transitionStatus CAS update}, so losing a race is a
  * harmless no-op. Any error is logged and swallowed — one broken node (or one
@@ -41,7 +43,8 @@ public class VmStatusPoller {
     static final String DETAIL_POWERED_ON = "게스트 전원 켜짐 감지(상태 폴러)";
 
     /** The only states the poller may reconcile — everything else belongs to the pipeline. */
-    private static final Set<VmStatus> POLLABLE = Set.of(VmStatus.RUNNING, VmStatus.STOPPED);
+    private static final Set<VmStatus> POLLABLE =
+            Set.of(VmStatus.RUNNING, VmStatus.STOPPED, VmStatus.REBOOTING);
 
     private static final Logger log = LoggerFactory.getLogger(VmStatusPoller.class);
 

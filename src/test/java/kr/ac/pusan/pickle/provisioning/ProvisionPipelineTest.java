@@ -151,7 +151,7 @@ class ProvisionPipelineTest {
                 .whenScenarioStateIs("failed-4")
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json")
-                        .withBody(clusterResourcesWith(vmid))));
+                        .withBody(clusterResourcesWith(vmid, hostnameOf(vmId)))));
         wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock
                 .delete(urlPathEqualTo(qemuPath(vmid)))
                 .willReturn(okFixture("70-delete")));
@@ -246,7 +246,7 @@ class ProvisionPipelineTest {
                 .inScenario("crash").whenScenarioStateIs("vm-exists")
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json")
-                        .withBody(clusterResourcesWith(vmid))));
+                        .withBody(clusterResourcesWith(vmid, hostnameOf(vmId)))));
         stubConfig(vmid);
         stubResize(vmid);
         stubStart(vmid);
@@ -379,7 +379,48 @@ class ProvisionPipelineTest {
                 .isEqualTo(VmStatus.DELETING);
     }
 
-    // ── ⑦ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
+    // ── ⑦ compensation must not destroy a foreign guest at our vmid ──────────
+
+    @Test
+    void compensationParksInsteadOfDestroyingForeignGuest() {
+        long vmId = createVm();
+        int vmid = 118;
+        stubNextId(vmid);
+        // clone fails permanently 4 times, then compensation looks the vmid up —
+        // and finds a guest that is not ours (foreign name, no pickle tag)
+        for (int attempt = 0; attempt < 4; attempt++) {
+            String from = attempt == 0 ? Scenario.STARTED : "failed-" + attempt;
+            wm.server().stubFor(post(urlPathEqualTo(qemuPath(9000) + "/clone"))
+                    .inScenario("clone-fail-foreign")
+                    .whenScenarioStateIs(from)
+                    .willReturn(jsonFixture(500, "11-clone-dup-error"))
+                    .willSetStateTo("failed-" + (attempt + 1)));
+            wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                    .inScenario("clone-fail-foreign")
+                    .whenScenarioStateIs(from)
+                    .willReturn(okFixture("03-cluster-resources")));
+        }
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .inScenario("clone-fail-foreign")
+                .whenScenarioStateIs("failed-4")
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(clusterResourcesWith(vmid, "somebody-elses-vm"))));
+
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            job.provisionVm(vmId);
+        }
+
+        // destroy was never called; the task parked for an operator instead
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
+        assertThat(task.getLastError()).contains("보상 실패");
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
+    }
+
+    // ── ⑧ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
 
     @Test
     void recycledVmidOfDeletedVmCanBeReassigned() {
@@ -502,9 +543,13 @@ class ProvisionPipelineTest {
     }
 
     /** cluster/resources body where the given VMID exists (post-clone state). */
-    private static String clusterResourcesWith(int vmid) {
+    private static String clusterResourcesWith(int vmid, String name) {
         return "{\"data\":[{\"vmid\":" + vmid + ",\"type\":\"qemu\",\"node\":\"" + NODE
-                + "\",\"status\":\"stopped\",\"name\":\"pipe-vm\",\"maxcpu\":1,"
+                + "\",\"status\":\"stopped\",\"name\":\"" + name + "\",\"maxcpu\":1,"
                 + "\"maxmem\":1073741824,\"template\":0}]}";
+    }
+
+    private String hostnameOf(long vmId) {
+        return vmRepository.findById(vmId).orElseThrow().getHostname();
     }
 }

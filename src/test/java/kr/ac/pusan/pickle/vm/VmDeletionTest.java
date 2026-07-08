@@ -512,6 +512,29 @@ class VmDeletionTest {
     }
 
     @Test
+    void deleteJobParksOnForeignGuestAtRecycledVmid() {
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+        // a foreign guest sits at our stored vmid: different name, no pickle tag
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("""
+                                {"data":[{"vmid":%d,"type":"qemu","status":"running",
+                                          "node":"%s","name":"somebody-elses-vm"}]}
+                                """.formatted(proxmoxVmid, NODE_NAME))));
+
+        deleteVmJob.deleteVm(vmId);
+
+        // never shut down or destroyed; parked for an operator instead
+        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath("status/shutdown"))));
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
+        assertThat(taskState(vmId).get(0)).isEqualTo("NEEDS_ADMIN");
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(statusDetailOf(vmId)).contains("파기 대상 불일치");
+    }
+
+    @Test
     void deleteJobRetriesWithBackoffThenParksNeedsAdmin() {
         long vmId = createVm(VmStatus.DELETING);
         markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
@@ -632,12 +655,13 @@ class VmDeletionTest {
     }
 
     private void stubClusterResourcesRunning() {
+        // carries the pickle tag, as the config step sets on every managed guest
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json;charset=UTF-8")
                         .withBody("""
                                 {"data":[{"vmid":%d,"type":"qemu","status":"running",
-                                          "node":"%s","name":"test"}]}
+                                          "node":"%s","name":"test","tags":"pickle"}]}
                                 """.formatted(proxmoxVmid, NODE_NAME))));
     }
 
