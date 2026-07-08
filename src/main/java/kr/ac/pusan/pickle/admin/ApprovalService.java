@@ -46,7 +46,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * ORG_ADMIN is hard-scoped to their own org — requests of other orgs answer
  * 404 (existence stays private, per contract). Approval is a single
  * transaction that writes intent only: review row + CREATING vm row + a
- * JobRunr mock-provisioning job; no Proxmox call happens here (docs/plan/03).
+ * JobRunr provisioning job; no Proxmox call happens here (docs/plan/03).
  */
 @Service
 public class ApprovalService {

@@ -40,6 +40,8 @@ import tools.jackson.databind.ObjectMapper;
  * jobrunr tables and executed by a worker thread — the test fails if the VM
  * stays CREATING.</p>
  */
+@org.junit.jupiter.api.Disabled("MockProvisionVmJob이 실제 파이프라인(ProvisionVmJob)으로 대체됨 — "
+        + "M3EndToEndTest로 개편 예정 (WP-B3 커밋 3)")
 @SpringBootTest(properties = {
         "jobrunr.background-job-server.enabled=true",
         "jobrunr.background-job-server.poll-interval-in-seconds=5"

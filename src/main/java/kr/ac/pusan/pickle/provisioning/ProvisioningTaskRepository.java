@@ -49,13 +49,15 @@ public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTa
 
     /**
      * Advances the step pointer; guarded by the current step and RUNNING so a
-     * concurrent duplicate run cannot double-advance.
+     * concurrent duplicate run cannot double-advance. Attempts are per-step
+     * (contract {@code ProvisioningTaskView.attempts}, ≤3 per step), so the
+     * counter resets to 1 — the run currently executing the next step.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("""
             update ProvisioningTask t
-               set t.currentStep = :fromStep + 1, t.updatedAt = :now
+               set t.currentStep = :fromStep + 1, t.attempts = 1, t.updatedAt = :now
              where t.id = :id and t.currentStep = :fromStep and t.status = :status
             """)
     int advanceStep(@Param("id") Long id, @Param("fromStep") int fromStep,
@@ -86,6 +88,27 @@ public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTa
     /** Retry run: RETRYING → RUNNING, counting the attempt. */
     default int resumeAttempt(Long id, Instant now) {
         return transitionStatusCountingAttempt(id, ProvisioningTaskStatus.RETRYING,
+                ProvisioningTaskStatus.RUNNING, now);
+    }
+
+    /**
+     * Admin re-run of a parked task: NEEDS_ADMIN → RUNNING with the attempt
+     * budget and error reset, so the resumed step gets fresh retries.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.status = :to, t.attempts = 1, t.lastError = null, t.updatedAt = :now
+             where t.id = :id and t.status = :from
+            """)
+    int transitionStatusResettingAttempts(@Param("id") Long id,
+            @Param("from") ProvisioningTaskStatus from, @Param("to") ProvisioningTaskStatus to,
+            @Param("now") Instant now);
+
+    /** NEEDS_ADMIN → RUNNING (admin re-run), resetting attempts and error. */
+    default int reactivate(Long id, Instant now) {
+        return transitionStatusResettingAttempts(id, ProvisioningTaskStatus.NEEDS_ADMIN,
                 ProvisioningTaskStatus.RUNNING, now);
     }
 
