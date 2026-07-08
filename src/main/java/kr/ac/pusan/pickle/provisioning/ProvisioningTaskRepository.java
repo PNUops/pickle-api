@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -19,6 +20,10 @@ import org.springframework.transaction.annotation.Transactional;
 public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTask, Long> {
 
     List<ProvisioningTask> findByVmIdOrderByIdDesc(Long vmId);
+
+    /** VM ids that currently have a task in the given statuses (poller/reconciler race guard). */
+    @Query("select distinct t.vmId from ProvisioningTask t where t.status in :statuses")
+    Set<Long> findVmIdsWithStatusIn(@Param("statuses") Collection<ProvisioningTaskStatus> statuses);
 
     Optional<ProvisioningTask> findFirstByVmIdAndKindAndStatusInOrderByIdDesc(
             Long vmId, ProvisioningTaskKind kind, Collection<ProvisioningTaskStatus> statuses);
