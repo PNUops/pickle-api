@@ -86,7 +86,10 @@ public class ApprovalContextService {
     @Transactional(readOnly = true)
     public ApprovalContextResponse context(AuthenticatedUser actor, long requestId) {
         VmRequest request = approvalService.findScoped(actor, requestId);
-        User applicant = userRepository.findById(request.getRequesterId()).orElse(null);
+        // The requester row always exists: accounts are soft-deleted only
+        // (WITHDRAWN + later anonymization keep the row, docs/plan/02), so
+        // applicant.signupAt/email are always non-null per contract.
+        User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
 
         OrgHeadroom headroom = orgHeadroom(request.getOrgId());
@@ -101,10 +104,10 @@ public class ApprovalContextService {
 
     private Applicant applicantPanel(VmRequest request, User applicant) {
         return new Applicant(
-                request.getRequesterId(),
-                applicant != null ? applicant.getName() : "탈퇴 회원",
-                applicant != null ? applicant.getEmail() : "",
-                applicant != null ? applicant.getCreatedAt() : null,
+                applicant.getId(),
+                applicant.getName(),
+                applicant.getEmail(),
+                applicant.getCreatedAt(),
                 requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), VmRequestStatus.APPROVED),
                 requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), VmRequestStatus.REJECTED));
     }
