@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
@@ -93,6 +94,8 @@ class PublishingTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private RouteApplyJob routeApplyJob;
+    @Autowired
+    private DeleteVmJob deleteVmJob;
     @Autowired
     private DomainVerifier domainVerifier;
     @Autowired
@@ -421,6 +424,88 @@ class PublishingTest {
         long genAfter = jdbcTemplate.queryForObject("select generation from routes where id = ?",
                 Long.class, routeId);
         assertThat(genAfter).isGreaterThan(genBefore);
+    }
+
+    // ── VM deletion tears down publishing (B1) ──────────────────────────────
+
+    @Test
+    void deletePipelineTearsDownPublishingBeforeIpRelease() throws Exception {
+        long vmId = publishableVm(true, "team-delpub", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        long domainId = domainIdForVm(vmId);
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+        long appliedGen = jdbcTemplate.queryForObject(
+                "select applied_generation from routes where id = ?", Long.class, routeId);
+
+        // Self-delete accepted, then run the destroy pipeline directly. The vmid
+        // is nulled so the (unstubbed) Proxmox destroy step skips.
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(999)));
+
+        deleteVmJob.deleteVm(vmId);
+
+        // The FQDN's vhost was removed (ABSENT, bumped generation) before the
+        // IP was released and the VM marked DELETED.
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("ABSENT")))
+                .withRequestBody(matchingJsonPath("$.fqdn",
+                        com.github.tomakehurst.wiremock.client.WireMock
+                                .equalTo("team-delpub.pickle.pnuops.com"))));
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("select generation from routes where id = ?",
+                Long.class, routeId)).isGreaterThan(appliedGen);
+        assertThat(jdbcTemplate.queryForObject("select status from vms where id = ?",
+                String.class, vmId)).isEqualTo("DELETED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from ip_allocations where vm_id = ? and status = 'ALLOCATED'
+                """, Long.class, vmId)).isZero();
+    }
+
+    @Test
+    void failedTeardownBlocksDeletionAndIpRelease() throws Exception {
+        long vmId = publishableVm(true, "team-delfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        routeApplyJob.apply(routeIdForVm(vmId));
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withStatus(422)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"applied\":false,\"error\":\"nginx: [emerg] boom\"}")));
+
+        deleteVmJob.deleteVm(vmId);
+
+        // Vhost removal unconfirmed → the pipeline retries instead of releasing
+        // the IP under a live route (no silent stale vhost).
+        assertThat(jdbcTemplate.queryForObject("select status from vms where id = ?",
+                String.class, vmId)).isEqualTo("DELETING");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from ip_allocations where vm_id = ? and status = 'ALLOCATED'
+                """, Long.class, vmId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from provisioning_tasks
+                 where vm_id = ? and kind = 'DELETE' order by id desc limit 1
+                """, String.class, vmId)).isEqualTo("RETRYING");
+
+        // Agent recovers → the retried run completes the deletion.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(1000)));
+        deleteVmJob.deleteVm(vmId);
+        assertThat(jdbcTemplate.queryForObject("select status from vms where id = ?",
+                String.class, vmId)).isEqualTo("DELETED");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
+import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
@@ -84,13 +85,15 @@ public class VmDeletionService {
     private final MailSender mailSender;
     private final VmLifecycleMailComposer mailComposer;
     private final ProvisioningTaskRepository provisioningTaskRepository;
+    private final PublishingTeardownService publishingTeardown;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService, MailSender mailSender,
             VmLifecycleMailComposer mailComposer,
-            ProvisioningTaskRepository provisioningTaskRepository) {
+            ProvisioningTaskRepository provisioningTaskRepository,
+            PublishingTeardownService publishingTeardown) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -103,6 +106,7 @@ public class VmDeletionService {
         this.mailSender = mailSender;
         this.mailComposer = mailComposer;
         this.provisioningTaskRepository = provisioningTaskRepository;
+        this.publishingTeardown = publishingTeardown;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -142,6 +146,13 @@ public class VmDeletionService {
         Instant now = Instant.now();
         if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
             throw alreadyPendingDeletion();
+        }
+        // An ERROR VM was never publishable, but sweep defensively: rows flip
+        // to REMOVED in this tx, the ABSENT pushes run as a retried job (the
+        // IP is released immediately here, so removal must not be lost).
+        long vmId = vm.getId();
+        if (!publishingTeardown.markPublicationsRemoved(vmId).isEmpty()) {
+            enqueueAfterCommit(() -> publishingTeardown.teardownForVmDeletion(vmId));
         }
         if (vm.getIpAllocationId() != null
                 && ipamService.release(vm.getIpAllocationId(), vm.getId())) {

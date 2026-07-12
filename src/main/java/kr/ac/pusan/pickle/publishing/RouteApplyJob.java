@@ -60,16 +60,26 @@ public class RouteApplyJob {
     @Job(name = "route-apply %0", retries = 0)
     @Transactional
     public void apply(long routeId) {
+        applyNow(routeId);
+    }
+
+    /**
+     * Same as {@link #apply} but reports the outcome — the VM-deletion teardown
+     * ({@link PublishingTeardownService}) pushes ABSENT synchronously and must
+     * know whether the vhost is actually gone before the IP is released.
+     */
+    @Transactional
+    public ApplyOutcome.Kind applyNow(long routeId) {
         Route route = routeRepository.findById(routeId).orElse(null);
         if (route == null) {
             log.warn("route-apply skipped: route {} not found", routeId);
-            return;
+            return null;
         }
         Domain domain = domainRepository.findById(route.getDomainId()).orElseThrow();
         boolean absent = route.getStatus() == RouteStatus.REMOVED;
         ApplyRequest request = absent ? absentRequest(domain, route) : presentRequest(domain, route);
         if (request == null) {
-            return; // present() already recorded the failure (no live IP)
+            return ApplyOutcome.Kind.FAILED; // present() already recorded it (no live IP)
         }
         ApplyOutcome outcome = proxyAgentClient.apply(request);
         switch (outcome.kind()) {
@@ -78,6 +88,7 @@ public class RouteApplyJob {
                     domain.getFqdn(), route.getGeneration(), outcome.generation());
             case FAILED -> recordFailed(route, domain, absent, outcome.error());
         }
+        return outcome.kind();
     }
 
     private ApplyRequest presentRequest(Domain domain, Route route) {

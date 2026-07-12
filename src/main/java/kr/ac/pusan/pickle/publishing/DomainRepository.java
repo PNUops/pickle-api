@@ -17,6 +17,9 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** Final FQDN-uniqueness gate (partial unique index backs this). */
     boolean existsByFqdnAndStatusNot(String fqdn, DomainStatus status);
 
+    /** Every domain row of a VM, any status — the deletion teardown sweep. */
+    List<Domain> findByVmId(Long vmId);
+
     /** Custom domains due for DNS re-check (recurring verification scan). */
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
 

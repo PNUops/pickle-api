@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
+import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -75,12 +76,13 @@ public class DeleteVmJob {
     private final UserRepository userRepository;
     private final MailSender mailSender;
     private final VmLifecycleMailComposer mailComposer;
+    private final PublishingTeardownService publishingTeardown;
 
     public DeleteVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
             UserRepository userRepository, MailSender mailSender,
-            VmLifecycleMailComposer mailComposer) {
+            VmLifecycleMailComposer mailComposer, PublishingTeardownService publishingTeardown) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -91,6 +93,7 @@ public class DeleteVmJob {
         this.userRepository = userRepository;
         this.mailSender = mailSender;
         this.mailComposer = mailComposer;
+        this.publishingTeardown = publishingTeardown;
     }
 
     /**
@@ -149,6 +152,11 @@ public class DeleteVmJob {
             return;
         }
         try {
+            // Tear down HTTP publishing BEFORE the guest/IP goes away: a vhost
+            // surviving past the 24h IP quarantine would route the deleted VM's
+            // FQDN to whoever gets the address next (internal.md Link 2). A
+            // failed teardown throws → backoff retry → NEEDS_ADMIN park.
+            publishingTeardown.teardownForVmDeletion(vmId);
             destroyOnProxmox(vm);
             if (vm.getIpAllocationId() != null
                     && ipamService.release(vm.getIpAllocationId(), vmId)) {
