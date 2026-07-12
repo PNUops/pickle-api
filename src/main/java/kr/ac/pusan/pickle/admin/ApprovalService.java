@@ -19,6 +19,9 @@ import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
+import kr.ac.pusan.pickle.publishing.DomainRepository;
+import kr.ac.pusan.pickle.publishing.DomainStatus;
+import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -65,12 +68,15 @@ public class ApprovalService {
     private final JobScheduler jobScheduler;
     private final ProvisioningService provisioningService;
     private final AuditService auditService;
+    private final SubdomainPolicy subdomainPolicy;
+    private final DomainRepository domainRepository;
     private final SecureRandom random = new SecureRandom();
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
             VmRequestAssembler assembler, VmRepository vmRepository, VmTemplateRepository templateRepository,
             NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
-            ProvisioningService provisioningService, AuditService auditService) {
+            ProvisioningService provisioningService, AuditService auditService,
+            SubdomainPolicy subdomainPolicy, DomainRepository domainRepository) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
@@ -81,6 +87,8 @@ public class ApprovalService {
         this.jobScheduler = jobScheduler;
         this.provisioningService = provisioningService;
         this.auditService = auditService;
+        this.subdomainPolicy = subdomainPolicy;
+        this.domainRepository = domainRepository;
     }
 
     @Transactional(readOnly = true)
@@ -141,6 +149,30 @@ public class ApprovalService {
                 errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
             }
         }
+        // Platform subdomain grant (M4A, docs/product-spec §12): the admin
+        // finalizes the subdomain NAME here (issuance is deferred to publish).
+        // Ignored when HTTP publishing was not granted.
+        String grantedSubdomain = Boolean.TRUE.equals(form.grantHttp())
+                ? Texts.blankToNull(form.grantedSubdomain()) : null;
+        String grantedRootDomain = Boolean.TRUE.equals(form.grantHttp())
+                ? Texts.blankToNull(form.grantedRootDomain()) : null;
+        if (grantedSubdomain != null) {
+            subdomainPolicy.validateLabel(grantedSubdomain, "grantedSubdomain", errors);
+            if (grantedRootDomain == null) {
+                errors.add(new FieldValidationError("grantedRootDomain",
+                        "서브도메인을 부여하려면 루트 도메인을 지정해야 합니다."));
+            } else {
+                subdomainPolicy.validateRootDomain(grantedRootDomain, "grantedRootDomain", errors);
+            }
+            if (grantedRootDomain != null && domainRepository.existsByFqdnAndStatusNot(
+                    grantedSubdomain + "." + grantedRootDomain, DomainStatus.REMOVED)) {
+                errors.add(new FieldValidationError("grantedSubdomain",
+                        "이미 사용 중인 서브도메인입니다."));
+            }
+        } else if (grantedRootDomain != null) {
+            // AUTO subdomain but a specific root was chosen — validate it.
+            subdomainPolicy.validateRootDomain(grantedRootDomain, "grantedRootDomain", errors);
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
@@ -149,7 +181,8 @@ public class ApprovalService {
                 Texts.blankToNull(form.comment()),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(), template.getId(),
                 form.grantedStartDate(), form.grantedEndDate(),
-                form.grantSsh(), form.grantHttp(), form.grantPublic(), form.nodeId()));
+                form.grantSsh(), form.grantHttp(), form.grantPublic(),
+                grantedSubdomain, grantedRootDomain, form.nodeId()));
         request.setStatus(VmRequestStatus.APPROVED);
 
         // M2 auto placement: the template's node (single-node cluster; the

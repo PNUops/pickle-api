@@ -21,6 +21,8 @@ public record VmRequestReviewResponse(
         Boolean grantSsh,
         Boolean grantHttp,
         Boolean grantPublic,
+        String grantedSubdomain,
+        String grantedRootDomain,
         Long nodeId,
         Instant decidedAt) {
 
@@ -31,6 +33,7 @@ public record VmRequestReviewResponse(
                 review.getGrantedVcpu(), review.getGrantedMemoryMb(), review.getGrantedDiskGb(),
                 review.getGrantedTemplateId(), review.getGrantedStartDate(), review.getGrantedEndDate(),
                 review.getGrantSsh(), review.getGrantHttp(), review.getGrantPublic(),
+                review.getGrantedSubdomain(), review.getGrantedRootDomain(),
                 review.getNodeId(), review.getCreatedAt());
     }
 }

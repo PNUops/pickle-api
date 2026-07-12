@@ -39,6 +39,12 @@ public record ApproveVmRequestRequest(
         @NotNull(message = "외부 공개 허용 여부를 지정해 주세요.")
         Boolean grantPublic,
 
+        // Validated server-side by SubdomainPolicy (RFC 1123 + reserved +
+        // profanity + uniqueness); null/blank ⇒ AUTO at publish.
+        String grantedSubdomain,
+
+        String grantedRootDomain,
+
         Long nodeId,
 
         @Size(max = 2000, message = "승인 의견은 2000자 이하여야 합니다.")
