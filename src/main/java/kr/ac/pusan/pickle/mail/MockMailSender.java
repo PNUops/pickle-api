@@ -1,19 +1,28 @@
 package kr.ac.pusan.pickle.mail;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
- * Dev/test mail sender: logs the full message (including the verification
- * link) at INFO and records messages in memory for tests. This logger is
- * exempted from log masking — the bean only exists under an explicit dev/test
- * profile. An unprofiled launch has no {@link MailSender} bean at all and
- * fails fast at startup instead of silently mocking mail and logging raw
- * verification tokens.
+ * Dev/test mail sender: records messages in memory for tests and, when
+ * {@code pickle.mail.mock-spool-path} is set (dev), appends the full body to a
+ * service-user-only spool file. The journal gets recipient/subject only —
+ * verification links carry bearer tokens, and the dev journal is readable by
+ * anyone with log access on a publicly reachable host. An unprofiled launch
+ * has no {@link MailSender} bean at all and fails fast at startup instead of
+ * silently mocking mail.
  */
 @Component
 @Profile({"dev", "test"})
@@ -22,11 +31,36 @@ public class MockMailSender implements MailSender {
     private static final Logger log = LoggerFactory.getLogger(MockMailSender.class);
 
     private final List<MailMessage> messages = new CopyOnWriteArrayList<>();
+    private final Path spoolPath;
+
+    public MockMailSender(@Value("${pickle.mail.mock-spool-path:}") String spoolPath) {
+        this.spoolPath = spoolPath == null || spoolPath.isBlank() ? null : Path.of(spoolPath);
+    }
 
     @Override
     public void send(MailMessage message) {
         messages.add(message);
-        log.info("[mock-mail] to={} subject={}\n{}", message.to(), message.subject(), message.body());
+        log.info("[mock-mail] to={} subject={} (body withheld from journal{})",
+                message.to(), message.subject(), spoolPath != null ? ", spooled" : "");
+        appendToSpool(message);
+    }
+
+    private synchronized void appendToSpool(MailMessage message) {
+        if (spoolPath == null) {
+            return;
+        }
+        try {
+            if (Files.notExists(spoolPath)) {
+                Files.createFile(spoolPath,
+                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+            }
+            String entry = "--- %s to=%s subject=%s%n%s%n".formatted(
+                    Instant.now(), message.to(), message.subject(), message.body());
+            Files.writeString(spoolPath, entry, StandardCharsets.UTF_8,
+                    StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            log.warn("[mock-mail] spool write failed ({}): {}", spoolPath, e.getMessage());
+        }
     }
 
     public List<MailMessage> getMessages() {

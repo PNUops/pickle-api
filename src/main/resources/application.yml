@@ -85,6 +85,10 @@ spring:
 pickle:
   jwt:
     secret: ${PICKLE_JWT_SECRET:pickle-dev-only-jwt-secret-0123456789abcdef}
+  mail:
+    # full mock-mail bodies (verification links = bearer tokens) go to this
+    # service-user-only (rw-------) spool, not the journal
+    mock-spool-path: ${PICKLE_MOCK_MAIL_SPOOL:/var/lib/pickle/mock-mail.log}
 
 ---
 # staging/prod: real SMTP (Google SMTP creds provided by operator via env).
