@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.config;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -15,13 +16,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param leCertValidityDays modelled validity of a freshly issued LE cert
  *                          (notAfter = now + this) — the real value is reported by
  *                          the agent's status endpoint in a later slice
+ * @param verificationTimeout how long the recurring DNS scan keeps re-checking an
+ *                          unverified custom domain before parking it FAILED
+ *                          (default 72h; a manual verify still succeeds any time
+ *                          the records finally match)
  */
 @ConfigurationProperties(prefix = "pickle.publishing")
 public record PublishingProperties(
         String proxyPublicIp,
         String originCaCertRef,
         String letsEncryptCertRef,
-        Integer leCertValidityDays) {
+        Integer leCertValidityDays,
+        Duration verificationTimeout) {
 
     public PublishingProperties {
         proxyPublicIp = proxyPublicIp != null && !proxyPublicIp.isBlank()
@@ -31,5 +37,7 @@ public record PublishingProperties(
         letsEncryptCertRef = letsEncryptCertRef != null && !letsEncryptCertRef.isBlank()
                 ? letsEncryptCertRef : "letsencrypt";
         leCertValidityDays = leCertValidityDays != null ? leCertValidityDays : 90;
+        verificationTimeout = verificationTimeout != null ? verificationTimeout
+                : Duration.ofHours(72);
     }
 }

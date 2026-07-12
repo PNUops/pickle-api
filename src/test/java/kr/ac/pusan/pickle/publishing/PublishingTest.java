@@ -95,6 +95,8 @@ class PublishingTest {
     @Autowired
     private RouteApplyJob routeApplyJob;
     @Autowired
+    private ResyncRoutesJob resyncRoutesJob;
+    @Autowired
     private DeleteVmJob deleteVmJob;
     @Autowired
     private DomainVerifier domainVerifier;
@@ -302,6 +304,66 @@ class PublishingTest {
                 Instant.class, domainId)).isNotNull();
     }
 
+    @Test
+    void verifyTriggerIsRateLimitedAndDeduplicated() throws Exception {
+        long vmId = publishableVm(true, "team-vrl", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "rl." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        // publish enqueued the initial verify job — it is still queued (no
+        // background server), so further triggers must not stack duplicates
+        long enqueued = verifyJobCount();
+
+        try {
+            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isAccepted());
+            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isAccepted());
+            assertThat(verifyJobCount()).isEqualTo(enqueued);
+
+            // per-user sliding window (10/min): the 11th trigger is rejected
+            for (int i = 0; i < 8; i++) {
+                mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                                .header("Authorization", "Bearer " + ownerToken))
+                        .andExpect(status().isAccepted());
+            }
+            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+        } finally {
+            // keep the shared per-user counter from leaking into other tests
+            jdbcTemplate.update("delete from auth_rate_limits where scope = 'domain_verify'");
+        }
+    }
+
+    @Test
+    void unverifiedDomainParksFailedPastDeadline() throws Exception {
+        long vmId = publishableVm(true, "team-vto", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "to." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+
+        // within the 72h window a miss keeps polling (VERIFYING) …
+        domainVerifier.verifyOne(domainId);
+        assertThat(domainStatus(domainId)).isEqualTo("VERIFYING");
+
+        // … past it the domain parks FAILED (recurring scan skips FAILED)
+        jdbcTemplate.update(
+                "update domains set created_at = now() - interval '4 days' where id = ?", domainId);
+        domainVerifier.verifyOne(domainId);
+        assertThat(domainStatus(domainId)).isEqualTo("FAILED");
+
+        // a manual re-check still succeeds once the records finally match
+        verifyDns(domainId, fqdn);
+        assertThat(domainVerifier.verifyOne(domainId)).isPresent();
+        assertThat(domainStatus(domainId)).isEqualTo("ACTIVE");
+    }
+
     // ── cert confirmation via agent /status (M2) + verify re-trigger (M3) ───
 
     @Test
@@ -401,6 +463,66 @@ class PublishingTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
+    }
+
+    @Test
+    void resyncValidationFailureLeavesRouteStatusUntouched() throws Exception {
+        long vmId = publishableVm(true, "team-rsfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+
+        // 422 sync-all changed NOTHING on the agent — the healthy route must
+        // not be flipped FAILED.
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock
+                .post(urlPathEqualTo("/sync-all"))
+                .willReturn(aResponse().withStatus(422)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"applied\":false,\"error\":\"nginx: [emerg] boom\"}")));
+        resyncRoutesJob.run();
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+    }
+
+    @Test
+    void adminDomainRemovedFilterAndFailedCertHideExpiry() throws Exception {
+        long vmId = publishableVm(true, "team-admrm", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "adm." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":80,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+
+        // status=REMOVED surfaces the row; the default listing keeps hiding it.
+        mockMvc.perform(get("/api/v1/admin/domains?status=REMOVED")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(domainId)).exists());
+        mockMvc.perform(get("/api/v1/admin/domains")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(domainId)).doesNotExist());
+
+        // a FAILED cert reports no expiry countdown even with a stale notAfter
+        long certId = jdbcTemplate.queryForObject("""
+                update certificates set status = 'FAILED', not_after = now() + interval '10 days'
+                 where domain_id = ? returning id
+                """, Long.class, domainId);
+        String body = mockMvc.perform(get("/api/v1/admin/certificates?status=FAILED")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        tools.jackson.databind.JsonNode cert = null;
+        for (tools.jackson.databind.JsonNode node : objectMapper.readTree(body).get("content")) {
+            if (node.get("id").asLong() == certId) {
+                cert = node;
+            }
+        }
+        assertThat(cert).isNotNull();
+        assertThat(cert.get("daysUntilExpiry").isNull()).isTrue();
     }
 
     @Test
@@ -603,6 +725,13 @@ class PublishingTest {
     private String domainStatus(long domainId) {
         return jdbcTemplate.queryForObject("select status from domains where id = ?", String.class,
                 domainId);
+    }
+
+    private long verifyJobCount() {
+        return jdbcTemplate.queryForObject("""
+                select count(*) from jobrunr_jobs
+                 where jobsignature like '%DomainVerificationJob.verify(%'
+                """, Long.class);
     }
 
     private String certStatus(long domainId) {

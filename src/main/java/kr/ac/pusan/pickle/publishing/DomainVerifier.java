@@ -87,7 +87,18 @@ public class DomainVerifier {
 
         // Transient miss: never demote an already-ACTIVE domain on a DNS flap.
         if (domain.getStatus() != DomainStatus.ACTIVE) {
-            domain.setStatus(DomainStatus.VERIFYING);
+            // Bounded polling: past the deadline the domain parks FAILED (the
+            // recurring scan only re-checks PENDING/VERIFYING). A manual verify
+            // still runs and succeeds whenever the records finally match.
+            boolean deadlinePassed = domain.getCreatedAt() != null && Instant.now()
+                    .isAfter(domain.getCreatedAt().plus(properties.verificationTimeout()));
+            domain.setStatus(deadlinePassed ? DomainStatus.FAILED : DomainStatus.VERIFYING);
+            if (deadlinePassed) {
+                domain.setLastError("검증 기한(" + properties.verificationTimeout().toHours()
+                        + "시간)이 지났습니다. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.");
+                log.info("domain {} verification deadline passed — parked FAILED", fqdn);
+                return Optional.empty();
+            }
         }
         domain.setLastError(missReason(txtOk, aOk));
         log.debug("domain {} not yet verified (txt={}, a={})", fqdn, txtOk, aOk);

@@ -83,10 +83,10 @@ public class ResyncRoutesJob {
                 route.setLastError(null);
             });
             case STALE -> log.info("route-resync superseded (snapshot {} stale)", snapshotGeneration);
-            case FAILED -> included.forEach(route -> {
-                route.setStatus(RouteStatus.FAILED);
-                route.setLastError(outcome.error());
-            });
+            // 422 = all-or-nothing validation failure: the agent changed NOTHING,
+            // so the routes keep their (still accurate) prior status — flipping
+            // them FAILED would misreport every healthy vhost.
+            case FAILED -> log.error("route-resync failed, agent tree unchanged: {}", outcome.error());
         }
         log.info("route-resync pushed {} routes (outcome {})", manifest.size(), outcome.kind());
     }

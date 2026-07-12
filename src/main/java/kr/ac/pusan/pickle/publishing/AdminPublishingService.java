@@ -129,7 +129,10 @@ public class AdminPublishingService {
         List<AdminCertificateView> content = certs.getContent().stream()
                 .map(cert -> new AdminCertificateView(cert.getId(), cert.getKind(), cert.getStatus(),
                         cert.getScope(), cert.getDomainId(), cert.getNotAfter(),
-                        daysUntilExpiry(now, cert.getNotAfter()), cert.getLastError()))
+                        // a FAILED cert has no meaningful expiry countdown
+                        cert.getStatus() == CertificateStatus.FAILED ? null
+                                : daysUntilExpiry(now, cert.getNotAfter()),
+                        cert.getLastError()))
                 .toList();
         return PageResponse.of(content, certs);
     }

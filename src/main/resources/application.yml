@@ -93,6 +93,9 @@ pickle:
     origin-ca-cert-ref: origin-wildcard
     lets-encrypt-cert-ref: letsencrypt
     le-cert-validity-days: 90
+    # Recurring DNS scan gives up (domain FAILED) past this age; manual verify
+    # still succeeds whenever the records finally match.
+    verification-timeout: 72h
   seed:
     sysadmin-email: ${PICKLE_SEED_SYSADMIN_EMAIL:admin@pickle.local}
     sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:pickle-sysadmin-dev!}

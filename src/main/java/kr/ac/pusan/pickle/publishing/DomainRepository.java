@@ -39,12 +39,13 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
 
     // Admin listing — joined to Vm for org scoping (ad-hoc join on the FK column).
     // Enum filters are cast to string so a null bind has a determinable type.
+    // REMOVED rows are hidden by default but visible via status=REMOVED.
     @Query("""
             select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where cast(d.status as string) <> 'REMOVED'
-              and (:orgId is null or v.orgId = :orgId)
+            where (:orgId is null or v.orgId = :orgId)
               and (:kind is null or cast(d.kind as string) = :kind)
-              and (:status is null or cast(d.status as string) = :status)
+              and ((:status is null and cast(d.status as string) <> 'REMOVED')
+                   or cast(d.status as string) = :status)
             order by d.id desc
             """)
     Page<Domain> findAdmin(@Param("orgId") Long orgId, @Param("kind") String kind,
