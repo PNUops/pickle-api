@@ -28,6 +28,15 @@ public final class ErrorCodes {
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 
+    // Internal SSH gateway route resolution (docs/api/internal.md Link 1). These
+    // are the machine-readable denial reasons the sshgw plugin reads; they are
+    // NOT part of the public console contract.
+    public static final String SSHGW_ROUTE_NOT_FOUND = "SSHGW_ROUTE_NOT_FOUND";
+    public static final String SSHGW_GATEWAY_DISABLED = "SSHGW_GATEWAY_DISABLED";
+    public static final String SSHGW_VM_NOT_RUNNING = "SSHGW_VM_NOT_RUNNING";
+    public static final String SSHGW_VM_BLOCKED = "SSHGW_VM_BLOCKED";
+    public static final String SSHGW_ROUTE_NO_ADDRESS = "SSHGW_ROUTE_NO_ADDRESS";
+
     private ErrorCodes() {
     }
 }

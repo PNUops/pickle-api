@@ -42,6 +42,12 @@ public class AuditService {
     public static final String VM_EMERGENCY_DELETE = "vm.emergency_delete";
     /** One-shot initial-password reveal — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password.reveal";
+    /** SSH gateway route resolved (docs/api/internal.md Link 1). */
+    public static final String SSHGW_ROUTE = "sshgw.route";
+    /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). */
+    public static final String SSHGW_ROUTE_DENIED = "sshgw.route_denied";
+    /** Actor role stamped on gateway route audits (no user identity in v1). */
+    public static final String ACTOR_ROLE_SSHGW = "SSHGW";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
