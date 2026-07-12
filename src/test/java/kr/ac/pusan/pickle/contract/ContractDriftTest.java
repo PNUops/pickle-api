@@ -101,11 +101,23 @@ class ContractDriftTest {
             "GET /admin/vms");
 
     /**
-     * Contract v0.3.1 operations not implemented yet (M3 VM lifecycle).
-     * Must be empty by the end of M3 — every entry moves to
-     * {@link #IMPLEMENTED} as the endpoint lands.
+     * Contract v0.4.0 (M4A HTTP publishing) operations not implemented yet.
+     * Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each
+     * entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
+     * empty again by the end of M4A.
      */
-    private static final Set<String> PLANNED = Set.of();
+    private static final Set<String> PLANNED = Set.of(
+            "POST /vms/{vmId}/publish",
+            "PATCH /vms/{vmId}/publication",
+            "DELETE /vms/{vmId}/publication",
+            "GET /domains",
+            "GET /domains/{domainId}",
+            "DELETE /domains/{domainId}",
+            "POST /domains/{domainId}/verify",
+            "GET /admin/routes",
+            "GET /admin/domains",
+            "GET /admin/certificates",
+            "POST /admin/routes/resync");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
