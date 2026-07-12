@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -80,6 +81,7 @@ public class PublishingService {
     private final JobScheduler jobScheduler;
     private final RouteApplyJob routeApplyJob;
     private final DomainVerificationJob domainVerificationJob;
+    private final RateLimitService rateLimitService;
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
@@ -88,7 +90,8 @@ public class PublishingService {
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             PublicationAssembler assembler, SubdomainPolicy subdomainPolicy,
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
-            RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob) {
+            RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
+            RateLimitService rateLimitService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupRepository = groupRepository;
@@ -104,6 +107,7 @@ public class PublishingService {
         this.jobScheduler = jobScheduler;
         this.routeApplyJob = routeApplyJob;
         this.domainVerificationJob = domainVerificationJob;
+        this.rateLimitService = rateLimitService;
     }
 
     // ── publish / update / unpublish ─────────────────────────────────────────
@@ -257,7 +261,11 @@ public class PublishingService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
-        enqueueAfterCommit(() -> domainVerificationJob.verify(domainId));
+        // Each trigger enqueues a (slow) DNS job on the shared JobRunr pool:
+        // per-user rate limit + per-domain in-flight dedupe bound the abuse.
+        rateLimitService.hit("domain_verify", "user:" + actor.id(),
+                RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_VERIFY,
                 "domain", domainId, Map.of("fqdn", domain.getFqdn()), ip);
         return assembler.toDomainDetail(domain);
@@ -287,7 +295,7 @@ public class PublishingService {
         if (applyNow) {
             enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
         } else {
-            enqueueAfterCommit(() -> domainVerificationJob.verify(domainId));
+            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         }
         return domain;
     }
@@ -333,7 +341,7 @@ public class PublishingService {
         if (domain.getStatus() == DomainStatus.ACTIVE) {
             enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
         } else {
-            enqueueAfterCommit(() -> domainVerificationJob.verify(domainId));
+            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         }
         return domain;
     }
@@ -478,10 +486,14 @@ public class PublishingService {
     }
 
     private void enqueueAfterCommit(JobLambda job) {
+        runAfterCommit(() -> jobScheduler.enqueue(job));
+    }
+
+    private void runAfterCommit(Runnable action) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                jobScheduler.enqueue(job);
+                action.run();
             }
         });
     }

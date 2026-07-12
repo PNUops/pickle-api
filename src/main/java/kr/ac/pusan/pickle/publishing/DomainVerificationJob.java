@@ -1,6 +1,8 @@
 package kr.ac.pusan.pickle.publishing;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
 import org.jobrunr.scheduling.JobScheduler;
@@ -32,6 +34,9 @@ public class DomainVerificationJob {
     private final RouteApplyJob routeApplyJob;
     private final JobScheduler jobScheduler;
 
+    /** Domains with a verify enqueued/running — {@link #requestVerify} dedupe. */
+    private final Set<Long> inFlight = ConcurrentHashMap.newKeySet();
+
     public DomainVerificationJob(DomainVerifier verifier, DomainRepository domainRepository,
             RouteApplyJob routeApplyJob, JobScheduler jobScheduler) {
         this.verifier = verifier;
@@ -50,9 +55,32 @@ public class DomainVerificationJob {
         }
     }
 
+    /**
+     * Enqueues a single verify unless one is already queued/running for this
+     * domain. DNS lookups are slow even with bounded timeouts, and the manual
+     * trigger ({@code POST /domains/{id}/verify}) must not be able to stack
+     * duplicate jobs onto the shared JobRunr pool.
+     */
+    public void requestVerify(long domainId) {
+        if (!inFlight.add(domainId)) {
+            log.debug("domain-verify {} already in flight — enqueue skipped", domainId);
+            return;
+        }
+        try {
+            jobScheduler.enqueue(() -> verify(domainId));
+        } catch (RuntimeException e) {
+            inFlight.remove(domainId);
+            throw e;
+        }
+    }
+
     @Job(name = "domain-verify %0", retries = 0)
     public void verify(long domainId) {
-        checkAndApply(domainId);
+        try {
+            checkAndApply(domainId);
+        } finally {
+            inFlight.remove(domainId);
+        }
     }
 
     private void checkAndApply(long domainId) {

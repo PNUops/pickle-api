@@ -37,6 +37,10 @@ public class JndiDnsResolver implements DnsResolver {
         Hashtable<String, String> env = new Hashtable<>();
         env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.dns.DnsContextFactory");
         env.put(Context.PROVIDER_URL, "dns:");
+        // Bound the lookup: a domain whose NS is a blackhole must not pin a
+        // shared JobRunr worker for the JNDI defaults (~15s x lookups).
+        env.put("com.sun.jndi.dns.timeout.initial", "2000");
+        env.put("com.sun.jndi.dns.timeout.retries", "2");
         DirContext ctx = null;
         try {
             ctx = new InitialDirContext(env);
