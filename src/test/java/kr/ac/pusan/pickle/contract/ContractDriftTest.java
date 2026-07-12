@@ -113,12 +113,39 @@ class ContractDriftTest {
             "POST /admin/routes/resync");
 
     /**
-     * Contract v0.4.0 (M4A HTTP publishing) operations not implemented yet.
-     * Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each
-     * entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
-     * empty again by the end of M4A — which it now is.
+     * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
+     * not implemented yet. Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime
+     * = IMPLEMENTED. Each entry moves to IMPLEMENTED as its endpoint lands,
+     * and PLANNED must be empty again by the end of M5.
+     *
+     * <p>Lane ownership — api-A: notifications/announcements/groups/activity/
+     * audit/settings; api-B: tasks/drift/summary/ip-allocations/delivery-log/
+     * period. Each lane moves only its own entries.</p>
      */
-    private static final Set<String> PLANNED = Set.of();
+    private static final Set<String> PLANNED = Set.of(
+            // api-A lane
+            "GET /notifications",
+            "GET /notifications/unread-count",
+            "POST /notifications/{notificationId}/read",
+            "POST /notifications/read-all",
+            "POST /admin/announcements",
+            "GET /admin/announcements",
+            "GET /admin/groups",
+            "GET /me/activity",
+            "GET /admin/audit",
+            "GET /admin/settings",
+            "PUT /admin/settings/{key}",
+            // api-B lane
+            "GET /admin/tasks",
+            "POST /admin/tasks/{taskId}/retry",
+            "GET /admin/drift-findings",
+            "POST /admin/drift-findings/{findingId}/resolve",
+            "GET /admin/summary",
+            "GET /admin/system-summary",
+            "GET /admin/ip-allocations",
+            "GET /admin/notifications",
+            "POST /admin/notifications/{notificationId}/resend",
+            "PATCH /admin/vms/{vmId}/period");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
