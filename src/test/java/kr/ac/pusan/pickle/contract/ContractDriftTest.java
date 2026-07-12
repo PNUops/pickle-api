@@ -98,15 +98,8 @@ class ContractDriftTest {
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}",
             "GET /admin/nodes",
-            "GET /admin/vms");
-
-    /**
-     * Contract v0.4.0 (M4A HTTP publishing) operations not implemented yet.
-     * Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each
-     * entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
-     * empty again by the end of M4A.
-     */
-    private static final Set<String> PLANNED = Set.of(
+            "GET /admin/vms",
+            // M4A HTTP publishing (contract v0.4.0).
             "POST /vms/{vmId}/publish",
             "PATCH /vms/{vmId}/publication",
             "DELETE /vms/{vmId}/publication",
@@ -118,6 +111,14 @@ class ContractDriftTest {
             "GET /admin/domains",
             "GET /admin/certificates",
             "POST /admin/routes/resync");
+
+    /**
+     * Contract v0.4.0 (M4A HTTP publishing) operations not implemented yet.
+     * Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each
+     * entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
+     * empty again by the end of M4A — which it now is.
+     */
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
