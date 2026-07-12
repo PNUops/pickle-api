@@ -123,7 +123,33 @@ class StaleTaskRecoveryJobTest {
         assertThat(enqueued("provisionVm", ownedVm)).isZero();
     }
 
+    @Test
+    void releasesStalePowerActionClaimButKeepsFreshOnes() {
+        // a crashed power worker left the claim set beyond the 10-minute cutoff
+        long staleVm = createVm("STOPPED");
+        jdbc.update("""
+                update vms set pending_power_action = 'START',
+                       pending_power_action_at = now() - interval '15 minutes' where id = ?
+                """, staleVm);
+        // an in-flight claim within the window must survive
+        long freshVm = createVm("RUNNING");
+        jdbc.update("""
+                update vms set pending_power_action = 'SHUTDOWN',
+                       pending_power_action_at = now() - interval '2 minutes' where id = ?
+                """, freshVm);
+
+        recoveryJob.recover();
+
+        assertThat(pendingAction(staleVm)).isNull();
+        assertThat(pendingAction(freshVm)).isEqualTo("SHUTDOWN");
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    private String pendingAction(long vmId) {
+        return jdbc.queryForObject("select pending_power_action from vms where id = ?",
+                String.class, vmId);
+    }
 
     private long createVm(String status) {
         long requestId = jdbc.queryForObject("""

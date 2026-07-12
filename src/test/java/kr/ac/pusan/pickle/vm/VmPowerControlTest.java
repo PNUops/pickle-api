@@ -13,7 +13,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
+import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
@@ -98,6 +107,9 @@ class VmPowerControlTest {
 
     @Autowired
     private VmPowerJobs vmPowerJobs;
+
+    @Autowired
+    private VmLifecycleService vmLifecycleService;
 
     private User owner;
     private User member;
@@ -246,6 +258,48 @@ class VmPowerControlTest {
         wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath("status/start"))));
     }
 
+    @Test
+    void concurrentDuplicateStartsClaimExactlyOnce() throws Exception {
+        long vmId = createVm(VmStatus.STOPPED);
+        AuthenticatedUser actor = new AuthenticatedUser(owner.getId(), owner.getEmail(),
+                owner.getRole(), owner.getOrgId());
+
+        int racers = 4;
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            List<Future<MessageResponse>> futures = IntStream.range(0, racers)
+                    .mapToObj(i -> pool.submit(() -> {
+                        start.await();
+                        return vmLifecycleService.start(actor, vmId);
+                    }))
+                    .toList();
+            start.countDown();
+
+            int accepted = 0;
+            int conflict = 0;
+            for (Future<MessageResponse> future : futures) {
+                try {
+                    future.get();
+                    accepted++;
+                } catch (ExecutionException e) {
+                    assertThat(e.getCause()).isInstanceOf(ApiException.class);
+                    assertThat(((ApiException) e.getCause()).getCode()).isEqualTo("VM_INVALID_STATE");
+                    conflict++;
+                }
+            }
+            // exactly one winner claims the slot; the rest 409
+            assertThat(accepted).isEqualTo(1);
+            assertThat(conflict).isEqualTo(racers - 1);
+            // and exactly one durable job was enqueued (after the winner committed)
+            assertThat(startJobsEnqueued(vmId)).isEqualTo(1);
+            // the claim is held until the worker releases it
+            assertThat(pendingActionOf(vmId)).isEqualTo("START");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private String qemuPath(String suffix) {
@@ -263,6 +317,20 @@ class VmPowerControlTest {
     private String statusDetailOf(long vmId) {
         return jdbcTemplate.queryForObject("select status_detail from vms where id = ?",
                 String.class, vmId);
+    }
+
+    private String pendingActionOf(long vmId) {
+        return jdbcTemplate.queryForObject("select pending_power_action from vms where id = ?",
+                String.class, vmId);
+    }
+
+    /** Durable start jobs enqueued for this vmId (vmid is the first serialized arg). */
+    private long startJobsEnqueued(long vmId) {
+        return jdbcTemplate.queryForObject("""
+                select count(*) from jobrunr_jobs
+                 where jobasjson like ? and jobasjson like ?
+                """, Long.class,
+                "%\"methodName\":\"start\"%", "%\"object\":" + vmId + "%");
     }
 
     private List<Object> lastEvent(long vmId) {
@@ -284,7 +352,13 @@ class VmPowerControlTest {
     }
 
     private void setStatus(long vmId, VmStatus status) {
-        jdbcTemplate.update("update vms set status = ?::vm_status where id = ?", status.name(), vmId);
+        // Also release any prior claim: each matrix row simulates a VM whose
+        // previous power action has already completed (C1 serialization).
+        jdbcTemplate.update("""
+                update vms set status = ?::vm_status,
+                       pending_power_action = null, pending_power_action_at = null
+                 where id = ?
+                """, status.name(), vmId);
     }
 
     /** One shared test node whose api_host points at this class's WireMock. */

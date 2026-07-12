@@ -77,8 +77,19 @@ public class VmPowerJobs {
         Vm vm = vmRepository.findById(vmId).orElse(null);
         if (vm == null) {
             log.warn("Power job {} skipped: vm {} not found", action, vmId);
-            return;
+            return; // no row → no claim to release
         }
+        // Release the start/shutdown/force-stop claim on every exit path so a
+        // finished (or skipped, or failed) action never bricks power controls.
+        // Reboot never set the claim, so this is a harmless no-op for it.
+        try {
+            run(action, vm, vmId, actorId);
+        } finally {
+            vmRepository.clearPowerActionClaim(vmId, Instant.now());
+        }
+    }
+
+    private void run(PowerAction action, Vm vm, long vmId, long actorId) {
         VmStatus from = vm.getStatus();
         if (!action.fromStatuses.contains(from)) {
             // Stale/duplicate enqueue, or the VM moved on (e.g. deletion won).

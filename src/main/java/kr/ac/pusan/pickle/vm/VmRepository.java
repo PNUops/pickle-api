@@ -76,6 +76,62 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int transitionStatus(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 
+    // --- power-action serialization (docs/plan/03; C1) -----------------------
+
+    /**
+     * Claims the single-writer power-action slot in one CAS: succeeds only
+     * when no action is already in flight and the status is an allowed source.
+     * Rapid duplicates therefore see exactly one success (1 row) and the rest
+     * a 409 (0 rows). The claimed action name is informational; the worker
+     * clears it on any exit path.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.pendingPowerAction = :action, v.pendingPowerActionAt = :now, v.updatedAt = :now
+             where v.id = :id and v.pendingPowerAction is null and v.status in :statuses
+            """)
+    int claimPowerAction(@Param("id") Long id, @Param("action") String action,
+            @Param("statuses") Collection<VmStatus> statuses, @Param("now") Instant now);
+
+    /**
+     * Reboot's intent: RUNNING → REBOOTING, but only when no other power action
+     * is claimed. Unlike {@link #claimPowerAction} it does NOT set
+     * pending_power_action — the visible REBOOTING status both serializes
+     * duplicate reboots and lets a force-stop target a hung reboot, and it
+     * keeps the status poller free to converge a crashed reboot job.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.status = :to, v.statusDetail = null, v.updatedAt = :now
+             where v.id = :id and v.status = :from and v.pendingPowerAction is null
+            """)
+    int claimReboot(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
+            @Param("now") Instant now);
+
+    /** Releases the power-action claim once the worker finishes (any exit path). */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.pendingPowerAction = null, v.pendingPowerActionAt = null, v.updatedAt = :now
+             where v.id = :id and v.pendingPowerAction is not null
+            """)
+    int clearPowerActionClaim(@Param("id") Long id, @Param("now") Instant now);
+
+    /** Crash recovery: frees power claims a dead worker never released. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.pendingPowerAction = null, v.pendingPowerActionAt = null, v.updatedAt = :now
+             where v.pendingPowerAction is not null and v.pendingPowerActionAt < :cutoff
+            """)
+    int clearStalePowerActionClaims(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
+
     // --- M3 pipeline column updates (single-writer: the provisioning job) ----
 
     /** Step 1 (place) confirms/overrides the node chosen at approval time. */
