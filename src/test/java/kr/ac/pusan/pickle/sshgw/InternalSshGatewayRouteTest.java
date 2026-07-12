@@ -32,7 +32,8 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * B1 internal SSH-gateway route endpoint (docs/api/internal.md Link 1): the
  * dedicated {@code /internal/**} filter chain (bearer + source-IP allowlist +
- * per-source rate limit) and the four route gates (global kill switch, VM
+ * global rate-limit backstop), the per-client (PROXY-recovered sourceIp) rate
+ * limit in the route service, and the four route gates (global kill switch, VM
  * exists / RUNNING / not blocked), plus that every lookup is audited with the
  * reported client source IP.
  */
@@ -45,12 +46,15 @@ class InternalSshGatewayRouteTest {
     private static final String TOKEN = "test-sshgw-token";
     private static final String SSHGW_IP = "172.30.1.30";
     private static final String CLIENT_IP = "203.0.113.7";
+    private static final String OTHER_CLIENT_IP = "198.51.100.9";
     private static final int RATE_LIMIT = 5;
+    private static final int GLOBAL_RATE_LIMIT = 12;
 
-    /** Small rate-limit budget so the limiter can be tripped in a short loop. */
+    /** Small rate-limit budgets so both limiters can be tripped in short loops. */
     @DynamicPropertySource
     static void sshgwProperties(DynamicPropertyRegistry registry) {
         registry.add("pickle.sshgw.rate-limit-per-minute", () -> RATE_LIMIT);
+        registry.add("pickle.sshgw.global-rate-limit-per-minute", () -> GLOBAL_RATE_LIMIT);
     }
 
     @Autowired
@@ -74,9 +78,9 @@ class InternalSshGatewayRouteTest {
 
     @BeforeEach
     void setUp() {
-        // Clean per-source rate window each test: the allowed source is fixed
-        // (allowlist), so counters would otherwise bleed across tests.
-        jdbcTemplate.update("delete from auth_rate_limits where scope = 'sshgw_route'");
+        // Clean the per-client and global rate windows each test: counters
+        // would otherwise bleed across tests.
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         setGatewayEnabled(true);
 
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
@@ -213,14 +217,44 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
-    void perSourceRateLimitTripsWith429() throws Exception {
+    void perClientRateLimitDoesNotLockOutOtherClients() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.18", false);
 
+        // One abusive client exhausts ITS bucket …
         for (int i = 0; i < RATE_LIMIT; i++) {
             route(slug, CLIENT_IP, SSHGW_IP, TOKEN).andExpect(status().isOk());
         }
         route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+                .andExpect(header().exists("Retry-After"));
+        // … and the denial is audited with the abuser's IP and a reason.
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select ip, detail::text as detail from audit_logs
+                 where action = 'sshgw.route_denied' order by id desc limit 1
+                """);
+        assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
+        assertThat((String) row.get("detail")).contains("RATE_LIMITED");
+
+        // A DIFFERENT client keeps logging in — no global lockout (the pre-fix
+        // peer-keyed bucket 429ed every student once one abuser hit the relay).
+        route(slug, OTHER_CLIENT_IP, SSHGW_IP, TOKEN)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ip").value("172.29.4.18"));
+    }
+
+    @Test
+    void globalBackstopStillBoundsAFloodAcrossManySourceIps() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.19", false);
+
+        // Distinct sourceIps stay under every per-client bucket, so only the
+        // filter's global backstop can (and must) bound the total volume.
+        for (int i = 0; i < GLOBAL_RATE_LIMIT; i++) {
+            route(slug, "203.0.113." + (100 + i), SSHGW_IP, TOKEN).andExpect(status().isOk());
+        }
+        route(slug, "203.0.113.250", SSHGW_IP, TOKEN)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
                 .andExpect(header().exists("Retry-After"));

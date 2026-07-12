@@ -8,7 +8,10 @@ package kr.ac.pusan.pickle.publishing.agent;
  *   <li>{@code STALE} — 409, our generation ≤ the agent's applied one; the job
  *       treats this as "superseded, no-op";</li>
  *   <li>{@code FAILED} — 422, render/{@code nginx -t}/reload failure ({@code error}
- *       carries the nginx stderr).</li>
+ *       carries the nginx stderr) — a definitive agent answer, retrying the same
+ *       config cannot succeed;</li>
+ *   <li>{@code TRANSPORT} — no HTTP response at all (agent unreachable, timeout).
+ *       Says nothing about the config: safe and worthwhile to retry.</li>
  * </ul>
  */
 public record ApplyOutcome(Kind kind, Long generation, String error) {
@@ -16,7 +19,8 @@ public record ApplyOutcome(Kind kind, Long generation, String error) {
     public enum Kind {
         APPLIED,
         STALE,
-        FAILED
+        FAILED,
+        TRANSPORT
     }
 
     public static ApplyOutcome applied(Long generation) {
@@ -29,5 +33,9 @@ public record ApplyOutcome(Kind kind, Long generation, String error) {
 
     public static ApplyOutcome failed(String error) {
         return new ApplyOutcome(Kind.FAILED, null, error);
+    }
+
+    public static ApplyOutcome transport(String error) {
+        return new ApplyOutcome(Kind.TRANSPORT, null, error);
     }
 }

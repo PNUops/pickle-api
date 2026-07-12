@@ -87,6 +87,9 @@ public class ResyncRoutesJob {
             // so the routes keep their (still accurate) prior status — flipping
             // them FAILED would misreport every healthy vhost.
             case FAILED -> log.error("route-resync failed, agent tree unchanged: {}", outcome.error());
+            // Agent unreachable: nothing changed either; the admin re-triggers,
+            // and per-route drift self-heals via RouteReconcileJob.
+            case TRANSPORT -> log.error("route-resync transport failure: {}", outcome.error());
         }
         log.info("route-resync pushed {} routes (outcome {})", manifest.size(), outcome.kind());
     }

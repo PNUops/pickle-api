@@ -153,10 +153,11 @@ public class ProxyAgentClient {
                         };
                     });
         } catch (ResourceAccessException e) {
-            // Connection refused/reset, timeout … — no HTTP response. Surface as a
-            // FAILED outcome so the job records it on the route (retryable).
+            // Connection refused/reset, timeout … — no HTTP response. Distinct
+            // from a 422 FAILED: the config was never judged, so callers may
+            // retry (JobRunr transport retry + the recurring route reconciler).
             log.warn("proxy-agent transport failure on POST {}: {}", path, e.getMessage());
-            return ApplyOutcome.failed("proxy-agent 연결 실패: " + e.getMessage());
+            return ApplyOutcome.transport("proxy-agent 연결 실패: " + e.getMessage());
         }
     }
 

@@ -5,6 +5,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -14,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import com.github.tomakehurst.wiremock.http.Fault;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
+import kr.ac.pusan.pickle.publishing.agent.ProxyAgentUnreachableException;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
@@ -96,6 +99,8 @@ class PublishingTest {
     private RouteApplyJob routeApplyJob;
     @Autowired
     private ResyncRoutesJob resyncRoutesJob;
+    @Autowired
+    private RouteReconcileJob routeReconcileJob;
     @Autowired
     private DeleteVmJob deleteVmJob;
     @Autowired
@@ -523,6 +528,160 @@ class PublishingTest {
         }
         assertThat(cert).isNotNull();
         assertThat(cert.get("daysUntilExpiry").isNull()).isTrue();
+    }
+
+    // ── transport-failure retry + recurring reconcile (M4 hardening) ─────────
+
+    /**
+     * Marks every existing route confirmed so a reconcile-cycle test only sees
+     * the routes it creates itself (the recurring job scans the whole shared
+     * test DB, where earlier tests leave unconfirmed REMOVED rows behind).
+     */
+    private void settleAllRoutes() {
+        jdbcTemplate.update("""
+                update routes set applied_generation = generation
+                 where applied_generation is null or applied_generation < generation
+                """);
+    }
+
+    @Test
+    void unpublishWithUnreachableAgentIsReconciledToAbsent() throws Exception {
+        settleAllRoutes();
+        long vmId = publishableVm(true, "team-recon", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+
+        // Agent goes dark, then the student unpublishes: the DB flips to REMOVED
+        // (tombstone/UI say "unpublished") while nginx would keep serving.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
+        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+
+        // The enqueued apply hits the transport failure: it records the error,
+        // keeps the desired REMOVED state, and throws so JobRunr retries it.
+        assertThatThrownBy(() -> routeApplyJob.apply(routeId))
+                .isInstanceOf(ProxyAgentUnreachableException.class);
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("select last_error from routes where id = ?",
+                String.class, routeId)).contains("연결 실패");
+
+        // Agent back up. Within the settle grace the reconciler leaves the route
+        // to its own retry …
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(100_000)));
+        routeReconcileJob.run();
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
+
+        // … past the grace it re-pushes ABSENT and the removal is confirmed.
+        jdbcTemplate.update(
+                "update routes set updated_at = now() - interval '5 minutes' where id = ?", routeId);
+        routeReconcileJob.run();
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("ABSENT"))));
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation >= generation from routes where id = ?
+                """, Boolean.class, routeId)).isTrue();
+
+        // Confirmed → the next cycle has nothing left to push.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(100_001)));
+        jdbcTemplate.update(
+                "update routes set updated_at = now() - interval '5 minutes' where id = ?", routeId);
+        routeReconcileJob.run();
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
+    }
+
+    @Test
+    void publishWithUnreachableAgentStaysPendingAndIsReconciledToPresent() throws Exception {
+        settleAllRoutes();
+        long vmId = publishableVm(true, "team-recon2", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
+
+        // Transport failure is NOT a FAILED verdict: the route stays PENDING
+        // (retryable), never falsely "rejected".
+        assertThatThrownBy(() -> routeApplyJob.apply(routeId))
+                .isInstanceOf(ProxyAgentUnreachableException.class);
+        assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(100_002)));
+        jdbcTemplate.update(
+                "update routes set updated_at = now() - interval '5 minutes' where id = ?", routeId);
+        routeReconcileJob.run();
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("PRESENT"))));
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+    }
+
+    @Test
+    void reconcilerSkipsConfirmedAndAgentRejectedRoutes() throws Exception {
+        settleAllRoutes();
+        // Confirmed APPLIED route: nothing to reconcile.
+        long appliedVm = publishableVm(true, "team-recon3", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(appliedVm, "{\"port\":80}").andExpect(status().isAccepted());
+        long appliedRoute = routeIdForVm(appliedVm);
+        routeApplyJob.apply(appliedRoute);
+        assertThat(routeStatus(appliedRoute)).isEqualTo("APPLIED");
+
+        // 422-FAILED route: a definitive agent verdict — re-pushing the same
+        // config every cycle would thrash; recovery stays re-publish/resync.
+        long failedVm = publishableVm(true, "team-recon4", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(failedVm, "{\"port\":80}").andExpect(status().isAccepted());
+        long failedRoute = routeIdForVm(failedVm);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withStatus(422)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"applied\":false,\"error\":\"nginx: [emerg] boom\"}")));
+        routeApplyJob.apply(failedRoute);
+        assertThat(routeStatus(failedRoute)).isEqualTo("FAILED");
+
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(100_003)));
+        jdbcTemplate.update("update routes set updated_at = now() - interval '5 minutes'"
+                + " where id in (?, ?)", appliedRoute, failedRoute);
+        routeReconcileJob.run();
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
+    }
+
+    @Test
+    void unreachableAgentOnTeardownBlocksDeletionAndIpRelease() throws Exception {
+        long vmId = publishableVm(true, "team-delnet", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        routeApplyJob.apply(routeIdForVm(vmId));
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
+
+        deleteVmJob.deleteVm(vmId);
+
+        // TRANSPORT (agent unreachable) must block IP release exactly like a 422:
+        // the vhost removal is unconfirmed either way.
+        assertThat(jdbcTemplate.queryForObject("select status from vms where id = ?",
+                String.class, vmId)).isEqualTo("DELETING");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from ip_allocations where vm_id = ? and status = 'ALLOCATED'
+                """, Long.class, vmId)).isEqualTo(1);
     }
 
     @Test
