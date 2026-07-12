@@ -80,7 +80,7 @@ public class GroupService {
             throw slugDuplicate(request.slug());
         }
         groupMemberRepository.save(new GroupMember(group, actor.id(), GroupMemberRole.OWNER));
-        auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_CREATE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_CREATE,
                 "group", group.getId(),
                 Map.of("kind", group.getKind().name(), "name", group.getName(), "slug", group.getSlug()), ip);
         return toDetail(group, GroupMemberRole.OWNER);
@@ -147,7 +147,7 @@ public class GroupService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_MEMBER_ALREADY_EXISTS,
                     "이미 그룹 멤버입니다", "해당 사용자는 이미 이 그룹의 멤버입니다.");
         }
-        auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_ADD,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_ADD,
                 "group", groupId,
                 Map.of("userId", target.getId(), "email", target.getEmail(), "role", member.getRole().name()), ip);
         return GroupMemberResponse.from(member, target);
@@ -179,10 +179,11 @@ public class GroupService {
             target.setRole(request.role());
         }
 
-        // Load the response projection before the REQUIRES_NEW audit write so a
-        // failure here cannot leave an audit row for a rolled-back change.
+        // The audit is deferred to after commit (recordAfterCommit), so a
+        // failure anywhere in this method leaves no audit row for a change that
+        // never committed.
         User targetUser = userRepository.findById(targetUserId).orElseThrow(GroupService::memberNotFound);
-        auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_UPDATE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_UPDATE,
                 "group", groupId,
                 Map.of("userId", targetUserId, "previousRole", previousRole.name(),
                         "role", target.getRole().name(), "ownershipTransfer", ownershipTransfer), ip);
@@ -211,7 +212,7 @@ public class GroupService {
         }
 
         groupMemberRepository.delete(target);
-        auditService.record(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_REMOVE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_REMOVE,
                 "group", groupId,
                 Map.of("userId", targetUserId, "previousRole", target.getRole().name(),
                         "selfLeave", selfLeave), ip);

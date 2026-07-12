@@ -126,7 +126,7 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, actor.id(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
-        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "scheduledFor", scheduledFor.toString()), ip);
 
@@ -149,7 +149,7 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
                 "생성 실패(ERROR) 상태 VM 즉시 삭제 — 유예 없음"));
-        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "immediate", true), ip);
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.id(), null, false);
@@ -179,7 +179,7 @@ public class VmDeletionService {
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
                 "관리자 삭제 예약 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
-        auditService.record(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
@@ -219,7 +219,7 @@ public class VmDeletionService {
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "셀프 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 예약 취소"));
-        auditService.record(actor.id(), actor.role().name(),
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
                 Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "canceledKind", vm.getDeleteKind().name()), ip);
@@ -247,7 +247,7 @@ public class VmDeletionService {
         failLiveProvisionTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.EMERGENCY_DELETE, actor.id(),
                 "긴급 삭제 접수 — 즉시 강제 종료 후 파기"));
-        auditService.record(actor.id(), actor.role().name(), AuditService.VM_EMERGENCY_DELETE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_EMERGENCY_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId()), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
