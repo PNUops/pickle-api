@@ -68,7 +68,10 @@ public class PublishingTeardownService {
         List<Long> routeIds = transactionTemplate.execute(tx -> markPublicationsRemoved(vmId));
         List<String> failures = new ArrayList<>();
         for (long routeId : routeIds) {
-            if (routeApplyJob.applyNow(routeId) == ApplyOutcome.Kind.FAILED) {
+            ApplyOutcome.Kind kind = routeApplyJob.applyNow(routeId);
+            // FAILED (agent rejected) and TRANSPORT (agent unreachable, removal
+            // unconfirmed) both block the deletion from releasing the IP.
+            if (kind == ApplyOutcome.Kind.FAILED || kind == ApplyOutcome.Kind.TRANSPORT) {
                 failures.add(String.valueOf(routeId));
             }
         }
