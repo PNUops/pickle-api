@@ -110,7 +110,10 @@ class ContractDriftTest {
             "GET /admin/routes",
             "GET /admin/domains",
             "GET /admin/certificates",
-            "POST /admin/routes/resync");
+            "POST /admin/routes/resync",
+            // M5 api-A (contract v0.5.0).
+            "GET /admin/settings",
+            "PUT /admin/settings/{key}");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -133,8 +136,6 @@ class ContractDriftTest {
             "GET /admin/groups",
             "GET /me/activity",
             "GET /admin/audit",
-            "GET /admin/settings",
-            "PUT /admin/settings/{key}",
             // api-B lane
             "GET /admin/tasks",
             "POST /admin/tasks/{taskId}/retry",
