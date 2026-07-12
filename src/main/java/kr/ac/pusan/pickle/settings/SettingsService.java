@@ -21,6 +21,7 @@ public class SettingsService {
     public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";
     public static final String VM_DELETE_GRACE_HOURS = "vm_delete_grace_hours";
     public static final String ADMIN_DELETE_MIN_NOTICE_DAYS = "admin_delete_min_notice_days";
+    public static final String SSH_GATEWAY_ENABLED = "ssh_gateway_enabled";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -51,6 +52,12 @@ public class SettingsService {
     public int integer(String key, int fallback) {
         JsonNode node = read(key);
         return node != null && node.isNumber() ? node.asInt() : fallback;
+    }
+
+    /** The setting as a boolean, or {@code fallback} when missing/non-boolean. */
+    public boolean bool(String key, boolean fallback) {
+        JsonNode node = read(key);
+        return node != null && node.isBoolean() ? node.asBoolean() : fallback;
     }
 
     private JsonNode read(String key) {

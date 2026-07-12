@@ -16,6 +16,9 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     boolean existsByHostname(String hostname);
 
+    /** SSH gateway route resolution: the VM a client slug (hostname) maps to. */
+    java.util.Optional<Vm> findByHostname(String hostname);
+
     Page<Vm> findByGroupIdIn(Collection<Long> groupIds, Pageable pageable);
 
     Page<Vm> findByGroupId(Long groupId, Pageable pageable);

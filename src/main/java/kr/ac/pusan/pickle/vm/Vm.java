@@ -69,6 +69,14 @@ public class Vm {
     @Column(name = "ssh_username", nullable = false)
     private String sshUsername = "student";
 
+    /**
+     * Per-VM SSH gateway block (docs/plan/05 kill switch): when true the route
+     * endpoint denies SSH for this VM alone, leaving the global switch and other
+     * VMs untouched. Set on member removal / suspected compromise (V13).
+     */
+    @Column(name = "ssh_gateway_blocked", nullable = false)
+    private boolean sshGatewayBlocked = false;
+
     @Column(name = "start_date")
     private LocalDate startDate;
 
@@ -216,6 +224,10 @@ public class Vm {
 
     public String getSshUsername() {
         return sshUsername;
+    }
+
+    public boolean isSshGatewayBlocked() {
+        return sshGatewayBlocked;
     }
 
     public LocalDate getStartDate() {
