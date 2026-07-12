@@ -130,8 +130,16 @@ public class ApprovalService {
                 && form.grantedEndDate().isBefore(form.grantedStartDate())) {
             errors.add(new FieldValidationError("grantedEndDate", "종료일은 시작일 이후여야 합니다."));
         }
-        if (form.nodeId() != null && !nodeRepository.existsById(form.nodeId())) {
-            errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
+        if (form.nodeId() != null) {
+            if (!nodeRepository.existsById(form.nodeId())) {
+                errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
+            } else if (template != null && !templateRepository.existsByNameAndNodeIdAndStatus(
+                    template.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
+                // Forced node must host the granted template — the M3 pipeline
+                // clones the template on the placed node, so a node without it
+                // guarantees a mid-pipeline clone failure (finding A3).
+                errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
+            }
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);

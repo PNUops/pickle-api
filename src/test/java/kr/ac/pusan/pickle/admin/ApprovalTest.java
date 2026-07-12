@@ -247,6 +247,33 @@ class ApprovalTest {
     }
 
     @Test
+    void approveRejectsForcedNodeWithoutTheGrantedTemplate() throws Exception {
+        long groupId = createTeam(studentToken, "appr-node-x1");
+        long requestId = submit(studentToken, groupId);
+
+        // a second ACTIVE node that hosts none of the seeded templates
+        long emptyNodeId = jdbcTemplate.queryForObject("""
+                insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)
+                values (?, 'https://172.30.0.9:8006', 8, 16384, 'vmbr2', 'local-lvm')
+                returning id
+                """, Long.class, "appr-empty-" + java.util.UUID.randomUUID().toString().substring(0, 8));
+
+        // forcing that node → 422 (the pipeline would clone-fail there otherwise)
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "nodeId", emptyNodeId))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("nodeId"));
+
+        // the request is untouched — forcing the seeded pve1 (hosts the template) approves
+        long pve1 = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "nodeId", pve1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.review.nodeId").isNumber());
+    }
+
+    @Test
     void rejectRequiresCommentAndDecidesOnce() throws Exception {
         long groupId = createTeam(studentToken, "appr-reject-x1");
         long requestId = submit(studentToken, groupId);
