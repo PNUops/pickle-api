@@ -16,6 +16,7 @@ public class SettingsService {
 
     public static final String ALLOWED_ROOT_DOMAINS = "allowed_root_domains";
     public static final String RESERVED_SUBDOMAINS = "reserved_subdomains";
+    public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
     public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";

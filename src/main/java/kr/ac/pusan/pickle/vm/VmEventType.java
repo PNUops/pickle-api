@@ -13,5 +13,9 @@ public enum VmEventType {
     /** Admin scheduled a routine delete (audit trail, contract v0.3.x). */
     SCHEDULE_DELETE,
     /** Admin canceled a scheduled delete before it ran. */
-    CANCEL_SCHEDULED_DELETE
+    CANCEL_SCHEDULED_DELETE,
+    /** HTTP service publish accepted (route/domain created — M4A). */
+    PUBLISH,
+    /** HTTP service publish revoked (route removed — M4A). */
+    UNPUBLISH
 }
