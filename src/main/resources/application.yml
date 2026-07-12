@@ -69,6 +69,13 @@ pickle:
     # until the sshgw lands (M4, docs/plan/05).
     advertised-host: ${PICKLE_SSH_HOST:}
     advertised-port: ${PICKLE_SSH_PORT:0}
+  sshgw:
+    # Internal route endpoint (docs/api/internal.md Link 1). No token default
+    # outside dev/test: when blank the /internal filter chain fails closed
+    # (rejects every request) instead of trusting an empty bearer.
+    token: ${PICKLE_SSHGW_TOKEN:}
+    allowed-source-ip: ${PICKLE_SSHGW_SOURCE_IP:172.30.1.30}
+    rate-limit-per-minute: ${PICKLE_SSHGW_RATE_LIMIT:60}
   seed:
     sysadmin-email: ${PICKLE_SEED_SYSADMIN_EMAIL:admin@pickle.local}
     sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:pickle-sysadmin-dev!}
