@@ -23,6 +23,11 @@ public final class ErrorCodes {
     public static final String VM_INVALID_STATE = "VM_INVALID_STATE";
     public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";
     public static final String VM_PASSWORD_ALREADY_VIEWED = "VM_PASSWORD_ALREADY_VIEWED";
+    // HTTP publishing (M4A, contract tag publishing).
+    public static final String VM_HTTP_NOT_GRANTED = "VM_HTTP_NOT_GRANTED";
+    public static final String PUBLICATION_ALREADY_EXISTS = "PUBLICATION_ALREADY_EXISTS";
+    public static final String DOMAIN_FQDN_TAKEN = "DOMAIN_FQDN_TAKEN";
+    public static final String DOMAIN_NOT_CUSTOM = "DOMAIN_NOT_CUSTOM";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

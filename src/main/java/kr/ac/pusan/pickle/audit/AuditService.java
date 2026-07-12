@@ -42,6 +42,13 @@ public class AuditService {
     public static final String VM_EMERGENCY_DELETE = "vm.emergency_delete";
     /** One-shot initial-password reveal — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password.reveal";
+    // HTTP publishing (M4A, docs/plan/06).
+    public static final String VM_PUBLISH = "vm.publish";
+    public static final String VM_PUBLICATION_UPDATE = "vm.publication_update";
+    public static final String VM_UNPUBLISH = "vm.unpublish";
+    public static final String DOMAIN_DELETE = "domain.delete";
+    public static final String DOMAIN_VERIFY = "domain.verify";
+    public static final String ROUTE_RESYNC = "route.resync";
     /** SSH gateway route resolved (docs/api/internal.md Link 1). */
     public static final String SSHGW_ROUTE = "sshgw.route";
     /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). */

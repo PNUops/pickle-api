@@ -13,7 +13,13 @@ import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
+import kr.ac.pusan.pickle.publishing.DomainRepository;
+import kr.ac.pusan.pickle.publishing.DomainStatus;
+import kr.ac.pusan.pickle.publishing.PublicationAssembler;
+import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
+import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
 import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
@@ -48,17 +54,24 @@ public class VmQueryService {
     private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final VmEventRepository vmEventRepository;
+    private final VmRequestReviewRepository reviewRepository;
+    private final DomainRepository domainRepository;
+    private final PublicationAssembler publicationAssembler;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             GroupRepository groupRepository, IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
-            VmEventRepository vmEventRepository) {
+            VmEventRepository vmEventRepository, VmRequestReviewRepository reviewRepository,
+            DomainRepository domainRepository, PublicationAssembler publicationAssembler) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupRepository = groupRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.vmEventRepository = vmEventRepository;
+        this.reviewRepository = reviewRepository;
+        this.domainRepository = domainRepository;
+        this.publicationAssembler = publicationAssembler;
     }
 
     @Transactional(readOnly = true)
@@ -95,7 +108,15 @@ public class VmQueryService {
                 .filter(task -> task.getStatus() != ProvisioningTaskStatus.DONE)
                 .map(ProvisioningTaskResponse::from)
                 .orElse(null);
-        return VmDetailResponse.from(vm, groupName, ipAddress, provisioning);
+        boolean httpPublishGranted = reviewRepository.findByRequestId(vm.getRequestId())
+                .map(VmRequestReview::getGrantHttp)
+                .orElse(false) == Boolean.TRUE;
+        PublicationView publication = domainRepository
+                .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
+                .map(publicationAssembler::toPublication)
+                .orElse(null);
+        return VmDetailResponse.from(vm, groupName, ipAddress, provisioning, httpPublishGranted,
+                publication);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */
