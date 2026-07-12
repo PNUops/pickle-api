@@ -51,6 +51,17 @@ public class PublicationAssembler {
         return new PublicationView(domain.getFqdn(), toDomainDetail(domain), route, certificate);
     }
 
+    /**
+     * Whether the domain has a live (non-REMOVED) route — i.e. is actually
+     * published. A custom-domain row kept by unpublish (verification state
+     * preserved) has none and must NOT surface as a publication: the contract
+     * requires {@code PublicationView.route}.
+     */
+    public boolean hasLiveRoute(Domain domain) {
+        return routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                .isPresent();
+    }
+
     /** The certificate backing a domain: shared wildcard (platform) or LE (custom). */
     public Optional<Certificate> certificateFor(Domain domain) {
         if (domain.getKind() == DomainKind.CUSTOM) {

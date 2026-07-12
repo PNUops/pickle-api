@@ -114,14 +114,35 @@ public class PublishingService {
         Vm vm = requireVmManager(actor, vmId);
         requireHttpGranted(vm);
         requirePublishableState(vm);
-        if (domainRepository.findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
+        Domain existing = domainRepository
+                .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
+                .orElse(null);
+        if (existing != null && routeRepository
+                .findFirstByDomainIdAndStatusNot(existing.getId(), RouteStatus.REMOVED)
                 .isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PUBLICATION_ALREADY_EXISTS,
                     "이미 공개된 VM입니다",
                     "이 VM은 이미 HTTP 서비스가 공개되어 있습니다. 포트·도메인을 바꾸려면 공개 설정을 수정해 주세요.");
         }
         int resolvedPort = validatePort(port);
-        Domain domain = createPublication(vm, resolvedPort, Texts.blankToNull(customDomain));
+        String requestedCustom = Texts.blankToNull(customDomain);
+        Domain domain;
+        if (existing != null) {
+            // A domain row without a live route is an unpublish tombstone (a custom
+            // row kept for its verification state) — the VM is NOT published
+            // (contract: PublicationView.route is required, VmDetail.publication is
+            // null when unpublished). Re-publishing the same custom FQDN revives the
+            // row (verification preserved); any other target retires it first.
+            if (existing.getKind() == DomainKind.CUSTOM && requestedCustom != null
+                    && existing.getFqdn().equals(requestedCustom.toLowerCase(Locale.ROOT))) {
+                domain = revive(existing, resolvedPort);
+            } else {
+                retire(existing);
+                domain = createPublication(vm, resolvedPort, requestedCustom);
+            }
+        } else {
+            domain = createPublication(vm, resolvedPort, requestedCustom);
+        }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(), domain.getFqdn()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_PUBLISH,
                 "vm", vmId, Map.of("fqdn", domain.getFqdn(), "port", resolvedPort,
@@ -140,6 +161,11 @@ public class PublishingService {
         Domain current = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
                 .orElseThrow(PublishingService::publicationNotFound);
+        // An unpublish tombstone (no live route) is not a publication — 404, same
+        // as a VM that was never published.
+        Route liveRoute = routeRepository
+                .findFirstByDomainIdAndStatusNot(current.getId(), RouteStatus.REMOVED)
+                .orElseThrow(PublishingService::publicationNotFound);
         requirePublishableState(vm);
 
         Domain result;
@@ -148,19 +174,13 @@ public class PublishingService {
             // cert archived) and create the new target (custom FQDN, or revert to
             // the platform subdomain when customDomain is null).
             String newCustom = Texts.blankToNull(customDomain);
-            int currentPort = routeRepository
-                    .findFirstByDomainIdAndStatusNot(current.getId(), RouteStatus.REMOVED)
-                    .map(Route::getTargetPort)
-                    .orElse(80);
-            int resolvedPort = port != null ? validatePort(port) : currentPort;
+            int resolvedPort = port != null ? validatePort(port) : liveRoute.getTargetPort();
             teardown(current, /* archiveCustomCert */ true);
             result = createPublication(vm, resolvedPort, newCustom);
         } else {
             int resolvedPort = validatePort(port);
             result = current;
-            Route route = routeRepository
-                    .findFirstByDomainIdAndStatusNot(current.getId(), RouteStatus.REMOVED)
-                    .orElseGet(() -> new Route(current.getId(), resolvedPort, routeGenerations.next()));
+            Route route = liveRoute;
             route.setTargetPort(resolvedPort);
             route.setGeneration(routeGenerations.next());
             route.setStatus(RouteStatus.PENDING);
@@ -182,7 +202,13 @@ public class PublishingService {
         requireVmManager(actor, vmId);
         Domain domain = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
-                .orElseThrow(PublishingService::vmNotFound);
+                .orElseThrow(PublishingService::publicationNotFound);
+        if (routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                .isEmpty()) {
+            // Tombstone (custom row kept after a previous unpublish): the VM is
+            // already unpublished — contract: 404.
+            throw publicationNotFound();
+        }
         // Unpublish keeps a custom domain's row (verification state preserved),
         // removing only its route; AUTO/REQUESTED rows are cleaned up.
         teardown(domain, /* archiveCustomCert */ false);
@@ -283,6 +309,40 @@ public class PublishingService {
         }
         return Domain.platform(vm.getId(), DomainKind.AUTO, generateAutoFqdn(vm.getGroupId(), rootDomain),
                 rootDomain);
+    }
+
+    /**
+     * Re-publishes onto an unpublish tombstone of the SAME custom FQDN: a fresh
+     * route (bumped generation), a live cert row if the old one was revoked, and
+     * the apply/verify hand-off per the domain's preserved verification state.
+     */
+    private Domain revive(Domain domain, int port) {
+        if (certificateRepository
+                .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED)
+                .isEmpty()) {
+            certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
+        }
+        Route route = routeRepository.findFirstByDomainId(domain.getId())
+                .orElseGet(() -> new Route(domain.getId(), port, routeGenerations.next()));
+        route.setTargetPort(port);
+        route.setGeneration(routeGenerations.next());
+        route.setStatus(RouteStatus.PENDING);
+        route.setLastError(null);
+        long routeId = routeRepository.save(route).getId();
+        long domainId = domain.getId();
+        if (domain.getStatus() == DomainStatus.ACTIVE) {
+            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+        } else {
+            enqueueAfterCommit(() -> domainVerificationJob.verify(domainId));
+        }
+        return domain;
+    }
+
+    /** Retires a tombstone whose FQDN is not being re-published (cert archived). */
+    private void retire(Domain domain) {
+        domain.setStatus(DomainStatus.REMOVED);
+        certificateRepository.findByDomainId(domain.getId())
+                .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
     }
 
     /** Removes the live route (ABSENT apply) and cleans up the domain/cert per kind. */

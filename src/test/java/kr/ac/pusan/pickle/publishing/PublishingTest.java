@@ -347,6 +347,66 @@ class PublishingTest {
     }
 
     @Test
+    void customDomainUnpublishLeavesVmCleanlyRepublishable() throws Exception {
+        long vmId = publishableVm(true, "team-tomb", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        String token = jdbcTemplate.queryForObject(
+                "select verification_token from domains where id = ?", String.class, domainId);
+
+        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        // The custom row survives as a tombstone (verification state preserved) …
+        assertThat(domainStatus(domainId)).isEqualTo("PENDING");
+        // … but the VM is NOT published: detail shows publication null (the
+        // contract requires PublicationView.route — no route-less publication).
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publication").value((Object) null));
+        // Re-unpublish and PATCH answer 404 (contract: unpublished VM).
+        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
+                .andExpect(status().isNotFound());
+
+        // Re-publish of the SAME custom FQDN revives the tombstone — no 409, the
+        // row (and its verification token) is reused.
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.fqdn").value(fqdn));
+        assertThat(domainIdForVm(vmId)).isEqualTo(domainId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select verification_token from domains where id = ?", String.class, domainId))
+                .isEqualTo(token);
+        assertThat(routeStatus(routeIdForVm(vmId))).isEqualTo("PENDING");
+    }
+
+    @Test
+    void platformPublishAfterCustomUnpublishRetiresTombstone() throws Exception {
+        long vmId = publishableVm(true, "team-tomb2", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long tombstoneId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+
+        // Publishing a different target (platform subdomain) retires the tombstone.
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.fqdn").value("team-tomb2.pickle.pnuops.com"));
+        assertThat(domainStatus(tombstoneId)).isEqualTo("REMOVED");
+        assertThat(domainIdForVm(vmId)).isNotEqualTo(tombstoneId);
+    }
+
+    @Test
     void portOnlyUpdateReappliesSameDomain() throws Exception {
         long vmId = publishableVm(true, "team-port", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());

@@ -113,6 +113,8 @@ public class VmQueryService {
                 .orElse(false) == Boolean.TRUE;
         PublicationView publication = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
+                // an unpublish tombstone (custom row, no live route) is not published
+                .filter(publicationAssembler::hasLiveRoute)
                 .map(publicationAssembler::toPublication)
                 .orElse(null);
         return VmDetailResponse.from(vm, groupName, ipAddress, provisioning, httpPublishGranted,
