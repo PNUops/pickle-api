@@ -5,8 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.ipam.IpAllocation;
-import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
+import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.sshgw.dto.RouteResponse;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -38,14 +37,14 @@ public class SshGatewayRouteService {
     private static final int UPSTREAM_SSH_PORT = 22;
 
     private final VmRepository vmRepository;
-    private final IpAllocationRepository ipAllocationRepository;
+    private final IpAddressResolver ipAddressResolver;
     private final SettingsService settingsService;
     private final AuditService auditService;
 
-    public SshGatewayRouteService(VmRepository vmRepository, IpAllocationRepository ipAllocationRepository,
+    public SshGatewayRouteService(VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             SettingsService settingsService, AuditService auditService) {
         this.vmRepository = vmRepository;
-        this.ipAllocationRepository = ipAllocationRepository;
+        this.ipAddressResolver = ipAddressResolver;
         this.settingsService = settingsService;
         this.auditService = auditService;
     }
@@ -98,10 +97,12 @@ public class SshGatewayRouteService {
                     slug, vm.getId(), sourceIp, gatewayPeer);
         }
 
-        String ip = upstreamIp(vm);
+        // SSRF belt-and-suspenders (docs/plan/07): resolve strictly through the
+        // owned + ALLOCATED guard, so a stale/reclaimed allocation pointer can
+        // never route this slug to a different VM's address. The RUNNING gate
+        // already implies a live allocation; this makes it defence in depth.
+        String ip = ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vm.getId());
         if (ip == null) {
-            // RUNNING VM with no live allocation should not happen; deny rather
-            // than pipe to a null/stale target.
             return deny(RouteOutcome.forbidden(ErrorCodes.SSHGW_ROUTE_NO_ADDRESS),
                     slug, vm.getId(), sourceIp, gatewayPeer);
         }
@@ -110,16 +111,6 @@ public class SshGatewayRouteService {
         auditService.record(null, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_ROUTE,
                 "vm", vm.getId(), detail(slug, sourceIp, gatewayPeer, null), sourceIp);
         return RouteOutcome.granted(route);
-    }
-
-    private String upstreamIp(Vm vm) {
-        Long allocationId = vm.getIpAllocationId();
-        if (allocationId == null) {
-            return null;
-        }
-        return ipAllocationRepository.findById(allocationId)
-                .map(IpAllocation::getIp)
-                .orElse(null);
     }
 
     private RouteOutcome deny(RouteOutcome outcome, String slug, Long vmId,

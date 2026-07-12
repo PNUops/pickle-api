@@ -2,7 +2,6 @@ package kr.ac.pusan.pickle.vm;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -11,9 +10,7 @@ import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupRepository;
-import kr.ac.pusan.pickle.ipam.AllocationStatus;
-import kr.ac.pusan.pickle.ipam.IpAllocation;
-import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
+import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -48,18 +45,18 @@ public class VmQueryService {
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final GroupRepository groupRepository;
-    private final IpAllocationRepository ipAllocationRepository;
+    private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final VmEventRepository vmEventRepository;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            GroupRepository groupRepository, IpAllocationRepository ipAllocationRepository,
+            GroupRepository groupRepository, IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
             VmEventRepository vmEventRepository) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupRepository = groupRepository;
-        this.ipAllocationRepository = ipAllocationRepository;
+        this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.vmEventRepository = vmEventRepository;
     }
@@ -133,20 +130,10 @@ public class VmQueryService {
     /**
      * The live address only: released/quarantined allocations show as null,
      * and an allocation re-claimed by another VM (stale pointer left by a
-     * crashed release) is never shown as this VM's address.
+     * crashed release) is never shown as this VM's address (shared owned +
+     * ALLOCATED guard, {@link IpAddressResolver}).
      */
     private String liveIpAddress(Vm vm) {
-        if (vm.getIpAllocationId() == null) {
-            return null;
-        }
-        return ipAllocationRepository.findById(vm.getIpAllocationId())
-                .filter(allocation -> allocation.getStatus() == AllocationStatus.ALLOCATED)
-                .filter(allocation -> Objects.equals(allocation.getVmId(), vm.getId()))
-                .map(IpAllocation::getIp)
-                .map(ip -> {
-                    int slash = ip.indexOf('/');
-                    return slash >= 0 ? ip.substring(0, slash) : ip;
-                })
-                .orElse(null);
+        return ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vm.getId());
     }
 }

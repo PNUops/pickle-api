@@ -170,6 +170,38 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
+    void staleOrReclaimedAllocationIsDeniedWithNoAddress() throws Exception {
+        // SSRF guard: a RUNNING VM whose allocation pointer is no longer a live,
+        // owned ALLOCATED row must not resolve to any IP.
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.30", false);
+        long allocationId = jdbcTemplate.queryForObject(
+                "select ip_allocation_id from vms where hostname = ?", Long.class, slug);
+
+        // (a) allocation released (status no longer ALLOCATED) → denied
+        jdbcTemplate.update("""
+                update ip_allocations set status = 'RELEASED'::allocation_status, released_at = now()
+                 where id = ?
+                """, allocationId);
+        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NO_ADDRESS"));
+
+        // (b) allocation re-claimed by a DIFFERENT VM (stale pointer) → denied
+        String otherSlug = uniqueSlug();
+        createVm(otherSlug, VmStatus.RUNNING, "172.29.4.31", false);
+        long otherVmId = jdbcTemplate.queryForObject(
+                "select id from vms where hostname = ?", Long.class, otherSlug);
+        jdbcTemplate.update("""
+                update ip_allocations set status = 'ALLOCATED'::allocation_status,
+                       released_at = null, vm_id = ? where id = ?
+                """, otherVmId, allocationId);
+        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NO_ADDRESS"));
+    }
+
+    @Test
     void globallyDisabledGatewayDeniesEverything() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.17", false);
