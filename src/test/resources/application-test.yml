@@ -18,3 +18,8 @@ spring:
 pickle:
   jwt:
     secret: pickle-test-jwt-secret-0123456789abcdef-test
+  sshgw:
+    # Known token/source for the /internal/sshgw/route filter-chain tests.
+    token: test-sshgw-token
+    allowed-source-ip: 172.30.1.30
+    rate-limit-per-minute: 60
