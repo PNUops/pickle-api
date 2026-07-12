@@ -53,7 +53,7 @@ public class AdminService {
         } catch (DataIntegrityViolationException raceWithConcurrentCreate) {
             throw orgSlugDuplicate(request.slug());
         }
-        auditService.record(actor.id(), actor.role().name(), AuditService.ORG_CREATE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ORG_CREATE,
                 "org", org.getId(), Map.of("name", org.getName(), "slug", org.getSlug()), ip);
         return OrgDetailResponse.from(org);
     }
@@ -84,7 +84,7 @@ public class AdminService {
             }
             org.setStatus(request.getStatus());
         }
-        auditService.record(actor.id(), actor.role().name(), AuditService.ORG_UPDATE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ORG_UPDATE,
                 "org", org.getId(), Map.of("name", org.getName(), "status", org.getStatus().name()), ip);
         return OrgDetailResponse.from(org);
     }
@@ -130,7 +130,7 @@ public class AdminService {
             user.bumpTokenVersion();
         }
 
-        auditService.record(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
                         "orgId", user.getOrgId() == null ? "null" : String.valueOf(user.getOrgId())), ip);

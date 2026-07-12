@@ -179,7 +179,7 @@ public class ApprovalService {
             }
         });
 
-        auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
                 "vm_request", request.getId(),
                 Map.of("vmId", vmId, "hostname", hostname, "grantedVcpu", form.grantedVcpu(),
                         "grantedMemoryMb", form.grantedMemoryMb(), "grantedDiskGb", form.grantedDiskGb(),
@@ -194,7 +194,7 @@ public class ApprovalService {
         requireSubmitted(request);
         reviewRepository.save(VmRequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(VmRequestStatus.REJECTED);
-        auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
                 "vm_request", request.getId(), Map.of("groupId", request.getGroupId()), ip);
         return assembler.toDetail(request);
     }

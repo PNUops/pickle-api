@@ -83,6 +83,19 @@ public class Vm {
     @Column(name = "status_detail")
     private String statusDetail;
 
+    /**
+     * Serialization slot for an in-flight power action (start/shutdown/
+     * force-stop): the request tx claims it atomically before enqueuing the
+     * worker, the worker clears it on every exit path. Reboot never sets it
+     * (its REBOOTING transition serializes duplicate reboots) so a force-stop
+     * can still interrupt a hung reboot. See {@link VmLifecycleService}.
+     */
+    @Column(name = "pending_power_action")
+    private String pendingPowerAction;
+
+    @Column(name = "pending_power_action_at")
+    private Instant pendingPowerActionAt;
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
@@ -219,6 +232,14 @@ public class Vm {
 
     public String getStatusDetail() {
         return statusDetail;
+    }
+
+    public String getPendingPowerAction() {
+        return pendingPowerAction;
+    }
+
+    public Instant getPendingPowerActionAt() {
+        return pendingPowerActionAt;
     }
 
     public Instant getDeletedAt() {

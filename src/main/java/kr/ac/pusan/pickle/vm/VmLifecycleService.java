@@ -1,7 +1,8 @@
 package kr.ac.pusan.pickle.vm;
 
 import java.time.Instant;
-import java.util.Set;
+import java.util.Collection;
+import java.util.List;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -32,6 +33,16 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * {@code REBOOTING}; everything else (incl. {@code NEEDS_ADMIN}) is a 409
  * {@code VM_INVALID_STATE}. Reboot records its intent as the {@code REBOOTING}
  * transition so force-stop can target a hung reboot.</p>
+ *
+ * <p>Duplicate actions are serialized by a claim (C1): start/shutdown/
+ * force-stop atomically claim {@code vms.pending_power_action} (CAS on
+ * "no action in flight AND status is an allowed source") before enqueuing the
+ * worker, so two rapid duplicates get exactly one 202 and one 409. The worker
+ * ({@link VmPowerJobs}) releases the claim on every exit path, a crashed
+ * worker's stale claim is freed by {@code StaleTaskRecoveryJob}, and the status
+ * poller skips claimed VMs. Reboot serializes through its visible
+ * {@code REBOOTING} transition instead of the claim column, so a force-stop can
+ * still interrupt a hung reboot and the poller can converge a crashed one.</p>
  */
 @Service
 public class VmLifecycleService {
@@ -51,8 +62,9 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse start(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireMemberControllableVm(actor, vmId);
-        requireStatus(vm, Set.of(VmStatus.STOPPED), "STOPPED 상태의 VM만 시작할 수 있습니다.");
+        requireMemberControllableVm(actor, vmId);
+        claimPowerAction(vmId, PowerAction.START, List.of(VmStatus.STOPPED),
+                "STOPPED 상태의 VM만 시작할 수 있습니다.");
         long actorId = actor.id();
         enqueueAfterCommit(() -> vmPowerJobs.start(vmId, actorId));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
@@ -60,8 +72,9 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse shutdown(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireMemberControllableVm(actor, vmId);
-        requireStatus(vm, Set.of(VmStatus.RUNNING), "RUNNING 상태의 VM만 종료할 수 있습니다.");
+        requireMemberControllableVm(actor, vmId);
+        claimPowerAction(vmId, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
+                "RUNNING 상태의 VM만 종료할 수 있습니다.");
         long actorId = actor.id();
         enqueueAfterCommit(() -> vmPowerJobs.shutdown(vmId, actorId));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
@@ -69,14 +82,11 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse reboot(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireMemberControllableVm(actor, vmId);
-        requireStatus(vm, Set.of(VmStatus.RUNNING), "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+        requireMemberControllableVm(actor, vmId);
         // Intent is visible immediately (and force-stop can target a hung
-        // reboot); the CAS loses only to a concurrent transition → 409.
-        int updated = vmRepository.transitionStatus(vmId, VmStatus.RUNNING, VmStatus.REBOOTING,
-                null, Instant.now());
-        if (updated == 0) {
-            throw invalidState(vm, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+        // reboot); the CAS loses to a concurrent transition OR a live claim → 409.
+        if (vmRepository.claimReboot(vmId, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
+            throw powerConflict(vmId, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
         }
         long actorId = actor.id();
         enqueueAfterCommit(() -> vmPowerJobs.reboot(vmId, actorId));
@@ -85,12 +95,37 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse forceStop(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireMemberControllableVm(actor, vmId);
-        requireStatus(vm, Set.of(VmStatus.RUNNING, VmStatus.REBOOTING),
+        requireMemberControllableVm(actor, vmId);
+        claimPowerAction(vmId, PowerAction.FORCE_STOP,
+                List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         long actorId = actor.id();
         enqueueAfterCommit(() -> vmPowerJobs.forceStop(vmId, actorId));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    /**
+     * Atomically claims the power-action slot, or throws a 409: a claim fails
+     * because either another action is already in flight (duplicate) or the
+     * status is not an allowed source. {@code label} must match the
+     * {@link VmPowerJobs} action name (informational only; the worker clears the
+     * claim by id).
+     */
+    private void claimPowerAction(long vmId, String label, Collection<VmStatus> allowed,
+            String invalidStateDetail) {
+        if (vmRepository.claimPowerAction(vmId, label, allowed, Instant.now()) == 0) {
+            throw powerConflict(vmId, invalidStateDetail);
+        }
+    }
+
+    /** Names the {@link VmPowerJobs} worker method for the pending-action label. */
+    private static final class PowerAction {
+        static final String START = "START";
+        static final String SHUTDOWN = "SHUTDOWN";
+        static final String FORCE_STOP = "FORCE_STOP";
+
+        private PowerAction() {
+        }
     }
 
     /**
@@ -110,10 +145,20 @@ public class VmLifecycleService {
         return vm;
     }
 
-    private void requireStatus(Vm vm, Set<VmStatus> allowed, String baseDetail) {
-        if (!allowed.contains(vm.getStatus())) {
-            throw invalidState(vm, baseDetail);
+    /**
+     * Builds the 409 for a failed claim/transition: an in-flight action reads
+     * as "already processing", otherwise the per-op invalid-state message with
+     * the (re-read) current status. Both use {@code VM_INVALID_STATE} for
+     * consistency with the existing power 409s.
+     */
+    private ApiException powerConflict(long vmId, String invalidStateDetail) {
+        Vm current = vmRepository.findById(vmId).orElseThrow(VmLifecycleService::vmNotFound);
+        if (current.getPendingPowerAction() != null) {
+            return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    "이미 진행 중인 전원 작업이 있습니다. 잠시 후 다시 시도해 주세요.");
         }
+        return invalidState(current, invalidStateDetail);
     }
 
     private static ApiException invalidState(Vm vm, String baseDetail) {

@@ -41,6 +41,13 @@ public class StaleTaskRecoveryJob {
     /** Far beyond any single step (agent wait max 5 min, backoff max 5 min). */
     static final Duration STALE_AFTER = Duration.ofMinutes(30);
 
+    /**
+     * Power actions are single-shot (retries = 0) and short; a claim older than
+     * this means the worker died before releasing it, so free it lest the VM's
+     * power controls stay bricked (docs/plan/03; C1).
+     */
+    static final Duration POWER_CLAIM_STALE_AFTER = Duration.ofMinutes(10);
+
     private static final Logger log = LoggerFactory.getLogger(StaleTaskRecoveryJob.class);
 
     private final ProvisioningTaskRepository taskRepository;
@@ -71,6 +78,7 @@ public class StaleTaskRecoveryJob {
             Instant cutoff = now.minus(STALE_AFTER);
             reclaimStaleTasks(cutoff, now);
             reenqueueOrphanedCreatingVms(cutoff);
+            releaseStalePowerClaims(now);
         } catch (RuntimeException e) {
             log.warn("stale-task recovery cycle failed: {}", e.toString());
         }
@@ -104,6 +112,16 @@ public class StaleTaskRecoveryJob {
                 enqueue(vm.getId(), ProvisioningTaskKind.PROVISION);
                 log.warn("stuck-CREATING vm {} has no PROVISION task — re-enqueued", vm.getId());
             }
+        }
+    }
+
+    /** A crashed power worker's claim (retries = 0, never re-run) is freed here. */
+    private void releaseStalePowerClaims(Instant now) {
+        int freed = vmRepository.clearStalePowerActionClaims(
+                now.minus(POWER_CLAIM_STALE_AFTER), now);
+        if (freed > 0) {
+            log.warn("freed {} stale power-action claim(s) (older than {} min)",
+                    freed, POWER_CLAIM_STALE_AFTER.toMinutes());
         }
     }
 

@@ -1,10 +1,13 @@
 package kr.ac.pusan.pickle.audit;
 
 import java.util.Map;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -42,10 +45,16 @@ public class AuditService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    /** Lazy self-reference so {@link #recordAfterCommit} can invoke the
+     *  REQUIRES_NEW {@link #record} through the proxy (self-invocation would
+     *  bypass it); ObjectProvider defers resolution and breaks the cycle. */
+    private final ObjectProvider<AuditService> self;
 
-    public AuditService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public AuditService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            ObjectProvider<AuditService> self) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.self = self;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -56,5 +65,32 @@ public class AuditService {
                 insert into audit_logs (actor_id, actor_role, action, target_type, target_id, detail, ip)
                 values (?, ?, ?, ?, ?, ?::jsonb, ?)
                 """, actorId, actorRole, action, targetType, targetId, detailJson, ip);
+    }
+
+    /**
+     * Records a <b>success</b> audit only once the surrounding business
+     * transaction commits: the REQUIRES_NEW {@link #record} runs in an
+     * afterCommit callback, so a business tx that rolls back at commit leaves
+     * no false success row (a bug REQUIRES_NEW alone cannot prevent — it would
+     * commit the audit even when the outer tx never does). If no transaction is
+     * active the write happens immediately.
+     *
+     * <p>Use this for success-path business audits (approvals, deletions, role
+     * and membership changes). Failure/security audits — AUTH_LOGIN_FAILED,
+     * refresh-reuse detection — must survive their business tx's rollback and
+     * therefore keep calling {@link #record} directly.</p>
+     */
+    public void recordAfterCommit(Long actorId, String actorRole, String action, String targetType,
+            Long targetId, Map<String, Object> detail, String ip) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            record(actorId, actorRole, action, targetType, targetId, detail, ip);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                self.getObject().record(actorId, actorRole, action, targetType, targetId, detail, ip);
+            }
+        });
     }
 }
