@@ -302,6 +302,73 @@ class PublishingTest {
                 Instant.class, domainId)).isNotNull();
     }
 
+    // ── cert confirmation via agent /status (M2) + verify re-trigger (M3) ───
+
+    @Test
+    void customDomainCertActivatesOnlyOnAgentConfirmedOk() throws Exception {
+        long vmId = publishableVm(true, "team-certok", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "ok." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        verifyDns(domainId, fqdn);
+        long routeId = domainVerifier.verifyOne(domainId).orElseThrow();
+        stubStatus(fqdn, "OK", null);
+
+        routeApplyJob.apply(routeId);
+
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+        assertThat(certStatus(domainId)).isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select not_after from certificates where domain_id = ? and status <> 'REVOKED'
+                """, Instant.class, domainId)).isNotNull();
+    }
+
+    @Test
+    void certFailureOnAgentStatusMarksFailedAndVerifyRetriggersWithBumpedGeneration()
+            throws Exception {
+        long vmId = publishableVm(true, "team-certfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "ko." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        verifyDns(domainId, fqdn);
+        long routeId = domainVerifier.verifyOne(domainId).orElseThrow();
+
+        // The agent answers /apply 200 even when certbot failed — the failure is
+        // only on GET /status, and the cert must NOT go ACTIVE with a fabricated
+        // notAfter.
+        stubStatus(fqdn, "FAILED", "acme: challenge failed");
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+        assertThat(certStatus(domainId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select last_error from certificates where domain_id = ? and status <> 'REVOKED'
+                """, String.class, domainId)).contains("challenge");
+        assertThat(jdbcTemplate.queryForObject("""
+                select not_after from certificates where domain_id = ? and status <> 'REVOKED'
+                """, Instant.class, domainId)).isNull();
+        long appliedGen = jdbcTemplate.queryForObject(
+                "select applied_generation from routes where id = ?", Long.class, routeId);
+
+        // M3: a verify retry re-arms the FAILED cert and bumps the route
+        // generation past the applied one, so the agent re-runs certbot instead
+        // of rejecting the re-apply as stale (409).
+        long retryRouteId = domainVerifier.verifyOne(domainId).orElseThrow();
+        assertThat(retryRouteId).isEqualTo(routeId);
+        assertThat(certStatus(domainId)).isEqualTo("RENEWING");
+        assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject("select generation from routes where id = ?",
+                Long.class, routeId)).isGreaterThan(appliedGen);
+
+        stubStatus(fqdn, "OK", null);
+        routeApplyJob.apply(routeId);
+        assertThat(certStatus(domainId)).isEqualTo("ACTIVE");
+
+        // Fully settled (route APPLIED + cert ACTIVE) → nothing left to re-apply.
+        assertThat(domainVerifier.verifyOne(domainId)).isEmpty();
+    }
+
     // ── admin scoping ────────────────────────────────────────────────────────
 
     @Test
@@ -536,6 +603,31 @@ class PublishingTest {
     private String domainStatus(long domainId) {
         return jdbcTemplate.queryForObject("select status from domains where id = ?", String.class,
                 domainId);
+    }
+
+    private String certStatus(long domainId) {
+        return jdbcTemplate.queryForObject(
+                "select status from certificates where domain_id = ? and status <> 'REVOKED'",
+                String.class, domainId);
+    }
+
+    /** Points the stub DNS at the required TXT + A so the next check verifies. */
+    private void verifyDns(long domainId, String fqdn) {
+        String token = jdbcTemplate.queryForObject(
+                "select verification_token from domains where id = ?", String.class, domainId);
+        dns.setTxt("_pickle-verify." + fqdn, List.of(token));
+        dns.setA(fqdn, List.of("164.125.249.87"));
+    }
+
+    /** Stubs the agent GET /status with a single cert entry for the FQDN. */
+    private void stubStatus(String fqdn, String state, String error) {
+        String cert = "{\"fqdn\":\"" + fqdn + "\",\"state\":\"" + state
+                + "\",\"checkedAt\":\"2026-07-12T00:00:00Z\""
+                + (error != null ? ",\"error\":\"" + error + "\"" : "") + "}";
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(urlPathEqualTo("/status"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"health\":\"ok\",\"routes\":[],\"certs\":[" + cert + "]}")));
     }
 
     private String vmIp(long vmId) {

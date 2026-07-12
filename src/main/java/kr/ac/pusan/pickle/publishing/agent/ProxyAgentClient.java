@@ -4,7 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import kr.ac.pusan.pickle.config.ProxyAgentProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +67,71 @@ public class ProxyAgentClient {
         return exchange("/sync-all", new SyncAllRequest(snapshotGeneration, routes));
     }
 
+    /**
+     * {@code GET /status} — agent health, applied generations, and cert-issuance
+     * results. The ONLY place certbot failures surface (an {@code /apply} is 200
+     * even when issuance failed). Empty on transport failure or a non-200.
+     */
+    public Optional<AgentStatus> status() {
+        try {
+            return restClient.get()
+                    .uri("/status")
+                    .header(HttpHeaders.AUTHORIZATION, authorizationHeader())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .exchange((req, response) -> {
+                        String responseBody = readBody(response.getBody());
+                        int status = response.getStatusCode().value();
+                        if (status != 200) {
+                            log.warn("proxy-agent GET /status HTTP {}: {}", status, responseBody);
+                            return Optional.<AgentStatus>empty();
+                        }
+                        return Optional.of(parseStatus(responseBody));
+                    });
+        } catch (ResourceAccessException e) {
+            log.warn("proxy-agent transport failure on GET /status: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static AgentStatus parseStatus(String body) {
+        JsonNode node = tree(body);
+        List<AgentStatus.RouteState> routes = new ArrayList<>();
+        for (JsonNode route : node.path("routes")) {
+            routes.add(new AgentStatus.RouteState(text(route, "fqdn"),
+                    route.path("present").asBoolean(false),
+                    route.path("generation").isNumber() ? route.path("generation").asLong() : null));
+        }
+        List<AgentStatus.CertState> certs = new ArrayList<>();
+        for (JsonNode cert : node.path("certs")) {
+            certs.add(new AgentStatus.CertState(text(cert, "fqdn"), certState(text(cert, "state")),
+                    instant(text(cert, "checkedAt")), text(cert, "error")));
+        }
+        return new AgentStatus(List.copyOf(routes), List.copyOf(certs));
+    }
+
+    /** Unknown/absent states read as PENDING — never a false OK. */
+    private static AgentStatus.CertState.State certState(String value) {
+        try {
+            return value != null ? AgentStatus.CertState.State.valueOf(value)
+                    : AgentStatus.CertState.State.PENDING;
+        } catch (IllegalArgumentException unknownState) {
+            return AgentStatus.CertState.State.PENDING;
+        }
+    }
+
+    private static String text(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isString() ? value.asString() : null;
+    }
+
+    private static Instant instant(String value) {
+        try {
+            return value != null ? Instant.parse(value) : null;
+        } catch (RuntimeException unparseable) {
+            return null;
+        }
+    }
+
     private ApplyOutcome exchange(String path, Object body) {
         String json = JSON.writeValueAsString(body);
         try {
@@ -103,6 +171,9 @@ public class ProxyAgentClient {
     private static Long readGeneration(String body) {
         JsonNode node = tree(body);
         JsonNode generation = node.path("generation");
+        if (!generation.isNumber()) {
+            generation = node.path("snapshotGeneration"); // /sync-all response shape
+        }
         return generation.isNumber() ? generation.asLong() : null;
     }
 

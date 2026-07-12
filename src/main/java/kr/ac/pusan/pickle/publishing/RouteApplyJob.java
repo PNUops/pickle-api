@@ -1,9 +1,12 @@
 package kr.ac.pusan.pickle.publishing;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
+import kr.ac.pusan.pickle.publishing.agent.AgentStatus;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import kr.ac.pusan.pickle.publishing.agent.ApplyRequest;
 import kr.ac.pusan.pickle.publishing.agent.ProxyAgentClient;
@@ -35,6 +38,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class RouteApplyJob {
 
     private static final Logger log = LoggerFactory.getLogger(RouteApplyJob.class);
+
+    /** Bounded /status confirmation after a custom-domain apply (certbot runs
+     * inline during the apply, so the first poll is normally definitive). */
+    private static final int CERT_STATUS_ATTEMPTS = 2;
+    private static final Duration CERT_STATUS_RETRY_DELAY = Duration.ofSeconds(1);
 
     private final RouteRepository routeRepository;
     private final DomainRepository domainRepository;
@@ -117,8 +125,10 @@ public class RouteApplyJob {
         if (!absent) {
             route.setStatus(RouteStatus.APPLIED);
             if (domain.getKind() == DomainKind.CUSTOM) {
-                // The agent drove certbot after the vhost went live (internal.md).
-                markCert(domain, CertificateStatus.ACTIVE, null);
+                // The agent drove certbot after the vhost went live (internal.md),
+                // but /apply answers 200 even when issuance failed — confirm via
+                // GET /status before calling the cert ACTIVE.
+                settleCertFromAgent(domain);
             }
         }
         log.info("route-apply {} for {} (generation {})",
@@ -134,6 +144,45 @@ public class RouteApplyJob {
             }
         }
         log.warn("route-apply failed for {}: {}", domain.getFqdn(), error);
+    }
+
+    /**
+     * Settles the custom domain's cert from the agent's {@code GET /status}:
+     * ACTIVE only on a confirmed OK (never a fabricated {@code notAfter} for an
+     * unconfirmed cert), FAILED with the agent's error, and RENEWING when the
+     * agent is unreachable or still PENDING — the verify retry
+     * ({@code POST /domains/{id}/verify}) re-triggers issuance.
+     */
+    private void settleCertFromAgent(Domain domain) {
+        for (int attempt = 1; attempt <= CERT_STATUS_ATTEMPTS; attempt++) {
+            Optional<AgentStatus.CertState> cert = proxyAgentClient.status()
+                    .flatMap(status -> status.cert(domain.getFqdn()));
+            if (cert.isPresent()) {
+                switch (cert.get().state()) {
+                    case OK -> {
+                        markCert(domain, CertificateStatus.ACTIVE, null);
+                        return;
+                    }
+                    case FAILED -> {
+                        markCert(domain, CertificateStatus.FAILED, cert.get().error());
+                        return;
+                    }
+                    case PENDING -> {
+                        // still issuing — retry below, else leave RENEWING
+                    }
+                }
+            }
+            if (attempt < CERT_STATUS_ATTEMPTS) {
+                try {
+                    Thread.sleep(CERT_STATUS_RETRY_DELAY.toMillis());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        markCert(domain, CertificateStatus.RENEWING, null);
+        log.info("cert for {} not confirmed on agent /status — left RENEWING", domain.getFqdn());
     }
 
     private void markCert(Domain domain, CertificateStatus status, String error) {
