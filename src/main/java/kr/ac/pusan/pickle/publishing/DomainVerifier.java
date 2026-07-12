@@ -26,15 +26,17 @@ public class DomainVerifier {
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
+    private final RouteGenerations routeGenerations;
     private final DnsResolver dnsResolver;
     private final PublishingProperties properties;
 
     public DomainVerifier(DomainRepository domainRepository, RouteRepository routeRepository,
-            CertificateRepository certificateRepository, DnsResolver dnsResolver,
-            PublishingProperties properties) {
+            CertificateRepository certificateRepository, RouteGenerations routeGenerations,
+            DnsResolver dnsResolver, PublishingProperties properties) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
+        this.routeGenerations = routeGenerations;
         this.dnsResolver = dnsResolver;
         this.properties = properties;
     }
@@ -66,9 +68,21 @@ public class DomainVerifier {
             if (domain.getVerifiedAt() == null) {
                 domain.setVerifiedAt(Instant.now());
             }
-            ensureCertificate(domain);
-            return routeRepository.findFirstByDomainIdAndStatusNot(domainId, RouteStatus.REMOVED)
-                    .map(Route::getId);
+            boolean certNeedsIssue = ensureCertificate(domain);
+            Route route = routeRepository
+                    .findFirstByDomainIdAndStatusNot(domainId, RouteStatus.REMOVED)
+                    .orElse(null);
+            if (route == null
+                    || (route.getStatus() == RouteStatus.APPLIED && !certNeedsIssue)) {
+                return Optional.empty(); // fully settled — nothing to re-apply
+            }
+            // The agent rejects a generation it already applied (409), so a
+            // verify-triggered re-apply (cert re-issue, FAILED route retry) must
+            // outrank the applied one — bump before handing the route back.
+            route.setGeneration(routeGenerations.next());
+            route.setStatus(RouteStatus.PENDING);
+            route.setLastError(null);
+            return Optional.of(route.getId());
         }
 
         // Transient miss: never demote an already-ACTIVE domain on a DNS flap.
@@ -80,19 +94,24 @@ public class DomainVerifier {
         return Optional.empty();
     }
 
-    /** Create the LE cert row if missing; re-arm a FAILED one for re-issue. */
-    private void ensureCertificate(Domain domain) {
+    /**
+     * Create the LE cert row if missing; re-arm a FAILED one for re-issue.
+     *
+     * @return whether issuance is still needed (anything but a live ACTIVE cert)
+     */
+    private boolean ensureCertificate(Domain domain) {
         Optional<Certificate> existing = certificateRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED);
         if (existing.isEmpty()) {
             certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
-            return;
+            return true;
         }
         Certificate cert = existing.get();
         if (cert.getStatus() == CertificateStatus.FAILED) {
             cert.setStatus(CertificateStatus.RENEWING);
             cert.setLastError(null);
         }
+        return cert.getStatus() != CertificateStatus.ACTIVE;
     }
 
     private static String missReason(boolean txtOk, boolean aOk) {
