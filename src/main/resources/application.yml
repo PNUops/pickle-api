@@ -75,7 +75,11 @@ pickle:
     # (rejects every request) instead of trusting an empty bearer.
     token: ${PICKLE_SSHGW_TOKEN:}
     allowed-source-ip: ${PICKLE_SSHGW_SOURCE_IP:172.30.1.30}
+    # Per-client budget keyed on the PROXY-recovered client sourceIp (the TCP
+    # peer is always the sshgw LXC — keying on it would be one global bucket).
     rate-limit-per-minute: ${PICKLE_SSHGW_RATE_LIMIT:60}
+    # Whole-gateway backstop at the /internal filter, across all clients.
+    global-rate-limit-per-minute: ${PICKLE_SSHGW_GLOBAL_RATE_LIMIT:600}
   proxy-agent:
     # Reverse-proxy control link (docs/api/internal.md Link 2). pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.

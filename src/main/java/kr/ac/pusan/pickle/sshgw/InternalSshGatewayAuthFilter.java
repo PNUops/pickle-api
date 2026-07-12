@@ -30,8 +30,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       {@code PICKLE_SSHGW_TOKEN}. <b>Fails closed</b> when the token is unset,
  *       so a mis-provisioned prod profile rejects every call rather than
  *       accepting an empty bearer. Never a user JWT.</li>
- *   <li><b>Rate limit</b> — per source IP, via the shared PG limiter, to bound
- *       abuse if the token leaks inside vmbr1.</li>
+ *   <li><b>Global rate-limit backstop</b> — via the shared PG limiter, bounding
+ *       the total call volume (abuse if the token leaks inside vmbr1, or a
+ *       runaway gateway). Deliberately NOT the per-client limit: the transport
+ *       peer here is always the sshgw LXC, so keying a tight limit on it would
+ *       be one shared bucket letting a single internet abuser 429 every
+ *       student's SSH login. The per-client (PROXY-recovered {@code sourceIp})
+ *       limit lives in {@link SshGatewayRouteService}, after the body is
+ *       parsed.</li>
  * </ol>
  *
  * <p>Auth failures return a generic 401 (token) or 403 (source) without
@@ -41,7 +47,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class InternalSshGatewayAuthFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String RATE_LIMIT_SCOPE = "sshgw_route";
+    private static final String GLOBAL_RATE_LIMIT_SCOPE = "sshgw_route_global";
+    private static final String GLOBAL_RATE_LIMIT_SUBJECT = "all";
 
     private final SshGatewayProperties properties;
     private final RateLimitService rateLimitService;
@@ -68,7 +75,8 @@ public class InternalSshGatewayAuthFilter extends OncePerRequestFilter {
             return;
         }
         try {
-            rateLimitService.hit(RATE_LIMIT_SCOPE, peer, properties.rateLimitPerMinute());
+            rateLimitService.hit(GLOBAL_RATE_LIMIT_SCOPE, GLOBAL_RATE_LIMIT_SUBJECT,
+                    properties.globalRateLimitPerMinute());
         } catch (ApiException e) {
             rateLimited(request, response, e);
             return;
