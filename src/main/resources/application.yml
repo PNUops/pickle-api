@@ -81,7 +81,8 @@ pickle:
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.
     # No token default outside dev/test: when blank the client fails closed at
     # first use instead of sending an empty bearer.
-    base-url: ${PICKLE_PROXY_AGENT_URL:http://172.30.1.10}
+    # :9443 is the agent's own listener — the bare host would hit nginx :80.
+    base-url: ${PICKLE_PROXY_AGENT_URL:http://172.30.1.10:9443}
     token: ${PICKLE_PROXY_AGENT_TOKEN:}
     connect-timeout: 5s
     read-timeout: 30s
