@@ -49,6 +49,11 @@ public class AuditService {
     public static final String DOMAIN_DELETE = "domain.delete";
     public static final String DOMAIN_VERIFY = "domain.verify";
     public static final String ROUTE_RESYNC = "route.resync";
+    // Operations (M5, contract tag admin).
+    public static final String DRIFT_RESOLVE = "drift.resolve";
+    public static final String TASK_RETRY = "task.retry";
+    public static final String NOTIFICATION_RESEND = "notification.resend";
+    public static final String VM_PERIOD_UPDATE = "vm.period_update";
     /** SSH gateway route resolved (docs/api/internal.md Link 1). */
     public static final String SSHGW_ROUTE = "sshgw.route";
     /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). */

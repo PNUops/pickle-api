@@ -28,6 +28,11 @@ public final class ErrorCodes {
     public static final String PUBLICATION_ALREADY_EXISTS = "PUBLICATION_ALREADY_EXISTS";
     public static final String DOMAIN_FQDN_TAKEN = "DOMAIN_FQDN_TAKEN";
     public static final String DOMAIN_NOT_CUSTOM = "DOMAIN_NOT_CUSTOM";
+    // Operations (M5, contract tag admin).
+    public static final String VM_EXPIRED = "VM_EXPIRED";
+    public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
+    public static final String DRIFT_FINDING_ALREADY_RESOLVED = "DRIFT_FINDING_ALREADY_RESOLVED";
+    public static final String NOTIFICATION_NOT_RESENDABLE = "NOTIFICATION_NOT_RESENDABLE";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
