@@ -210,6 +210,23 @@ class NotificationTest {
         forceDue(failing.getId());
         dispatchJob.dispatch();
         assertThat(failingRow(failing.getId())).containsEntry("attempts", 3);
+
+        // resend (admin delivery log: CAS FAILED→PENDING, due now) is a
+        // SINGLE shot: attempts are already ≥ the budget, so one more failed
+        // try parks the row FAILED again immediately — no backoff loop
+        jdbcTemplate.update("""
+                update notifications set status = 'PENDING', next_attempt_at = now()
+                 where user_id = ? and status = 'FAILED'
+                """, failing.getId());
+        dispatchJob.dispatch();
+        row = failingRow(failing.getId());
+        assertThat(row).containsEntry("status", "FAILED").containsEntry("attempts", 4);
+        assertThat((String) row.get("last_error")).contains("모의 SMTP 실패");
+        // and the re-parked row stays parked
+        forceDue(failing.getId());
+        dispatchJob.dispatch();
+        assertThat(failingRow(failing.getId()))
+                .containsEntry("status", "FAILED").containsEntry("attempts", 4);
     }
 
     @Test
