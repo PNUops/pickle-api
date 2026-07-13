@@ -111,11 +111,16 @@ class AdminTasksTest {
     @Test
     void retryIsAcceptedOnlyForNeedsAdminAndResetsTheAttemptBudget() throws Exception {
         long parked = createTask(vmA, "PROVISION", "NEEDS_ADMIN", 5, "IP 풀 고갈");
+        long enqueuedBefore = provisionEnqueueCount();
 
         mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", parked)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
+
+        // the afterCommit dispatch really enqueued the pipeline job (the
+        // background server is off, so the row is the observable evidence)
+        assertThat(provisionEnqueueCount()).isEqualTo(enqueuedBefore + 1);
 
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "select status::text as status, attempts, last_error, current_step"
@@ -187,6 +192,13 @@ class AdminTasksTest {
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'STOPPED'::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
+    }
+
+    /** JobRunr rows of the provision pipeline job (enqueue evidence). */
+    private long provisionEnqueueCount() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%provisionVm(%'",
+                Long.class);
     }
 
     private long createTask(long vmId, String kind, String status, int currentStep,

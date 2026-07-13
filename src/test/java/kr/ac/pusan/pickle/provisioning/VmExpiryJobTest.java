@@ -21,6 +21,8 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.vm.VmStatus;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,16 +53,40 @@ import org.springframework.test.context.ActiveProfiles;
 @Import({EmbeddedPostgresConfig.class, VmExpiryJobTest.FixedClockConfig.class})
 class VmExpiryJobTest {
 
-    /** 2026-03-10 12:00 KST — "today" for every date computation in the suite. */
+    /** 2026-03-10 12:00 KST — the default "today" for every date computation. */
     private static final Instant FIXED_NOW = Instant.parse("2026-03-10T03:00:00Z");
     private static final LocalDate TODAY = LocalDate.of(2026, 3, 10);
+
+    /** Settable fixed clock: boundary tests move it, setUp resets it. */
+    static final class MutableClock extends Clock {
+        private volatile Instant instant = FIXED_NOW;
+
+        void set(Instant value) {
+            instant = value;
+        }
+
+        @Override
+        public Instant instant() {
+            return instant;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneId.of("UTC");
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+    }
 
     @TestConfiguration
     static class FixedClockConfig {
         @Bean
         @Primary
         Clock fixedClock() {
-            return Clock.fixed(FIXED_NOW, ZoneId.of("UTC"));
+            return new MutableClock();
         }
     }
 
@@ -74,6 +100,9 @@ class VmExpiryJobTest {
     private static ProxmoxWireMockSupport wm;
 
     @Autowired
+    private Clock clock;
+
+    @Autowired
     private VmExpiryJob vmExpiryJob;
 
     @Autowired
@@ -81,6 +110,9 @@ class VmExpiryJobTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private VmRepository vmRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -107,6 +139,7 @@ class VmExpiryJobTest {
 
     @BeforeEach
     void setUp() {
+        ((MutableClock) clock).set(FIXED_NOW);
         wm.reset();
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
@@ -169,6 +202,20 @@ class VmExpiryJobTest {
         vmExpiryJob.run();
         assertThat(totalNoticeRows()).isEqualTo(before);
         assertThat(stageOf(vm14)).isEqualTo(14);
+
+        // extension re-arm (e2e): the admin extends vm1 → markers cleared →
+        // the next sweep sends a FRESH notice for the NEW end date (the dedup
+        // key embeds endDate, so the old D-1 row does not block it)
+        assertThat(vmRepository.updatePeriod(vm1, null, TODAY.plusDays(7),
+                List.of(VmStatus.DELETED, VmStatus.DELETING), Instant.now())).isEqualTo(1);
+        assertThat(stageOf(vm1)).isNull();
+        vmExpiryJob.run();
+        assertThat(noticeEvents(vm1)).containsExactlyInAnyOrder("vm.expiry.d1", "vm.expiry.d7");
+        assertThat(stageOf(vm1)).isEqualTo(7);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(distinct payload ->> 'endDate') from notifications
+                 where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
+                """, Long.class, String.valueOf(vm1))).isEqualTo(2);
     }
 
     // ── auto-stop ──────────────────────────────────────────────────────────
@@ -244,6 +291,38 @@ class VmExpiryJobTest {
             jdbcTemplate.update("update settings set value = 'true'::jsonb"
                     + " where key = 'vm_expiry_autostop_enabled'");
         }
+    }
+
+    @Test
+    void autoStopBoundaryFollowsKstNotUtc() {
+        long vmId = createVm("RUNNING", LocalDate.of(2026, 3, 10));
+
+        // 2026-03-09 23:00 UTC = 03-10 08:00 KST → end date (inclusive) not
+        // yet past in KST → no claim
+        ((MutableClock) clock).set(Instant.parse("2026-03-09T23:00:00Z"));
+        vmExpiryJob.run();
+        assertThat(pendingActionOf(vmId)).isNull();
+
+        // 2026-03-10 15:30 UTC = 03-11 00:30 KST → past in KST although the
+        // UTC calendar date is still 03-10 — a todayKst→UTC regression would
+        // skip this claim
+        ((MutableClock) clock).set(Instant.parse("2026-03-10T15:30:00Z"));
+        vmExpiryJob.run();
+        assertThat(pendingActionOf(vmId)).isEqualTo("EXPIRE_STOP");
+    }
+
+    @Test
+    void autoStopExcludesDeletionBoundVms() {
+        long scheduled = createVm("RUNNING", TODAY.minusDays(1));
+        long accepted = createVm("RUNNING", TODAY.minusDays(1));
+        jdbcTemplate.update("update vms set delete_scheduled_for = now() where id = ?", scheduled);
+        jdbcTemplate.update("update vms set delete_requested_at = now() where id = ?", accepted);
+
+        vmExpiryJob.run();
+
+        // the deletion flow owns these VMs — the expiry sweep must not race it
+        assertThat(pendingActionOf(scheduled)).isNull();
+        assertThat(pendingActionOf(accepted)).isNull();
     }
 
     @Test
