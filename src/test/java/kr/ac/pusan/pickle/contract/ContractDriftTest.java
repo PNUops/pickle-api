@@ -117,7 +117,10 @@ class ContractDriftTest {
             "GET /notifications",
             "GET /notifications/unread-count",
             "POST /notifications/{notificationId}/read",
-            "POST /notifications/read-all");
+            "POST /notifications/read-all",
+            "POST /admin/announcements",
+            "GET /admin/announcements",
+            "GET /admin/groups");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -131,9 +134,6 @@ class ContractDriftTest {
      */
     private static final Set<String> PLANNED = Set.of(
             // api-A lane
-            "POST /admin/announcements",
-            "GET /admin/announcements",
-            "GET /admin/groups",
             "GET /me/activity",
             "GET /admin/audit",
             // api-B lane

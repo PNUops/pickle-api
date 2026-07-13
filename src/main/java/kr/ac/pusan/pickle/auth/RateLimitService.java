@@ -75,6 +75,41 @@ public class RateLimitService {
         }
     }
 
+    /**
+     * Sliding 1-hour window (15-minute buckets) over the same counter table —
+     * used by low-frequency admin actions (M5 announcements: 10/hour/author).
+     * Counts this request and throws 429 RATE_LIMITED with Retry-After when
+     * the window total exceeds {@code limitPerHour}.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void hitHourly(String scope, String subject, int limitPerHour) {
+        jdbcTemplate.update("""
+                delete from auth_rate_limits
+                 where scope = ? and subject = ? and window_start <= now() - interval '120 minutes'
+                """, scope, subject);
+        jdbcTemplate.update("""
+                insert into auth_rate_limits (scope, subject, window_start, request_count)
+                values (?, ?, date_bin(interval '15 minutes', now(), timestamptz 'epoch'), 1)
+                on conflict (scope, subject, window_start)
+                do update set request_count = auth_rate_limits.request_count + 1, updated_at = now()
+                """, scope, subject);
+        WindowState window = jdbcTemplate.queryForObject("""
+                select coalesce(sum(request_count), 0) as total, min(window_start) as oldest
+                  from auth_rate_limits
+                 where scope = ? and subject = ? and window_start > now() - interval '60 minutes'
+                """,
+                (rs, rowNum) -> new WindowState(rs.getLong("total"),
+                        rs.getObject("oldest", OffsetDateTime.class)),
+                scope, subject);
+        if (window.total() > limitPerHour) {
+            Instant oldest = window.oldest().toInstant();
+            // the oldest bucket ages out of the window at oldest + 60m + 15m
+            long retryAfter = Math.max(1, Duration.between(Instant.now(),
+                    oldest.plus(Duration.ofMinutes(75))).toSeconds());
+            throw ApiException.rateLimited(retryAfter);
+        }
+    }
+
     /** Throws 429 when the account is under an escalating login lockout. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void checkLoginLock(String account) {
