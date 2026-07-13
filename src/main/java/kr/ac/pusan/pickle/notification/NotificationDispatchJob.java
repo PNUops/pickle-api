@@ -34,7 +34,8 @@ public class NotificationDispatchJob {
 
     private static final String MAIL_FOOTER = "\n\n— Pickle 운영팀\n";
 
-    private record PendingMail(long id, int attempts, String title, String body, String email) {
+    private record PendingMail(long id, int attempts, String title, String body, String email,
+                               String userStatus) {
     }
 
     private final JdbcTemplate jdbcTemplate;
@@ -49,7 +50,7 @@ public class NotificationDispatchJob {
     @Job(name = JOB_ID, retries = 0)
     public void dispatch() {
         List<PendingMail> due = jdbcTemplate.query("""
-                select n.id, n.attempts, n.title, n.body, u.email
+                select n.id, n.attempts, n.title, n.body, u.email, u.status as user_status
                   from notifications n
                   join users u on u.id = n.user_id
                  where n.status = 'PENDING' and n.next_attempt_at <= now()
@@ -57,8 +58,20 @@ public class NotificationDispatchJob {
                  limit %d
                 """.formatted(BATCH_SIZE),
                 (rs, rowNum) -> new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
-                        rs.getString("title"), rs.getString("body"), rs.getString("email")));
+                        rs.getString("title"), rs.getString("body"), rs.getString("email"),
+                        rs.getString("user_status")));
         for (PendingMail mail : due) {
+            // Recipient deactivated between enqueue and send (publish resolves
+            // ACTIVE at insert time) — never mail a closed account; SKIPPED
+            // keeps the delivery log honest instead of an eternal PENDING.
+            if (!"ACTIVE".equals(mail.userStatus())) {
+                jdbcTemplate.update("""
+                        update notifications
+                           set status = 'SKIPPED', last_error = '수신자 계정 비활성(발송 생략)'
+                         where id = ? and status = 'PENDING'
+                        """, mail.id());
+                continue;
+            }
             // CAS claim — a concurrent run (or a resend) that got here first wins.
             if (jdbcTemplate.update("""
                     update notifications set attempts = attempts + 1

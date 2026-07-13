@@ -212,6 +212,27 @@ class NotificationTest {
         assertThat(failingRow(failing.getId())).containsEntry("attempts", 3);
     }
 
+    @Test
+    void dispatcherSkipsRecipientDeactivatedAfterEnqueue() {
+        User leaver = ensureUser("notif.leaver@pusan.ac.kr", "탈퇴자");
+        jdbcTemplate.update("delete from notifications where user_id = ?", leaver.getId());
+        publishAnnouncement(leaver.getId(), "지연 발송 알림", null);
+        // deactivated between enqueue and dispatch (보안 게이트 M-1)
+        jdbcTemplate.update("update users set status = 'DISABLED' where id = ?", leaver.getId());
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(leaver.getEmail())).isNull();
+        Map<String, Object> row = failingRow(leaver.getId());
+        assertThat(row).containsEntry("status", "SKIPPED").containsEntry("attempts", 0);
+        assertThat((String) row.get("last_error")).contains("비활성");
+
+        // SKIPPED rows are terminal — never picked up again
+        forceDue(leaver.getId());
+        dispatchJob.dispatch();
+        assertThat(failingRow(leaver.getId())).containsEntry("status", "SKIPPED");
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private void publishAnnouncement(long userId, String title, String dedupKey) {
