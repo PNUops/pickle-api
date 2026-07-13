@@ -71,7 +71,7 @@ class AnnouncementTest {
     private Org org;
     private Org otherOrg;
     private User ownMember;
-    private User pendingMember;
+    private User inactiveMember;
     private User crossMember;
     private User farMember;
     private String sysAdminToken;
@@ -87,8 +87,8 @@ class AnnouncementTest {
         otherOrg = orgRepository.findBySlug("ann-other").orElseGet(() ->
                 orgRepository.save(new Org("공지 타기관", "ann-other", null)));
         ownMember = ensureStudent("ann.own.member@pusan.ac.kr", "공지자기관원", UserStatus.ACTIVE);
-        pendingMember = ensureStudent("ann.pending@pusan.ac.kr", "공지미인증",
-                UserStatus.PENDING_VERIFICATION);
+        inactiveMember = ensureStudent("ann.pending@pusan.ac.kr", "공지비활성",
+                UserStatus.DISABLED);
         crossMember = ensureStudent("ann.cross.member@pusan.ac.kr", "공지동반원",
                 UserStatus.ACTIVE);
         farMember = ensureStudent("ann.far.member@pusan.ac.kr", "공지타기관원", UserStatus.ACTIVE);
@@ -105,8 +105,8 @@ class AnnouncementTest {
                 userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         studentToken = jwtService.createAccessToken(ownMember);
-        // group linked to the caller's org (vm_request) with ACTIVE + PENDING members
-        mixedGroupId = createGroup("annmix", ownMember.getId(), pendingMember.getId(),
+        // group linked to the caller's org (vm_request), ACTIVE + DISABLED members
+        mixedGroupId = createGroup("annmix", ownMember.getId(), inactiveMember.getId(),
                 crossMember.getId());
         linkGroupToOrg(mixedGroupId, org.getId(), ownMember.getId());
         // group linked only to the other org — never targetable by our ORG_ADMIN
@@ -163,7 +163,7 @@ class AnnouncementTest {
                 """, Long.class, allId)).isEqualTo(activeUsers);
 
         // ORG (pinned): derived members — group members via the org-linked
-        // group and the org's ORG_ADMINs; PENDING and other-org-only excluded
+        // group and the org's ORG_ADMINs; DISABLED and other-org-only excluded
         ResultActions orgSend = create(orgAdminToken, Map.of(
                 "title", "기관 공지", "body", "본문", "scope", "ORG"))
                 .andExpect(status().isCreated())
@@ -174,7 +174,7 @@ class AnnouncementTest {
         Long seededOrgAdminId = userRepository.findByEmail("orgadmin@pickle.local")
                 .map(User::getId).orElseThrow();
         assertThat(recipientOf(orgAnnId, seededOrgAdminId)).isEqualTo(1);
-        assertThat(recipientOf(orgAnnId, pendingMember.getId())).isZero();
+        assertThat(recipientOf(orgAnnId, inactiveMember.getId())).isZero();
         assertThat(recipientOf(orgAnnId, farMember.getId())).isZero();
         // the snapshot count equals the rows actually inserted
         assertThat(recipientRows(orgAnnId)).isEqualTo(jdbcTemplate.queryForObject("""
@@ -189,7 +189,7 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$.recipientCount").value(2)));
         assertThat(recipientOf(groupAnnId, ownMember.getId())).isEqualTo(1);
         assertThat(recipientOf(groupAnnId, crossMember.getId())).isEqualTo(1);
-        assertThat(recipientOf(groupAnnId, pendingMember.getId())).isZero();
+        assertThat(recipientOf(groupAnnId, inactiveMember.getId())).isZero();
 
         // GROUP by SYS_ADMIN: same member set (no gate)
         createdId(create(sysAdminToken, Map.of(
@@ -236,7 +236,7 @@ class AnnouncementTest {
     }
 
     @Test
-    void perAuthorHourlyBudgetAnswers429WithRetryAfter() throws Exception {
+    void perAuthorHourlyBudgetCountsOnlyAcceptedSends() throws Exception {
         User burster = userRepository.findByEmail("ann.burst.admin@pusan.ac.kr")
                 .orElseGet(() -> userRepository.save(
                         new User("ann.burst.admin@pusan.ac.kr", "{noop}unused", "공지폭주")));
@@ -245,6 +245,14 @@ class AnnouncementTest {
         burster.setStatus(UserStatus.ACTIVE);
         burster = userRepository.save(burster);
         String bursterToken = jwtService.createAccessToken(burster);
+        // rejected attempts (403/422/404) never consume the send budget —
+        // the limit covers SENDS, not tries (gate finding #2)
+        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
+                .andExpect(status().isForbidden());
+        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "GROUP"))
+                .andExpect(status().isUnprocessableContent());
+        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "GROUP",
+                "groupId", foreignGroupId)).andExpect(status().isNotFound());
         for (int i = 1; i <= 10; i++) {
             create(bursterToken, Map.of("title", "공지 " + i, "body", "b", "scope", "ORG"))
                     .andExpect(status().isCreated());
@@ -257,12 +265,12 @@ class AnnouncementTest {
 
     @Test
     void adminGroupPickerFollowsTheGroupGate() throws Exception {
-        // ORG_ADMIN: org-linked groups only, with the FULL member count
-        // (the whole group is the announcement unit)
+        // ORG_ADMIN: org-linked groups only. memberCount counts ACTIVE members
+        // (the fan-out basis) — the DISABLED member is not part of it
         mockMvc.perform(get("/api/v1/admin/groups")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==3)]")
+                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==2)]")
                         .exists())
                 .andExpect(jsonPath("$[?(@.id==" + foreignGroupId + ")]").doesNotExist());
         // cross-org filter → 404 (existence stays private)
@@ -273,7 +281,7 @@ class AnnouncementTest {
         mockMvc.perform(get("/api/v1/admin/groups")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==3)]")
+                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==2)]")
                         .exists())
                 .andExpect(jsonPath("$[?(@.id==" + foreignGroupId + " && @.memberCount==1)]")
                         .exists());

@@ -17,9 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
  * sees exactly the groups they may target with a GROUP announcement — groups
  * linked to their org by the canonical derived-membership rule
  * ({@link OrgMembershipSql}: ≥1 vm_request or non-DELETED VM in the org).
- * {@code memberCount} is the group's full member count (the announcement unit
- * is the whole group). A cross-org {@code orgId} answers 404 (existence stays
- * private); the filter itself is SYS_ADMIN's.
+ * {@code memberCount} counts the group's <b>ACTIVE</b> members — exactly the
+ * fan-out basis of a GROUP announcement (contract clarification, docs
+ * eb8bbf6). A cross-org {@code orgId} answers 404 (existence stays private);
+ * the filter itself is SYS_ADMIN's.
  */
 @Service
 public class AdminGroupQueryService {
@@ -35,7 +36,9 @@ public class AdminGroupQueryService {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         String select = """
                 select g.id, g.name, g.slug,
-                       (select count(*) from group_members gm where gm.group_id = g.id)
+                       (select count(*) from group_members gm
+                          join users mu on mu.id = gm.user_id
+                         where gm.group_id = g.id and mu.status = 'ACTIVE')
                            as member_count
                   from groups g
                 """;

@@ -63,8 +63,6 @@ public class AnnouncementService {
     @Transactional
     public AnnouncementView create(AuthenticatedUser actor, AnnouncementCreateRequest request,
             String ip) {
-        rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
-
         AnnouncementScope scope = request.scope();
         List<FieldValidationError> errors = new ArrayList<>();
         Long orgId = null;
@@ -129,6 +127,13 @@ public class AnnouncementService {
                 throw notFound("해당 그룹이 존재하지 않습니다.");
             }
         }
+
+        // The 10/hour budget covers SENDS (contract: 발송 제한) — counted only
+        // after every scope/gate/validation check passed, right before the
+        // fan-out, so rejected attempts can never starve a valid announcement.
+        // (REQUIRES_NEW: the count survives even if the fan-out tx rolls back
+        // — an accepted send that fails mid-flight still spent its slot.)
+        rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
 
         Announcement announcement = announcementRepository.saveAndFlush(new Announcement(
                 actor.id(), scope, orgId, groupId, request.title().strip(), request.body().strip()));
