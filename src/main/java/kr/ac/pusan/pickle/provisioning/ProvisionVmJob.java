@@ -8,8 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
@@ -20,15 +20,11 @@ import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
 import kr.ac.pusan.pickle.ipam.IpPool;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
-import kr.ac.pusan.pickle.mail.MailMessage;
-import kr.ac.pusan.pickle.mail.MailSender;
 import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
-import kr.ac.pusan.pickle.user.User;
-import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -105,9 +101,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ProxmoxClient proxmox;
     private final JobScheduler jobScheduler;
     private final PasswordEncoder passwordEncoder;
-    private final MailSender mailSender;
-    private final GroupMemberRepository groupMemberRepository;
-    private final UserRepository userRepository;
+    private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
     private final SecureRandom random = new SecureRandom();
 
@@ -116,9 +110,8 @@ public class ProvisionVmJob implements ProvisioningService {
             VmTemplateRepository templateRepository, VmRequestReviewRepository reviewRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
-            JobScheduler jobScheduler, PasswordEncoder passwordEncoder, MailSender mailSender,
-            GroupMemberRepository groupMemberRepository, UserRepository userRepository,
-            ObjectMapper objectMapper) {
+            JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
+            NotificationService notificationService, ObjectMapper objectMapper) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -132,9 +125,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.proxmox = proxmox;
         this.jobScheduler = jobScheduler;
         this.passwordEncoder = passwordEncoder;
-        this.mailSender = mailSender;
-        this.groupMemberRepository = groupMemberRepository;
-        this.userRepository = userRepository;
+        this.notificationService = notificationService;
         this.objectMapper = objectMapper;
     }
 
@@ -434,7 +425,7 @@ public class ProvisionVmJob implements ProvisioningService {
                     .map(a -> hostAddress(a.getIp())).orElse(null);
             vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.CREATE, null,
                     "프로비저닝 완료 (vmid " + vm.getProxmoxVmid() + ", ip " + ip + ")"));
-            sendCreatedMail(vm, ip);
+            publishCreated(vm, ip);
         }
         taskRepository.complete(task.getId(), now);
         log.info("provision vm {} finished (vmid {})", vm.getId(), vm.getProxmoxVmid());
@@ -472,6 +463,7 @@ public class ProvisionVmJob implements ProvisioningService {
             taskRepository.fail(taskId, error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.ERROR,
                     "생성 실패: " + summarize(e), now);
+            publishCreateFailed(vmId, "생성 실패: " + summarize(e));
         } else if (step <= ProvisioningStep.CONFIG.index()) {
             compensate(taskId, vmId, error, e);
         } else {
@@ -479,6 +471,7 @@ public class ProvisionVmJob implements ProvisioningService {
             taskRepository.park(taskId, error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
                     "프로비저닝 중 오류가 발생해 관리자 확인 대기 중입니다", now);
+            publishCreateFailed(vmId, error);
         }
     }
 
@@ -516,6 +509,7 @@ public class ProvisionVmJob implements ProvisioningService {
             taskRepository.park(taskId, error + " (보상 실패: " + summarize(cleanupFailure) + ")", now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
                     "생성 실패 후 자원 정리에 실패해 관리자 확인이 필요합니다", now);
+            publishCreateFailed(vmId, error + " (보상 실패: " + summarize(cleanupFailure) + ")");
             return;
         }
         releaseIp(vmId);
@@ -523,6 +517,7 @@ public class ProvisionVmJob implements ProvisioningService {
         taskRepository.fail(taskId, error, now);
         vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.ERROR,
                 "생성 실패: " + summarize(cause), now);
+        publishCreateFailed(vmId, "생성 실패: " + summarize(cause));
     }
 
     private void releaseIp(long vmId) {
@@ -548,37 +543,52 @@ public class ProvisionVmJob implements ProvisioningService {
 
     // --- notifications ---------------------------------------------------------
 
-    /** Creation mail to the owning group's OWNERs; failure never fails the VM. */
-    private void sendCreatedMail(Vm vm, String ip) {
+    /** Creation notice to the owning group's OWNERs; failure never fails the VM. */
+    private void publishCreated(Vm vm, String ip) {
         try {
-            List<String> recipients = groupMemberRepository
-                    .findByGroupIdOrderByIdAsc(vm.getGroupId()).stream()
-                    .filter(member -> member.getRole() == GroupMemberRole.OWNER)
-                    .map(member -> userRepository.findById(member.getUserId()))
-                    .flatMap(Optional::stream)
-                    .map(User::getEmail)
-                    .toList();
+            List<Long> recipients = notificationService.groupRoleHolderIds(vm.getGroupId(), false);
             if (recipients.isEmpty()) {
                 log.warn("provision vm {}: no group OWNER to notify", vm.getId());
                 return;
             }
-            String subject = "[Pickle] VM 생성 완료: " + vm.getHostname();
-            String body = """
-                    신청하신 VM이 생성되어 실행 중입니다.
-
-                    - 호스트명: %s
-                    - 내부 IP: %s
-                    - SSH 계정: %s
-                    - 초기 비밀번호: 콘솔의 VM 상세 화면에서 딱 1회만 확인할 수 있습니다.
-
-                    [중요] 플랫폼은 VM 데이터를 백업하지 않습니다(이용자 책임).
-                    중요한 데이터는 반드시 직접 백업해 주세요.
-                    """.formatted(vm.getHostname(), ip != null ? ip : "(확인 중)", vm.getSshUsername());
-            for (String to : recipients) {
-                mailSender.send(new MailMessage(to, subject, body));
+            Map<String, Object> args = new LinkedHashMap<>();
+            args.put("vmId", vm.getId());
+            args.put("hostname", vm.getHostname());
+            if (ip != null) {
+                args.put("ip", ip);
             }
+            args.put("sshUsername", vm.getSshUsername());
+            notificationService.publish(recipients, NotificationEvent.VM_CREATE_DONE, args,
+                    "vm_create_done:" + vm.getId());
         } catch (RuntimeException e) {
-            log.error("provision vm {}: creation mail failed", vm.getId(), e);
+            log.error("provision vm {}: creation notification failed", vm.getId(), e);
+        }
+    }
+
+    /**
+     * Permanent creation failure (ERROR or NEEDS_ADMIN park): group OWNERs and
+     * every SYS_ADMIN get a HIGH notice. Deduped per VM so the multiple failure
+     * paths (retry-exhaustion, compensation, admin re-run failing again) cannot
+     * stack duplicates; never fails the pipeline itself.
+     */
+    private void publishCreateFailed(long vmId, String reason) {
+        try {
+            Vm vm = vmRepository.findById(vmId).orElse(null);
+            if (vm == null) {
+                return;
+            }
+            Map<String, Object> args = new LinkedHashMap<>();
+            args.put("vmId", vmId);
+            args.put("hostname", vm.getHostname());
+            args.put("reason", reason);
+            notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), false),
+                    NotificationEvent.VM_CREATE_FAILED, args, "vm_create_failed:" + vmId);
+            Map<String, Object> adminArgs = new LinkedHashMap<>(args);
+            adminArgs.put("admin", true);
+            notificationService.publish(notificationService.sysAdminIds(),
+                    NotificationEvent.VM_CREATE_FAILED, adminArgs, "vm_create_failed:" + vmId);
+        } catch (RuntimeException e) {
+            log.error("provision vm {}: failure notification failed", vmId, e);
         }
     }
 

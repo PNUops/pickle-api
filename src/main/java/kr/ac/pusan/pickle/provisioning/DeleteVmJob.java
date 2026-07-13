@@ -3,12 +3,13 @@ package kr.ac.pusan.pickle.provisioning;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
-import kr.ac.pusan.pickle.mail.MailSender;
-import kr.ac.pusan.pickle.mail.VmLifecycleMailComposer;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
@@ -74,15 +75,14 @@ public class DeleteVmJob {
     private final IpamService ipamService;
     private final JobScheduler jobScheduler;
     private final UserRepository userRepository;
-    private final MailSender mailSender;
-    private final VmLifecycleMailComposer mailComposer;
+    private final NotificationService notificationService;
     private final PublishingTeardownService publishingTeardown;
 
     public DeleteVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
-            UserRepository userRepository, MailSender mailSender,
-            VmLifecycleMailComposer mailComposer, PublishingTeardownService publishingTeardown) {
+            UserRepository userRepository, NotificationService notificationService,
+            PublishingTeardownService publishingTeardown) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -91,8 +91,7 @@ public class DeleteVmJob {
         this.ipamService = ipamService;
         this.jobScheduler = jobScheduler;
         this.userRepository = userRepository;
-        this.mailSender = mailSender;
-        this.mailComposer = mailComposer;
+        this.notificationService = notificationService;
         this.publishingTeardown = publishingTeardown;
     }
 
@@ -321,10 +320,13 @@ public class DeleteVmJob {
 
     /** Contract: the final destruction is notified to the org's admins. */
     private void notifyOrgAdmins(Vm vm) {
-        for (User admin : userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId())) {
-            if (admin.getStatus() == UserStatus.ACTIVE) {
-                mailSender.send(mailComposer.deleteCompleted(admin.getEmail(), vm.getName()));
-            }
-        }
+        List<Long> admins = userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId())
+                .stream()
+                .filter(admin -> admin.getStatus() == UserStatus.ACTIVE)
+                .map(User::getId)
+                .toList();
+        notificationService.publish(admins, NotificationEvent.VM_DELETE_COMPLETED,
+                Map.of("vmId", vm.getId(), "vmName", vm.getName()),
+                "vm_delete_completed:" + vm.getId());
     }
 }

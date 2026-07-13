@@ -113,7 +113,11 @@ class ContractDriftTest {
             "POST /admin/routes/resync",
             // M5 api-A (contract v0.5.0).
             "GET /admin/settings",
-            "PUT /admin/settings/{key}");
+            "PUT /admin/settings/{key}",
+            "GET /notifications",
+            "GET /notifications/unread-count",
+            "POST /notifications/{notificationId}/read",
+            "POST /notifications/read-all");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -127,10 +131,6 @@ class ContractDriftTest {
      */
     private static final Set<String> PLANNED = Set.of(
             // api-A lane
-            "GET /notifications",
-            "GET /notifications/unread-count",
-            "POST /notifications/{notificationId}/read",
-            "POST /notifications/read-all",
             "POST /admin/announcements",
             "GET /admin/announcements",
             "GET /admin/groups",

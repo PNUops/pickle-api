@@ -8,7 +8,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import kr.ac.pusan.pickle.admin.dto.EmergencyDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -20,9 +19,8 @@ import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpamService;
-import kr.ac.pusan.pickle.mail.MailMessage;
-import kr.ac.pusan.pickle.mail.MailSender;
-import kr.ac.pusan.pickle.mail.VmLifecycleMailComposer;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
@@ -82,16 +80,15 @@ public class VmDeletionService {
     private final JobScheduler jobScheduler;
     private final DeleteVmJob deleteVmJob;
     private final AuditService auditService;
-    private final MailSender mailSender;
-    private final VmLifecycleMailComposer mailComposer;
+    private final NotificationService notificationService;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
-            DeleteVmJob deleteVmJob, AuditService auditService, MailSender mailSender,
-            VmLifecycleMailComposer mailComposer,
+            DeleteVmJob deleteVmJob, AuditService auditService,
+            NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
             PublishingTeardownService publishingTeardown) {
         this.vmRepository = vmRepository;
@@ -103,8 +100,7 @@ public class VmDeletionService {
         this.jobScheduler = jobScheduler;
         this.deleteVmJob = deleteVmJob;
         this.auditService = auditService;
-        this.mailSender = mailSender;
-        this.mailComposer = mailComposer;
+        this.notificationService = notificationService;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
     }
@@ -136,8 +132,8 @@ public class VmDeletionService {
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
-        sendAfterCommit(recipients(vm, true),
-                email -> mailComposer.selfDeleteAccepted(email, vm.getName(), scheduledFor));
+        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_ACCEPTED,
+                Map.of("vmId", vmId, "vmName", vm.getName(), "scheduledFor", scheduledFor), null);
         return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.id(), null, true);
     }
 
@@ -194,9 +190,9 @@ public class VmDeletionService {
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
-        sendAfterCommit(recipients(vm, false),
-                email -> mailComposer.adminDeleteScheduled(email, vm.getName(), reason,
-                        request.scheduledFor()));
+        notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_SCHEDULED,
+                Map.of("vmId", vmId, "vmName", vm.getName(), "reason", reason,
+                        "scheduledFor", request.scheduledFor()), null);
         return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.id(),
                 reason, true);
     }
@@ -234,8 +230,8 @@ public class VmDeletionService {
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
                 Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "canceledKind", vm.getDeleteKind().name()), ip);
-        sendAfterCommit(recipients(vm, false),
-                email -> mailComposer.deleteCanceled(email, vm.getName()));
+        notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
+                Map.of("vmId", vmId, "vmName", vm.getName()), null);
         return new MessageResponse("삭제 예약이 취소되었습니다.");
     }
 
@@ -262,8 +258,8 @@ public class VmDeletionService {
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId()), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
-        sendAfterCommit(recipients(vm, true),
-                email -> mailComposer.emergencyDeleteAccepted(email, vm.getName()));
+        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_EMERGENCY,
+                Map.of("vmId", vmId, "vmName", vm.getName()), null);
         return new MessageResponse("긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
     }
 
@@ -355,32 +351,27 @@ public class VmDeletionService {
 
     // ── notifications / enqueue ────────────────────────────────────────────
 
-    /** Group members' emails, optionally plus the org's admins (ACTIVE only). */
-    private List<String> recipients(Vm vm, boolean includeOrgAdmins) {
-        Set<String> emails = new LinkedHashSet<>();
+    /**
+     * Group members' user ids, optionally plus the org's admins (ACTIVE only).
+     * Notifications are INSERTed in the deletion transaction itself, so they
+     * exist iff the deletion intent committed; email leaves asynchronously via
+     * the dispatcher.
+     */
+    private List<Long> recipients(Vm vm, boolean includeOrgAdmins) {
+        Set<Long> userIds = new LinkedHashSet<>();
         List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(vm.getGroupId())
                 .stream().map(GroupMember::getUserId).toList();
         userRepository.findAllById(memberIds).stream()
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                .map(User::getEmail)
-                .forEach(emails::add);
+                .map(User::getId)
+                .forEach(userIds::add);
         if (includeOrgAdmins) {
             userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId()).stream()
                     .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                    .map(User::getEmail)
-                    .forEach(emails::add);
+                    .map(User::getId)
+                    .forEach(userIds::add);
         }
-        return List.copyOf(emails);
-    }
-
-    /** Mails go out only if the deletion intent actually committed. */
-    private void sendAfterCommit(List<String> recipients, Function<String, MailMessage> composer) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                recipients.forEach(email -> mailSender.send(composer.apply(email)));
-            }
-        });
+        return List.copyOf(userIds);
     }
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */

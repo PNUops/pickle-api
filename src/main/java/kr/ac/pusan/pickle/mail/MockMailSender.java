@@ -37,8 +37,16 @@ public class MockMailSender implements MailSender {
         this.spoolPath = spoolPath == null || spoolPath.isBlank() ? null : Path.of(spoolPath);
     }
 
+    /** Test hook: recipients whose local part contains this tag fail to send
+     *  (dispatcher backoff/FAILED paths need a deterministic SMTP failure). */
+    static final String FAILING_RECIPIENT_TAG = "+fail";
+
     @Override
     public void send(MailMessage message) {
+        String localPart = message.to().split("@", 2)[0];
+        if (localPart.contains(FAILING_RECIPIENT_TAG)) {
+            throw new IllegalStateException("모의 SMTP 실패 (수신자 " + message.to() + ")");
+        }
         messages.add(message);
         log.info("[mock-mail] to={} subject={} (body withheld from journal{})",
                 message.to(), message.subject(), spoolPath != null ? ", spooled" : "");

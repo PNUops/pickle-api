@@ -85,6 +85,9 @@ class ProvisionPipelineTest {
     private MockMailSender mockMailSender;
 
     @Autowired
+    private kr.ac.pusan.pickle.notification.NotificationDispatchJob notificationDispatchJob;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -346,7 +349,9 @@ class ProvisionPipelineTest {
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
 
-        // the completion mail reached the group OWNER with the no-backup notice
+        // the completion notification is emailed by the dispatcher to the
+        // group OWNER with the no-backup notice
+        notificationDispatchJob.dispatch();
         MailMessage mail = mockMailSender.lastMessageTo("orgadmin@pickle.local");
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).contains(vm.getHostname());

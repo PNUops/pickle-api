@@ -3,9 +3,12 @@ package kr.ac.pusan.pickle.publishing;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Optional;
 import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.publishing.agent.AgentStatus;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import kr.ac.pusan.pickle.publishing.agent.ApplyRequest;
@@ -60,11 +63,13 @@ public class RouteApplyJob {
     private final ProxyAgentClient proxyAgentClient;
     private final PublishingProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final NotificationService notificationService;
 
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             IpAddressResolver ipAddressResolver, ProxyAgentClient proxyAgentClient,
-            PublishingProperties properties, TransactionTemplate transactionTemplate) {
+            PublishingProperties properties, TransactionTemplate transactionTemplate,
+            NotificationService notificationService) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -73,6 +78,7 @@ public class RouteApplyJob {
         this.proxyAgentClient = proxyAgentClient;
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -153,6 +159,10 @@ public class RouteApplyJob {
                 // GET /status before calling the cert ACTIVE.
                 settleCertFromAgent(domain);
             }
+            // Deduped per domain: reconcile re-applies and generation bumps do
+            // not re-announce an already-connected domain.
+            notifyDomainOutcome(domain, NotificationEvent.DOMAIN_CONNECT_DONE, null,
+                    "domain_connect_done:" + domain.getId());
         }
         log.info("route-apply {} for {} (generation {})",
                 absent ? "removed" : "applied", domain.getFqdn(), appliedGen);
@@ -190,8 +200,26 @@ public class RouteApplyJob {
             if (domain.getKind() == DomainKind.CUSTOM) {
                 markCert(domain, CertificateStatus.FAILED, error);
             }
+            // Deduped per generation: the reconcile job retrying the same
+            // failed generation stays silent, a fresh publish attempt speaks.
+            notifyDomainOutcome(domain, NotificationEvent.DOMAIN_CONNECT_FAILED, error,
+                    "domain_connect_failed:" + domain.getId() + ":g" + route.getGeneration());
         }
         log.warn("route-apply failed for {}: {}", domain.getFqdn(), error);
+    }
+
+    /** Group OWNER/MANAGER notice for a route outcome (same tx as the record). */
+    private void notifyDomainOutcome(Domain domain, NotificationEvent event, String reason,
+            String dedupKey) {
+        Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
+        if (vm == null) {
+            return;
+        }
+        Map<String, Object> args = reason == null
+                ? Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId())
+                : Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", reason);
+        notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                event, args, dedupKey);
     }
 
     /**
@@ -242,5 +270,14 @@ public class RouteApplyJob {
                         cert.setNotAfter(Instant.now().plus(properties.leCertValidityDays(), ChronoUnit.DAYS));
                     }
                 });
+        if (status == CertificateStatus.FAILED) {
+            // Operators watch cert issuance/renewal — HIGH to every SYS_ADMIN,
+            // deduped per domain so repeated failed applies stay quiet.
+            notificationService.publish(notificationService.sysAdminIds(),
+                    NotificationEvent.CERT_FAILURE,
+                    Map.of("fqdn", domain.getFqdn(),
+                            "reason", error != null ? error : "원인 미상 (에이전트 응답 없음)"),
+                    "cert_failure:" + domain.getId());
+        }
     }
 }
