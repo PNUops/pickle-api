@@ -125,7 +125,8 @@ class ContractDriftTest {
             "POST /admin/tasks/{taskId}/retry",
             "GET /admin/ip-allocations",
             "GET /admin/summary",
-            "GET /admin/system-summary");
+            "GET /admin/system-summary",
+            "PATCH /admin/vms/{vmId}/period");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -146,8 +147,7 @@ class ContractDriftTest {
             "GET /admin/audit",
             // api-B lane
             "GET /admin/notifications",
-            "POST /admin/notifications/{notificationId}/resend",
-            "PATCH /admin/vms/{vmId}/period");
+            "POST /admin/notifications/{notificationId}/resend");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

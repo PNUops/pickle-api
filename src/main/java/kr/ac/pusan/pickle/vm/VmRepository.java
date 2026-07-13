@@ -135,6 +135,78 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             """)
     int clearStalePowerActionClaims(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
 
+    // --- M5 usage-period expiry (single-writer: VmExpiryJob / VmPeriodService) ---
+
+    /** Expiry-notice working set: dated, live, no pending deletion, ending by the horizon. */
+    @Query("""
+            select v from Vm v
+             where v.endDate is not null and v.endDate >= :today and v.endDate <= :horizon
+               and v.status in :statuses
+               and v.deleteScheduledFor is null and v.deleteRequestedAt is null
+             order by v.id
+            """)
+    List<Vm> findExpiryNoticeCandidates(@Param("statuses") Collection<VmStatus> statuses,
+            @Param("today") java.time.LocalDate today,
+            @Param("horizon") java.time.LocalDate horizon);
+
+    /** Auto-stop working set: past end date, still powered, not yet expiry-stopped. */
+    @Query("""
+            select v from Vm v
+             where v.endDate is not null and v.endDate < :today
+               and v.status in :statuses and v.expiryStoppedAt is null
+               and v.deleteScheduledFor is null and v.deleteRequestedAt is null
+             order by v.id
+            """)
+    List<Vm> findExpiryStopCandidates(@Param("statuses") Collection<VmStatus> statuses,
+            @Param("today") java.time.LocalDate today);
+
+    /**
+     * Notice-stage CAS: descends only (14 → 7 → 1). An hourly re-run or a
+     * duplicate worker loses the guard and sends nothing; extending the period
+     * clears the stage (see {@link #updatePeriod}) so notices re-arm.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.lastExpiryNoticeStage = :stage, v.updatedAt = :now
+             where v.id = :id
+               and (v.lastExpiryNoticeStage is null or v.lastExpiryNoticeStage > :stage)
+            """)
+    int markExpiryNoticeStage(@Param("id") Long id, @Param("stage") int stage,
+            @Param("now") Instant now);
+
+    /** Confirmed expiry stop: status → STOPPED with the expiry marker, in one CAS. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.status = :to, v.statusDetail = :statusDetail, v.expiryStoppedAt = :now,
+                   v.updatedAt = :now
+             where v.id = :id and v.status in :from and v.expiryStoppedAt is null
+            """)
+    int finishExpiryStop(@Param("id") Long id, @Param("from") Collection<VmStatus> from,
+            @Param("to") VmStatus to, @Param("statusDetail") String statusDetail,
+            @Param("now") Instant now);
+
+    /**
+     * Admin period change: updates the dates and clears both expiry markers in
+     * the same CAS, guarded against deletion states so a raced schedule-delete
+     * cannot be overridden (0 rows → 409 {@code VM_INVALID_STATE}).
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.startDate = :startDate, v.endDate = :endDate, v.expiryStoppedAt = null,
+                   v.lastExpiryNoticeStage = null, v.updatedAt = :now
+             where v.id = :id and v.status not in :excluded
+               and v.deleteScheduledFor is null and v.deleteRequestedAt is null
+            """)
+    int updatePeriod(@Param("id") Long id, @Param("startDate") java.time.LocalDate startDate,
+            @Param("endDate") java.time.LocalDate endDate,
+            @Param("excluded") Collection<VmStatus> excluded, @Param("now") Instant now);
+
     // --- M3 pipeline column updates (single-writer: the provisioning job) ----
 
     /** Step 1 (place) confirms/overrides the node chosen at approval time. */

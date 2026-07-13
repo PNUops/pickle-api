@@ -1,9 +1,13 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupRepository;
@@ -31,17 +35,24 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminVmQueryService {
 
+    /** Expiry filters never surface rows already leaving through deletion. */
+    private static final List<VmStatus> EXPIRY_FILTER_EXCLUDED =
+            List.of(VmStatus.DELETED, VmStatus.DELETING);
+
     private final VmRepository vmRepository;
     private final GroupRepository groupRepository;
+    private final Clock clock;
 
-    public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository) {
+    public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository,
+            Clock clock) {
         this.vmRepository = vmRepository;
         this.groupRepository = groupRepository;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long groupId,
-            VmStatus status, int page, int size) {
+            VmStatus status, Integer expiringInDays, Boolean expired, int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
@@ -53,6 +64,21 @@ public class AdminVmQueryService {
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        LocalDate today = ClockConfig.todayKst(clock);
+        if (expiringInDays != null) {
+            // today ≤ endDate ≤ today+N — already-expired rows are the expired
+            // filter's business; combining both filters ANDs to empty by
+            // design (contract).
+            LocalDate horizon = today.plusDays(expiringInDays);
+            spec = spec.and((root, query, cb) -> cb.and(
+                    cb.between(root.get("endDate"), today, horizon),
+                    cb.not(root.get("status").in(EXPIRY_FILTER_EXCLUDED))));
+        }
+        if (Boolean.TRUE.equals(expired)) {
+            spec = spec.and((root, query, cb) -> cb.and(
+                    cb.lessThan(root.get("endDate"), today),
+                    cb.not(root.get("status").in(EXPIRY_FILTER_EXCLUDED))));
         }
         Page<Vm> result = vmRepository.findAll(spec, pageable);
         Map<Long, String> groupNames = groupRepository.findAllById(

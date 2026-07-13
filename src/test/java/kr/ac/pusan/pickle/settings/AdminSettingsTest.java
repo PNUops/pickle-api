@@ -160,12 +160,14 @@ class AdminSettingsTest {
                         .content("{\"value\": 2}"))
                 .andExpect(status().isNotFound());
 
-        // whitelisted but not seeded yet (api-B's V18 key) → 404 as well
+        // whitelisted AND seeded since api-B's V18 → editable like any other key
         mockMvc.perform(put("/api/v1/admin/settings/vm_expiry_autostop_enabled")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"value\": true}"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.key").value("vm_expiry_autostop_enabled"))
+                .andExpect(jsonPath("$.value").value(true));
     }
 
     @Test

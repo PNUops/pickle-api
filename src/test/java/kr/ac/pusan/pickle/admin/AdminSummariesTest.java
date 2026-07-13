@@ -180,8 +180,7 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.tasks.retryingCount").isNumber())
                 .andExpect(jsonPath("$.tasks.needsAdminCount").isNumber())
                 .andExpect(jsonPath("$.tasks.failed24hCount").isNumber())
-                // notifications table does not exist before the api-A merge
-                .andExpect(jsonPath("$.notificationFailureCount").value(0))
+                .andExpect(jsonPath("$.notificationFailureCount").isNumber())
                 .andExpect(jsonPath("$.certExpiring30dCount").isNumber())
                 .andExpect(jsonPath("$.openDriftFindingCount").isNumber())
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].allocatedCount")
