@@ -115,7 +115,8 @@ class ContractDriftTest {
             "GET /admin/drift-findings",
             "POST /admin/drift-findings/{findingId}/resolve",
             "GET /admin/tasks",
-            "POST /admin/tasks/{taskId}/retry");
+            "POST /admin/tasks/{taskId}/retry",
+            "GET /admin/ip-allocations");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -143,7 +144,6 @@ class ContractDriftTest {
             // api-B lane
             "GET /admin/summary",
             "GET /admin/system-summary",
-            "GET /admin/ip-allocations",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
             "PATCH /admin/vms/{vmId}/period");
