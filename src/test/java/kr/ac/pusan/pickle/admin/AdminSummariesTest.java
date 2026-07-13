@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -151,16 +152,29 @@ class AdminSummariesTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        // SYS_ADMIN drills into a named org; no/unknown org → 404
+        // SYS_ADMIN drills into a named org; an unknown org → 404
         mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/admin/summary")
-                        .header("Authorization", "Bearer " + sysAdminToken))
-                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/admin/summary?orgId=999999")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
+
+        // SYS_ADMIN without orgId → platform-wide aggregate in the same shape
+        // (the console home calls it without a drill-in for both roles)
+        createPlatformWideProbeVm();
+        mockMvc.perform(get("/api/v1/admin/summary")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.pendingRequestCount").isNumber())
+                .andExpect(jsonPath("$.recentDecisions14d.approvedCount").isNumber())
+                .andExpect(jsonPath("$.vmCountsByStatus.RUNNING").isNumber())
+                .andExpect(jsonPath("$.resource.allocatedVcpu").isNumber())
+                .andExpect(jsonPath("$.resource.guidance").isNotEmpty())
+                .andExpect(jsonPath("$.topGroupsByVmCount").isArray())
+                .andExpect(jsonPath("$.attention.failedTaskCount").isNumber())
+                // spans orgs: the probe VM counts without any org filter
+                .andExpect(jsonPath("$.vmCountsByStatus.RUNNING", greaterThanOrEqualTo(1)));
     }
 
     @Test
@@ -186,6 +200,11 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].allocatedCount")
                         .exists())
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].freeCount").exists());
+    }
+
+    /** One RUNNING VM in groupBig so the platform-wide summary has this org's data. */
+    private void createPlatformWideProbeVm() {
+        createVm(groupBig, "RUNNING", null);
     }
 
     // --- fixtures ---------------------------------------------------------------

@@ -68,22 +68,29 @@ public class AdminSummaryService {
         this.clock = clock;
     }
 
+    /**
+     * Org panel — or, for a SYS_ADMIN without an {@code orgId} drill-in, the
+     * platform-wide aggregate in the same shape ({@code scopedOrgId} null =
+     * no org filter anywhere below; the console home calls it that way).
+     */
     @Transactional(readOnly = true)
     public OrgDashboardSummaryResponse orgSummary(AuthenticatedUser actor, Long orgId) {
-        long scopedOrgId = resolveOrgId(actor, orgId);
+        Long scopedOrgId = resolveOrgId(actor, orgId);
         LocalDate today = ClockConfig.todayKst(clock);
         Instant decidedSince = clock.instant().minus(Duration.ofDays(14));
 
-        long pending = count("select count(*) from vm_requests where org_id = ?"
-                + " and status = 'SUBMITTED'", scopedOrgId);
+        long pending = count("select count(*) from vm_requests"
+                + " where (?::bigint is null or org_id = ?) and status = 'SUBMITTED'",
+                scopedOrgId, scopedOrgId);
         RecentDecisions decisions = jdbcTemplate.queryForObject("""
                 select count(*) filter (where r.decision = 'APPROVE') as approved,
                        count(*) filter (where r.decision = 'REJECT') as rejected
                   from vm_request_reviews r
                   join vm_requests q on q.id = r.request_id
-                 where q.org_id = ? and r.created_at >= ?
+                 where (?::bigint is null or q.org_id = ?) and r.created_at >= ?
                 """, (rs, rowNum) -> new RecentDecisions(rs.getLong("approved"),
-                rs.getLong("rejected")), scopedOrgId, java.sql.Timestamp.from(decidedSince));
+                rs.getLong("rejected")), scopedOrgId, scopedOrgId,
+                java.sql.Timestamp.from(decidedSince));
 
         OrgHeadroomService.OrgHeadroom headroom = orgHeadroomService.headroom(scopedOrgId);
         Resource resource = new Resource(headroom.allocated().vcpu(),
@@ -94,40 +101,41 @@ public class AdminSummaryService {
                 select v.group_id, g.name, count(*) as vm_count
                   from vms v
                   join groups g on g.id = v.group_id
-                 where v.org_id = ? and v.status <> 'DELETED'
+                 where (?::bigint is null or v.org_id = ?) and v.status <> 'DELETED'
                  group by v.group_id, g.name
                  order by vm_count desc, v.group_id
                  limit 10
                 """, (rs, rowNum) -> new TopGroup(rs.getLong("group_id"), rs.getString("name"),
-                rs.getLong("vm_count")), scopedOrgId);
+                rs.getLong("vm_count")), scopedOrgId, scopedOrgId);
 
         long published = count("""
                 select count(*)
                   from routes r
                   join domains d on d.id = r.domain_id
                   join vms v on v.id = d.vm_id
-                 where v.org_id = ? and r.status <> 'REMOVED'
-                """, scopedOrgId);
+                 where (?::bigint is null or v.org_id = ?) and r.status <> 'REMOVED'
+                """, scopedOrgId, scopedOrgId);
         long expiring30d = jdbcTemplate.queryForObject("""
                 select count(*) from vms
-                 where org_id = ? and end_date is not null
+                 where (?::bigint is null or org_id = ?) and end_date is not null
                    and end_date >= ? and end_date <= ?
                    and status not in ('DELETED', 'DELETING')
-                """, Long.class, scopedOrgId, today, today.plusDays(30));
+                """, Long.class, scopedOrgId, scopedOrgId, today, today.plusDays(30));
 
         Attention attention = new Attention(
                 count("""
                         select count(*) from provisioning_tasks t
                           join vms v on v.id = t.vm_id
-                         where v.org_id = ? and t.status = 'FAILED'
-                        """, scopedOrgId),
-                count("select count(*) from vms where org_id = ? and status = 'NEEDS_ADMIN'",
-                        scopedOrgId),
+                         where (?::bigint is null or v.org_id = ?) and t.status = 'FAILED'
+                        """, scopedOrgId, scopedOrgId),
+                count("select count(*) from vms where (?::bigint is null or org_id = ?)"
+                        + " and status = 'NEEDS_ADMIN'", scopedOrgId, scopedOrgId),
                 jdbcTemplate.queryForObject("""
                         select count(*) from vms
-                         where org_id = ? and end_date is not null and end_date < ?
+                         where (?::bigint is null or org_id = ?)
+                           and end_date is not null and end_date < ?
                            and status not in ('DELETED', 'DELETING')
-                        """, Long.class, scopedOrgId, today));
+                        """, Long.class, scopedOrgId, scopedOrgId, today));
 
         return new OrgDashboardSummaryResponse(pending, decisions,
                 vmCountsByStatus(scopedOrgId), resource, topGroups,
@@ -207,11 +215,12 @@ public class AdminSummaryService {
     }
 
     /**
-     * ORG_ADMIN is pinned to their own org (another org's id answers 404);
-     * SYS_ADMIN must name the org to drill into — a missing or unknown orgId
-     * answers 404 too (the summary is per-org by contract).
+     * ORG_ADMIN is pinned to their own org (another org's id answers 404).
+     * SYS_ADMIN: an explicit {@code orgId} must exist (unknown → 404), and no
+     * {@code orgId} means the platform-wide aggregate (null scope) — the
+     * console home calls the summary without a drill-in for both roles.
      */
-    private long resolveOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long resolveOrgId(AuthenticatedUser actor, Long orgId) {
         if (actor.role() == UserRole.ORG_ADMIN) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
@@ -222,7 +231,10 @@ public class AdminSummaryService {
             }
             return actor.orgId();
         }
-        if (orgId == null || orgRepository.findById(orgId).isEmpty()) {
+        if (orgId == null) {
+            return null; // SYS_ADMIN without drill-in → platform-wide
+        }
+        if (orgRepository.findById(orgId).isEmpty()) {
             throw orgNotFound();
         }
         return orgId;

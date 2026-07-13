@@ -32,10 +32,14 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     List<Vm> findActiveByGroupIdIn(@Param("groupIds") Collection<Long> groupIds,
             @Param("deleted") VmStatus deleted);
 
-    /** Currently allocated (= not deleted) VMs of an org, for headroom math. */
+    /**
+     * Currently allocated (= not deleted) VMs of an org, for headroom math —
+     * a null {@code orgId} means platform-wide (SYS_ADMIN dashboard, M5).
+     */
     @Query("""
             select v from Vm v
-             where v.orgId = :orgId and v.deletedAt is null and v.status <> :deleted
+             where (:orgId is null or v.orgId = :orgId)
+               and v.deletedAt is null and v.status <> :deleted
              order by v.id
             """)
     List<Vm> findActiveByOrgId(@Param("orgId") Long orgId, @Param("deleted") VmStatus deleted);

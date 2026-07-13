@@ -43,7 +43,11 @@ public class OrgHeadroomService {
         this.settingsService = settingsService;
     }
 
-    /** Allocated-vs-capacity aggregates + threshold warnings + guidance for one org. */
+    /**
+     * Allocated-vs-capacity aggregates + threshold warnings + guidance for one
+     * org — or platform-wide (all orgs) when {@code orgId} is null (SYS_ADMIN
+     * dashboard without a drill-in).
+     */
     public OrgHeadroom headroom(Long orgId) {
         List<Vm> orgVms = vmRepository.findActiveByOrgId(orgId, VmStatus.DELETED);
         ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
