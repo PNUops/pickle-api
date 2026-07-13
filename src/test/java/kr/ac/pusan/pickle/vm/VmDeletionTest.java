@@ -120,6 +120,9 @@ class VmDeletionTest {
     @Autowired
     private MockMailSender mockMailSender;
 
+    @Autowired
+    private kr.ac.pusan.pickle.notification.NotificationDispatchJob notificationDispatchJob;
+
     private User owner;
     private User member;
     private User outsider;
@@ -191,11 +194,13 @@ class VmDeletionTest {
                 Long.class);
         assertThat(enqueued).isPositive();
 
-        // mail: group members + org admins, with both policy notices
+        // notifications were inserted in-tx; the dispatcher emails them:
+        // group members + org admins, with both policy notices
+        notificationDispatchJob.dispatch();
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to)
                 .contains(owner.getEmail(), member.getEmail(), "orgadmin@pickle.local");
-        assertThat(mails.getFirst().body())
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
                 .contains("삭제 취소는 관리자만 가능합니다");
 
@@ -308,6 +313,7 @@ class VmDeletionTest {
         assertThat(column(vmId, "delete_kind")).isEqualTo("ADMIN");
         assertThat(eventTypes(vmId)).contains("SCHEDULE_DELETE");
         assertThat(auditCount("vm.schedule_delete", vmId)).isEqualTo(1);
+        notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
                 .contains("사용 종료일이 지난 VM 정리")
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
@@ -352,6 +358,7 @@ class VmDeletionTest {
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
         assertThat(auditCount("vm.cancel_scheduled_delete", selfVm)).isEqualTo(1);
+        notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("취소");
 
         // ADMIN: schedule only — the power state is preserved
@@ -432,6 +439,7 @@ class VmDeletionTest {
                 "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
                 Long.class);
         assertThat(enqueued).isPositive();
+        notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("긴급");
 
         // already destroyed → 409
@@ -519,6 +527,7 @@ class VmDeletionTest {
         wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath("status/stop"))));
         wm.server().verify(deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
         // org admin notified of the final destruction
+        notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo("orgadmin@pickle.local").body()).contains("파기");
     }
 

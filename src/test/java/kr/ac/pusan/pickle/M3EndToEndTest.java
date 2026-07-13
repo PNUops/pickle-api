@@ -95,6 +95,9 @@ class M3EndToEndTest {
     private MockMailSender mockMailSender;
 
     @Autowired
+    private kr.ac.pusan.pickle.notification.NotificationDispatchJob notificationDispatchJob;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeAll
@@ -224,6 +227,10 @@ class M3EndToEndTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
+        // creation notice is a notifications row; the dispatcher emails it
+        // (running it directly — the 1-minute recurring schedule is too slow
+        // for the test, and the CAS claim makes the direct call race-safe)
+        notificationDispatchJob.dispatch();
         MailMessage createdMail = mockMailSender.lastMessageTo(STUDENT_EMAIL);
         assertThat(createdMail.subject()).contains(vm.get("hostname").asString());
         assertThat(createdMail.body())

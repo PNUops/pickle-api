@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.admin.dto.ApproveVmRequestRequest;
@@ -18,6 +19,8 @@ import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
 import kr.ac.pusan.pickle.publishing.DomainRepository;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
@@ -68,6 +71,7 @@ public class ApprovalService {
     private final JobScheduler jobScheduler;
     private final ProvisioningService provisioningService;
     private final AuditService auditService;
+    private final NotificationService notificationService;
     private final SubdomainPolicy subdomainPolicy;
     private final DomainRepository domainRepository;
     private final SecureRandom random = new SecureRandom();
@@ -76,6 +80,7 @@ public class ApprovalService {
             VmRequestAssembler assembler, VmRepository vmRepository, VmTemplateRepository templateRepository,
             NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
+            NotificationService notificationService,
             SubdomainPolicy subdomainPolicy, DomainRepository domainRepository) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -87,6 +92,7 @@ public class ApprovalService {
         this.jobScheduler = jobScheduler;
         this.provisioningService = provisioningService;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.subdomainPolicy = subdomainPolicy;
         this.domainRepository = domainRepository;
     }
@@ -217,6 +223,16 @@ public class ApprovalService {
                 Map.of("vmId", vmId, "hostname", hostname, "grantedVcpu", form.grantedVcpu(),
                         "grantedMemoryMb", form.grantedMemoryMb(), "grantedDiskGb", form.grantedDiskGb(),
                         "nodeId", nodeId), ip);
+        // In-tx insert: the notice exists iff the approval committed.
+        Map<String, Object> notifyArgs = new LinkedHashMap<>();
+        notifyArgs.put("requestId", request.getId());
+        notifyArgs.put("hostname", hostname);
+        String reviewComment = Texts.blankToNull(form.comment());
+        if (reviewComment != null) {
+            notifyArgs.put("comment", reviewComment);
+        }
+        notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_APPROVED,
+                notifyArgs, null);
         return assembler.toDetail(request);
     }
 
@@ -229,6 +245,8 @@ public class ApprovalService {
         request.setStatus(VmRequestStatus.REJECTED);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
                 "vm_request", request.getId(), Map.of("groupId", request.getGroupId()), ip);
+        notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
+                Map.of("requestId", request.getId(), "comment", form.comment().strip()), null);
         return assembler.toDetail(request);
     }
 

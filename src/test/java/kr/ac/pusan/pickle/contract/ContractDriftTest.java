@@ -111,7 +111,14 @@ class ContractDriftTest {
             "GET /admin/domains",
             "GET /admin/certificates",
             "POST /admin/routes/resync",
-            // M5 operations (contract v0.5.0, api-B lane).
+            // M5 api-A (contract v0.5.0).
+            "GET /admin/settings",
+            "PUT /admin/settings/{key}",
+            "GET /notifications",
+            "GET /notifications/unread-count",
+            "POST /notifications/{notificationId}/read",
+            "POST /notifications/read-all",
+            // M5 api-B (contract v0.5.0).
             "GET /admin/drift-findings",
             "POST /admin/drift-findings/{findingId}/resolve",
             "GET /admin/tasks",
@@ -132,17 +139,11 @@ class ContractDriftTest {
      */
     private static final Set<String> PLANNED = Set.of(
             // api-A lane
-            "GET /notifications",
-            "GET /notifications/unread-count",
-            "POST /notifications/{notificationId}/read",
-            "POST /notifications/read-all",
             "POST /admin/announcements",
             "GET /admin/announcements",
             "GET /admin/groups",
             "GET /me/activity",
             "GET /admin/audit",
-            "GET /admin/settings",
-            "PUT /admin/settings/{key}",
             // api-B lane
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",

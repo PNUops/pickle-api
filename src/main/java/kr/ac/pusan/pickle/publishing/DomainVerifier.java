@@ -1,8 +1,13 @@
 package kr.ac.pusan.pickle.publishing;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import kr.ac.pusan.pickle.config.PublishingProperties;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -29,16 +34,21 @@ public class DomainVerifier {
     private final RouteGenerations routeGenerations;
     private final DnsResolver dnsResolver;
     private final PublishingProperties properties;
+    private final VmRepository vmRepository;
+    private final NotificationService notificationService;
 
     public DomainVerifier(DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
-            DnsResolver dnsResolver, PublishingProperties properties) {
+            DnsResolver dnsResolver, PublishingProperties properties, VmRepository vmRepository,
+            NotificationService notificationService) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
         this.routeGenerations = routeGenerations;
         this.dnsResolver = dnsResolver;
         this.properties = properties;
+        this.vmRepository = vmRepository;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -94,8 +104,10 @@ public class DomainVerifier {
                     .isAfter(domain.getCreatedAt().plus(properties.verificationTimeout()));
             domain.setStatus(deadlinePassed ? DomainStatus.FAILED : DomainStatus.VERIFYING);
             if (deadlinePassed) {
-                domain.setLastError("검증 기한(" + properties.verificationTimeout().toHours()
-                        + "시간)이 지났습니다. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.");
+                String error = "검증 기한(" + properties.verificationTimeout().toHours()
+                        + "시간)이 지났습니다. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.";
+                domain.setLastError(error);
+                notifyVerificationFailed(domain, error);
                 log.info("domain {} verification deadline passed — parked FAILED", fqdn);
                 return Optional.empty();
             }
@@ -123,6 +135,22 @@ public class DomainVerifier {
             cert.setLastError(null);
         }
         return cert.getStatus() != CertificateStatus.ACTIVE;
+    }
+
+    /**
+     * Verification parked FAILED (deadline passed): group OWNER/MANAGERs get a
+     * HIGH notice, deduped per domain — the recurring scan stops re-checking a
+     * FAILED domain, so this fires once per park.
+     */
+    private void notifyVerificationFailed(Domain domain, String error) {
+        Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
+        if (vm == null) {
+            return;
+        }
+        notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                NotificationEvent.DOMAIN_CONNECT_FAILED,
+                Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", error),
+                "domain_verify_failed:" + domain.getId());
     }
 
     private static String missReason(boolean txtOk, boolean aOk) {

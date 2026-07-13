@@ -18,6 +18,8 @@ import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
@@ -49,11 +51,13 @@ public class VmRequestService {
     private final VmTemplateRepository templateRepository;
     private final SettingsService settingsService;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
             OrgRepository orgRepository, VmTemplateRepository templateRepository,
-            SettingsService settingsService, AuditService auditService) {
+            SettingsService settingsService, AuditService auditService,
+            NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.groupRepository = groupRepository;
@@ -62,6 +66,7 @@ public class VmRequestService {
         this.templateRepository = templateRepository;
         this.settingsService = settingsService;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -111,6 +116,16 @@ public class VmRequestService {
                 Map.of("groupId", group.getId(), "orgId", org.getId(), "templateId", template.getId(),
                         "reqVcpu", saved.getReqVcpu(), "reqMemoryMb", saved.getReqMemoryMb(),
                         "reqDiskGb", saved.getReqDiskGb()), ip);
+        // In-tx inserts: the notices exist iff the request row committed.
+        notificationService.publish(actor.id(), NotificationEvent.REQUEST_SUBMITTED,
+                Map.of("requestId", saved.getId(), "groupName", group.getName(),
+                        "purpose", saved.getPurpose()), null);
+        notificationService.publish(
+                notificationService.orgAdminIds(org.getId()).stream()
+                        .filter(adminId -> !adminId.equals(actor.id())).toList(),
+                NotificationEvent.REQUEST_SUBMITTED,
+                Map.of("requestId", saved.getId(), "groupName", group.getName(),
+                        "purpose", saved.getPurpose(), "admin", true), null);
         return assembler.toDetail(saved);
     }
 

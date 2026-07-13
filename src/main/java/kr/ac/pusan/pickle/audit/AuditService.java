@@ -58,6 +58,9 @@ public class AuditService {
     public static final String SSHGW_ROUTE = "sshgw.route";
     /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). */
     public static final String SSHGW_ROUTE_DENIED = "sshgw.route_denied";
+    // M5 admin surfaces (contract v0.5.0).
+    public static final String SETTING_UPDATE = "setting.update";
+    public static final String ANNOUNCEMENT_CREATE = "announcement.create";
     /** Actor role stamped on gateway route audits (no user identity in v1). */
     public static final String ACTOR_ROLE_SSHGW = "SSHGW";
 
