@@ -120,7 +120,9 @@ class ContractDriftTest {
             "POST /notifications/read-all",
             "POST /admin/announcements",
             "GET /admin/announcements",
-            "GET /admin/groups");
+            "GET /admin/groups",
+            "GET /me/activity",
+            "GET /admin/audit");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -133,9 +135,7 @@ class ContractDriftTest {
      * period. Each lane moves only its own entries.</p>
      */
     private static final Set<String> PLANNED = Set.of(
-            // api-A lane
-            "GET /me/activity",
-            "GET /admin/audit",
+            // api-A lane: complete — all 11 ops moved to IMPLEMENTED.
             // api-B lane
             "GET /admin/tasks",
             "POST /admin/tasks/{taskId}/retry",
