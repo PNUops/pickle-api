@@ -1,11 +1,13 @@
 package kr.ac.pusan.pickle.vm;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
@@ -51,18 +53,28 @@ public class VmLifecycleService {
     private final GroupMemberRepository groupMemberRepository;
     private final JobScheduler jobScheduler;
     private final VmPowerJobs vmPowerJobs;
+    private final Clock clock;
 
     public VmLifecycleService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            JobScheduler jobScheduler, VmPowerJobs vmPowerJobs) {
+            JobScheduler jobScheduler, VmPowerJobs vmPowerJobs, Clock clock) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.jobScheduler = jobScheduler;
         this.vmPowerJobs = vmPowerJobs;
+        this.clock = clock;
     }
 
     @Transactional
     public MessageResponse start(AuthenticatedUser actor, long vmId) {
-        requireMemberControllableVm(actor, vmId);
+        Vm vm = requireMemberControllableVm(actor, vmId);
+        // M5 expiry guard: a past end date (KST, inclusive end) refuses start
+        // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
+        if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
+                    "사용 기간이 만료된 VM입니다",
+                    "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 관리자에게 기간 연장을 요청해 주세요."
+                            .formatted(vm.getEndDate()));
+        }
         claimPowerAction(vmId, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         long actorId = actor.id();

@@ -83,6 +83,14 @@ public class Vm {
     @Column(name = "end_date")
     private LocalDate endDate;
 
+    /** Set when the expiry sweeper auto-stopped this VM; cleared on period extension (M5). */
+    @Column(name = "expiry_stopped_at")
+    private Instant expiryStoppedAt;
+
+    /** Smallest already-notified D-day stage for the current end date (M5 expiry notices). */
+    @Column(name = "last_expiry_notice_stage")
+    private Integer lastExpiryNoticeStage;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "vm_status")
@@ -236,6 +244,14 @@ public class Vm {
 
     public LocalDate getEndDate() {
         return endDate;
+    }
+
+    public Instant getExpiryStoppedAt() {
+        return expiryStoppedAt;
+    }
+
+    public Integer getLastExpiryNoticeStage() {
+        return lastExpiryNoticeStage;
     }
 
     public VmStatus getStatus() {

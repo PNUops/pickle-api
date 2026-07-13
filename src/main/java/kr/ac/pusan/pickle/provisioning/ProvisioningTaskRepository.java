@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
  * JobRunr job re-runs idempotent — 0 rows updated means the task already
  * moved on and the caller must stop.
  */
-public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTask, Long> {
+public interface ProvisioningTaskRepository
+        extends JpaRepository<ProvisioningTask, Long>, JpaSpecificationExecutor<ProvisioningTask> {
 
     List<ProvisioningTask> findByVmIdOrderByIdDesc(Long vmId);
 
@@ -119,6 +121,30 @@ public interface ProvisioningTaskRepository extends JpaRepository<ProvisioningTa
     default int reactivate(Long id, Instant now) {
         return transitionStatusResettingAttempts(id, ProvisioningTaskStatus.NEEDS_ADMIN,
                 ProvisioningTaskStatus.RUNNING, now);
+    }
+
+    /**
+     * Admin retry API (M5): parks the task back in the queue instead of
+     * claiming it — NEEDS_ADMIN → RETRYING with the attempt budget and error
+     * cleared, so the re-enqueued job claims RETRYING → RUNNING like any
+     * backoff retry and counts the fresh attempt itself. (Claiming RUNNING
+     * here would make the job's own claim CAS see an unclaimable task.)
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.status = :to, t.attempts = 0, t.lastError = null, t.updatedAt = :now
+             where t.id = :id and t.status = :from
+            """)
+    int transitionStatusClearingAttempts(@Param("id") Long id,
+            @Param("from") ProvisioningTaskStatus from, @Param("to") ProvisioningTaskStatus to,
+            @Param("now") Instant now);
+
+    /** NEEDS_ADMIN → RETRYING (admin retry API); 0 rows = not retryable. */
+    default int requeueForAdminRetry(Long id, Instant now) {
+        return transitionStatusClearingAttempts(id, ProvisioningTaskStatus.NEEDS_ADMIN,
+                ProvisioningTaskStatus.RETRYING, now);
     }
 
     /** RUNNING → RETRYING with the failure that caused the backoff. */

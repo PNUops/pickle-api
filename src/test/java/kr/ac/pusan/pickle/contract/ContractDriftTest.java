@@ -122,7 +122,18 @@ class ContractDriftTest {
             "GET /admin/announcements",
             "GET /admin/groups",
             "GET /me/activity",
-            "GET /admin/audit");
+            "GET /admin/audit",
+            // M5 api-B (contract v0.5.0).
+            "GET /admin/drift-findings",
+            "POST /admin/drift-findings/{findingId}/resolve",
+            "GET /admin/tasks",
+            "POST /admin/tasks/{taskId}/retry",
+            "GET /admin/ip-allocations",
+            "GET /admin/summary",
+            "GET /admin/system-summary",
+            "PATCH /admin/vms/{vmId}/period",
+            "GET /admin/notifications",
+            "POST /admin/notifications/{notificationId}/resend");
 
     /**
      * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
@@ -134,19 +145,8 @@ class ContractDriftTest {
      * audit/settings; api-B: tasks/drift/summary/ip-allocations/delivery-log/
      * period. Each lane moves only its own entries.</p>
      */
-    private static final Set<String> PLANNED = Set.of(
-            // api-A lane: complete — all 11 ops moved to IMPLEMENTED.
-            // api-B lane
-            "GET /admin/tasks",
-            "POST /admin/tasks/{taskId}/retry",
-            "GET /admin/drift-findings",
-            "POST /admin/drift-findings/{findingId}/resolve",
-            "GET /admin/summary",
-            "GET /admin/system-summary",
-            "GET /admin/ip-allocations",
-            "GET /admin/notifications",
-            "POST /admin/notifications/{notificationId}/resend",
-            "PATCH /admin/vms/{vmId}/period");
+    // Both M5 lanes complete — all 21 v0.5.0 ops moved to IMPLEMENTED.
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

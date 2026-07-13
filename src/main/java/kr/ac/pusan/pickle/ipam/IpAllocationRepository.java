@@ -3,8 +3,10 @@ package kr.ac.pusan.pickle.ipam;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface IpAllocationRepository extends JpaRepository<IpAllocation, Long> {
+public interface IpAllocationRepository
+        extends JpaRepository<IpAllocation, Long>, JpaSpecificationExecutor<IpAllocation> {
 
     List<IpAllocation> findByPoolIdAndStatus(Long poolId, AllocationStatus status);
 

@@ -98,7 +98,17 @@ public class VmQueryService {
 
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireVisibleVm(actor, vmId);
+        return detailOf(requireVisibleVm(actor, vmId));
+    }
+
+    /**
+     * Assembles the full contract {@code VmDetail} for an <b>already
+     * authorized</b> VM — shared by the member-scoped {@link #get} and admin
+     * flows (period update, M5) whose authorization is org-scoped instead.
+     */
+    @Transactional(readOnly = true)
+    public VmDetailResponse detailOf(Vm vm) {
+        long vmId = vm.getId();
         String groupName = groupRepository.findById(vm.getGroupId())
                 .map(Group::getName).orElse("");
         String ipAddress = liveIpAddress(vm);

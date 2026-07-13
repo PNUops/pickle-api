@@ -17,5 +17,9 @@ public enum VmEventType {
     /** HTTP service publish accepted (route/domain created — M4A). */
     PUBLISH,
     /** HTTP service publish revoked (route removed — M4A). */
-    UNPUBLISH
+    UNPUBLISH,
+    /** Expiry sweeper auto-stopped the VM past its end date (M5, actor null). */
+    EXPIRE_STOP,
+    /** Admin changed the usage period (M5 {@code PATCH /admin/vms/{vmId}/period}). */
+    PERIOD_UPDATE
 }

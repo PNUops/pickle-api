@@ -8,17 +8,20 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.admin.dto.EmergencyDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
+import kr.ac.pusan.pickle.admin.dto.VmPeriodUpdateRequest;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmDeletionService;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
+import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,11 +43,13 @@ public class AdminVmController {
 
     private final AdminVmQueryService adminVmQueryService;
     private final VmDeletionService vmDeletionService;
+    private final VmPeriodService vmPeriodService;
 
     public AdminVmController(AdminVmQueryService adminVmQueryService,
-            VmDeletionService vmDeletionService) {
+            VmDeletionService vmDeletionService, VmPeriodService vmPeriodService) {
         this.adminVmQueryService = adminVmQueryService;
         this.vmDeletionService = vmDeletionService;
+        this.vmPeriodService = vmPeriodService;
     }
 
     @GetMapping
@@ -53,9 +58,22 @@ public class AdminVmController {
             @RequestParam(required = false) Long orgId,
             @RequestParam(required = false) Long groupId,
             @RequestParam(required = false) VmStatus status,
+            @RequestParam(required = false) @Min(1) Integer expiringInDays,
+            @RequestParam(required = false) Boolean expired,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return adminVmQueryService.list(principal, orgId, groupId, status, page, size);
+        return adminVmQueryService.list(principal, orgId, groupId, status, expiringInDays, expired,
+                page, size);
+    }
+
+    /** Synchronous DB update per contract (200 + full detail, not 202). */
+    @PatchMapping("/{vmId}/period")
+    public VmDetailResponse updateVmPeriod(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId,
+            @Valid @RequestBody VmPeriodUpdateRequest request,
+            HttpServletRequest httpRequest) {
+        return vmPeriodService.updatePeriod(principal, vmId, request, clientIp(httpRequest));
     }
 
     @PostMapping("/{vmId}/schedule-delete")

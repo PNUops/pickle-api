@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.admin;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -19,11 +18,7 @@ import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupRepository;
-import kr.ac.pusan.pickle.inventory.Node;
-import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -49,14 +44,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ApprovalContextService {
 
-    static final String GUIDANCE_AMPLE = "여유가 충분합니다. 요청 스펙 그대로 승인해도 무리가 없습니다.";
-    static final String GUIDANCE_MEMORY = "메모리 여유가 부족해 신중한 승인이 필요합니다.";
-    static final String GUIDANCE_VCPU = "vCPU 오버커밋 비율이 높아 신중한 승인이 필요합니다.";
-    static final String GUIDANCE_BOTH = "vCPU와 메모리 여유가 모두 부족해 신중한 승인이 필요합니다.";
+    // Aliases kept for existing callers/tests; the single home of the
+    // headroom math and guidance wording is OrgHeadroomService (M5 extract).
+    static final String GUIDANCE_AMPLE = OrgHeadroomService.GUIDANCE_AMPLE;
+    static final String GUIDANCE_MEMORY = OrgHeadroomService.GUIDANCE_MEMORY;
+    static final String GUIDANCE_VCPU = OrgHeadroomService.GUIDANCE_VCPU;
+    static final String GUIDANCE_BOTH = OrgHeadroomService.GUIDANCE_BOTH;
 
     private static final int HISTORY_LIMIT = 20;
-    private static final double DEFAULT_VCPU_OVERCOMMIT_WARN = 3.0;
-    private static final double DEFAULT_MEMORY_USAGE_WARN = 0.8;
 
     private final ApprovalService approvalService;
     private final VmRequestRepository requestRepository;
@@ -65,13 +60,12 @@ public class ApprovalContextService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
-    private final NodeRepository nodeRepository;
-    private final SettingsService settingsService;
+    private final OrgHeadroomService orgHeadroomService;
 
     public ApprovalContextService(ApprovalService approvalService, VmRequestRepository requestRepository,
             VmRequestReviewRepository reviewRepository, VmRepository vmRepository,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
-            UserRepository userRepository, NodeRepository nodeRepository, SettingsService settingsService) {
+            UserRepository userRepository, OrgHeadroomService orgHeadroomService) {
         this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -79,8 +73,7 @@ public class ApprovalContextService {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
-        this.nodeRepository = nodeRepository;
-        this.settingsService = settingsService;
+        this.orgHeadroomService = orgHeadroomService;
     }
 
     @Transactional(readOnly = true)
@@ -92,14 +85,16 @@ public class ApprovalContextService {
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
 
-        OrgHeadroom headroom = orgHeadroom(request.getOrgId());
+        OrgHeadroomService.OrgHeadroom headroom = orgHeadroomService.headroom(request.getOrgId());
         return new ApprovalContextResponse(
                 applicantPanel(request, applicant),
                 applicantResources(request.getRequesterId()),
                 groupPanel(group),
                 history(request),
-                headroom,
-                guidance(headroom.warnings()));
+                new OrgHeadroom(headroom.allocated(),
+                        new Capacity(headroom.capacityVcpu(), headroom.capacityMemoryMb()),
+                        headroom.vcpuRatio(), headroom.memoryRatio(), headroom.warnings()),
+                headroom.guidance());
     }
 
     private Applicant applicantPanel(VmRequest request, User applicant) {
@@ -161,51 +156,7 @@ public class ApprovalContextService {
                 .toList();
     }
 
-    private OrgHeadroom orgHeadroom(Long orgId) {
-        List<Vm> orgVms = vmRepository.findActiveByOrgId(orgId, VmStatus.DELETED);
-        ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
-        List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
-        long cpuThreads = nodes.stream().mapToLong(Node::getCpuThreads).sum();
-        long memoryMb = nodes.stream().mapToLong(Node::getMemoryMb).sum();
-
-        double vcpuRatio = cpuThreads == 0 ? 0.0 : round2((double) allocated.vcpu() / cpuThreads);
-        double memoryRatio = memoryMb == 0 ? 0.0 : round2((double) allocated.memoryMb() / memoryMb);
-        double vcpuWarn = settingsService.decimal(SettingsService.VCPU_OVERCOMMIT_WARN,
-                DEFAULT_VCPU_OVERCOMMIT_WARN);
-        double memoryWarn = settingsService.decimal(SettingsService.MEMORY_USAGE_WARN,
-                DEFAULT_MEMORY_USAGE_WARN);
-
-        List<String> warnings = new ArrayList<>();
-        if (vcpuRatio >= vcpuWarn) {
-            warnings.add("vCPU 오버커밋 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f).".formatted(vcpuRatio, vcpuWarn));
-        }
-        if (memoryRatio >= memoryWarn) {
-            warnings.add("메모리 할당 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f).".formatted(memoryRatio, memoryWarn));
-        }
-        return new OrgHeadroom(allocated, new Capacity(cpuThreads, memoryMb), vcpuRatio, memoryRatio,
-                List.copyOf(warnings));
-    }
-
-    private static String guidance(List<String> warnings) {
-        boolean vcpu = warnings.stream().anyMatch(w -> w.startsWith("vCPU"));
-        boolean memory = warnings.stream().anyMatch(w -> w.startsWith("메모리"));
-        if (vcpu && memory) {
-            return GUIDANCE_BOTH;
-        }
-        if (memory) {
-            return GUIDANCE_MEMORY;
-        }
-        if (vcpu) {
-            return GUIDANCE_VCPU;
-        }
-        return GUIDANCE_AMPLE;
-    }
-
     private static List<VmBriefResponse> briefs(List<Vm> vms) {
         return vms.stream().map(VmBriefResponse::from).toList();
-    }
-
-    private static double round2(double value) {
-        return Math.round(value * 100.0) / 100.0;
     }
 }

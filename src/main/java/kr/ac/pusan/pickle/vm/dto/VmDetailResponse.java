@@ -31,6 +31,7 @@ public record VmDetailResponse(
         String sshUsername,
         LocalDate startDate,
         LocalDate endDate,
+        Instant expiryStoppedAt,
         ProvisioningTaskResponse provisioning,
         VmDeletionResponse deletion,
         boolean httpPublishGranted,
@@ -45,7 +46,7 @@ public record VmDetailResponse(
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName,
                 vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(),
                 vm.getTemplateId(), ipAddress, vm.getSshUsername(), vm.getStartDate(),
-                vm.getEndDate(), provisioning, VmDeletionResponse.from(vm),
+                vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning, VmDeletionResponse.from(vm),
                 httpPublishGranted, publication,
                 vm.getInitialPassword() != null, vm.getUpdatedAt());
     }

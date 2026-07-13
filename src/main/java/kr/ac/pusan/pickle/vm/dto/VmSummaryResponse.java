@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.vm.dto;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
 
@@ -17,11 +18,14 @@ public record VmSummaryResponse(
         String groupName,
         Long requestId,
         String statusDetail,
+        LocalDate endDate,
+        Instant expiryStoppedAt,
         Instant createdAt) {
 
     public static VmSummaryResponse from(Vm vm, String groupName) {
         return new VmSummaryResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName,
-                vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt());
+                vm.getRequestId(), vm.getStatusDetail(), vm.getEndDate(), vm.getExpiryStoppedAt(),
+                vm.getCreatedAt());
     }
 }
