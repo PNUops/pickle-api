@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * v0.3.1) and the springdoc runtime spec.
+ * currently v0.5.0) and the springdoc runtime spec.
  *
  * <p>The comparison is bidirectional over path+method sets: the contract must
  * equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}, and the runtime must expose
@@ -32,10 +32,10 @@ import org.springframework.test.web.servlet.MockMvc;
  * named explicitly so a drift failure points at the exact endpoint instead of
  * a set diff of unknown origin.</p>
  *
- * <p>{@link #PLANNED} holds contract v0.3.1 operations not yet implemented,
- * enabling parallel M3 development against a frozen contract. As each endpoint
+ * <p>{@link #PLANNED} holds contract operations not yet implemented,
+ * enabling parallel per-milestone development against a frozen contract. As each endpoint
  * lands, move its entry from PLANNED to IMPLEMENTED. <b>PLANNED must be empty
- * by the end of M3.</b></p>
+ * at each milestone end.</b></p>
  *
  * <p><b>Limitation:</b> only METHOD+path sets are compared. Parameters,
  * request/response schema shapes, and error codes are NOT checked here —
@@ -54,7 +54,7 @@ class ContractDriftTest {
     /** Contract server prefix stripped from runtime paths before comparison. */
     private static final String SERVER_PREFIX = "/api/v1";
 
-    /** The implemented surface ("METHOD path") — the full contract v0.2.3 set. */
+    /** The implemented surface ("METHOD path") — runtime must expose exactly this. */
     private static final Set<String> IMPLEMENTED = Set.of(
             "POST /auth/signup",
             "POST /auth/verify-email",
@@ -176,7 +176,7 @@ class ContractDriftTest {
         Set<String> contractSurface = new TreeSet<>(IMPLEMENTED);
         contractSurface.addAll(PLANNED);
         assertThat(endpointsOf(contract, ""))
-                .as("contract v0.3.0 path+method set vs IMPLEMENTED ∪ PLANNED")
+                .as("contract path+method set vs IMPLEMENTED ∪ PLANNED")
                 .isEqualTo(contractSurface);
 
         assertThat(endpointsOf(runtime, SERVER_PREFIX))
