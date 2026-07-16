@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -152,26 +153,32 @@ public class AnnouncementService {
      * ACTIVE member of the (already gated) group.
      */
     private int fanOut(Announcement announcement) {
+        // Event id and importance are bound from the NotificationEvent catalog
+        // (single source) — the set-based INSERT…SELECT itself stays.
+        String event = NotificationEvent.ANNOUNCEMENT.id();
+        String importance = NotificationEvent.ANNOUNCEMENT.defaultImportance().name();
         String base = """
                 insert into notifications
                     (user_id, event, title, body, importance, announcement_id, status)
-                select u.id, 'announcement', ?, ?, 'NORMAL', ?, 'PENDING'
+                select u.id, ?, ?, ?, ?, ?, 'PENDING'
                   from users u
                 """;
         return switch (announcement.getScope()) {
             case ALL -> jdbcTemplate.update(base + " where u.status = 'ACTIVE'",
-                    announcement.getTitle(), announcement.getBody(), announcement.getId());
+                    event, announcement.getTitle(), announcement.getBody(), importance,
+                    announcement.getId());
             case ORG -> jdbcTemplate.update(
                     base + " where u.status = 'ACTIVE' and (u.org_id = ? or "
                             + OrgMembershipSql.memberOfOrgLinkedGroup("u.id") + ")",
-                    announcement.getTitle(), announcement.getBody(), announcement.getId(),
+                    event, announcement.getTitle(), announcement.getBody(), importance,
+                    announcement.getId(),
                     announcement.getOrgId(), announcement.getOrgId(), announcement.getOrgId());
             case GROUP -> jdbcTemplate.update(base + """
                           join group_members gm on gm.user_id = u.id
                          where gm.group_id = ? and u.status = 'ACTIVE'
                         """,
-                    announcement.getTitle(), announcement.getBody(), announcement.getId(),
-                    announcement.getGroupId());
+                    event, announcement.getTitle(), announcement.getBody(), importance,
+                    announcement.getId(), announcement.getGroupId());
         };
     }
 
