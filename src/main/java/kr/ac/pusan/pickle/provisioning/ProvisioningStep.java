@@ -8,16 +8,16 @@ package kr.ac.pusan.pickle.provisioning;
  */
 public enum ProvisioningStep {
 
-    GUARD(0, "준비 확인"),
-    PLACE(1, "노드 배치"),
-    ALLOC_IP(2, "IP 할당"),
-    VMID(3, "VMID 발급"),
+    GUARD(0, "준비 확인 중"),
+    PLACE(1, "노드 배치 중"),
+    ALLOC_IP(2, "IP 할당 중"),
+    VMID(3, "VMID 발급 중"),
     CLONE(4, "템플릿 복제 중"),
-    CONFIG(5, "초기 설정 중"),
-    RESIZE(6, "디스크 확장 중"),
-    START(7, "부팅·에이전트 대기"),
-    VERIFY(8, "네트워크 확인"),
-    FINALIZE(9, "마무리");
+    CONFIG(5, "VM 설정 중"),
+    RESIZE(6, "디스크 크기 조정 중"),
+    START(7, "VM 시작 중"),
+    VERIFY(8, "네트워크 확인 중"),
+    FINALIZE(9, "마무리 중");
 
     public static final int TOTAL_STEPS = values().length;
 

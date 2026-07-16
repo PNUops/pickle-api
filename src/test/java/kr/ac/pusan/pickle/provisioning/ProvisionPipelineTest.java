@@ -209,7 +209,7 @@ class ProvisionPipelineTest {
         ProvisioningTask task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
         assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.START.index());
-        assertThat(task.getLastError()).contains("부팅");
+        assertThat(task.getLastError()).contains("VM 시작");
         Vm vm = vmRepository.findById(vmId).orElseThrow();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
         // the VM is never destroyed: vmid kept, IP kept, no DELETE call

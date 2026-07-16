@@ -1,8 +1,10 @@
 package kr.ac.pusan.pickle.vm.dto;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.provisioning.ProvisioningStep;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
@@ -23,18 +25,10 @@ public record ProvisioningTaskResponse(
         String lastError,
         Instant updatedAt) {
 
-    /** docs/plan/03 provision pipeline steps 0–9, in user-facing Korean. */
-    private static final List<String> PROVISION_STEPS = List.of(
-            "준비 확인 중",
-            "노드 배치 중",
-            "IP 할당 중",
-            "VMID 발급 중",
-            "템플릿 복제 중",
-            "VM 설정 중",
-            "디스크 크기 조정 중",
-            "VM 시작 중",
-            "네트워크 확인 중",
-            "마무리 중");
+    /** docs/plan/03 provision pipeline steps 0–9 — the single source of the
+     *  user-facing Korean labels is {@link ProvisioningStep}. */
+    private static final List<String> PROVISION_STEPS =
+            Arrays.stream(ProvisioningStep.values()).map(ProvisioningStep::label).toList();
 
     private static final Map<ProvisioningTaskKind, List<String>> STEP_LABELS = Map.of(
             ProvisioningTaskKind.PROVISION, PROVISION_STEPS,
