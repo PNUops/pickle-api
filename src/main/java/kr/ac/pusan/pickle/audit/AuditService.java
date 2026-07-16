@@ -41,7 +41,7 @@ public class AuditService {
     public static final String VM_CANCEL_SCHEDULED_DELETE = "vm.cancel_scheduled_delete";
     public static final String VM_FORCE_DELETE = "vm.force_delete";
     /** One-shot initial-password reveal — the fact only, never the value. */
-    public static final String VM_PASSWORD_REVEAL = "vm.password.reveal";
+    public static final String VM_PASSWORD_REVEAL = "vm.password_reveal";
     // HTTP publishing (M4A, docs/plan/06).
     public static final String VM_PUBLISH = "vm.publish";
     public static final String VM_PUBLICATION_UPDATE = "vm.publication_update";

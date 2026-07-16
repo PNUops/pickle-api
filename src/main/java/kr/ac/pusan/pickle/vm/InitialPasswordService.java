@@ -28,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
  * the statement snapshot and thus the pre-update plaintext for the winner.</p>
  *
  * <p>The plaintext exists only in the HTTP response: the reveal is recorded in
- * {@code audit_logs} as the bare fact ({@code vm.password.reveal}), never the
+ * {@code audit_logs} as the bare fact ({@code vm.password_reveal}), never the
  * value, and nothing is logged or written to vm_events.</p>
  */
 @Service

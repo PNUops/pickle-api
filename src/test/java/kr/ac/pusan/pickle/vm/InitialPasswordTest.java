@@ -126,7 +126,7 @@ class InitialPasswordTest {
         // the reveal is audited as a fact — never the value
         List<Map<String, Object>> audits = jdbcTemplate.queryForList("""
                 select action, coalesce(detail::text, '') as detail from audit_logs
-                 where action = 'vm.password.reveal' and target_id = ?
+                 where action = 'vm.password_reveal' and target_id = ?
                 """, vmId);
         assertThat(audits).hasSize(1);
         assertThat((String) audits.getFirst().get("detail")).doesNotContain(PASSWORD);
