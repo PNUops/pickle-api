@@ -20,7 +20,7 @@ public enum NotificationEvent {
     VM_DELETE_ACCEPTED("vm.delete.accepted", NotificationImportance.NORMAL, true),
     VM_DELETE_SCHEDULED("vm.delete.scheduled", NotificationImportance.HIGH, true),
     VM_DELETE_CANCELED("vm.delete.canceled", NotificationImportance.NORMAL, true),
-    VM_DELETE_EMERGENCY("vm.delete.emergency", NotificationImportance.HIGH, true),
+    VM_DELETE_FORCE("vm.delete.force", NotificationImportance.HIGH, true),
     VM_DELETE_COMPLETED("vm.delete.completed", NotificationImportance.NORMAL, true),
     DOMAIN_CONNECT_DONE("domain.connect.done", NotificationImportance.NORMAL, true),
     DOMAIN_CONNECT_FAILED("domain.connect.failed", NotificationImportance.HIGH, true),

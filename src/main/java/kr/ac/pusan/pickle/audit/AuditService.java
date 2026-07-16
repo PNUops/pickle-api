@@ -39,7 +39,7 @@ public class AuditService {
     public static final String VM_SELF_DELETE = "vm.self_delete";
     public static final String VM_SCHEDULE_DELETE = "vm.schedule_delete";
     public static final String VM_CANCEL_SCHEDULED_DELETE = "vm.cancel_scheduled_delete";
-    public static final String VM_EMERGENCY_DELETE = "vm.emergency_delete";
+    public static final String VM_FORCE_DELETE = "vm.force_delete";
     /** One-shot initial-password reveal — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password.reveal";
     // HTTP publishing (M4A, docs/plan/06).

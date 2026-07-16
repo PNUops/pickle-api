@@ -54,12 +54,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
  *       {@code scheduledFor} at least {@code settings.admin_delete_min_notice_days}
  *       out, reason mandatory and mailed to the group.</li>
- *   <li><b>Emergency delete</b> (SYS_ADMIN): name-confirmed immediate
+ *   <li><b>Force delete</b> (SYS_ADMIN): name-confirmed immediate
  *       stop+destroy, never cancelable, audited separately.</li>
  * </ul>
  *
  * <p>Cancellation is admin-only and kind-aware: SELF returns the (already
- * shut down) VM to STOPPED, ADMIN merely clears the schedule, EMERGENCY can
+ * shut down) VM to STOPPED, ADMIN merely clears the schedule, FORCE can
  * never be canceled. ORG_ADMIN scoping masks other orgs' VMs as 404.</p>
  */
 @Service
@@ -204,7 +204,7 @@ public class VmDeletionService {
         Vm vm = requireOrgScopedVm(actor, vmId);
         Instant now = Instant.now();
         boolean cancelable = vm.getDeleteKind() != null
-                && vm.getDeleteKind() != VmDeleteKind.EMERGENCY
+                && vm.getDeleteKind() != VmDeleteKind.FORCE
                 && vm.getStatus() != VmStatus.DELETED
                 && vm.getDeleteScheduledFor() != null
                 && vm.getDeleteScheduledFor().isAfter(now);
@@ -235,7 +235,7 @@ public class VmDeletionService {
         return new MessageResponse("삭제가 취소되었습니다.");
     }
 
-    // ── emergency delete (SYS_ADMIN, immediate, not cancelable) ────────────
+    // ── force delete (SYS_ADMIN, immediate, not cancelable) ────────────────
 
     @Transactional
     public MessageResponse forceDelete(AuthenticatedUser actor, long vmId,
@@ -252,19 +252,19 @@ public class VmDeletionService {
                     "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
         }
         failLiveProvisionTask(vmId);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.EMERGENCY_DELETE, actor.id(),
-                "긴급 삭제 접수 — 즉시 강제 종료 후 파기"));
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_EMERGENCY_DELETE,
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
+                "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId()), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
-        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_EMERGENCY,
+        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vmId, "vmName", vm.getName()), null);
-        return new MessageResponse("긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
+        return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
     }
 
     /**
-     * Parks any live PROVISION task as FAILED before an emergency delete, so
+     * Parks any live PROVISION task as FAILED before a force delete, so
      * a scheduled backoff retry cannot resume the pipeline and resurrect the
      * guest. A RUNNING worker mid-step may win a CAS race here — the pipeline
      * itself re-checks the VM status before every step and halts, so this is
@@ -281,7 +281,7 @@ public class VmDeletionService {
                 return;
             }
             if (provisioningTaskRepository.transitionStatus(task.getId(), task.getStatus(),
-                    ProvisioningTaskStatus.FAILED, "긴급 삭제로 프로비저닝 중단", now) == 1) {
+                    ProvisioningTaskStatus.FAILED, "강제 삭제로 프로비저닝 중단", now) == 1) {
                 return;
             }
         }

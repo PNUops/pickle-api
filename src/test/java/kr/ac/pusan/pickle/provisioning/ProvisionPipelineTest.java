@@ -360,7 +360,7 @@ class ProvisionPipelineTest {
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
     }
 
-    // ── ⑥ emergency delete mid-pipeline → resumed run halts before any call ──
+    // ── ⑥ force delete mid-pipeline → resumed run halts before any call ──
 
     @Test
     void pipelineHaltsWhenVmLeavesCreatingMidFlight() {
@@ -370,7 +370,7 @@ class ProvisionPipelineTest {
                 insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
                 values (?, 'PROVISION', 4, 'RETRYING', 1)
                 """, vmId);
-        // an emergency delete flips the VM to DELETING during the backoff
+        // a force delete flips the VM to DELETING during the backoff
         jdbc.update("update vms set status = 'DELETING' where id = ?", vmId);
 
         job.provisionVm(vmId);

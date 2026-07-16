@@ -8,7 +8,8 @@ public enum VmEventType {
     REBOOT,
     FORCE_STOP,
     DELETE,
-    EMERGENCY_DELETE,
+    /** SYS_ADMIN force delete accepted: immediate stop + purge. */
+    FORCE_DELETE,
     REINSTALL,
     /** Admin scheduled a routine delete (audit trail, contract v0.3.x). */
     SCHEDULE_DELETE,

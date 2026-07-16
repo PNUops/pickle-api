@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * currently v0.5.0) and the springdoc runtime spec.
+ * currently v0.6.0) and the springdoc runtime spec.
  *
  * <p>The comparison is bidirectional over path+method sets: the contract must
  * equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}, and the runtime must expose
@@ -82,7 +82,7 @@ class ContractDriftTest {
             "DELETE /vms/{vmId}",
             "POST /admin/vms/{vmId}/schedule-delete",
             "POST /admin/vms/{vmId}/cancel-scheduled-delete",
-            "POST /admin/vms/{vmId}/emergency-delete",
+            "POST /admin/vms/{vmId}/force-delete",
             "POST /vms/{vmId}/start",
             "POST /vms/{vmId}/shutdown",
             "POST /vms/{vmId}/reboot",

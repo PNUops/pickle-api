@@ -33,7 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Contract tag {@code admin}, vms subset — list plus deletion management.
  * ORG_ADMIN acts on its own org (cross-org orgId filters and targets answer
  * 404, never 403, so the existence of other orgs stays private); SYS_ADMIN
- * covers all orgs. Emergency delete is SYS_ADMIN-only (method-level gate
+ * covers all orgs. Force delete is SYS_ADMIN-only (method-level gate
  * overrides the class-level one).
  */
 @RestController
@@ -94,7 +94,7 @@ public class AdminVmController {
         return vmDeletionService.cancelScheduledDeletion(principal, vmId, clientIp(httpRequest));
     }
 
-    @PostMapping("/{vmId}/emergency-delete")
+    @PostMapping("/{vmId}/force-delete")
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public ResponseEntity<MessageResponse> forceDeleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal,

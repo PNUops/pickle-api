@@ -120,11 +120,14 @@ public class NotificationComposer {
                             str(args, "vmName")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName"));
-            case VM_DELETE_EMERGENCY -> new Composed(event.id(),
-                    "VM 긴급 삭제 통지 — " + str(args, "vmName"),
+            // User-facing wording stays on the "who deleted" axis (glossary):
+            // admin-initiated deletion is announced as 관리자 삭제 without
+            // exposing the force/immediacy distinction.
+            case VM_DELETE_FORCE -> new Composed(event.id(),
+                    "VM 관리자 삭제 통지 — " + str(args, "vmName"),
                     """
-                    보안 사고 등 긴급 사유로 관리자가 VM '%s'를 즉시 강제 종료하고
-                    파기했습니다. 긴급 삭제는 취소할 수 없습니다.
+                    관리자가 VM '%s'를 삭제했습니다. 이 삭제는 취소할 수 없으며,
+                    할당되었던 자원은 회수됩니다.
 
                     - %s
 

@@ -234,7 +234,7 @@ public class ProvisionVmJob implements ProvisioningService {
     }
 
     /**
-     * Re-checked before every step after the guard: an emergency delete can
+     * Re-checked before every step after the guard: a force delete can
      * flip the VM to DELETING mid-pipeline, and continuing (clone/start)
      * would resurrect a guest whose IP is already being freed. NEEDS_ADMIN
      * re-enters via the same CAS the guard uses, so an admin re-run of a task

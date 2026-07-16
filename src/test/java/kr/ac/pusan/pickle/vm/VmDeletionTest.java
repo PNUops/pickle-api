@@ -51,7 +51,7 @@ import tools.jackson.databind.ObjectMapper;
  * B5 deletion flows per contract v0.3.1: self-delete grace scheduling (168 h)
  * with the backup/cancellation-policy mails, the ERROR immediate path,
  * admin scheduled deletes (min-notice 422), kind-aware admin cancellation,
- * name-confirmed emergency deletes, the {@link DeleteVmJob} destroy pipeline
+ * name-confirmed force deletes, the {@link DeleteVmJob} destroy pipeline
  * against real pve1 captures (incl. the ACPI-timeout → force-stop fallback,
  * fixture 61), retry-then-park, and the sweeper's due selection.
  */
@@ -370,10 +370,10 @@ class VmDeletionTest {
         assertThat(statusOf(adminVm)).isEqualTo("RUNNING");
         assertThat(column(adminVm, "delete_kind")).isNull();
 
-        // EMERGENCY / no pending deletion / grace elapsed → 409
-        long emergencyVm = createVm(VmStatus.DELETING);
-        markPendingDeletion(emergencyVm, "EMERGENCY", Instant.now());
-        mockMvc.perform(post("/api/v1/admin/vms/" + emergencyVm + "/cancel-scheduled-delete")
+        // FORCE / no pending deletion / grace elapsed → 409
+        long forceVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(forceVm, "FORCE", Instant.now());
+        mockMvc.perform(post("/api/v1/admin/vms/" + forceVm + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
@@ -397,42 +397,42 @@ class VmDeletionTest {
                 .andExpect(status().isNotFound());
     }
 
-    // ── emergency delete ───────────────────────────────────────────────────
+    // ── force delete ───────────────────────────────────────────────────────
 
     @Test
-    void emergencyDeleteConfirmsNameAuditsAndEnqueues() throws Exception {
+    void forceDeleteConfirmsNameAuditsAndEnqueues() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
 
         // ORG_ADMIN → 403 (SYS_ADMIN only)
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
                 .andExpect(status().isForbidden());
 
         // wrong confirm name → 409 VM_CONFIRM_NAME_MISMATCH
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", "wrong-name"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_CONFIRM_NAME_MISMATCH"));
 
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").value(
-                        "긴급 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다."));
+                        "강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다."));
 
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        assertThat(column(vmId, "delete_kind")).isEqualTo("EMERGENCY");
-        assertThat(eventTypes(vmId)).contains("EMERGENCY_DELETE");
+        assertThat(column(vmId, "delete_kind")).isEqualTo("FORCE");
+        assertThat(eventTypes(vmId)).contains("FORCE_DELETE");
         Long audits = jdbcTemplate.queryForObject(
-                "select count(*) from audit_logs where action = 'vm.emergency_delete' and target_id = ?",
+                "select count(*) from audit_logs where action = 'vm.force_delete' and target_id = ?",
                 Long.class, vmId);
         assertThat(audits).isEqualTo(1);
         Long enqueued = jdbcTemplate.queryForObject(
@@ -440,11 +440,11 @@ class VmDeletionTest {
                 Long.class);
         assertThat(enqueued).isPositive();
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("긴급");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("관리자");
 
         // already destroyed → 409
         setStatus(vmId, VmStatus.DELETED);
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -453,7 +453,7 @@ class VmDeletionTest {
     }
 
     @Test
-    void emergencyDeleteParksLiveProvisionTask() throws Exception {
+    void forceDeleteParksLiveProvisionTask() throws Exception {
         long vmId = createVm(VmStatus.CREATING);
         jdbcTemplate.update("""
                 insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
@@ -462,7 +462,7 @@ class VmDeletionTest {
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
 
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/emergency-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -476,7 +476,7 @@ class VmDeletionTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select last_error from provisioning_tasks
                  where vm_id = ? and kind = 'PROVISION' order by id desc limit 1
-                """, String.class, vmId)).contains("긴급 삭제");
+                """, String.class, vmId)).contains("강제 삭제");
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
     }
 

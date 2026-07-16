@@ -41,7 +41,7 @@ import org.springframework.stereotype.Component;
  * <p>Idempotency/serialization comes from the {@code provisioning_tasks} DELETE
  * task: the partial unique index allows one live task per VM, and the CAS
  * claim (PENDING/RETRYING → RUNNING) makes concurrent or duplicated enqueues
- * (sweeper every 5 min + direct emergency enqueue) no-ops. Retries are
+ * (sweeper every 5 min + direct force-delete enqueue) no-ops. Retries are
  * self-scheduled with backoff; after {@value #MAX_ATTEMPTS} attempts the task
  * parks as NEEDS_ADMIN while the VM stays DELETING. A parked task is a dead
  * end for automation: {@link #claimTask} never claims NEEDS_ADMIN and the

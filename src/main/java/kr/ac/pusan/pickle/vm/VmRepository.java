@@ -359,7 +359,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             @Param("now") Instant now);
 
     /**
-     * SYS_ADMIN emergency delete: immediate DELETING + EMERGENCY intent,
+     * SYS_ADMIN force delete: immediate DELETING + FORCE intent,
      * overriding a pending SELF/ADMIN deletion (schedule-delete's escape
      * hatch for "destroy now").
      */
@@ -367,7 +367,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
             update vms
-               set status = 'DELETING', status_detail = null, delete_kind = 'EMERGENCY',
+               set status = 'DELETING', status_detail = null, delete_kind = 'FORCE',
                    delete_scheduled_for = :now, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null, updated_at = :now
              where id = :id and status <> 'DELETED'
@@ -404,7 +404,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * Deletion-sweeper scan: pending deletions whose destroy time arrived.
-     * SELF/EMERGENCY VMs are already DELETING; ADMIN-scheduled ones sit in a
+     * SELF/FORCE VMs are already DELETING; ADMIN-scheduled ones sit in a
      * normal power state until due. NEEDS_ADMIN and DELETED never match, so a
      * parked delete pipeline is not re-enqueued behind the operator's back.
      */
