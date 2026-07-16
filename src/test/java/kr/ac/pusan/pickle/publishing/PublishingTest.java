@@ -128,10 +128,10 @@ class PublishingTest {
                 .willReturn(okApply(1)));
         dns.clear();
 
-        owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.STUDENT, null);
-        User manager = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.STUDENT, null);
-        User viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.STUDENT, null);
-        User outsider = ensureUser("pub.outsider@pusan.ac.kr", "공개외부인", UserRole.STUDENT, null);
+        owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.USER, null);
+        User manager = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
+        User viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.USER, null);
+        User outsider = ensureUser("pub.outsider@pusan.ac.kr", "공개외부인", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
         User sysAdmin = userRepository.findByEmail("admin@pickle.local").orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);

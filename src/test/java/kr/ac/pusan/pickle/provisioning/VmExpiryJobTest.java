@@ -345,7 +345,7 @@ class VmExpiryJobTest {
     private long createUser(String email) {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", "만료테스트");
-            user.setRole(UserRole.STUDENT);
+            user.setRole(UserRole.USER);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);

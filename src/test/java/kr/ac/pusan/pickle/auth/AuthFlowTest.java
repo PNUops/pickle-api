@@ -95,7 +95,7 @@ class AuthFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.user.email").value(EMAIL))
-                .andExpect(jsonPath("$.user.role").value("STUDENT"))
+                .andExpect(jsonPath("$.user.role").value("USER"))
                 .andExpect(cookie().exists("pickle_refresh"))
                 .andExpect(cookie().exists("pickle_csrf"))
                 .andReturn();

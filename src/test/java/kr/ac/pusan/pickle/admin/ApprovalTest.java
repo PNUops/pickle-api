@@ -88,7 +88,7 @@ class ApprovalTest {
         org = orgRepository.findBySlug("sw-edu").orElseThrow();
         otherOrg = orgRepository.findBySlug("appr-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "appr-other", null)));
-        student = ensureUser("appr.student@pusan.ac.kr", "승인학생", UserRole.STUDENT, null);
+        student = ensureUser("appr.student@pusan.ac.kr", "승인학생", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
         User otherOrgAdmin = ensureUser("appr.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
@@ -317,7 +317,7 @@ class ApprovalTest {
         User ctxAdmin = ensureUser("appr.ctx.admin@pusan.ac.kr", "컨텍스트관리자",
                 UserRole.ORG_ADMIN, ctxOrg.getId());
         User ctxStudent = ensureUser("appr.ctx.student@pusan.ac.kr", "컨텍스트학생",
-                UserRole.STUDENT, null);
+                UserRole.USER, null);
         String ctxAdminToken = jwtService.createAccessToken(ctxAdmin);
         String ctxStudentToken = jwtService.createAccessToken(ctxStudent);
 

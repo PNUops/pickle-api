@@ -51,7 +51,7 @@ class DomainCheckConstraintsTest {
     void studentWithOrgIdIsRejected() {
         assertThatThrownBy(() -> jdbc.update("""
                 insert into users (email, password_hash, name, role, org_id, status)
-                values (?, 'x', '학생', 'STUDENT', ?, 'ACTIVE')
+                values (?, 'x', '학생', 'USER', ?, 'ACTIVE')
                 """, UUID.randomUUID() + "@pusan.ac.kr", orgId))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("chk_users_org_role");

@@ -62,7 +62,7 @@ class AdminNotificationsTest {
                 userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
         recipientEmail = "adn." + UUID.randomUUID().toString().substring(0, 8) + "@pusan.ac.kr";
         User recipient = new User(recipientEmail, "{test-no-login}", "발송로그테스트");
-        recipient.setRole(UserRole.STUDENT);
+        recipient.setRole(UserRole.USER);
         recipient.setStatus(UserStatus.ACTIVE);
         recipient.setEmailVerifiedAt(Instant.now());
         recipientId = userRepository.save(recipient).getId();

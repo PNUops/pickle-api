@@ -71,7 +71,7 @@ class AdminSummariesTest {
         org = orgRepository.save(new Org("요약 테스트 기관 " + slug, slug, null));
         User orgAdmin = createUser("ads.admin." + slug + "@pusan.ac.kr", UserRole.ORG_ADMIN,
                 org.getId());
-        User student = createUser("ads.student." + slug + "@pusan.ac.kr", UserRole.STUDENT, null);
+        User student = createUser("ads.student." + slug + "@pusan.ac.kr", UserRole.USER, null);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         studentToken = jwtService.createAccessToken(student);
         sysAdminToken = jwtService.createAccessToken(

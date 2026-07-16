@@ -77,7 +77,7 @@ class AdminVmPeriodTest {
         groupId = jdbcTemplate.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
-        User member = ensureUser("avp.member." + slug + "@pusan.ac.kr", UserRole.STUDENT, null);
+        User member = ensureUser("avp.member." + slug + "@pusan.ac.kr", UserRole.USER, null);
         memberId = member.getId();
         jdbcTemplate.update("""
                 insert into group_members (group_id, user_id, role)

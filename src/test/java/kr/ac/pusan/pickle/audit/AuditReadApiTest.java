@@ -85,11 +85,11 @@ class AuditReadApiTest {
                 userRepository.findByEmail("admin@pickle.local").orElseThrow());
         runTag = UUID.randomUUID().toString().substring(0, 8);
 
-        insertAudit(self.getId(), "STUDENT", "auth.login", null, null, "10.0.0.1");
-        insertAudit(self.getId(), "STUDENT", "auth.login_failed", null, null, "10.0.0.1");
-        insertAudit(self.getId(), "STUDENT", "test." + runTag + ".vmdel", "vm", 5511L, "10.0.0.1");
-        insertAudit(peer.getId(), "STUDENT", "test." + runTag + ".vmdel", "vm", 5522L, "10.0.0.2");
-        insertAudit(otherOrgUser.getId(), "STUDENT", "test." + runTag + ".vmdel", "vm", 5533L,
+        insertAudit(self.getId(), "USER", "auth.login", null, null, "10.0.0.1");
+        insertAudit(self.getId(), "USER", "auth.login_failed", null, null, "10.0.0.1");
+        insertAudit(self.getId(), "USER", "test." + runTag + ".vmdel", "vm", 5511L, "10.0.0.1");
+        insertAudit(peer.getId(), "USER", "test." + runTag + ".vmdel", "vm", 5522L, "10.0.0.2");
+        insertAudit(otherOrgUser.getId(), "USER", "test." + runTag + ".vmdel", "vm", 5533L,
                 "10.0.0.3");
         // system row: no actor at all — SYS_ADMIN-only in the admin view
         insertAudit(null, null, "test." + runTag + ".system", "vm", 5544L, null);
@@ -168,7 +168,7 @@ class AuditReadApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].actorName").value("감사본인"))
-                .andExpect(jsonPath("$.content[0].actorRole").value("STUDENT"));
+                .andExpect(jsonPath("$.content[0].actorRole").value("USER"));
         mockMvc.perform(get("/api/v1/admin/audit?targetType=vm&targetId=5533&action=test."
                         + runTag + ".vmdel")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -218,7 +218,7 @@ class AuditReadApiTest {
     private User ensureStudent(String email, String name) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
-        user.setRole(UserRole.STUDENT);
+        user.setRole(UserRole.USER);
         user.setOrgId(null);
         user.setStatus(UserStatus.ACTIVE);
         return userRepository.save(user);

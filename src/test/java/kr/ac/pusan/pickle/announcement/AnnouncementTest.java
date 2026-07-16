@@ -349,7 +349,7 @@ class AnnouncementTest {
     private User ensureStudent(String email, String name, UserStatus status) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
-        user.setRole(UserRole.STUDENT);
+        user.setRole(UserRole.USER);
         user.setOrgId(null);
         user.setStatus(status);
         return userRepository.save(user);

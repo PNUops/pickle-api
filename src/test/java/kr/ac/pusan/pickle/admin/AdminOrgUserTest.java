@@ -73,7 +73,7 @@ class AdminOrgUserTest {
                 () -> orgRepository.save(new Org("관리 테스트 기관", "adm-org-base", null)));
         sysAdmin = ensureUser("adm.sysadmin@pusan.ac.kr", "시스템관리자", UserRole.SYS_ADMIN, null);
         orgAdmin = ensureUser("adm.orgadmin@pusan.ac.kr", "기관관리자", UserRole.ORG_ADMIN, org.getId());
-        student = ensureUser("adm.student@pusan.ac.kr", "학생", UserRole.STUDENT, null);
+        student = ensureUser("adm.student@pusan.ac.kr", "학생", UserRole.USER, null);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         studentToken = jwtService.createAccessToken(student);
@@ -82,7 +82,7 @@ class AdminOrgUserTest {
     @Test
     void adminEndpointsAreSysAdminOnly() throws Exception {
         Map<String, ?> body = Map.of("name", "새 기관", "slug", "adm-gate-x1");
-        // ORG_ADMIN and STUDENT are rejected with 403 ACCESS_DENIED
+        // ORG_ADMIN and USER are rejected with 403 ACCESS_DENIED
         postJson("/api/v1/admin/orgs", orgAdminToken, body)
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -148,7 +148,7 @@ class AdminOrgUserTest {
 
     @Test
     void userRoleUpdateValidatesOrgIdAndBumpsTokenVersion() throws Exception {
-        User target = ensureUser("adm.promotee@pusan.ac.kr", "승격대상", UserRole.STUDENT, null);
+        User target = ensureUser("adm.promotee@pusan.ac.kr", "승격대상", UserRole.USER, null);
         String targetToken = jwtService.createAccessToken(target);
         int versionBefore = target.getTokenVersion();
         Org org = orgRepository.findBySlug("adm-org-base").orElseThrow();
@@ -165,16 +165,16 @@ class AdminOrgUserTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("orgId"));
 
-        // STUDENT/SYS_ADMIN must not carry an orgId → 422
+        // USER/SYS_ADMIN must not carry an orgId → 422
         patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken,
-                Map.of("role", "STUDENT", "orgId", org.getId()))
+                Map.of("role", "USER", "orgId", org.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("orgId"));
 
         // empty patch → 422, unknown user → 404
         patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken, Map.of())
                 .andExpect(status().isUnprocessableContent());
-        patchJson("/api/v1/admin/users/999999", sysAdminToken, Map.of("role", "STUDENT"))
+        patchJson("/api/v1/admin/users/999999", sysAdminToken, Map.of("role", "USER"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 

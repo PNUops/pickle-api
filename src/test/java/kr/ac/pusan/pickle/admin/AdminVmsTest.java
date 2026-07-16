@@ -70,7 +70,7 @@ class AdminVmsTest {
         org = orgRepository.findBySlug("sw-edu").orElseThrow();
         otherOrg = orgRepository.findBySlug("advm-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "advm-other", null)));
-        User student = ensureUser("advm.student@pusan.ac.kr", "목록학생", UserRole.STUDENT, null);
+        User student = ensureUser("advm.student@pusan.ac.kr", "목록학생", UserRole.USER, null);
         User otherOrgAdmin = ensureUser("advm.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
         studentToken = jwtService.createAccessToken(student);
