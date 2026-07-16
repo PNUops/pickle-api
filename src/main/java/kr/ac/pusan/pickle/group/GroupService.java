@@ -90,7 +90,7 @@ public class GroupService {
     public GroupDetailResponse get(AuthenticatedUser actor, long groupId) {
         Group group = findGroup(groupId);
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
-                .orElseThrow(() -> accessDenied("그룹 멤버만 조회할 수 있습니다."));
+                .orElseThrow(() -> accessDenied("그룹 구성원만 조회할 수 있습니다."));
         return toDetail(group, membership.getRole());
     }
 
@@ -98,9 +98,9 @@ public class GroupService {
     public GroupDetailResponse update(AuthenticatedUser actor, long groupId, UpdateGroupRequest request) {
         Group group = findGroup(groupId);
         GroupMember membership = groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id())
-                .orElseThrow(() -> accessDenied("그룹 OWNER만 수정할 수 있습니다."));
+                .orElseThrow(() -> accessDenied("그룹 소유자(OWNER)만 수정할 수 있습니다."));
         if (membership.getRole() != GroupMemberRole.OWNER) {
-            throw accessDenied("그룹 OWNER만 수정할 수 있습니다.");
+            throw accessDenied("그룹 소유자(OWNER)만 수정할 수 있습니다.");
         }
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -123,11 +123,11 @@ public class GroupService {
     public GroupMemberResponse addMember(AuthenticatedUser actor, long groupId,
             AddGroupMemberRequest request, String ip) {
         Group group = findGroup(groupId);
-        requireOwnerForMemberManagement(group, actor, "그룹 OWNER만 멤버를 추가할 수 있습니다.",
-                "PERSONAL 그룹에는 멤버를 추가할 수 없습니다.");
+        requireOwnerForMemberManagement(group, actor, "그룹 소유자(OWNER)만 구성원을 추가할 수 있습니다.",
+                "PERSONAL 그룹에는 구성원을 추가할 수 없습니다.");
         if (request.role() == GroupMemberRole.OWNER) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "OWNER 역할은 멤버 추가로 부여할 수 없습니다. 역할 변경(소유권 이전)을 사용해 주세요.")));
+                    "OWNER 역할은 구성원 추가로 부여할 수 없습니다. 역할 변경(소유권 이전)을 사용해 주세요.")));
         }
 
         User target = userRepository.findByEmail(Texts.normalizeEmail(request.email()))
@@ -137,7 +137,7 @@ public class GroupService {
                         "해당 이메일로 가입된 사용자가 없습니다. 가입 후 다시 시도해 주세요."));
         if (groupMemberRepository.findByGroupIdAndUserId(groupId, target.getId()).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_MEMBER_ALREADY_EXISTS,
-                    "이미 그룹 멤버입니다", "해당 사용자는 이미 이 그룹의 멤버입니다.");
+                    "이미 그룹 구성원입니다", "해당 사용자는 이미 이 그룹의 구성원입니다.");
         }
 
         GroupMember member;
@@ -145,7 +145,7 @@ public class GroupService {
             member = groupMemberRepository.save(new GroupMember(group, target.getId(), request.role()));
         } catch (DataIntegrityViolationException raceWithConcurrentAdd) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_MEMBER_ALREADY_EXISTS,
-                    "이미 그룹 멤버입니다", "해당 사용자는 이미 이 그룹의 멤버입니다.");
+                    "이미 그룹 구성원입니다", "해당 사용자는 이미 이 그룹의 구성원입니다.");
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_ADD,
                 "group", groupId,
@@ -158,7 +158,7 @@ public class GroupService {
             UpdateGroupMemberRequest request, String ip) {
         Group group = findGroup(groupId);
         GroupMember actorMembership = requireOwnerForMemberManagement(group, actor,
-                "그룹 OWNER만 역할을 변경할 수 있습니다.", "PERSONAL 그룹의 멤버 구성은 변경할 수 없습니다.");
+                "그룹 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 그룹의 구성원 구성은 변경할 수 없습니다.");
         GroupMember target = groupMemberRepository.findByGroupIdAndUserId(groupId, targetUserId)
                 .orElseThrow(GroupService::memberNotFound);
 
@@ -194,14 +194,14 @@ public class GroupService {
     public void removeMember(AuthenticatedUser actor, long groupId, long targetUserId, String ip) {
         Group group = findGroup(groupId);
         if (group.getKind() == GroupKind.PERSONAL) {
-            throw memberManageForbidden("멤버를 관리할 권한이 없습니다", "PERSONAL 그룹의 멤버 구성은 변경할 수 없습니다.");
+            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "PERSONAL 그룹의 구성원 구성은 변경할 수 없습니다.");
         }
         GroupMember actorMembership = groupMemberRepository.findWithLockByGroupIdAndUserId(groupId, actor.id())
-                .orElseThrow(() -> memberManageForbidden("멤버를 제거할 권한이 없습니다",
-                        "그룹 OWNER만 다른 멤버를 제거할 수 있습니다."));
+                .orElseThrow(() -> memberManageForbidden("구성원을 제거할 권한이 없습니다",
+                        "그룹 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다."));
         boolean selfLeave = targetUserId == actor.id();
         if (!selfLeave && actorMembership.getRole() != GroupMemberRole.OWNER) {
-            throw memberManageForbidden("멤버를 제거할 권한이 없습니다", "그룹 OWNER만 다른 멤버를 제거할 수 있습니다.");
+            throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "그룹 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
         }
 
         GroupMember target = groupMemberRepository.findByGroupIdAndUserId(groupId, targetUserId)
@@ -226,11 +226,11 @@ public class GroupService {
     private GroupMember requireOwnerForMemberManagement(Group group, AuthenticatedUser actor,
             String notOwnerDetail, String personalDetail) {
         if (group.getKind() == GroupKind.PERSONAL) {
-            throw memberManageForbidden("멤버를 관리할 권한이 없습니다", personalDetail);
+            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", personalDetail);
         }
         return groupMemberRepository.findWithLockByGroupIdAndUserId(group.getId(), actor.id())
                 .filter(membership -> membership.getRole() == GroupMemberRole.OWNER)
-                .orElseThrow(() -> memberManageForbidden("멤버를 관리할 권한이 없습니다", notOwnerDetail));
+                .orElseThrow(() -> memberManageForbidden("구성원을 관리할 권한이 없습니다", notOwnerDetail));
     }
 
     private GroupDetailResponse toDetail(Group group, GroupMemberRole myRole) {
@@ -255,7 +255,7 @@ public class GroupService {
 
     private static ApiException memberNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 사용자는 이 그룹의 멤버가 아닙니다.");
+                "리소스를 찾을 수 없습니다", "해당 사용자는 이 그룹의 구성원이 아닙니다.");
     }
 
     private static ApiException accessDenied(String detail) {
@@ -268,7 +268,7 @@ public class GroupService {
 
     private static ApiException soleOwnerRemoval(String title) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_SOLE_OWNER_REMOVAL, title,
-                "소유권을 다른 멤버에게 이전한 뒤 다시 시도해 주세요.");
+                "소유권을 다른 구성원에게 이전한 뒤 다시 시도해 주세요.");
     }
 
     private static ApiException slugDuplicate(String slug) {

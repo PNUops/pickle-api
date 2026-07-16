@@ -406,7 +406,7 @@ class ApprovalTest {
         body.put("grantSsh", true);
         body.put("grantHttp", false);
         body.put("grantPublic", false);
-        body.put("comment", "요청 스펙 그대로 승인합니다.");
+        body.put("comment", "요청 사양 그대로 승인합니다.");
         return body;
     }
 

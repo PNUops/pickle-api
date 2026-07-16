@@ -33,7 +33,7 @@ public class NotificationComposer {
                     + "필요한 데이터는 파기 전에 직접 백업해 주세요.";
 
     static final String CANCEL_POLICY_NOTICE =
-            "삭제 취소는 관리자만 가능합니다. 복원이 필요하면 관리자에게 문의해 주세요.";
+            "삭제 취소는 관리자만 가능합니다. 복구가 필요하면 관리자에게 문의해 주세요.";
 
     private static final DateTimeFormatter KST =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
@@ -67,7 +67,7 @@ public class NotificationComposer {
                     - SSH 계정: %s
                     - 초기 비밀번호: 콘솔의 VM 상세 화면에서 딱 1회만 확인할 수 있습니다.
 
-                    [중요] 플랫폼은 VM 데이터를 백업하지 않습니다(이용자 책임).
+                    [중요] 플랫폼은 VM 데이터를 백업하지 않습니다(사용자 책임).
                     중요한 데이터는 반드시 직접 백업해 주세요.
                     """.formatted(str(args, "hostname"),
                             args.get("ip") != null ? str(args, "ip") : "(확인 중)",
@@ -98,9 +98,9 @@ public class NotificationComposer {
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName"));
             case VM_DELETE_SCHEDULED -> new Composed(event.id(),
-                    "VM 삭제 예약 안내 — " + str(args, "vmName"),
+                    "VM 관리자 삭제 안내 — " + str(args, "vmName"),
                     """
-                    관리자가 VM '%s'의 삭제를 예약했습니다.
+                    관리자가 VM '%s'의 삭제를 접수했습니다.
 
                     - 사유: %s
                     - 파기 예정 시각: %s (KST)
@@ -112,10 +112,10 @@ public class NotificationComposer {
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName"));
             case VM_DELETE_CANCELED -> new Composed(event.id(),
-                    "VM 삭제 예약 취소 안내 — " + str(args, "vmName"),
+                    "VM 삭제 취소 안내 — " + str(args, "vmName"),
                     """
-                    VM '%s'에 예약되어 있던 삭제가 관리자에 의해 취소되었습니다.
-                    VM과 데이터는 그대로 유지됩니다. (셀프 삭제로 종료되었던 VM은
+                    VM '%s'에 접수되어 있던 삭제가 관리자에 의해 취소되었습니다.
+                    VM과 데이터는 그대로 유지됩니다. (본인 삭제로 종료되었던 VM은
                     STOPPED 상태로 남아 있으며, 콘솔에서 직접 시작할 수 있습니다.)""".formatted(
                             str(args, "vmName")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),

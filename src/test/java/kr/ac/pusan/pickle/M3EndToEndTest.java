@@ -188,7 +188,7 @@ class M3EndToEndTest {
                 "grantSsh", true,
                 "grantHttp", false,
                 "grantPublic", false,
-                "comment", "요청 스펙 그대로 승인합니다."))
+                "comment", "요청 사양 그대로 승인합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));

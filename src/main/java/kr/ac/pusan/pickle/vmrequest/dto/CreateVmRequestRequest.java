@@ -28,7 +28,7 @@ public record CreateVmRequestRequest(
         @Size(max = 200, message = "수업/프로젝트명은 200자 이하여야 합니다.")
         String courseOrProject,
 
-        @Size(max = 2000, message = "스펙 사유는 2000자 이하여야 합니다.")
+        @Size(max = 2000, message = "사양 사유는 2000자 이하여야 합니다.")
         String specReason,
 
         @Size(max = 2000, message = "기타 참고 사항은 2000자 이하여야 합니다.")

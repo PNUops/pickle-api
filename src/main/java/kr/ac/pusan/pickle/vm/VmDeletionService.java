@@ -170,7 +170,7 @@ public class VmDeletionService {
         Vm vm = requireOrgScopedVm(actor, vmId);
         requireNoPendingDeletion(vm);
         requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
-                VmStatus.ERROR), "현재 상태에서는 삭제를 예약할 수 없습니다.");
+                VmStatus.ERROR), "현재 상태에서는 삭제를 접수할 수 없습니다.");
 
         Instant now = Instant.now();
         int noticeDays = settingsService.integer(SettingsService.ADMIN_DELETE_MIN_NOTICE_DAYS,
@@ -185,7 +185,7 @@ public class VmDeletionService {
             throw alreadyPendingDeletion();
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
-                "관리자 삭제 예약 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
+                "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(),
@@ -224,15 +224,15 @@ public class VmDeletionService {
         vmRepository.clearDeletion(vmId, now);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(),
                 vm.getDeleteKind() == VmDeleteKind.SELF
-                        ? "셀프 삭제 취소 — VM은 STOPPED 상태로 유지"
-                        : "관리자 삭제 예약 취소"));
+                        ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
+                        : "관리자 삭제 취소"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
                 Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "canceledKind", vm.getDeleteKind().name()), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
                 Map.of("vmId", vmId, "vmName", vm.getName()), null);
-        return new MessageResponse("삭제 예약이 취소되었습니다.");
+        return new MessageResponse("삭제가 취소되었습니다.");
     }
 
     // ── emergency delete (SYS_ADMIN, immediate, not cancelable) ────────────
@@ -311,7 +311,7 @@ public class VmDeletionService {
                 .orElseThrow(VmDeletionService::vmNotFound);
         if (role != GroupMemberRole.OWNER) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM을 삭제할 권한이 없습니다", "그룹의 OWNER 또는 관리자만 VM을 삭제할 수 있습니다.");
+                    "VM을 삭제할 권한이 없습니다", "그룹 소유자(OWNER) 또는 관리자만 VM을 삭제할 수 있습니다.");
         }
         return vm;
     }
@@ -341,7 +341,7 @@ public class VmDeletionService {
 
     private static ApiException alreadyPendingDeletion() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                "현재 상태에서는 수행할 수 없는 작업입니다", "이미 삭제가 예약되었거나 진행 중인 VM입니다.");
+                "현재 상태에서는 수행할 수 없는 작업입니다", "이미 삭제가 접수되었거나 진행 중인 VM입니다.");
     }
 
     private static ApiException vmNotFound() {

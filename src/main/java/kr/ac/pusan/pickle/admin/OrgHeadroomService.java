@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class OrgHeadroomService {
 
-    static final String GUIDANCE_AMPLE = "여유가 충분합니다. 요청 스펙 그대로 승인해도 무리가 없습니다.";
+    static final String GUIDANCE_AMPLE = "여유가 충분합니다. 요청 사양 그대로 승인해도 무리가 없습니다.";
     static final String GUIDANCE_MEMORY = "메모리 여유가 부족해 신중한 승인이 필요합니다.";
     static final String GUIDANCE_VCPU = "vCPU 오버커밋 비율이 높아 신중한 승인이 필요합니다.";
     static final String GUIDANCE_BOTH = "vCPU와 메모리 여유가 모두 부족해 신중한 승인이 필요합니다.";

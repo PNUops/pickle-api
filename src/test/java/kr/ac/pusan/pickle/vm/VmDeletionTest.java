@@ -209,7 +209,7 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
-                .andExpect(jsonPath("$.detail").value("이미 삭제가 예약되었거나 진행 중인 VM입니다."));
+                .andExpect(jsonPath("$.detail").value("이미 삭제가 접수되었거나 진행 중인 VM입니다."));
     }
 
     @Test
@@ -353,7 +353,7 @@ class VmDeletionTest {
         mockMvc.perform(post("/api/v1/admin/vms/" + selfVm + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("삭제 예약이 취소되었습니다."));
+                .andExpect(jsonPath("$.message").value("삭제가 취소되었습니다."));
         assertThat(statusOf(selfVm)).isEqualTo("STOPPED");
         assertThat(column(selfVm, "delete_kind")).isNull();
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");

@@ -159,7 +159,7 @@ public class VmRequestService {
                 || groupMemberRepository.findByGroupIdAndUserId(request.getGroupId(), actor.id()).isPresent();
         if (!participant) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 또는 그룹 멤버만 조회할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 또는 그룹 구성원만 조회할 수 있습니다.");
         }
         return assembler.toDetail(request);
     }
@@ -176,7 +176,7 @@ public class VmRequestService {
                 .isPresent();
         if (!requester && !managerOrOwner) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 OWNER/MANAGER만 취소할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)/편집자(MANAGER)만 취소할 수 있습니다.");
         }
         if (request.getStatus() != VmRequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
@@ -212,7 +212,7 @@ public class VmRequestService {
                 || request.reqDiskGb() > template.getDefaultDiskGb();
         if (exceedsDefaults && Texts.blankToNull(request.specReason()) == null) {
             errors.add(new FieldValidationError("specReason",
-                    "템플릿 기본 스펙을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
+                    "템플릿 기본 사양을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
         }
     }
 
@@ -265,6 +265,6 @@ public class VmRequestService {
 
     private static ApiException requestRoleInsufficient() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                "VM을 신청할 권한이 없습니다", "그룹의 OWNER 또는 MANAGER만 VM을 신청할 수 있습니다.");
+                "VM을 신청할 권한이 없습니다", "그룹 소유자(OWNER) 또는 편집자(MANAGER)만 VM을 신청할 수 있습니다.");
     }
 }
