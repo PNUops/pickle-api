@@ -372,7 +372,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                    delete_requested_by = :requestedBy, delete_reason = null, updated_at = :now
              where id = :id and status <> 'DELETED'
             """)
-    int beginEmergencyDeletion(@Param("id") Long id, @Param("requestedBy") Long requestedBy,
+    int beginForceDeletion(@Param("id") Long id, @Param("requestedBy") Long requestedBy,
             @Param("now") Instant now);
 
     /** Cancels the pending deletion by clearing every delete_* column. */

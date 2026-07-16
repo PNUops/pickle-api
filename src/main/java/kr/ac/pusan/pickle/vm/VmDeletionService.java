@@ -8,7 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import kr.ac.pusan.pickle.admin.dto.EmergencyDeleteVmRequest;
+import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -238,8 +238,8 @@ public class VmDeletionService {
     // ── emergency delete (SYS_ADMIN, immediate, not cancelable) ────────────
 
     @Transactional
-    public MessageResponse emergencyDelete(AuthenticatedUser actor, long vmId,
-            EmergencyDeleteVmRequest request, String ip) {
+    public MessageResponse forceDelete(AuthenticatedUser actor, long vmId,
+            ForceDeleteVmRequest request, String ip) {
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
         if (!vm.getName().equals(request.confirmName())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
@@ -247,7 +247,7 @@ public class VmDeletionService {
                     "입력한 이름이 VM 이름과 일치하지 않습니다. VM 이름을 정확히 입력해 주세요.");
         }
         Instant now = Instant.now();
-        if (vmRepository.beginEmergencyDeletion(vmId, actor.id(), now) == 0) {
+        if (vmRepository.beginForceDeletion(vmId, actor.id(), now) == 0) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                     "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
         }

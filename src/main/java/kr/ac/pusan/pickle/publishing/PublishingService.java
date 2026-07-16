@@ -454,7 +454,7 @@ public class PublishingService {
         if (role != GroupMemberRole.OWNER && role != GroupMemberRole.MANAGER) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "HTTP 서비스를 공개할 권한이 없습니다",
-                    "그룹의 OWNER 또는 MANAGER만 도메인·포트를 설정할 수 있습니다.");
+                    "그룹 소유자(OWNER) 또는 편집자(MANAGER)만 도메인·포트를 설정할 수 있습니다.");
         }
         return vm;
     }

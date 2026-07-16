@@ -158,7 +158,7 @@ public class GroupService {
             UpdateGroupMemberRequest request, String ip) {
         Group group = findGroup(groupId);
         GroupMember actorMembership = requireOwnerForMemberManagement(group, actor,
-                "그룹 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 그룹의 구성원 구성은 변경할 수 없습니다.");
+                "그룹 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 그룹의 구성원은 변경할 수 없습니다.");
         GroupMember target = groupMemberRepository.findByGroupIdAndUserId(groupId, targetUserId)
                 .orElseThrow(GroupService::memberNotFound);
 
@@ -194,7 +194,7 @@ public class GroupService {
     public void removeMember(AuthenticatedUser actor, long groupId, long targetUserId, String ip) {
         Group group = findGroup(groupId);
         if (group.getKind() == GroupKind.PERSONAL) {
-            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "PERSONAL 그룹의 구성원 구성은 변경할 수 없습니다.");
+            throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "PERSONAL 그룹의 구성원은 변경할 수 없습니다.");
         }
         GroupMember actorMembership = groupMemberRepository.findWithLockByGroupIdAndUserId(groupId, actor.id())
                 .orElseThrow(() -> memberManageForbidden("구성원을 제거할 권한이 없습니다",

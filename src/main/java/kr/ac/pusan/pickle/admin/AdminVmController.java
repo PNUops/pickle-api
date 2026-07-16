@@ -6,7 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import kr.ac.pusan.pickle.admin.dto.EmergencyDeleteVmRequest;
+import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.admin.dto.VmPeriodUpdateRequest;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -96,13 +96,13 @@ public class AdminVmController {
 
     @PostMapping("/{vmId}/emergency-delete")
     @PreAuthorize("hasRole('SYS_ADMIN')")
-    public ResponseEntity<MessageResponse> emergencyDeleteVm(
+    public ResponseEntity<MessageResponse> forceDeleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
-            @Valid @RequestBody EmergencyDeleteVmRequest request,
+            @Valid @RequestBody ForceDeleteVmRequest request,
             HttpServletRequest httpRequest) {
         return ResponseEntity.accepted()
-                .body(vmDeletionService.emergencyDelete(principal, vmId, request,
+                .body(vmDeletionService.forceDelete(principal, vmId, request,
                         clientIp(httpRequest)));
     }
 }
