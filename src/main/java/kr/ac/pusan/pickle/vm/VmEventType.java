@@ -7,7 +7,10 @@ public enum VmEventType {
     STOP,
     REBOOT,
     FORCE_STOP,
+    /** Terminal purge completed (shared by every deletion kind). */
     DELETE,
+    /** User self-delete accepted (grace period starts). */
+    SELF_DELETE,
     /** SYS_ADMIN force delete accepted: immediate stop + purge. */
     FORCE_DELETE,
     REINSTALL,

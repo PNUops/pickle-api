@@ -185,7 +185,7 @@ class VmDeletionTest {
 
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
         assertThat(column(vmId, "delete_kind")).isEqualTo("SELF");
-        assertThat(eventTypes(vmId)).contains("DELETE");
+        assertThat(eventTypes(vmId)).contains("SELF_DELETE");
         assertThat(auditCount("vm.self_delete", vmId)).isEqualTo(1);
 
         // graceful-shutdown job enqueued after commit
@@ -263,7 +263,8 @@ class VmDeletionTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select status from ip_allocations where id = ?", String.class, allocationId))
                 .isEqualTo("RELEASED");
-        assertThat(eventTypes(vmId)).contains("DELETE");
+        // acceptance + terminal purge event pair, both in the same tx
+        assertThat(eventTypes(vmId)).contains("SELF_DELETE", "DELETE");
         assertThat(auditCount("vm.self_delete", vmId)).isEqualTo(1);
         // no pipeline: nothing enqueued for this VM
         Long tasks = jdbcTemplate.queryForObject(

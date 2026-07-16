@@ -124,7 +124,7 @@ public class VmDeletionService {
         if (vmRepository.beginSelfDeletion(vmId, vm.getStatus(), scheduledFor, actor.id(), now) == 0) {
             throw alreadyPendingDeletion(); // lost a race with a concurrent transition
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
@@ -154,8 +154,10 @@ public class VmDeletionService {
                 && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
             vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);
         }
+        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(),
+                "삭제 접수 — 생성 실패(ERROR) 상태, 유예 없이 즉시 파기"));
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
-                "생성 실패(ERROR) 상태 VM 즉시 삭제 — 유예 없음"));
+                "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "groupId", vm.getGroupId(), "immediate", true), ip);
