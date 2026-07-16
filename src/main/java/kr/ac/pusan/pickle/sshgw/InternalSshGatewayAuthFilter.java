@@ -35,7 +35,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  *       runaway gateway). Deliberately NOT the per-client limit: the transport
  *       peer here is always the sshgw LXC, so keying a tight limit on it would
  *       be one shared bucket letting a single internet abuser 429 every
- *       student's SSH login. The per-client (PROXY-recovered {@code sourceIp})
+ *       user's SSH login. The per-client (PROXY-recovered {@code sourceIp})
  *       limit lives in {@link SshGatewayRouteService}, after the body is
  *       parsed.</li>
  * </ol>

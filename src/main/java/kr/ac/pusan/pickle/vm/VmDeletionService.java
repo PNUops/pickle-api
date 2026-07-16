@@ -48,7 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <ul>
  *   <li><b>Self-delete</b> (group OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
  *       immediate DELETING + async graceful shutdown, hard delete after
- *       {@code settings.vm_delete_grace_hours}; students cannot cancel.
+ *       {@code settings.vm_delete_grace_hours}; users cannot cancel.
  *       ERROR VMs (compensated create failures) collapse to an immediate
  *       DELETED with the IP released — there is nothing to destroy.</li>
  *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
@@ -199,7 +199,7 @@ public class VmDeletionService {
                 reason, true);
     }
 
-    // ── admin cancel (the only cancellation path — students have none) ─────
+    // ── admin cancel (the only cancellation path — users have none) ─────
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId, String ip) {

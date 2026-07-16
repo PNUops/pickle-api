@@ -158,7 +158,7 @@ public class ProxmoxClient {
     /**
      * {@code DELETE /nodes/{n}/qemu/{id}?purge=1&destroy-unreferenced-disks=1}:
      * also drop the VM from backup/HA configs and destroy stray disks so a
-     * deleted student VM leaves nothing behind.
+     * deleted user VM leaves nothing behind.
      */
     public String delete(String apiHost, String node, int vmid) {
         URI uri = baseBuilder(apiHost)

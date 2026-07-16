@@ -4,7 +4,7 @@ package kr.ac.pusan.pickle.orgs;
  * Canonical <b>derived org membership</b> SQL (M5 operator decision,
  * 2026-07-13): user U belongs to org O iff U is an ACTIVE member of a group
  * that has ≥1 {@code vm_request} or non-DELETED VM with {@code org_id = O},
- * or U is an ORG_ADMIN with {@code users.org_id = O}. Students carry no
+ * or U is an ORG_ADMIN with {@code users.org_id = O}. Regular users carry no
  * {@code users.org_id} (V11 {@code chk_users_org_role}) — the org is a
  * per-request/VM boundary, so membership is derived from the group's
  * resources. Used by announcements, the admin group picker, and the

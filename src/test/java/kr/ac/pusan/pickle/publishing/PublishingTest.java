@@ -110,7 +110,7 @@ class PublishingTest {
 
     private User owner;
     private String ownerToken;
-    private String managerToken;
+    private String editorToken;
     private String viewerToken;
     private String outsiderToken;
     private String orgAdminToken;
@@ -129,13 +129,13 @@ class PublishingTest {
         dns.clear();
 
         owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.USER, null);
-        User manager = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
+        User editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
         User viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.USER, null);
         User outsider = ensureUser("pub.outsider@pusan.ac.kr", "공개외부인", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
         User sysAdmin = userRepository.findByEmail("admin@pickle.local").orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);
-        managerToken = jwtService.createAccessToken(manager);
+        editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
@@ -146,7 +146,7 @@ class PublishingTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = createTeam(groupSlug);
-        addMember(groupId, manager.getEmail(), "EDITOR");
+        addMember(groupId, editor.getEmail(), "EDITOR");
         addMember(groupId, viewer.getEmail(), "VIEWER");
     }
 
@@ -170,7 +170,7 @@ class PublishingTest {
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
         // EDITOR → 202
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
-                        .header("Authorization", "Bearer " + managerToken)
+                        .header("Authorization", "Bearer " + editorToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-alpha.pickle.pnuops.com"))
@@ -443,7 +443,7 @@ class PublishingTest {
         long vmId = publishableVm(true, "team-admin", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
 
-        // ORG_ADMIN of sw-edu sees the route; a student cannot reach the admin list.
+        // ORG_ADMIN of sw-edu sees the route; a regular user cannot reach the admin list.
         mockMvc.perform(get("/api/v1/admin/routes").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.vmId == %d)]".formatted(vmId)).exists());
@@ -553,7 +553,7 @@ class PublishingTest {
         routeApplyJob.apply(routeId);
         assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
 
-        // Agent goes dark, then the student unpublishes: the DB flips to REMOVED
+        // Agent goes dark, then the user unpublishes: the DB flips to REMOVED
         // (tombstone/UI say "unpublished") while nginx would keep serving.
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))

@@ -24,7 +24,7 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
 
     /**
-     * Student listing — scoped to the caller's own groups' VMs. {@code vmId} and
+     * User listing — scoped to the caller's own groups' VMs. {@code vmId} and
      * {@code status} are optional filters; newest first.
      */
     @Query("""

@@ -89,7 +89,7 @@ class AdminVmsTest {
 
     @Test
     void orgAdminIsPinnedToTheirOrgAndCrossOrgFilterAnswers404() throws Exception {
-        // students have no admin VM list → 403 ACCESS_DENIED
+        // users have no admin VM list → 403 ACCESS_DENIED
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));

@@ -36,7 +36,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Student side of the VM request flow (contract tag {@code vm-requests}):
+ * User side of the VM request flow (contract tag {@code vm-requests}):
  * submission with the contract's cross-field rules, visibility-scoped listing
  * and cancellation. Approval/rejection live in the admin ApprovalService.
  */

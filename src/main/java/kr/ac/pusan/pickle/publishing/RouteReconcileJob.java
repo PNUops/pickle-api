@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Recurring desired-state reconciler for HTTP routes (docs/plan/06). The
- * enqueued {@link RouteApplyJob} is fire-and-forget from the student's point of
- * view: if proxy-agent is unreachable when a student unpublishes, the DB says
+ * enqueued {@link RouteApplyJob} is fire-and-forget from the user's point of
+ * view: if proxy-agent is unreachable when a user unpublishes, the DB says
  * REMOVED while nginx keeps serving the vhost — the opposite of intent — and
  * before this job only a manual admin resync would ever fix it. Every cycle
  * re-pushes routes whose desired state the agent has not confirmed

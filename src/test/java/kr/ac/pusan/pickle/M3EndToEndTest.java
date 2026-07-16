@@ -62,8 +62,8 @@ class M3EndToEndTest {
 
     private static final Pattern TOKEN_IN_LINK = Pattern.compile("[?&]token=([A-Za-z0-9_-]+)");
 
-    private static final String STUDENT_EMAIL = "m3.e2e@pusan.ac.kr";
-    private static final String STUDENT_PASSWORD = "M3-e2e-Corr3ct-horse!";
+    private static final String USER_EMAIL = "m3.e2e@pusan.ac.kr";
+    private static final String USER_PASSWORD = "M3-e2e-Corr3ct-horse!";
     private static final String GROUP_SLUG = "m3-e2e-team";
 
     /** VMID the stubbed {@code /cluster/nextid} hands out (fixture 02). */
@@ -118,17 +118,17 @@ class M3EndToEndTest {
 
         // 1. signup + email verification (token comes from the mock mail)
         postJson("/api/v1/auth/signup", null,
-                Map.of("email", STUDENT_EMAIL, "password", STUDENT_PASSWORD, "name", "엠쓰리학생"))
+                Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "엠쓰리학생"))
                 .andExpect(status().isAccepted());
-        MailMessage mail = mockMailSender.lastMessageTo(STUDENT_EMAIL);
+        MailMessage mail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
         Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
         assertThat(matcher.find()).isTrue();
         postJson("/api/v1/auth/verify-email", null, Map.of("token", matcher.group(1)))
                 .andExpect(status().isOk());
 
-        // 2. login as the student
-        String studentToken = login(STUDENT_EMAIL, STUDENT_PASSWORD);
+        // 2. login as the user
+        String studentToken = login(USER_EMAIL, USER_PASSWORD);
 
         // 3. create a TEAM group
         MvcResult groupResult = postJson("/api/v1/groups", studentToken,
@@ -174,7 +174,7 @@ class M3EndToEndTest {
         mockMvc.perform(get("/api/v1/admin/vm-requests/" + requestId + "/context")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.applicant.email").value(STUDENT_EMAIL))
+                .andExpect(jsonPath("$.applicant.email").value(USER_EMAIL))
                 .andExpect(jsonPath("$.group.id").value(groupId))
                 .andExpect(jsonPath("$.orgHeadroom.capacity.cpuThreads").value(40))
                 .andExpect(jsonPath("$.guidance").isNotEmpty());
@@ -231,7 +231,7 @@ class M3EndToEndTest {
         // (running it directly — the 1-minute recurring schedule is too slow
         // for the test, and the CAS claim makes the direct call race-safe)
         notificationDispatchJob.dispatch();
-        MailMessage createdMail = mockMailSender.lastMessageTo(STUDENT_EMAIL);
+        MailMessage createdMail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(createdMail.subject()).contains(vm.get("hostname").asString());
         assertThat(createdMail.body())
                 .contains(EXPECTED_IP)

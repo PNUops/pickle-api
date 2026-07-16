@@ -126,7 +126,7 @@ class AdminOrgUserTest {
                 .andExpect(jsonPath("$.name").value("실습지원센터(개편)"))
                 .andExpect(jsonPath("$.status").value("DISABLED"));
 
-        // DISABLED orgs disappear from the student-facing reference list
+        // DISABLED orgs disappear from the user-facing reference list
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());

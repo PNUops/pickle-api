@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Student VM request flow per contract: creation validation matrix (group
+ * User VM request flow per contract: creation validation matrix (group
  * role, template rules, spec-reason rule, subdomain/domain rules), list/detail
  * visibility incl. the 403 non-member groupId filter, and cancel permissions
  * with the 409 double-decision guard.
@@ -72,11 +72,11 @@ class VmRequestTest {
     private JdbcTemplate jdbcTemplate;
 
     private User requester;
-    private User manager;
+    private User editor;
     private User viewer;
     private User outsider;
     private String requesterToken;
-    private String managerToken;
+    private String editorToken;
     private String viewerToken;
     private String outsiderToken;
     private Org org;
@@ -85,11 +85,11 @@ class VmRequestTest {
     @BeforeEach
     void setUp() {
         requester = ensureUser("vmr.requester@pusan.ac.kr", "신청자");
-        manager = ensureUser("vmr.manager@pusan.ac.kr", "매니저");
+        editor = ensureUser("vmr.manager@pusan.ac.kr", "매니저");
         viewer = ensureUser("vmr.viewer@pusan.ac.kr", "뷰어");
         outsider = ensureUser("vmr.outsider@pusan.ac.kr", "외부인");
         requesterToken = jwtService.createAccessToken(requester);
-        managerToken = jwtService.createAccessToken(manager);
+        editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         org = orgRepository.findBySlug("sw-edu").orElseThrow();
@@ -282,7 +282,7 @@ class VmRequestTest {
     @Test
     void cancelIsForRequesterOrGroupManagersAndOnlyOnce() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-cancel-x1");
-        addMember(requesterToken, groupId, manager.getEmail(), "EDITOR");
+        addMember(requesterToken, groupId, editor.getEmail(), "EDITOR");
         addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
         long first = submit(requesterToken, groupId);
         long second = submit(requesterToken, groupId);
@@ -305,7 +305,7 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
         // group EDITOR may cancel another member's request
-        postJson("/api/v1/vm-requests/" + second + "/cancel", managerToken, Map.of())
+        postJson("/api/v1/vm-requests/" + second + "/cancel", editorToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 

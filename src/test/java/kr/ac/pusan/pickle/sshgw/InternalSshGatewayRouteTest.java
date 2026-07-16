@@ -238,7 +238,7 @@ class InternalSshGatewayRouteTest {
         assertThat((String) row.get("detail")).contains("RATE_LIMITED");
 
         // A DIFFERENT client keeps logging in — no global lockout (the pre-fix
-        // peer-keyed bucket 429ed every student once one abuser hit the relay).
+        // peer-keyed bucket 429ed every user once one abuser hit the relay).
         route(slug, OTHER_CLIENT_IP, SSHGW_IP, TOKEN)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ip").value("172.29.4.18"));

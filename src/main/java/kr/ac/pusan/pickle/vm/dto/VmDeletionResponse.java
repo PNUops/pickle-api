@@ -9,7 +9,7 @@ import kr.ac.pusan.pickle.vm.VmStatus;
  * Contract schema {@code VmDeletion} — the pending (or just-accepted)
  * deletion. {@code cancelable} answers "can an <b>admin</b> cancel this right
  * now": false only for force deletes, already-destroyed VMs and elapsed
- * grace/notice times; students can never cancel (contract deletion policy).
+ * grace/notice times; users can never cancel (contract deletion policy).
  */
 public record VmDeletionResponse(
         VmDeleteKind kind,

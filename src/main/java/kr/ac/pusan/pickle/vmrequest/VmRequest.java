@@ -15,7 +15,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
-/** Student VM request (docs/plan/02 vm_requests). Rows keep their final status forever. */
+/** User VM request (docs/plan/02 vm_requests). Rows keep their final status forever. */
 @Entity
 @Table(name = "vm_requests")
 public class VmRequest {

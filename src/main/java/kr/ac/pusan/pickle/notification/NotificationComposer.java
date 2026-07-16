@@ -9,11 +9,9 @@ import java.util.Map;
 import org.springframework.stereotype.Component;
 
 /**
- * Renders the Korean title/body/linkPath for every {@link NotificationEvent}.
- * The deletion-flow wording (including the two policy notices users must not
- * miss — no backups, admin-only cancellation) is carried over verbatim from
- * the retired {@code VmLifecycleMailComposer}; the creation-done body from the
- * old inline mail in {@code ProvisionVmJob}.
+ * Renders the Korean title/body/linkPath for every {@link NotificationEvent},
+ * including the two deletion-flow policy notices users must not miss (no
+ * backups, admin-only cancellation).
  *
  * <p>Payloads carry whitelisted display fields only — never tokens, passwords
  * or internal identifiers beyond the linked resource ids.</p>
@@ -58,7 +56,6 @@ public class NotificationComposer {
                     payload(args, "requestId"));
             case VM_CREATE_DONE -> new Composed(event.id(),
                     "VM 생성 완료 — " + str(args, "hostname"),
-                    // verbatim from the retired ProvisionVmJob inline mail
                     """
                     신청하신 VM이 생성되어 실행 중입니다.
 

@@ -21,7 +21,7 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
     @Query("select r from VmRequest r where r.id = :id")
     Optional<VmRequest> findWithLockById(@Param("id") Long id);
 
-    /** Student list visibility: own requests + requests of groups I belong to. */
+    /** User list visibility: own requests + requests of groups I belong to. */
     @Query("select r from VmRequest r where r.requesterId = :userId or r.groupId in :groupIds")
     Page<VmRequest> findVisible(@Param("userId") Long userId,
             @Param("groupIds") Collection<Long> groupIds, Pageable pageable);

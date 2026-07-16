@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * Audit read APIs per contract v0.5.0: {@code /me/activity} is strictly
  * self-scoped (login rows included, filters cannot widen it), and
  * {@code /admin/audit} pins ORG_ADMIN to actors of their own org via the
- * canonical <b>derived membership</b> rule enforced in SQL — students belong
+ * canonical <b>derived membership</b> rule enforced in SQL — regular users belong
  * to an org through groups holding vm_requests / non-DELETED VMs in it.
  * System rows (null actor) and cross-org actors stay invisible; a cross-org
  * {@code orgId} masks as 404; SYS_ADMIN sees everything with filters.
@@ -131,7 +131,7 @@ class AuditReadApiTest {
     @Test
     void adminAuditScopesOrgAdminByDerivedMembershipInSql() throws Exception {
         String actionFilter = "?action=test." + runTag + ".vmdel&size=100";
-        // ORG_ADMIN: derived own-org actors only (students via their group's
+        // ORG_ADMIN: derived own-org actors only (users via their group's
         // sw-edu request) — the other org's actor is invisible
         mockMvc.perform(get("/api/v1/admin/audit" + actionFilter)
                         .header("Authorization", "Bearer " + orgAdminToken))
@@ -175,7 +175,7 @@ class AuditReadApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].targetId").value("5533"));
-        // students → 403
+        // users → 403
         mockMvc.perform(get("/api/v1/admin/audit")
                         .header("Authorization", "Bearer " + selfToken))
                 .andExpect(status().isForbidden());

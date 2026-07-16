@@ -110,7 +110,7 @@ class ApprovalTest {
         postJson("/api/v1/vm-requests/" + canceled + "/cancel", studentToken, Map.of())
                 .andExpect(status().isOk());
 
-        // students have no admin queue → 403 ACCESS_DENIED
+        // users have no admin queue → 403 ACCESS_DENIED
         mockMvc.perform(get("/api/v1/admin/vm-requests").header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
@@ -224,7 +224,7 @@ class ApprovalTest {
                 Long.class, requestId);
         assertThat(audits).isEqualTo(1);
 
-        // the requester sees the decision in the student detail view
+        // the requester sees the decision in the user detail view
         mockMvc.perform(get("/api/v1/vm-requests/" + requestId)
                         .header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isOk())

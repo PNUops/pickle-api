@@ -12,7 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * LXC, so the meaningful per-client limit ({@code rateLimitPerMinute}) is keyed
  * on the PROXY-recovered client {@code sourceIp} inside the route service — a
  * peer-keyed limit would be one shared bucket that lets a single internet
- * abuser 429 every student's SSH login. The filter keeps only a high global
+ * abuser 429 every user's SSH login. The filter keeps only a high global
  * backstop ({@code globalRateLimitPerMinute}) bounding total abuse.</p>
  *
  * <p>The token has <b>no default</b> outside dev/test: when it is blank the

@@ -319,7 +319,7 @@ class VmDeletionTest {
                 .contains("사용 종료일이 지난 VM 정리")
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
 
-        // double-schedule and student access → 409 / 403
+        // double-schedule and regular-user access → 409 / 403
         mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -388,7 +388,7 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict());
 
-        // students cannot cancel (403 via method security), other org → 404
+        // users cannot cancel (403 via method security), other org → 404
         mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden());

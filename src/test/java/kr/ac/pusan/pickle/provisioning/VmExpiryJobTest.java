@@ -124,7 +124,7 @@ class VmExpiryJobTest {
     private long nodeId;
     private String nodeName;
     private long ownerId;
-    private long managerId;
+    private long editorId;
     private long memberId;
 
     @BeforeAll
@@ -150,10 +150,10 @@ class VmExpiryJobTest {
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
-        managerId = createUser("manager." + slug + "@pusan.ac.kr");
+        editorId = createUser("manager." + slug + "@pusan.ac.kr");
         memberId = createUser("member." + slug + "@pusan.ac.kr");
         addMember(ownerId, "OWNER");
-        addMember(managerId, "EDITOR");
+        addMember(editorId, "EDITOR");
         addMember(memberId, "MEMBER");
         nodeName = "wmexp-" + UUID.randomUUID().toString().substring(0, 8);
         nodeId = jdbcTemplate.queryForObject("""
@@ -187,7 +187,7 @@ class VmExpiryJobTest {
         assertThat(stageOf(vmLate)).isEqualTo(7);
 
         // recipients: OWNER + EDITOR, never the plain MEMBER; D-1 is HIGH
-        assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, managerId);
+        assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, editorId);
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
                  where event = 'vm.expiry.d1' and payload ->> 'vmId' = ?
@@ -261,7 +261,7 @@ class VmExpiryJobTest {
                 select user_id from notifications
                  where event = 'vm.expiry.stopped' and payload ->> 'vmId' = ?
                 """, Long.class, String.valueOf(vmExpired)))
-                .contains(ownerId, managerId, requesterId)
+                .contains(ownerId, editorId, requesterId)
                 .doesNotContain(memberId);
         wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath(vmid, "status/shutdown"))));
         wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath(vmid, "status/stop"))));

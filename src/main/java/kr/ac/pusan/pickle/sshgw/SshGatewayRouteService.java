@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
  * (docs/api/internal.md Link 1, docs/plan/05). A per-client rate limit runs
  * first — keyed on the PROXY-recovered {@code sourceIp}, because the transport
  * peer is always the sshgw LXC and a peer-keyed bucket would let one internet
- * abuser lock out every student (the filter keeps only a global backstop); the
+ * abuser lock out every user (the filter keeps only a global backstop); the
  * route lookup happens before SSH auth, so this is also the primary slug
  * brute-force throttle. Then all four gate checks must pass — the gateway is
  * globally enabled, the VM exists for that slug, is RUNNING, and is not per-VM

@@ -13,7 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Tears down a VM's HTTP publishing when the VM itself is deleted (docs/api/
  * internal.md Link 2). Without this, a published VM's vhost would outlive it:
- * after the 24h IP quarantine the address is reassigned to ANOTHER student's VM
+ * after the 24h IP quarantine the address is reassigned to ANOTHER user's VM
  * and the deleted VM's FQDN silently routes there.
  *
  * <p>Two-phase and idempotent, mirroring unpublish: first the DB rows flip to

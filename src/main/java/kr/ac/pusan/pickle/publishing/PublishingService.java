@@ -45,7 +45,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Student HTTP publishing (contract tag {@code publishing}): publish/update/
+ * User HTTP publishing (contract tag {@code publishing}): publish/update/
  * unpublish a VM's HTTP service and manage its domains. Endpoints only validate
  * and write intent (domain/route rows + generation); every proxy-agent call and
  * DNS check happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}
@@ -115,7 +115,7 @@ public class PublishingService {
     @Transactional
     public PublicationView publish(AuthenticatedUser actor, long vmId, Integer port,
             String customDomain, String ip) {
-        Vm vm = requireVmManager(actor, vmId);
+        Vm vm = requireVmOwnerOrEditor(actor, vmId);
         requireHttpGranted(vm);
         requirePublishableState(vm);
         Domain existing = domainRepository
@@ -157,7 +157,7 @@ public class PublishingService {
     @Transactional
     public PublicationView updatePublication(AuthenticatedUser actor, long vmId, Integer port,
             boolean customDomainProvided, String customDomain, String ip) {
-        Vm vm = requireVmManager(actor, vmId);
+        Vm vm = requireVmOwnerOrEditor(actor, vmId);
         if (port == null && !customDomainProvided) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("port",
                     "변경할 포트 또는 커스텀 도메인 중 최소 1개를 지정해야 합니다.")));
@@ -203,7 +203,7 @@ public class PublishingService {
 
     @Transactional
     public MessageResponse unpublish(AuthenticatedUser actor, long vmId, String ip) {
-        requireVmManager(actor, vmId);
+        requireVmOwnerOrEditor(actor, vmId);
         Domain domain = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
                 .orElseThrow(PublishingService::publicationNotFound);
@@ -243,7 +243,7 @@ public class PublishingService {
     @Transactional
     public MessageResponse deleteDomain(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmManager(actor, domain.getVmId());
+        requireVmOwnerOrEditor(actor, domain.getVmId());
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
         }
@@ -256,7 +256,7 @@ public class PublishingService {
     @Transactional
     public DomainDetailView verifyDomain(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmManager(actor, domain.getVmId());
+        requireVmOwnerOrEditor(actor, domain.getVmId());
         if (domain.getKind() != DomainKind.CUSTOM) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
@@ -446,7 +446,7 @@ public class PublishingService {
         return vm;
     }
 
-    private Vm requireVmManager(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId).orElseThrow(PublishingService::vmNotFound);
         GroupMemberRole role = groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
                 .map(GroupMember::getRole)
