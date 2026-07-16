@@ -146,7 +146,7 @@ class PublishingTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = createTeam(groupSlug);
-        addMember(groupId, manager.getEmail(), "MANAGER");
+        addMember(groupId, manager.getEmail(), "EDITOR");
         addMember(groupId, viewer.getEmail(), "VIEWER");
     }
 
@@ -168,7 +168,7 @@ class PublishingTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        // MANAGER → 202
+        // EDITOR → 202
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
                         .header("Authorization", "Bearer " + managerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))

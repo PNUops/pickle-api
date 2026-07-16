@@ -138,7 +138,7 @@ public class DomainVerifier {
     }
 
     /**
-     * Verification parked FAILED (deadline passed): group OWNER/MANAGERs get a
+     * Verification parked FAILED (deadline passed): group OWNER/EDITORs get a
      * HIGH notice, deduped per domain — the recurring scan stops re-checking a
      * FAILED domain, so this fires once per park.
      */

@@ -77,7 +77,7 @@ public class VmRequestService {
                 .findByGroupIdAndUserId(group.getId(), actor.id())
                 .map(GroupMember::getRole)
                 .orElseThrow(VmRequestService::requestRoleInsufficient);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.MANAGER) {
+        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
             throw requestRoleInsufficient();
         }
 
@@ -172,11 +172,11 @@ public class VmRequestService {
         Optional<GroupMemberRole> role = groupMemberRepository
                 .findByGroupIdAndUserId(request.getGroupId(), actor.id())
                 .map(GroupMember::getRole);
-        boolean managerOrOwner = role.filter(r -> r == GroupMemberRole.OWNER || r == GroupMemberRole.MANAGER)
+        boolean editorOrOwner = role.filter(r -> r == GroupMemberRole.OWNER || r == GroupMemberRole.EDITOR)
                 .isPresent();
-        if (!requester && !managerOrOwner) {
+        if (!requester && !editorOrOwner) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)/편집자(MANAGER)만 취소할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)/편집자(EDITOR)만 취소할 수 있습니다.");
         }
         if (request.getStatus() != VmRequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
@@ -265,6 +265,6 @@ public class VmRequestService {
 
     private static ApiException requestRoleInsufficient() {
         return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                "VM을 신청할 권한이 없습니다", "그룹 소유자(OWNER) 또는 편집자(MANAGER)만 VM을 신청할 수 있습니다.");
+                "VM을 신청할 권한이 없습니다", "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 VM을 신청할 수 있습니다.");
     }
 }

@@ -51,7 +51,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * DNS check happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}
  * (docs/plan/06).
  *
- * <p>Authorization: mutating ops require the owning group's OWNER/MANAGER (a
+ * <p>Authorization: mutating ops require the owning group's OWNER/EDITOR (a
  * VIEWER is 403, a non-member 404 — same masking as the power path); reads
  * require VIEWER+. The platform subdomain NAME is fixed at approval and never
  * chosen here. The routing target IP is never accepted from the client — it is
@@ -451,10 +451,10 @@ public class PublishingService {
         GroupMemberRole role = groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
                 .map(GroupMember::getRole)
                 .orElseThrow(PublishingService::vmNotFound);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.MANAGER) {
+        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "HTTP 서비스를 공개할 권한이 없습니다",
-                    "그룹 소유자(OWNER) 또는 편집자(MANAGER)만 도메인·포트를 설정할 수 있습니다.");
+                    "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 도메인·포트를 설정할 수 있습니다.");
         }
         return vm;
     }

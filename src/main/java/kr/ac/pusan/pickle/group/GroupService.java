@@ -166,9 +166,9 @@ public class GroupService {
         boolean ownershipTransfer = false;
         if (request.role() == GroupMemberRole.OWNER) {
             if (targetUserId != actor.id()) {
-                // Ownership transfer: the previous OWNER steps down to MANAGER.
+                // Ownership transfer: the previous OWNER steps down to EDITOR.
                 target.setRole(GroupMemberRole.OWNER);
-                actorMembership.setRole(GroupMemberRole.MANAGER);
+                actorMembership.setRole(GroupMemberRole.EDITOR);
                 ownershipTransfer = true;
             }
         } else {

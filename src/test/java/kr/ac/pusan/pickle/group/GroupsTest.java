@@ -136,11 +136,11 @@ class GroupsTest {
     void memberManagementIsOwnerOnly() throws Exception {
         long groupId = createGroup(ownerToken, "grp-members-x1");
 
-        // OWNER adds MANAGER / MEMBER / VIEWER
-        addMember(ownerToken, groupId, manager.getEmail(), "MANAGER")
+        // OWNER adds EDITOR / MEMBER / VIEWER
+        addMember(ownerToken, groupId, manager.getEmail(), "EDITOR")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.userId").value(manager.getId()))
-                .andExpect(jsonPath("$.role").value("MANAGER"));
+                .andExpect(jsonPath("$.role").value("EDITOR"));
         addMember(ownerToken, groupId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
         // duplicate member → 409
@@ -158,7 +158,7 @@ class GroupsTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_USER_NOT_FOUND"));
 
-        // MANAGER cannot add members → 403 GROUP_MEMBER_MANAGE_FORBIDDEN
+        // EDITOR cannot add members → 403 GROUP_MEMBER_MANAGE_FORBIDDEN
         addMember(managerToken, groupId, outsider.getEmail(), "VIEWER")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
@@ -184,7 +184,7 @@ class GroupsTest {
     @Test
     void groupInfoUpdateAllowsOwnerAndManagerOnly() throws Exception {
         long groupId = createGroup(ownerToken, "grp-update-x1");
-        addMember(ownerToken, groupId, manager.getEmail(), "MANAGER").andExpect(status().isCreated());
+        addMember(ownerToken, groupId, manager.getEmail(), "EDITOR").andExpect(status().isCreated());
         addMember(ownerToken, groupId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
         // OWNER may edit name/description
@@ -199,7 +199,7 @@ class GroupsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.description").value((Object) null));
 
-        // MANAGER / MEMBER / outsider → 403, empty patch → 422 (contract: OWNER only)
+        // EDITOR / MEMBER / outsider → 403, empty patch → 422 (contract: OWNER only)
         patchJson("/api/v1/groups/" + groupId, managerToken, Map.of("name", "몰래 수정"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
@@ -216,7 +216,7 @@ class GroupsTest {
     @Test
     void ownershipTransferAndSoleOwnerProtection() throws Exception {
         long groupId = createGroup(ownerToken, "grp-owner-x1");
-        addMember(ownerToken, groupId, manager.getEmail(), "MANAGER").andExpect(status().isCreated());
+        addMember(ownerToken, groupId, manager.getEmail(), "EDITOR").andExpect(status().isCreated());
         addMember(ownerToken, groupId, member.getEmail(), "VIEWER").andExpect(status().isCreated());
 
         // MEMBER-level users cannot change roles or remove others
@@ -237,7 +237,7 @@ class GroupsTest {
 
         // sole OWNER cannot demote or remove themselves
         patchJson("/api/v1/groups/" + groupId + "/members/" + owner.getId(), ownerToken,
-                Map.of("role", "MANAGER"))
+                Map.of("role", "EDITOR"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GROUP_SOLE_OWNER_REMOVAL"));
         mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + owner.getId())
@@ -245,7 +245,7 @@ class GroupsTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GROUP_SOLE_OWNER_REMOVAL"));
 
-        // granting OWNER transfers ownership: previous OWNER becomes MANAGER
+        // granting OWNER transfers ownership: previous OWNER becomes EDITOR
         patchJson("/api/v1/groups/" + groupId + "/members/" + manager.getId(), ownerToken,
                 Map.of("role", "OWNER"))
                 .andExpect(status().isOk())
@@ -253,7 +253,7 @@ class GroupsTest {
         mockMvc.perform(get("/api/v1/groups/" + groupId).header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.members[?(@.userId == %d)].role".formatted(owner.getId()))
-                        .value(org.hamcrest.Matchers.contains("MANAGER")))
+                        .value(org.hamcrest.Matchers.contains("EDITOR")))
                 .andExpect(jsonPath("$.members[?(@.userId == %d)].role".formatted(manager.getId()))
                         .value(org.hamcrest.Matchers.contains("OWNER")));
 
@@ -308,7 +308,7 @@ class GroupsTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
         patchJson("/api/v1/groups/" + personalGroupId + "/members/" + owner.getId(), ownerToken,
-                Map.of("role", "MANAGER"))
+                Map.of("role", "EDITOR"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/groups/" + personalGroupId + "/members/" + owner.getId())

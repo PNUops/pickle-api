@@ -282,7 +282,7 @@ class VmRequestTest {
     @Test
     void cancelIsForRequesterOrGroupManagersAndOnlyOnce() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-cancel-x1");
-        addMember(requesterToken, groupId, manager.getEmail(), "MANAGER");
+        addMember(requesterToken, groupId, manager.getEmail(), "EDITOR");
         addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
         long first = submit(requesterToken, groupId);
         long second = submit(requesterToken, groupId);
@@ -304,7 +304,7 @@ class VmRequestTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
-        // group MANAGER may cancel another member's request
+        // group EDITOR may cancel another member's request
         postJson("/api/v1/vm-requests/" + second + "/cancel", managerToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));

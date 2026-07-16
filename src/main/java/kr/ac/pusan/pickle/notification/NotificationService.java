@@ -92,11 +92,11 @@ public class NotificationService {
 
     // ── recipient resolution helpers (ACTIVE users only) ───────────────────
 
-    /** ACTIVE group members holding OWNER (optionally MANAGER too). */
-    public List<Long> groupRoleHolderIds(long groupId, boolean includeManagers) {
+    /** ACTIVE group members holding OWNER (optionally EDITOR too). */
+    public List<Long> groupRoleHolderIds(long groupId, boolean includeEditors) {
         List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(groupId).stream()
                 .filter(m -> m.getRole() == GroupMemberRole.OWNER
-                        || (includeManagers && m.getRole() == GroupMemberRole.MANAGER))
+                        || (includeEditors && m.getRole() == GroupMemberRole.EDITOR))
                 .map(GroupMember::getUserId)
                 .toList();
         return userRepository.findAllById(memberIds).stream()

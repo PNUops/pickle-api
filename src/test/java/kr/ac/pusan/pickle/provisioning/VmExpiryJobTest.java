@@ -153,7 +153,7 @@ class VmExpiryJobTest {
         managerId = createUser("manager." + slug + "@pusan.ac.kr");
         memberId = createUser("member." + slug + "@pusan.ac.kr");
         addMember(ownerId, "OWNER");
-        addMember(managerId, "MANAGER");
+        addMember(managerId, "EDITOR");
         addMember(memberId, "MEMBER");
         nodeName = "wmexp-" + UUID.randomUUID().toString().substring(0, 8);
         nodeId = jdbcTemplate.queryForObject("""
@@ -186,7 +186,7 @@ class VmExpiryJobTest {
         assertThat(stageOf(vm14)).isEqualTo(14);
         assertThat(stageOf(vmLate)).isEqualTo(7);
 
-        // recipients: OWNER + MANAGER, never the plain MEMBER; D-1 is HIGH
+        // recipients: OWNER + EDITOR, never the plain MEMBER; D-1 is HIGH
         assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, managerId);
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
@@ -256,7 +256,7 @@ class VmExpiryJobTest {
                 select count(*) from vm_events
                  where vm_id = ? and type = 'EXPIRE_STOP' and actor_id is null
                 """, Long.class, vmExpired)).isEqualTo(1);
-        // HIGH notification to OWNER/MANAGER + the org's ORG_ADMINs
+        // HIGH notification to OWNER/EDITOR + the org's ORG_ADMINs
         assertThat(jdbcTemplate.queryForList("""
                 select user_id from notifications
                  where event = 'vm.expiry.stopped' and payload ->> 'vmId' = ?
