@@ -8,7 +8,7 @@ import java.time.Instant;
 /**
  * Contract op {@code scheduleVmDeletion} body. The minimum-notice rule on
  * {@code scheduledFor} is checked in the service against
- * {@code settings.admin_delete_min_notice_days}.
+ * {@code settings.vm_admin_delete_min_notice_days}.
  */
 public record ScheduleVmDeletionRequest(
         @NotNull Instant scheduledFor,

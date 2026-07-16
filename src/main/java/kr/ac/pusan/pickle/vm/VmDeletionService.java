@@ -52,7 +52,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *       ERROR VMs (compensated create failures) collapse to an immediate
  *       DELETED with the IP released — there is nothing to destroy.</li>
  *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
- *       {@code scheduledFor} at least {@code settings.admin_delete_min_notice_days}
+ *       {@code scheduledFor} at least {@code settings.vm_admin_delete_min_notice_days}
  *       out, reason mandatory and mailed to the group.</li>
  *   <li><b>Force delete</b> (SYS_ADMIN): name-confirmed immediate
  *       stop+destroy, never cancelable, audited separately.</li>

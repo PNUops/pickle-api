@@ -44,7 +44,7 @@ public class SettingsService {
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
     public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";
     public static final String VM_DELETE_GRACE_HOURS = "vm_delete_grace_hours";
-    public static final String ADMIN_DELETE_MIN_NOTICE_DAYS = "admin_delete_min_notice_days";
+    public static final String ADMIN_DELETE_MIN_NOTICE_DAYS = "vm_admin_delete_min_notice_days";
     public static final String SSH_GATEWAY_ENABLED = "ssh_gateway_enabled";
     // M5 (V16 seeds the first two; vm_expiry_autostop_enabled arrives with V18).
     public static final String VM_EXPIRY_NOTICE_DAYS = "vm_expiry_notice_days";
