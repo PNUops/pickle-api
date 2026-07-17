@@ -99,8 +99,8 @@ public class VmController {
     }
 
     /** Re-viewable reveal (GET since v0.7.0 — no side effect); never cached. */
-    @GetMapping("/{vmId}/initial-password")
-    public ResponseEntity<InitialPasswordResponse> revealInitialPassword(
+    @GetMapping("/{vmId}/password")
+    public ResponseEntity<InitialPasswordResponse> revealVmPassword(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             HttpServletRequest httpRequest) {
         InitialPasswordResponse response =

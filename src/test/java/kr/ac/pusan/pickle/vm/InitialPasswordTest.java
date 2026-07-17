@@ -94,7 +94,7 @@ class InitialPasswordTest {
         long vmId = createVm(VmStatus.RUNNING, PASSWORD);
 
         for (int i = 0; i < 2; i++) {
-            mockMvc.perform(get("/api/v1/vms/" + vmId + "/initial-password")
+            mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
@@ -134,7 +134,7 @@ class InitialPasswordTest {
                 VmStatus.ERROR, VmStatus.NEEDS_ADMIN)) {
             jdbcTemplate.update("update vms set status = ?::vm_status where id = ?",
                     status.name(), vmId);
-            mockMvc.perform(get("/api/v1/vms/" + vmId + "/initial-password")
+            mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
@@ -145,19 +145,19 @@ class InitialPasswordTest {
 
         // VIEWER → 403, non-member → 404 (masked), unauthenticated → 401
         jdbcTemplate.update("update vms set status = 'RUNNING' where id = ?", vmId);
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/initial-password")
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/initial-password")
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/initial-password"))
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password"))
                 .andExpect(status().isUnauthorized());
 
         // a VM without a stored password (e.g. M2 mock-provisioned) → 410
         long mockVm = createVm(VmStatus.RUNNING, null);
-        mockMvc.perform(get("/api/v1/vms/" + mockVm + "/initial-password")
+        mockMvc.perform(get("/api/v1/vms/" + mockVm + "/password")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.code").value("VM_PASSWORD_ALREADY_VIEWED"));

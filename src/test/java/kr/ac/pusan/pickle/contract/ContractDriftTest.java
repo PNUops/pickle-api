@@ -87,7 +87,7 @@ class ContractDriftTest {
             "POST /vms/{vmId}/shutdown",
             "POST /vms/{vmId}/reboot",
             "POST /vms/{vmId}/force-stop",
-            "GET /vms/{vmId}/initial-password",
+            "GET /vms/{vmId}/password",
             "GET /vms/{vmId}/events",
             "GET /admin/vm-requests",
             "GET /admin/vm-requests/{requestId}",
@@ -136,17 +136,23 @@ class ContractDriftTest {
             "POST /admin/notifications/{notificationId}/resend");
 
     /**
-     * Contract v0.5.0 (M5 dashboards/notifications/audit/expiry) operations
-     * not implemented yet. Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime
-     * = IMPLEMENTED. Each entry moves to IMPLEMENTED as its endpoint lands,
-     * and PLANNED must be empty again by the end of M5.
+     * Contract v0.8.0 (M5.5 SSH per-user identity) operations not implemented
+     * yet. Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED.
+     * Each entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
+     * empty again by the end of M5.5.
      *
-     * <p>Lane ownership — api-A: notifications/announcements/groups/activity/
-     * audit/settings; api-B: tasks/drift/summary/ip-allocations/delivery-log/
-     * period. Each lane moves only its own entries.</p>
+     * <p>Lane ownership — api (W1/W2): all eight M5.5 ops below. As each SSH-key,
+     * VM-settings, and password endpoint lands it leaves this set.</p>
      */
-    // Both M5 lanes complete — all 21 v0.5.0 ops moved to IMPLEMENTED.
-    private static final Set<String> PLANNED = Set.of();
+    private static final Set<String> PLANNED = Set.of(
+            "GET /me/ssh-keys",
+            "POST /me/ssh-keys",
+            "POST /me/ssh-keys/generate",
+            "DELETE /me/ssh-keys/{keyId}",
+            "GET /me/ssh-keys/{keyId}/private-key",
+            "GET /vms/{vmId}/settings",
+            "PATCH /vms/{vmId}/settings",
+            "POST /vms/{vmId}/password/regenerate");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
