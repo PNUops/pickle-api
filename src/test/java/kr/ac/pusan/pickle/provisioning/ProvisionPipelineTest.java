@@ -225,6 +225,46 @@ class ProvisionPipelineTest {
         wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
     }
 
+    // ── ②b host-key collection keeps failing → NEEDS_ADMIN, VM intact ────────
+
+    @Test
+    void hostKeyReadFailureParksNeedsAdminWithoutDestroying() {
+        long vmId = createVm();
+        int vmid = 117;
+        String ip = preallocateIp(vmId);
+        stubNextId(vmid);
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(okFixture("03-cluster-resources")));
+        stubClone();
+        stubConfig(vmid);
+        stubResize(vmid);
+        stubStart(vmid);
+        wm.server().stubFor(post(urlPathEqualTo(qemuPath(vmid) + "/agent/ping"))
+                .willReturn(okFixture("50-agent-ping")));
+        wm.server().stubFor(get(urlPathEqualTo(qemuPath(vmid) + "/agent/network-get-interfaces"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(fixture("51-agent-netif").replace("172.29.255.250", ip))));
+        // the guest agent never yields the host key file (still regenerating)
+        wm.server().stubFor(get(urlPathEqualTo(qemuPath(vmid) + "/agent/file-read"))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":null,\"message\":\"No such file or directory\"}")));
+
+        for (int attempt = 1; attempt <= 4; attempt++) {
+            job.provisionVm(vmId);
+        }
+
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
+        assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.HOSTKEY.index());
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
+        assertThat(vm.getSshHostKey()).isNull();
+        // never destroyed
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+    }
+
     // ── ③ crash mid-clone → resume clones exactly once and completes ─────────
 
     @Test
@@ -283,12 +323,23 @@ class ProvisionPipelineTest {
         assertThat(passwordEncoder.matches(plaintext, vm.getPasswordHash())).isTrue();
         String expectedIpconfig = URLEncoder.encode("ip=" + ip + "/16,gw=172.29.0.1",
                 StandardCharsets.UTF_8);
+        // The gateway platform key is pre-encoded once by configure() and then a
+        // second time by the form encoder — PVE unwraps the outer encoding and
+        // stores the once-encoded value. Verify the double-encoding on the wire.
+        String platformKey = "ssh-ed25519 "
+                + "AAAAC3NzaC1lZDI1NTE5AAAAIPlatformGatewayKeyFixtureForTests pickle-sshgw";
+        String sshkeysDoubleEncoded = URLEncoder.encode(
+                URLEncoder.encode(platformKey, StandardCharsets.UTF_8), StandardCharsets.UTF_8);
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("cipassword="))
                 .withRequestBody(containing("ciuser=student"))
                 .withRequestBody(containing("ipconfig0=" + expectedIpconfig))
+                .withRequestBody(containing("sshkeys=" + sshkeysDoubleEncoded))
                 .withRequestBody(containing("onboot=1"))
                 .withRequestBody(containing("tags=pickle")));
+        // HOSTKEY step collected and normalized the guest host key (comment dropped)
+        assertThat(vm.getSshHostKey())
+                .isEqualTo("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGuestHostKeyFixtureForPipelineAAA");
         assertThat(jdbc.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
@@ -529,7 +580,8 @@ class ProvisionPipelineTest {
         stubTaskStatus(START_UPID, "40-start-status");
     }
 
-    /** Agent ping answers immediately; netif reports the allocated IP. */
+    /** Agent ping answers immediately; netif reports the allocated IP; the
+     *  HOSTKEY step reads the guest's host public key. */
     private void stubAgent(int vmid, String ip) {
         wm.server().stubFor(post(urlPathEqualTo(qemuPath(vmid) + "/agent/ping"))
                 .willReturn(okFixture("50-agent-ping")));
@@ -537,6 +589,12 @@ class ProvisionPipelineTest {
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json")
                         .withBody(fixture("51-agent-netif").replace("172.29.255.250", ip))));
+        wm.server().stubFor(get(urlPathEqualTo(qemuPath(vmid) + "/agent/file-read"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"content\":\"ssh-ed25519 "
+                                + "AAAAC3NzaC1lZDI1NTE5AAAAIGuestHostKeyFixtureForPipelineAAA root@vm\\n\","
+                                + "\"truncated\":false}}")));
     }
 
     private void stubTaskStatus(String upid, String fixtureName) {

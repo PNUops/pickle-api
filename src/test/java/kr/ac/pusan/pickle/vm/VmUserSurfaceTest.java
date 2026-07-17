@@ -158,7 +158,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.provisioning.kind").value("PROVISION"))
                 .andExpect(jsonPath("$.provisioning.status").value("RUNNING"))
                 .andExpect(jsonPath("$.provisioning.currentStep").value(4))
-                .andExpect(jsonPath("$.provisioning.totalSteps").value(10))
+                .andExpect(jsonPath("$.provisioning.totalSteps").value(11))
                 .andExpect(jsonPath("$.provisioning.stepLabel").value("템플릿 복제 중"))
                 .andExpect(jsonPath("$.provisioning.attempts").value(2))
                 .andExpect(jsonPath("$.provisioning.lastError").value("일시 오류"))

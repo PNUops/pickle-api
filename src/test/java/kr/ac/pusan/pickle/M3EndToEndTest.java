@@ -272,6 +272,13 @@ class M3EndToEndTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody(fixture("51-agent-netif")
                                 .replace("172.29.255.250", EXPECTED_IP))));
+        // HOSTKEY step reads the guest's SSH host public key
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo(qemu + "/agent/file-read"))
+                .willReturn(WireMock.aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"content\":\"ssh-ed25519 "
+                                + "AAAAC3NzaC1lZDI1NTE5AAAAIGuestHostKeyFixtureForE2E root@vm\\n\","
+                                + "\"truncated\":false}}")));
     }
 
     private static void stubTaskStatus(String upid, String fixtureName) {

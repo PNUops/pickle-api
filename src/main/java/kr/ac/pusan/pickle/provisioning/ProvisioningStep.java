@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.provisioning;
 
 /**
- * The ten ordered steps of the provision pipeline (docs/plan/03).
+ * The eleven ordered steps of the provision pipeline (docs/plan/03).
  * {@code index} is what {@code provisioning_tasks.current_step} stores;
  * {@code label} is the Korean step name the contract exposes as
  * {@code ProvisioningTaskView.stepLabel}.
@@ -17,7 +17,8 @@ public enum ProvisioningStep {
     RESIZE(6, "디스크 크기 조정 중"),
     START(7, "VM 시작 중"),
     VERIFY(8, "네트워크 확인 중"),
-    FINALIZE(9, "마무리 중");
+    HOSTKEY(9, "호스트 키 수집 중"),
+    FINALIZE(10, "마무리 중");
 
     public static final int TOTAL_STEPS = values().length;
 

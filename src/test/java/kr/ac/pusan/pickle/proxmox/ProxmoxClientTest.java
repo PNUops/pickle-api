@@ -203,6 +203,47 @@ class ProxmoxClientTest {
     }
 
     @Test
+    void agentFileReadReturnsContentAndRejectsTruncated() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/qemu/102/agent/file-read"))
+                .withQueryParam("file", equalTo("/etc/ssh/ssh_host_ed25519_key.pub"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":{\"content\":\"ssh-ed25519 AAAAhostkey root@vm\\n\","
+                                + "\"truncated\":false}}")));
+        assertThat(client.agentFileRead(wm.apiHost(), NODE, 102,
+                "/etc/ssh/ssh_host_ed25519_key.pub")).isEqualTo("ssh-ed25519 AAAAhostkey root@vm\n");
+
+        // a truncated read is an error, not a silently-clipped value
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/qemu/103/agent/file-read"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":{\"content\":\"partial\",\"truncated\":1}}")));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                client.agentFileRead(wm.apiHost(), NODE, 103, "/big"))
+                .isInstanceOf(ProxmoxApiException.class);
+    }
+
+    @Test
+    void agentSetUserPasswordReflectsHttpOutcome() {
+        wm.server().stubFor(post(urlPathEqualTo(
+                "/api2/json/nodes/pve1/qemu/102/agent/set-user-password"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null}")));
+        wm.server().stubFor(post(urlPathEqualTo(
+                "/api2/json/nodes/pve1/qemu/103/agent/set-user-password"))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null,\"message\":\"QEMU guest agent is not running\\n\"}")));
+
+        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 102, "student", "pw")).isTrue();
+        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 103, "student", "pw")).isFalse();
+        wm.server().verify(postRequestedFor(urlPathEqualTo(
+                "/api2/json/nodes/pve1/qemu/102/agent/set-user-password"))
+                .withRequestBody(containing("username=student")));
+    }
+
+    @Test
     void clusterResourcesParsesInventory() {
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));

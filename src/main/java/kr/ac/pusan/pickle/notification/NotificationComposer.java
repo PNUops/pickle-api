@@ -6,6 +6,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,6 +37,14 @@ public class NotificationComposer {
     private static final DateTimeFormatter KST =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
 
+    /** SSH gateway host advertised in the VM-created mail (config-driven). */
+    private final String sshHost;
+
+    public NotificationComposer(
+            @Value("${pickle.ssh.advertised-host:ssh.pickle.pnuops.com}") String sshHost) {
+        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pickle.pnuops.com" : sshHost;
+    }
+
     public Composed compose(NotificationEvent event, Map<String, Object> args) {
         return switch (event) {
             case REQUEST_SUBMITTED -> requestSubmitted(event, args);
@@ -62,13 +71,16 @@ public class NotificationComposer {
                     - 호스트명: %s
                     - 내부 IP: %s
                     - SSH 계정: %s
-                    - 초기 비밀번호: 콘솔의 VM 상세 화면에서 확인할 수 있습니다.
+                    - SSH 접속: ssh %s@%s
+                    - 비밀번호: 콘솔의 VM 상세 화면에서 확인할 수 있습니다.
+
+                    [안내] SSH 접속에는 콘솔에 등록한 SSH 키가 필요합니다. 아직 키가 없다면 콘솔의 'SSH 키' 메뉴에서 만들거나 등록해 주세요.
 
                     [중요] 플랫폼은 VM 데이터를 백업하지 않습니다(사용자 책임).
                     중요한 데이터는 반드시 직접 백업해 주세요.
                     """.formatted(str(args, "hostname"),
                             args.get("ip") != null ? str(args, "ip") : "(확인 중)",
-                            str(args, "sshUsername")),
+                            str(args, "sshUsername"), str(args, "hostname"), sshHost),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "hostname"));
             case VM_CREATE_FAILED -> new Composed(event.id(),

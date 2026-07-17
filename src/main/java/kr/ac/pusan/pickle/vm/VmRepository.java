@@ -284,6 +284,16 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int recordPasswordViewed(@Param("id") Long id, @Param("now") Instant now);
 
     /**
+     * Provisioning HOSTKEY step: pins the collected SSH host key. Idempotent — a
+     * re-run overwrites with the same collected value (docs/api/internal.md v2).
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("update Vm v set v.sshHostKey = :hostKey, v.updatedAt = :now where v.id = :id")
+    int storeSshHostKey(@Param("id") Long id, @Param("hostKey") String hostKey,
+            @Param("now") Instant now);
+
+    /**
      * Sets the informational {@code status_detail} without a state transition
      * (drift class ③). Guarded by the current status so a concurrent pipeline
      * transition wins and the note is dropped instead of clobbering.

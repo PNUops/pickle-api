@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -9,6 +11,7 @@ import java.util.Objects;
 import java.util.Optional;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
+import kr.ac.pusan.pickle.config.SshPlatformProperties;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.inventory.Node;
@@ -101,6 +104,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final CredentialCipher credentialCipher;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
+    private final SshPlatformProperties sshPlatformProperties;
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
@@ -109,7 +113,8 @@ public class ProvisionVmJob implements ProvisioningService {
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
             JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
             VmPasswordGenerator passwordGenerator, CredentialCipher credentialCipher,
-            NotificationService notificationService, ObjectMapper objectMapper) {
+            NotificationService notificationService, ObjectMapper objectMapper,
+            SshPlatformProperties sshPlatformProperties) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -127,6 +132,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.credentialCipher = credentialCipher;
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
+        this.sshPlatformProperties = sshPlatformProperties;
     }
 
     @Override
@@ -219,6 +225,7 @@ public class ProvisionVmJob implements ProvisioningService {
                 case RESIZE -> resize(vm);
                 case START -> start(vm);
                 case VERIFY -> verify(vm);
+                case HOSTKEY -> collectHostKey(vm);
                 case FINALIZE -> {
                     finalizeVm(task, vm);
                     return;
@@ -340,6 +347,12 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("memory", String.valueOf(vm.getMemoryMb()));
         params.put("ciuser", vm.getSshUsername());
         params.put("cipassword", password);
+        // Authorize the SSH gateway's platform key on the guest (docs/plan/05).
+        // Proxmox wants the sshkeys value URL-encoded once itself; encodeForm
+        // adds the transport encoding, so the value is deliberately pre-encoded
+        // here (a double-encode on the wire that PVE unwraps to the raw key).
+        params.put("sshkeys", URLEncoder.encode(
+                sshPlatformProperties.requirePlatformPublicKey(), StandardCharsets.UTF_8));
         params.put("ipconfig0", "ip=" + ip + "/" + cidrPrefix(pool.getCidr())
                 + ",gw=" + hostAddress(pool.getGateway()));
         firstDns(pool).ifPresent(dns -> params.put("nameserver", dns));
@@ -413,7 +426,48 @@ public class ProvisionVmJob implements ProvisioningService {
         }
     }
 
-    /** Step 9: CREATING → RUNNING, task DONE, CREATE event, owner mail. */
+    /**
+     * Step 9 (HOSTKEY): collect the guest's SSH host key via the agent and pin
+     * it on the vms row, so the gateway can verify the upstream host key (v2 —
+     * no IgnoreHostKey). Idempotent: a re-run overwrites with the same value.
+     * Failures (agent not ready, malformed key) are retryable and, being past
+     * CONFIG, park NEEDS_ADMIN when the budget is exhausted rather than
+     * destroying the VM.
+     */
+    private void collectHostKey(Vm vm) {
+        if (vm.getSshHostKey() != null && !vm.getSshHostKey().isBlank()) {
+            return; // already collected on an earlier run
+        }
+        Node node = node(vm);
+        String content;
+        try {
+            content = proxmox.agentFileRead(node.getApiHost(), node.getName(), requireVmid(vm),
+                    "/etc/ssh/ssh_host_ed25519_key.pub");
+        } catch (ProxmoxApiException e) {
+            // sshd may still be regenerating host keys on first boot — retryable
+            throw new RetryableStepException("게스트 SSH 호스트 키를 읽지 못했습니다: " + e.getMessage());
+        }
+        String hostKey = normalizeHostKey(content);
+        vmRepository.storeSshHostKey(vm.getId(), hostKey, Instant.now());
+    }
+
+    /**
+     * Validates and normalizes an {@code ssh_host_ed25519_key.pub} to the
+     * {@code ssh-ed25519 <base64>} one-liner (comment dropped). A malformed
+     * file is retryable — the guest may not have finished writing it.
+     */
+    private static String normalizeHostKey(String content) {
+        if (content == null || content.isBlank()) {
+            throw new RetryableStepException("게스트 SSH 호스트 키 파일이 비어 있습니다");
+        }
+        String[] fields = content.strip().split("\\s+", 3);
+        if (fields.length < 2 || !"ssh-ed25519".equals(fields[0]) || fields[1].isBlank()) {
+            throw new RetryableStepException("게스트 SSH 호스트 키 형식이 올바르지 않습니다");
+        }
+        return fields[0] + " " + fields[1];
+    }
+
+    /** Step 10: CREATING → RUNNING, task DONE, CREATE event, owner mail. */
     private void finalizeVm(ProvisioningTask task, Vm vm) {
         Instant now = Instant.now();
         int transitioned = vmRepository.transitionStatus(vm.getId(), VmStatus.CREATING,
@@ -468,7 +522,7 @@ public class ProvisionVmJob implements ProvisioningService {
         } else if (step <= ProvisioningStep.CONFIG.index()) {
             compensate(taskId, vmId, error, e);
         } else {
-            // steps 6–9: the VM exists and may hold user-visible state — park it
+            // steps 6–10: the VM exists and may hold user-visible state — park it
             taskRepository.park(taskId, error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
                     "프로비저닝 중 오류가 발생해 관리자 확인 대기 중입니다", now);

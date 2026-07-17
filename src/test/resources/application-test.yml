@@ -23,6 +23,7 @@ pickle:
   ssh:
     advertised-host: ssh.pickle.pnuops.com
     advertised-port: 22
+    platform-public-key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlatformGatewayKeyFixtureForTests pickle-sshgw'
   sshgw:
     # Known token/source for the /internal/sshgw/route filter-chain tests.
     token: test-sshgw-token

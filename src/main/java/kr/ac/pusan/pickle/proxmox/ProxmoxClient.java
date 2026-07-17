@@ -71,6 +71,9 @@ public class ProxmoxClient {
     private static final TypeReference<Envelope<AgentResult<List<AgentInterface>>>> AGENT_NETIF_RESPONSE =
             new TypeReference<>() {
             };
+    private static final TypeReference<Envelope<AgentFileRead>> AGENT_FILE_READ_RESPONSE =
+            new TypeReference<>() {
+            };
 
     private final ProxmoxProperties properties;
     private final RestClient restClient;
@@ -252,6 +255,27 @@ public class ProxmoxClient {
         }
     }
 
+    /**
+     * {@code GET /nodes/{n}/qemu/{id}/agent/file-read?file=<path>} — reads a
+     * small guest file via the agent (used to collect the SSH host key). A
+     * truncated read (file exceeded the agent's size cap) is an error rather
+     * than a silently-clipped value.
+     */
+    public String agentFileRead(String apiHost, String node, int vmid, String path) {
+        URI uri = baseBuilder(apiHost)
+                .pathSegment("nodes", node, "qemu", String.valueOf(vmid), "agent", "file-read")
+                .queryParam("file", path)
+                .build().encode().toUri();
+        AgentFileRead result = call(HttpMethod.GET, uri, null, AGENT_FILE_READ_RESPONSE);
+        if (result == null || result.content() == null) {
+            throw new ProxmoxApiException("agent file-read returned no content for " + path, null);
+        }
+        if (result.isTruncated()) {
+            throw new ProxmoxApiException("agent file-read truncated for " + path, null);
+        }
+        return result.content();
+    }
+
     /** {@code GET /nodes/{n}/qemu/{id}/agent/network-get-interfaces}. */
     public List<AgentInterface> agentNetworkInterfaces(String apiHost, String node, int vmid) {
         AgentResult<List<AgentInterface>> data = call(HttpMethod.GET,
@@ -399,6 +423,24 @@ public class ProxmoxClient {
     /** Guest-agent responses nest the payload one level deeper: {@code data.result}. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record AgentResult<T>(T result) {
+    }
+
+    /**
+     * {@code agent/file-read} payload ({@code {"content":..., "truncated":...}}).
+     * PVE has returned {@code truncated} as both a boolean and a 0/1 int across
+     * versions, so it is read leniently.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record AgentFileRead(String content, Object truncated) {
+        boolean isTruncated() {
+            if (truncated instanceof Boolean b) {
+                return b;
+            }
+            if (truncated instanceof Number n) {
+                return n.intValue() != 0;
+            }
+            return false;
+        }
     }
 
     /** PVE error responses: {@code {"message": "...", "data": null}}. */

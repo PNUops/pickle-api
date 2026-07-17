@@ -95,7 +95,7 @@ class AdminTasksTest {
                 .andExpect(jsonPath("$.content[0].kind").value("PROVISION"))
                 .andExpect(jsonPath("$.content[0].status").value("NEEDS_ADMIN"))
                 .andExpect(jsonPath("$.content[0].currentStep").value(3))
-                .andExpect(jsonPath("$.content[0].totalSteps").value(10))
+                .andExpect(jsonPath("$.content[0].totalSteps").value(11))
                 .andExpect(jsonPath("$.content[0].stepLabel").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].lastError").value("테스트 오류"))
                 .andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
