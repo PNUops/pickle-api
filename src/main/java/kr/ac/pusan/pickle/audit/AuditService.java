@@ -40,8 +40,10 @@ public class AuditService {
     public static final String VM_SCHEDULE_DELETE = "vm.schedule_delete";
     public static final String VM_CANCEL_SCHEDULED_DELETE = "vm.cancel_scheduled_delete";
     public static final String VM_FORCE_DELETE = "vm.force_delete";
-    /** One-shot initial-password reveal — the fact only, never the value. */
+    /** Initial-password reveal (every reveal since v0.7.0) — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password_reveal";
+    /** Guest-agent password reset — the fact only, never the value. */
+    public static final String VM_PASSWORD_RESET = "vm.password_reset";
     // HTTP publishing (M4A, docs/plan/06).
     public static final String VM_PUBLISH = "vm.publish";
     public static final String VM_PUBLICATION_UPDATE = "vm.publication_update";

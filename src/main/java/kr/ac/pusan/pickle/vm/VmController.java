@@ -98,13 +98,25 @@ public class VmController {
         return vmQueryService.events(principal, vmId, page, size);
     }
 
-    /** One-shot reveal (POST — consuming side effect); response must never cache. */
-    @PostMapping("/{vmId}/initial-password")
+    /** Re-viewable reveal (GET since v0.7.0 — no side effect); never cached. */
+    @GetMapping("/{vmId}/initial-password")
     public ResponseEntity<InitialPasswordResponse> revealInitialPassword(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             HttpServletRequest httpRequest) {
         InitialPasswordResponse response =
                 initialPasswordService.reveal(principal, vmId, clientIp(httpRequest));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(response);
+    }
+
+    /** Guest-agent password reset (synchronous, no reboot); never cached. */
+    @PostMapping("/{vmId}/password-reset")
+    public ResponseEntity<InitialPasswordResponse> resetVmPassword(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            HttpServletRequest httpRequest) {
+        InitialPasswordResponse response =
+                initialPasswordService.reset(principal, vmId, clientIp(httpRequest));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(response);

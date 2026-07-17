@@ -48,6 +48,6 @@ public record VmDetailResponse(
                 vm.getTemplateId(), ipAddress, vm.getSshUsername(), vm.getStartDate(),
                 vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning, VmDeletionResponse.from(vm),
                 httpPublishGranted, publication,
-                vm.getInitialPassword() != null, vm.getUpdatedAt());
+                vm.getInitialPasswordEnc() != null, vm.getUpdatedAt());
     }
 }

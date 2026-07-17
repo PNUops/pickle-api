@@ -18,6 +18,8 @@ spring:
 pickle:
   jwt:
     secret: pickle-test-jwt-secret-0123456789abcdef-test
+  credentials:
+    encryption-key: 4IUuLkNP8ook5VuNU7By7GAq0J8rbFOcEfuExymtueM=
   sshgw:
     # Known token/source for the /internal/sshgw/route filter-chain tests.
     token: test-sshgw-token

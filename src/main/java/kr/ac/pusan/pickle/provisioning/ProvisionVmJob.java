@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.provisioning;
 
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -8,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
+import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.inventory.Node;
@@ -61,8 +62,8 @@ import tools.jackson.databind.ObjectMapper;
  * anything.</p>
  *
  * <p>The generated initial password never appears in any log statement or
- * exception message; only the vms row (plaintext until first view + BCrypt
- * hash) and the cloud-init {@code cipassword} form field carry it.</p>
+ * exception message; only the vms row (AES-GCM ciphertext + BCrypt hash) and
+ * the cloud-init {@code cipassword} form field carry it.</p>
  */
 @Component
 public class ProvisionVmJob implements ProvisioningService {
@@ -83,11 +84,6 @@ public class ProvisionVmJob implements ProvisioningService {
     private static final Duration AGENT_PING_INTERVAL = Duration.ofSeconds(5);
     private static final Duration AGENT_PING_TIMEOUT = Duration.ofMinutes(5);
 
-    private static final int PASSWORD_LENGTH = 24;
-    private static final char[] PASSWORD_ALPHABET =
-            ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#%^*-_+=")
-                    .toCharArray();
-
     private final VmRepository vmRepository;
     private final VmEventRepository vmEventRepository;
     private final ProvisioningTaskRepository taskRepository;
@@ -101,9 +97,10 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ProxmoxClient proxmox;
     private final JobScheduler jobScheduler;
     private final PasswordEncoder passwordEncoder;
+    private final VmPasswordGenerator passwordGenerator;
+    private final CredentialCipher credentialCipher;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
-    private final SecureRandom random = new SecureRandom();
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
@@ -111,6 +108,7 @@ public class ProvisionVmJob implements ProvisioningService {
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
             JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
+            VmPasswordGenerator passwordGenerator, CredentialCipher credentialCipher,
             NotificationService notificationService, ObjectMapper objectMapper) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
@@ -125,6 +123,8 @@ public class ProvisionVmJob implements ProvisioningService {
         this.proxmox = proxmox;
         this.jobScheduler = jobScheduler;
         this.passwordEncoder = passwordEncoder;
+        this.passwordGenerator = passwordGenerator;
+        this.credentialCipher = credentialCipher;
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
     }
@@ -323,16 +323,17 @@ public class ProvisionVmJob implements ProvisioningService {
 
     /**
      * Step 5: cloud-init and hardware config. Generates the initial password
-     * (24-char CSPRNG), pushes it as {@code cipassword} and stores plaintext +
-     * BCrypt hash on the vms row. A re-run regenerates and overwrites both
-     * sides, so DB and guest can never disagree after the step completes.
+     * (24-char CSPRNG), pushes it as {@code cipassword} and stores AES-GCM
+     * ciphertext + BCrypt hash on the vms row (plaintext is never persisted).
+     * A re-run regenerates and overwrites both sides, so DB and guest can
+     * never disagree after the step completes.
      */
     private void configure(Vm vm) {
         Node node = node(vm);
         IpAllocation allocation = requireAllocation(vm);
         IpPool pool = poolRepository.findById(allocation.getPoolId()).orElseThrow();
         String ip = hostAddress(allocation.getIp());
-        String password = generatePassword();
+        String password = passwordGenerator.generate();
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("cores", String.valueOf(vm.getVcpu()));
@@ -347,8 +348,8 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("tags", "pickle");
         proxmox.config(node.getApiHost(), node.getName(), requireVmid(vm), params);
 
-        vmRepository.storeInitialCredentials(vm.getId(), password, passwordEncoder.encode(password),
-                Instant.now());
+        vmRepository.storeInitialCredentials(vm.getId(), credentialCipher.encrypt(password),
+                passwordEncoder.encode(password), Instant.now());
     }
 
     /**
@@ -623,14 +624,6 @@ public class ProvisionVmJob implements ProvisioningService {
         return proxmox.clusterResources(node.getApiHost(), "vm").stream()
                 .filter(resource -> Objects.equals(resource.vmid(), vmid))
                 .findFirst().orElse(null);
-    }
-
-    private String generatePassword() {
-        StringBuilder password = new StringBuilder(PASSWORD_LENGTH);
-        for (int i = 0; i < PASSWORD_LENGTH; i++) {
-            password.append(PASSWORD_ALPHABET[random.nextInt(PASSWORD_ALPHABET.length)]);
-        }
-        return password.toString();
     }
 
     /** Strips an inet prefix suffix, e.g. {@code 172.29.1.5/16 → 172.29.1.5}. */

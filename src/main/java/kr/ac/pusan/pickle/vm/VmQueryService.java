@@ -42,8 +42,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The detail view assembles the M3 lifecycle surface: {@code provisioning}
  * is the newest task unless it finished cleanly (contract: in-flight or
  * last-failed; DONE → null), {@code deletion} maps the delete_* intent,
- * {@code initialPasswordAvailable} mirrors the one-shot plaintext column and
- * {@code ipAddress} resolves the IPAM allocation.</p>
+ * {@code initialPasswordAvailable} mirrors the stored ciphertext column
+ * (re-viewable — it stays true after reveals) and {@code ipAddress} resolves
+ * the IPAM allocation.</p>
  */
 @Service
 public class VmQueryService {

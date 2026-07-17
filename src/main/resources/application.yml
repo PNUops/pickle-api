@@ -46,6 +46,10 @@ pickle:
     # fast when unset (docs/plan/07 secrets policy, /etc/pickle/api.env).
     secret: ${PICKLE_JWT_SECRET:}
     access-token-ttl: 15m
+  credentials:
+    # AES-256-GCM key (base64 32 bytes) for reversible credential storage
+    # (VM initial passwords). Same fail-fast policy as the JWT secret.
+    encryption-key: ${PICKLE_CREDENTIALS_KEY:}
   auth:
     refresh-token-ttl: 14d
     verification-token-ttl: 24h
@@ -116,6 +120,9 @@ spring:
 pickle:
   jwt:
     secret: ${PICKLE_JWT_SECRET:pickle-dev-only-jwt-secret-0123456789abcdef}
+  credentials:
+    # dev-only default (like the JWT secret above) — real envs set the env var
+    encryption-key: ${PICKLE_CREDENTIALS_KEY:QxUeRChMTsvTKefqkSaWyxt17nWc2Iykf2Q9abjdcxs=}
   mail:
     # full mock-mail bodies (verification links = bearer tokens) go to this
     # service-user-only (rw-------) spool, not the journal

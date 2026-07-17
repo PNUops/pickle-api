@@ -119,11 +119,13 @@ public class Vm {
     private Long deletedBy;
 
     /**
-     * Plaintext by design, but only until first view: the one-shot password
-     * endpoint returns it once and nulls it (docs/plan/03 initial credentials).
+     * AES-256-GCM ciphertext of the current initial password (CredentialCipher,
+     * key from env). Reversible by design — the always-re-viewable policy
+     * (2026-07-17) replaced the old one-shot plaintext column. NULLed on
+     * deletion.
      */
-    @Column(name = "initial_password")
-    private String initialPassword;
+    @Column(name = "initial_password_enc")
+    private String initialPasswordEnc;
 
     /** BCrypt hash kept permanently for support verification. */
     @Column(name = "initial_password_hash")
@@ -278,8 +280,8 @@ public class Vm {
         return deletedBy;
     }
 
-    public String getInitialPassword() {
-        return initialPassword;
+    public String getInitialPasswordEnc() {
+        return initialPasswordEnc;
     }
 
     public String getInitialPasswordHash() {

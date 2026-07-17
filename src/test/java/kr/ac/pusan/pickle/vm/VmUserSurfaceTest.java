@@ -145,7 +145,7 @@ class VmUserSurfaceTest {
                 update vms
                    set delete_kind = 'SELF', delete_scheduled_for = now() + interval '7 days',
                        delete_requested_at = now(), delete_requested_by = ?,
-                       initial_password = 'pw-once', initial_password_hash = 'h'
+                       initial_password_enc = 'v1:iv:ct', initial_password_hash = 'h'
                  where id = ?
                 """, owner.getId(), vmId);
 
@@ -171,7 +171,7 @@ class VmUserSurfaceTest {
         // a cleanly finished task and a consumed password flip the surface
         jdbcTemplate.update("update provisioning_tasks set status = 'DONE' where vm_id = ?", vmId);
         jdbcTemplate.update("""
-                update vms set initial_password = null, delete_kind = null,
+                update vms set initial_password_enc = null, delete_kind = null,
                                delete_scheduled_for = null, delete_requested_at = null,
                                delete_requested_by = null
                  where id = ?

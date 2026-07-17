@@ -261,20 +261,27 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int clearProxmoxVmid(@Param("id") Long id, @Param("now") Instant now);
 
     /**
-     * Step 5 (config) stores the generated initial credentials: plaintext for
-     * the one-shot view endpoint, BCrypt hash for support verification
-     * (docs/plan/03 initial credentials). Never logged anywhere.
+     * Step 5 (config) and password reset store the generated credentials:
+     * AES-GCM ciphertext for the (re-)viewable endpoint, BCrypt hash for
+     * support verification (docs/plan/03 initial credentials). The plaintext
+     * is never persisted or logged anywhere.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("""
             update Vm v
-               set v.initialPassword = :password, v.initialPasswordHash = :passwordHash,
+               set v.initialPasswordEnc = :passwordEnc, v.initialPasswordHash = :passwordHash,
                    v.initialPasswordViewedAt = null, v.updatedAt = :now
              where v.id = :id
             """)
-    int storeInitialCredentials(@Param("id") Long id, @Param("password") String password,
+    int storeInitialCredentials(@Param("id") Long id, @Param("passwordEnc") String passwordEnc,
             @Param("passwordHash") String passwordHash, @Param("now") Instant now);
+
+    /** Records the (latest) reveal time — informational only since v0.7.0. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("update Vm v set v.initialPasswordViewedAt = :now where v.id = :id")
+    int recordInitialPasswordViewed(@Param("id") Long id, @Param("now") Instant now);
 
     /**
      * Sets the informational {@code status_detail} without a state transition
@@ -328,7 +335,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /**
      * ERROR VMs have no substrate to destroy (compensation already ran):
      * the self-delete collapses to an immediate DELETED, no pipeline. The
-     * plaintext initial password is wiped like in {@link #markDeleted}.
+     * stored initial-password ciphertext is wiped like in {@link #markDeleted}.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -337,7 +344,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                set status = 'DELETED', status_detail = null, delete_kind = 'SELF',
                    delete_scheduled_for = :now, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null,
-                   initial_password = null,
+                   initial_password_enc = null,
                    deleted_at = :now, deleted_by = :requestedBy, updated_at = :now
              where id = :id and status = 'ERROR' and delete_kind is null
             """)
@@ -388,14 +395,14 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * Final destruction: DELETING → DELETED, keeping the row forever — except
-     * the plaintext initial password: an unviewed one must not outlive the VM
-     * (the BCrypt hash stays for support verification).
+     * the stored initial-password ciphertext: credentials must not outlive the
+     * VM (the BCrypt hash stays for support verification).
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
             update vms
-               set status = 'DELETED', status_detail = null, initial_password = null,
+               set status = 'DELETED', status_detail = null, initial_password_enc = null,
                    deleted_at = :now, deleted_by = :deletedBy, updated_at = :now
              where id = :id and status = 'DELETING'
             """)

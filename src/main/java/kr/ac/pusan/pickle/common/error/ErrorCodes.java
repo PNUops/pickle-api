@@ -33,6 +33,8 @@ public final class ErrorCodes {
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
     public static final String DRIFT_FINDING_ALREADY_RESOLVED = "DRIFT_FINDING_ALREADY_RESOLVED";
     public static final String NOTIFICATION_NOT_RESENDABLE = "NOTIFICATION_NOT_RESENDABLE";
+    // Password reset (contract v0.7.0): synchronous Proxmox failure → 502.
+    public static final String PROXMOX_UPSTREAM_ERROR = "PROXMOX_UPSTREAM_ERROR";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
