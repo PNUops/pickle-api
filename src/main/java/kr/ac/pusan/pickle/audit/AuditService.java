@@ -61,6 +61,14 @@ public class AuditService {
     // M5 admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";
+    // M5.5 SSH keys / VM settings / password (contract v0.8.0). Never the key
+    // material — only the fact and non-secret metadata (fingerprint/keyId).
+    public static final String USER_SSH_KEY_ADD = "user.ssh_key_add";
+    public static final String USER_SSH_KEY_GENERATE = "user.ssh_key_generate";
+    public static final String USER_SSH_KEY_DOWNLOAD = "user.ssh_key_download";
+    public static final String USER_SSH_KEY_DELETE = "user.ssh_key_delete";
+    public static final String VM_SETTING_UPDATE = "vm.setting_update";
+    public static final String VM_PASSWORD_REGENERATE = "vm.password_regenerate";
     /** Actor role stamped on gateway route audits (no user identity in v1). */
     public static final String ACTOR_ROLE_SSHGW = "SSHGW";
 

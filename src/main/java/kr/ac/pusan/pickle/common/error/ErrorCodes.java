@@ -33,6 +33,9 @@ public final class ErrorCodes {
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
     public static final String DRIFT_FINDING_ALREADY_RESOLVED = "DRIFT_FINDING_ALREADY_RESOLVED";
     public static final String NOTIFICATION_NOT_RESENDABLE = "NOTIFICATION_NOT_RESENDABLE";
+    // M5.5 SSH keys (contract tag me, v0.8.0).
+    public static final String SSH_KEY_DUPLICATE = "SSH_KEY_DUPLICATE";
+    public static final String SSH_KEY_LIMIT_EXCEEDED = "SSH_KEY_LIMIT_EXCEEDED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

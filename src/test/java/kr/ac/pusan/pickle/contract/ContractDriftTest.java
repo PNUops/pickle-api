@@ -133,7 +133,13 @@ class ContractDriftTest {
             "GET /admin/system-summary",
             "PATCH /admin/vms/{vmId}/period",
             "GET /admin/notifications",
-            "POST /admin/notifications/{notificationId}/resend");
+            "POST /admin/notifications/{notificationId}/resend",
+            // M5.5 per-user SSH keys (contract v0.8.0).
+            "GET /me/ssh-keys",
+            "POST /me/ssh-keys",
+            "POST /me/ssh-keys/generate",
+            "DELETE /me/ssh-keys/{keyId}",
+            "GET /me/ssh-keys/{keyId}/private-key");
 
     /**
      * Contract v0.8.0 (M5.5 SSH per-user identity) operations not implemented
@@ -145,11 +151,6 @@ class ContractDriftTest {
      * VM-settings, and password endpoint lands it leaves this set.</p>
      */
     private static final Set<String> PLANNED = Set.of(
-            "GET /me/ssh-keys",
-            "POST /me/ssh-keys",
-            "POST /me/ssh-keys/generate",
-            "DELETE /me/ssh-keys/{keyId}",
-            "GET /me/ssh-keys/{keyId}/private-key",
             "GET /vms/{vmId}/settings",
             "PATCH /vms/{vmId}/settings",
             "POST /vms/{vmId}/password/regenerate");
