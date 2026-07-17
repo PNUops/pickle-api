@@ -8,8 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 @ConfigurationPropertiesScan
 public class PickleApiApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(PickleApiApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(PickleApiApplication.class, args);
+    }
 
 }

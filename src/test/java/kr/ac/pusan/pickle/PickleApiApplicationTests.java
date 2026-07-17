@@ -11,8 +11,8 @@ import org.springframework.test.context.ActiveProfiles;
 @Import(EmbeddedPostgresConfig.class)
 class PickleApiApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
+    @Test
+    void contextLoads() {
+    }
 
 }
