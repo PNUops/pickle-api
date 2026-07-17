@@ -110,15 +110,4 @@ public class VmController {
                 .body(response);
     }
 
-    /** Guest-agent password reset (synchronous, no reboot); never cached. */
-    @PostMapping("/{vmId}/password-reset")
-    public ResponseEntity<InitialPasswordResponse> resetVmPassword(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            HttpServletRequest httpRequest) {
-        InitialPasswordResponse response =
-                initialPasswordService.reset(principal, vmId, clientIp(httpRequest));
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .body(response);
-    }
 }

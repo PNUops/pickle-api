@@ -228,23 +228,6 @@ public class ProxmoxClient {
         }
     }
 
-    /**
-     * {@code POST /nodes/{n}/qemu/{id}/agent/set-user-password} — sets a guest
-     * account password through the agent, synchronously and without a reboot
-     * (no UPID). {@code crypted=0}: PVE passes the plaintext to the agent,
-     * which hashes it in-guest. An HTTP error surfaces as
-     * {@link ProxmoxApiException} ("QEMU guest agent is not running" when the
-     * agent is down — callers map that to a user-facing conflict).
-     */
-    public void agentSetUserPassword(String apiHost, String node, int vmid, String username,
-            String password) {
-        call(HttpMethod.POST,
-                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "agent",
-                        "set-user-password"),
-                Map.of("username", username, "password", password, "crypted", "0"),
-                VOID_RESPONSE);
-    }
-
     /** {@code GET /nodes/{n}/qemu/{id}/agent/network-get-interfaces}. */
     public List<AgentInterface> agentNetworkInterfaces(String apiHost, String node, int vmid) {
         AgentResult<List<AgentInterface>> data = call(HttpMethod.GET,

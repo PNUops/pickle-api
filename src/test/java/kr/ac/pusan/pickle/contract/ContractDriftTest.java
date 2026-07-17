@@ -88,7 +88,6 @@ class ContractDriftTest {
             "POST /vms/{vmId}/reboot",
             "POST /vms/{vmId}/force-stop",
             "GET /vms/{vmId}/initial-password",
-            "POST /vms/{vmId}/password-reset",
             "GET /vms/{vmId}/events",
             "GET /admin/vm-requests",
             "GET /admin/vm-requests/{requestId}",
