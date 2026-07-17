@@ -3,8 +3,10 @@ package kr.ac.pusan.pickle.vm;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.List;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -13,13 +15,18 @@ import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
+import kr.ac.pusan.pickle.vmsettings.dto.VmSettingView;
+import kr.ac.pusan.pickle.vmsettings.dto.VmSettingsUpdateRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -33,13 +40,16 @@ public class VmController {
     private final VmLifecycleService vmLifecycleService;
     private final VmDeletionService vmDeletionService;
     private final InitialPasswordService initialPasswordService;
+    private final VmSettingsService vmSettingsService;
 
     public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService,
-            VmDeletionService vmDeletionService, InitialPasswordService initialPasswordService) {
+            VmDeletionService vmDeletionService, InitialPasswordService initialPasswordService,
+            VmSettingsService vmSettingsService) {
         this.vmQueryService = vmQueryService;
         this.vmLifecycleService = vmLifecycleService;
         this.vmDeletionService = vmDeletionService;
         this.initialPasswordService = initialPasswordService;
+        this.vmSettingsService = vmSettingsService;
     }
 
     @GetMapping
@@ -108,6 +118,21 @@ public class VmController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(response);
+    }
+
+    /** Per-VM settings (EDITOR+; non-member 404). */
+    @GetMapping("/{vmId}/settings")
+    public List<VmSettingView> getVmSettings(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId) {
+        return vmSettingsService.get(principal, vmId);
+    }
+
+    /** Atomic partial update; per-key required role (contract v0.8.0). */
+    @PatchMapping("/{vmId}/settings")
+    public List<VmSettingView> updateVmSettings(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @Valid @RequestBody VmSettingsUpdateRequest request, HttpServletRequest httpRequest) {
+        return vmSettingsService.patch(principal, vmId, request.settings(), clientIp(httpRequest));
     }
 
 }

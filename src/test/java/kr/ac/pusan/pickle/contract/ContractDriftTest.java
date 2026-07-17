@@ -139,7 +139,9 @@ class ContractDriftTest {
             "POST /me/ssh-keys",
             "POST /me/ssh-keys/generate",
             "DELETE /me/ssh-keys/{keyId}",
-            "GET /me/ssh-keys/{keyId}/private-key");
+            "GET /me/ssh-keys/{keyId}/private-key",
+            "GET /vms/{vmId}/settings",
+            "PATCH /vms/{vmId}/settings");
 
     /**
      * Contract v0.8.0 (M5.5 SSH per-user identity) operations not implemented
@@ -151,8 +153,6 @@ class ContractDriftTest {
      * VM-settings, and password endpoint lands it leaves this set.</p>
      */
     private static final Set<String> PLANNED = Set.of(
-            "GET /vms/{vmId}/settings",
-            "PATCH /vms/{vmId}/settings",
             "POST /vms/{vmId}/password/regenerate");
 
     private static final Set<String> HTTP_METHODS =
