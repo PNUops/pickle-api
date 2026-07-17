@@ -175,18 +175,9 @@ public class AdminSummaryService {
                 driftFindingRepository.countByStatus(DriftFindingStatus.OPEN), pools);
     }
 
-    /**
-     * FAILED notification deliveries. Defensive: the notifications table lands
-     * with the api-A notification core (V16) — until that merge the count is 0
-     * instead of a 500.
-     */
+    /** FAILED notification deliveries (surfaced on the system dashboard). */
     private long notificationFailureCount() {
-        Boolean exists = jdbcTemplate.queryForObject(
-                "select to_regclass('public.notifications') is not null", Boolean.class);
-        if (exists == null || !exists) {
-            return 0;
-        }
-        return count("select count(*) from notifications where status::text = 'FAILED'");
+        return count("select count(*) from notifications where status = 'FAILED'");
     }
 
     /** All {@code VmStatus} keys, zero-filled, overlaid with actual counts (org-scoped or global). */
