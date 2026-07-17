@@ -8,8 +8,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface IpAllocationRepository
         extends JpaRepository<IpAllocation, Long>, JpaSpecificationExecutor<IpAllocation> {
 
-    List<IpAllocation> findByPoolIdAndStatus(Long poolId, AllocationStatus status);
-
     /**
      * The VM's live allocation. Crash guard for the pipeline's alloc step:
      * {@code IpamService.allocate} may have committed before the crash while
