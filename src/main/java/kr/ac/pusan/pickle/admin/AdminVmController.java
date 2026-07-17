@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.admin.dto.VmPeriodUpdateRequest;
@@ -60,10 +61,12 @@ public class AdminVmController {
             @RequestParam(required = false) VmStatus status,
             @RequestParam(required = false) @Min(1) Integer expiringInDays,
             @RequestParam(required = false) Boolean expired,
+            @RequestParam(required = false) @Size(min = 1, max = 100) String q,
+            @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return adminVmQueryService.list(principal, orgId, groupId, status, expiringInDays, expired,
-                page, size);
+                q, sort, page, size);
     }
 
     /** Synchronous DB update per contract (200 + full detail, not 202). */

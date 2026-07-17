@@ -176,6 +176,66 @@ class AdminVmsTest {
                 .andExpect(status().isUnprocessableContent());
     }
 
+    @Test
+    void searchesByNamePartialMatchWithLikeEscaping() throws Exception {
+        // 이 메서드 전용 접두사 — DB가 다른 테스트 메서드와 공유되므로 이름을 격리한다.
+        long alpha = createVm(org.getId(), groupA1, "RUNNING", "adv-qsearch-alpha");
+        long underscore = createVm(org.getId(), groupA1, "RUNNING", "adv-q-under_score");
+        long noUnderscore = createVm(org.getId(), groupA1, "RUNNING", "adv-q-underXscore");
+
+        // case-insensitive partial match on name
+        mockMvc.perform(get("/api/v1/admin/vms?q=QSEARCH-AL")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(alpha)).exists())
+                .andExpect(jsonPath("$.content.length()").value(1));
+
+        // hostname is searched too — alpha's custom name doesn't contain the
+        // seeded hostname prefix, so this hit proves the hostname column
+        mockMvc.perform(get("/api/v1/admin/vms?q=advm-vm-&groupId=" + groupA1)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(alpha)).exists());
+
+        // '_' must match literally, not as a single-char wildcard
+        mockMvc.perform(get("/api/v1/admin/vms?q=q-under_score")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(underscore)).exists())
+                .andExpect(jsonPath(byId(noUnderscore)).doesNotExist());
+    }
+
+    @Test
+    void sortsByWhitelistAndRejectsUnknownKeys() throws Exception {
+        long alpha = createVm(org.getId(), groupA1, "RUNNING", "adv-sortsearch-alpha");
+        long bravo = createVm(org.getId(), groupA1, "RUNNING", "adv-sortsearch-bravo");
+
+        mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch&sort=name")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(alpha))
+                .andExpect(jsonPath("$.content[1].id").value(bravo));
+
+        mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch&sort=-name")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(bravo))
+                .andExpect(jsonPath("$.content[1].id").value(alpha));
+
+        // default stays newest-first when sort is omitted
+        mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(bravo));
+
+        // arbitrary property names never reach the ORM
+        mockMvc.perform(get("/api/v1/admin/vms?sort=initialPassword")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("sort"));
+    }
+
     private static String byId(long vmId) {
         return "$.content[?(@.id == %d)]".formatted(vmId);
     }
@@ -187,8 +247,12 @@ class AdminVmsTest {
                 Long.class, slug, slug);
     }
 
-    /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
     private long createVm(long orgId, long groupId, String status) {
+        return createVm(orgId, groupId, status, null);
+    }
+
+    /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
+    private long createVm(long orgId, long groupId, String status, String name) {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         long requesterId = jdbcTemplate.queryForObject(
                 "select id from users where email = 'orgadmin@pickle.local'", Long.class);
@@ -206,8 +270,8 @@ class AdminVmsTest {
                                  template_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, status);
+                """, Long.class, nodeId, groupId, orgId, requestId,
+                name != null ? name : hostname, hostname, templateId, status);
     }
 
     private User ensureUser(String email, String name, UserRole role, Long orgId) {

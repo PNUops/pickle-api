@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
@@ -39,6 +40,19 @@ public class AdminVmQueryService {
     private static final List<VmStatus> EXPIRY_FILTER_EXCLUDED =
             List.of(VmStatus.DELETED, VmStatus.DELETING);
 
+    /**
+     * Contract {@code sort} whitelist — free-form property names never reach
+     * the ORM. {@code endDate} keeps period-less VMs last in both directions;
+     * every choice is stabilised with a secondary {@code id desc} below.
+     */
+    private static final Map<String, Sort> SORTS = Map.of(
+            "name", Sort.by(Sort.Order.asc("name")),
+            "-name", Sort.by(Sort.Order.desc("name")),
+            "endDate", Sort.by(Sort.Order.asc("endDate").nullsLast()),
+            "-endDate", Sort.by(Sort.Order.desc("endDate").nullsLast()),
+            "createdAt", Sort.by(Sort.Order.asc("createdAt")),
+            "-createdAt", Sort.by(Sort.Order.desc("createdAt")));
+
     private final VmRepository vmRepository;
     private final GroupRepository groupRepository;
     private final Clock clock;
@@ -52,10 +66,18 @@ public class AdminVmQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long groupId,
-            VmStatus status, Integer expiringInDays, Boolean expired, int page, int size) {
+            VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
+            int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Pageable pageable = PageRequest.of(page, size,
+                resolveSort(sort).and(Sort.by(Sort.Direction.DESC, "id")));
         Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
+        if (q != null && !q.isBlank()) {
+            String pattern = "%" + escapeLike(q.trim().toLowerCase()) + "%";
+            spec = spec.and((root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("name")), pattern, '\\'),
+                    cb.like(cb.lower(root.get("hostname")), pattern, '\\')));
+        }
         if (scopedOrgId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
         }
@@ -90,6 +112,24 @@ public class AdminVmQueryService {
     }
 
     /** ORG_ADMIN is pinned to their own org; another org's id answers 404. */
+    private static Sort resolveSort(String sort) {
+        if (sort == null) {
+            return Sort.unsorted();
+        }
+        Sort resolved = SORTS.get(sort);
+        if (resolved == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("sort",
+                    "정렬 기준이 올바르지 않습니다. (허용: " + String.join(", ",
+                            SORTS.keySet().stream().sorted().toList()) + ")")));
+        }
+        return resolved;
+    }
+
+    /** JPQL LIKE 특수문자를 이스케이프해 사용자 입력이 와일드카드로 해석되지 않게 한다. */
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
     private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
         if (actor.role() != UserRole.ORG_ADMIN) {
             return orgId;
