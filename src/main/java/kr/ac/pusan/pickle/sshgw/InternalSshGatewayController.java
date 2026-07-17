@@ -38,7 +38,7 @@ public class InternalSshGatewayController {
         // The authenticated transport peer (the sshgw LXC); distinct from the
         // reported client IP in the body, which sshpiper recovered from PROXY.
         String gatewayPeer = http.getRemoteAddr();
-        RouteOutcome outcome = routeService.resolve(request.slug(), request.sourceIp(), gatewayPeer);
+        RouteOutcome outcome = routeService.resolve(request, gatewayPeer);
         if (outcome.granted()) {
             return ResponseEntity.ok(outcome.route());
         }

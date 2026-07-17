@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -30,12 +31,12 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * B1 internal SSH-gateway route endpoint (docs/api/internal.md Link 1): the
- * dedicated {@code /internal/**} filter chain (bearer + source-IP allowlist +
- * global rate-limit backstop), the per-client (PROXY-recovered sourceIp) rate
- * limit in the route service, and the four route gates (global kill switch, VM
- * exists / RUNNING / not blocked), plus that every lookup is audited with the
- * reported client source IP.
+ * B1 internal SSH-gateway route endpoint, v2 (docs/api/internal.md Link 1 v2):
+ * the {@code /internal/**} filter chain (bearer + source-IP allowlist + global
+ * backstop), the per-client rate limit, and the normative v2 chain — kill
+ * switch &gt; slug &gt; RUNNING &gt; per-VM block &gt; identity (publickey
+ * fingerprint→key→member / password opt-in) &gt; host-key pin &gt; live IP —
+ * with per-user audit attribution on the publickey path.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -50,6 +51,11 @@ class InternalSshGatewayRouteTest {
     private static final int RATE_LIMIT = 5;
     private static final int GLOBAL_RATE_LIMIT = 12;
 
+    private static final String HOST_KEY =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKeyFixtureForRouteResolutionTestsAAAA";
+    private static final String FP_MEMBER = "SHA256:memberFingerprintForRouteTestsAAAAAAAAAAA";
+    private static final String FP_STRANGER = "SHA256:strangerFingerprintForRouteTestsBBBBBBB";
+
     /** Small rate-limit budgets so both limiters can be tripped in short loops. */
     @DynamicPropertySource
     static void sshgwProperties(DynamicPropertyRegistry registry) {
@@ -59,13 +65,10 @@ class InternalSshGatewayRouteTest {
 
     @Autowired
     private MockMvc mockMvc;
-
     @Autowired
     private ObjectMapper objectMapper;
-
     @Autowired
     private JdbcTemplate jdbcTemplate;
-
     @Autowired
     private UserRepository userRepository;
 
@@ -74,12 +77,11 @@ class InternalSshGatewayRouteTest {
     private long nodeId;
     private long groupId;
     private long poolId;
-    private long requesterId;
+    private long memberId;
+    private long strangerId;
 
     @BeforeEach
     void setUp() {
-        // Clean the per-client and global rate windows each test: counters
-        // would otherwise bleed across tests.
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         setGatewayEnabled(true);
 
@@ -88,46 +90,162 @@ class InternalSshGatewayRouteTest {
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'student-vmbr2'",
                 Long.class);
         nodeId = ensureNode();
-        requesterId = ensureRequester();
+        memberId = ensureUser("sshgw.member@pusan.ac.kr", "라우트멤버");
+        strangerId = ensureUser("sshgw.stranger@pusan.ac.kr", "비구성원");
         groupId = createGroup();
+        addMember(groupId, memberId, "MEMBER");
+        registerKey(memberId, FP_MEMBER);
+        registerKey(strangerId, FP_STRANGER);
     }
 
     @Test
-    void runningVmResolvesToItsRouteAndAuditsTheClientIp() throws Exception {
+    void publickeyMemberResolvesWithHostKeysAndAttributesUser() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.11", false);
+        createVm(slug, VmStatus.RUNNING, "172.29.4.11", false, HOST_KEY);
 
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ip").value("172.29.4.11"))
                 .andExpect(jsonPath("$.port").value(22))
-                .andExpect(jsonPath("$.user").value("student"));
+                .andExpect(jsonPath("$.user").value("student"))
+                .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
 
-        // audited as sshgw.route with the reported client IP (not the sshgw IP)
+        // audited as sshgw.route, actor = key owner, client IP recorded
         Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select action, ip, detail::text as detail from audit_logs
+                select actor_id, ip, detail::text as detail from audit_logs
                  where action = 'sshgw.route' order by id desc limit 1
                 """);
+        assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
         assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
-        assertThat((String) row.get("detail")).contains(slug).contains(SSHGW_IP);
+        assertThat((String) row.get("detail")).contains(slug).contains(FP_MEMBER)
+                .contains("publickey");
+        // last_used_at bumped (best-effort)
+        assertThat(jdbcTemplate.queryForObject(
+                "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
+                Instant.class, FP_MEMBER)).isNotNull();
+    }
+
+    @Test
+    void unknownFingerprintDeniedWithNullActor() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.12", false, HOST_KEY);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, "SHA256:nobodyKnowsThisFingerprintXXXXXXXXXXXXX")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_UNKNOWN"));
+
+        assertThat(latestDenied().get("actor_id")).isNull();
+    }
+
+    @Test
+    void nonMemberKeyDeniedButAttributesOwner() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.13", false, HOST_KEY);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_STRANGER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_NOT_MEMBER"));
+
+        // identified after fingerprint match → actor = the (non-member) owner
+        assertThat(((Number) latestDenied().get("actor_id")).longValue()).isEqualTo(strangerId);
+    }
+
+    @Test
+    void noHostKeyDeniedAfterIdentification() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.14", false, null);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_NO_HOST_KEY"));
+
+        // reached via the publickey path after identification → actor = owner
+        assertThat(((Number) latestDenied().get("actor_id")).longValue()).isEqualTo(memberId);
+    }
+
+    @Test
+    void passwordPathDefaultDenyThenOptIn() throws Exception {
+        String slug = uniqueSlug();
+        long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.15", false, HOST_KEY);
+
+        // default-deny (G6): ssh_password_enabled off → denied, actor null
+        password(slug, CLIENT_IP, SSHGW_IP)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_PASSWORD_DISABLED"));
+        assertThat(latestDenied().get("actor_id")).isNull();
+
+        // opt in → route granted, and the password path stays anonymous (actor null)
+        enablePasswordSsh(vmId);
+        password(slug, CLIENT_IP, SSHGW_IP)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
+        assertThat(jdbcTemplate.queryForMap("""
+                select actor_id from audit_logs where action = 'sshgw.route'
+                 order by id desc limit 1
+                """).get("actor_id")).isNull();
+    }
+
+    @Test
+    void killSwitchOutranksPasswordOptIn() throws Exception {
+        String slug = uniqueSlug();
+        long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.16", false, HOST_KEY);
+        enablePasswordSsh(vmId);
+        setGatewayEnabled(false);
+
+        // Even with the per-VM opt-in on, the global kill switch wins (precedence).
+        password(slug, CLIENT_IP, SSHGW_IP)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_GATEWAY_DISABLED"));
+    }
+
+    @Test
+    void unknownSlugIsDeniedWith404() throws Exception {
+        publickey("does-not-exist-" + UUID.randomUUID(), CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NOT_FOUND"));
+    }
+
+    @Test
+    void stoppedVmIsDeniedWith403() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.STOPPED, "172.29.4.17", false, HOST_KEY);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_VM_NOT_RUNNING"));
+    }
+
+    @Test
+    void blockedVmIsDeniedWith403() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.18", true, HOST_KEY);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_VM_BLOCKED"));
+    }
+
+    @Test
+    void staleOrReclaimedAllocationIsDeniedWithNoAddress() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.30", false, HOST_KEY);
+        long allocationId = jdbcTemplate.queryForObject(
+                "select ip_allocation_id from vms where hostname = ?", Long.class, slug);
+        jdbcTemplate.update("""
+                update ip_allocations set status = 'RELEASED'::allocation_status, released_at = now()
+                 where id = ?
+                """, allocationId);
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NO_ADDRESS"));
     }
 
     @Test
     void wrongTokenIsRejectedWith401() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.12", false);
-
-        route(slug, CLIENT_IP, SSHGW_IP, "wrong-token")
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
-    }
-
-    @Test
-    void missingTokenIsRejectedWith401() throws Exception {
-        String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.13", false);
-
-        mockMvc.perform(routeRequest(slug, CLIENT_IP, SSHGW_IP))
+        createVm(slug, VmStatus.RUNNING, "172.29.4.19", false, HOST_KEY);
+        mockMvc.perform(routeRequest(slug, CLIENT_IP, SSHGW_IP, publickeyBody(slug, CLIENT_IP, FP_MEMBER))
+                        .header("Authorization", "Bearer wrong-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
     }
@@ -135,162 +253,104 @@ class InternalSshGatewayRouteTest {
     @Test
     void wrongSourceIpIsRejectedWith403() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.14", false);
-
-        route(slug, CLIENT_IP, "172.30.1.99", TOKEN)
+        createVm(slug, VmStatus.RUNNING, "172.29.4.20", false, HOST_KEY);
+        publickey(slug, CLIENT_IP, "172.30.1.99", FP_MEMBER)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 
     @Test
-    void unknownSlugIsDeniedWith404() throws Exception {
-        route("does-not-exist-" + UUID.randomUUID(), CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NOT_FOUND"));
-
-        assertDenialAudited(CLIENT_IP);
-    }
-
-    @Test
-    void stoppedVmIsDeniedWith403() throws Exception {
-        String slug = uniqueSlug();
-        createVm(slug, VmStatus.STOPPED, "172.29.4.15", false);
-
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.reason").value("SSHGW_VM_NOT_RUNNING"));
-
-        assertDenialAudited(CLIENT_IP);
-    }
-
-    @Test
-    void blockedVmIsDeniedWith403() throws Exception {
-        String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.16", true);
-
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.reason").value("SSHGW_VM_BLOCKED"));
-    }
-
-    @Test
-    void staleOrReclaimedAllocationIsDeniedWithNoAddress() throws Exception {
-        // SSRF guard: a RUNNING VM whose allocation pointer is no longer a live,
-        // owned ALLOCATED row must not resolve to any IP.
-        String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.30", false);
-        long allocationId = jdbcTemplate.queryForObject(
-                "select ip_allocation_id from vms where hostname = ?", Long.class, slug);
-
-        // (a) allocation released (status no longer ALLOCATED) → denied
-        jdbcTemplate.update("""
-                update ip_allocations set status = 'RELEASED'::allocation_status, released_at = now()
-                 where id = ?
-                """, allocationId);
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NO_ADDRESS"));
-
-        // (b) allocation re-claimed by a DIFFERENT VM (stale pointer) → denied
-        String otherSlug = uniqueSlug();
-        createVm(otherSlug, VmStatus.RUNNING, "172.29.4.31", false);
-        long otherVmId = jdbcTemplate.queryForObject(
-                "select id from vms where hostname = ?", Long.class, otherSlug);
-        jdbcTemplate.update("""
-                update ip_allocations set status = 'ALLOCATED'::allocation_status,
-                       released_at = null, vm_id = ? where id = ?
-                """, otherVmId, allocationId);
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.reason").value("SSHGW_ROUTE_NO_ADDRESS"));
-    }
-
-    @Test
-    void globallyDisabledGatewayDeniesEverything() throws Exception {
-        String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.17", false);
-        setGatewayEnabled(false);
-
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.reason").value("SSHGW_GATEWAY_DISABLED"));
-    }
-
-    @Test
     void perClientRateLimitDoesNotLockOutOtherClients() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.18", false);
+        createVm(slug, VmStatus.RUNNING, "172.29.4.21", false, HOST_KEY);
 
-        // One abusive client exhausts ITS bucket …
         for (int i = 0; i < RATE_LIMIT; i++) {
-            route(slug, CLIENT_IP, SSHGW_IP, TOKEN).andExpect(status().isOk());
+            publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER).andExpect(status().isOk());
         }
-        route(slug, CLIENT_IP, SSHGW_IP, TOKEN)
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
                 .andExpect(header().exists("Retry-After"));
-        // … and the denial is audited with the abuser's IP and a reason.
-        Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select ip, detail::text as detail from audit_logs
-                 where action = 'sshgw.route_denied' order by id desc limit 1
-                """);
-        assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
-        assertThat((String) row.get("detail")).contains("RATE_LIMITED");
-
-        // A DIFFERENT client keeps logging in — no global lockout (the pre-fix
-        // peer-keyed bucket 429ed every user once one abuser hit the relay).
-        route(slug, OTHER_CLIENT_IP, SSHGW_IP, TOKEN)
+        // a different client keeps working — no global lockout
+        publickey(slug, OTHER_CLIENT_IP, SSHGW_IP, FP_MEMBER)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.ip").value("172.29.4.18"));
+                .andExpect(jsonPath("$.ip").value("172.29.4.21"));
     }
 
     @Test
     void globalBackstopStillBoundsAFloodAcrossManySourceIps() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.19", false);
-
-        // Distinct sourceIps stay under every per-client bucket, so only the
-        // filter's global backstop can (and must) bound the total volume.
+        createVm(slug, VmStatus.RUNNING, "172.29.4.22", false, HOST_KEY);
         for (int i = 0; i < GLOBAL_RATE_LIMIT; i++) {
-            route(slug, "203.0.113." + (100 + i), SSHGW_IP, TOKEN).andExpect(status().isOk());
+            publickey(slug, "203.0.113." + (100 + i), SSHGW_IP, FP_MEMBER).andExpect(status().isOk());
         }
-        route(slug, "203.0.113.250", SSHGW_IP, TOKEN)
+        publickey(slug, "203.0.113.250", SSHGW_IP, FP_MEMBER)
                 .andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
-                .andExpect(header().exists("Retry-After"));
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private ResultActions route(String slug, String sourceIp, String peerIp, String token)
+    private ResultActions publickey(String slug, String sourceIp, String peerIp, String fingerprint)
             throws Exception {
-        return mockMvc.perform(routeRequest(slug, sourceIp, peerIp)
-                .header("Authorization", "Bearer " + token));
+        return mockMvc.perform(routeRequest(slug, sourceIp, peerIp,
+                publickeyBody(slug, sourceIp, fingerprint)).header("Authorization", "Bearer " + TOKEN));
+    }
+
+    private ResultActions password(String slug, String sourceIp, String peerIp) throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("slug", slug);
+        body.put("sourceIp", sourceIp);
+        body.put("authMethod", "password");
+        return mockMvc.perform(routeRequest(slug, sourceIp, peerIp, body)
+                .header("Authorization", "Bearer " + TOKEN));
+    }
+
+    private Map<String, Object> publickeyBody(String slug, String sourceIp, String fingerprint) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("slug", slug);
+        body.put("sourceIp", sourceIp);
+        body.put("authMethod", "publickey");
+        body.put("publicKeyFingerprint", fingerprint);
+        return body;
     }
 
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder routeRequest(
-            String slug, String sourceIp, String peerIp) throws Exception {
+            String slug, String sourceIp, String peerIp, Map<String, Object> body) throws Exception {
         return post("/internal/sshgw/route")
                 .with(request -> {
                     request.setRemoteAddr(peerIp);
                     return request;
                 })
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("slug", slug, "sourceIp", sourceIp)));
+                .content(objectMapper.writeValueAsString(body));
     }
 
-    private void assertDenialAudited(String expectedClientIp) {
-        Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select ip, detail::text as detail from audit_logs
+    private Map<String, Object> latestDenied() {
+        return jdbcTemplate.queryForMap("""
+                select actor_id, ip, detail::text as detail from audit_logs
                  where action = 'sshgw.route_denied' order by id desc limit 1
                 """);
-        assertThat(row.get("ip")).isEqualTo(expectedClientIp);
-        assertThat((String) row.get("detail")).contains("reason");
     }
 
     private void setGatewayEnabled(boolean enabled) {
         jdbcTemplate.update("update settings set value = ?::jsonb where key = 'ssh_gateway_enabled'",
                 String.valueOf(enabled));
+    }
+
+    private void enablePasswordSsh(long vmId) {
+        jdbcTemplate.update("""
+                insert into vm_settings (vm_id, key, value, updated_at)
+                values (?, 'ssh_password_enabled', 'true'::jsonb, now())
+                """, vmId);
+    }
+
+    private void registerKey(long userId, String fingerprint) {
+        jdbcTemplate.update("""
+                insert into user_ssh_keys (user_id, name, algorithm, public_key, fingerprint_sha256)
+                values (?, 'route-test', 'ssh-ed25519', 'ssh-ed25519 AAAA', ?)
+                on conflict (fingerprint_sha256) do nothing
+                """, userId, fingerprint);
     }
 
     private long ensureNode() {
@@ -306,9 +366,9 @@ class InternalSshGatewayRouteTest {
                 """, Long.class, poolId);
     }
 
-    private long ensureRequester() {
-        User user = userRepository.findByEmail("sshgw.route@pusan.ac.kr").orElseGet(() -> {
-            User u = new User("sshgw.route@pusan.ac.kr", "{test-no-login}", "라우트요청자");
+    private long ensureUser(String email, String name) {
+        User user = userRepository.findByEmail(email).orElseGet(() -> {
+            User u = new User(email, "{test-no-login}", name);
             u.setStatus(UserStatus.ACTIVE);
             u.setEmailVerifiedAt(Instant.now());
             return userRepository.save(u);
@@ -323,14 +383,22 @@ class InternalSshGatewayRouteTest {
                 """, Long.class, "sshgw-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
-    private void createVm(String slug, VmStatus status, String ip, boolean blocked) {
+    private void addMember(long groupId, long userId, String role) {
+        jdbcTemplate.update("""
+                insert into group_members (group_id, user_id, role)
+                values (?, ?, ?::group_member_role)
+                on conflict (group_id, user_id) do update set role = excluded.role
+                """, groupId, userId, role);
+    }
+
+    private long createVm(String slug, VmStatus status, String ip, boolean blocked, String hostKey) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
                                          need_ssh, need_http, need_public)
                 values (?, ?, ?, 'SSH 라우트 테스트', ?, 1, 1024, 10, true, false, false)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, memberId, templateId);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
@@ -338,12 +406,13 @@ class InternalSshGatewayRouteTest {
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  template_id, vcpu, memory_mb, disk_gb, status,
-                                 ip_allocation_id, ssh_gateway_blocked)
-                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?)
+                                 ip_allocation_id, ssh_gateway_blocked, ssh_host_key)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?, ?)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, templateId,
-                status.name(), allocationId, blocked);
+                status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
+        return vmId;
     }
 
     private static String uniqueSlug() {

@@ -57,8 +57,8 @@ class InternalSshGatewayFailClosedTest {
                         })
                         .header("Authorization", "Bearer any-token-value")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                Map.of("slug", "team-anything", "sourceIp", "203.0.113.7"))))
+                        .content(objectMapper.writeValueAsString(Map.of("slug", "team-anything",
+                                "sourceIp", "203.0.113.7", "authMethod", "password"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
     }

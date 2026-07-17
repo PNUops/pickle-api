@@ -49,6 +49,11 @@ public final class ErrorCodes {
     public static final String SSHGW_VM_NOT_RUNNING = "SSHGW_VM_NOT_RUNNING";
     public static final String SSHGW_VM_BLOCKED = "SSHGW_VM_BLOCKED";
     public static final String SSHGW_ROUTE_NO_ADDRESS = "SSHGW_ROUTE_NO_ADDRESS";
+    // M5.5 route v2 (per-user identity, docs/api/internal.md Link 1 v2).
+    public static final String SSHGW_KEY_UNKNOWN = "SSHGW_KEY_UNKNOWN";
+    public static final String SSHGW_KEY_NOT_MEMBER = "SSHGW_KEY_NOT_MEMBER";
+    public static final String SSHGW_PASSWORD_DISABLED = "SSHGW_PASSWORD_DISABLED";
+    public static final String SSHGW_NO_HOST_KEY = "SSHGW_NO_HOST_KEY";
 
     private ErrorCodes() {
     }
