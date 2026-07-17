@@ -77,6 +77,14 @@ public class Vm {
     @Column(name = "ssh_gateway_blocked", nullable = false)
     private boolean sshGatewayBlocked = false;
 
+    /**
+     * Pinned SSH host public key (authorized_keys one-liner), collected at
+     * provisioning (HOSTKEY step). NULL means the gateway route is denied rather
+     * than piped unverified (docs/api/internal.md Link 1 v2).
+     */
+    @Column(name = "ssh_host_key")
+    private String sshHostKey;
+
     @Column(name = "start_date")
     private LocalDate startDate;
 
@@ -238,6 +246,14 @@ public class Vm {
 
     public boolean isSshGatewayBlocked() {
         return sshGatewayBlocked;
+    }
+
+    public String getSshHostKey() {
+        return sshHostKey;
+    }
+
+    public void setSshHostKey(String sshHostKey) {
+        this.sshHostKey = sshHostKey;
     }
 
     public LocalDate getStartDate() {
