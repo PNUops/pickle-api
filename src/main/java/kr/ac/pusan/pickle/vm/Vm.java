@@ -127,20 +127,20 @@ public class Vm {
     private Long deletedBy;
 
     /**
-     * AES-256-GCM ciphertext of the current initial password (CredentialCipher,
-     * key from env). Reversible by design — the always-re-viewable policy
-     * (2026-07-17) replaced the old one-shot plaintext column. NULLed on
-     * deletion.
+     * AES-256-GCM ciphertext of the current VM password (CredentialCipher, key
+     * from env). Reversible by design — the always-re-viewable policy
+     * (2026-07-17) replaced the old one-shot plaintext column; regeneration
+     * updates it in place. NULLed on deletion.
      */
-    @Column(name = "initial_password_enc")
-    private String initialPasswordEnc;
+    @Column(name = "password_enc")
+    private String passwordEnc;
 
     /** BCrypt hash kept permanently for support verification. */
-    @Column(name = "initial_password_hash")
-    private String initialPasswordHash;
+    @Column(name = "password_hash")
+    private String passwordHash;
 
-    @Column(name = "initial_password_viewed_at")
-    private Instant initialPasswordViewedAt;
+    @Column(name = "password_viewed_at")
+    private Instant passwordViewedAt;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -296,16 +296,16 @@ public class Vm {
         return deletedBy;
     }
 
-    public String getInitialPasswordEnc() {
-        return initialPasswordEnc;
+    public String getPasswordEnc() {
+        return passwordEnc;
     }
 
-    public String getInitialPasswordHash() {
-        return initialPasswordHash;
+    public String getPasswordHash() {
+        return passwordHash;
     }
 
-    public Instant getInitialPasswordViewedAt() {
-        return initialPasswordViewedAt;
+    public Instant getPasswordViewedAt() {
+        return passwordViewedAt;
     }
 
     public VmDeleteKind getDeleteKind() {

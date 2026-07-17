@@ -216,7 +216,7 @@ class M3EndToEndTest {
                 .andExpect(jsonPath("$.sshUsername").value("student"))
                 .andExpect(jsonPath("$.orgId").value(orgId))
                 .andExpect(jsonPath("$.ipAddress").value(EXPECTED_IP))
-                .andExpect(jsonPath("$.initialPasswordAvailable").value(true))
+                .andExpect(jsonPath("$.passwordAvailable").value(true))
                 // contract v0.3.1: provisioning surfaces only in-flight or
                 // last-failed tasks — a cleanly finished pipeline shows null
                 .andExpect(jsonPath("$.provisioning").value(org.hamcrest.Matchers.nullValue()));

@@ -30,7 +30,7 @@ import tools.jackson.databind.ObjectMapper;
  * Lane-L user surface assembly per contract v0.3.1: the VM event history
  * endpoint (visibility + newest-first paging), the VmDetail lifecycle fields
  * (provisioning task view with Korean step labels, pending deletion,
- * initialPasswordAvailable, ipAddress), VmSummary.groupName,
+ * passwordAvailable, ipAddress), VmSummary.groupName,
  * GroupDetail.myRole and OrgSummary.status.
  */
 @SpringBootTest
@@ -145,7 +145,7 @@ class VmUserSurfaceTest {
                 update vms
                    set delete_kind = 'SELF', delete_scheduled_for = now() + interval '7 days',
                        delete_requested_at = now(), delete_requested_by = ?,
-                       initial_password_enc = 'v1:iv:ct', initial_password_hash = 'h'
+                       password_enc = 'v1:iv:ct', password_hash = 'h'
                  where id = ?
                 """, owner.getId(), vmId);
 
@@ -154,7 +154,7 @@ class VmUserSurfaceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.groupName").value(groupName))
                 .andExpect(jsonPath("$.ipAddress").value(ip))
-                .andExpect(jsonPath("$.initialPasswordAvailable").value(true))
+                .andExpect(jsonPath("$.passwordAvailable").value(true))
                 .andExpect(jsonPath("$.provisioning.kind").value("PROVISION"))
                 .andExpect(jsonPath("$.provisioning.status").value("RUNNING"))
                 .andExpect(jsonPath("$.provisioning.currentStep").value(4))
@@ -171,7 +171,7 @@ class VmUserSurfaceTest {
         // a cleanly finished task and a consumed password flip the surface
         jdbcTemplate.update("update provisioning_tasks set status = 'DONE' where vm_id = ?", vmId);
         jdbcTemplate.update("""
-                update vms set initial_password_enc = null, delete_kind = null,
+                update vms set password_enc = null, delete_kind = null,
                                delete_scheduled_for = null, delete_requested_at = null,
                                delete_requested_by = null
                  where id = ?
@@ -181,7 +181,7 @@ class VmUserSurfaceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.provisioning").value((Object) null))
                 .andExpect(jsonPath("$.deletion").value((Object) null))
-                .andExpect(jsonPath("$.initialPasswordAvailable").value(false));
+                .andExpect(jsonPath("$.passwordAvailable").value(false));
     }
 
     @Test

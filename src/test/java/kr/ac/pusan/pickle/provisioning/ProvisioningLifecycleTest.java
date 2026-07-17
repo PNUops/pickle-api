@@ -153,15 +153,15 @@ class ProvisioningLifecycleTest {
 
         jdbcTemplate.update("""
                 update vms
-                   set initial_password_enc = 'v1:iv:ct', initial_password_hash = 'bcrypt-hash',
+                   set password_enc = 'v1:iv:ct', password_hash = 'bcrypt-hash',
                        delete_kind = 'SELF', delete_scheduled_for = now() + interval '168 hours',
                        delete_requested_by = ?, delete_reason = '학기 종료'
                  where id = ?
                 """, requesterId, vmId);
         Vm vm = vmRepository.findById(vmId).orElseThrow();
-        assertThat(vm.getInitialPasswordEnc()).isEqualTo("v1:iv:ct");
-        assertThat(vm.getInitialPasswordHash()).isEqualTo("bcrypt-hash");
-        assertThat(vm.getInitialPasswordViewedAt()).isNull();
+        assertThat(vm.getPasswordEnc()).isEqualTo("v1:iv:ct");
+        assertThat(vm.getPasswordHash()).isEqualTo("bcrypt-hash");
+        assertThat(vm.getPasswordViewedAt()).isNull();
         assertThat(vm.getDeleteKind()).isEqualTo(VmDeleteKind.SELF);
         assertThat(vm.getDeleteScheduledFor()).isAfter(Instant.now());
         assertThat(vm.getDeleteRequestedBy()).isEqualTo(requesterId);

@@ -348,7 +348,7 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("tags", "pickle");
         proxmox.config(node.getApiHost(), node.getName(), requireVmid(vm), params);
 
-        vmRepository.storeInitialCredentials(vm.getId(), credentialCipher.encrypt(password),
+        vmRepository.storeCredentials(vm.getId(), credentialCipher.encrypt(password),
                 passwordEncoder.encode(password), Instant.now());
     }
 

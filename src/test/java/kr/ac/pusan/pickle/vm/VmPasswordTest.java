@@ -40,7 +40,7 @@ import tools.jackson.databind.ObjectMapper;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class InitialPasswordTest {
+class VmPasswordTest {
 
     private static final AtomicInteger VMID_SEQ = new AtomicInteger(930_000);
     private static final String PASSWORD = "x7GmQ4vRk2LpWn9sCtYb8Zed";
@@ -64,9 +64,11 @@ class InitialPasswordTest {
     private CredentialCipher credentialCipher;
 
     private User owner;
+    private User member;
     private User viewer;
     private User outsider;
     private String ownerToken;
+    private String memberToken;
     private String viewerToken;
     private String outsiderToken;
     private long orgId;
@@ -77,16 +79,60 @@ class InitialPasswordTest {
     @BeforeEach
     void setUp() throws Exception {
         owner = ensureUser("vmpw.owner@pusan.ac.kr", "비번소유자");
+        member = ensureUser("vmpw.member@pusan.ac.kr", "비번멤버");
         viewer = ensureUser("vmpw.viewer@pusan.ac.kr", "비번뷰어");
         outsider = ensureUser("vmpw.outsider@pusan.ac.kr", "비번외부인");
         ownerToken = jwtService.createAccessToken(owner);
+        memberToken = jwtService.createAccessToken(member);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         groupId = createTeam("vmpw-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(groupId, member.getEmail(), "MEMBER");
         addMember(groupId, viewer.getEmail(), "VIEWER");
+    }
+
+    @Test
+    void revealMinRoleRaiseBlocksMember() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING, PASSWORD);
+        // default min-role MEMBER: a MEMBER may reveal
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk());
+        // raise password_reveal_min_role to EDITOR → the MEMBER is now blocked
+        jdbcTemplate.update("""
+                insert into vm_settings (vm_id, key, value, updated_at)
+                values (?, 'password_reveal_min_role', '"EDITOR"'::jsonb, now())
+                """, vmId);
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        // the OWNER still can (OWNER ≥ EDITOR)
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void regenerateAuthzAndStateGuardsBeforeAgent() throws Exception {
+        // MEMBER/VIEWER are below EDITOR → 403; non-member → 404
+        long running = createVm(VmStatus.RUNNING, PASSWORD);
+        mockMvc.perform(post("/api/v1/vms/" + running + "/password/regenerate")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        mockMvc.perform(post("/api/v1/vms/" + running + "/password/regenerate")
+                        .header("Authorization", "Bearer " + outsiderToken))
+                .andExpect(status().isNotFound());
+        // OWNER on a non-RUNNING VM → 409 before any guest-agent call
+        long stopped = createVm(VmStatus.STOPPED, PASSWORD);
+        mockMvc.perform(post("/api/v1/vms/" + stopped + "/password/regenerate")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
     @Test
@@ -104,12 +150,12 @@ class InitialPasswordTest {
 
         // ciphertext survives reveals; the reveal time is recorded
         Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select initial_password_enc, initial_password_hash,
-                       initial_password_viewed_at is not null as viewed
+                select password_enc, password_hash,
+                       password_viewed_at is not null as viewed
                   from vms where id = ?
                 """, vmId);
-        assertThat((String) row.get("initial_password_enc")).startsWith("v1:");
-        assertThat((String) row.get("initial_password_enc")).doesNotContain(PASSWORD);
+        assertThat((String) row.get("password_enc")).startsWith("v1:");
+        assertThat((String) row.get("password_enc")).doesNotContain(PASSWORD);
         assertThat(row.get("viewed")).isEqualTo(true);
 
         // every reveal is audited as a fact — never the value
@@ -140,7 +186,7 @@ class InitialPasswordTest {
                     .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         }
         assertThat(jdbcTemplate.queryForObject(
-                "select initial_password_enc from vms where id = ?", String.class, vmId))
+                "select password_enc from vms where id = ?", String.class, vmId))
                 .isNotNull();
 
         // VIEWER → 403, non-member → 404 (masked), unauthenticated → 401
@@ -177,7 +223,7 @@ class InitialPasswordTest {
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
-                                 initial_password_enc, initial_password_hash)
+                                 password_enc, password_hash)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status, ?, ?)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,

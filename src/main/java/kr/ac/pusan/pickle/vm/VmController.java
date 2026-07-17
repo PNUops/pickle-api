@@ -10,10 +10,10 @@ import java.util.List;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.vm.dto.InitialPasswordResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
+import kr.ac.pusan.pickle.vm.dto.VmPasswordResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import kr.ac.pusan.pickle.vmsettings.dto.VmSettingView;
@@ -39,16 +39,16 @@ public class VmController {
     private final VmQueryService vmQueryService;
     private final VmLifecycleService vmLifecycleService;
     private final VmDeletionService vmDeletionService;
-    private final InitialPasswordService initialPasswordService;
+    private final VmPasswordService vmPasswordService;
     private final VmSettingsService vmSettingsService;
 
     public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService,
-            VmDeletionService vmDeletionService, InitialPasswordService initialPasswordService,
+            VmDeletionService vmDeletionService, VmPasswordService vmPasswordService,
             VmSettingsService vmSettingsService) {
         this.vmQueryService = vmQueryService;
         this.vmLifecycleService = vmLifecycleService;
         this.vmDeletionService = vmDeletionService;
-        this.initialPasswordService = initialPasswordService;
+        this.vmPasswordService = vmPasswordService;
         this.vmSettingsService = vmSettingsService;
     }
 
@@ -110,11 +110,23 @@ public class VmController {
 
     /** Re-viewable reveal (GET since v0.7.0 — no side effect); never cached. */
     @GetMapping("/{vmId}/password")
-    public ResponseEntity<InitialPasswordResponse> revealVmPassword(
+    public ResponseEntity<VmPasswordResponse> revealVmPassword(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             HttpServletRequest httpRequest) {
-        InitialPasswordResponse response =
-                initialPasswordService.reveal(principal, vmId, clientIp(httpRequest));
+        VmPasswordResponse response =
+                vmPasswordService.reveal(principal, vmId, clientIp(httpRequest));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(response);
+    }
+
+    /** Regenerates the password live via the guest agent (EDITOR+); never cached. */
+    @PostMapping("/{vmId}/password/regenerate")
+    public ResponseEntity<VmPasswordResponse> regenerateVmPassword(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            HttpServletRequest httpRequest) {
+        VmPasswordResponse response =
+                vmPasswordService.regenerate(principal, vmId, clientIp(httpRequest));
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .body(response);

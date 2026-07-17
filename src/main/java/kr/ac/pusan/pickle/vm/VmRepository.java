@@ -270,18 +270,18 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     @Modifying(clearAutomatically = true)
     @Query("""
             update Vm v
-               set v.initialPasswordEnc = :passwordEnc, v.initialPasswordHash = :passwordHash,
-                   v.initialPasswordViewedAt = null, v.updatedAt = :now
+               set v.passwordEnc = :passwordEnc, v.passwordHash = :passwordHash,
+                   v.passwordViewedAt = null, v.updatedAt = :now
              where v.id = :id
             """)
-    int storeInitialCredentials(@Param("id") Long id, @Param("passwordEnc") String passwordEnc,
+    int storeCredentials(@Param("id") Long id, @Param("passwordEnc") String passwordEnc,
             @Param("passwordHash") String passwordHash, @Param("now") Instant now);
 
     /** Records the (latest) reveal time — informational only since v0.7.0. */
     @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("update Vm v set v.initialPasswordViewedAt = :now where v.id = :id")
-    int recordInitialPasswordViewed(@Param("id") Long id, @Param("now") Instant now);
+    @Query("update Vm v set v.passwordViewedAt = :now where v.id = :id")
+    int recordPasswordViewed(@Param("id") Long id, @Param("now") Instant now);
 
     /**
      * Sets the informational {@code status_detail} without a state transition
@@ -344,7 +344,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                set status = 'DELETED', status_detail = null, delete_kind = 'SELF',
                    delete_scheduled_for = :now, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null,
-                   initial_password_enc = null,
+                   password_enc = null,
                    deleted_at = :now, deleted_by = :requestedBy, updated_at = :now
              where id = :id and status = 'ERROR' and delete_kind is null
             """)
@@ -402,7 +402,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
             update vms
-               set status = 'DELETED', status_detail = null, initial_password_enc = null,
+               set status = 'DELETED', status_detail = null, password_enc = null,
                    deleted_at = :now, deleted_by = :deletedBy, updated_at = :now
              where id = :id and status = 'DELETING'
             """)

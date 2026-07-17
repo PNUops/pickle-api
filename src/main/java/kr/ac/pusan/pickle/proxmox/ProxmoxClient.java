@@ -228,6 +228,30 @@ public class ProxmoxClient {
         }
     }
 
+    /**
+     * {@code POST /nodes/{n}/qemu/{id}/agent/set-user-password} — sets the
+     * guest account's password live (no reboot). Returns true on success; an
+     * HTTP error ("guest agent is not running") is the expected agent-unavailable
+     * answer → false (caller maps to 409). Transport failures still throw (5xx).
+     */
+    public boolean agentSetUserPassword(String apiHost, String node, int vmid, String username,
+            String password) {
+        try {
+            call(HttpMethod.POST,
+                    uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "agent",
+                            "set-user-password"),
+                    Map.of("username", username, "password", password), VOID_RESPONSE);
+            return true;
+        } catch (ProxmoxApiException e) {
+            if (e.statusCode() > 0) {
+                log.debug("proxmox agent set-user-password negative for vmid {}: {}", vmid,
+                        e.getMessage());
+                return false;
+            }
+            throw e;
+        }
+    }
+
     /** {@code GET /nodes/{n}/qemu/{id}/agent/network-get-interfaces}. */
     public List<AgentInterface> agentNetworkInterfaces(String apiHost, String node, int vmid) {
         AgentResult<List<AgentInterface>> data = call(HttpMethod.GET,

@@ -77,7 +77,9 @@ public class VmPeriodService {
                         "new", Map.of("startDate", String.valueOf(newStart),
                                 "endDate", String.valueOf(request.endDate()))),
                 ip);
-        return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow());
+        // Admin period edit is org-scoped, not group-membership-scoped, so the
+        // requester has no group role in this VM's group → myGroupRole null.
+        return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
     }
 
     private void validateDates(LocalDate endDate, LocalDate startDate) {

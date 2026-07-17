@@ -490,7 +490,7 @@ class VmDeletionTest {
         markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
         // an unviewed plaintext initial password must not survive destruction
         jdbcTemplate.update(
-                "update vms set initial_password_enc = 'v1:pw-unviewed', initial_password_hash = 'h'"
+                "update vms set password_enc = 'v1:pw-unviewed', password_hash = 'h'"
                         + " where id = ?", vmId);
 
         stubClusterResourcesRunning();
@@ -514,8 +514,8 @@ class VmDeletionTest {
         assertThat(jdbcTemplate.queryForObject("select deleted_at is not null from vms where id = ?",
                 Boolean.class, vmId)).isTrue();
         // plaintext wiped, hash kept for support verification
-        assertThat(column(vmId, "initial_password_enc")).isNull();
-        assertThat(column(vmId, "initial_password_hash")).isEqualTo("h");
+        assertThat(column(vmId, "password_enc")).isNull();
+        assertThat(column(vmId, "password_hash")).isEqualTo("h");
         assertThat(jdbcTemplate.queryForObject("select status from ip_allocations where id = ?",
                 String.class, allocationId)).isEqualTo("RELEASED");
         assertThat(jdbcTemplate.queryForObject("""

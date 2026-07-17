@@ -9,6 +9,7 @@ import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
@@ -24,6 +25,8 @@ import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -42,9 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The detail view assembles the M3 lifecycle surface: {@code provisioning}
  * is the newest task unless it finished cleanly (contract: in-flight or
  * last-failed; DONE → null), {@code deletion} maps the delete_* intent,
- * {@code initialPasswordAvailable} mirrors the stored ciphertext column
- * (re-viewable — it stays true after reveals) and {@code ipAddress} resolves
- * the IPAM allocation.</p>
+ * {@code passwordAvailable} mirrors the stored ciphertext column (re-viewable —
+ * it stays true after reveals) and {@code ipAddress} resolves the IPAM
+ * allocation.</p>
  */
 @Service
 public class VmQueryService {
@@ -58,12 +61,16 @@ public class VmQueryService {
     private final VmRequestReviewRepository reviewRepository;
     private final DomainRepository domainRepository;
     private final PublicationAssembler publicationAssembler;
+    private final VmSettingsService vmSettingsService;
+    private final String sshHost;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             GroupRepository groupRepository, IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
             VmEventRepository vmEventRepository, VmRequestReviewRepository reviewRepository,
-            DomainRepository domainRepository, PublicationAssembler publicationAssembler) {
+            DomainRepository domainRepository, PublicationAssembler publicationAssembler,
+            VmSettingsService vmSettingsService,
+            @Value("${pickle.ssh.advertised-host:}") String sshHost) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupRepository = groupRepository;
@@ -73,6 +80,8 @@ public class VmQueryService {
         this.reviewRepository = reviewRepository;
         this.domainRepository = domainRepository;
         this.publicationAssembler = publicationAssembler;
+        this.vmSettingsService = vmSettingsService;
+        this.sshHost = sshHost == null || sshHost.isBlank() ? null : sshHost;
     }
 
     @Transactional(readOnly = true)
@@ -99,16 +108,24 @@ public class VmQueryService {
 
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
-        return detailOf(requireVisibleVm(actor, vmId));
+        Vm vm = requireVisibleVm(actor, vmId);
+        GroupMemberRole myGroupRole = groupMemberRepository
+                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
+                .map(GroupMember::getRole)
+                .orElseThrow(VmQueryService::vmNotFound);
+        return detailOf(vm, myGroupRole);
     }
 
     /**
      * Assembles the full contract {@code VmDetail} for an <b>already
      * authorized</b> VM — shared by the member-scoped {@link #get} and admin
      * flows (period update, M5) whose authorization is org-scoped instead.
+     * {@code myGroupRole} is the requester's role in the owning group (null for
+     * a non-member admin); it drives {@code passwordRevealAllowed} and the
+     * console's settings-section visibility.
      */
     @Transactional(readOnly = true)
-    public VmDetailResponse detailOf(Vm vm) {
+    public VmDetailResponse detailOf(Vm vm, GroupMemberRole myGroupRole) {
         long vmId = vm.getId();
         String groupName = groupRepository.findById(vm.getGroupId())
                 .map(Group::getName).orElse("");
@@ -128,8 +145,10 @@ public class VmQueryService {
                 .filter(publicationAssembler::hasLiveRoute)
                 .map(publicationAssembler::toPublication)
                 .orElse(null);
-        return VmDetailResponse.from(vm, groupName, ipAddress, provisioning, httpPublishGranted,
-                publication);
+        boolean passwordRevealAllowed = myGroupRole != null && myGroupRole.atLeast(
+                vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
+        return VmDetailResponse.from(vm, groupName, ipAddress, sshHost, myGroupRole,
+                passwordRevealAllowed, provisioning, httpPublishGranted, publication);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

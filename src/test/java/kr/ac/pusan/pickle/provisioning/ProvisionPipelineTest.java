@@ -277,10 +277,10 @@ class ProvisionPipelineTest {
 
         // cloud-init config carried the generated credentials and network;
         // the DB keeps ciphertext + hash, never plaintext
-        assertThat(vm.getInitialPasswordEnc()).isNotNull().startsWith("v1:");
-        String plaintext = credentialCipher.decrypt(vm.getInitialPasswordEnc());
+        assertThat(vm.getPasswordEnc()).isNotNull().startsWith("v1:");
+        String plaintext = credentialCipher.decrypt(vm.getPasswordEnc());
         assertThat(plaintext).hasSize(24);
-        assertThat(passwordEncoder.matches(plaintext, vm.getInitialPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches(plaintext, vm.getPasswordHash())).isTrue();
         String expectedIpconfig = URLEncoder.encode("ip=" + ip + "/16,gw=172.29.0.1",
                 StandardCharsets.UTF_8);
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))

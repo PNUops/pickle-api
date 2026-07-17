@@ -141,7 +141,8 @@ class ContractDriftTest {
             "DELETE /me/ssh-keys/{keyId}",
             "GET /me/ssh-keys/{keyId}/private-key",
             "GET /vms/{vmId}/settings",
-            "PATCH /vms/{vmId}/settings");
+            "PATCH /vms/{vmId}/settings",
+            "POST /vms/{vmId}/password/regenerate");
 
     /**
      * Contract v0.8.0 (M5.5 SSH per-user identity) operations not implemented
@@ -152,8 +153,8 @@ class ContractDriftTest {
      * <p>Lane ownership — api (W1/W2): all eight M5.5 ops below. As each SSH-key,
      * VM-settings, and password endpoint lands it leaves this set.</p>
      */
-    private static final Set<String> PLANNED = Set.of(
-            "POST /vms/{vmId}/password/regenerate");
+    // W1+W2 complete — all eight v0.8.0 ops moved to IMPLEMENTED.
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
