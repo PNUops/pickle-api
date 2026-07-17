@@ -28,9 +28,9 @@ import tools.jackson.databind.ObjectMapper;
  * active tx (pipeline jobs commit step-by-step) write immediately. Per-user
  * dedup collisions ({@code dedup_key}) are absorbed by
  * {@code ON CONFLICT DO NOTHING} — a duplicate publish is a per-recipient
- * no-op. Email delivery is asynchronous: rows start {@code PENDING} (or
- * {@code SKIPPED} for email-off events) and {@link NotificationDispatchJob}
- * drains them.</p>
+ * no-op. Email delivery is asynchronous: rows start {@code PENDING} and
+ * {@link NotificationDispatchJob} drains them ({@code SKIPPED} is written by
+ * the dispatcher for recipients deactivated after enqueue).</p>
  */
 @Service
 public class NotificationService {
@@ -81,8 +81,7 @@ public class NotificationService {
         NotificationComposer.Composed composed = composer.compose(event, args);
         String payloadJson = composed.payload() == null ? null
                 : objectMapper.writeValueAsString(composed.payload());
-        String status = (event.emailEnabled() ? NotificationStatus.PENDING
-                : NotificationStatus.SKIPPED).name();
+        String status = NotificationStatus.PENDING.name();
         for (Long userId : recipientUserIds) {
             jdbcTemplate.update(INSERT_SQL, userId, composed.eventId(), composed.title(),
                     composed.body(), composed.linkPath(), composed.importance().name(),
