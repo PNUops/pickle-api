@@ -17,6 +17,8 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.dto.InitialPasswordResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -41,6 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class InitialPasswordService {
+
+    private static final Logger log = LoggerFactory.getLogger(InitialPasswordService.class);
 
     private static final Set<VmStatus> FORBIDDEN_STATUSES = Set.of(VmStatus.CREATING,
             VmStatus.DELETING, VmStatus.DELETED, VmStatus.ERROR, VmStatus.NEEDS_ADMIN);
@@ -117,10 +121,12 @@ public class InitialPasswordService {
                     vm.getSshUsername(), password);
         } catch (ProxmoxApiException e) {
             // "QEMU guest agent is not running" (500) → user-actionable 409;
-            // anything else is a genuine upstream failure.
+            // anything else is a genuine upstream failure. The PVE message never
+            // carries the password (it is only in the request form body).
             if (e.getMessage() != null && e.getMessage().contains("guest agent is not running")) {
                 throw agentUnavailable();
             }
+            log.warn("password reset for vm {} failed upstream: {}", vmId, e.getMessage());
             throw new ApiException(HttpStatus.BAD_GATEWAY, ErrorCodes.PROXMOX_UPSTREAM_ERROR,
                     "하이퍼바이저 요청에 실패했습니다",
                     "잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의하세요.");
