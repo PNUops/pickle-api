@@ -27,6 +27,7 @@ locally, export them or rely on the dev/test defaults.
 |---|---|---|
 | `PICKLE_DB_URL` / `PICKLE_DB_USER` / `PICKLE_DB_PASSWORD` | PostgreSQL connection | `jdbc:postgresql://localhost:5432/pickle_dev` / `pickle` / `pickle` |
 | `PICKLE_JWT_SECRET` | HS256 signing key (>= 32 bytes). **Required** outside dev/test — startup fails fast without it | dev/test only: built-in dev secret |
+| `PICKLE_CREDENTIALS_KEY` | AES-256-GCM key (base64 32 bytes) for reversible credential storage (`vms.initial_password_enc`). **Required** outside dev/test — startup fails fast without it | dev/test only: built-in dev key |
 | `PICKLE_VERIFICATION_BASE_URL` | Base URL of the console verify-email page in mails | `https://pickle.pnuops.com/verify-email` |
 | `PICKLE_SMTP_HOST` / `PICKLE_SMTP_PORT` / `PICKLE_SMTP_USERNAME` / `PICKLE_SMTP_PASSWORD` | Real SMTP (staging/prod profiles only; dev/test log mails via `MockMailSender`) | — |
 
