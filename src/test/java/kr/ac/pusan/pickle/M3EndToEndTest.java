@@ -118,7 +118,10 @@ class M3EndToEndTest {
 
         // 1. signup + email verification (token comes from the mock mail)
         postJson("/api/v1/auth/signup", null,
-                Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "엠쓰리학생"))
+                Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "엠쓰리학생",
+                        "consents", java.util.List.of(
+                                Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                                Map.of("docType", "PRIVACY_POLICY", "version", 1))))
                 .andExpect(status().isAccepted());
         MailMessage mail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();

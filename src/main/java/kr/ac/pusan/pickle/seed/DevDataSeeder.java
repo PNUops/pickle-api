@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.seed;
 
 import java.time.Instant;
 import java.util.Set;
+import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -50,16 +51,18 @@ public class DevDataSeeder implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final SeedProperties properties;
     private final Environment environment;
+    private final TermsService termsService;
 
     public DevDataSeeder(UserRepository userRepository, OrgRepository orgRepository,
             PersonalGroupService personalGroupService, PasswordEncoder passwordEncoder,
-            SeedProperties properties, Environment environment) {
+            SeedProperties properties, Environment environment, TermsService termsService) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.personalGroupService = personalGroupService;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.environment = environment;
+        this.termsService = termsService;
     }
 
     @Override
@@ -100,5 +103,9 @@ public class DevDataSeeder implements ApplicationRunner {
             user = userRepository.save(user);
             personalGroupService.ensurePersonalGroup(user);
         });
+        // Seed accounts bypass signup, so grant consent to the current documents
+        // idempotently (a fresh DB seeds users after the V42 backfill ran empty).
+        userRepository.findByEmail(email)
+                .ifPresent(user -> termsService.ensureCurrentConsents(user.getId()));
     }
 }

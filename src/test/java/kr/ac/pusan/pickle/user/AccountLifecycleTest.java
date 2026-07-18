@@ -220,9 +220,12 @@ class AccountLifecycleTest {
                 select count(*) from user_status_changes
                  where user_id = ? and to_status = 'WITHDRAWN' and actor_id = ?
                 """, Long.class, user.getId(), user.getId())).isEqualTo(1L);
-        // same email can never re-register
+        // same email can never re-register (consents present so the 409 fires, not bean validation)
         postPublic("/api/v1/auth/signup",
-                Map.of("email", user.getEmail(), "password", NEW_PASSWORD, "name", "재가입시도"))
+                Map.of("email", user.getEmail(), "password", NEW_PASSWORD, "name", "재가입시도",
+                        "consents", List.of(
+                                Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                                Map.of("docType", "PRIVACY_POLICY", "version", 1))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("AUTH_EMAIL_ALREADY_REGISTERED"));
     }

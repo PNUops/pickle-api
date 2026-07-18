@@ -42,6 +42,11 @@ class AuthFlowTest {
     private static final String EMAIL = "flow.tester@pusan.ac.kr";
     private static final String PASSWORD = "Corr3ct-horse-battery!";
 
+    /** Consent to both current (v1) documents — required for signup (M6 W2-A). */
+    private static final Object FULL_CONSENTS = List.of(
+            Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+            Map.of("docType", "PRIVACY_POLICY", "version", 1));
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -55,13 +60,13 @@ class AuthFlowTest {
     void fullAuthLifecycle() throws Exception {
         // signup → 202 and a verification mail
         postJson("/api/v1/auth/signup",
-                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동"))
+                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
 
         // duplicate signup → 409 AUTH_EMAIL_ALREADY_REGISTERED (problem+json)
         postJson("/api/v1/auth/signup",
-                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동"))
+                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("AUTH_EMAIL_ALREADY_REGISTERED"))
@@ -195,13 +200,19 @@ class AuthFlowTest {
     }
 
     @Test
-    void signupToleratesConsentsField() throws Exception {
-        // M6 contract-gate carryover: signup must accept (and, until W2-A, ignore)
-        // the consents field without an unknown-property 4xx.
-        Map<String, ?> body = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
+    void signupRequiresConsentToEveryCurrentDocument() throws Exception {
+        // Only one of the two required documents → 422 (server completeness check).
+        Map<String, ?> partial = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
                 "name", "동의자",
                 "consents", List.of(Map.of("docType", "TERMS_OF_SERVICE", "version", 1)));
-        postJson("/api/v1/auth/signup", body)
+        postJson("/api/v1/auth/signup", partial)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        // both documents → 202
+        Map<String, ?> full = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
+                "name", "동의자", "consents", FULL_CONSENTS);
+        postJson("/api/v1/auth/signup", full)
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
@@ -209,7 +220,8 @@ class AuthFlowTest {
     @Test
     void signupRejectsNonPusanEmail() throws Exception {
         postJson("/api/v1/auth/signup",
-                Map.of("email", "someone@gmail.com", "password", PASSWORD, "name", "외부인"))
+                Map.of("email", "someone@gmail.com", "password", PASSWORD, "name", "외부인",
+                        "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("email"));
@@ -219,14 +231,16 @@ class AuthFlowTest {
     void signupRejectsWeakPassword() throws Exception {
         // long enough but a well-known password → server-side policy rejects
         postJson("/api/v1/auth/signup",
-                Map.of("email", "weak.password@pusan.ac.kr", "password", "qwerty1234", "name", "약한비번"))
+                Map.of("email", "weak.password@pusan.ac.kr", "password", "qwerty1234", "name", "약한비번",
+                        "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("password"));
 
         // too short → bean validation
         postJson("/api/v1/auth/signup",
-                Map.of("email", "weak.password@pusan.ac.kr", "password", "short1!", "name", "약한비번"))
+                Map.of("email", "weak.password@pusan.ac.kr", "password", "short1!", "name", "약한비번",
+                        "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("password"));

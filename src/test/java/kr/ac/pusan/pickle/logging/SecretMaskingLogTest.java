@@ -81,7 +81,10 @@ class SecretMaskingLogTest {
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("email", email, "password", PASSWORD, "name", "마스킹"))))
+                                Map.of("email", email, "password", PASSWORD, "name", "마스킹",
+                                        "consents", List.of(
+                                                Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                                                Map.of("docType", "PRIVACY_POLICY", "version", 1))))))
                 .andExpect(status().isAccepted());
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

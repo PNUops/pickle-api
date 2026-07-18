@@ -1,8 +1,12 @@
 package kr.ac.pusan.pickle.auth.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.List;
+import kr.ac.pusan.pickle.consent.dto.ConsentInput;
 
 /** Contract schema {@code SignupRequest}. */
 public record SignupRequest(
@@ -17,5 +21,10 @@ public record SignupRequest(
 
         @NotBlank(message = "이름을 입력해 주세요.")
         @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
-        String name) {
+        String name,
+
+        // Consent completeness (every current document) is validated server-side.
+        @NotEmpty(message = "약관 동의가 필요합니다.")
+        @Valid
+        List<ConsentInput> consents) {
 }

@@ -104,7 +104,10 @@ class RefreshCsrfTest {
 
     /** signup → verification mail token → verify-email → login (no CSRF anywhere). */
     private MvcResult loginWithFreshAccount(String email) throws Exception {
-        postJson("/api/v1/auth/signup", Map.of("email", email, "password", PASSWORD, "name", "시에스알프"))
+        postJson("/api/v1/auth/signup", Map.of("email", email, "password", PASSWORD, "name", "시에스알프",
+                "consents", java.util.List.of(
+                        Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                        Map.of("docType", "PRIVACY_POLICY", "version", 1))))
                 .andExpect(status().isAccepted());
         MailMessage mail = mockMailSender.lastMessageTo(email);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();

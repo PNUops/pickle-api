@@ -43,6 +43,20 @@ class ConsentFlowTest {
     private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private TermsService termsService;
+
+    @Test
+    void signupRecordsConsentsSoNothingIsPending() throws Exception {
+        postConsents("/api/v1/auth/signup", null, Map.of(
+                "email", "consent.signup@pusan.ac.kr", "password", PASSWORD, "name", "가입동의",
+                "consents", List.of(
+                        Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                        Map.of("docType", "PRIVACY_POLICY", "version", 1))))
+                .andExpect(status().isAccepted());
+        long userId = userRepository.findByEmail("consent.signup@pusan.ac.kr").orElseThrow().getId();
+        org.assertj.core.api.Assertions.assertThat(termsService.pendingConsents(userId)).isEmpty();
+    }
 
     @Test
     void newUserHasPendingConsentsThenClearsAfterAccepting() throws Exception {

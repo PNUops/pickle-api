@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.AuthProperties;
+import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.mfa.MfaLoginToken;
 import kr.ac.pusan.pickle.mfa.MfaService;
@@ -73,6 +74,7 @@ public class AuthService {
     private final VerificationMailComposer verificationMailComposer;
     private final AuthProperties authProperties;
     private final MfaService mfaService;
+    private final TermsService termsService;
 
     public AuthService(UserRepository userRepository,
             EmailVerificationRepository emailVerificationRepository,
@@ -87,7 +89,8 @@ public class AuthService {
             MailSender mailSender,
             VerificationMailComposer verificationMailComposer,
             AuthProperties authProperties,
-            MfaService mfaService) {
+            MfaService mfaService,
+            TermsService termsService) {
         this.userRepository = userRepository;
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
@@ -102,6 +105,7 @@ public class AuthService {
         this.verificationMailComposer = verificationMailComposer;
         this.authProperties = authProperties;
         this.mfaService = mfaService;
+        this.termsService = termsService;
     }
 
     @Transactional
@@ -123,6 +127,9 @@ public class AuthService {
             // Concurrent signup lost the unique-email race → same 409 as above.
             throw emailAlreadyRegistered();
         }
+        // Consent completeness is validated here (422 rolls the whole tx back, so
+        // no verification mail is sent for an incomplete signup).
+        termsService.recordSignupConsents(user.getId(), request.consents());
         sendVerificationMail(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_SIGNUP,
                 "user", user.getId(), Map.of("email", user.getEmail()), ip);
