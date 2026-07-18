@@ -12,10 +12,11 @@ import org.springframework.stereotype.Component;
 /**
  * Weekly retention sweep (Mon 04:40 KST, M6) of spent auth artifacts:
  * {@code refresh_tokens} past their expiry (unusable — the reuse-detection
- * window has closed) and {@code email_verifications} that were used or expired.
- * Both are batched in a bounded LIMIT loop to avoid long locks. Touches ONLY
- * these two tables — {@code audit_logs}/{@code vm_events} are permanent and
- * must never be swept.
+ * window has closed), {@code email_verifications} that were used or expired, and
+ * {@code mfa_login_tokens} that were consumed or expired (single-use step-up
+ * tokens with no post-expiry value). Each is batched in a bounded LIMIT loop to
+ * avoid long locks. Touches ONLY these three tables — {@code audit_logs}/
+ * {@code vm_events} are permanent and must never be swept.
  */
 @Component
 public class AuthTokenRetentionSweeper {
@@ -49,8 +50,14 @@ public class AuthTokenRetentionSweeper {
                  where id in (select id from email_verifications
                                where used_at is not null or expires_at < ? order by id limit ?)
                 """, now);
-        log.info("auth-token retention sweep deleted {} refresh token(s), {} email verification(s)",
-                tokens, verifications);
+        // Consumed or expired single-use MFA login step-up tokens.
+        int mfaLoginTokens = deleteBatched("""
+                delete from mfa_login_tokens
+                 where id in (select id from mfa_login_tokens
+                               where consumed_at is not null or expires_at < ? order by id limit ?)
+                """, now);
+        log.info("auth-token retention sweep deleted {} refresh token(s), {} email verification(s), "
+                + "{} mfa login token(s)", tokens, verifications, mfaLoginTokens);
     }
 
     private int deleteBatched(String sql, Timestamp bound) {

@@ -76,6 +76,9 @@ class RetentionSweeperTest {
         long usedVerification = insertVerification("+ interval '1 day'", true);
         long expiredVerification = insertVerification("- interval '1 day'", false);
         long liveVerification = insertVerification("+ interval '1 day'", false);
+        long consumedMfaToken = insertMfaLoginToken("+ interval '1 day'", true);
+        long expiredMfaToken = insertMfaLoginToken("- interval '1 day'", false);
+        long liveMfaToken = insertMfaLoginToken("+ interval '1 day'", false);
 
         authTokenSweeper.sweep();
 
@@ -84,6 +87,10 @@ class RetentionSweeperTest {
         assertThat(exists("email_verifications", usedVerification)).isFalse();
         assertThat(exists("email_verifications", expiredVerification)).isFalse();
         assertThat(exists("email_verifications", liveVerification)).isTrue();
+        // consumed or expired step-up tokens go; a live unused one survives
+        assertThat(exists("mfa_login_tokens", consumedMfaToken)).isFalse();
+        assertThat(exists("mfa_login_tokens", expiredMfaToken)).isFalse();
+        assertThat(exists("mfa_login_tokens", liveMfaToken)).isTrue();
     }
 
     private long insertNotification(String age) {
@@ -106,6 +113,14 @@ class RetentionSweeperTest {
                 insert into email_verifications (user_id, token_hash, purpose, expires_at, used_at)
                 values (?, ?, 'SIGNUP', now() %s, %s) returning id
                 """.formatted(expiryExpr, used ? "now()" : "null"),
+                Long.class, userId, UUID.randomUUID().toString());
+    }
+
+    private long insertMfaLoginToken(String expiryExpr, boolean consumed) {
+        return jdbcTemplate.queryForObject("""
+                insert into mfa_login_tokens (user_id, token_hash, expires_at, consumed_at)
+                values (?, ?, now() %s, %s) returning id
+                """.formatted(expiryExpr, consumed ? "now()" : "null"),
                 Long.class, userId, UUID.randomUUID().toString());
     }
 
