@@ -106,11 +106,12 @@ public class AdminService {
 
         UserRole previousRole = user.getRole();
         UserRole targetRole = request.role() != null ? request.role() : user.getRole();
-        if (targetRole == UserRole.ORG_ADMIN) {
+        if (targetRole.isOrgTier()) {
+            // ORG_ADMIN and ORG_MANAGER both manage one org (permission-matrix.md §2).
             Long orgId = request.orgId() != null ? request.orgId() : user.getOrgId();
             if (orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "ORG_ADMIN 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
+                        "ORG_ADMIN·ORG_MANAGER 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
             }
             if (!orgRepository.existsById(orgId)) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
@@ -120,7 +121,7 @@ public class AdminService {
         } else {
             if (request.orgId() != null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "ORG_ADMIN이 아닌 역할에는 orgId를 지정할 수 없습니다.")));
+                        "이 역할에는 orgId를 지정할 수 없습니다.")));
             }
             user.setOrgId(null);
         }
