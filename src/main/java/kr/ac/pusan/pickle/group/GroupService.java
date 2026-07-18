@@ -24,6 +24,9 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vmrequest.VmRequest;
+import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
+import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
 import java.time.Instant;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -43,16 +46,19 @@ public class GroupService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final VmRepository vmRepository;
+    private final VmRequestRepository vmRequestRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
 
     public GroupService(GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
-            UserRepository userRepository, VmRepository vmRepository, AuditService auditService,
+            UserRepository userRepository, VmRepository vmRepository,
+            VmRequestRepository vmRequestRepository, AuditService auditService,
             NotificationService notificationService) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
         this.vmRepository = vmRepository;
+        this.vmRequestRepository = vmRequestRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
     }
@@ -256,6 +262,24 @@ public class GroupService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_HAS_ACTIVE_VMS,
                     "그룹을 삭제할 수 없습니다",
                     "그룹에 삭제되지 않은 VM이 있습니다. VM 삭제(파기 완료) 후 다시 시도해 주세요.");
+        }
+
+        // Cancel the group's in-flight (SUBMITTED) VM requests in this tx so an
+        // approval racing the delete can't provision into a dead group. Each
+        // request is locked and re-checked (same guard the cancel/approve paths
+        // use) — a request the approver already decided is left alone, and its
+        // approval that lost the row lock hits the existing SUBMITTED check
+        // (409 REQUEST_ALREADY_DECIDED) once this delete commits.
+        for (VmRequest pending : vmRequestRepository
+                .findByGroupIdAndStatus(groupId, VmRequestStatus.SUBMITTED)) {
+            VmRequest locked = vmRequestRepository.findWithLockById(pending.getId()).orElse(null);
+            if (locked == null || locked.getStatus() != VmRequestStatus.SUBMITTED) {
+                continue;
+            }
+            locked.setStatus(VmRequestStatus.CANCELED);
+            auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                    AuditService.REQUEST_CANCEL, "vm_request", locked.getId(),
+                    Map.of("groupId", groupId, "reason", "group_deleted"), ip);
         }
 
         // Recipients are resolved before the soft-delete flips visibility; the

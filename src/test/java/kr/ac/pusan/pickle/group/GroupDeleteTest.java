@@ -138,6 +138,46 @@ class GroupDeleteTest {
                 .andExpect(jsonPath("$.code").value("GROUP_PERSONAL_UNDELETABLE"));
     }
 
+    @Test
+    void deletingGroupCancelsSubmittedRequestsAndApprovalThenConflicts() throws Exception {
+        long groupId = createTeam("gdel-req-" + UUID.randomUUID().toString().substring(0, 8));
+        long requestId = insertSubmittedRequest(groupId);
+        String sysAdminToken = jwtService.createAccessToken(
+                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+
+        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNoContent());
+
+        // the in-flight request is CANCELED in the same unit and audited
+        assertThat(jdbcTemplate.queryForObject("select status from vm_requests where id = ?",
+                String.class, requestId)).isEqualTo("CANCELED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs where action='request.cancel' and target_id=?
+                """, Long.class, requestId)).isEqualTo(1L);
+
+        // approving the now-canceled request hits the existing SUBMITTED guard → 409
+        mockMvc.perform(post("/api/v1/admin/vm-requests/" + requestId + "/approve")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "grantedVcpu", 1, "grantedMemoryMb", 1024, "grantedDiskGb", 10,
+                                "grantedTemplateId", templateId, "grantSsh", true,
+                                "grantHttp", false, "grantPublic", false))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
+    }
+
+    private long insertSubmittedRequest(long groupId) {
+        return jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb,
+                                         need_ssh, need_http, need_public)
+                values (?, ?, ?, '그룹 삭제 취소 테스트', ?, 1, 1024, 10, true, false, false)
+                returning id
+                """, Long.class, groupId, orgId, owner.getId(), templateId);
+    }
+
     private long insertVm(long groupId, String status) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
