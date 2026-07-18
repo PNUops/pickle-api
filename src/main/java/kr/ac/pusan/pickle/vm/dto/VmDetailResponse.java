@@ -23,6 +23,8 @@ public record VmDetailResponse(
         int diskGb,
         Long groupId,
         String groupName,
+        String orgName,
+        String displayName,
         Long requestId,
         String statusDetail,
         Instant createdAt,
@@ -43,13 +45,13 @@ public record VmDetailResponse(
         boolean passwordRevealAllowed,
         Instant updatedAt) {
 
-    public static VmDetailResponse from(Vm vm, String groupName, String ipAddress, String sshHost,
-            GroupMemberRole myGroupRole, boolean passwordRevealAllowed,
-            ProvisioningTaskResponse provisioning, boolean httpPublishGranted,
-            PublicationView publication) {
+    public static VmDetailResponse from(Vm vm, String groupName, String orgName, String displayName,
+            String ipAddress, String sshHost, GroupMemberRole myGroupRole,
+            boolean passwordRevealAllowed, ProvisioningTaskResponse provisioning,
+            boolean httpPublishGranted, PublicationView publication) {
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName,
-                vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(),
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
+                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(),
                 vm.getTemplateId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
                 VmDeletionResponse.from(vm), httpPublishGranted, publication,

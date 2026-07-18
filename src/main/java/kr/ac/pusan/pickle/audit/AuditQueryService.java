@@ -39,6 +39,26 @@ public class AuditQueryService {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
+    /**
+     * Representative derived-org name for the audit row's actor (v0.9.0 display
+     * field): the actor's managed org (ORG_ADMIN {@code users.org_id}) if any,
+     * else the smallest org id derived from the actor's group resources
+     * (vm_requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
+     * Null for system rows and actors with no derived org. Correlated on
+     * {@code u}/{@code a} from the outer query; binds no positional parameters.
+     */
+    private static final String ACTOR_ORG_NAME = """
+            (select o.name from orgs o where o.id = coalesce(u.org_id, (
+                 select min(dro.org_id) from (
+                     select lr.org_id from vm_requests lr
+                       join group_members gm on gm.group_id = lr.group_id
+                      where gm.user_id = a.actor_id
+                     union
+                     select lv.org_id from vms lv
+                       join group_members gm2 on gm2.group_id = lv.group_id
+                      where gm2.user_id = a.actor_id and lv.status <> 'DELETED'
+                 ) dro)))""";
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -107,16 +127,18 @@ public class AuditQueryService {
         long total = queryCount("select count(*)" + base + where, params);
         params.add(size);
         params.add((long) page * size);
-        List<AuditLogViewResponse> content = jdbcTemplate.query("""
-                select a.id, a.actor_id, a.actor_role, a.action, a.target_type, a.target_id,
-                       a.detail, a.ip, a.created_at, u.email as actor_email, u.name as actor_name
-                """ + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
+        List<AuditLogViewResponse> content = jdbcTemplate.query("select a.id, a.actor_id, "
+                + "a.actor_role, a.action, a.target_type, a.target_id, a.detail, a.ip, "
+                + "a.created_at, u.email as actor_email, u.name as actor_name, "
+                + ACTOR_ORG_NAME + " as org_name"
+                + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
                 (rs, rowNum) -> new AuditLogViewResponse(rs.getLong("id"),
                         rs.getObject("actor_id", Long.class), rs.getString("actor_email"),
                         rs.getString("actor_name"), rs.getString("actor_role"),
                         rs.getString("action"), rs.getString("target_type"),
                         targetIdOf(rs.getObject("target_id", Long.class)),
                         detailOf(rs.getString("detail")), rs.getString("ip"),
+                        rs.getString("org_name"),
                         rs.getObject("created_at", OffsetDateTime.class).toInstant()),
                 params.toArray());
         return pageOf(content, page, size, total);

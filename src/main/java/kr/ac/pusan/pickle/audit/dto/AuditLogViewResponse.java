@@ -20,5 +20,6 @@ public record AuditLogViewResponse(
         String targetId,
         JsonNode detail,
         String ip,
+        String orgName,
         Instant createdAt) {
 }
