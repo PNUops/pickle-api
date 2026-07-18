@@ -138,6 +138,22 @@ class MfaEnrollmentTest {
                 .andExpect(jsonPath("$.code").value("AUTH_MFA_CODE_INVALID"));
     }
 
+    @Test
+    void unenrolledAdminIsNotRestrictedWhenEnforcementOff() throws Exception {
+        // Default (test) profile has pickle.mfa.enforce-admin=false, so an
+        // unenrolled admin-tier account reaches ordinary endpoints normally.
+        User admin = userRepository.findByEmail("mfa.enforce.off@pusan.ac.kr").orElseGet(() -> {
+            User u = new User("mfa.enforce.off@pusan.ac.kr", passwordEncoder.encode(PASSWORD), "미강제관리자");
+            u.setRole(kr.ac.pusan.pickle.user.UserRole.SYS_ADMIN);
+            u.setStatus(UserStatus.ACTIVE);
+            u.setEmailVerifiedAt(Instant.now());
+            return userRepository.save(u);
+        });
+        mockMvc.perform(get("/api/v1/groups")
+                .header("Authorization", "Bearer " + jwtService.createAccessToken(admin)))
+                .andExpect(status().isOk());
+    }
+
     private String codeFor(String secret) {
         return totpService.generate(secret, Instant.now().getEpochSecond() / 30);
     }

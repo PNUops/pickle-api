@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.config;
 
 import jakarta.servlet.DispatcherType;
 import kr.ac.pusan.pickle.security.JwtAuthenticationFilter;
+import kr.ac.pusan.pickle.security.MfaEnrollmentFilter;
 import kr.ac.pusan.pickle.security.ProblemAccessDeniedHandler;
 import kr.ac.pusan.pickle.security.ProblemAuthenticationEntryPoint;
 import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
@@ -31,6 +32,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            MfaEnrollmentFilter mfaEnrollmentFilter,
             RefreshCsrfFilter refreshCsrfFilter,
             ProblemAuthenticationEntryPoint authenticationEntryPoint,
             ProblemAccessDeniedHandler accessDeniedHandler) throws Exception {
@@ -48,6 +50,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // MFA enrollment gate (G5) runs right after auth so the principal
+                // is resolved; unenrolled admin-tier accounts are scope-restricted.
+                .addFilterAfter(mfaEnrollmentFilter, JwtAuthenticationFilter.class)
                 // CSRF check first: refresh/logout requests are rejected before
                 // any authentication work; independent of the JWT filter.
                 .addFilterBefore(refreshCsrfFilter, JwtAuthenticationFilter.class);

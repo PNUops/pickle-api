@@ -50,6 +50,10 @@ pickle:
     # AES-256-GCM key (base64 32 bytes) for reversible credential storage
     # (VM initial passwords). Same fail-fast policy as the JWT secret.
     encryption-key: ${PICKLE_CREDENTIALS_KEY:}
+  mfa:
+    # G5: enforce 2FA enrollment for admin-tier accounts (scope-restrict the
+    # unenrolled). Off in dev/test; the prod profile turns it on.
+    enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:false}
   auth:
     refresh-token-ttl: 14d
     verification-token-ttl: 24h
@@ -149,5 +153,8 @@ spring:
             enable: true
 
 pickle:
+  mfa:
+    # Admin-tier 2FA is mandatory in production (G5); override per env if needed.
+    enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
   mail:
     from: ${PICKLE_SMTP_USERNAME}
