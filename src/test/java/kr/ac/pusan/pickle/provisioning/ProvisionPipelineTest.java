@@ -15,6 +15,7 @@ import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -323,18 +324,26 @@ class ProvisionPipelineTest {
         assertThat(passwordEncoder.matches(plaintext, vm.getPasswordHash())).isTrue();
         String expectedIpconfig = URLEncoder.encode("ip=" + ip + "/16,gw=172.29.0.1",
                 StandardCharsets.UTF_8);
-        // The gateway platform key is pre-encoded once by configure() and then a
-        // second time by the form encoder — PVE unwraps the outer encoding and
-        // stores the once-encoded value. Verify the double-encoding on the wire.
+        // The gateway platform key is pre-encoded once by configure() (with
+        // space→%20 so PVE's urlencoded validator, which rejects space AND '+',
+        // passes) and then a second time by the form encoder. Verify the exact
+        // wire value AND that PVE's decode round-trip restores the raw key:
+        //   wire (space=%2520) --form decode--> once-encoded (space=%20)
+        //        --cloud-init uri_unescape--> original key.
         String platformKey = "ssh-ed25519 "
                 + "AAAAC3NzaC1lZDI1NTE5AAAAIPlatformGatewayKeyFixtureForTests pickle-sshgw";
-        String sshkeysDoubleEncoded = URLEncoder.encode(
-                URLEncoder.encode(platformKey, StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        String innerEncoded = URLEncoder.encode(platformKey, StandardCharsets.UTF_8)
+                .replace("+", "%20");
+        String sshkeysWire = URLEncoder.encode(innerEncoded, StandardCharsets.UTF_8);
+        // the bug left a literal '+' from the space; the fix makes it survive as %2520
+        assertThat(sshkeysWire).contains("%2520").doesNotContain("+");
+        assertThat(URLDecoder.decode(URLDecoder.decode(sshkeysWire, StandardCharsets.UTF_8),
+                StandardCharsets.UTF_8)).isEqualTo(platformKey);
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("cipassword="))
                 .withRequestBody(containing("ciuser=student"))
                 .withRequestBody(containing("ipconfig0=" + expectedIpconfig))
-                .withRequestBody(containing("sshkeys=" + sshkeysDoubleEncoded))
+                .withRequestBody(containing("sshkeys=" + sshkeysWire))
                 .withRequestBody(containing("onboot=1"))
                 .withRequestBody(containing("tags=pickle")));
         // HOSTKEY step collected and normalized the guest host key (comment dropped)

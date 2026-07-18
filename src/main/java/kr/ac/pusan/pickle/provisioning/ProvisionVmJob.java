@@ -348,11 +348,16 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("ciuser", vm.getSshUsername());
         params.put("cipassword", password);
         // Authorize the SSH gateway's platform key on the guest (docs/plan/05).
-        // Proxmox wants the sshkeys value URL-encoded once itself; encodeForm
-        // adds the transport encoding, so the value is deliberately pre-encoded
-        // here (a double-encode on the wire that PVE unwraps to the raw key).
+        // PVE's sshkeys param is format=urlencoded and its validator forbids both
+        // space and '+' (^[-%a-zA-Z0-9_.!~*'()]*$, PVE::JSONSchema pve_verify_urlencoded).
+        // URLEncoder maps space→'+', so we must turn those into %20 on the inner
+        // (pre-)encoding; encodeForm then adds its transport layer (space%20 → %2520
+        // on the wire), PVE decodes the form once, and cloud-init uri_unescapes once
+        // more — restoring the exact key. Without the replace, a literal '+' from a
+        // space survives PVE's form decode and fails the validator (400).
         params.put("sshkeys", URLEncoder.encode(
-                sshPlatformProperties.requirePlatformPublicKey(), StandardCharsets.UTF_8));
+                sshPlatformProperties.requirePlatformPublicKey(), StandardCharsets.UTF_8)
+                .replace("+", "%20"));
         params.put("ipconfig0", "ip=" + ip + "/" + cidrPrefix(pool.getCidr())
                 + ",gw=" + hostAddress(pool.getGateway()));
         firstDns(pool).ifPresent(dns -> params.put("nameserver", dns));
