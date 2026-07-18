@@ -172,8 +172,6 @@ class ContractDriftTest {
             "GET /meta/status",
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
-            "POST /admin/users/{userId}/disable",
-            "POST /admin/users/{userId}/enable",
             "POST /admin/users/{userId}/mfa-reset",
             "POST /auth/mfa",
             "POST /me/consents",
