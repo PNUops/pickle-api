@@ -16,6 +16,9 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.inventory.Node;
+import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -42,6 +45,12 @@ public class VmSettingsService {
 
     public static final String SSH_PASSWORD_ENABLED = "ssh_password_enabled";
     public static final String PASSWORD_REVEAL_MIN_ROLE = "password_reveal_min_role";
+    public static final String DELETION_PROTECTION = "deletion_protection";
+    public static final String STOP_PROTECTION = "stop_protection";
+    public static final String DISPLAY_NAME = "display_name";
+
+    /** Contract cap for {@code display_name} (STRING); empty string clears it. */
+    private static final int DISPLAY_NAME_MAX_LENGTH = 100;
 
     /** States in which no setting may change (contract 409 VM_INVALID_STATE). */
     private static final Set<VmStatus> UNCHANGEABLE_STATES =
@@ -55,24 +64,37 @@ public class VmSettingsService {
      */
     private record VmSettingDef(String key, VmSettingValueType type, List<String> allowedValues,
             JsonNode defaultValue, GroupMemberRole requiredRole, String label, String description,
-            String auditAction) {
+            String auditAction, int maxLength) {
+
+        /** {@code maxLength} 0 means "no cap" (only STRING keys use it today). */
+        VmSettingDef(String key, VmSettingValueType type, List<String> allowedValues,
+                JsonNode defaultValue, GroupMemberRole requiredRole, String label, String description,
+                String auditAction) {
+            this(key, type, allowedValues, defaultValue, requiredRole, label, description,
+                    auditAction, 0);
+        }
     }
 
     private final VmSettingRepository settingRepository;
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
+    private final NodeRepository nodeRepository;
+    private final ProxmoxClient proxmoxClient;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Map<String, VmSettingDef> registry;
 
     public VmSettingsService(VmSettingRepository settingRepository, VmRepository vmRepository,
             GroupMemberRepository groupMemberRepository, UserRepository userRepository,
+            NodeRepository nodeRepository, ProxmoxClient proxmoxClient,
             AuditService auditService, ObjectMapper objectMapper) {
         this.settingRepository = settingRepository;
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
+        this.nodeRepository = nodeRepository;
+        this.proxmoxClient = proxmoxClient;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
         this.registry = buildRegistry(objectMapper);
@@ -95,6 +117,57 @@ public class VmSettingsService {
         JsonNode value = currentValue(vmId, def);
         String raw = value.isString() ? value.asString() : def.defaultValue().asString();
         return GroupMemberRole.valueOf(raw);
+    }
+
+    /** STRING setting (e.g. {@code display_name}); blank/absent → null. */
+    @Transactional(readOnly = true)
+    public String string(long vmId, String key) {
+        VmSettingDef def = requireDef(key);
+        JsonNode value = currentValue(vmId, def);
+        if (!value.isString()) {
+            return null;
+        }
+        String raw = value.asString();
+        return raw.isBlank() ? null : raw;
+    }
+
+    /**
+     * The subset of {@code vmIds} whose {@code deletion_protection} is on — one
+     * query for the drift reconciler (checks the PVE flag only for these).
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> deletionProtectedVmIds(java.util.Collection<Long> vmIds) {
+        if (vmIds.isEmpty()) {
+            return Set.of();
+        }
+        Set<Long> protectedIds = new java.util.HashSet<>();
+        for (VmSetting row : settingRepository.findByKeyAndVmIdIn(DELETION_PROTECTION, vmIds)) {
+            JsonNode value = parse(row.getValue());
+            if (value.isBoolean() && value.asBoolean()) {
+                protectedIds.add(row.getVmId());
+            }
+        }
+        return protectedIds;
+    }
+
+    /**
+     * Batch variant of {@code string(vmId, DISPLAY_NAME)} for list views —
+     * one query for all VMs (avoids N+1). Absent/blank names are simply not in
+     * the returned map.
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, String> displayNames(java.util.Collection<Long> vmIds) {
+        if (vmIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> names = new java.util.HashMap<>();
+        for (VmSetting row : settingRepository.findByKeyAndVmIdIn(DISPLAY_NAME, vmIds)) {
+            JsonNode value = parse(row.getValue());
+            if (value.isString() && !value.asString().isBlank()) {
+                names.put(row.getVmId(), value.asString());
+            }
+        }
+        return names;
     }
 
     // ── console surface (contract getVmSettings / updateVmSettings) ────────────
@@ -163,6 +236,17 @@ public class VmSettingsService {
             String newJson = objectMapper.writeValueAsString(newValue);
             VmSetting row = settingRepository.findByVmIdAndKey(vmId, def.key()).orElse(null);
             JsonNode oldValue = row != null ? parse(row.getValue()) : def.defaultValue();
+            // On-change hook: deletion_protection is backed by the PVE native
+            // `protection` flag. Reflect it synchronously BEFORE the DB write so
+            // a Proxmox failure aborts the whole patch (contract: 반영 실패 시
+            // 변경 자체가 실패) — the tx rollback then undoes any sibling keys.
+            if (DELETION_PROTECTION.equals(def.key())) {
+                boolean newProtect = newValue.isBoolean() && newValue.asBoolean();
+                boolean oldProtect = oldValue.isBoolean() && oldValue.asBoolean();
+                if (newProtect != oldProtect) {
+                    applyPveProtection(vm, newProtect);
+                }
+            }
             if (row == null) {
                 settingRepository.save(new VmSetting(vmId, def.key(), newJson, actor.id(), now));
             } else {
@@ -217,7 +301,9 @@ public class VmSettingsService {
             case BOOLEAN -> value.isBoolean();
             case ENUM -> value.isString() && def.allowedValues().contains(value.asString());
             case INTEGER -> value.isIntegralNumber();
-            case STRING -> value.isString();
+            // STRING accepts any string incl. "" (empty = clear); length capped.
+            case STRING -> value.isString()
+                    && (def.maxLength() == 0 || value.asString().length() <= def.maxLength());
         };
         if (valid) {
             return java.util.Optional.empty();
@@ -226,7 +312,9 @@ public class VmSettingsService {
             case BOOLEAN -> "true 또는 false여야 합니다.";
             case ENUM -> String.join(", ", def.allowedValues()) + " 중 하나여야 합니다.";
             case INTEGER -> "정수여야 합니다.";
-            case STRING -> "문자열이어야 합니다.";
+            case STRING -> value.isString() && def.maxLength() > 0
+                    ? "최대 " + def.maxLength() + "자까지 입력할 수 있습니다."
+                    : "문자열이어야 합니다.";
         };
         return java.util.Optional.of(new FieldValidationError(field, message));
     }
@@ -247,6 +335,25 @@ public class VmSettingsService {
             throw new IllegalArgumentException("unknown vm setting key: " + key);
         }
         return def;
+    }
+
+    /**
+     * Reflects {@code deletion_protection} onto the PVE native protection flag.
+     * A VM without a {@code proxmox_vmid} (provisioning not complete) has no
+     * guest to flag, so the change is refused with a clear 409 rather than
+     * silently diverging.
+     */
+    private void applyPveProtection(Vm vm, boolean protect) {
+        Integer vmid = vm.getProxmoxVmid();
+        if (vmid == null) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    "프로비저닝이 완료되지 않아 삭제 보호를 설정할 수 없습니다. 생성이 끝난 뒤 다시 시도해 주세요.");
+        }
+        Node node = nodeRepository.findById(vm.getNodeId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
+        proxmoxClient.setProtection(node.getApiHost(), node.getName(), vmid, protect);
     }
 
     private GroupMemberRole memberRole(Vm vm, AuthenticatedUser actor) {
@@ -272,6 +379,25 @@ public class VmSettingsService {
                 mapper.valueToTree("MEMBER"), GroupMemberRole.OWNER, "비밀번호 열람 최소 역할",
                 "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 그룹 역할입니다.",
                 AuditService.VM_SETTING_UPDATE));
+        map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
+                VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
+                GroupMemberRole.OWNER, "삭제 보호",
+                "켜면 본인·관리자 일반·강제 삭제 접수가 모두 거부됩니다. Proxmox 네이티브 "
+                        + "protection 플래그로 하이퍼바이저 수준에서도 파기가 백킹되며, 설정 변경은 "
+                        + "즉시 반영됩니다(반영 실패 시 변경 자체가 실패). 삭제하려면 먼저 해제하세요.",
+                AuditService.VM_SETTING_UPDATE));
+        map.put(STOP_PROTECTION, new VmSettingDef(STOP_PROTECTION,
+                VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
+                GroupMemberRole.OWNER, "중지 보호",
+                "켜면 종료·재부팅·강제 종료를 EDITOR 이상만 수행할 수 있습니다(시작은 제한 없음). "
+                        + "한계: sudo 가능한 구성원은 게스트 내부에서 여전히 종료할 수 있습니다.",
+                AuditService.VM_SETTING_UPDATE));
+        map.put(DISPLAY_NAME, new VmSettingDef(DISPLAY_NAME,
+                VmSettingValueType.STRING, null, mapper.nullNode(),
+                GroupMemberRole.EDITOR, "표시명",
+                "콘솔 목록·상세에 이름 대신 표시할 별칭입니다(최대 " + DISPLAY_NAME_MAX_LENGTH
+                        + "자, 빈 문자열로 해제). 호스트네임·슬러그·Proxmox 이름은 바뀌지 않습니다.",
+                AuditService.VM_SETTING_UPDATE, DISPLAY_NAME_MAX_LENGTH));
         return Collections.unmodifiableMap(map);
     }
 }

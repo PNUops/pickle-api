@@ -175,6 +175,63 @@ class VmSettingsTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
+    @Test
+    void m6KeysAppearInCatalogWithRolesAndDefaults() throws Exception {
+        long vmId = createVm();
+        mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.key=='deletion_protection')].value")
+                        .value(org.hamcrest.Matchers.contains(false)))
+                .andExpect(jsonPath("$[?(@.key=='deletion_protection')].requiredRole")
+                        .value(org.hamcrest.Matchers.contains("OWNER")))
+                .andExpect(jsonPath("$[?(@.key=='stop_protection')].value")
+                        .value(org.hamcrest.Matchers.contains(false)))
+                .andExpect(jsonPath("$[?(@.key=='display_name')].valueType")
+                        .value(org.hamcrest.Matchers.contains("STRING")))
+                .andExpect(jsonPath("$[?(@.key=='display_name')].value")
+                        .value(org.hamcrest.Matchers.contains((Object) null)));
+    }
+
+    @Test
+    void displayNameEditableByEditorWithLengthCapAndClear() throws Exception {
+        long vmId = createVm();
+        patchSettings(editorToken, vmId, Map.of("display_name", "실습 서버 A"))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME))
+                .isEqualTo("실습 서버 A");
+        // VmDetail carries the displayName + orgName join (M6/M5 display fields)
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + editorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("실습 서버 A"))
+                .andExpect(jsonPath("$.orgName").isNotEmpty());
+        // empty string clears (getter returns null)
+        patchSettings(editorToken, vmId, Map.of("display_name", ""))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME)).isNull();
+        // over 100 chars → 422
+        patchSettings(editorToken, vmId, Map.of("display_name", "가".repeat(101)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("settings.display_name"));
+    }
+
+    @Test
+    void protectionKeysAreOwnerOnly() throws Exception {
+        long vmId = createVm();
+        // EDITOR blocked from both protection keys (role gate precedes any hook)
+        patchSettings(editorToken, vmId, Map.of("deletion_protection", true))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        patchSettings(editorToken, vmId, Map.of("stop_protection", true))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        // stop_protection has no hypervisor hook, so OWNER can toggle it here
+        patchSettings(ownerToken, vmId, Map.of("stop_protection", true))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)).isTrue();
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private org.springframework.test.web.servlet.ResultActions patchSettings(String token,
