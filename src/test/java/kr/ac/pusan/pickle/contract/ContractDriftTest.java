@@ -142,7 +142,12 @@ class ContractDriftTest {
             "GET /me/ssh-keys/{keyId}/private-key",
             "GET /vms/{vmId}/settings",
             "PATCH /vms/{vmId}/settings",
-            "POST /vms/{vmId}/password/regenerate");
+            "POST /vms/{vmId}/password/regenerate",
+            // M6 account self-service — Lane A (contract v0.9.0).
+            "POST /auth/password-reset",
+            "POST /auth/password-reset/confirm",
+            "POST /me/withdraw",
+            "PUT /me/password");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -168,15 +173,11 @@ class ContractDriftTest {
             "POST /admin/users/{userId}/enable",
             "POST /admin/users/{userId}/mfa-reset",
             "POST /auth/mfa",
-            "POST /auth/password-reset",
-            "POST /auth/password-reset/confirm",
             "POST /me/consents",
             "POST /me/mfa/disable",
             "POST /me/mfa/recovery-codes",
             "POST /me/mfa/totp",
-            "POST /me/mfa/totp/activate",
-            "POST /me/withdraw",
-            "PUT /me/password");
+            "POST /me/mfa/totp/activate");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

@@ -4,18 +4,16 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.time.Duration;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.LoginRequest;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.auth.dto.PasswordResetConfirmRequest;
+import kr.ac.pusan.pickle.auth.dto.PasswordResetRequest;
 import kr.ac.pusan.pickle.auth.dto.ResendVerificationRequest;
 import kr.ac.pusan.pickle.auth.dto.SignupRequest;
 import kr.ac.pusan.pickle.auth.dto.VerifyEmailRequest;
-import kr.ac.pusan.pickle.config.AuthProperties;
-import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,17 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    static final String REFRESH_COOKIE = "pickle_refresh";
-    static final String REFRESH_COOKIE_PATH = "/api/v1/auth";
-    static final String CSRF_COOKIE = RefreshCsrfFilter.CSRF_COOKIE;
-    static final String CSRF_COOKIE_PATH = "/";
-
     private final AuthService authService;
-    private final AuthProperties authProperties;
+    private final SessionCookies sessionCookies;
 
-    public AuthController(AuthService authService, AuthProperties authProperties) {
+    public AuthController(AuthService authService, SessionCookies sessionCookies) {
         this.authService = authService;
-        this.authProperties = authProperties;
+        this.sessionCookies = sessionCookies;
     }
 
     @PostMapping("/signup")
@@ -72,62 +65,41 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<AuthTokenResponse> refresh(
-            @CookieValue(value = REFRESH_COOKIE, required = false) String refreshToken,
+            @CookieValue(value = SessionCookies.REFRESH_COOKIE, required = false) String refreshToken,
             @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
         AuthService.AuthResult result = authService.refresh(refreshToken, clientIp(httpRequest), userAgent);
         return withRefreshCookie(result);
     }
 
+    @PostMapping("/password-reset")
+    public ResponseEntity<MessageResponse> requestPasswordReset(
+            @Valid @RequestBody PasswordResetRequest request, HttpServletRequest httpRequest) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(authService.requestPasswordReset(request.email(), clientIp(httpRequest)));
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public MessageResponse confirmPasswordReset(
+            @Valid @RequestBody PasswordResetConfirmRequest request, HttpServletRequest httpRequest) {
+        return authService.confirmPasswordReset(request.token(), request.newPassword(),
+                clientIp(httpRequest));
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
-            @CookieValue(value = REFRESH_COOKIE, required = false) String refreshToken,
+            @CookieValue(value = SessionCookies.REFRESH_COOKIE, required = false) String refreshToken,
             HttpServletRequest httpRequest) {
         authService.logout(refreshToken, clientIp(httpRequest));
-        return ResponseEntity.noContent()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie("", Duration.ZERO).toString())
-                .header(HttpHeaders.SET_COOKIE, csrfCookie("", Duration.ZERO).toString())
-                .build();
+        ResponseEntity.HeadersBuilder<?> response = ResponseEntity.noContent();
+        sessionCookies.cleared().forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));
+        return response.build();
     }
 
     private ResponseEntity<AuthTokenResponse> withRefreshCookie(AuthService.AuthResult result) {
-        Duration ttl = authProperties.refreshTokenTtl();
-        return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, refreshCookie(result.refreshToken(), ttl).toString())
-                .header(HttpHeaders.SET_COOKIE, csrfCookie(TokenHasher.newCsrfToken(), ttl).toString())
-                .body(result.body());
-    }
-
-    /**
-     * {@code pickle_refresh=<opaque>; Path=/api/v1/auth; Max-Age=1209600;
-     * HttpOnly; Secure; SameSite=Lax} per contract.
-     */
-    private ResponseCookie refreshCookie(String value, Duration maxAge) {
-        return ResponseCookie.from(REFRESH_COOKIE, value)
-                .path(REFRESH_COOKIE_PATH)
-                .maxAge(maxAge)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Lax")
-                .build();
-    }
-
-    /**
-     * CSRF double-submit cookie, reissued on every login/refresh: {@code
-     * pickle_csrf=<128-bit random>; Path=/; Max-Age=1209600; Secure;
-     * SameSite=Lax} per contract. Deliberately NOT HttpOnly — console script
-     * must read it to echo the value in the {@code X-Pickle-Csrf} header
-     * ({@link RefreshCsrfFilter} enforces the match). The value is not bound
-     * to the session; see {@link RefreshCsrfFilter} for why double-submit
-     * needs no server-side state.
-     */
-    private ResponseCookie csrfCookie(String value, Duration maxAge) {
-        return ResponseCookie.from(CSRF_COOKIE, value)
-                .path(CSRF_COOKIE_PATH)
-                .maxAge(maxAge)
-                .httpOnly(false)
-                .secure(true)
-                .sameSite("Lax")
-                .build();
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
+        sessionCookies.issued(result.refreshToken())
+                .forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));
+        return response.body(result.body());
     }
 }

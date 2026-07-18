@@ -21,6 +21,9 @@ public interface UserSshKeyRepository extends JpaRepository<UserSshKey, Long> {
 
     long countByUserId(Long userId);
 
+    /** Withdrawal removes the user's registered keys so no fingerprint resolves to them. */
+    void deleteByUserId(Long userId);
+
     /**
      * Best-effort {@code last_used_at} bump on a successful gateway auth. Runs in
      * its own transaction (REQUIRES_NEW) so it can write from the read-only route

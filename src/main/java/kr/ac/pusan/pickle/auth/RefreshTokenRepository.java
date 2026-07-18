@@ -10,6 +10,22 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     Optional<RefreshToken> findByTokenHash(String tokenHash);
 
+    /**
+     * Revokes every still-active refresh token of a user — password change and
+     * password reset kill all other sessions (the caller re-issues one for the
+     * surviving session where applicable).
+     */
+    @Modifying
+    @Query(value = """
+            update refresh_tokens
+               set revoked_at = now(), updated_at = now()
+             where user_id = :userId and revoked_at is null
+            """, nativeQuery = true)
+    int revokeAllActiveByUserId(@Param("userId") Long userId);
+
+    /** Withdrawal removes the user's refresh tokens outright (pre-production, no history kept). */
+    void deleteByUserId(Long userId);
+
     /** Returns 0 when the token was already revoked (concurrent rotation ⇒ reuse). */
     @Modifying
     @Query(value = """

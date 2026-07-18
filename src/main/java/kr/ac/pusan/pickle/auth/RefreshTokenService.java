@@ -56,6 +56,12 @@ public class RefreshTokenService {
         repository.revokeIfActive(id);
     }
 
+    /** Kills every active session of a user (password change / reset). */
+    @Transactional
+    public void revokeAllForUser(Long userId) {
+        repository.revokeAllActiveByUserId(userId);
+    }
+
     @Transactional
     public void revokeChainFrom(Long id) {
         repository.revokeChainFrom(id);

@@ -55,6 +55,8 @@ pickle:
     verification-token-ttl: 24h
     # Console URL the verification mail links to; token is appended as ?token=
     verification-base-url: ${PICKLE_VERIFICATION_BASE_URL:https://pickle.pnuops.com/verify-email}
+    # Console URL the password-reset mail links to; token is appended as ?token=
+    password-reset-base-url: ${PICKLE_PASSWORD_RESET_BASE_URL:https://pickle.pnuops.com/reset-password}
   proxmox:
     # PVE API token (docs/plan/03). Deliberately no startup fail-fast: dev/test
     # profiles that never touch Proxmox may leave these unset — ProxmoxClient

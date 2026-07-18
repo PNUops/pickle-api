@@ -33,6 +33,9 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 
     long countByGroupIdAndRole(Long groupId, GroupMemberRole role);
 
+    /** Withdrawal drops all of the departing user's memberships in one statement. */
+    void deleteByUserId(Long userId);
+
     /** Member counts for the group-list view ({@code GroupSummary.memberCount}). */
     @Query("""
             select gm.group.id as groupId, count(gm.id) as memberCount

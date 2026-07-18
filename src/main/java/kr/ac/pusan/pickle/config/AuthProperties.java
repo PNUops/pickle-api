@@ -8,5 +8,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record AuthProperties(
         Duration refreshTokenTtl,
         Duration verificationTokenTtl,
-        String verificationBaseUrl) {
+        String verificationBaseUrl,
+        String passwordResetBaseUrl) {
 }

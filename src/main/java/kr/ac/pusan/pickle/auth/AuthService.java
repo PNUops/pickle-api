@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.auth;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
@@ -17,6 +18,8 @@ import kr.ac.pusan.pickle.config.AuthProperties;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.mail.MailSender;
 import kr.ac.pusan.pickle.mail.VerificationMailComposer;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -39,6 +42,9 @@ public class AuthService {
     private static final String TIMING_EQUALIZER_HASH =
             "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7uHhZ8mCEyXbNP9qhrPQicvBSl2Fx16";
 
+    /** Password-reset link validity (contract: 30 minutes, single use). */
+    private static final Duration PASSWORD_RESET_TOKEN_TTL = Duration.ofMinutes(30);
+
     private final UserRepository userRepository;
     private final EmailVerificationRepository emailVerificationRepository;
     private final RefreshTokenService refreshTokenService;
@@ -47,6 +53,7 @@ public class AuthService {
     private final PasswordPolicy passwordPolicy;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
+    private final NotificationService notificationService;
     private final JwtService jwtService;
     private final MailSender mailSender;
     private final VerificationMailComposer verificationMailComposer;
@@ -60,6 +67,7 @@ public class AuthService {
             PasswordPolicy passwordPolicy,
             RateLimitService rateLimitService,
             AuditService auditService,
+            NotificationService notificationService,
             JwtService jwtService,
             MailSender mailSender,
             VerificationMailComposer verificationMailComposer,
@@ -72,6 +80,7 @@ public class AuthService {
         this.passwordPolicy = passwordPolicy;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
+        this.notificationService = notificationService;
         this.jwtService = jwtService;
         this.mailSender = mailSender;
         this.verificationMailComposer = verificationMailComposer;
@@ -246,11 +255,113 @@ public class AuthService {
         });
     }
 
+    /**
+     * Self-service password change ({@code PUT /me/password}): the current
+     * session survives via the fresh token pair this returns, while the
+     * version bump + refresh-token revocation invalidate every other session.
+     */
+    @Transactional
+    public AuthResult changePassword(long userId, String currentPassword, String newPassword,
+            String ip, String userAgent) {
+        User user = userRepository.findById(userId).orElseThrow(AuthService::sessionUserGone);
+        rateLimitService.hit("password_change:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit("password_change:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_PASSWORD_CHANGE,
+                    "user", user.getId(), Map.of("result", "mismatch"), ip);
+            throw passwordMismatch();
+        }
+        passwordPolicy.validate(newPassword, user.getEmail());
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.bumpTokenVersion();
+        // Other sessions: access tokens die on the version bump, refresh tokens
+        // are revoked here; then issue a fresh pair for this session.
+        refreshTokenService.revokeAllForUser(user.getId());
+        var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
+
+        auditService.recordAfterCommit(user.getId(), user.getRole().name(),
+                AuditService.ACCOUNT_PASSWORD_CHANGE, "user", user.getId(), Map.of(), ip);
+        notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
+                "account_password_changed:" + user.getId() + ":" + user.getTokenVersion());
+        return new AuthResult(
+                new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
+                issued.rawToken());
+    }
+
+    /**
+     * Password-reset request ({@code POST /auth/password-reset}). Uniform 202:
+     * a non-existent or non-ACTIVE account is a silent no-op so account
+     * existence is not disclosed.
+     */
+    @Transactional
+    public MessageResponse requestPasswordReset(String email, String ip) {
+        String normalized = normalize(email);
+        rateLimitService.hit("password_reset:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit("password_reset:acct", normalized, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+
+        userRepository.findByEmail(normalized)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .ifPresent(this::sendPasswordResetMail);
+        return new MessageResponse("해당 주소가 등록되어 있다면 비밀번호 재설정 메일을 발송했습니다.");
+    }
+
+    /**
+     * Password-reset confirm ({@code POST /auth/password-reset/confirm}):
+     * single-use token, invalidates every session (version bump + refresh
+     * revocation) and clears the login-failure lockout.
+     */
+    @Transactional
+    public MessageResponse confirmPasswordReset(String rawToken, String newPassword, String ip) {
+        rateLimitService.hit("password_reset_confirm:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+
+        EmailVerification verification = emailVerificationRepository
+                .findByTokenHashAndPurpose(TokenHasher.sha256Hex(rawToken), VerificationPurpose.PASSWORD_RESET)
+                .orElseThrow(AuthService::resetTokenGone);
+        Instant now = Instant.now();
+        if (verification.isExpired(now)) {
+            throw resetTokenGone();
+        }
+        User user = userRepository.findById(verification.getUserId())
+                .orElseThrow(AuthService::resetTokenGone);
+        passwordPolicy.validate(newPassword, user.getEmail());
+        // Single-use guard: a concurrent/repeated confirm loses the UPDATE → 410.
+        if (emailVerificationRepository.consume(verification.getId(), now) == 0) {
+            throw resetTokenGone();
+        }
+
+        // consume() runs with clearAutomatically, detaching the entity above —
+        // reload so the mutations below are tracked and flushed.
+        user = userRepository.findById(verification.getUserId())
+                .orElseThrow(AuthService::resetTokenGone);
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.bumpTokenVersion();
+        refreshTokenService.revokeAllForUser(user.getId());
+        rateLimitService.clearLoginFailures(user.getEmail());
+
+        auditService.recordAfterCommit(user.getId(), user.getRole().name(),
+                AuditService.ACCOUNT_PASSWORD_RESET, "user", user.getId(), Map.of(), ip);
+        notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
+                "account_password_reset:" + user.getId() + ":" + user.getTokenVersion());
+        return new MessageResponse("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.");
+    }
+
     private void sendVerificationMail(User user) {
         String rawToken = TokenHasher.newToken();
         emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
                 VerificationPurpose.SIGNUP, Instant.now().plus(authProperties.verificationTokenTtl())));
         mailSender.send(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken));
+    }
+
+    private void sendPasswordResetMail(User user) {
+        Instant now = Instant.now();
+        // Only the last link stays valid: invalidate the user's open reset rows.
+        emailVerificationRepository.invalidateOpen(user.getId(), VerificationPurpose.PASSWORD_RESET, now);
+        String rawToken = TokenHasher.newToken();
+        emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
+                VerificationPurpose.PASSWORD_RESET, now.plus(PASSWORD_RESET_TOKEN_TTL)));
+        mailSender.send(verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken));
     }
 
     private static String normalize(String email) {
@@ -275,5 +386,21 @@ public class AuthService {
     private static ApiException refreshTokenInvalid() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_REFRESH_TOKEN_INVALID,
                 "세션이 만료되었습니다", "다시 로그인해 주세요.");
+    }
+
+    private static ApiException passwordMismatch() {
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_PASSWORD_MISMATCH,
+                "현재 비밀번호가 올바르지 않습니다", "현재 비밀번호를 다시 확인해 주세요.");
+    }
+
+    private static ApiException resetTokenGone() {
+        return new ApiException(HttpStatus.GONE, ErrorCodes.AUTH_RESET_TOKEN_EXPIRED,
+                "재설정 링크가 만료되었습니다",
+                "재설정 링크가 만료되었거나 이미 사용되었습니다. 재설정을 다시 요청해 주세요.");
+    }
+
+    private static ApiException sessionUserGone() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
+                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 }

@@ -133,7 +133,10 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.orgId").value((Object) null))
                 .andExpect(jsonPath("$.memberships[0].groupKind").value("PERSONAL"))
                 .andExpect(jsonPath("$.memberships[0].role").value("OWNER"))
-                .andExpect(jsonPath("$.memberships[0].groupName").value("홍길동"));
+                .andExpect(jsonPath("$.memberships[0].groupName").value("홍길동"))
+                // M6 contract-gate carryover: fields hardcoded until W2-A (2FA/consent)
+                .andExpect(jsonPath("$.mfaEnabled").value(false))
+                .andExpect(jsonPath("$.pendingConsents").isArray());
 
         // refresh (with CSRF double submit) → rotated refresh + reissued CSRF cookie
         MvcResult refreshed = mockMvc.perform(post("/api/v1/auth/refresh")
@@ -189,6 +192,18 @@ class AuthFlowTest {
                         .cookie(secondCsrf)
                         .header("X-Pickle-Csrf", secondCsrf.getValue()))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void signupToleratesConsentsField() throws Exception {
+        // M6 contract-gate carryover: signup must accept (and, until W2-A, ignore)
+        // the consents field without an unknown-property 4xx.
+        Map<String, ?> body = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
+                "name", "동의자",
+                "consents", List.of(Map.of("docType", "TERMS_OF_SERVICE", "version", 1)));
+        postJson("/api/v1/auth/signup", body)
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
     @Test
