@@ -38,6 +38,9 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
 
     Page<VmRequest> findByGroupIdAndStatus(Long groupId, VmRequestStatus status, Pageable pageable);
 
+    /** All requests of a group in a given status (group-delete cancels its SUBMITTED ones). */
+    List<VmRequest> findByGroupIdAndStatus(Long groupId, VmRequestStatus status);
+
     Page<VmRequest> findByStatus(VmRequestStatus status, Pageable pageable);
 
     Page<VmRequest> findByOrgId(Long orgId, Pageable pageable);

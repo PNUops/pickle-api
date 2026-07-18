@@ -63,6 +63,9 @@ public class ProxmoxClient {
     };
     private static final TypeReference<Envelope<TaskStatus>> TASK_STATUS_RESPONSE = new TypeReference<>() {
     };
+    private static final TypeReference<Envelope<Map<String, Object>>> CONFIG_RESPONSE =
+            new TypeReference<>() {
+            };
     private static final TypeReference<Envelope<List<ClusterResource>>> CLUSTER_RESOURCES_RESPONSE =
             new TypeReference<>() {
             };
@@ -128,6 +131,43 @@ public class ProxmoxClient {
     public void config(String apiHost, String node, int vmid, Map<String, String> params) {
         call(HttpMethod.PUT, uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "config"),
                 params, VOID_RESPONSE);
+    }
+
+    /**
+     * Sets or clears the PVE native {@code protection} flag on the VM config
+     * (synchronous, form-urlencoded — mirrors {@link #config}). A protected VM
+     * refuses destroy/disk-remove at the hypervisor level, backing the
+     * {@code deletion_protection} VM setting (M6, docs/plan/03).
+     */
+    public void setProtection(String apiHost, String node, int vmid, boolean protect) {
+        config(apiHost, node, vmid, Map.of("protection", protect ? "1" : "0"));
+    }
+
+    /**
+     * {@code GET /nodes/{n}/qemu/{id}/config} → the live PVE {@code protection}
+     * flag (absent/0 = false). Used by the reconciler to detect out-of-band
+     * {@code qm set --protection} divergence from the {@code deletion_protection}
+     * VM setting (M6).
+     */
+    public boolean isProtected(String apiHost, String node, int vmid) {
+        Map<String, Object> config = call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "config"), null,
+                CONFIG_RESPONSE);
+        return config != null && truthyFlag(config.get("protection"));
+    }
+
+    /** PVE renders boolean flags as 0/1 int or string across versions. */
+    private static boolean truthyFlag(Object value) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value instanceof Number n) {
+            return n.intValue() != 0;
+        }
+        if (value instanceof String s) {
+            return "1".equals(s) || "true".equalsIgnoreCase(s);
+        }
+        return false;
     }
 
     /** {@code PUT /nodes/{n}/qemu/{id}/resize} — e.g. disk "scsi0", size "20G". */

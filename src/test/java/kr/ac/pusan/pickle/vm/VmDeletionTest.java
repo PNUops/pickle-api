@@ -764,6 +764,153 @@ class VmDeletionTest {
         return allocationId;
     }
 
+    // ── M6 deletion / stop protection ────────────────────────────────────────
+
+    @Test
+    void deletePipelineParksNeedsAdminOnProtectedDestroyError() {
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "FORCE", Instant.now().minus(Duration.ofMinutes(1)));
+        // guest present but stopped (shutdown skipped); destroy refused by PVE
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("""
+                                {"data":[{"vmid":%d,"type":"qemu","status":"stopped",
+                                          "node":"%s","name":"test","tags":"pickle"}]}
+                                """.formatted(proxmoxVmid, NODE_NAME))));
+        wm.server().stubFor(WireMock.delete(urlPathEqualTo(qemuBasePath()))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null,\"message\":\"VM is protected - unable to remove\"}")));
+
+        deleteVmJob.deleteVm(vmId);
+
+        // immediate NEEDS_ADMIN park (never the backoff retry path)
+        assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 1);
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(statusDetailOf(vmId)).contains("보호");
+    }
+
+    @Test
+    void deletionProtectionRefusesAllPathsAndOverrideForceDeletesClearingPveFlag() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
+                String.class, vmId);
+        setSetting(vmId, "deletion_protection", "true");
+
+        // self-delete, admin schedule-delete, and force-delete are all refused
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", Instant.now().plus(Duration.ofDays(30)).toString(),
+                                "reason", "정리"))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
+
+        // override force-delete clears the PVE protection flag before destroy
+        stubConfigPut(proxmoxVmid);
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "confirmName", vmName, "overrideProtection", true))))
+                .andExpect(status().isAccepted());
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        wm.server().verify(WireMock.putRequestedFor(
+                        urlPathEqualTo("/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid
+                                + "/config"))
+                .withRequestBody(containing("protection=0")));
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs
+                 where action='vm.force_delete' and target_id=? and detail::text like '%overrodeProtection%'
+                """, Long.class, vmId)).isEqualTo(1L);
+    }
+
+    @Test
+    void deletionProtectionOnChangeReflectsToPveAtomically() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        stubConfigPut(proxmoxVmid);
+        // OWNER turns protection on → PVE receives protection=1, row persists
+        patchSetting(ownerToken, vmId, "deletion_protection", true).andExpect(status().isOk());
+        wm.server().verify(WireMock.putRequestedFor(
+                        urlPathEqualTo("/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid
+                                + "/config"))
+                .withRequestBody(containing("protection=1")));
+        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("true");
+
+        // PVE failure → the setting change fails atomically (row unchanged)
+        wm.server().stubFor(WireMock.put(urlPathEqualTo(
+                        "/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid + "/config"))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null,\"message\":\"boom\"}")));
+        patchSetting(ownerToken, vmId, "deletion_protection", false)
+                .andExpect(status().is5xxServerError());
+        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("true");
+    }
+
+    @Test
+    void deletionProtectionRejectedWithoutProxmoxVmid() throws Exception {
+        long vmId = createVm(VmStatus.CREATING);
+        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        patchSetting(ownerToken, vmId, "deletion_protection", true)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+    }
+
+    @Test
+    void stopProtectionGatesMemberPowerOps() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        setSetting(vmId, "stop_protection", "true");
+        // MEMBER is blocked from shutdown while stop protection is on
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_STOP_PROTECTED"));
+        // OWNER (>= EDITOR) is allowed
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+    }
+
+    private void stubConfigPut(int vmid) {
+        wm.server().stubFor(WireMock.put(urlPathEqualTo(
+                        "/api2/json/nodes/" + NODE_NAME + "/qemu/" + vmid + "/config"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null}")));
+    }
+
+    private void setSetting(long vmId, String key, String jsonValue) {
+        jdbcTemplate.update("insert into vm_settings (vm_id, key, value) values (?, ?, ?::jsonb)",
+                vmId, key, jsonValue);
+    }
+
+    private String settingValue(long vmId, String key) {
+        return jdbcTemplate.query("select value::text from vm_settings where vm_id = ? and key = ?",
+                rs -> rs.next() ? rs.getString(1) : null, vmId, key);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions patchSetting(String token, long vmId,
+            String key, Object value) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .patch("/api/v1/vms/" + vmId + "/settings")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("settings", Map.of(key, value)))));
+    }
+
     private long ensureWireMockNode() {
         Long existing = jdbcTemplate.query("select id from nodes where name = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, NODE_NAME);

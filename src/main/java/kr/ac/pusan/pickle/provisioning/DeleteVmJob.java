@@ -177,8 +177,32 @@ public class DeleteVmJob {
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
                     e.getMessage() + " — 관리자 확인이 필요합니다", now);
         } catch (RuntimeException e) {
+            if (isProtectionError(e)) {
+                // Out-of-band `qm set --protection 1` (or a non-override force
+                // delete that reached destroy): PVE refuses the destroy. Never
+                // retry — park for an operator to clear the flag / override.
+                Instant now = Instant.now();
+                String detail = "Proxmox 보호(protection) 플래그로 파기가 거부되었습니다 — "
+                        + "관리자가 보호를 해제하거나 오버라이드 강제 삭제로 회수해야 합니다";
+                log.error("Delete pipeline parked for vm {} (protected guest): {}", vmId,
+                        e.getMessage());
+                taskRepository.park(task.getId(), detail, now);
+                vmRepository.updateStatusDetail(vmId, VmStatus.DELETING, detail, now);
+                return;
+            }
             handleFailure(task.getId(), vmId, e);
         }
+    }
+
+    /** A PVE "VM is protected" destroy refusal, anywhere in the cause chain. */
+    private static boolean isProtectionError(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String message = t.getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("protect")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

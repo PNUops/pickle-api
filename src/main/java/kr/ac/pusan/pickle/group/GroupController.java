@@ -63,6 +63,14 @@ public class GroupController {
         return groupService.update(principal, groupId, request);
     }
 
+    @DeleteMapping("/{groupId}")
+    public ResponseEntity<Void> deleteGroup(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long groupId,
+            HttpServletRequest httpRequest) {
+        groupService.delete(principal, groupId, clientIp(httpRequest));
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{groupId}/members")
     public ResponseEntity<GroupMemberResponse> addGroupMember(
             @AuthenticationPrincipal AuthenticatedUser principal,

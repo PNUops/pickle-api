@@ -92,6 +92,7 @@ class AdminTasksTest {
                 .andExpect(jsonPath("$.content[0].hostname").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].orgId").value(orgId))
                 .andExpect(jsonPath("$.content[0].orgName").value(orgName))
+                .andExpect(jsonPath("$.content[0].groupName").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].kind").value("PROVISION"))
                 .andExpect(jsonPath("$.content[0].status").value("NEEDS_ADMIN"))
                 .andExpect(jsonPath("$.content[0].currentStep").value(3))
@@ -106,6 +107,13 @@ class AdminTasksTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byTaskId(done)).exists())
                 .andExpect(jsonPath(byTaskId(needsAdmin)).doesNotExist());
+
+        // multi-value status (v0.9.0): OR over the repeated params
+        mockMvc.perform(get("/api/v1/admin/tasks?status=NEEDS_ADMIN&status=DONE")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byTaskId(needsAdmin)).exists())
+                .andExpect(jsonPath(byTaskId(done)).exists());
     }
 
     @Test

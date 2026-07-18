@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.http.HttpStatus;
@@ -51,14 +52,17 @@ public class VmLifecycleService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final VmSettingsService vmSettingsService;
     private final JobScheduler jobScheduler;
     private final VmPowerJobs vmPowerJobs;
     private final Clock clock;
 
     public VmLifecycleService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            JobScheduler jobScheduler, VmPowerJobs vmPowerJobs, Clock clock) {
+            VmSettingsService vmSettingsService, JobScheduler jobScheduler, VmPowerJobs vmPowerJobs,
+            Clock clock) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.vmSettingsService = vmSettingsService;
         this.jobScheduler = jobScheduler;
         this.vmPowerJobs = vmPowerJobs;
         this.clock = clock;
@@ -66,7 +70,7 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse start(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireMemberControllableVm(actor, vmId);
+        Vm vm = requireMemberControllableVm(actor, vmId).vm();
         // M5 expiry guard: a past end date (KST, inclusive end) refuses start
         // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
         if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
@@ -84,7 +88,8 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse shutdown(AuthenticatedUser actor, long vmId) {
-        requireMemberControllableVm(actor, vmId);
+        Controllable controllable = requireMemberControllableVm(actor, vmId);
+        requireStopAllowed(vmId, controllable.role());
         claimPowerAction(vmId, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         long actorId = actor.id();
@@ -94,7 +99,8 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse reboot(AuthenticatedUser actor, long vmId) {
-        requireMemberControllableVm(actor, vmId);
+        Controllable controllable = requireMemberControllableVm(actor, vmId);
+        requireStopAllowed(vmId, controllable.role());
         // Intent is visible immediately (and force-stop can target a hung
         // reboot); the CAS loses to a concurrent transition OR a live claim → 409.
         if (vmRepository.claimReboot(vmId, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
@@ -107,7 +113,8 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse forceStop(AuthenticatedUser actor, long vmId) {
-        requireMemberControllableVm(actor, vmId);
+        Controllable controllable = requireMemberControllableVm(actor, vmId);
+        requireStopAllowed(vmId, controllable.role());
         claimPowerAction(vmId, PowerAction.FORCE_STOP,
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
@@ -140,11 +147,16 @@ public class VmLifecycleService {
         }
     }
 
+    /** A power-controllable VM plus the requester's role in its group. */
+    private record Controllable(Vm vm, GroupMemberRole role) {
+    }
+
     /**
      * Resolves the VM for a power op: unknown id and non-member both answer
-     * 404 (masking), a member below MEMBER answers 403.
+     * 404 (masking), a member below MEMBER answers 403. The role is returned so
+     * stop-protected ops can additionally require EDITOR (M6).
      */
-    private Vm requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
+    private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmLifecycleService::vmNotFound);
         GroupMemberRole role = groupMemberRepository
                 .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
@@ -154,7 +166,24 @@ public class VmLifecycleService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "VM을 제어할 권한이 없습니다", "그룹의 MEMBER 이상만 VM 전원을 제어할 수 있습니다.");
         }
-        return vm;
+        return new Controllable(vm, role);
+    }
+
+    /**
+     * Stop protection (M6): when {@code stop_protection} is on, shutdown/reboot/
+     * force-stop require group EDITOR+; a MEMBER is refused 409
+     * {@code VM_STOP_PROTECTED}. Start is deliberately unaffected. Admins reach
+     * these ops only as group members, so no separate admin bypass exists.
+     */
+    private void requireStopAllowed(long vmId, GroupMemberRole role) {
+        if (role.atLeast(GroupMemberRole.EDITOR)) {
+            return;
+        }
+        if (vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_STOP_PROTECTED,
+                    "중지 보호가 설정된 VM입니다",
+                    "중지 보호가 켜져 있어 그룹의 EDITOR 이상만 종료·재부팅·강제 종료할 수 있습니다.");
+        }
     }
 
     /**

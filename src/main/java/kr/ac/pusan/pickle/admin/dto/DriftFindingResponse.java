@@ -11,6 +11,7 @@ public record DriftFindingResponse(
         Long id,
         DriftFindingKind kind,
         Long vmId,
+        String vmName,
         Integer proxmoxVmid,
         String nodeName,
         String summary,
@@ -24,9 +25,9 @@ public record DriftFindingResponse(
         String resolutionNote) {
 
     public static DriftFindingResponse from(DriftFinding finding, JsonNode detail,
-            String resolvedByEmail) {
+            String resolvedByEmail, String vmName) {
         return new DriftFindingResponse(finding.getId(), finding.getKind(), finding.getVmId(),
-                finding.getProxmoxVmid(), finding.getNodeName(), finding.getSummary(), detail,
+                vmName, finding.getProxmoxVmid(), finding.getNodeName(), finding.getSummary(), detail,
                 finding.getStatus(), finding.getFirstSeenAt(), finding.getLastSeenAt(),
                 finding.getResolvedAt(), finding.getResolvedBy(), resolvedByEmail,
                 finding.getResolutionNote());

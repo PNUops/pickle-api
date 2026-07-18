@@ -19,6 +19,7 @@ public record AdminTaskResponse(
         String hostname,
         Long orgId,
         String orgName,
+        String groupName,
         ProvisioningTaskKind kind,
         ProvisioningTaskStatus status,
         int currentStep,
@@ -30,13 +31,15 @@ public record AdminTaskResponse(
         Instant createdAt,
         Instant updatedAt) {
 
-    public static AdminTaskResponse from(ProvisioningTask task, Vm vm, String orgName) {
+    public static AdminTaskResponse from(ProvisioningTask task, Vm vm, String orgName,
+            String groupName) {
         ProvisioningTaskResponse view = ProvisioningTaskResponse.from(task);
         return new AdminTaskResponse(task.getId(), task.getVmId(),
                 vm == null ? null : vm.getName(),
                 vm == null ? null : vm.getHostname(),
                 vm == null ? null : vm.getOrgId(),
                 orgName,
+                groupName,
                 view.kind(), view.status(), view.currentStep(), view.totalSteps(),
                 view.stepLabel(), view.attempts(), view.lastError(),
                 task.getJobrunrJobId(), task.getCreatedAt(), task.getUpdatedAt());

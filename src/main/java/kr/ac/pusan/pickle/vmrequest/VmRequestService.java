@@ -71,7 +71,8 @@ public class VmRequestService {
 
     @Transactional
     public VmRequestDetailResponse create(AuthenticatedUser actor, CreateVmRequestRequest request, String ip) {
-        Group group = groupRepository.findById(request.groupId())
+        // A soft-deleted group cannot receive new VM requests (M6).
+        Group group = groupRepository.findByIdAndDeletedAtIsNull(request.groupId())
                 .orElseThrow(() -> notFound("해당 그룹이 존재하지 않습니다."));
         GroupMemberRole role = groupMemberRepository
                 .findByGroupIdAndUserId(group.getId(), actor.id())

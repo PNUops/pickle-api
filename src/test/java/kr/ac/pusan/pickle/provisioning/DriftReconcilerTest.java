@@ -192,6 +192,35 @@ class DriftReconcilerTest {
                 .isEqualTo(VmStatus.NEEDS_ADMIN);
     }
 
+    @Test
+    void deletionProtectionDriftIsFlaggedWhenPveFlagCleared() {
+        long nodeId = createNode(wm.apiHost());
+        String nodeName = jdbcTemplate.queryForObject("select name from nodes where id = ?",
+                String.class, nodeId);
+        long vmId = createVm(nodeId, 62501, "RUNNING", 1, 1024);
+        // user desires protection ON …
+        jdbcTemplate.update(
+                "insert into vm_settings (vm_id, key, value) values (?, 'deletion_protection', 'true'::jsonb)",
+                vmId);
+        // … guest present with matching spec, but PVE reports protection cleared
+        stubClusterResources(wm, qemu(62501, "running", 1, 1024, "pickle"));
+        wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+                        com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo(
+                                "/api2/json/nodes/" + nodeName + "/qemu/62501/config"))
+                .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                        .withStatus(200).withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":{\"cores\":1}}")));
+
+        reconciler.reconcile();
+
+        Long findings = jdbcTemplate.queryForObject("""
+                select count(*) from drift_findings
+                 where vm_id = ? and kind = 'SPEC_MISMATCH' and status = 'OPEN'
+                   and summary like '%삭제 보호%'
+                """, Long.class, vmId);
+        assertThat(findings).isEqualTo(1L);
+    }
+
     // --- fixtures (same shape as VmStatusPollerTest) ----------------------------
 
     private long createNode(String apiHost) {

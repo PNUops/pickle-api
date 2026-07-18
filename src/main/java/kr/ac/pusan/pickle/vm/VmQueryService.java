@@ -12,6 +12,8 @@ import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.publishing.DomainRepository;
@@ -55,6 +57,7 @@ public class VmQueryService {
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final GroupRepository groupRepository;
+    private final OrgRepository orgRepository;
     private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final VmEventRepository vmEventRepository;
@@ -65,7 +68,8 @@ public class VmQueryService {
     private final String sshHost;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            GroupRepository groupRepository, IpAddressResolver ipAddressResolver,
+            GroupRepository groupRepository, OrgRepository orgRepository,
+            IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
             VmEventRepository vmEventRepository, VmRequestReviewRepository reviewRepository,
             DomainRepository domainRepository, PublicationAssembler publicationAssembler,
@@ -74,6 +78,7 @@ public class VmQueryService {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.groupRepository = groupRepository;
+        this.orgRepository = orgRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.vmEventRepository = vmEventRepository;
@@ -101,9 +106,25 @@ public class VmQueryService {
                     ? Page.empty(pageable)
                     : vmRepository.findByGroupIdIn(groupIds, pageable);
         }
-        return PageResponse.of(result.getContent().stream()
-                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), "")))
+        List<Vm> vms = result.getContent();
+        Map<Long, String> orgNames = orgNames(vms);
+        Map<Long, String> displayNames = vmSettingsService.displayNames(
+                vms.stream().map(Vm::getId).toList());
+        return PageResponse.of(vms.stream()
+                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), ""),
+                        orgNames.get(vm.getOrgId()), displayNames.get(vm.getId())))
                 .toList(), result);
+    }
+
+    /** Batch org-name join for the summary views (avoids N+1). */
+    private Map<Long, String> orgNames(List<Vm> vms) {
+        List<Long> orgIds = vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
+                .distinct().toList();
+        if (orgIds.isEmpty()) {
+            return Map.of();
+        }
+        return orgRepository.findAllById(orgIds).stream()
+                .collect(Collectors.toMap(Org::getId, Org::getName));
     }
 
     @Transactional(readOnly = true)
@@ -127,8 +148,13 @@ public class VmQueryService {
     @Transactional(readOnly = true)
     public VmDetailResponse detailOf(Vm vm, GroupMemberRole myGroupRole) {
         long vmId = vm.getId();
+        // History-preserving joins: a DELETED vm's group/org may have been
+        // deleted afterwards, so this deliberately reads all groups/orgs.
         String groupName = groupRepository.findById(vm.getGroupId())
                 .map(Group::getName).orElse("");
+        String orgName = vm.getOrgId() == null ? null
+                : orgRepository.findById(vm.getOrgId()).map(Org::getName).orElse(null);
+        String displayName = vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME);
         String ipAddress = liveIpAddress(vm);
         ProvisioningTaskResponse provisioning = provisioningTaskRepository
                 .findByVmIdOrderByIdDesc(vmId).stream()
@@ -147,8 +173,8 @@ public class VmQueryService {
                 .orElse(null);
         boolean passwordRevealAllowed = myGroupRole != null && myGroupRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
-        return VmDetailResponse.from(vm, groupName, ipAddress, sshHost, myGroupRole,
-                passwordRevealAllowed, provisioning, httpPublishGranted, publication);
+        return VmDetailResponse.from(vm, groupName, orgName, displayName, ipAddress, sshHost,
+                myGroupRole, passwordRevealAllowed, provisioning, httpPublishGranted, publication);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

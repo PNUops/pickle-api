@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.List;
 import kr.ac.pusan.pickle.admin.dto.AdminTaskResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -38,7 +39,9 @@ public class AdminTaskController {
 
     @GetMapping
     public PageResponse<AdminTaskResponse> listAdminTasks(
-            @RequestParam(required = false) ProvisioningTaskStatus status,
+            // Multi-value (v0.9.0): ?status=FAILED&status=NEEDS_ADMIN → OR filter;
+            // a single value still binds to a one-element list (compat).
+            @RequestParam(required = false) List<ProvisioningTaskStatus> status,
             @RequestParam(required = false) ProvisioningTaskKind kind,
             @RequestParam(required = false) Long vmId,
             @RequestParam(defaultValue = "0") @Min(0) int page,

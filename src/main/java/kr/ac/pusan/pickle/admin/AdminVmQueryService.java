@@ -12,12 +12,15 @@ import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -55,12 +58,16 @@ public class AdminVmQueryService {
 
     private final VmRepository vmRepository;
     private final GroupRepository groupRepository;
+    private final OrgRepository orgRepository;
+    private final VmSettingsService vmSettingsService;
     private final Clock clock;
 
     public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository,
-            Clock clock) {
+            OrgRepository orgRepository, VmSettingsService vmSettingsService, Clock clock) {
         this.vmRepository = vmRepository;
         this.groupRepository = groupRepository;
+        this.orgRepository = orgRepository;
+        this.vmSettingsService = vmSettingsService;
         this.clock = clock;
     }
 
@@ -103,11 +110,19 @@ public class AdminVmQueryService {
                     cb.not(root.get("status").in(EXPIRY_FILTER_EXCLUDED))));
         }
         Page<Vm> result = vmRepository.findAll(spec, pageable);
+        List<Vm> vms = result.getContent();
         Map<Long, String> groupNames = groupRepository.findAllById(
-                        result.getContent().stream().map(Vm::getGroupId).distinct().toList())
+                        vms.stream().map(Vm::getGroupId).distinct().toList())
                 .stream().collect(Collectors.toMap(Group::getId, Group::getName));
-        return PageResponse.of(result.getContent().stream()
-                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), "")))
+        Map<Long, String> orgNames = orgRepository.findAllById(
+                        vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
+                                .distinct().toList())
+                .stream().collect(Collectors.toMap(Org::getId, Org::getName));
+        Map<Long, String> displayNames = vmSettingsService.displayNames(
+                vms.stream().map(Vm::getId).toList());
+        return PageResponse.of(vms.stream()
+                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), ""),
+                        orgNames.get(vm.getOrgId()), displayNames.get(vm.getId())))
                 .toList(), result);
     }
 

@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
 import org.slf4j.Logger;
@@ -72,17 +73,19 @@ public class DriftReconciler {
     private final ProvisioningTaskRepository taskRepository;
     private final DriftFindingRepository driftFindingRepository;
     private final ProxmoxClient proxmoxClient;
+    private final VmSettingsService vmSettingsService;
     private final ObjectMapper objectMapper;
 
     public DriftReconciler(NodeRepository nodeRepository, VmRepository vmRepository,
             ProvisioningTaskRepository taskRepository,
             DriftFindingRepository driftFindingRepository, ProxmoxClient proxmoxClient,
-            ObjectMapper objectMapper) {
+            VmSettingsService vmSettingsService, ObjectMapper objectMapper) {
         this.nodeRepository = nodeRepository;
         this.vmRepository = vmRepository;
         this.taskRepository = taskRepository;
         this.driftFindingRepository = driftFindingRepository;
         this.proxmoxClient = proxmoxClient;
+        this.vmSettingsService = vmSettingsService;
         this.objectMapper = objectMapper;
     }
 
@@ -109,6 +112,11 @@ public class DriftReconciler {
                     .filter(vm -> vm.getStatus() != VmStatus.DELETED)
                     .map(Vm::getProxmoxVmid)
                     .collect(Collectors.toSet());
+            // deletion_protection desired-ON set (M6): the reconciler reads the
+            // live PVE protection flag only for these, so an out-of-band
+            // `qm set --protection 0` that drops a user's protection is caught.
+            Set<Long> protectedVmIds = vmSettingsService.deletionProtectedVmIds(
+                    activeByNode.values().stream().flatMap(List::stream).map(Vm::getId).toList());
             for (Node node : nodeRepository.findAll()) {
                 if (node.getStatus() == NodeStatus.OFFLINE) {
                     // Operator took the node out of service: excluded from the
@@ -119,7 +127,7 @@ public class DriftReconciler {
                 }
                 try {
                     reconcileNode(node, activeByNode.getOrDefault(node.getId(), List.of()),
-                            knownVmids, liveTaskVmIds, cycle);
+                            knownVmids, liveTaskVmIds, protectedVmIds, cycle);
                 } catch (RuntimeException e) {
                     // Next cycle retries in 10 min; other nodes still reconcile.
                     cycle.listingFailed(activeByNode.getOrDefault(node.getId(), List.of()));
@@ -133,7 +141,7 @@ public class DriftReconciler {
     }
 
     private void reconcileNode(Node node, List<Vm> nodeVms, Set<Integer> knownVmids,
-            Set<Long> liveTaskVmIds, Cycle cycle) {
+            Set<Long> liveTaskVmIds, Set<Long> protectedVmIds, Cycle cycle) {
         // Cluster-wide listing: existence is matched by vmid alone, so a VM
         // migrated to a sibling cluster node is not falsely flagged missing.
         Map<Integer, ClusterResource> qemuByVmid = new HashMap<>();
@@ -149,6 +157,7 @@ public class DriftReconciler {
                 // VM as seen for both per-VM kinds so nothing auto-resolves.
                 cycle.seen(DriftFindingKind.MISSING_IN_PROXMOX, vmKey(vm));
                 cycle.seen(DriftFindingKind.SPEC_MISMATCH, vmKey(vm));
+                cycle.seen(DriftFindingKind.SPEC_MISMATCH, protectionKey(vm));
                 continue;
             }
             ClusterResource resource = qemuByVmid.get(vm.getProxmoxVmid());
@@ -156,6 +165,9 @@ public class DriftReconciler {
                 flagMissing(vm, node, cycle);
             } else {
                 reconcileSpec(vm, resource, cycle);
+                if (protectedVmIds.contains(vm.getId())) {
+                    reconcileProtection(vm, node, cycle);
+                }
             }
         }
 
@@ -264,8 +276,48 @@ public class DriftReconciler {
         }
     }
 
+    /**
+     * Protection drift (M6): the VM's {@code deletion_protection} is ON, so the
+     * PVE {@code protection} flag must be set too. If PVE reports it cleared
+     * (out-of-band {@code qm set --protection 0}), persist a SPEC_MISMATCH
+     * finding under a {@code :protection} dedup key (distinct from the
+     * cpu/mem key). A config-read failure holds the key so an existing finding
+     * does not flap. Matched → key not marked → auto-resolves a prior finding.
+     */
+    private void reconcileProtection(Vm vm, Node node, Cycle cycle) {
+        boolean actual;
+        try {
+            actual = proxmoxClient.isProtected(node.getApiHost(), node.getName(),
+                    vm.getProxmoxVmid());
+        } catch (RuntimeException e) {
+            cycle.seen(DriftFindingKind.SPEC_MISMATCH, protectionKey(vm));
+            log.warn("protection drift check failed for vm {} (vmid {}): {}",
+                    vm.getId(), vm.getProxmoxVmid(), e.toString());
+            return;
+        }
+        if (actual) {
+            return; // in sync — leave the key unseen so any prior finding resolves
+        }
+        String dedupKey = protectionKey(vm);
+        if (cycle.seen(DriftFindingKind.SPEC_MISMATCH, dedupKey)) {
+            driftFindingRepository.observe(DriftFindingKind.SPEC_MISMATCH, vm.getId(),
+                    vm.getProxmoxVmid(), node.getName(),
+                    "삭제 보호 불일치: %s — 설정은 보호(ON)이나 Proxmox protection 플래그가 해제됨"
+                            .formatted(vm.getHostname()),
+                    detailJson(Map.of("setting", "deletion_protection",
+                            "expected", true, "actual", false)),
+                    dedupKey, Instant.now());
+        }
+        log.warn("vm {} (vmid {}) deletion_protection drift: PVE protection flag cleared",
+                vm.getId(), vm.getProxmoxVmid());
+    }
+
     private static String vmKey(Vm vm) {
         return "vm:" + vm.getId();
+    }
+
+    private static String protectionKey(Vm vm) {
+        return "vm:" + vm.getId() + ":protection";
     }
 
     private String detailJson(Map<String, ?> detail) {
@@ -287,6 +339,7 @@ public class DriftReconciler {
             for (Vm vm : nodeVms) {
                 seen(DriftFindingKind.MISSING_IN_PROXMOX, vmKey(vm));
                 seen(DriftFindingKind.SPEC_MISMATCH, vmKey(vm));
+                seen(DriftFindingKind.SPEC_MISMATCH, protectionKey(vm));
             }
         }
 

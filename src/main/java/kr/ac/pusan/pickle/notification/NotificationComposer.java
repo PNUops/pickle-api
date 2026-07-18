@@ -248,7 +248,8 @@ public class NotificationComposer {
                     """
                     소유자가 그룹 '%s'을(를) 삭제하여 그룹과 구성원 정보가
                     정리되었습니다. 그룹에 연결된 VM이 없는 상태에서만 삭제할 수
-                    있으므로 자원에는 영향이 없습니다.""".formatted(str(args, "groupName")),
+                    있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이
+                    있었다면 함께 취소되었습니다.""".formatted(str(args, "groupName")),
                     null, event.defaultImportance(), payload(args, "groupId", "groupName"));
         };
     }
