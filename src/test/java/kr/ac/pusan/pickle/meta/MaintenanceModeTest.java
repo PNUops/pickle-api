@@ -160,6 +160,20 @@ class MaintenanceModeTest {
     }
 
     @Test
+    void mfaStepUpIsNeverGatedByMaintenance() throws Exception {
+        setMaintenance(true, "");
+
+        // Stage-2 login runs with an anonymous principal, so gating it would lock
+        // out every enrolled admin. The request must reach the handler (a bogus
+        // token is 410, not a 503 MAINTENANCE_MODE).
+        mockMvc.perform(post("/api/v1/auth/mfa")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"mfaToken\":\"bogus\",\"code\":\"123456\"}"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("AUTH_MFA_TOKEN_EXPIRED"));
+    }
+
+    @Test
     void togglingOffPropagatesWithinCacheTtl() throws Exception {
         setMaintenance(true, "");
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + userToken))

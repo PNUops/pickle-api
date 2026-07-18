@@ -27,9 +27,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * SystemStatusService}'s short cache, so a toggle propagates within its TTL and
  * this hot path costs no per-request DB hit.</p>
  *
- * <p><b>Always-exempt paths</b> are load-bearing: {@code /auth/login|refresh|
- * logout} (admins must be able to log in during maintenance; deploy health also
- * refreshes tokens), {@code /meta/**} (the status poll that surfaces the notice,
+ * <p><b>Always-exempt paths</b> are load-bearing: {@code /auth/login|mfa|refresh|
+ * logout} (admins must be able to log in during maintenance — the 2FA step-up
+ * {@code /auth/mfa} runs with an anonymous principal, so gating it would 503
+ * every enrolled admin at stage 2; deploy health also refreshes tokens),
+ * {@code /meta/**} (the status poll that surfaces the notice,
  * per contract), the actuator health endpoint (deploy-api.sh polls it — a 503
  * would roll back a good deploy), and the springdoc {@code /openapi} document.
  * The admin tier is matched by role <em>name</em> — ORG_ADMIN/SYS_ADMIN plus the
@@ -84,6 +86,7 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
 
     private static boolean isExempt(String uri) {
         return "/api/v1/auth/login".equals(uri)
+                || "/api/v1/auth/mfa".equals(uri)
                 || "/api/v1/auth/refresh".equals(uri)
                 || "/api/v1/auth/logout".equals(uri)
                 || uri.startsWith("/api/v1/meta")
