@@ -153,7 +153,12 @@ class ContractDriftTest {
             "GET /admin/users",
             "GET /admin/users/{userId}",
             "POST /admin/users/{userId}/disable",
-            "POST /admin/users/{userId}/enable");
+            "POST /admin/users/{userId}/enable",
+            // M6 2FA enrollment — W2-A (contract v0.9.0).
+            "POST /me/mfa/totp",
+            "POST /me/mfa/totp/activate",
+            "POST /me/mfa/disable",
+            "POST /me/mfa/recovery-codes");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -174,11 +179,7 @@ class ContractDriftTest {
             "GET /meta/terms/{docType}",
             "POST /admin/users/{userId}/mfa-reset",
             "POST /auth/mfa",
-            "POST /me/consents",
-            "POST /me/mfa/disable",
-            "POST /me/mfa/recovery-codes",
-            "POST /me/mfa/totp",
-            "POST /me/mfa/totp/activate");
+            "POST /me/consents");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

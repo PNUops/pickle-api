@@ -28,10 +28,11 @@ public record UserProfileResponse(
         }
     }
 
-    public static UserProfileResponse from(User user, List<GroupMember> memberships) {
-        // mfaEnabled / pendingConsents are hardcoded until W2-A (2FA + consent) lands.
+    public static UserProfileResponse from(User user, List<GroupMember> memberships,
+            boolean mfaEnabled) {
+        // pendingConsents stays empty until W2-A part 2 (terms/consent) lands.
         return new UserProfileResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
                 user.getOrgId(), user.getStatus(),
-                memberships.stream().map(Membership::from).toList(), false, List.of());
+                memberships.stream().map(Membership::from).toList(), mfaEnabled, List.of());
     }
 }
