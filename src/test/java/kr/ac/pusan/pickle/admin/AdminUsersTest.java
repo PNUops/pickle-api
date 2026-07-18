@@ -1,0 +1,240 @@
+package kr.ac.pusan.pickle.admin;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+import kr.ac.pusan.pickle.group.Group;
+import kr.ac.pusan.pickle.group.GroupKind;
+import kr.ac.pusan.pickle.group.GroupMember;
+import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserRole;
+import kr.ac.pusan.pickle.user.UserStatus;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * Admin user list/detail (ORG_ADMIN derived-org scoping, 404 masking) and
+ * SYS_ADMIN disable/enable (self-guard, immediate token death, enable restores
+ * the pre-disable status).
+ */
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@Import(EmbeddedPostgresConfig.class)
+class AdminUsersTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+    @Autowired
+    private ObjectMapper objectMapper;
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private OrgRepository orgRepository;
+    @Autowired
+    private GroupRepository groupRepository;
+    @Autowired
+    private GroupMemberRepository groupMemberRepository;
+    @Autowired
+    private JwtService jwtService;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    private User sysAdmin;
+    private User orgAdminA;
+    private User memberA;
+    private User foreign;
+    private String sysAdminToken;
+    private String orgAdminAToken;
+    private String memberAToken;
+
+    @BeforeEach
+    void setUp() {
+        Org orgA = orgRepository.findBySlug("au-org-a")
+                .orElseGet(() -> orgRepository.save(new Org("사용자관리 기관 A", "au-org-a", null)));
+        sysAdmin = ensureUser("au.sys@pusan.ac.kr", "시스템", UserRole.SYS_ADMIN, null, UserStatus.ACTIVE);
+        orgAdminA = ensureUser("au.orga@pusan.ac.kr", "기관A관리자", UserRole.ORG_ADMIN, orgA.getId(),
+                UserStatus.ACTIVE);
+        memberA = ensureUser("au.member@pusan.ac.kr", "A소속원", UserRole.USER, null, UserStatus.ACTIVE);
+        foreign = ensureUser("au.foreign@pusan.ac.kr", "외부인", UserRole.USER, null, UserStatus.ACTIVE);
+
+        // memberA becomes derived-in-orgA: member of a group with a VM in orgA.
+        if (groupMemberRepository.findWithGroupByUserId(memberA.getId()).isEmpty()) {
+            Group group = groupRepository.save(
+                    new Group(GroupKind.TEAM, "A팀", "au-team-" + UUID.randomUUID().toString().substring(0, 8),
+                            null));
+            groupMemberRepository.save(new GroupMember(group, memberA.getId(), GroupMemberRole.OWNER));
+            createActiveVm(group.getId(), orgA.getId(), memberA.getId());
+        }
+
+        sysAdminToken = jwtService.createAccessToken(sysAdmin);
+        orgAdminAToken = jwtService.createAccessToken(orgAdminA);
+        memberAToken = jwtService.createAccessToken(memberA);
+    }
+
+    @Test
+    void listAndDetailAreScopedForOrgAdmin() throws Exception {
+        // plain USER cannot use the admin surface
+        mockMvc.perform(get("/api/v1/admin/users").header("Authorization", "Bearer " + memberAToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // SYS_ADMIN sees every user (envelope shape)
+        mockMvc.perform(get("/api/v1/admin/users").header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.totalElements").isNumber());
+        mockMvc.perform(get("/api/v1/admin/users?q=au.foreign@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1));
+
+        // ORG_ADMIN sees the derived member but not the out-of-scope user
+        mockMvc.perform(get("/api/v1/admin/users?q=au.member@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].email").value("au.member@pusan.ac.kr"))
+                .andExpect(jsonPath("$.content[0].mfaEnabled").value(false));
+        mockMvc.perform(get("/api/v1/admin/users?q=au.foreign@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        // ORG_ADMIN detail: in-scope 200, out-of-scope masked as 404
+        mockMvc.perform(get("/api/v1/admin/users/" + memberA.getId())
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(memberA.getId()))
+                .andExpect(jsonPath("$.activeVmCount").value(1))
+                .andExpect(jsonPath("$.statusChanges").isArray());
+        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getId())
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        // invalid sort → 422
+        mockMvc.perform(get("/api/v1/admin/users?sort=bogus")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("sort"));
+    }
+
+    @Test
+    void disableAndEnableRestorePreviousStatus() throws Exception {
+        User target = ensureUser("au.target@pusan.ac.kr", "대상", UserRole.USER, null, UserStatus.ACTIVE);
+        String targetToken = jwtService.createAccessToken(target);
+
+        // ORG_ADMIN cannot disable (SYS_ADMIN only)
+        postJson("/api/v1/admin/users/" + target.getId() + "/disable", orgAdminAToken,
+                Map.of("reason", "시도"))
+                .andExpect(status().isForbidden());
+
+        // self-disable is refused
+        postJson("/api/v1/admin/users/" + sysAdmin.getId() + "/disable", sysAdminToken,
+                Map.of("reason", "본인"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_SELF_DISABLE_FORBIDDEN"));
+
+        // disable → 200 DISABLED, target token dies immediately
+        postJson("/api/v1/admin/users/" + target.getId() + "/disable", sysAdminToken,
+                Map.of("reason", "자원 남용"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"))
+                .andExpect(jsonPath("$.disabledReason").value("자원 남용"))
+                .andExpect(jsonPath("$.statusChanges[0].toStatus").value("DISABLED"));
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + targetToken))
+                .andExpect(status().isUnauthorized());
+
+        // disabling an already-DISABLED account → 409
+        postJson("/api/v1/admin/users/" + target.getId() + "/disable", sysAdminToken,
+                Map.of("reason", "다시"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_INVALID_STATE"));
+
+        // enable restores ACTIVE and clears the disable stamp
+        postJson("/api/v1/admin/users/" + target.getId() + "/enable", sysAdminToken, Map.of())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.disabledAt").value((Object) null));
+
+        // enabling a non-DISABLED account → 409 ACCOUNT_NOT_DISABLED
+        postJson("/api/v1/admin/users/" + target.getId() + "/enable", sysAdminToken, Map.of())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_NOT_DISABLED"));
+    }
+
+    @Test
+    void enableRestoresPendingVerificationNotActive() throws Exception {
+        User pending = ensureUser("au.pending@pusan.ac.kr", "미인증", UserRole.USER, null,
+                UserStatus.PENDING_VERIFICATION);
+
+        postJson("/api/v1/admin/users/" + pending.getId() + "/disable", sysAdminToken,
+                Map.of("reason", "미인증 잠금"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"));
+        postJson("/api/v1/admin/users/" + pending.getId() + "/enable", sysAdminToken, Map.of())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING_VERIFICATION"));
+    }
+
+    private void createActiveVm(long groupId, long orgId, long requesterId) {
+        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb, need_ssh, need_http, need_public)
+                values (?, ?, ?, '사용자관리 테스트', ?, 2, 2048, 10, true, false, false)
+                returning id
+                """, Long.class, groupId, orgId, requesterId, templateId);
+        String hostname = "au-vm-" + UUID.randomUUID().toString().substring(0, 12);
+        jdbcTemplate.update("""
+                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                                 template_id, vcpu, memory_mb, disk_gb, status)
+                values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status)
+                """, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
+    }
+
+    private User ensureUser(String email, String name, UserRole role, Long orgId, UserStatus status) {
+        return userRepository.findByEmail(email).orElseGet(() -> {
+            User user = new User(email, "{test-no-login}", name);
+            user.setRole(role);
+            user.setOrgId(orgId);
+            user.setStatus(status);
+            if (status == UserStatus.ACTIVE) {
+                user.setEmailVerifiedAt(Instant.now());
+            }
+            return userRepository.save(user);
+        });
+    }
+
+    private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
+        return mockMvc.perform(post(uri)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)));
+    }
+}

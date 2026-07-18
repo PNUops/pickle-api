@@ -147,7 +147,12 @@ class ContractDriftTest {
             "POST /auth/password-reset",
             "POST /auth/password-reset/confirm",
             "POST /me/withdraw",
-            "PUT /me/password");
+            "PUT /me/password",
+            // M6 admin user surface — Lane A (contract v0.9.0).
+            "GET /admin/users",
+            "GET /admin/users/{userId}",
+            "POST /admin/users/{userId}/disable",
+            "POST /admin/users/{userId}/enable");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -163,8 +168,6 @@ class ContractDriftTest {
      */
     private static final Set<String> PLANNED = Set.of(
             "DELETE /groups/{groupId}",
-            "GET /admin/users",
-            "GET /admin/users/{userId}",
             "GET /me/consents",
             "GET /meta/status",
             "GET /meta/terms",
