@@ -27,7 +27,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class MfaEnrollmentFilter extends OncePerRequestFilter {
 
-    private static final Set<UserRole> ADMIN_TIER = Set.of(UserRole.ORG_ADMIN, UserRole.SYS_ADMIN);
+    private static final Set<UserRole> ADMIN_TIER = Set.of(UserRole.ORG_MANAGER,
+            UserRole.ORG_ADMIN, UserRole.SYS_MANAGER, UserRole.SYS_ADMIN);
 
     private final MfaProperties mfaProperties;
     private final MfaService mfaService;
