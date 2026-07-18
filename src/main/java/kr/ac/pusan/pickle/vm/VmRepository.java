@@ -44,6 +44,26 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             """)
     List<Vm> findActiveByOrgId(@Param("orgId") Long orgId, @Param("deleted") VmStatus deleted);
 
+    /**
+     * M6 shared blocker query — group deletion (Lane B) and account withdrawal
+     * (Lane A) both refuse while a group still has non-destroyed VMs
+     * (everything but DELETED, DELETING included). Defined at kickoff so both
+     * lanes bind to one predicate instead of drifting apart (W0 / R4).
+     */
+    @Query("""
+            select count(v) from Vm v
+             where v.groupId = :groupId and v.deletedAt is null and v.status <> :deleted
+            """)
+    long countActiveByGroupId(@Param("groupId") Long groupId, @Param("deleted") VmStatus deleted);
+
+    /** Multi-group variant of {@link #countActiveByGroupId} (withdrawal scan). */
+    @Query("""
+            select count(v) from Vm v
+             where v.groupId in :groupIds and v.deletedAt is null and v.status <> :deleted
+            """)
+    long countActiveByGroupIdIn(@Param("groupIds") Collection<Long> groupIds,
+            @Param("deleted") VmStatus deleted);
+
     /** DB-intent capacity already granted on a node, for placement scoring. */
     @Query("""
             select coalesce(sum(v.vcpu), 0) as vcpu, coalesce(sum(v.memoryMb), 0) as memoryMb
