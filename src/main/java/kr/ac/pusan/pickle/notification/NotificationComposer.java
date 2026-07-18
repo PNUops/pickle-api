@@ -185,6 +185,71 @@ public class NotificationComposer {
                     payload(args, "vmId", "vmName", "endDate"));
             case ANNOUNCEMENT -> new Composed(event.id(), str(args, "title"), str(args, "body"),
                     null, event.defaultImportance(), null);
+            // M6 account-lifecycle events — templates registered with the enum
+            // at kickoff (the compose switch is exhaustive by design; a new
+            // event without a template must fail the build, not runtime).
+            case ACCOUNT_PASSWORD_CHANGED -> new Composed(event.id(), "계정 비밀번호 변경 안내",
+                    """
+                    계정 비밀번호가 방금 변경되었습니다. 기존의 다른 로그인 세션은
+                    모두 종료되었습니다.
+
+                    본인이 변경한 것이 아니라면 즉시 비밀번호를 재설정하고
+                    관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
+            case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
+                    """
+                    관리자에 의해 계정이 비활성화되어 로그인과 SSH 접속이
+                    차단되었습니다.
+
+                    - 사유: %s
+
+                    이의가 있거나 문의가 필요하면 관리자에게 연락해 주세요.""".formatted(
+                            str(args, "reason")),
+                    null, event.defaultImportance(), payload(args, "userId", "userEmail"));
+            case ACCOUNT_ENABLED -> new Composed(event.id(), "계정 활성화 안내",
+                    """
+                    비활성화되었던 계정이 다시 활성화되었습니다.
+                    이제 정상적으로 로그인해 이용할 수 있습니다.""",
+                    null, event.defaultImportance(), payload(args, "userId", "userEmail"));
+            case ACCOUNT_WITHDRAWN -> new Composed(event.id(), "회원 탈퇴 완료 안내",
+                    """
+                    회원 탈퇴가 완료되었습니다. 계정 정보는 관련 법령과
+                    개인정보처리방침에 따라 보존되며, 같은 이메일로는 다시
+                    가입할 수 없습니다.
+
+                    그동안 이용해 주셔서 감사합니다.""",
+                    null, event.defaultImportance(), payload(args, "userId", "userEmail"));
+            case ACCOUNT_MFA_ENROLLED -> new Composed(event.id(), "2단계 인증 등록 안내",
+                    """
+                    계정에 2단계 인증(TOTP)이 등록되었습니다. 앞으로 로그인할 때
+                    인증 앱의 코드가 필요합니다.
+
+                    본인이 등록한 것이 아니라면 즉시 비밀번호를 변경하고
+                    관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
+            case ACCOUNT_MFA_DISABLED -> new Composed(event.id(), "2단계 인증 해제 안내",
+                    """
+                    계정의 2단계 인증이 해제되었습니다. 이제 비밀번호만으로
+                    로그인할 수 있습니다.
+
+                    본인이 해제한 것이 아니라면 즉시 비밀번호를 변경하고
+                    관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
+            case ACCOUNT_MFA_RESET -> new Composed(event.id(), "2단계 인증 초기화 안내 (관리자 조치)",
+                    """
+                    관리자가 계정의 2단계 인증을 초기화했습니다. 다음 로그인은
+                    비밀번호만으로 가능하며, 보안을 위해 콘솔에서 2단계 인증을
+                    다시 등록해 주세요.
+
+                    요청한 적이 없다면 즉시 관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
+            case GROUP_DELETED -> new Composed(event.id(),
+                    "그룹 삭제 안내 — " + str(args, "groupName"),
+                    """
+                    소유자가 그룹 '%s'을(를) 삭제하여 그룹과 구성원 정보가
+                    정리되었습니다. 그룹에 연결된 VM이 없는 상태에서만 삭제할 수
+                    있으므로 자원에는 영향이 없습니다.""".formatted(str(args, "groupName")),
+                    null, event.defaultImportance(), payload(args, "groupId", "groupName"));
         };
     }
 

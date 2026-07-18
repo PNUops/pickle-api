@@ -27,7 +27,18 @@ public enum NotificationEvent {
     CERT_FAILURE("cert.failure", NotificationImportance.HIGH),
     VM_EXPIRY_NOTICE("vm.expiry.notice", NotificationImportance.NORMAL),
     VM_EXPIRY_STOPPED("vm.expiry.stopped", NotificationImportance.HIGH),
-    ANNOUNCEMENT("announcement", NotificationImportance.NORMAL);
+    ANNOUNCEMENT("announcement", NotificationImportance.NORMAL),
+
+    // M6 (contract v0.9.0) — all M6 events are pre-registered at kickoff so
+    // parallel lanes never edit this enum concurrently (W0 decision).
+    ACCOUNT_PASSWORD_CHANGED("account.password.changed", NotificationImportance.HIGH),
+    ACCOUNT_DISABLED("account.disabled", NotificationImportance.HIGH),
+    ACCOUNT_ENABLED("account.enabled", NotificationImportance.NORMAL),
+    ACCOUNT_WITHDRAWN("account.withdrawn", NotificationImportance.NORMAL),
+    ACCOUNT_MFA_ENROLLED("account.mfa.enrolled", NotificationImportance.HIGH),
+    ACCOUNT_MFA_DISABLED("account.mfa.disabled", NotificationImportance.HIGH),
+    ACCOUNT_MFA_RESET("account.mfa.reset", NotificationImportance.HIGH),
+    GROUP_DELETED("group.deleted", NotificationImportance.NORMAL);
 
     private final String id;
     private final NotificationImportance defaultImportance;
