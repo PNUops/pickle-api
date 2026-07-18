@@ -58,6 +58,8 @@ class UserSshKeyTest {
     private UserRepository userRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private UserSshKeyRepository userSshKeyRepository;
 
     private User owner;
     private User other;
@@ -130,6 +132,62 @@ class UserSshKeyTest {
         registerKey(ownerToken, "열한번째", ED25519_PUB)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SSH_KEY_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    void generatedKeyFingerprintMatchesDownloadedPrivateKey(@org.junit.jupiter.api.io.TempDir
+            java.nio.file.Path dir) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/me/ssh-keys/generate")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("name", "생성키 조회"))))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long keyId = objectMapper.readTree(body).get("id").asLong();
+        String responseFp = objectMapper.readTree(body).get("fingerprint").asString();
+        String responsePub = objectMapper.readTree(body).get("publicKey").asString();
+        String dbFp = jdbcTemplate.queryForObject(
+                "select fingerprint_sha256 from user_ssh_keys where id = ?", String.class, keyId);
+
+        // (1) store == response, and the lookup the route uses finds it
+        assertThat(dbFp).isEqualTo(responseFp);
+        assertThat(userSshKeyRepository.findByFingerprintSha256(responseFp)).isPresent();
+
+        // (2) the KEY the user actually uses = the downloaded private key. Its
+        // public key (what sshpiperd fingerprints) must match what we stored.
+        String pem = objectMapper.readTree(mockMvc.perform(
+                        get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
+                                .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .get("privateKey").asString();
+        org.junit.jupiter.api.Assumptions.assumeTrue(commandExists(), "ssh-keygen unavailable");
+        java.nio.file.Path keyFile = dir.resolve("id_ed25519_pickle");
+        java.nio.file.Files.writeString(keyFile, pem);
+        java.nio.file.Files.setPosixFilePermissions(keyFile,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        String rederived = run(dir, "ssh-keygen", "-y", "-f", keyFile.toString()).strip();
+        String fpLine = run(dir, "ssh-keygen", "-lf", keyFile.toString());
+        // the fingerprint of the downloaded key (what sshpiperd computes and looks
+        // up) must equal the stored fingerprint — i.e. the generated key round-trips
+        assertThat(fpLine).contains(responseFp);
+        assertThat(rederived).startsWith(responsePub);
+    }
+
+    private static boolean commandExists() {
+        try {
+            return new ProcessBuilder("ssh-keygen", "-?").redirectErrorStream(true).start() != null;
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
+    private static String run(java.nio.file.Path dir, String... command) throws Exception {
+        Process process = new ProcessBuilder(command).directory(dir.toFile())
+                .redirectErrorStream(true).start();
+        String out = new String(process.getInputStream().readAllBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        process.waitFor();
+        return out;
     }
 
     @Test
