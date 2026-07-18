@@ -4,6 +4,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
@@ -14,6 +15,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.mfa.UserMfaRepository;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
@@ -35,7 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code /{userId}}). Scoping is enforced <b>in SQL</b>: SYS_ADMIN sees every
  * user; ORG_ADMIN is pinned to their org by the canonical <b>derived
  * membership</b> rule ({@link OrgMembershipSql}) — an out-of-scope user is
- * masked as 404. {@code mfaEnabled} is hardcoded false until W2-A adds 2FA.
+ * masked as 404. {@code mfaEnabled} reflects live {@code user_mfa} enrollment
+ * (batch-loaded for the list, single lookup for the detail).
  */
 @Service
 public class AdminUserQueryService {
@@ -54,15 +57,18 @@ public class AdminUserQueryService {
     private final GroupMemberRepository groupMemberRepository;
     private final VmRepository vmRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
+    private final UserMfaRepository userMfaRepository;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
             GroupMemberRepository groupMemberRepository, VmRepository vmRepository,
-            UserStatusChangeRepository userStatusChangeRepository) {
+            UserStatusChangeRepository userStatusChangeRepository,
+            UserMfaRepository userMfaRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.vmRepository = vmRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
+        this.userMfaRepository = userMfaRepository;
     }
 
     @Transactional(readOnly = true)
@@ -104,10 +110,19 @@ public class AdminUserQueryService {
         List<Object> pageParams = new ArrayList<>(params);
         pageParams.add(size);
         pageParams.add((long) page * size);
-        List<UserAdminViewResponse> content = jdbcTemplate.query("""
+        List<UserAdminViewResponse> rows = jdbcTemplate.query("""
                 select u.id, u.email, u.name, u.role, u.org_id, u.status, u.created_at
                 """ + base + where + " order by " + resolveOrder(sort) + " limit ? offset ?",
                 (rs, rowNum) -> mapView(rs), pageParams.toArray());
+        // Real 2FA state: one set-membership query over the page's user ids
+        // (the console mfa-reset button keys off this).
+        Set<Long> enrolled = rows.isEmpty() ? Set.of()
+                : Set.copyOf(userMfaRepository.findEnrolledUserIds(
+                        rows.stream().map(UserAdminViewResponse::id).toList()));
+        List<UserAdminViewResponse> content = rows.stream()
+                .map(v -> new UserAdminViewResponse(v.id(), v.email(), v.name(), v.role(), v.orgId(),
+                        v.status(), enrolled.contains(v.id()), v.createdAt()))
+                .toList();
         int totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
         return new PageResponse<>(content, page, size, totalElements, totalPages);
     }
@@ -132,7 +147,8 @@ public class AdminUserQueryService {
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
 
         return new UserAdminDetailResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
-                user.getOrgId(), user.getStatus(), false, user.getCreatedAt(),
+                user.getOrgId(), user.getStatus(), userMfaRepository.isEnrolled(user.getId()),
+                user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
                 memberships, activeVmCount, statusChanges);
     }

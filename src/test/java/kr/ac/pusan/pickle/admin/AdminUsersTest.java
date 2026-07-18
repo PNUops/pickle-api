@@ -201,6 +201,34 @@ class AdminUsersTest {
                 .andExpect(jsonPath("$.status").value("PENDING_VERIFICATION"));
     }
 
+    @Test
+    void mfaEnabledReflectsRealEnrollment() throws Exception {
+        User enrolled = ensureUser("au.mfa@pusan.ac.kr", "이중인증", UserRole.USER, null, UserStatus.ACTIVE);
+        // Live enrollment row (enabled_at not null = enrolled).
+        jdbcTemplate.update(
+                "insert into user_mfa (user_id, totp_secret_enc, enabled_at) values (?, 'enc', now()) "
+                        + "on conflict (user_id) do update set enabled_at = now()",
+                enrolled.getId());
+
+        // list shows the real flag …
+        mockMvc.perform(get("/api/v1/admin/users?q=au.mfa@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].email").value("au.mfa@pusan.ac.kr"))
+                .andExpect(jsonPath("$.content[0].mfaEnabled").value(true));
+        // … and so does the detail (drives the admin mfa-reset button)
+        mockMvc.perform(get("/api/v1/admin/users/" + enrolled.getId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaEnabled").value(true));
+
+        // an un-enrolled user stays false in the detail view
+        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaEnabled").value(false));
+    }
+
     private void createActiveVm(long groupId, long orgId, long requesterId) {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
