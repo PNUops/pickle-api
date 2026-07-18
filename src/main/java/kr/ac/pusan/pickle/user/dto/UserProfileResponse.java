@@ -16,7 +16,9 @@ public record UserProfileResponse(
         UserRole role,
         Long orgId,
         UserStatus status,
-        List<Membership> memberships) {
+        List<Membership> memberships,
+        boolean mfaEnabled,
+        List<Object> pendingConsents) {
 
     public record Membership(Long groupId, String groupName, GroupKind groupKind, GroupMemberRole role) {
 
@@ -27,8 +29,9 @@ public record UserProfileResponse(
     }
 
     public static UserProfileResponse from(User user, List<GroupMember> memberships) {
+        // mfaEnabled / pendingConsents are hardcoded until W2-A (2FA + consent) lands.
         return new UserProfileResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
                 user.getOrgId(), user.getStatus(),
-                memberships.stream().map(Membership::from).toList());
+                memberships.stream().map(Membership::from).toList(), false, List.of());
     }
 }

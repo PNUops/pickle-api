@@ -53,6 +53,12 @@ public class User {
     @Column(name = "withdrawn_at")
     private Instant withdrawnAt;
 
+    @Column(name = "disabled_at")
+    private Instant disabledAt;
+
+    @Column(name = "disabled_reason")
+    private String disabledReason;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -140,6 +146,26 @@ public class User {
 
     public void setWithdrawnAt(Instant withdrawnAt) {
         this.withdrawnAt = withdrawnAt;
+    }
+
+    public Instant getDisabledAt() {
+        return disabledAt;
+    }
+
+    public String getDisabledReason() {
+        return disabledReason;
+    }
+
+    /** Admin disable: stamps the reason/time (V33). Cleared by {@link #clearDisabled()}. */
+    public void disable(String reason, Instant when) {
+        this.disabledAt = when;
+        this.disabledReason = reason;
+    }
+
+    /** Admin enable: clears the disable stamp; history keeps the past reason. */
+    public void clearDisabled() {
+        this.disabledAt = null;
+        this.disabledReason = null;
     }
 
     public Instant getCreatedAt() {

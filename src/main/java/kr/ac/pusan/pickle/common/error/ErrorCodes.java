@@ -10,6 +10,15 @@ public final class ErrorCodes {
     public static final String AUTH_REFRESH_TOKEN_INVALID = "AUTH_REFRESH_TOKEN_INVALID";
     public static final String AUTH_TOKEN_INVALID = "AUTH_TOKEN_INVALID";
     public static final String AUTH_CSRF_INVALID = "AUTH_CSRF_INVALID";
+    // M6 account lifecycle (contract tag me/auth/admin, v0.9.0).
+    public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
+    public static final String AUTH_RESET_TOKEN_EXPIRED = "AUTH_RESET_TOKEN_EXPIRED";
+    public static final String ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP = "ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP";
+    public static final String ACCOUNT_HAS_ACTIVE_VMS = "ACCOUNT_HAS_ACTIVE_VMS";
+    public static final String ACCOUNT_SELF_DISABLE_FORBIDDEN = "ACCOUNT_SELF_DISABLE_FORBIDDEN";
+    public static final String ACCOUNT_NOT_DISABLED = "ACCOUNT_NOT_DISABLED";
+    /** Disable target is not in a disable-able state (already DISABLED, or WITHDRAWN). */
+    public static final String ACCOUNT_INVALID_STATE = "ACCOUNT_INVALID_STATE";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
     public static final String GROUP_SLUG_DUPLICATE = "GROUP_SLUG_DUPLICATE";

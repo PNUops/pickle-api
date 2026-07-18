@@ -36,6 +36,13 @@ public class AuditService {
     public static final String ORG_CREATE = "org.create";
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
+    // M6 account lifecycle (contract v0.9.0). Never the password material —
+    // only the fact of the change.
+    public static final String ACCOUNT_PASSWORD_CHANGE = "account.password_change";
+    public static final String ACCOUNT_PASSWORD_RESET = "account.password_reset";
+    public static final String ACCOUNT_WITHDRAW = "account.withdraw";
+    public static final String USER_DISABLE = "user.disable";
+    public static final String USER_ENABLE = "user.enable";
     public static final String VM_SELF_DELETE = "vm.self_delete";
     public static final String VM_SCHEDULE_DELETE = "vm.schedule_delete";
     public static final String VM_CANCEL_SCHEDULED_DELETE = "vm.cancel_scheduled_delete";

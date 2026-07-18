@@ -35,6 +35,12 @@ public class Group {
 
     private String description;
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -83,5 +89,19 @@ public class Group {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
+    }
+
+    public Long getDeletedBy() {
+        return deletedBy;
+    }
+
+    /** Soft-delete stamp (M6): group delete and PERSONAL-group cleanup on withdrawal. */
+    public void softDelete(Long actorId, Instant when) {
+        this.deletedAt = when;
+        this.deletedBy = actorId;
     }
 }
