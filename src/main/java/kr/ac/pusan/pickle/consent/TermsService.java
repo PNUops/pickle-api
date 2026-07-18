@@ -91,6 +91,14 @@ public class TermsService {
     @Transactional
     public void recordSignupConsents(long userId, List<ConsentInput> inputs) {
         List<TermsVersion> current = currentVersionEntities();
+        // Fail closed: with no configured documents the per-document loop below
+        // finds nothing to require and would let a consent-free account through.
+        // A missing terms/privacy document is a deploy misconfiguration, not a
+        // green light to skip consent — refuse signup outright.
+        if (current.isEmpty()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
+                    "가입을 완료할 수 없습니다", "약관 문서가 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+        }
         List<FieldValidationError> errors = new ArrayList<>();
         List<ConsentInput> submitted = inputs == null ? List.of() : inputs;
         for (TermsVersion doc : current) {
