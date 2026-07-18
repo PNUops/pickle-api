@@ -171,6 +171,33 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
+    void suspendedOwnerDeniedAsUnknownKey() throws Exception {
+        // A registered key whose owner is a MEMBER but whose account is no longer
+        // ACTIVE must be denied like an unregistered key (least-leaky, no oracle).
+        long ownerId = ensureUser("sshgw.suspended@pusan.ac.kr", "정지된소유자");
+        addMember(groupId, ownerId, "MEMBER");
+        String fingerprint = "SHA256:suspendedOwnerFingerprintForRouteTestsCCC";
+        registerKey(ownerId, fingerprint);
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.60", false, HOST_KEY);
+
+        // ACTIVE owner resolves normally
+        setUserStatus(ownerId, UserStatus.ACTIVE);
+        publickey(slug, CLIENT_IP, SSHGW_IP, fingerprint).andExpect(status().isOk());
+
+        // DISABLED and WITHDRAWN owners are both denied as SSHGW_KEY_UNKNOWN
+        setUserStatus(ownerId, UserStatus.DISABLED);
+        publickey(slug, OTHER_CLIENT_IP, SSHGW_IP, fingerprint)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_UNKNOWN"));
+
+        setUserStatus(ownerId, UserStatus.WITHDRAWN);
+        publickey(slug, "203.0.113.44", SSHGW_IP, fingerprint)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_UNKNOWN"));
+    }
+
+    @Test
     void noHostKeyDeniedWithNullActor() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.14", false, null);
@@ -361,6 +388,11 @@ class InternalSshGatewayRouteTest {
                 insert into vm_settings (vm_id, key, value, updated_at)
                 values (?, 'ssh_password_enabled', 'true'::jsonb, now())
                 """, vmId);
+    }
+
+    private void setUserStatus(long userId, UserStatus status) {
+        jdbcTemplate.update("update users set status = ?::user_status where id = ?",
+                status.name(), userId);
     }
 
     private void registerKey(long userId, String fingerprint) {

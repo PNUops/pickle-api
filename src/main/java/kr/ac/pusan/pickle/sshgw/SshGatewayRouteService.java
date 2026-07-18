@@ -18,6 +18,8 @@ import kr.ac.pusan.pickle.sshgw.dto.RouteRequest;
 import kr.ac.pusan.pickle.sshgw.dto.RouteResponse;
 import kr.ac.pusan.pickle.sshkey.UserSshKey;
 import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -69,14 +71,15 @@ public class SshGatewayRouteService {
     private final RateLimitService rateLimitService;
     private final SshGatewayProperties properties;
     private final UserSshKeyRepository sshKeyRepository;
+    private final UserRepository userRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final VmSettingsService vmSettingsService;
 
     public SshGatewayRouteService(VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             SettingsService settingsService, AuditService auditService,
             RateLimitService rateLimitService, SshGatewayProperties properties,
-            UserSshKeyRepository sshKeyRepository, GroupMemberRepository groupMemberRepository,
-            VmSettingsService vmSettingsService) {
+            UserSshKeyRepository sshKeyRepository, UserRepository userRepository,
+            GroupMemberRepository groupMemberRepository, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.settingsService = settingsService;
@@ -84,6 +87,7 @@ public class SshGatewayRouteService {
         this.rateLimitService = rateLimitService;
         this.properties = properties;
         this.sshKeyRepository = sshKeyRepository;
+        this.userRepository = userRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.vmSettingsService = vmSettingsService;
     }
@@ -157,6 +161,15 @@ public class SshGatewayRouteService {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
             ctx.identify(key.get());
+            // The owner must still be ACTIVE (a disabled/withdrawn account loses
+            // gateway access immediately). Reuse the least-leaky "unknown key"
+            // code so a suspended owner is indistinguishable from an unregistered
+            // key. Withdrawal also deletes the key rows, so this mainly covers
+            // DISABLED (whose rows survive).
+            if (userRepository.findById(key.get().getUserId())
+                    .filter(owner -> owner.getStatus() == UserStatus.ACTIVE).isEmpty()) {
+                return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
+            }
             GroupMemberRole role = groupMemberRepository
                     .findByGroupIdAndUserId(vm.getGroupId(), key.get().getUserId())
                     .map(GroupMember::getRole)
