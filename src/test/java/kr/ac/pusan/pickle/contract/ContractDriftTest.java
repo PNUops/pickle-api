@@ -145,16 +145,38 @@ class ContractDriftTest {
             "POST /vms/{vmId}/password/regenerate");
 
     /**
-     * Contract v0.8.0 (M5.5 SSH per-user identity) operations not implemented
+     * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
      * yet. Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED.
      * Each entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
-     * empty again by the end of M5.5.
+     * empty again by the end of M6.
      *
-     * <p>Lane ownership — api (W1/W2): all eight M5.5 ops below. As each SSH-key,
-     * VM-settings, and password endpoint lands it leaves this set.</p>
+     * <p>Lane ownership — Lane A (account lifecycle): password change/reset,
+     * withdraw, admin users list/detail/disable/enable. Lane B: group delete.
+     * W2-A (2FA + consent): mfa ops, mfa-reset, terms/consents. W2-B: meta
+     * status. Keep entries alphabetized one-per-line to make lane merges
+     * trivial.</p>
      */
-    // W1+W2 complete — all eight v0.8.0 ops moved to IMPLEMENTED.
-    private static final Set<String> PLANNED = Set.of();
+    private static final Set<String> PLANNED = Set.of(
+            "DELETE /groups/{groupId}",
+            "GET /admin/users",
+            "GET /admin/users/{userId}",
+            "GET /me/consents",
+            "GET /meta/status",
+            "GET /meta/terms",
+            "GET /meta/terms/{docType}",
+            "POST /admin/users/{userId}/disable",
+            "POST /admin/users/{userId}/enable",
+            "POST /admin/users/{userId}/mfa-reset",
+            "POST /auth/mfa",
+            "POST /auth/password-reset",
+            "POST /auth/password-reset/confirm",
+            "POST /me/consents",
+            "POST /me/mfa/disable",
+            "POST /me/mfa/recovery-codes",
+            "POST /me/mfa/totp",
+            "POST /me/mfa/totp/activate",
+            "POST /me/withdraw",
+            "PUT /me/password");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
