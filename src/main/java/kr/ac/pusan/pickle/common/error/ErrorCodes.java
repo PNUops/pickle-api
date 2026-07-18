@@ -21,6 +21,8 @@ public final class ErrorCodes {
     public static final String MFA_NOT_ENROLLED = "MFA_NOT_ENROLLED";
     /** Admin-tier account is unenrolled while enforcement is on — every op but mfa/auth/me/meta is 403'd. */
     public static final String MFA_ENROLLMENT_REQUIRED = "MFA_ENROLLMENT_REQUIRED";
+    // M6 terms/consent — contract tag me/reference, v0.9.0.
+    public static final String CONSENT_VERSION_MISMATCH = "CONSENT_VERSION_MISMATCH";
     public static final String ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP = "ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP";
     public static final String ACCOUNT_HAS_ACTIVE_VMS = "ACCOUNT_HAS_ACTIVE_VMS";
     public static final String ACCOUNT_SELF_DISABLE_FORBIDDEN = "ACCOUNT_SELF_DISABLE_FORBIDDEN";
