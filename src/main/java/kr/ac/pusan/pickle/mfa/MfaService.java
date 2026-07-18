@@ -191,12 +191,15 @@ public class MfaService {
 
     /**
      * Verifies a TOTP code or single-use recovery code for an enrolled user,
-     * consuming the recovery code on success. Exactly one of the two must be
-     * non-blank (422 otherwise). Returns false on a wrong code (no state change).
+     * consuming the recovery code on success. Lenient: returns false (no throw)
+     * unless exactly one of the two is present and correct — callers that need a
+     * 422 for a missing/ambiguous code call {@link #requireExactlyOneCode} first.
      */
     @Transactional
     public boolean verifyEnrolledCode(long userId, String code, String recoveryCode) {
-        requireExactlyOneCode(code, recoveryCode);
+        if (!isExactlyOne(code, recoveryCode)) {
+            return false;
+        }
         UserMfa mfa = userMfaRepository.findById(userId).filter(UserMfa::isEnrolled).orElse(null);
         if (mfa == null) {
             return false;
@@ -285,10 +288,15 @@ public class MfaService {
                         "2단계 인증이 설정되어 있지 않습니다", "먼저 2단계 인증을 등록해 주세요."));
     }
 
-    private static void requireExactlyOneCode(String code, String recoveryCode) {
+    private static boolean isExactlyOne(String code, String recoveryCode) {
         boolean hasCode = code != null && !code.isBlank();
         boolean hasRecovery = recoveryCode != null && !recoveryCode.isBlank();
-        if (hasCode == hasRecovery) {
+        return hasCode != hasRecovery;
+    }
+
+    /** 422 unless exactly one of code/recoveryCode is present (login step-up / disable). */
+    public static void requireExactlyOneCode(String code, String recoveryCode) {
+        if (!isExactlyOne(code, recoveryCode)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.VALIDATION_FAILED,
                     "입력값이 올바르지 않습니다", "인증 코드 또는 복구 코드 중 하나만 입력해 주세요.");
         }

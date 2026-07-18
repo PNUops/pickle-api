@@ -57,7 +57,7 @@ public class AccountController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody WithdrawRequest request, HttpServletRequest httpRequest) {
         MessageResponse body = accountService.withdraw(principal.id(), request.password(),
-                clientIp(httpRequest));
+                request.totpCode(), request.recoveryCode(), clientIp(httpRequest));
         // Session ends: clear both cookies like logout.
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         sessionCookies.cleared().forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));

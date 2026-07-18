@@ -232,6 +232,7 @@ public class AuthService {
     @Transactional
     public AuthResult completeMfaLogin(String mfaToken, String code, String recoveryCode,
             String ip, String userAgent) {
+        MfaService.requireExactlyOneCode(code, recoveryCode);
         MfaLoginToken challenge = mfaService.loadChallengeOrThrow(mfaToken);
         User user = userRepository.findById(challenge.getUserId())
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)

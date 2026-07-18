@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.group.GroupKind;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
@@ -41,12 +42,13 @@ public class AccountService {
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final MfaService mfaService;
 
     public AccountService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             GroupMemberRepository groupMemberRepository, VmRepository vmRepository,
             UserSshKeyRepository userSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
-            NotificationService notificationService) {
+            NotificationService notificationService, MfaService mfaService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.groupMemberRepository = groupMemberRepository;
@@ -56,17 +58,24 @@ public class AccountService {
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.mfaService = mfaService;
     }
 
     @Transactional
-    public MessageResponse withdraw(long userId, String password, String ip) {
+    public MessageResponse withdraw(long userId, String password, String totpCode, String recoveryCode,
+            String ip) {
         User user = userRepository.findById(userId).orElseThrow(AccountService::sessionUserGone);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
-        // W2-A: verify TOTP when user_mfa exists (totpCode/recoveryCode ignored until then).
+        // 2FA-enrolled accounts must also present a valid TOTP or recovery code.
+        if (mfaService.isEnrolled(user.getId())
+                && !mfaService.verifyEnrolledCode(user.getId(), totpCode, recoveryCode)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
+                    "본인 확인에 실패했습니다", "인증 코드를 다시 확인해 주세요.");
+        }
 
         List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
                 .filter(member -> member.getGroup().getDeletedAt() == null)
