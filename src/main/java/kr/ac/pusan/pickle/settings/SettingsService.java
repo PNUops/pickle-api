@@ -50,12 +50,22 @@ public class SettingsService {
     public static final String VM_EXPIRY_NOTICE_DAYS = "vm_expiry_notice_days";
     public static final String NOTIFICATION_RETENTION_DAYS = "notification_retention_days";
     public static final String VM_EXPIRY_AUTOSTOP_ENABLED = "vm_expiry_autostop_enabled";
+    // M6 점검 모드·공지 배너·문의처 (V43, GET /meta/status).
+    public static final String MAINTENANCE_MODE = "maintenance_mode";
+    public static final String MAINTENANCE_MESSAGE = "maintenance_message";
+    public static final String BANNER_MESSAGE = "banner_message";
+    public static final String CONTACT_EMAIL = "contact_email";
 
     /** Hostname-safe entry: lowercase dot-separated labels, ≤63 chars total. */
     private static final Pattern HOSTNAME_SAFE = Pattern.compile(
             "(?=.{1,63}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*");
     private static final int MAX_LIST_ENTRIES = 500;
     private static final int MAX_EXPIRY_STAGES = 5;
+    /** Free-text operator message cap (banner/maintenance notice). */
+    private static final int MAX_MESSAGE_LENGTH = 500;
+    private static final int MAX_EMAIL_LENGTH = 254;
+    /** Pragmatic email check (empty allowed); full RFC compliance is not the goal. */
+    private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
 
     /** One whitelisted (operator-editable) key: declared type + validator. */
     private record Editable(SettingValueType type,
@@ -115,6 +125,21 @@ public class SettingsService {
     public boolean bool(String key, boolean fallback) {
         JsonNode node = read(key);
         return node != null && node.isBoolean() ? node.asBoolean() : fallback;
+    }
+
+    /**
+     * The setting as a string, or {@code null} when missing, non-string, or
+     * blank. Blank collapses to {@code null} so an empty (unset) message/email
+     * reads uniformly regardless of whether it was seeded as {@code ""} or never
+     * set.
+     */
+    public String string(String key) {
+        JsonNode node = read(key);
+        if (node == null || !node.isString()) {
+            return null;
+        }
+        String value = node.asString();
+        return value.isBlank() ? null : value;
     }
 
     // ── SYS_ADMIN editor (contract listSettings / updateSetting) ───────────
@@ -226,12 +251,49 @@ public class SettingsService {
         map.put(VM_EXPIRY_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages()));
         map.put(NOTIFICATION_RETENTION_DAYS, new Editable(SettingValueType.INTEGER,
                 intInRange(30, 3650)));
+        map.put(MAINTENANCE_MODE, new Editable(SettingValueType.BOOLEAN, bool()));
+        map.put(MAINTENANCE_MESSAGE, new Editable(SettingValueType.STRING,
+                stringMaxLength(MAX_MESSAGE_LENGTH)));
+        map.put(BANNER_MESSAGE, new Editable(SettingValueType.STRING,
+                stringMaxLength(MAX_MESSAGE_LENGTH)));
+        map.put(CONTACT_EMAIL, new Editable(SettingValueType.STRING, emailOrEmpty()));
         return Map.copyOf(map);
     }
 
     private static Function<JsonNode, List<FieldValidationError>> bool() {
         return value -> value.isBoolean() ? List.of()
                 : List.of(new FieldValidationError("value", "true 또는 false여야 합니다."));
+    }
+
+    /** A string (empty allowed) up to {@code max} chars. */
+    private static Function<JsonNode, List<FieldValidationError>> stringMaxLength(int max) {
+        return value -> {
+            if (!value.isString()) {
+                return List.of(new FieldValidationError("value", "문자열이어야 합니다."));
+            }
+            if (value.asString().length() > max) {
+                return List.of(new FieldValidationError("value",
+                        max + "자 이하의 문자열이어야 합니다."));
+            }
+            return List.of();
+        };
+    }
+
+    /** An email string, or an empty string to clear it. */
+    private static Function<JsonNode, List<FieldValidationError>> emailOrEmpty() {
+        return value -> {
+            if (!value.isString()) {
+                return List.of(new FieldValidationError("value", "문자열이어야 합니다."));
+            }
+            String email = value.asString();
+            if (email.isEmpty()) {
+                return List.of();
+            }
+            if (email.length() > MAX_EMAIL_LENGTH || !EMAIL.matcher(email).matches()) {
+                return List.of(new FieldValidationError("value", "올바른 이메일 주소여야 합니다."));
+            }
+            return List.of();
+        };
     }
 
     private static Function<JsonNode, List<FieldValidationError>> intInRange(int min, int max) {

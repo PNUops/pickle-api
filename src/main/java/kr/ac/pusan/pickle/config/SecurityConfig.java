@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.config;
 
 import jakarta.servlet.DispatcherType;
 import kr.ac.pusan.pickle.security.JwtAuthenticationFilter;
+import kr.ac.pusan.pickle.security.MaintenanceModeFilter;
 import kr.ac.pusan.pickle.security.MfaEnrollmentFilter;
 import kr.ac.pusan.pickle.security.ProblemAccessDeniedHandler;
 import kr.ac.pusan.pickle.security.ProblemAuthenticationEntryPoint;
@@ -33,6 +34,7 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             MfaEnrollmentFilter mfaEnrollmentFilter,
+            MaintenanceModeFilter maintenanceModeFilter,
             RefreshCsrfFilter refreshCsrfFilter,
             ProblemAuthenticationEntryPoint authenticationEntryPoint,
             ProblemAccessDeniedHandler accessDeniedHandler) throws Exception {
@@ -45,6 +47,8 @@ public class SecurityConfig {
                         // Public consent documents (contract security: []).
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
                                 "/api/v1/meta/terms", "/api/v1/meta/terms/**").permitAll()
+                        // Public system status poll (contract getSystemStatus, security: []).
+                        .requestMatchers("/api/v1/meta/status").permitAll()
                         .requestMatchers("/api/v1/openapi", "/api/v1/openapi/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
@@ -53,9 +57,11 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
-                // MFA enrollment gate (G5) runs right after auth so the principal
-                // is resolved; unenrolled admin-tier accounts are scope-restricted.
-                .addFilterAfter(mfaEnrollmentFilter, JwtAuthenticationFilter.class)
+                // Deterministic post-auth gate order: maintenance 503 first
+                // (system-wide), then the MFA enrollment scope gate (G5) —
+                // an unenrolled admin still passes maintenance and can enroll.
+                .addFilterAfter(maintenanceModeFilter, JwtAuthenticationFilter.class)
+                .addFilterAfter(mfaEnrollmentFilter, MaintenanceModeFilter.class)
                 // CSRF check first: refresh/logout requests are rejected before
                 // any authentication work; independent of the JWT filter.
                 .addFilterBefore(refreshCsrfFilter, JwtAuthenticationFilter.class);

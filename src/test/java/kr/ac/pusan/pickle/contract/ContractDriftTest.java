@@ -165,7 +165,9 @@ class ContractDriftTest {
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
             "GET /me/consents",
-            "POST /me/consents");
+            "POST /me/consents",
+            // M6 maintenance/contact — W2-B (contract v0.9.0).
+            "GET /meta/status");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -173,14 +175,11 @@ class ContractDriftTest {
      * Each entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
      * empty again by the end of M6.
      *
-     * <p>Lane ownership — Lane A (account lifecycle): password change/reset,
-     * withdraw, admin users list/detail/disable/enable. Lane B: group delete.
-     * W2-A (2FA + consent): mfa ops, mfa-reset, terms/consents. W2-B: meta
-     * status. Keep entries alphabetized one-per-line to make lane merges
-     * trivial.</p>
+     * <p>W2 merge complete — all 20 v0.9.0 ops moved to IMPLEMENTED (W3 adds
+     * no new operations, only role-gate changes). Keep entries alphabetized
+     * one-per-line if a future rev repopulates this set.</p>
      */
-    private static final Set<String> PLANNED = Set.of(
-            "GET /meta/status");
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
