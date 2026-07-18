@@ -1,0 +1,171 @@
+# Machine-readable transcription of docs/security/permission-matrix.md (M6 W0,
+# contract v0.9.0 / 103 ops). One entry per operationId. This file is POLICY;
+# PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1 and that
+# the runtime op set equals this file exactly.
+#
+# Tokens (permission-matrix.md §1 legend):
+#   public                       — no authentication (security: []); no role gate
+#   allow                        — allowed, authentication only (no org scoping)
+#   allow_org_scoped             — allowed; service layer forces caller's own org
+#                                  (cross-org target -> 404 existence mask)
+#   allow_group_scoped:<ROLE>    — allowed to the named group role or above,
+#                                  enforced in the service layer (no @PreAuthorize)
+#   deny                         — denied (403 via method security / not offered)
+#
+# How the test reads tokens: a row with >=1 `deny` is role-gated, and its
+# @PreAuthorize must name exactly the roles marked allow / allow_org_scoped. A
+# row with no `deny` (self / catalog / group-scoped / notifications / deleteVm)
+# is authentication-only and must carry NO @PreAuthorize (service layer decides).
+# `public` rows carry no gate and must not require authentication.
+#
+# Roles in privilege order: USER, ORG_MANAGER, ORG_ADMIN, SYS_MANAGER, SYS_ADMIN.
+
+operations:
+
+  # ── 3.1 Auth & public meta (no authentication) ────────────────────────────
+  - { id: signup,               method: POST,   path: "/auth/signup",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: verifyEmail,          method: POST,   path: "/auth/verify-email",                  roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: resendVerification,   method: POST,   path: "/auth/resend-verification",           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: login,                method: POST,   path: "/auth/login",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: refresh,              method: POST,   path: "/auth/refresh",                       roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: logout,               method: POST,   path: "/auth/logout",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: requestPasswordReset, method: POST,   path: "/auth/password-reset",                roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: confirmPasswordReset, method: POST,   path: "/auth/password-reset/confirm",        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: completeMfaLogin,     method: POST,   path: "/auth/mfa",                           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: getSystemStatus,      method: GET,    path: "/meta/status",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: listTermsVersions,    method: GET,    path: "/meta/terms",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: getTermsDocument,     method: GET,    path: "/meta/terms/{docType}",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+
+  # ── 3.2 Me / self (any authenticated) ─────────────────────────────────────
+  - { id: getMe,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listMySshKeys,               method: GET,    path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: registerMySshKey,            method: POST,   path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: generateMySshKey,            method: POST,   path: "/me/ssh-keys/generate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: deleteMySshKey,              method: DELETE, path: "/me/ssh-keys/{keyId}",         roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: downloadMySshKeyPrivateKey,  method: GET,    path: "/me/ssh-keys/{keyId}/private-key", roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: changeMyPassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: withdrawMyAccount,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: beginMfaTotpSetup,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: activateMfaTotp,             method: POST,   path: "/me/mfa/totp/activate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: disableMyMfa,                method: POST,   path: "/me/mfa/disable",              roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: regenerateMfaRecoveryCodes,  method: POST,   path: "/me/mfa/recovery-codes",       roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listMyConsents,              method: GET,    path: "/me/consents",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: acceptConsents,              method: POST,   path: "/me/consents",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.3 Catalog / lookup (any authenticated) ──────────────────────────────
+  - { id: listOrgs,             method: GET,    path: "/orgs",                        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listTemplates,        method: GET,    path: "/templates",                   roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getRequestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.4 Groups (group-role-scoped, service level) ─────────────────────────
+  - { id: listGroups,           method: GET,    path: "/groups",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createGroup,          method: POST,   path: "/groups",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getGroup,             method: GET,    path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: updateGroup,          method: PATCH,  path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+  - { id: deleteGroup,          method: DELETE, path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+  - { id: addGroupMember,       method: POST,   path: "/groups/{groupId}/members",        roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+  - { id: updateGroupMember,    method: PATCH,  path: "/groups/{groupId}/members/{userId}", roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+  - { id: removeGroupMember,    method: DELETE, path: "/groups/{groupId}/members/{userId}", roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+
+  # ── 3.5 VM requests (group-role-scoped) ───────────────────────────────────
+  - { id: createVmRequest,      method: POST,   path: "/vm-requests",                     roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: listVmRequests,       method: GET,    path: "/vm-requests",                     roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: getVmRequest,         method: GET,    path: "/vm-requests/{requestId}",         roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: cancelVmRequest,      method: POST,   path: "/vm-requests/{requestId}/cancel",  roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+
+  # ── 3.6 VMs (group-role-scoped; deleteVm has service-layer admin override) ─
+  - { id: listVms,              method: GET,    path: "/vms",                             roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: getVm,                method: GET,    path: "/vms/{vmId}",                      roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  # deleteVm: group OWNER for everyone, plus ORG_ADMIN (own org) / SYS_ADMIN admin
+  # override in VmDeletionService. ORG_MANAGER/SYS_MANAGER keep ONLY the group-OWNER
+  # path (permission-matrix.md footnotes 1/2). No role is denied -> no @PreAuthorize.
+  - { id: deleteVm,             method: DELETE, path: "/vms/{vmId}",                      roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow } }
+  - { id: startVm,              method: POST,   path: "/vms/{vmId}/start",                roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: shutdownVm,           method: POST,   path: "/vms/{vmId}/shutdown",             roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: rebootVm,             method: POST,   path: "/vms/{vmId}/reboot",               roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: forceStopVm,          method: POST,   path: "/vms/{vmId}/force-stop",           roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: revealVmPassword,     method: GET,    path: "/vms/{vmId}/password",             roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: regenerateVmPassword, method: POST,   path: "/vms/{vmId}/password/regenerate",  roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: getVmSettings,        method: GET,    path: "/vms/{vmId}/settings",             roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: updateVmSettings,     method: PATCH,  path: "/vms/{vmId}/settings",             roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: listVmEvents,         method: GET,    path: "/vms/{vmId}/events",               roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: publishVm,            method: POST,   path: "/vms/{vmId}/publish",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: updatePublication,    method: PATCH,  path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: unpublishVm,          method: DELETE, path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+
+  # ── 3.7 Domains (group-role-scoped) ───────────────────────────────────────
+  - { id: listDomains,          method: GET,    path: "/domains",                         roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: getDomain,            method: GET,    path: "/domains/{domainId}",              roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: deleteDomain,         method: DELETE, path: "/domains/{domainId}",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: verifyDomain,         method: POST,   path: "/domains/{domainId}/verify",       roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+
+  # ── 3.8 Notifications (self-scoped) ───────────────────────────────────────
+  - { id: listNotifications,          method: GET,  path: "/notifications",                       roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getUnreadNotificationCount, method: GET,  path: "/notifications/unread-count",          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: markNotificationRead,       method: POST, path: "/notifications/{notificationId}/read", roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: markAllNotificationsRead,   method: POST, path: "/notifications/read-all",              roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.9 Admin — VM request approval ───────────────────────────────────────
+  - { id: listAdminVmRequests,  method: GET,    path: "/admin/vm-requests",                        roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminVmRequest,    method: GET,    path: "/admin/vm-requests/{requestId}",            roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getApprovalContext,   method: GET,    path: "/admin/vm-requests/{requestId}/context",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: approveVmRequest,     method: POST,   path: "/admin/vm-requests/{requestId}/approve",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: rejectVmRequest,      method: POST,   path: "/admin/vm-requests/{requestId}/reject",     roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
+  - { id: createOrg,            method: POST,   path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateOrg,            method: PATCH,  path: "/admin/orgs/{orgId}",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateUserRole,       method: PATCH,  path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminUsers,       method: GET,    path: "/admin/users",                      roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminUser,         method: GET,    path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: disableUser,          method: POST,   path: "/admin/users/{userId}/disable",     roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: enableUser,           method: POST,   path: "/admin/users/{userId}/enable",      roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: resetUserMfa,         method: POST,   path: "/admin/users/{userId}/mfa-reset",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.11 Admin — VMs (force-delete SYS_ADMIN-only) ────────────────────────
+  - { id: listAdminVms,             method: GET,   path: "/admin/vms",                                 roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateVmPeriod,           method: PATCH, path: "/admin/vms/{vmId}/period",                   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: scheduleVmDeletion,       method: POST,  path: "/admin/vms/{vmId}/schedule-delete",          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: cancelScheduledVmDeletion, method: POST, path: "/admin/vms/{vmId}/cancel-scheduled-delete", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: forceDeleteVm,            method: POST,  path: "/admin/vms/{vmId}/force-delete",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.12 Admin — publishing / routes (resync SYS tier) ────────────────────
+  - { id: listAdminRoutes,       method: GET,  path: "/admin/routes",          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminDomains,      method: GET,  path: "/admin/domains",         roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminCertificates, method: GET,  path: "/admin/certificates",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: resyncRoutes,          method: POST, path: "/admin/routes/resync",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.13 Admin — announcements ────────────────────────────────────────────
+  - { id: createAnnouncement,   method: POST, path: "/admin/announcements",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAnnouncements,    method: GET,  path: "/admin/announcements",   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.14 Admin — groups ───────────────────────────────────────────────────
+  - { id: listAdminGroups,      method: GET,  path: "/admin/groups",          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.15 Admin — audit ────────────────────────────────────────────────────
+  - { id: listAuditLogs,        method: GET,  path: "/admin/audit",           roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.16 Admin — summary (system summary SYS tier) ────────────────────────
+  - { id: getAdminSummary,      method: GET,  path: "/admin/summary",         roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getSystemSummary,     method: GET,  path: "/admin/system-summary",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.17 Admin — infra read (SYS tier) ────────────────────────────────────
+  - { id: listAdminNodes,       method: GET,  path: "/admin/nodes",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listIpAllocations,    method: GET,  path: "/admin/ip-allocations",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.18 Admin — notifications ops (SYS tier) ─────────────────────────────
+  - { id: listAdminNotifications,   method: GET,  path: "/admin/notifications",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: resendAdminNotification,  method: POST, path: "/admin/notifications/{notificationId}/resend", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.19 Admin — settings (updateSetting SYS_ADMIN-only) ──────────────────
+  - { id: listSettings,         method: GET,  path: "/admin/settings",        roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateSetting,        method: PUT,  path: "/admin/settings/{key}",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.20 Admin — tasks (SYS tier) ─────────────────────────────────────────
+  - { id: listAdminTasks,       method: GET,  path: "/admin/tasks",                 roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: retryAdminTask,       method: POST, path: "/admin/tasks/{taskId}/retry",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.21 Admin — drift (SYS tier) ─────────────────────────────────────────
+  - { id: listDriftFindings,    method: GET,  path: "/admin/drift-findings",                    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: resolveDriftFinding,  method: POST, path: "/admin/drift-findings/{findingId}/resolve", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
