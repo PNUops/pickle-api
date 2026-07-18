@@ -11,7 +11,17 @@ import org.springframework.data.repository.query.Param;
 
 public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> {
 
-    @Query("select gm from GroupMember gm join fetch gm.group where gm.userId = :userId order by gm.id")
+    /**
+     * A user's memberships with their groups fetched, excluding soft-deleted
+     * groups (M6) — this is the single derived-groups query behind the group
+     * list, profile, VM-request scope, publishing scope and org derivation, so
+     * a deleted group disappears from all of them at once.
+     */
+    @Query("""
+            select gm from GroupMember gm join fetch gm.group g
+             where gm.userId = :userId and g.deletedAt is null
+             order by gm.id
+            """)
     List<GroupMember> findWithGroupByUserId(@Param("userId") Long userId);
 
     boolean existsByUserIdAndGroupKind(Long userId, GroupKind kind);

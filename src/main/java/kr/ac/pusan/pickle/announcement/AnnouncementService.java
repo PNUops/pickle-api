@@ -122,7 +122,7 @@ public class AnnouncementService {
         if (scope == AnnouncementScope.GROUP) {
             // Unknown group and (for ORG_ADMIN) a group without resources in
             // their org answer the same 404 — group existence stays private.
-            if (!groupRepository.existsById(groupId)
+            if (!groupRepository.existsByIdAndDeletedAtIsNull(groupId)
                     || (actor.role() == UserRole.ORG_ADMIN
                             && !groupLinkedToOrg(groupId, actor.orgId()))) {
                 throw notFound("해당 그룹이 존재하지 않습니다.");

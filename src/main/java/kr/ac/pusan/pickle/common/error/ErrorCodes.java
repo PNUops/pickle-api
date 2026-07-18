@@ -18,10 +18,16 @@ public final class ErrorCodes {
     public static final String GROUP_MEMBER_ALREADY_EXISTS = "GROUP_MEMBER_ALREADY_EXISTS";
     public static final String GROUP_SOLE_OWNER_REMOVAL = "GROUP_SOLE_OWNER_REMOVAL";
     public static final String GROUP_ROLE_INSUFFICIENT = "GROUP_ROLE_INSUFFICIENT";
+    // Group deletion (M6, contract v0.9.0).
+    public static final String GROUP_HAS_ACTIVE_VMS = "GROUP_HAS_ACTIVE_VMS";
+    public static final String GROUP_PERSONAL_UNDELETABLE = "GROUP_PERSONAL_UNDELETABLE";
     public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
     public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
     public static final String VM_INVALID_STATE = "VM_INVALID_STATE";
     public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";
+    // VM protection settings (M6, contract v0.9.0).
+    public static final String VM_DELETION_PROTECTED = "VM_DELETION_PROTECTED";
+    public static final String VM_STOP_PROTECTED = "VM_STOP_PROTECTED";
     public static final String VM_PASSWORD_ALREADY_VIEWED = "VM_PASSWORD_ALREADY_VIEWED";
     // HTTP publishing (M4A, contract tag publishing).
     public static final String VM_HTTP_NOT_GRANTED = "VM_HTTP_NOT_GRANTED";

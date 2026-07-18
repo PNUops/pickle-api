@@ -33,7 +33,7 @@ public class PersonalGroupService {
     private String uniqueSlug(String base) {
         String candidate = base;
         int suffix = 2;
-        while (groupRepository.existsBySlug(candidate)) {
+        while (groupRepository.existsBySlugAndDeletedAtIsNull(candidate)) {
             candidate = base + "-" + suffix++;
         }
         return candidate;

@@ -43,6 +43,14 @@ public class Group {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Soft-delete stamp (M6). A non-null value hides the group everywhere. */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    /** Who deleted the group: the OWNER (deleteGroup) or the withdrawing user. */
+    @Column(name = "deleted_by")
+    private Long deletedBy;
+
     protected Group() {
     }
 
@@ -83,5 +91,23 @@ public class Group {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
+    }
+
+    public Long getDeletedBy() {
+        return deletedBy;
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
+    }
+
+    /** Soft-deletes the group (row kept for VM/audit history). Idempotent-safe caller-guarded. */
+    public void softDelete(long deletedBy, Instant when) {
+        this.deletedAt = when;
+        this.deletedBy = deletedBy;
     }
 }

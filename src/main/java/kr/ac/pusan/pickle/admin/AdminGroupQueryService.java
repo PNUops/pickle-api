@@ -44,15 +44,15 @@ public class AdminGroupQueryService {
                 """;
         if (scopedOrgId != null) {
             return jdbcTemplate.query(
-                    select + " where " + OrgMembershipSql.groupLinkedToOrg("g.id")
-                            + " order by g.id",
+                    select + " where g.deleted_at is null and "
+                            + OrgMembershipSql.groupLinkedToOrg("g.id") + " order by g.id",
                     (rs, rowNum) -> new AdminGroupOptionResponse(rs.getLong("id"),
                             rs.getString("name"), rs.getString("slug"),
                             rs.getLong("member_count")),
                     scopedOrgId, scopedOrgId);
         }
-        // SYS_ADMIN without a filter: every group
-        return jdbcTemplate.query(select + " order by g.id",
+        // SYS_ADMIN without a filter: every live group (soft-deleted excluded)
+        return jdbcTemplate.query(select + " where g.deleted_at is null order by g.id",
                 (rs, rowNum) -> new AdminGroupOptionResponse(rs.getLong("id"),
                         rs.getString("name"), rs.getString("slug"), rs.getLong("member_count")));
     }

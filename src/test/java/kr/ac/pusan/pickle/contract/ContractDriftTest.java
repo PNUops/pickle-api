@@ -70,6 +70,7 @@ class ContractDriftTest {
             "POST /groups",
             "GET /groups/{groupId}",
             "PATCH /groups/{groupId}",
+            "DELETE /groups/{groupId}",
             "POST /groups/{groupId}/members",
             "PATCH /groups/{groupId}/members/{userId}",
             "DELETE /groups/{groupId}/members/{userId}",
@@ -157,7 +158,6 @@ class ContractDriftTest {
      * trivial.</p>
      */
     private static final Set<String> PLANNED = Set.of(
-            "DELETE /groups/{groupId}",
             "GET /admin/users",
             "GET /admin/users/{userId}",
             "GET /me/consents",

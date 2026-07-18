@@ -26,6 +26,7 @@ public class AuditService {
     public static final String AUTH_REFRESH_REUSE_DETECTED = "auth.refresh_reuse_detected";
     public static final String AUTH_LOGOUT = "auth.logout";
     public static final String GROUP_CREATE = "group.create";
+    public static final String GROUP_DELETE = "group.delete";
     public static final String GROUP_MEMBER_ADD = "group.member_add";
     public static final String GROUP_MEMBER_UPDATE = "group.member_update";
     public static final String GROUP_MEMBER_REMOVE = "group.member_remove";
