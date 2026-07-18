@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import kr.ac.pusan.pickle.auth.PasswordPolicy;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -43,8 +44,12 @@ class ProdBootstrapSeederTest {
     @Mock
     private PersonalGroupService personalGroupService;
 
+    /** Real policy (no deps): exercises the same weak-password bar as signup. */
+    private final PasswordPolicy passwordPolicy = new PasswordPolicy();
+
     private ProdBootstrapSeeder seederWith(MockEnvironment env) {
-        return new ProdBootstrapSeeder(userRepository, passwordEncoder, personalGroupService, env);
+        return new ProdBootstrapSeeder(userRepository, passwordEncoder, personalGroupService,
+                passwordPolicy, env);
     }
 
     private static MockEnvironment validEnv() {
@@ -111,6 +116,20 @@ class ProdBootstrapSeederTest {
                 .withProperty(ProdBootstrapSeeder.PASSWORD_ENV, "changeme");
         assertThatThrownBy(() -> seederWith(env).run(null))
                 .isInstanceOf(IllegalStateException.class);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void refusesWeakButLongPassword() {
+        // Long enough to clear the length floor and not in the exact blacklist,
+        // but structurally weak — PasswordPolicy must still reject it so a
+        // guessable admin never bootstraps.
+        MockEnvironment env = new MockEnvironment()
+                .withProperty(ProdBootstrapSeeder.EMAIL_ENV, "root-admin@pickle.local")
+                .withProperty(ProdBootstrapSeeder.PASSWORD_ENV, "aaaaaaaaaaaa");
+        assertThatThrownBy(() -> seederWith(env).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(ProdBootstrapSeeder.PASSWORD_ENV);
         verify(userRepository, never()).save(any());
     }
 

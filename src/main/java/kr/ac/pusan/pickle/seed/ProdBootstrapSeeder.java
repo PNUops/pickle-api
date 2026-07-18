@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.seed;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Set;
+import kr.ac.pusan.pickle.auth.PasswordPolicy;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -50,13 +51,16 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final PersonalGroupService personalGroupService;
+    private final PasswordPolicy passwordPolicy;
     private final Environment environment;
 
     public ProdBootstrapSeeder(UserRepository userRepository, PasswordEncoder passwordEncoder,
-            PersonalGroupService personalGroupService, Environment environment) {
+            PersonalGroupService personalGroupService, PasswordPolicy passwordPolicy,
+            Environment environment) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.personalGroupService = personalGroupService;
+        this.passwordPolicy = passwordPolicy;
         this.environment = environment;
     }
 
@@ -87,7 +91,7 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
         personalGroupService.ensurePersonalGroup(admin);
     }
 
-    private static void validate(String email, String password) {
+    private void validate(String email, String password) {
         if (email == null || email.isBlank()) {
             throw new IllegalStateException(EMAIL_ENV
                     + " 환경 변수가 비어 있습니다. 초기 관리자 이메일을 설정한 뒤 다시 시작하세요.");
@@ -103,6 +107,16 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
         if (FORBIDDEN_PASSWORDS.contains(password.toLowerCase(Locale.ROOT))) {
             throw new IllegalStateException(PASSWORD_ENV
                     + " 비밀번호가 추측 가능한 기본값입니다. 실제 비밀번호로 교체한 뒤 다시 시작하세요.");
+        }
+        // Same weak-password bar every self-service account clears: a long but
+        // structurally weak bootstrap password (e.g. all-same-char) must not slip
+        // through the length floor + blacklist. PasswordPolicy throws 422 on a
+        // weak value; wrap it so startup fails fast with the ops-facing message.
+        try {
+            passwordPolicy.validate(password, email);
+        } catch (RuntimeException weak) {
+            throw new IllegalStateException(PASSWORD_ENV
+                    + " 비밀번호가 보안 정책을 통과하지 못했습니다. 더 강력한 비밀번호로 다시 시작하세요.", weak);
         }
     }
 
