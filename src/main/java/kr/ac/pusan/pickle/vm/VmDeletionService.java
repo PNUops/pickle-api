@@ -18,9 +18,12 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.inventory.Node;
+import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
@@ -34,6 +37,7 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.http.HttpStatus;
@@ -83,6 +87,9 @@ public class VmDeletionService {
     private final NotificationService notificationService;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
+    private final VmSettingsService vmSettingsService;
+    private final NodeRepository nodeRepository;
+    private final ProxmoxClient proxmoxClient;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             UserRepository userRepository, VmEventRepository vmEventRepository,
@@ -90,7 +97,8 @@ public class VmDeletionService {
             DeleteVmJob deleteVmJob, AuditService auditService,
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
-            PublishingTeardownService publishingTeardown) {
+            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService,
+            NodeRepository nodeRepository, ProxmoxClient proxmoxClient) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -103,6 +111,9 @@ public class VmDeletionService {
         this.notificationService = notificationService;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
+        this.vmSettingsService = vmSettingsService;
+        this.nodeRepository = nodeRepository;
+        this.proxmoxClient = proxmoxClient;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -111,6 +122,7 @@ public class VmDeletionService {
     public VmDeletionResponse selfDelete(AuthenticatedUser actor, long vmId, String ip) {
         Vm vm = requireDeletableByActor(actor, vmId);
         requireNoPendingDeletion(vm);
+        requireNotDeletionProtected(vmId);
         if (vm.getStatus() == VmStatus.ERROR) {
             return deleteErrorVmImmediately(actor, vm, ip);
         }
@@ -173,6 +185,7 @@ public class VmDeletionService {
         requireNoPendingDeletion(vm);
         requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
                 VmStatus.ERROR), "현재 상태에서는 삭제를 접수할 수 없습니다.");
+        requireNotDeletionProtected(vmId);
 
         Instant now = Instant.now();
         int noticeDays = settingsService.integer(SettingsService.ADMIN_DELETE_MIN_NOTICE_DAYS,
@@ -248,17 +261,32 @@ public class VmDeletionService {
                     "확인용 이름이 일치하지 않습니다",
                     "입력한 이름이 VM 이름과 일치하지 않습니다. VM 이름을 정확히 입력해 주세요.");
         }
+        // Deletion protection: refused by default; the SYS_ADMIN escalation path
+        // (overrideProtection) bypasses it and clears the PVE flag before destroy.
+        boolean protectedVm = vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION);
+        if (protectedVm && !request.overridesProtection()) {
+            throw deletionProtected(
+                    "삭제 보호가 켜져 있습니다. 소유 그룹 OWNER가 해제하거나, 회수가 시급하면 "
+                            + "overrideProtection: true를 명시해 강제 삭제해야 합니다.");
+        }
+        boolean overrodeProtection = protectedVm && request.overridesProtection();
         Instant now = Instant.now();
         if (vmRepository.beginForceDeletion(vmId, actor.id(), now) == 0) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                     "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
         }
+        if (overrodeProtection) {
+            // Clear the hypervisor flag now so the async destroy is not itself
+            // refused by PVE; a failure here fails the whole force-delete.
+            clearPveProtection(vm);
+        }
         failLiveProvisionTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
-                "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
+                overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
+                        : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId()), ip);
+                        "groupId", vm.getGroupId(), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
         notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vmId, "vmName", vm.getName()), null);
@@ -331,6 +359,30 @@ public class VmDeletionService {
         if (vm.getDeleteKind() != null) {
             throw alreadyPendingDeletion();
         }
+    }
+
+    /** Refuses any delete acceptance while {@code deletion_protection} is on (M6). */
+    private void requireNotDeletionProtected(long vmId) {
+        if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
+            throw deletionProtected("삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "
+                    + "삭제 보호를 해제한 뒤 다시 시도해 주세요.");
+        }
+    }
+
+    private static ApiException deletionProtected(String detail) {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_DELETION_PROTECTED,
+                "삭제 보호가 설정된 VM입니다", detail);
+    }
+
+    /** Clears the PVE native protection flag (override path); no-op without a vmid. */
+    private void clearPveProtection(Vm vm) {
+        if (vm.getProxmoxVmid() == null) {
+            return;
+        }
+        Node node = nodeRepository.findById(vm.getNodeId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
+        proxmoxClient.setProtection(node.getApiHost(), node.getName(), vm.getProxmoxVmid(), false);
     }
 
     private void requireStatusOutside(Vm vm, Set<VmStatus> forbidden, String baseDetail) {
