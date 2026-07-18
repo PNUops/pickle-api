@@ -16,6 +16,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.AuthProperties;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.mfa.MfaLoginToken;
+import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.mail.MailSender;
 import kr.ac.pusan.pickle.mail.VerificationMailComposer;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
@@ -34,8 +36,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AuthService {
 
+    /**
+     * Outcome of {@code POST /auth/login}: either a full token pair
+     * ({@link AuthResult}) or, for an enrolled account, an MFA step-up challenge
+     * ({@link MfaChallenge}) — no cookies/tokens are issued in the latter case.
+     */
+    public sealed interface LoginOutcome permits AuthResult, MfaChallenge {
+    }
+
     /** Access token + user summary + raw refresh token for the cookie. */
-    public record AuthResult(AuthTokenResponse body, String refreshToken) {
+    public record AuthResult(AuthTokenResponse body, String refreshToken) implements LoginOutcome {
+    }
+
+    /** 2FA 1단계 통과: caller must complete via {@code POST /auth/mfa} with this token. */
+    public record MfaChallenge(String mfaToken) implements LoginOutcome {
     }
 
     /** Burned once for unknown accounts so login timing does not leak existence. */
@@ -58,6 +72,7 @@ public class AuthService {
     private final MailSender mailSender;
     private final VerificationMailComposer verificationMailComposer;
     private final AuthProperties authProperties;
+    private final MfaService mfaService;
 
     public AuthService(UserRepository userRepository,
             EmailVerificationRepository emailVerificationRepository,
@@ -71,7 +86,8 @@ public class AuthService {
             JwtService jwtService,
             MailSender mailSender,
             VerificationMailComposer verificationMailComposer,
-            AuthProperties authProperties) {
+            AuthProperties authProperties,
+            MfaService mfaService) {
         this.userRepository = userRepository;
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
@@ -85,6 +101,7 @@ public class AuthService {
         this.mailSender = mailSender;
         this.verificationMailComposer = verificationMailComposer;
         this.authProperties = authProperties;
+        this.mfaService = mfaService;
     }
 
     @Transactional
@@ -155,7 +172,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResult login(LoginRequest request, String ip, String userAgent) {
+    public LoginOutcome login(LoginRequest request, String ip, String userAgent) {
         String email = normalize(request.email());
         rateLimitService.hit("login:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("login:acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
@@ -190,10 +207,49 @@ public class AuthService {
             throw invalidCredentials();
         }
 
+        // Enrolled accounts stop at stage 1: return a step-up challenge, issue no
+        // tokens/cookies, and keep the login-failure counter (the login is not
+        // complete until POST /auth/mfa). Non-enrolled accounts complete here.
+        if (mfaService.isEnrolled(user.getId())) {
+            return new MfaChallenge(mfaService.issueLoginChallenge(user.getId()));
+        }
+
         rateLimitService.clearLoginFailures(email);
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
                 "user", user.getId(), Map.of("email", email), ip);
+        return new AuthResult(
+                new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
+                issued.rawToken());
+    }
+
+    /**
+     * Login stage 2 ({@code POST /auth/mfa}): validates the step-up token and a
+     * TOTP/recovery code, then issues the token pair exactly as {@link #login}
+     * would. A wrong code keeps the token (401) and counts toward the login
+     * lockout; an expired/consumed token is 410 (restart login).
+     */
+    @Transactional
+    public AuthResult completeMfaLogin(String mfaToken, String code, String recoveryCode,
+            String ip, String userAgent) {
+        MfaLoginToken challenge = mfaService.loadChallengeOrThrow(mfaToken);
+        User user = userRepository.findById(challenge.getUserId())
+                .filter(u -> u.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(AuthService::invalidCredentials);
+
+        rateLimitService.checkLoginLock(user.getEmail());
+        if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
+            rateLimitService.registerLoginFailure(user.getEmail());
+            auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
+                    "user", user.getId(), Map.of("email", user.getEmail(), "reason", "mfa_code"), ip);
+            throw MfaService.loginCodeInvalid();
+        }
+        mfaService.consumeChallenge(challenge);
+        rateLimitService.clearLoginFailures(user.getEmail());
+
+        var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
+        auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
+                "user", user.getId(), Map.of("email", user.getEmail(), "stage", "mfa"), ip);
         return new AuthResult(
                 new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
                 issued.rawToken());

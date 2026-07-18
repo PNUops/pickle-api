@@ -158,7 +158,8 @@ class ContractDriftTest {
             "POST /me/mfa/totp",
             "POST /me/mfa/totp/activate",
             "POST /me/mfa/disable",
-            "POST /me/mfa/recovery-codes");
+            "POST /me/mfa/recovery-codes",
+            "POST /auth/mfa");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -178,7 +179,6 @@ class ContractDriftTest {
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
             "POST /admin/users/{userId}/mfa-reset",
-            "POST /auth/mfa",
             "POST /me/consents");
 
     private static final Set<String> HTTP_METHODS =

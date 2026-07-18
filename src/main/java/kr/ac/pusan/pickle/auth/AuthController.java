@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.LoginRequest;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.auth.dto.MfaChallengeResponse;
+import kr.ac.pusan.pickle.auth.dto.MfaLoginRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetConfirmRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetRequest;
 import kr.ac.pusan.pickle.auth.dto.ResendVerificationRequest;
@@ -56,10 +58,25 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthTokenResponse> login(@Valid @RequestBody LoginRequest request,
+    public ResponseEntity<Object> login(@Valid @RequestBody LoginRequest request,
             @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
-        AuthService.AuthResult result = authService.login(request, clientIp(httpRequest), userAgent);
+        AuthService.LoginOutcome outcome = authService.login(request, clientIp(httpRequest), userAgent);
+        // Enrolled account: return the step-up challenge, no cookies.
+        if (outcome instanceof AuthService.MfaChallenge challenge) {
+            return ResponseEntity.ok(MfaChallengeResponse.of(challenge.mfaToken()));
+        }
+        ResponseEntity<AuthTokenResponse> tokens = withRefreshCookie((AuthService.AuthResult) outcome);
+        return ResponseEntity.status(tokens.getStatusCode()).headers(tokens.getHeaders())
+                .body((Object) tokens.getBody());
+    }
+
+    @PostMapping("/mfa")
+    public ResponseEntity<AuthTokenResponse> completeMfa(@Valid @RequestBody MfaLoginRequest request,
+            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            HttpServletRequest httpRequest) {
+        AuthService.AuthResult result = authService.completeMfaLogin(request.mfaToken(), request.code(),
+                request.recoveryCode(), clientIp(httpRequest), userAgent);
         return withRefreshCookie(result);
     }
 
