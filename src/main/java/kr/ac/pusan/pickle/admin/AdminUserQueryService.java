@@ -182,7 +182,7 @@ public class AdminUserQueryService {
     }
 
     private static Long orgIdIfOrgAdmin(AuthenticatedUser actor) {
-        return actor.role() == UserRole.ORG_ADMIN ? actor.orgId() : null;
+        return actor.role().isOrgTier() ? actor.orgId() : null;
     }
 
     private static String escapeLike(String value) {
@@ -194,9 +194,9 @@ public class AdminUserQueryService {
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
     }
 
-    /** ORG_ADMIN pinned to their org; another org's id answers 404 (mask). */
+    /** Org tier pinned to their org; another org's id answers 404 (mask). */
     private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
-        if (actor.role() != UserRole.ORG_ADMIN) {
+        if (!actor.role().isOrgTier()) {
             return orgId;
         }
         if (actor.orgId() == null) {

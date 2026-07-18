@@ -20,7 +20,6 @@ import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
 import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import org.jobrunr.scheduling.JobScheduler;
@@ -153,7 +152,7 @@ public class AdminPublishingService {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private Long scopedOrgId(AuthenticatedUser actor, Long orgId) {
-        if (actor.role() == UserRole.ORG_ADMIN) {
+        if (actor.role().isOrgTier()) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");

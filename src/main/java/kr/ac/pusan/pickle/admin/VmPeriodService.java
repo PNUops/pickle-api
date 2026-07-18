@@ -12,7 +12,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -101,10 +100,10 @@ public class VmPeriodService {
         }
     }
 
-    /** ORG_ADMIN sees only its own org's VMs — cross-org and unknown both 404. */
+    /** Org tier sees only its own org's VMs — cross-org and unknown both 404. */
     private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmPeriodService::vmNotFound);
-        if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
+        if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
             throw vmNotFound();
         }
         return vm;

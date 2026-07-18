@@ -5,7 +5,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -25,7 +24,7 @@ public class AnnouncementQueryService {
     @Transactional(readOnly = true)
     public PageResponse<AnnouncementView> list(AuthenticatedUser actor, int page, int size) {
         Page<Announcement> result;
-        if (actor.role() == UserRole.SYS_ADMIN) {
+        if (actor.role().isSysTier()) {
             result = announcementRepository.findAllByOrderByIdDesc(PageRequest.of(page, size));
         } else {
             if (actor.orgId() == null) {

@@ -15,7 +15,6 @@ import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -146,11 +145,11 @@ public class AdminVmQueryService {
     }
 
     private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
-        if (actor.role() != UserRole.ORG_ADMIN) {
+        if (!actor.role().isOrgTier()) {
             return orgId;
         }
         if (actor.orgId() == null) {
-            // Defensive: an ORG_ADMIN without a managed org sees nothing.
+            // Defensive: an org-tier actor without a managed org sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }

@@ -27,7 +27,6 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -212,7 +211,7 @@ public class AdminSummaryService {
      * console home calls the summary without a drill-in for both roles.
      */
     private Long resolveOrgId(AuthenticatedUser actor, Long orgId) {
-        if (actor.role() == UserRole.ORG_ADMIN) {
+        if (actor.role().isOrgTier()) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");

@@ -13,7 +13,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -181,9 +180,9 @@ public class AuditQueryService {
         return detailJson != null ? objectMapper.readTree(detailJson) : null;
     }
 
-    /** ORG_ADMIN pinned to their org; another org's id answers 404. */
+    /** Org tier pinned to their org; another org's id answers 404. */
     private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
-        if (actor.role() != UserRole.ORG_ADMIN) {
+        if (!actor.role().isOrgTier()) {
             return orgId;
         }
         if (actor.orgId() == null) {

@@ -26,7 +26,6 @@ import kr.ac.pusan.pickle.publishing.DomainRepository;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vmrequest.VmRequest;
@@ -101,10 +100,10 @@ public class ApprovalService {
     public PageResponse<VmRequestDetailResponse> list(AuthenticatedUser actor, VmRequestStatus status,
             Long orgId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        // ORG_ADMIN is always pinned to their own org; orgId is SYS_ADMIN-only.
-        Long scopedOrgId = actor.role() == UserRole.ORG_ADMIN ? actor.orgId() : orgId;
-        if (actor.role() == UserRole.ORG_ADMIN && scopedOrgId == null) {
-            // Defensive: an ORG_ADMIN without a managed org sees nothing.
+        // Org tier is always pinned to their own org; orgId is sys-tier-only.
+        Long scopedOrgId = actor.role().isOrgTier() ? actor.orgId() : orgId;
+        if (actor.role().isOrgTier() && scopedOrgId == null) {
+            // Defensive: an org-tier actor without a managed org sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
@@ -261,7 +260,7 @@ public class ApprovalService {
 
     private VmRequest scoped(AuthenticatedUser actor, VmRequest request) {
         if (request == null
-                || (actor.role() == UserRole.ORG_ADMIN && !request.getOrgId().equals(actor.orgId()))) {
+                || (actor.role().isOrgTier() && !request.getOrgId().equals(actor.orgId()))) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 신청이 존재하지 않습니다.");
         }
