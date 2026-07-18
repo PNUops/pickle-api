@@ -42,6 +42,10 @@ public class AuditService {
     public static final String ACCOUNT_PASSWORD_CHANGE = "account.password_change";
     public static final String ACCOUNT_PASSWORD_RESET = "account.password_reset";
     public static final String ACCOUNT_WITHDRAW = "account.withdraw";
+    // M6 2FA (contract v0.9.0). Secrets/codes are never recorded, only the event.
+    public static final String ACCOUNT_MFA_ENROLL = "account.mfa_enroll";
+    public static final String ACCOUNT_MFA_DISABLE = "account.mfa_disable";
+    public static final String ACCOUNT_MFA_RESET = "account.mfa_reset";
     public static final String USER_DISABLE = "user.disable";
     public static final String USER_ENABLE = "user.enable";
     public static final String VM_SELF_DELETE = "vm.self_delete";

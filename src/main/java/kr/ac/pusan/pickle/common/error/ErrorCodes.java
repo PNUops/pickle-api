@@ -13,6 +13,14 @@ public final class ErrorCodes {
     // M6 account lifecycle (contract tag me/auth/admin, v0.9.0).
     public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
     public static final String AUTH_RESET_TOKEN_EXPIRED = "AUTH_RESET_TOKEN_EXPIRED";
+    // M6 2FA (TOTP) — contract tag me/auth/admin, v0.9.0.
+    public static final String AUTH_MFA_CODE_INVALID = "AUTH_MFA_CODE_INVALID";
+    public static final String AUTH_MFA_TOKEN_EXPIRED = "AUTH_MFA_TOKEN_EXPIRED";
+    public static final String MFA_ALREADY_ENROLLED = "MFA_ALREADY_ENROLLED";
+    public static final String MFA_SETUP_NOT_IN_PROGRESS = "MFA_SETUP_NOT_IN_PROGRESS";
+    public static final String MFA_NOT_ENROLLED = "MFA_NOT_ENROLLED";
+    /** Admin-tier account is unenrolled while enforcement is on — every op but mfa/auth/me/meta is 403'd. */
+    public static final String MFA_ENROLLMENT_REQUIRED = "MFA_ENROLLMENT_REQUIRED";
     public static final String ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP = "ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP";
     public static final String ACCOUNT_HAS_ACTIVE_VMS = "ACCOUNT_HAS_ACTIVE_VMS";
     public static final String ACCOUNT_SELF_DISABLE_FORBIDDEN = "ACCOUNT_SELF_DISABLE_FORBIDDEN";
