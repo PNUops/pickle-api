@@ -178,6 +178,22 @@ class ManagerRoleScopingTest {
                 Map.of("comment", "차단")).andExpect(status().isForbidden());
     }
 
+    @Test
+    void managerTiersGetNoDeleteVmAdminOverride() throws Exception {
+        // deleteVm (DELETE /vms/{id}) is group OWNER-scoped for both manager tiers
+        // — unlike ORG_ADMIN (own org) / SYS_ADMIN, they get NO admin override, so
+        // deleting a VM they do not own is masked as 404 (existence privacy). This
+        // closes an audit blind spot: the annotation matrix allows the call, and
+        // only the service-layer OWNER check keeps them out.
+        long vmInOrgB = insertActiveVmInOrg(orgB.getId());
+        delete("/api/v1/vms/" + vmInOrgB, orgManagerAToken)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        delete("/api/v1/vms/" + vmInOrgB, sysManagerToken)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     private ResultActions get(String uri, String token) throws Exception {
@@ -188,6 +204,11 @@ class ManagerRoleScopingTest {
     private ResultActions post(String uri, String token) throws Exception {
         return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .post(uri).header("Authorization", "Bearer " + token));
+    }
+
+    private ResultActions delete(String uri, String token) throws Exception {
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete(uri).header("Authorization", "Bearer " + token));
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
@@ -223,6 +244,27 @@ class ManagerRoleScopingTest {
                 values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10, true, false, false)
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId);
+    }
+
+    private long insertActiveVmInOrg(long orgId) {
+        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        long groupId = jdbcTemplate.queryForObject("""
+                insert into groups (kind, name, slug)
+                values ('TEAM'::group_kind, ?, ?) returning id
+                """, Long.class, "mgr-vmgrp-" + slug(), "mgr-vmgrp-" + slug());
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb, need_ssh, need_http, need_public)
+                values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10, true, false, false)
+                returning id
+                """, Long.class, groupId, orgId, foreignAdminB.getId(), templateId);
+        String hostname = "mgr-vm-" + slug();
+        return jdbcTemplate.queryForObject("""
+                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                                 template_id, vcpu, memory_mb, disk_gb, status)
+                values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status) returning id
+                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
     }
 
     private static String slug() {
