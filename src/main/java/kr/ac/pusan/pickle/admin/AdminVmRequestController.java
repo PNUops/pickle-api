@@ -30,7 +30,9 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/vm-requests")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+// Read surfaces: org tier + sys tier (permission-matrix.md §3.9). The approve/
+// reject decisions drop SYS_MANAGER via a method-level override below.
+@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminVmRequestController {
 
     private final ApprovalService approvalService;
@@ -65,6 +67,7 @@ public class AdminVmRequestController {
     }
 
     @PostMapping("/{requestId}/approve")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
     public VmRequestDetailResponse approveVmRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long requestId,
             @Valid @RequestBody ApproveVmRequestRequest request,
@@ -73,6 +76,7 @@ public class AdminVmRequestController {
     }
 
     @PostMapping("/{requestId}/reject")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
     public VmRequestDetailResponse rejectVmRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long requestId,
             @Valid @RequestBody RejectVmRequestRequest request,

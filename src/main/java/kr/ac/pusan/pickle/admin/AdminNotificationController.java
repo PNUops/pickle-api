@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/notifications")
-@PreAuthorize("hasRole('SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminNotificationController {
 
     private final AdminNotificationService adminNotificationService;

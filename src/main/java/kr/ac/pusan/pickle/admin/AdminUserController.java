@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/users")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminUserController {
 
     private final AdminUserQueryService adminUserQueryService;

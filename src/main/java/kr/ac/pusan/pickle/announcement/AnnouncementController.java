@@ -50,6 +50,7 @@ public class AnnouncementController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public PageResponse<AnnouncementView> listAnnouncements(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(defaultValue = "0") @Min(0) int page,

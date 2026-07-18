@@ -54,6 +54,7 @@ public class AdminVmController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public PageResponse<VmSummaryResponse> listAdminVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) Long orgId,
@@ -71,6 +72,7 @@ public class AdminVmController {
 
     /** Synchronous DB update per contract (200 + full detail, not 202). */
     @PatchMapping("/{vmId}/period")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public VmDetailResponse updateVmPeriod(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,

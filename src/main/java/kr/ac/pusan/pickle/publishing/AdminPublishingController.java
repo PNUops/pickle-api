@@ -28,7 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+// Read surfaces: org tier + sys tier (permission-matrix.md §3.12). resyncRoutes
+// is a sys-tier-only routine recovery via a method-level override below.
+@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminPublishingController {
 
     private final AdminPublishingService adminPublishingService;
@@ -71,7 +73,7 @@ public class AdminPublishingController {
     }
 
     @PostMapping("/routes/resync")
-    @PreAuthorize("hasRole('SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
     public ResponseEntity<MessageResponse> resyncRoutes(
             @AuthenticationPrincipal AuthenticatedUser principal, HttpServletRequest httpRequest) {
         return ResponseEntity.accepted()

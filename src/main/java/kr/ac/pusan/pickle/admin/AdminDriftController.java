@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/drift-findings")
-@PreAuthorize("hasRole('SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminDriftController {
 
     private final AdminDriftService adminDriftService;

@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin/audit")
-@PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminAuditController {
 
     private final AuditQueryService auditQueryService;

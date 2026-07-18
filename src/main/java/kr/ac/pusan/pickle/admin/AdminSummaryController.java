@@ -26,7 +26,7 @@ public class AdminSummaryController {
     }
 
     @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public OrgDashboardSummaryResponse getAdminSummary(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) Long orgId) {
@@ -34,7 +34,7 @@ public class AdminSummaryController {
     }
 
     @GetMapping("/system-summary")
-    @PreAuthorize("hasRole('SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
     public SystemDashboardSummaryResponse getSystemSummary() {
         return adminSummaryService.systemSummary();
     }
