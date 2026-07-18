@@ -39,6 +39,15 @@ import org.springframework.transaction.annotation.Transactional;
  *       {@code actor} = null.</li>
  * </ul>
  *
+ * <p><b>{@code authMethod=password} wins over any accumulated candidates.</b> A
+ * connection may offer a public key (accumulating a candidate) and then actually
+ * authenticate by password — e.g. an attacker offers a <i>victim's</i> public key
+ * (a single candidate) that would otherwise resolve to one owner, fails to sign,
+ * and falls back to the VM password on an opt-in VM. Since the session's
+ * {@code authMethod} is {@code password}, the candidates are ignored entirely and
+ * {@code actor} stays null — closing the single-victim-key + password-fallback
+ * framing that the distinct-owner rule (two-owner-triggered) alone would miss.</p>
+ *
  * <p>Fire-and-forget and best-effort: a race is logged, never surfaced as a 5xx
  * that would tear down an already-live session.</p>
  */
@@ -71,6 +80,10 @@ public class SshGatewaySessionService {
             Map<String, Object> detail = baseDetail(request, gatewayPeer);
             Long actorId = null;
 
+            // authMethod=password wins over any accumulated candidates: the
+            // candidate set is consulted ONLY on the publickey path, so a
+            // password-fallback session is always keyless (actor=null), even if a
+            // (victim's) public key was offered earlier on the connection.
             if (AUTH_PUBLICKEY.equals(request.authMethod())) {
                 List<UserSshKey> resolved = resolveCandidates(request.candidateFingerprints());
                 Set<Long> owners = new LinkedHashSet<>();

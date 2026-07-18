@@ -150,6 +150,25 @@ class SshGatewaySessionTest {
     }
 
     @Test
+    void passwordSessionIgnoresAccumulatedCandidateKey() throws Exception {
+        // password-fallback framing: an attacker offers the *victim's* public key
+        // (a single candidate that would resolve to one owner) but fails to sign and
+        // authenticates by the VM password on an opt-in VM. authMethod=password wins,
+        // so the candidate is ignored and the session stays keyless (actor=null).
+        String slug = uniqueSlug();
+        createVm(slug, "172.29.4.45");
+
+        session(slug, CLIENT_IP, "password", List.of(FP_MEMBER))
+                .andExpect(status().isNoContent());
+
+        Map<String, Object> row = latestSession();
+        assertThat(row.get("actor_id")).isNull();
+        assertThat((String) row.get("detail")).doesNotContain("userId").doesNotContain(FP_MEMBER);
+        // the victim's key is not bumped
+        assertThat(lastUsed(FP_MEMBER)).isNull();
+    }
+
+    @Test
     void unknownSlugStillRecordsTheVerifiedUser() throws Exception {
         // slug→vm misses (VM gone), but a single-owner candidate set still attributes
         session("no-such-vm-" + UUID.randomUUID(), CLIENT_IP, "publickey", List.of(FP_MEMBER))
