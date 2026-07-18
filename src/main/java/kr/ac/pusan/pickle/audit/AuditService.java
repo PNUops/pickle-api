@@ -54,10 +54,22 @@ public class AuditService {
     public static final String TASK_RETRY = "task.retry";
     public static final String NOTIFICATION_RESEND = "notification.resend";
     public static final String VM_PERIOD_UPDATE = "vm.period_update";
-    /** SSH gateway route resolved (docs/api/internal.md Link 1). */
+    /**
+     * SSH gateway route resolved (docs/api/internal.md Link 1). Retired as an
+     * audit action by the gate-C split (2026-07-18): the route lookup runs on an
+     * unauthenticated offered key, so an allowed lookup is no longer audited —
+     * the authenticated record is {@link #SSHGW_SESSION}. Kept only for reading
+     * pre-split rows.
+     */
     public static final String SSHGW_ROUTE = "sshgw.route";
-    /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). */
+    /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). Actor null. */
     public static final String SSHGW_ROUTE_DENIED = "sshgw.route_denied";
+    /**
+     * Authenticated SSH session established (docs/api/internal.md Link 1
+     * {@code /session}, gate-C fix). Emitted from sshpiperd's PipeStart, after
+     * signature verification — this is the per-user attribution G6 requires.
+     */
+    public static final String SSHGW_SESSION = "sshgw.session";
     // M5 admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";

@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.sshgw;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,8 +22,6 @@ import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,20 +36,25 @@ import org.springframework.transaction.annotation.Transactional;
  * requires the per-VM {@code ssh_password_enabled} opt-in) → a collected host
  * key to pin → a live IP.
  *
- * <p><b>Audit attribution (v2):</b> once a public-key fingerprint resolves to a
- * registered key, the audit {@code actor} is the key owner's user id — including
- * on post-identification denials ({@code SSHGW_KEY_NOT_MEMBER}, and
- * {@code SSHGW_NO_HOST_KEY}/{@code SSHGW_ROUTE_NO_ADDRESS} reached on the
- * publickey path). Before identification and on the whole password path the
- * actor stays null (the password path's documented anonymity). Audits are
- * written directly (own committed tx) so denials are recorded on the read path;
- * the reported {@code sourceIp} (PROXY-recovered) is kept separate from the
- * authenticated {@code gatewayPeer}.</p>
+ * <p><b>This call is an authorization decision, not a session record</b>
+ * (gate-C fix, 2026-07-18): it runs on an <b>unauthenticated</b> offered key
+ * (sshpiperd's query-phase callback fires before signature verification), so a
+ * public key anyone can offer must never attribute a session to its owner.
+ * Therefore:
+ * <ul>
+ *   <li><b>Allowed lookups are not audited here</b> — the authenticated,
+ *       attributed record is the {@code sshgw.session} event written by
+ *       {@link SshGatewaySessionService} at PipeStart (post-verification).</li>
+ *   <li><b>Denials</b> are audited synchronously as {@code sshgw.route_denied}
+ *       (a security signal) but with <b>{@code actor} = null even when the
+ *       fingerprint resolved to a user</b> — attributing a denial to the
+ *       resolved user would let anyone stamp "victim denied at VM X" into the
+ *       victim's trail by offering their public key. The fingerprint/keyId stay
+ *       in {@code detail} for operators, without becoming an actor.</li>
+ * </ul>
  */
 @Service
 public class SshGatewayRouteService {
-
-    private static final Logger log = LoggerFactory.getLogger(SshGatewayRouteService.class);
 
     /** Upstream SSH port on every guest VM (fixed; docs/plan/05). */
     private static final int UPSTREAM_SSH_PORT = 22;
@@ -120,110 +122,92 @@ public class SshGatewayRouteService {
             rateLimitService.hit(SOURCE_RATE_LIMIT_SCOPE, ctx.sourceIp(),
                     properties.rateLimitPerMinute());
         } catch (ApiException rateLimited) {
-            auditDenied(ctx, null, null, ErrorCodes.RATE_LIMITED);
+            auditDenied(ctx, null, ErrorCodes.RATE_LIMITED);
             throw rateLimited; // → 429 problem+json with Retry-After
         }
 
         // 1) Global kill switch first — a disabled gateway reveals nothing about
         //    which slugs exist, and it outranks any per-VM opt-in.
         if (!settingsService.bool(SettingsService.SSH_GATEWAY_ENABLED, false)) {
-            return deny(ctx, null, null, RouteOutcome.forbidden(ErrorCodes.SSHGW_GATEWAY_DISABLED));
+            return deny(ctx, null, RouteOutcome.forbidden(ErrorCodes.SSHGW_GATEWAY_DISABLED));
         }
 
         // 2) Slug → VM.
         Optional<Vm> found = vmRepository.findByHostname(ctx.slug());
         if (found.isEmpty()) {
-            return deny(ctx, null, null, RouteOutcome.notFound(ErrorCodes.SSHGW_ROUTE_NOT_FOUND));
+            return deny(ctx, null, RouteOutcome.notFound(ErrorCodes.SSHGW_ROUTE_NOT_FOUND));
         }
         Vm vm = found.get();
 
         // 3) RUNNING, 4) not per-VM blocked.
         if (vm.getStatus() != VmStatus.RUNNING) {
-            return deny(ctx, vm.getId(), null, RouteOutcome.forbidden(ErrorCodes.SSHGW_VM_NOT_RUNNING));
+            return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_VM_NOT_RUNNING));
         }
         if (vm.isSshGatewayBlocked()) {
-            return deny(ctx, vm.getId(), null, RouteOutcome.forbidden(ErrorCodes.SSHGW_VM_BLOCKED));
+            return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_VM_BLOCKED));
         }
 
         // 5) Identity: publickey (fingerprint → key → member) or password opt-in.
-        UserSshKey identifiedKey = null;
+        //    Identification fills detail's keyId but never an audit actor here.
         if (RouteRequest.AUTH_PUBLICKEY.equals(ctx.authMethod())) {
             Optional<UserSshKey> key = ctx.fingerprint() == null || ctx.fingerprint().isBlank()
                     ? Optional.empty()
                     : sshKeyRepository.findByFingerprintSha256(ctx.fingerprint());
             if (key.isEmpty()) {
-                // Not yet identified → actor stays null.
-                return deny(ctx, vm.getId(), null,
-                        RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
+                return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
-            identifiedKey = key.get();
-            ctx.identify(identifiedKey);
+            ctx.identify(key.get());
             GroupMemberRole role = groupMemberRepository
-                    .findByGroupIdAndUserId(vm.getGroupId(), identifiedKey.getUserId())
+                    .findByGroupIdAndUserId(vm.getGroupId(), key.get().getUserId())
                     .map(GroupMember::getRole)
                     .orElse(null);
             // VIEWER and non-members are denied identically (one code, no oracle).
             if (role == null || !role.atLeast(GroupMemberRole.MEMBER)) {
-                return deny(ctx, vm.getId(), identifiedKey.getUserId(),
-                        RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_NOT_MEMBER));
+                return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_NOT_MEMBER));
             }
         } else if (RouteRequest.AUTH_PASSWORD.equals(ctx.authMethod())) {
             if (!vmSettingsService.bool(vm.getId(), VmSettingsService.SSH_PASSWORD_ENABLED)) {
-                return deny(ctx, vm.getId(), null,
+                return deny(ctx, vm.getId(),
                         RouteOutcome.forbidden(ErrorCodes.SSHGW_PASSWORD_DISABLED));
             }
         } else {
-            // Unknown method — fail closed, unidentified.
-            return deny(ctx, vm.getId(), null, RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
+            // Unknown method — fail closed.
+            return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
         }
 
-        // 6) A collected host key to pin. actor = identified user (publickey) or null.
+        // 6) A collected host key to pin.
         if (vm.getSshHostKey() == null || vm.getSshHostKey().isBlank()) {
-            return deny(ctx, vm.getId(), ctx.identifiedUserId(),
-                    RouteOutcome.forbidden(ErrorCodes.SSHGW_NO_HOST_KEY));
+            return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_NO_HOST_KEY));
         }
 
         // 7) A live IP allocation (SSRF-safe: owned + ALLOCATED guard).
         String ip = ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vm.getId());
         if (ip == null) {
-            return deny(ctx, vm.getId(), ctx.identifiedUserId(),
-                    RouteOutcome.forbidden(ErrorCodes.SSHGW_ROUTE_NO_ADDRESS));
+            return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_ROUTE_NO_ADDRESS));
         }
 
+        // Allowed lookups are NOT audited (gate-C): this ran on an unauthenticated
+        // offered key. The authenticated per-user record is the /session call.
         RouteResponse route = new RouteResponse(ip, UPSTREAM_SSH_PORT, vm.getSshUsername(),
                 List.of(vm.getSshHostKey()));
-        auditService.record(ctx.identifiedUserId(), AuditService.ACTOR_ROLE_SSHGW,
-                AuditService.SSHGW_ROUTE, "vm", vm.getId(), ctx.detail(null), ctx.sourceIp());
-        if (identifiedKey != null) {
-            touchLastUsed(identifiedKey.getId());
-        }
         return RouteOutcome.granted(route);
     }
 
-    /** Best-effort — a failed last_used_at bump must not fail the route. */
-    private void touchLastUsed(Long keyId) {
-        try {
-            sshKeyRepository.touchLastUsedAt(keyId, Instant.now());
-        } catch (RuntimeException e) {
-            log.debug("sshgw route: last_used_at bump failed for key {} (ignored)", keyId, e);
-        }
-    }
-
-    private RouteOutcome deny(Context ctx, Long vmId, Long actorId, RouteOutcome outcome) {
-        auditDenied(ctx, vmId, actorId, outcome.reason());
+    private RouteOutcome deny(Context ctx, Long vmId, RouteOutcome outcome) {
+        auditDenied(ctx, vmId, outcome.reason());
         return outcome;
     }
 
-    private void auditDenied(Context ctx, Long vmId, Long actorId, String reason) {
-        auditService.record(actorId, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_ROUTE_DENIED,
+    /** Denials carry a null actor even after identification (see class javadoc). */
+    private void auditDenied(Context ctx, Long vmId, String reason) {
+        auditService.record(null, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_ROUTE_DENIED,
                 "vm", vmId, ctx.detail(reason), ctx.sourceIp());
     }
 
-    /** Per-request scratch: request fields plus the identity resolved so far. */
+    /** Per-request scratch: request fields plus the key resolved for detail. */
     private static final class Context {
         private final RouteRequest request;
         private final String gatewayPeer;
-        private Long identifiedUserId;
         private Long identifiedKeyId;
 
         Context(RouteRequest request, String gatewayPeer) {
@@ -248,12 +232,7 @@ public class SshGatewayRouteService {
         }
 
         void identify(UserSshKey key) {
-            this.identifiedUserId = key.getUserId();
             this.identifiedKeyId = key.getId();
-        }
-
-        Long identifiedUserId() {
-            return identifiedUserId;
         }
 
         Map<String, Object> detail(String reason) {

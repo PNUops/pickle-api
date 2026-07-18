@@ -99,9 +99,9 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
-    void publickeyMemberResolvesWithHostKeysAndAttributesUser() throws Exception {
+    void publickeyMemberResolvesWithHostKeysAndIsNotAudited() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.11", false, HOST_KEY);
+        long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.11", false, HOST_KEY);
 
         publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
                 .andExpect(status().isOk())
@@ -110,19 +110,15 @@ class InternalSshGatewayRouteTest {
                 .andExpect(jsonPath("$.user").value("student"))
                 .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
 
-        // audited as sshgw.route, actor = key owner, client IP recorded
-        Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select actor_id, ip, detail::text as detail from audit_logs
-                 where action = 'sshgw.route' order by id desc limit 1
-                """);
-        assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
-        assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
-        assertThat((String) row.get("detail")).contains(slug).contains(FP_MEMBER)
-                .contains("publickey");
-        // last_used_at bumped (best-effort)
+        // gate-C: an allowed lookup runs on an unauthenticated offered key, so it
+        // is NOT audited (the attributed record is the /session call) and it does
+        // NOT bump last_used_at.
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = 'sshgw.route' and target_id = ?",
+                Long.class, vmId)).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
-                Instant.class, FP_MEMBER)).isNotNull();
+                Instant.class, FP_MEMBER)).isNull();
     }
 
     @Test
@@ -138,7 +134,7 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
-    void nonMemberKeyDeniedButAttributesOwner() throws Exception {
+    void nonMemberKeyDeniedWithNullActorButKeyIdInDetail() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.13", false, HOST_KEY);
 
@@ -146,12 +142,16 @@ class InternalSshGatewayRouteTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.reason").value("SSHGW_KEY_NOT_MEMBER"));
 
-        // identified after fingerprint match → actor = the (non-member) owner
-        assertThat(((Number) latestDenied().get("actor_id")).longValue()).isEqualTo(strangerId);
+        // gate-C: even after fingerprint identification a denial has a null actor
+        // (no one can stamp "victim denied at VM X" via the victim's public key),
+        // but the offered key still appears in detail for operators.
+        Map<String, Object> row = latestDenied();
+        assertThat(row.get("actor_id")).isNull();
+        assertThat((String) row.get("detail")).contains(FP_STRANGER);
     }
 
     @Test
-    void noHostKeyDeniedAfterIdentification() throws Exception {
+    void noHostKeyDeniedWithNullActor() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.14", false, null);
 
@@ -159,8 +159,7 @@ class InternalSshGatewayRouteTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.reason").value("SSHGW_NO_HOST_KEY"));
 
-        // reached via the publickey path after identification → actor = owner
-        assertThat(((Number) latestDenied().get("actor_id")).longValue()).isEqualTo(memberId);
+        assertThat(latestDenied().get("actor_id")).isNull();
     }
 
     @Test
@@ -174,15 +173,14 @@ class InternalSshGatewayRouteTest {
                 .andExpect(jsonPath("$.reason").value("SSHGW_PASSWORD_DISABLED"));
         assertThat(latestDenied().get("actor_id")).isNull();
 
-        // opt in → route granted, and the password path stays anonymous (actor null)
+        // opt in → route granted; gate-C: an allowed lookup is not audited
         enablePasswordSsh(vmId);
         password(slug, CLIENT_IP, SSHGW_IP)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
-        assertThat(jdbcTemplate.queryForMap("""
-                select actor_id from audit_logs where action = 'sshgw.route'
-                 order by id desc limit 1
-                """).get("actor_id")).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = 'sshgw.route' and target_id = ?",
+                Long.class, vmId)).isZero();
     }
 
     @Test

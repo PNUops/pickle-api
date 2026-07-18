@@ -28,9 +28,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class InternalSshGatewayController {
 
     private final SshGatewayRouteService routeService;
+    private final SshGatewaySessionService sessionService;
 
-    public InternalSshGatewayController(SshGatewayRouteService routeService) {
+    public InternalSshGatewayController(SshGatewayRouteService routeService,
+            SshGatewaySessionService sessionService) {
         this.routeService = routeService;
+        this.sessionService = sessionService;
     }
 
     @PostMapping("/route")
@@ -43,5 +46,17 @@ public class InternalSshGatewayController {
             return ResponseEntity.ok(outcome.route());
         }
         return ResponseEntity.status(outcome.status()).body(new RouteDenied(outcome.reason()));
+    }
+
+    /**
+     * Authenticated session audit (PipeStart, post-verification). Fire-and-forget:
+     * always 204, even on a best-effort resolution miss — the session is already
+     * live and must not be torn down by this call (docs/api/internal.md Link 1).
+     */
+    @PostMapping("/session")
+    public ResponseEntity<Void> session(@Valid @RequestBody RouteRequest request,
+            HttpServletRequest http) {
+        sessionService.recordSession(request, http.getRemoteAddr());
+        return ResponseEntity.noContent().build();
     }
 }
