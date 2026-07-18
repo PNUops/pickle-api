@@ -34,6 +34,10 @@ public class UserMfa {
     @Column(name = "pending_created_at")
     private Instant pendingCreatedAt;
 
+    /** Highest TOTP step already consumed; a code at a step ≤ this is a replay. */
+    @Column(name = "last_totp_step")
+    private Long lastTotpStep;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -86,5 +90,14 @@ public class UserMfa {
 
     public Instant getEnabledAt() {
         return enabledAt;
+    }
+
+    public Long getLastTotpStep() {
+        return lastTotpStep;
+    }
+
+    /** Marks {@code step} as consumed so the same code cannot be replayed. */
+    public void recordTotpStep(long step) {
+        this.lastTotpStep = step;
     }
 }

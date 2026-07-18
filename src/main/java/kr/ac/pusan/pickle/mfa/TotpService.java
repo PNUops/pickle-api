@@ -48,18 +48,32 @@ public class TotpService {
                 + "&algorithm=SHA1&digits=" + DIGITS + "&period=" + STEP_SECONDS;
     }
 
+    /** Sentinel returned by {@link #matchingStep} when no step in the window matches. */
+    public static final long NO_MATCH = -1;
+
     /** True if {@code code} matches the secret within the ±1 step window at {@code at}. */
     public boolean verify(String secretBase32, String code, Instant at) {
+        return matchingStep(secretBase32, code, at) != NO_MATCH;
+    }
+
+    /**
+     * The step counter whose code matches {@code code} within the ±1 window at
+     * {@code at}, or {@link #NO_MATCH}. Exposed (over {@link #verify}) so the
+     * caller can reject a step it has already consumed — TOTP replay hardening
+     * within a code's ~90s validity window.
+     */
+    public long matchingStep(String secretBase32, String code, Instant at) {
         if (code == null || code.length() != DIGITS) {
-            return false;
+            return NO_MATCH;
         }
         long counter = at.getEpochSecond() / STEP_SECONDS;
         for (int offset = -SKEW_STEPS; offset <= SKEW_STEPS; offset++) {
-            if (constantTimeEquals(code, generate(secretBase32, counter + offset))) {
-                return true;
+            long step = counter + offset;
+            if (constantTimeEquals(code, generate(secretBase32, step))) {
+                return step;
             }
         }
-        return false;
+        return NO_MATCH;
     }
 
     /** The RFC 6238 code for a given step counter (package-visible for tests). */

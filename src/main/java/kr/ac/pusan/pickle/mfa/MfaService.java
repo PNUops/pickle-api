@@ -183,8 +183,12 @@ public class MfaService {
 
     @Transactional
     public void consumeChallenge(MfaLoginToken token) {
-        token.consume(Instant.now());
-        loginTokenRepository.save(token);
+        // Conditional consume: a concurrent (or repeated) completion of the same
+        // step-up token loses the UPDATE and gets 410, so tokens issue exactly one
+        // session.
+        if (loginTokenRepository.consume(token.getId(), Instant.now()) == 0) {
+            throw challengeExpired();
+        }
     }
 
     // ── shared code verification (login step-up + withdraw) ─────────────────
@@ -209,9 +213,29 @@ public class MfaService {
 
     private boolean verifyEnrolledCode(UserMfa mfa, long userId, String code, String recoveryCode) {
         if (code != null && !code.isBlank()) {
-            return totpService.verify(activeSecret(mfa), code, Instant.now());
+            return verifyTotpNoReplay(mfa, code);
         }
         return consumeRecoveryCode(userId, recoveryCode);
+    }
+
+    /**
+     * Verifies a TOTP code against the active secret and rejects a step already
+     * consumed (replay within the ~90s validity window). The matched step is
+     * persisted so the same code cannot be reused, e.g. login then an immediate
+     * disable with the same code — the second must wait for the next code.
+     */
+    private boolean verifyTotpNoReplay(UserMfa mfa, String code) {
+        long step = totpService.matchingStep(activeSecret(mfa), code, Instant.now());
+        if (step == TotpService.NO_MATCH) {
+            return false;
+        }
+        Long last = mfa.getLastTotpStep();
+        if (last != null && step <= last) {
+            return false;
+        }
+        mfa.recordTotpStep(step);
+        userMfaRepository.save(mfa);
+        return true;
     }
 
     // ── admin reset ─────────────────────────────────────────────────────────
@@ -245,9 +269,9 @@ public class MfaService {
         String normalized = rawCode.trim().toLowerCase(Locale.ROOT);
         for (MfaRecoveryCode candidate : recoveryCodeRepository.findByUserIdAndUsedAtIsNull(userId)) {
             if (passwordEncoder.matches(normalized, candidate.getCodeHash())) {
-                candidate.markUsed(Instant.now());
-                recoveryCodeRepository.save(candidate);
-                return true;
+                // Conditional consume: two parallel logins presenting the same
+                // code — only the one that flips used_at wins.
+                return recoveryCodeRepository.consume(candidate.getId(), Instant.now()) == 1;
             }
         }
         return false;

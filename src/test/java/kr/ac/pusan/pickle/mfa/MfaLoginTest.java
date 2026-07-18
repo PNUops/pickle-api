@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.mfa;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -7,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.Map;
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.mfa.dto.MfaSetupResponse;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
@@ -17,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -97,6 +102,50 @@ class MfaLoginTest {
         mfa(Map.of("mfaToken", json(again).get("mfaToken").asText(), "recoveryCode", recoveryCode))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_MFA_CODE_INVALID"));
+    }
+
+    @Test
+    void stepUpTokenConsumeIsAtomicSingleUse() {
+        User user = createActiveUser("mfa.race.token@pusan.ac.kr");
+        enroll(user.getId());
+        String raw = mfaService.issueLoginChallenge(user.getId());
+        MfaLoginToken token = mfaService.loadChallengeOrThrow(raw);
+
+        mfaService.consumeChallenge(token);
+        // Second consume of the SAME already-loaded token — the concurrent-race
+        // path that bypasses loadChallengeOrThrow's isConsumed pre-check — loses
+        // the conditional UPDATE and gets 410.
+        assertThatThrownBy(() -> mfaService.consumeChallenge(token))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.GONE);
+                    assertThat(ex.getCode()).isEqualTo(ErrorCodes.AUTH_MFA_TOKEN_EXPIRED);
+                });
+    }
+
+    @Test
+    void recoveryCodeConsumeIsAtomicSingleUse() {
+        User user = createActiveUser("mfa.race.recovery@pusan.ac.kr");
+        String secret = enroll(user.getId());
+        String recoveryCode = mfaService.regenerateRecoveryCodes(user.getId(), PASSWORD,
+                codeFor(secret)).recoveryCodes().get(0);
+
+        // First consume wins; a second consume of the same code (parallel login)
+        // loses the conditional used_at UPDATE and returns false.
+        assertThat(mfaService.verifyEnrolledCode(user.getId(), null, recoveryCode)).isTrue();
+        assertThat(mfaService.verifyEnrolledCode(user.getId(), null, recoveryCode)).isFalse();
+    }
+
+    @Test
+    void totpCodeCannotBeReplayedWithinItsWindow() {
+        User user = createActiveUser("mfa.replay@pusan.ac.kr");
+        String secret = enroll(user.getId());
+        String code = codeFor(secret);
+
+        // First presentation of the code (step N) verifies and records the step.
+        assertThat(mfaService.verifyEnrolledCode(user.getId(), code, null)).isTrue();
+        // Replaying the same code (same step, still inside the ±1 window) is
+        // rejected even though it would otherwise match the secret.
+        assertThat(mfaService.verifyEnrolledCode(user.getId(), code, null)).isFalse();
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
