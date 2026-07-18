@@ -42,6 +42,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Public consent documents (contract security: []).
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,
+                                "/api/v1/meta/terms", "/api/v1/meta/terms/**").permitAll()
                         .requestMatchers("/api/v1/openapi", "/api/v1/openapi/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
