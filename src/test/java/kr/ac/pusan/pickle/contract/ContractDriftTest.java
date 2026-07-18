@@ -179,7 +179,6 @@ class ContractDriftTest {
             "GET /meta/status",
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
-            "POST /admin/users/{userId}/mfa-reset",
             "POST /me/consents");
 
     private static final Set<String> HTTP_METHODS =
