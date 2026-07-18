@@ -98,6 +98,10 @@ class SecretMaskingLogTest {
         probe.info("payload {\"password\": \"{}\", \"refreshToken\": \"{}\"}", PASSWORD, "rt-fedcba9876543210");
         probe.info("cloud-init cipassword=vm-secret-pw! secret: hunter2-hunter2");
         probe.info("header Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig");
+        // 2FA artifacts: recovery codes and the otpauth enrollment URI (carries
+        // the Base32 secret) must never surface raw.
+        probe.info("mfa disable recoveryCode={} recovery_code={}", "abcd-efgh-jkmn", "pqrs-tuvw-xyz2");
+        probe.info("enroll otpauth://totp/Pickle:probe@x?secret=JBSWY3DPEHPK3PXP&issuer=Pickle");
 
         List<String> rendered = listAppender.list.stream().map(maskedLayout::doLayout).toList();
         String allOutput = String.join("", rendered);
@@ -109,7 +113,10 @@ class SecretMaskingLogTest {
                 .doesNotContain("rt-fedcba9876543210")
                 .doesNotContain("vm-secret-pw!")
                 .doesNotContain("hunter2-hunter2")
-                .doesNotContain("eyJhbGciOiJIUzI1NiJ9.payload.sig");
+                .doesNotContain("eyJhbGciOiJIUzI1NiJ9.payload.sig")
+                .doesNotContain("abcd-efgh-jkmn")
+                .doesNotContain("pqrs-tuvw-xyz2")
+                .doesNotContain("JBSWY3DPEHPK3PXP");
 
         String probeOutput = rendered.stream()
                 .filter(line -> line.startsWith("masking.probe"))
@@ -117,7 +124,9 @@ class SecretMaskingLogTest {
         assertThat(probeOutput)
                 .contains("password=" + MaskingMessageConverter.MASK)
                 .contains("token=" + MaskingMessageConverter.MASK)
-                .contains("cipassword=" + MaskingMessageConverter.MASK);
+                .contains("cipassword=" + MaskingMessageConverter.MASK)
+                .contains("recoveryCode=" + MaskingMessageConverter.MASK)
+                .contains("recovery_code=" + MaskingMessageConverter.MASK);
     }
 
     @Test

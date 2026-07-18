@@ -6,8 +6,8 @@ import java.util.regex.Pattern;
 
 /**
  * Logback conversion word {@code %maskedMsg}: masks values of secret-bearing
- * keys (password/token/secret/cipassword/…) in log messages so credentials and
- * tokens never land in logs raw (docs/plan/07 logging policy).
+ * keys (password/token/secret/cipassword/recoveryCode/otpauth/…) in log messages
+ * so credentials and tokens never land in logs raw (docs/plan/07 logging policy).
  *
  * <p>The dev/test-only {@code MockMailSender} logger is exempted so developers
  * can copy the emailed verification link from the console; that bean never
@@ -22,7 +22,7 @@ public class MaskingMessageConverter extends MessageConverter {
     /** key = value / key: value / "key":"value" / key=>value forms. */
     private static final Pattern KEY_VALUE = Pattern.compile(
             "(?i)([\"']?(?:initial[_-]?password|password|passwd|pwd|secret|token|cipassword"
-                    + "|authorization|api[_-]?key|pickle_refresh)"
+                    + "|authorization|api[_-]?key|pickle_refresh|recovery[_-]?code|otpauth)"
                     + "[a-z0-9_-]*[\"']?\\s*(?:=>|[:=])\\s*[\"']?)"
                     + "([^\\s,;&\"'}\\])]+)");
 
