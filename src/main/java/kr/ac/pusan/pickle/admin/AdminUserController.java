@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.admin.dto.DisableUserRequest;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
+import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -75,5 +76,12 @@ public class AdminUserController {
     public UserAdminDetailResponse enableUser(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long userId, HttpServletRequest httpRequest) {
         return adminUserService.enable(principal, userId, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{userId}/mfa-reset")
+    @PreAuthorize("hasRole('SYS_ADMIN')")
+    public MessageResponse resetUserMfa(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long userId, HttpServletRequest httpRequest) {
+        return adminUserService.resetMfa(principal, userId, clientIp(httpRequest));
     }
 }

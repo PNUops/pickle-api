@@ -5,8 +5,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -33,15 +35,31 @@ public class AdminUserService {
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final AdminUserQueryService adminUserQueryService;
+    private final MfaService mfaService;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
-            NotificationService notificationService, AdminUserQueryService adminUserQueryService) {
+            NotificationService notificationService, AdminUserQueryService adminUserQueryService,
+            MfaService mfaService) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.adminUserQueryService = adminUserQueryService;
+        this.mfaService = mfaService;
+    }
+
+    /**
+     * SYS_ADMIN 2FA reset ({@code POST /admin/users/{userId}/mfa-reset}): clears
+     * the target's enrollment + recovery codes after offline identity checks.
+     * 404 if the user is unknown, 409 if they are not enrolled.
+     */
+    @Transactional
+    public MessageResponse resetMfa(AuthenticatedUser actor, long userId, String ip) {
+        User target = userRepository.findById(userId).orElseThrow(AdminUserService::userNotFound);
+        mfaService.adminReset(actor.id(), actor.role().name(), target, ip);
+        return new MessageResponse(
+                "2단계 인증을 초기화했습니다. 사용자는 비밀번호로 로그인한 뒤 다시 등록해야 합니다.");
     }
 
     @Transactional

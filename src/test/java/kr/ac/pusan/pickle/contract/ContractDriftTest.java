@@ -159,7 +159,8 @@ class ContractDriftTest {
             "POST /me/mfa/totp/activate",
             "POST /me/mfa/disable",
             "POST /me/mfa/recovery-codes",
-            "POST /auth/mfa");
+            "POST /auth/mfa",
+            "POST /admin/users/{userId}/mfa-reset");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented

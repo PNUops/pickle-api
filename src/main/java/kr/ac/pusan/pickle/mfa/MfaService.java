@@ -215,7 +215,7 @@ public class MfaService {
 
     /** SYS_ADMIN lockout recovery: drops enrollment + codes; 409 if the user is not enrolled. */
     @Transactional
-    public void adminReset(User actor, User target, String ip) {
+    public void adminReset(long actorId, String actorRole, User target, String ip) {
         if (!userMfaRepository.isEnrolled(target.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_NOT_ENROLLED,
                     "2단계 인증이 설정되어 있지 않습니다", "해당 사용자는 2단계 인증을 사용하고 있지 않습니다.");
@@ -223,7 +223,7 @@ public class MfaService {
         userMfaRepository.deleteByUserId(target.getId());
         recoveryCodeRepository.deleteByUserId(target.getId());
 
-        auditService.record(actor.getId(), actor.getRole().name(), AuditService.ACCOUNT_MFA_RESET,
+        auditService.record(actorId, actorRole, AuditService.ACCOUNT_MFA_RESET,
                 "user", target.getId(), Map.of("targetEmail", target.getEmail()), ip);
         notificationService.publish(target.getId(), NotificationEvent.ACCOUNT_MFA_RESET, Map.of(),
                 "account_mfa_reset:" + target.getId() + ":" + Instant.now().toEpochMilli());
