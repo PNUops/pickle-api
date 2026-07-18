@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.RefreshTokenService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -36,17 +37,19 @@ public class AdminUserService {
     private final NotificationService notificationService;
     private final AdminUserQueryService adminUserQueryService;
     private final MfaService mfaService;
+    private final RefreshTokenService refreshTokenService;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
             NotificationService notificationService, AdminUserQueryService adminUserQueryService,
-            MfaService mfaService) {
+            MfaService mfaService, RefreshTokenService refreshTokenService) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.adminUserQueryService = adminUserQueryService;
         this.mfaService = mfaService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     /**
@@ -81,6 +84,10 @@ public class AdminUserService {
         user.setStatus(UserStatus.DISABLED);
         user.disable(reason, now);
         user.bumpTokenVersion();
+        // Access tokens die on the version bump; revoke refresh tokens too so a
+        // token left unused during the disable window cannot resurrect the session
+        // after a later enable.
+        refreshTokenService.revokeAllForUser(user.getId());
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), fromStatus,
                 UserStatus.DISABLED, actor.id(), reason));
 
