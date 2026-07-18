@@ -153,7 +153,9 @@ class ContractDriftTest {
             "GET /admin/users",
             "GET /admin/users/{userId}",
             "POST /admin/users/{userId}/disable",
-            "POST /admin/users/{userId}/enable");
+            "POST /admin/users/{userId}/enable",
+            // M6 maintenance/contact — W2-B (contract v0.9.0).
+            "GET /meta/status");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -169,7 +171,6 @@ class ContractDriftTest {
      */
     private static final Set<String> PLANNED = Set.of(
             "GET /me/consents",
-            "GET /meta/status",
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
             "POST /admin/users/{userId}/mfa-reset",
