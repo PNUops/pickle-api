@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import kr.ac.pusan.pickle.sshgw.SshGatewayRouteService.RouteOutcome;
 import kr.ac.pusan.pickle.sshgw.dto.RouteDenied;
 import kr.ac.pusan.pickle.sshgw.dto.RouteRequest;
+import kr.ac.pusan.pickle.sshgw.dto.SessionRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -54,7 +55,7 @@ public class InternalSshGatewayController {
      * live and must not be torn down by this call (docs/api/internal.md Link 1).
      */
     @PostMapping("/session")
-    public ResponseEntity<Void> session(@Valid @RequestBody RouteRequest request,
+    public ResponseEntity<Void> session(@Valid @RequestBody SessionRequest request,
             HttpServletRequest http) {
         sessionService.recordSession(request, http.getRemoteAddr());
         return ResponseEntity.noContent().build();

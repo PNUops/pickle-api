@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -28,10 +29,10 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Authenticated session audit endpoint (docs/api/internal.md Link 1
- * {@code /internal/sshgw/session}, gate-C): the publickey path writes a verified
- * per-user {@code sshgw.session} record and bumps last_used_at, the password
- * path records a null actor, and a resolution miss (deleted key / unknown slug)
- * is best-effort — always 204, never a 5xx that would tear down a live session.
+ * {@code /internal/sshgw/session}, gate C-2): the <b>distinct-owner rule</b> over
+ * the candidate fingerprint set — one owner ⇒ verified attribution + last_used_at
+ * bump, two+ owners ⇒ null actor + {@code ambiguous} (framing prevention), zero
+ * resolve / password ⇒ null actor — all fire-and-forget 204, never a 5xx.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -45,6 +46,8 @@ class SshGatewaySessionTest {
     private static final String HOST_KEY =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKeyFixtureForSessionTestsAAAAAA";
     private static final String FP_MEMBER = "SHA256:sessionMemberFingerprintAAAAAAAAAAAAAAAAAAA";
+    private static final String FP_MEMBER2 = "SHA256:sessionMemberSecondKeyBBBBBBBBBBBBBBBBBBB";
+    private static final String FP_OTHER = "SHA256:sessionOtherOwnerFingerprintCCCCCCCCCCCCC";
 
     @Autowired
     private MockMvc mockMvc;
@@ -61,6 +64,7 @@ class SshGatewaySessionTest {
     private long poolId;
     private long groupId;
     private long memberId;
+    private long otherId;
 
     @BeforeEach
     void setUp() {
@@ -73,32 +77,70 @@ class SshGatewaySessionTest {
         // org-headroom capacity other tests (e.g. ApprovalTest) assert against.
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         memberId = ensureUser("sshgw.session.member@pusan.ac.kr", "세션멤버");
+        otherId = ensureUser("sshgw.session.other@pusan.ac.kr", "다른소유자");
+        // Fresh keys each test so a prior test's last_used_at bump does not bleed in.
+        jdbcTemplate.update("delete from user_ssh_keys where user_id in (?, ?)", memberId, otherId);
         groupId = createGroup();
         addMember(groupId, memberId, "MEMBER");
         registerKey(memberId, FP_MEMBER);
+        registerKey(memberId, FP_MEMBER2);
+        registerKey(otherId, FP_OTHER);
     }
 
     @Test
-    void publickeySessionAuditsVerifiedUserAndBumpsLastUsed() throws Exception {
+    void oneOwnerAcrossCandidatesGivesVerifiedAttributionAndBumpsAllKeys() throws Exception {
         String slug = uniqueSlug();
         long vmId = createVm(slug, "172.29.4.41");
 
-        session(slug, CLIENT_IP, "publickey", FP_MEMBER).andExpect(status().isNoContent());
+        session(slug, CLIENT_IP, "publickey", List.of(FP_MEMBER, FP_MEMBER2))
+                .andExpect(status().isNoContent());
 
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
         assertThat(((Number) row.get("target_id")).longValue()).isEqualTo(vmId);
         assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
-        assertThat((String) row.get("detail")).contains(FP_MEMBER).contains(slug);
-        assertThat(jdbcTemplate.queryForObject(
-                "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
-                Instant.class, FP_MEMBER)).isNotNull();
+        assertThat((String) row.get("detail")).contains(FP_MEMBER).contains(FP_MEMBER2)
+                .contains("\"userId\"").doesNotContain("ambiguous");
+        // both of that owner's candidate keys are bumped
+        assertThat(lastUsed(FP_MEMBER)).isNotNull();
+        assertThat(lastUsed(FP_MEMBER2)).isNotNull();
+    }
+
+    @Test
+    void candidatesSpanningTwoOwnersAreAmbiguousNullActor() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, "172.29.4.42");
+
+        // a member offering a *fellow user's* key alongside their own must not pin
+        // the session on either — the plugin can't prove which key signed
+        session(slug, CLIENT_IP, "publickey", List.of(FP_MEMBER, FP_OTHER))
+                .andExpect(status().isNoContent());
+
+        Map<String, Object> row = latestSession();
+        assertThat(row.get("actor_id")).isNull();
+        assertThat((String) row.get("detail")).contains("ambiguous")
+                .contains(String.valueOf(memberId)).contains(String.valueOf(otherId));
+        // framing prevention: no last_used_at bump on an ambiguous session
+        assertThat(lastUsed(FP_MEMBER)).isNull();
+        assertThat(lastUsed(FP_OTHER)).isNull();
+    }
+
+    @Test
+    void zeroResolvingCandidatesIsBestEffortNullActor() throws Exception {
+        String slug = uniqueSlug();
+        createVm(slug, "172.29.4.43");
+
+        session(slug, CLIENT_IP, "publickey",
+                List.of("SHA256:vanishedKeyOneXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                        "SHA256:vanishedKeyTwoYYYYYYYYYYYYYYYYYYYYYYYYYYY"))
+                .andExpect(status().isNoContent());
+        assertThat(latestSession().get("actor_id")).isNull();
     }
 
     @Test
     void passwordSessionAuditsWithNullActor() throws Exception {
         String slug = uniqueSlug();
-        createVm(slug, "172.29.4.42");
+        createVm(slug, "172.29.4.44");
 
         session(slug, CLIENT_IP, "password", null).andExpect(status().isNoContent());
 
@@ -108,21 +150,9 @@ class SshGatewaySessionTest {
     }
 
     @Test
-    void deletedKeyRaceIsBestEffortNullActor() throws Exception {
-        String slug = uniqueSlug();
-        createVm(slug, "172.29.4.43");
-
-        // fingerprint no longer resolves (key deleted mid-connection) → still 204,
-        // recorded with a null actor rather than 5xx
-        session(slug, CLIENT_IP, "publickey", "SHA256:vanishedKeyFingerprintXXXXXXXXXXXXXXXXXXX")
-                .andExpect(status().isNoContent());
-        assertThat(latestSession().get("actor_id")).isNull();
-    }
-
-    @Test
     void unknownSlugStillRecordsTheVerifiedUser() throws Exception {
-        // slug→vm misses (VM gone), but the verified fingerprint→user still holds
-        session("no-such-vm-" + UUID.randomUUID(), CLIENT_IP, "publickey", FP_MEMBER)
+        // slug→vm misses (VM gone), but a single-owner candidate set still attributes
+        session("no-such-vm-" + UUID.randomUUID(), CLIENT_IP, "publickey", List.of(FP_MEMBER))
                 .andExpect(status().isNoContent());
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
@@ -132,13 +162,13 @@ class SshGatewaySessionTest {
     // ── helpers ──────────────────────────────────────────────────────────
 
     private ResultActions session(String slug, String sourceIp, String authMethod,
-            String fingerprint) throws Exception {
+            List<String> candidateFingerprints) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("slug", slug);
         body.put("sourceIp", sourceIp);
         body.put("authMethod", authMethod);
-        if (fingerprint != null) {
-            body.put("publicKeyFingerprint", fingerprint);
+        if (candidateFingerprints != null) {
+            body.put("candidateFingerprints", candidateFingerprints);
         }
         body.put("connectionId", "conn-" + UUID.randomUUID());
         return mockMvc.perform(post("/internal/sshgw/session")
@@ -156,6 +186,12 @@ class SshGatewaySessionTest {
                 select actor_id, target_id, ip, detail::text as detail from audit_logs
                  where action = 'sshgw.session' order by id desc limit 1
                 """);
+    }
+
+    private Instant lastUsed(String fingerprint) {
+        return jdbcTemplate.queryForObject(
+                "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
+                Instant.class, fingerprint);
     }
 
     private void registerKey(long userId, String fingerprint) {
