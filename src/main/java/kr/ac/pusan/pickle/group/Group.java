@@ -35,9 +35,11 @@ public class Group {
 
     private String description;
 
+    /** Soft-delete stamp (M6). A non-null value hides the group everywhere. */
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /** Who deleted the group: the OWNER (deleteGroup) or the withdrawing user. */
     @Column(name = "deleted_by")
     private Long deletedBy;
 
@@ -48,14 +50,6 @@ public class Group {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
-
-    /** Soft-delete stamp (M6). A non-null value hides the group everywhere. */
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
-
-    /** Who deleted the group: the OWNER (deleteGroup) or the withdrawing user. */
-    @Column(name = "deleted_by")
-    private Long deletedBy;
 
     protected Group() {
     }
