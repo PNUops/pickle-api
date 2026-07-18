@@ -53,6 +53,8 @@ public final class ErrorCodes {
     public static final String SSH_KEY_LIMIT_EXCEEDED = "SSH_KEY_LIMIT_EXCEEDED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
+    // M6 점검 모드 (contract v0.9.0, GET /meta/status): 비관리자 요청 503.
+    public static final String MAINTENANCE_MODE = "MAINTENANCE_MODE";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 

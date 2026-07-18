@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.config;
 
 import jakarta.servlet.DispatcherType;
 import kr.ac.pusan.pickle.security.JwtAuthenticationFilter;
+import kr.ac.pusan.pickle.security.MaintenanceModeFilter;
 import kr.ac.pusan.pickle.security.ProblemAccessDeniedHandler;
 import kr.ac.pusan.pickle.security.ProblemAuthenticationEntryPoint;
 import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
@@ -31,6 +32,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            MaintenanceModeFilter maintenanceModeFilter,
             RefreshCsrfFilter refreshCsrfFilter,
             ProblemAuthenticationEntryPoint authenticationEntryPoint,
             ProblemAccessDeniedHandler accessDeniedHandler) throws Exception {
@@ -40,6 +42,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        // Public system status poll (contract getSystemStatus, security: []).
+                        .requestMatchers("/api/v1/meta/status").permitAll()
                         .requestMatchers("/api/v1/openapi", "/api/v1/openapi/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
@@ -48,6 +52,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // Maintenance gate runs right after auth so the principal's role
+                // is known (admin tier bypasses the 503; exempt paths always pass).
+                .addFilterAfter(maintenanceModeFilter, JwtAuthenticationFilter.class)
                 // CSRF check first: refresh/logout requests are rejected before
                 // any authentication work; independent of the JWT filter.
                 .addFilterBefore(refreshCsrfFilter, JwtAuthenticationFilter.class);
