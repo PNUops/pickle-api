@@ -188,8 +188,10 @@ public class SshGatewayRouteService {
 
         // Allowed lookups are NOT audited (gate-C): this ran on an unauthenticated
         // offered key. The authenticated per-user record is the /session call.
+        // The stored ssh_host_key is newline-joined (one entry per host-key type
+        // the VM presents); split it into the pinned hostKeys array.
         RouteResponse route = new RouteResponse(ip, UPSTREAM_SSH_PORT, vm.getSshUsername(),
-                List.of(vm.getSshHostKey()));
+                splitHostKeys(vm.getSshHostKey()));
         return RouteOutcome.granted(route);
     }
 
@@ -202,6 +204,11 @@ public class SshGatewayRouteService {
     private void auditDenied(Context ctx, Long vmId, String reason) {
         auditService.record(null, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_ROUTE_DENIED,
                 "vm", vmId, ctx.detail(reason), ctx.sourceIp());
+    }
+
+    /** Splits the newline-joined stored host keys into one entry per type. */
+    private static List<String> splitHostKeys(String stored) {
+        return stored.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
     }
 
     /** Per-request scratch: request fields plus the key resolved for detail. */

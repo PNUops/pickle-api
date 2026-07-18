@@ -122,6 +122,26 @@ class InternalSshGatewayRouteTest {
     }
 
     @Test
+    void allPinnedHostKeyTypesAreReturnedInHostKeys() throws Exception {
+        String slug = uniqueSlug();
+        // the VM presents multiple host-key types (ed25519/ecdsa/rsa), stored
+        // newline-joined; the route must split them into the hostKeys array
+        String multi = HOST_KEY
+                + "\necdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItRouteEcdsaFixture"
+                + "\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABRouteRsaFixture";
+        createVm(slug, VmStatus.RUNNING, "172.29.4.50", false, multi);
+
+        publickey(slug, CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hostKeys.length()").value(3))
+                .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY))
+                .andExpect(jsonPath("$.hostKeys[1]")
+                        .value("ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItRouteEcdsaFixture"))
+                .andExpect(jsonPath("$.hostKeys[2]")
+                        .value("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABRouteRsaFixture"));
+    }
+
+    @Test
     void unknownFingerprintDeniedWithNullActor() throws Exception {
         String slug = uniqueSlug();
         createVm(slug, VmStatus.RUNNING, "172.29.4.12", false, HOST_KEY);

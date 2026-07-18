@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.provisioning;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
@@ -346,9 +347,12 @@ class ProvisionPipelineTest {
                 .withRequestBody(containing("sshkeys=" + sshkeysWire))
                 .withRequestBody(containing("onboot=1"))
                 .withRequestBody(containing("tags=pickle")));
-        // HOSTKEY step collected and normalized the guest host key (comment dropped)
-        assertThat(vm.getSshHostKey())
-                .isEqualTo("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGuestHostKeyFixtureForPipelineAAA");
+        // HOSTKEY step collected ALL host-key types, normalized (comment dropped),
+        // newline-joined in the order read (ed25519, ecdsa, rsa)
+        assertThat(vm.getSshHostKey()).isEqualTo(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGuestEd25519ForPipeline\n"
+                        + "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItEcdsaForPipeline\n"
+                        + "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABRsaForPipeline");
         assertThat(jdbc.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
@@ -598,12 +602,21 @@ class ProvisionPipelineTest {
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json")
                         .withBody(fixture("51-agent-netif").replace("172.29.255.250", ip))));
+        // HOSTKEY step reads every host-key type the VM presents
+        stubHostKeyFile(vmid, "/etc/ssh/ssh_host_ed25519_key.pub",
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGuestEd25519ForPipeline root@vm");
+        stubHostKeyFile(vmid, "/etc/ssh/ssh_host_ecdsa_key.pub",
+                "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItEcdsaForPipeline root@vm");
+        stubHostKeyFile(vmid, "/etc/ssh/ssh_host_rsa_key.pub",
+                "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABRsaForPipeline root@vm");
+    }
+
+    private void stubHostKeyFile(int vmid, String path, String line) {
         wm.server().stubFor(get(urlPathEqualTo(qemuPath(vmid) + "/agent/file-read"))
+                .withQueryParam("file", equalTo(path))
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json")
-                        .withBody("{\"data\":{\"content\":\"ssh-ed25519 "
-                                + "AAAAC3NzaC1lZDI1NTE5AAAAIGuestHostKeyFixtureForPipelineAAA root@vm\\n\","
-                                + "\"truncated\":false}}")));
+                        .withBody("{\"data\":{\"content\":\"" + line + "\\n\",\"truncated\":false}}")));
     }
 
     private void stubTaskStatus(String upid, String fixtureName) {

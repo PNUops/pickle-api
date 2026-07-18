@@ -4,11 +4,13 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
 import kr.ac.pusan.pickle.config.SshPlatformProperties;
@@ -78,6 +80,17 @@ public class ProvisionVmJob implements ProvisioningService {
 
     private static final List<Duration> RETRY_BACKOFF =
             List.of(Duration.ofSeconds(10), Duration.ofSeconds(60), Duration.ofMinutes(5));
+
+    /** Host-key public files the HOSTKEY step collects (all types the VM presents). */
+    private static final List<String> HOST_KEY_FILES = List.of(
+            "/etc/ssh/ssh_host_ed25519_key.pub",
+            "/etc/ssh/ssh_host_ecdsa_key.pub",
+            "/etc/ssh/ssh_host_rsa_key.pub");
+
+    /** Accepted host-key type tokens (the leading field of a pinned entry). */
+    private static final Set<String> HOST_KEY_TYPES = Set.of(
+            "ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384",
+            "ecdsa-sha2-nistp521", "ssh-rsa");
 
     private static final List<ProvisioningTaskStatus> LIVE_STATUSES = List.of(
             ProvisioningTaskStatus.PENDING, ProvisioningTaskStatus.RUNNING,
@@ -444,32 +457,53 @@ public class ProvisionVmJob implements ProvisioningService {
             return; // already collected on an earlier run
         }
         Node node = node(vm);
+        // Collect EVERY host-key type the VM presents — the gateway pins all of
+        // them because sshpiperd's upstream client advertises ecdsa ahead of
+        // ed25519 and can't be constrained, so the VM may present its ecdsa key
+        // on the upstream hop. Each type is best-effort (a VM lacking a type is
+        // skipped); collecting none means sshd hasn't generated its keys yet
+        // (or the agent isn't answering) → retryable.
+        List<String> collected = new ArrayList<>();
+        for (String path : HOST_KEY_FILES) {
+            readHostKey(node, vm, path).ifPresent(collected::add);
+        }
+        if (collected.isEmpty()) {
+            throw new RetryableStepException(
+                    "게스트 SSH 호스트 키를 아직 읽지 못했습니다 (sshd 키 생성 대기 또는 에이전트 무응답)");
+        }
+        vmRepository.storeSshHostKey(vm.getId(), String.join("\n", collected), Instant.now());
+    }
+
+    /** Reads one host-key file and normalizes it; empty if absent/malformed. */
+    private Optional<String> readHostKey(Node node, Vm vm, String path) {
         String content;
         try {
-            content = proxmox.agentFileRead(node.getApiHost(), node.getName(), requireVmid(vm),
-                    "/etc/ssh/ssh_host_ed25519_key.pub");
+            content = proxmox.agentFileRead(node.getApiHost(), node.getName(), requireVmid(vm), path);
         } catch (ProxmoxApiException e) {
-            // sshd may still be regenerating host keys on first boot — retryable
-            throw new RetryableStepException("게스트 SSH 호스트 키를 읽지 못했습니다: " + e.getMessage());
+            // a host-key type this VM does not have (file absent) or a transient
+            // read miss — skip it; the "collected none" guard handles readiness.
+            log.debug("provision vm {}: host key {} not collected: {}", vm.getId(), path,
+                    e.getMessage());
+            return Optional.empty();
         }
-        String hostKey = normalizeHostKey(content);
-        vmRepository.storeSshHostKey(vm.getId(), hostKey, Instant.now());
+        return normalizeHostKey(content);
     }
 
     /**
-     * Validates and normalizes an {@code ssh_host_ed25519_key.pub} to the
-     * {@code ssh-ed25519 <base64>} one-liner (comment dropped). A malformed
-     * file is retryable — the guest may not have finished writing it.
+     * Validates and normalizes an {@code ssh_host_*_key.pub} to the
+     * {@code <type> <base64>} one-liner (comment dropped). Empty (skipped)
+     * rather than throwing on a malformed/mid-write file, so one bad type does
+     * not fail the whole step.
      */
-    private static String normalizeHostKey(String content) {
+    private static Optional<String> normalizeHostKey(String content) {
         if (content == null || content.isBlank()) {
-            throw new RetryableStepException("게스트 SSH 호스트 키 파일이 비어 있습니다");
+            return Optional.empty();
         }
         String[] fields = content.strip().split("\\s+", 3);
-        if (fields.length < 2 || !"ssh-ed25519".equals(fields[0]) || fields[1].isBlank()) {
-            throw new RetryableStepException("게스트 SSH 호스트 키 형식이 올바르지 않습니다");
+        if (fields.length < 2 || !HOST_KEY_TYPES.contains(fields[0]) || fields[1].isBlank()) {
+            return Optional.empty();
         }
-        return fields[0] + " " + fields[1];
+        return Optional.of(fields[0] + " " + fields[1]);
     }
 
     /** Step 10: CREATING → RUNNING, task DONE, CREATE event, owner mail. */
