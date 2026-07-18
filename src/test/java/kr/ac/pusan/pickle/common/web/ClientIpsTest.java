@@ -6,11 +6,36 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
- * Single-trusted-proxy X-Forwarded-For resolution: only the rightmost entry
- * (appended by our nginx) is trusted; client-supplied left entries must not
- * influence the resolved IP (rate-limit bypass hardening).
+ * Client IP resolution behind the two-hop proxy chain. {@code X-Real-IP} (set by
+ * the app-LXC nginx from Cloudflare's CF-Connecting-IP) is the true client and
+ * wins; without it we fall back to the rightmost {@code X-Forwarded-For} entry,
+ * then {@code getRemoteAddr()}. Client-supplied left entries must never influence
+ * the resolved IP (rate-limit bypass hardening).
  */
 class ClientIpsTest {
+
+    @Test
+    void prefersRealIpOverForwardedRightmostInTwoHopChain() {
+        // Cloudflare → LXC100 (172.30.1.10) → app-LXC nginx → api: the XFF
+        // rightmost is the LXC100 hop for ALL external traffic, so trusting it
+        // would collapse every client into one bucket. X-Real-IP carries the
+        // true client and must win.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.30.1.20");
+        request.addHeader("X-Forwarded-For", "203.0.113.7, 172.30.1.10");
+        request.addHeader("X-Real-IP", "203.0.113.7");
+        assertThat(ClientIps.clientIp(request)).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    void realIpWinsEvenWhenForwardedIsSpoofed() {
+        // An attacker may forge X-Forwarded-For, but nginx overwrites X-Real-IP.
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("172.30.1.20");
+        request.addHeader("X-Forwarded-For", "6.6.6.6, 7.7.7.7, 172.30.1.10");
+        request.addHeader("X-Real-IP", "198.51.100.42");
+        assertThat(ClientIps.clientIp(request)).isEqualTo("198.51.100.42");
+    }
 
     @Test
     void usesRemoteAddrWithoutForwardedHeader() {
