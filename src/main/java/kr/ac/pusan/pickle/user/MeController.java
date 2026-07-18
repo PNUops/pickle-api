@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.user;
 
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -21,12 +22,14 @@ public class MeController {
     private final UserRepository userRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final MfaService mfaService;
+    private final TermsService termsService;
 
     public MeController(UserRepository userRepository, GroupMemberRepository groupMemberRepository,
-            MfaService mfaService) {
+            MfaService mfaService, TermsService termsService) {
         this.userRepository = userRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.mfaService = mfaService;
+        this.termsService = termsService;
     }
 
     @GetMapping
@@ -36,6 +39,6 @@ public class MeController {
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
                         "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요."));
         return UserProfileResponse.from(user, groupMemberRepository.findWithGroupByUserId(user.getId()),
-                mfaService.isEnrolled(user.getId()));
+                mfaService.isEnrolled(user.getId()), termsService.pendingConsents(user.getId()));
     }
 }

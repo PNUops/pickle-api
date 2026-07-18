@@ -163,7 +163,9 @@ class ContractDriftTest {
             "POST /admin/users/{userId}/mfa-reset",
             // M6 terms/consent — W2-A (contract v0.9.0).
             "GET /meta/terms",
-            "GET /meta/terms/{docType}");
+            "GET /meta/terms/{docType}",
+            "GET /me/consents",
+            "POST /me/consents");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -178,9 +180,7 @@ class ContractDriftTest {
      * trivial.</p>
      */
     private static final Set<String> PLANNED = Set.of(
-            "GET /me/consents",
-            "GET /meta/status",
-            "POST /me/consents");
+            "GET /meta/status");
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");

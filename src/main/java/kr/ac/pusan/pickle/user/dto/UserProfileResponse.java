@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.user.dto;
 
 import java.util.List;
+import kr.ac.pusan.pickle.consent.dto.TermsVersionView;
 import kr.ac.pusan.pickle.group.GroupKind;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
@@ -18,7 +19,7 @@ public record UserProfileResponse(
         UserStatus status,
         List<Membership> memberships,
         boolean mfaEnabled,
-        List<Object> pendingConsents) {
+        List<TermsVersionView> pendingConsents) {
 
     public record Membership(Long groupId, String groupName, GroupKind groupKind, GroupMemberRole role) {
 
@@ -29,10 +30,9 @@ public record UserProfileResponse(
     }
 
     public static UserProfileResponse from(User user, List<GroupMember> memberships,
-            boolean mfaEnabled) {
-        // pendingConsents stays empty until W2-A part 2 (terms/consent) lands.
+            boolean mfaEnabled, List<TermsVersionView> pendingConsents) {
         return new UserProfileResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
                 user.getOrgId(), user.getStatus(),
-                memberships.stream().map(Membership::from).toList(), mfaEnabled, List.of());
+                memberships.stream().map(Membership::from).toList(), mfaEnabled, pendingConsents);
     }
 }
