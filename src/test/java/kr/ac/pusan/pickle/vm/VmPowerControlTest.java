@@ -196,6 +196,26 @@ class VmPowerControlTest {
     }
 
     @Test
+    void startIsUnaffectedByStopProtection() throws Exception {
+        long vmId = createVm(VmStatus.STOPPED);
+        // stop protection ON: shutdown/reboot/force-stop require group EDITOR+,
+        // but START is deliberately never gated by it.
+        jdbcTemplate.update("insert into vm_settings (vm_id, key, value) values (?, ?, 'true'::jsonb)",
+                vmId, "stop_protection");
+
+        // a MEMBER (below EDITOR) can still START …
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isAccepted());
+        // … while the same MEMBER is refused a stop-class op by stop protection.
+        setStatus(vmId, VmStatus.RUNNING);
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_STOP_PROTECTED"));
+    }
+
+    @Test
     void rebootAcceptRecordsIntentAndEnqueuesAfterCommit() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/reboot")
