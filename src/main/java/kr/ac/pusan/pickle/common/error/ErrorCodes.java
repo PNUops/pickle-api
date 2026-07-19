@@ -63,6 +63,10 @@ public final class ErrorCodes {
     public static final String SSH_KEY_LIMIT_EXCEEDED = "SSH_KEY_LIMIT_EXCEEDED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
+    // M6.5 web terminal (contract v0.10.0). Ticket mint refusals surfaced to the
+    // console; the internal redeem/revalidate reason codes are separate (below).
+    public static final String TERMINAL_DISABLED = "TERMINAL_DISABLED";
+    public static final String TERMINAL_SESSION_LIMIT = "TERMINAL_SESSION_LIMIT";
     // M6 점검 모드 (contract v0.9.0, GET /meta/status): 비관리자 요청 503.
     public static final String MAINTENANCE_MODE = "MAINTENANCE_MODE";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
