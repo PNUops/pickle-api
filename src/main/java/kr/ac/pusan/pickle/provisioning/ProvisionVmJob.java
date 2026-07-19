@@ -360,16 +360,18 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("memory", String.valueOf(vm.getMemoryMb()));
         params.put("ciuser", vm.getSshUsername());
         params.put("cipassword", password);
-        // Authorize the SSH gateway's platform key on the guest (docs/plan/05).
+        // Authorize the platform keys on the guest (docs/plan/05): the SSH gateway
+        // upstream key (M5.5) and, when configured, the web-terminal bridge key
+        // (M6.5 — independent revocation, docs/plan/05 D6). The two authorized_keys
+        // one-liners are newline-joined before encoding.
         // PVE's sshkeys param is format=urlencoded and its validator forbids both
         // space and '+' (^[-%a-zA-Z0-9_.!~*'()]*$, PVE::JSONSchema pve_verify_urlencoded).
         // URLEncoder maps space→'+', so we must turn those into %20 on the inner
         // (pre-)encoding; encodeForm then adds its transport layer (space%20 → %2520
         // on the wire), PVE decodes the form once, and cloud-init uri_unescapes once
-        // more — restoring the exact key. Without the replace, a literal '+' from a
+        // more — restoring the exact keys. Without the replace, a literal '+' from a
         // space survives PVE's form decode and fails the validator (400).
-        params.put("sshkeys", URLEncoder.encode(
-                sshPlatformProperties.requirePlatformPublicKey(), StandardCharsets.UTF_8)
+        params.put("sshkeys", URLEncoder.encode(platformSshKeys(vm), StandardCharsets.UTF_8)
                 .replace("+", "%20"));
         params.put("ipconfig0", "ip=" + ip + "/" + cidrPrefix(pool.getCidr())
                 + ",gw=" + hostAddress(pool.getGateway()));
@@ -381,6 +383,23 @@ public class ProvisionVmJob implements ProvisioningService {
 
         vmRepository.storeCredentials(vm.getId(), credentialCipher.encrypt(password),
                 passwordEncoder.encode(password), Instant.now());
+    }
+
+    /**
+     * The cloud-init {@code sshkeys} value: the required SSH gateway platform key,
+     * plus the optional web-terminal bridge key (M6.5, newline-joined). When the
+     * terminal key is not yet configured only the gateway key is injected and a
+     * warning is logged — such VMs are re-provisioned once W2 sets
+     * {@code PICKLE_TERMINAL_PUBLIC_KEY} (dev volatile policy).
+     */
+    private String platformSshKeys(Vm vm) {
+        String platformKey = sshPlatformProperties.requirePlatformPublicKey();
+        if (!sshPlatformProperties.hasTerminalPublicKey()) {
+            log.warn("provision vm {}: PICKLE_TERMINAL_PUBLIC_KEY unset — injecting only the SSH "
+                    + "gateway key; web terminal will be unavailable until re-provisioned", vm.getId());
+            return platformKey;
+        }
+        return platformKey + "\n" + sshPlatformProperties.terminalPublicKey().strip();
     }
 
     /**
