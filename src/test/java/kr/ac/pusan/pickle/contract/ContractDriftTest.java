@@ -167,7 +167,11 @@ class ContractDriftTest {
             "GET /me/consents",
             "POST /me/consents",
             // M6 maintenance/contact — W2-B (contract v0.9.0).
-            "GET /meta/status");
+            "GET /meta/status",
+            // M6.5 web terminal (contract v0.10.0).
+            "POST /vms/{vmId}/terminal-sessions",
+            "GET /admin/terminal-sessions",
+            "POST /admin/terminal-sessions/{sessionId}/terminate");
 
     /**
      * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
@@ -179,12 +183,7 @@ class ContractDriftTest {
      * no new operations, only role-gate changes). Keep entries alphabetized
      * one-per-line if a future rev repopulates this set.</p>
      */
-    private static final Set<String> PLANNED = Set.of(
-            // M6.5 web terminal (contract v0.10.0) — Lane A moves these to
-            // IMPLEMENTED as each endpoint lands; must be empty at W3 merge.
-            "POST /vms/{vmId}/terminal-sessions",
-            "GET /admin/terminal-sessions",
-            "POST /admin/terminal-sessions/{sessionId}/terminate");
+    private static final Set<String> PLANNED = Set.of();
 
     private static final Set<String> HTTP_METHODS =
             Set.of("get", "put", "post", "delete", "options", "head", "patch", "trace");
