@@ -55,6 +55,8 @@ public class SettingsService {
     public static final String MAINTENANCE_MESSAGE = "maintenance_message";
     public static final String BANNER_MESSAGE = "banner_message";
     public static final String CONTACT_EMAIL = "contact_email";
+    /** M6.5 web-terminal global kill switch (V46, default false). */
+    public static final String WEB_TERMINAL_ENABLED = "web_terminal_enabled";
 
     /** Hostname-safe entry: lowercase dot-separated labels, ≤63 chars total. */
     private static final Pattern HOSTNAME_SAFE = Pattern.compile(
@@ -244,6 +246,7 @@ public class SettingsService {
         map.put(ADMIN_DELETE_MIN_NOTICE_DAYS, new Editable(SettingValueType.INTEGER,
                 intInRange(0, 90)));
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
+        map.put(WEB_TERMINAL_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(VM_EXPIRY_AUTOSTOP_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(ALLOWED_ROOT_DOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
         map.put(RESERVED_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
