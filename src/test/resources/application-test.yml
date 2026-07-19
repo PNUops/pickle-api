@@ -29,3 +29,10 @@ pickle:
     token: test-sshgw-token
     allowed-source-ip: 172.30.1.30
     rate-limit-per-minute: 60
+  terminal:
+    # Known control token/URL for the force-terminate tests (WireMock points here).
+    bridge-control-base-url: http://127.0.0.1:0
+    bridge-control-token: test-terminal-control-token
+    # Multiple Spring test contexts are cached alive in one JVM; the PG advisory
+    # single-instance lock would trip across contexts, so it is disabled in tests.
+    enforce-single-instance: false

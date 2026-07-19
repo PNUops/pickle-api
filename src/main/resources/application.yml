@@ -79,6 +79,13 @@ pickle:
     # (sshgw live since M4B — dev sets these via /etc/pickle/api.env).
     advertised-host: ${PICKLE_SSH_HOST:}
     advertised-port: ${PICKLE_SSH_PORT:0}
+    # SSH gateway upstream public key, authorized on every VM (M5.5). No default:
+    # provisioning fails closed when unset (docs/plan/05).
+    platform-public-key: ${PICKLE_SSH_PLATFORM_PUBLIC_KEY:}
+    # Web-terminal bridge public key, injected alongside the gateway key (M6.5,
+    # independent revocation). Optional — when blank only the gateway key is
+    # injected (warning logged); dev VMs are re-provisioned once W2 sets it.
+    terminal-public-key: ${PICKLE_TERMINAL_PUBLIC_KEY:}
   sshgw:
     # Internal route endpoint (docs/api/internal.md Link 1). No token default
     # outside dev/test: when blank the /internal filter chain fails closed
@@ -100,6 +107,33 @@ pickle:
     token: ${PICKLE_PROXY_AGENT_TOKEN:}
     connect-timeout: 5s
     read-timeout: 30s
+  terminal:
+    # M6.5 web terminal control link (docs/api/internal.md Link 3b). pickle-api is
+    # the client for force-terminate only; the browser WS + SSH bytes live on the
+    # sshgw-terminal-bridge (LXC 102). The inbound redeem/session/revalidate calls
+    # reuse the /internal filter (PICKLE_SSHGW_TOKEN, source 172.30.1.30).
+    #
+    # Control token has no default outside dev/test: when blank the terminate
+    # call fails closed with 503 (never an empty bearer). :8083 is the bridge
+    # control port (source 172.30.1.20 only, nftables-restricted).
+    bridge-control-base-url: ${PICKLE_TERMINAL_BRIDGE_URL:http://172.30.1.30:8083}
+    bridge-control-token: ${PICKLE_TERMINAL_CONTROL_TOKEN:}
+    bridge-connect-timeout: 2s
+    bridge-read-timeout: 3s
+    # One-time ticket lifetime from mint (docs/plan/05 D4). Short — the bridge
+    # redeems within one WS handshake.
+    ticket-ttl: 60s
+    # Concurrent live-session caps enforced at mint over tickets + mirror
+    # (docs/plan/05 D7 M6; per-org avoids a single global shared-fate cap).
+    per-user-cap: ${PICKLE_TERMINAL_PER_USER_CAP:3}
+    per-vm-cap: ${PICKLE_TERMINAL_PER_VM_CAP:5}
+    per-org-cap: ${PICKLE_TERMINAL_PER_ORG_CAP:20}
+    # Ticket-mint rate limit, applied on BOTH the client IP and the JWT userId
+    # (dual key, B3c — IP is spoofable, userId is the fixed axis).
+    rate-limit-per-minute: ${PICKLE_TERMINAL_RATE_LIMIT:10}
+    # Boot-time single-instance assertion (PG advisory lock): the in-memory
+    # session mirror + cap accounting require exactly one api instance (I2).
+    enforce-single-instance: ${PICKLE_TERMINAL_SINGLE_INSTANCE:true}
   publishing:
     # Reverse-proxy public IPv4 a custom domain's A record must point at
     # (docs/plan/06 verified campus proxy address).

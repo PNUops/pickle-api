@@ -219,8 +219,15 @@ public class SshGatewayRouteService {
                 "vm", vmId, ctx.detail(reason), ctx.sourceIp());
     }
 
-    /** Splits the newline-joined stored host keys into one entry per type. */
-    private static List<String> splitHostKeys(String stored) {
+    /**
+     * Splits the newline-joined stored host keys into one entry per type. Shared
+     * with the M6.5 terminal redeem (docs/api/internal.md Link 3a) so both hops
+     * pin against the identical multi-type set.
+     */
+    public static List<String> splitHostKeys(String stored) {
+        if (stored == null) {
+            return List.of();
+        }
         return stored.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
     }
 

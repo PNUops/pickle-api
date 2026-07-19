@@ -85,6 +85,13 @@ public class AuditService {
     // M5 admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";
+    // M6.5 web terminal (contract v0.10.0, docs/api/internal.md Link 3). Actor is
+    // the mint-time user (session-start/end) or the admin (force_terminate). The
+    // detail map NEVER carries terminal frame/keystroke content — only lifecycle
+    // metadata (byte/duration counts, reasons, clientIp); this is asserted by test.
+    public static final String TERMINAL_SESSION_START = "terminal.session_start";
+    public static final String TERMINAL_SESSION_END = "terminal.session_end";
+    public static final String TERMINAL_FORCE_TERMINATE = "terminal.force_terminate";
     // M5.5 SSH keys / VM settings / password (contract v0.8.0). Never the key
     // material — only the fact and non-secret metadata (fingerprint/keyId).
     public static final String USER_SSH_KEY_ADD = "user.ssh_key_add";
