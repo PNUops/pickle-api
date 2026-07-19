@@ -119,10 +119,14 @@ class TerminalMintTest {
     }
 
     @Test
-    void nonMemberAndViewerAreMaskedAs404() throws Exception {
+    void nonMemberIsMasked404ButViewerGets403() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, false);
+        // non-member: existence masked as 404.
         mint(outsiderToken, vmId).andExpect(status().isNotFound());
-        mint(viewerToken, vmId).andExpect(status().isNotFound());
+        // VIEWER already sees the VM (getVm), so it gets an honest role 403.
+        mint(viewerToken, vmId)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
     }
 
     @Test

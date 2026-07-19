@@ -111,14 +111,21 @@ public class TerminalService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.TERMINAL_DISABLED,
                     "웹 터미널을 사용할 수 없습니다", "웹 터미널 기능이 현재 비활성화되어 있습니다.");
         }
-        // 2) visible VM + group MEMBER+ (non-member, VIEWER, missing → 404 mask).
+        // 2) visible VM + group MEMBER+. A non-member (or missing VM) is masked as
+        //    404 (existence stays private); a VIEWER already sees the VM via getVm,
+        //    so it gets an honest 403 (same as the power-control paths) rather than
+        //    a misleading 404.
         Vm vm = vmRepository.findById(vmId).orElseThrow(TerminalService::vmNotFound);
         GroupMemberRole role = groupMemberRepository
                 .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
                 .map(GroupMember::getRole)
                 .orElse(null);
-        if (role == null || !role.atLeast(GroupMemberRole.MEMBER)) {
+        if (role == null) {
             throw vmNotFound();
+        }
+        if (!role.atLeast(GroupMemberRole.MEMBER)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+                    "웹 터미널을 열 권한이 없습니다", "그룹의 MEMBER 이상만 웹 터미널을 사용할 수 있습니다.");
         }
         // 3) RUNNING.
         if (vm.getStatus() != VmStatus.RUNNING) {
