@@ -146,6 +146,9 @@ public class TerminalService {
     }
 
     private void enforceCaps(long userId, long vmId, long orgId) {
+        // reclaim any leaked mirror slots before counting, so a dead bridge cannot
+        // permanently exhaust a cap.
+        sessionRegistry.prune();
         long userCount = ticketRegistry.countUser(userId) + sessionRegistry.countUser(userId);
         long vmCount = ticketRegistry.countVm(vmId) + sessionRegistry.countVm(vmId);
         long orgCount = ticketRegistry.countOrg(orgId) + sessionRegistry.countOrg(orgId);
@@ -265,6 +268,9 @@ public class TerminalService {
         if (s.isEmpty()) {
             return TerminalRevalidateResponse.denied(TerminalReasons.SESSION_UNKNOWN);
         }
+        // the 60s poll is the session heartbeat — refresh liveness so the leak
+        // pruner never evicts a genuinely-live session.
+        sessionRegistry.touch(sessionId);
         Authz authz = authorize(s.get().vmId(), s.get().userId());
         return authz.allowed() ? TerminalRevalidateResponse.allowed()
                 : TerminalRevalidateResponse.denied(authz.reason());
@@ -278,6 +284,7 @@ public class TerminalService {
      */
     @Transactional(readOnly = true)
     public List<TerminalSessionView> list(AuthenticatedUser actor) {
+        sessionRegistry.prune();
         List<MirrorSession> sessions = sessionRegistry.started();
         if (actor.role().isOrgTier()) {
             Long orgId = actor.orgId();

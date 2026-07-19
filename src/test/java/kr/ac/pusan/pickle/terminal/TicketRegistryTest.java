@@ -57,7 +57,8 @@ class TicketRegistryTest {
     }
 
     private static TerminalProperties propsWithTtl(Duration ttl) {
-        return new TerminalProperties(null, null, null, null, ttl, null, null, null, null, false);
+        return new TerminalProperties(null, null, null, null, ttl, null, null, null, null, null,
+                null, false);
     }
 
     @Test

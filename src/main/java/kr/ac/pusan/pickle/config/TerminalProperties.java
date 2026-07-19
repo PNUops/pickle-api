@@ -24,6 +24,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param perVmCap              max concurrent live sessions per VM (default 5)
  * @param perOrgCap             max concurrent live sessions per owning org (default 20)
  * @param rateLimitPerMinute    ticket-mint budget, applied on BOTH client IP and userId
+ * @param pendingGrace          a redeemed-but-never-started mirror entry is pruned after
+ *                              this idle age (default 120s ≈ ticket TTL + slack); covers a
+ *                              bridge that dies between redeem and session-start
+ * @param staleAfter            a started mirror entry with no revalidation heartbeat for
+ *                              this long is pruned (default 330s ≈ 60s poll × 5 + slack);
+ *                              covers a hard-killed bridge that never reports session-end
  * @param enforceSingleInstance boot-time PG-advisory single-instance assertion (default true)
  */
 @ConfigurationProperties(prefix = "pickle.terminal")
@@ -37,6 +43,8 @@ public record TerminalProperties(
         Integer perVmCap,
         Integer perOrgCap,
         Integer rateLimitPerMinute,
+        Duration pendingGrace,
+        Duration staleAfter,
         Boolean enforceSingleInstance) {
 
     public TerminalProperties {
@@ -49,6 +57,8 @@ public record TerminalProperties(
         perVmCap = positiveOr(perVmCap, 5);
         perOrgCap = positiveOr(perOrgCap, 20);
         rateLimitPerMinute = positiveOr(rateLimitPerMinute, 10);
+        pendingGrace = positiveDuration(pendingGrace, Duration.ofSeconds(120));
+        staleAfter = positiveDuration(staleAfter, Duration.ofSeconds(330));
         enforceSingleInstance = enforceSingleInstance == null || enforceSingleInstance;
     }
 
@@ -63,5 +73,9 @@ public record TerminalProperties(
 
     private static int positiveOr(Integer value, int fallback) {
         return value != null && value > 0 ? value : fallback;
+    }
+
+    private static Duration positiveDuration(Duration value, Duration fallback) {
+        return value != null && !value.isZero() && !value.isNegative() ? value : fallback;
     }
 }

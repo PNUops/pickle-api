@@ -131,6 +131,11 @@ pickle:
     # Ticket-mint rate limit, applied on BOTH the client IP and the JWT userId
     # (dual key, B3c — IP is spoofable, userId is the fixed axis).
     rate-limit-per-minute: ${PICKLE_TERMINAL_RATE_LIMIT:10}
+    # Mirror leak pruning: a redeemed-but-never-started entry is evicted after
+    # pending-grace; a started entry with no revalidation heartbeat after
+    # stale-after (60s poll × 5 + slack). Reclaims cap slots from a dead bridge.
+    pending-grace: 120s
+    stale-after: 330s
     # Boot-time single-instance assertion (PG advisory lock): the in-memory
     # session mirror + cap accounting require exactly one api instance (I2).
     enforce-single-instance: ${PICKLE_TERMINAL_SINGLE_INSTANCE:true}
