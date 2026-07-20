@@ -34,6 +34,7 @@ import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
 import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
 import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
 import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import kr.ac.pusan.pickle.vmrequest.VmSlugPolicy;
 import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.data.domain.Page;
@@ -73,6 +74,7 @@ public class ApprovalService {
     private final NotificationService notificationService;
     private final SubdomainPolicy subdomainPolicy;
     private final DomainRepository domainRepository;
+    private final VmSlugPolicy slugPolicy;
     private final SecureRandom random = new SecureRandom();
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
@@ -80,7 +82,8 @@ public class ApprovalService {
             NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
             NotificationService notificationService,
-            SubdomainPolicy subdomainPolicy, DomainRepository domainRepository) {
+            SubdomainPolicy subdomainPolicy, DomainRepository domainRepository,
+            VmSlugPolicy slugPolicy) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
@@ -94,6 +97,7 @@ public class ApprovalService {
         this.notificationService = notificationService;
         this.subdomainPolicy = subdomainPolicy;
         this.domainRepository = domainRepository;
+        this.slugPolicy = slugPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -178,6 +182,19 @@ public class ApprovalService {
             // AUTO subdomain but a specific root was chosen — validate it.
             subdomainPolicy.validateRootDomain(grantedRootDomain, "grantedRootDomain", errors);
         }
+        // VM slug finalization (v0.12.0): the admin accepts/changes the
+        // requester's desiredSlug here; null/blank keeps today's auto path.
+        // vms.hostname is checked against ALL rows incl. soft-deleted —
+        // slugs are never recycled (the unique constraint is the backstop).
+        String grantedSlug = Texts.blankToNull(form.grantedSlug());
+        if (grantedSlug != null) {
+            int slugErrorsBefore = errors.size();
+            slugPolicy.validateSlug(grantedSlug, "grantedSlug", errors);
+            if (errors.size() == slugErrorsBefore && vmRepository.existsByHostname(grantedSlug)) {
+                errors.add(new FieldValidationError("grantedSlug",
+                        "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
+            }
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
@@ -194,7 +211,7 @@ public class ApprovalService {
         // scoring placement step arrives with the M3 pipeline, docs/plan/03).
         Long nodeId = form.nodeId() != null ? form.nodeId() : template.getNodeId();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
-        String hostname = generateHostname(group.getSlug());
+        String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());
         Vm vm = vmRepository.save(new Vm(nodeId, request.getGroupId(), request.getOrgId(),
                 request.getId(), hostname, hostname, template.getId(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),

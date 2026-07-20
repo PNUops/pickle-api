@@ -247,6 +247,63 @@ class ApprovalTest {
     }
 
     @Test
+    void grantedSlugFinalizesHostnameAndBlankFallsBackToAuto() throws Exception {
+        long groupId = createTeam(studentToken, "appr-slug-x1");
+        long requestId = submit(studentToken, groupId);
+
+        // malformed (bean validation) / reserved word (shared list) → 422 grantedSlug
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "grantedSlug", "-bad-"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("grantedSlug"));
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "grantedSlug", "www"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("grantedSlug"));
+
+        // taken hostname — even of a soft-deleted VM (slugs are never recycled) → 422,
+        // and the request stays SUBMITTED (decidable again)
+        long otherRequestId = submit(studentToken, groupId);
+        Vm taken = vmRepository.save(new Vm(
+                jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class),
+                groupId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
+                template.getId(), 1, 1024, 10, null, null));
+        jdbcTemplate.update(
+                "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
+                taken.getId());
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "grantedSlug", "appr-slug-taken"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("grantedSlug"))
+                .andExpect(jsonPath("$.errors[0].message").value(
+                        "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
+        mockMvc.perform(get("/api/v1/admin/vm-requests/" + requestId)
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUBMITTED"));
+
+        // granted slug becomes vms.hostname verbatim
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                with(approveBody(), "grantedSlug", "appr-slug-final"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+        Vm named = vmRepository.findAll().stream()
+                .filter(vm -> vm.getRequestId() == requestId)
+                .findFirst().orElseThrow();
+        assertThat(named.getHostname()).isEqualTo("appr-slug-final");
+
+        // blank grantedSlug → today's auto generation (group slug + 4-char suffix)
+        postJson("/api/v1/admin/vm-requests/" + otherRequestId + "/approve", orgAdminToken,
+                with(approveBody(), "grantedSlug", "  "))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+        Vm auto = vmRepository.findAll().stream()
+                .filter(vm -> vm.getRequestId() == otherRequestId && vm.getDeletedAt() == null)
+                .findFirst().orElseThrow();
+        assertThat(auto.getHostname()).matches("appr-slug-x1-[a-z0-9]{4}");
+    }
+
+    @Test
     void approveRejectsForcedNodeWithoutTheGrantedTemplate() throws Exception {
         long groupId = createTeam(studentToken, "appr-node-x1");
         long requestId = submit(studentToken, groupId);
