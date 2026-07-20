@@ -6,6 +6,7 @@ import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.consent.dto.TermsDocumentView;
 import kr.ac.pusan.pickle.consent.dto.TermsVersionView;
 import kr.ac.pusan.pickle.settings.SettingsService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -25,18 +26,24 @@ public class MetaController {
     private final TermsService termsService;
     private final SystemStatusService systemStatusService;
 
+    /** SSH gateway host advertised in the request form's slug preview (v0.12.0, config-driven). */
+    private final String sshHost;
+
     public MetaController(SettingsService settingsService, TermsService termsService,
-            SystemStatusService systemStatusService) {
+            SystemStatusService systemStatusService,
+            @Value("${pickle.ssh.advertised-host:ssh.pickle.pnuops.com}") String sshHost) {
         this.settingsService = settingsService;
         this.termsService = termsService;
         this.systemStatusService = systemStatusService;
+        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pickle.pnuops.com" : sshHost;
     }
 
     @GetMapping("/request-options")
     public RequestOptionsResponse requestOptions() {
         return new RequestOptionsResponse(
                 settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS),
-                settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS));
+                settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS),
+                sshHost);
     }
 
     /** Public: current version metadata of every consent document. */

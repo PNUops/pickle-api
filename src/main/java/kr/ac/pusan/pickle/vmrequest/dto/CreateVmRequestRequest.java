@@ -68,5 +68,11 @@ public record CreateVmRequestRequest(
 
         @Pattern(regexp = "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
                 message = "커스텀 도메인이 올바른 호스트명 형식이 아닙니다.")
-        String customDomain) {
+        String customDomain,
+
+        // Blank ≡ null (미지정 → 승인 시 자동 생성) — 예약어·중복(파기 VM 포함)은
+        // 서버(VmSlugPolicy + 서비스)에서 검증.
+        @Pattern(regexp = "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
+                message = "호스트명(슬러그)은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
+        String desiredSlug) {
 }

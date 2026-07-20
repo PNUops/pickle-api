@@ -76,6 +76,7 @@ public class VmRequestAssembler {
                     request.getReqStartDate(), request.getReqEndDate(),
                     request.isNeedSsh(), request.isNeedHttp(), request.isNeedPublic(),
                     request.getDesiredSubdomain(), request.getRootDomain(), request.getCustomDomain(),
+                    request.getDesiredSlug(),
                     request.getStatus(),
                     review != null
                             ? VmRequestReviewResponse.from(review, users.get(review.getReviewerId()))

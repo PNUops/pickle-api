@@ -81,6 +81,10 @@ public class VmRequest {
     @Column(name = "custom_domain")
     private String customDomain;
 
+    /** Requester-desired hostname/slug (v0.12.0); null = auto-generate at approval. */
+    @Column(name = "desired_slug")
+    private String desiredSlug;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "vm_request_status")
@@ -101,7 +105,7 @@ public class VmRequest {
             String courseOrProject, String specReason, String extraNote,
             int reqVcpu, int reqMemoryMb, int reqDiskGb, LocalDate reqStartDate, LocalDate reqEndDate,
             boolean needSsh, boolean needHttp, boolean needPublic,
-            String desiredSubdomain, String rootDomain, String customDomain) {
+            String desiredSubdomain, String rootDomain, String customDomain, String desiredSlug) {
         this.groupId = groupId;
         this.orgId = orgId;
         this.requesterId = requesterId;
@@ -121,6 +125,7 @@ public class VmRequest {
         this.desiredSubdomain = desiredSubdomain;
         this.rootDomain = rootDomain;
         this.customDomain = customDomain;
+        this.desiredSlug = desiredSlug;
     }
 
     public Long getId() {
@@ -201,6 +206,10 @@ public class VmRequest {
 
     public String getCustomDomain() {
         return customDomain;
+    }
+
+    public String getDesiredSlug() {
+        return desiredSlug;
     }
 
     public VmRequestStatus getStatus() {

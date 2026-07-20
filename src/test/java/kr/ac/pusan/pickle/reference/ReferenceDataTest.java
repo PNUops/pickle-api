@@ -129,6 +129,8 @@ class ReferenceDataTest {
                 .andExpect(jsonPath("$.allowedRootDomains").value(
                         org.hamcrest.Matchers.contains("pickle.pnuops.com")))
                 .andExpect(jsonPath("$.reservedSubdomains").value(org.hamcrest.Matchers.containsInAnyOrder(
-                        "www", "api", "admin", "ssh", "mail", "console", "staging")));
+                        "www", "api", "admin", "ssh", "mail", "console", "staging")))
+                // v0.12.0: SSH gateway host for the request form's slug preview
+                .andExpect(jsonPath("$.sshHost").value("ssh.pickle.pnuops.com"));
     }
 }

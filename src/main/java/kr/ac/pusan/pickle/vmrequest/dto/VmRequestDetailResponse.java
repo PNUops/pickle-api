@@ -32,6 +32,7 @@ public record VmRequestDetailResponse(
         String desiredSubdomain,
         String rootDomain,
         String customDomain,
+        String desiredSlug,
         VmRequestStatus status,
         VmRequestReviewResponse review,
         Instant createdAt,

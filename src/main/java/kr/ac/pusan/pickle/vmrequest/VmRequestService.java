@@ -25,6 +25,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
+import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vmrequest.dto.CreateVmRequestRequest;
 import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
 import org.springframework.data.domain.Page;
@@ -52,12 +53,15 @@ public class VmRequestService {
     private final SettingsService settingsService;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final VmRepository vmRepository;
+    private final VmSlugPolicy slugPolicy;
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
             OrgRepository orgRepository, VmTemplateRepository templateRepository,
             SettingsService settingsService, AuditService auditService,
-            NotificationService notificationService) {
+            NotificationService notificationService, VmRepository vmRepository,
+            VmSlugPolicy slugPolicy) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.groupRepository = groupRepository;
@@ -67,6 +71,8 @@ public class VmRequestService {
         this.settingsService = settingsService;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.vmRepository = vmRepository;
+        this.slugPolicy = slugPolicy;
     }
 
     @Transactional
@@ -99,6 +105,8 @@ public class VmRequestService {
         }
         validateDates(request, errors);
         validateDomains(request, errors);
+        String desiredSlug = Texts.blankToNull(request.desiredSlug());
+        validateSlug(desiredSlug, errors);
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
@@ -111,7 +119,7 @@ public class VmRequestService {
                 request.reqStartDate(), request.reqEndDate(),
                 request.needSsh(), request.needHttp(), request.needPublic(),
                 request.desiredSubdomain(), Texts.blankToNull(request.rootDomain()),
-                Texts.blankToNull(request.customDomain())));
+                Texts.blankToNull(request.customDomain()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
                 Map.of("groupId", group.getId(), "orgId", org.getId(), "templateId", template.getId(),
@@ -256,6 +264,28 @@ public class VmRequestService {
                         List.of(VmRequestStatus.SUBMITTED, VmRequestStatus.APPROVED))) {
             errors.add(new FieldValidationError("desiredSubdomain",
                     "이미 사용 중이거나 신청된 서브도메인입니다."));
+        }
+    }
+
+    /**
+     * Desired-slug validation (v0.12.0): pattern/reserved/profanity via
+     * {@link VmSlugPolicy}, then uniqueness — against vms.hostname (soft-deleted
+     * included, slugs are never recycled) and against other SUBMITTED requests.
+     */
+    private void validateSlug(String desiredSlug, List<FieldValidationError> errors) {
+        if (desiredSlug == null) {
+            return;
+        }
+        int before = errors.size();
+        slugPolicy.validateSlug(desiredSlug, "desiredSlug", errors);
+        if (errors.size() > before) {
+            return;
+        }
+        if (vmRepository.existsByHostname(desiredSlug)) {
+            errors.add(new FieldValidationError("desiredSlug", "이미 사용 중인 호스트명입니다."));
+        } else if (requestRepository.existsByDesiredSlugAndStatus(desiredSlug,
+                VmRequestStatus.SUBMITTED)) {
+            errors.add(new FieldValidationError("desiredSlug", "이미 신청 중인 호스트명입니다."));
         }
     }
 

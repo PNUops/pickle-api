@@ -57,6 +57,14 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
     boolean existsByDesiredSubdomainAndRootDomainAndStatusIn(String desiredSubdomain, String rootDomain,
             Collection<VmRequestStatus> statuses);
 
+    /**
+     * Duplicate-slug guard at submission (v0.12.0): another SUBMITTED request
+     * already asks for the same hostname/slug. APPROVED requests need no check
+     * here — approval turned the slug into a vms.hostname row, which the
+     * existsByHostname check covers.
+     */
+    boolean existsByDesiredSlugAndStatus(String desiredSlug, VmRequestStatus status);
+
     /** Approval-context history: prior requests by the same user or group. */
     @Query("""
             select r from VmRequest r

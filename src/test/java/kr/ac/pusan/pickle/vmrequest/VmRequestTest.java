@@ -21,6 +21,8 @@ import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +66,9 @@ class VmRequestTest {
 
     @Autowired
     private NodeRepository nodeRepository;
+
+    @Autowired
+    private VmRepository vmRepository;
 
     @Autowired
     private JwtService jwtService;
@@ -218,6 +223,67 @@ class VmRequestTest {
 
         // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void desiredSlugIsValidatedEchoedAndNeverRecycled() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-slug-x1");
+
+        // desiredSlug echoed in the detail; omitted → null
+        String mine = postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"))
+                .andReturn().getResponse().getContentAsString();
+        long mineId = objectMapper.readTree(mine).get("id").asLong();
+        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSlug").value((Object) null));
+
+        // malformed slug → 422 (bean validation pattern)
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "-bad-"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "ab"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
+
+        // reserved word (shared with reservedSubdomains) → 422
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "www"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
+
+        // another SUBMITTED request already asks for the slug → 422
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
+                .andExpect(jsonPath("$.errors[0].message").value("이미 신청 중인 호스트명입니다."));
+
+        // an existing vms.hostname blocks the slug — even soft-deleted (never recycled)
+        long vmReqId = submit(requesterToken, groupId);
+        Vm vm = vmRepository.save(new Vm(nodeRepository.findAll().getFirst().getId(), groupId,
+                org.getId(), vmReqId, "vmr-slug-taken", "vmr-slug-taken", template.getId(),
+                1, 1024, 10, null, null));
+        jdbcTemplate.update(
+                "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
+                vm.getId());
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSlug", "vmr-slug-taken"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
+                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 호스트명입니다."));
+
+        // a rejected request is terminal — its desired slug is submittable again
+        User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
+        String orgAdminToken = jwtService.createAccessToken(orgAdmin);
+        postJson("/api/v1/admin/vm-requests/" + mineId + "/reject", orgAdminToken,
+                Map.of("comment", "슬러그 재사용 테스트를 위해 반려합니다."))
+                .andExpect(status().isOk());
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"));
     }
 
     @Test
