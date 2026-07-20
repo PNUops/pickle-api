@@ -319,15 +319,19 @@ public class VmDeletionService {
      * {@code DeleteVmJob.claimTask} deliberately never claims NEEDS_ADMIN, so
      * without this the enqueued run below would be a silent no-op and the VM
      * would stay wedged in DELETING — force-delete is the advertised recovery
-     * path for those parks, so it resumes the task to PENDING here.
+     * path for those parks, so it resumes the task to PENDING here. The
+     * attempt budget is cleared with the transition (repository resume
+     * convention): a retry-exhaustion park carries {@code attempts=MAX}, and
+     * without the reset the resumed run would re-park on its first failure
+     * with zero backoff retries.
      */
     private void resumeParkedDeleteTask(long vmId) {
         provisioningTaskRepository
                 .findFirstByVmIdAndKindAndStatusInOrderByIdDesc(vmId, ProvisioningTaskKind.DELETE,
                         Set.of(ProvisioningTaskStatus.NEEDS_ADMIN))
-                .ifPresent(task -> provisioningTaskRepository.transitionStatus(task.getId(),
-                        ProvisioningTaskStatus.NEEDS_ADMIN, ProvisioningTaskStatus.PENDING,
-                        "오버라이드 강제 삭제로 파기 재개", Instant.now()));
+                .ifPresent(task -> provisioningTaskRepository.transitionStatusClearingAttempts(
+                        task.getId(), ProvisioningTaskStatus.NEEDS_ADMIN,
+                        ProvisioningTaskStatus.PENDING, Instant.now()));
     }
 
     // ── shared guards ──────────────────────────────────────────────────────

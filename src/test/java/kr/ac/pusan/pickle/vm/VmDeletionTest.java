@@ -836,7 +836,9 @@ class VmDeletionTest {
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "confirmName", vmName, "overrideProtection", true))))
                 .andExpect(status().isAccepted());
-        assertThat(taskState(vmId)).containsExactly("PENDING", 1);
+        // attempts cleared with the resume — a retry-exhaustion park (attempts
+        // = MAX) must get a fresh retry budget, not re-park on first failure
+        assertThat(taskState(vmId)).containsExactly("PENDING", 0);
         assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("false");
 
         // the resumed run now destroys clean (guest stopped → shutdown skipped)
