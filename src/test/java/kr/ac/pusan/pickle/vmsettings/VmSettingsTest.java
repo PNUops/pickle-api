@@ -219,17 +219,22 @@ class VmSettingsTest {
     @Test
     void protectionKeysAreOwnerOnly() throws Exception {
         long vmId = createVm();
-        // EDITOR blocked from both protection keys (role gate precedes any hook)
+        // EDITOR blocked from both protection keys (role gate)
         patchSettings(editorToken, vmId, Map.of("deletion_protection", true))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
         patchSettings(editorToken, vmId, Map.of("stop_protection", true))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        // stop_protection has no hypervisor hook, so OWNER can toggle it here
+        // Both keys are pure pickle-side state (the PVE protection flag is
+        // always-on platform state, not mirrored from here), so OWNER toggles
+        // succeed even on this vmid-less VM with no Proxmox behind it.
         patchSettings(ownerToken, vmId, Map.of("stop_protection", true))
                 .andExpect(status().isOk());
         assertThat(vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)).isTrue();
+        patchSettings(ownerToken, vmId, Map.of("deletion_protection", true))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)).isTrue();
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

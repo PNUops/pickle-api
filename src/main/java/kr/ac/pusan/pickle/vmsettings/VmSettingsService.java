@@ -16,9 +16,6 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.inventory.Node;
-import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -58,9 +55,12 @@ public class VmSettingsService {
 
     /**
      * One registry entry. {@code auditAction} is uniform today
-     * ({@code vm.setting_update}) but kept per-key for future divergence; an
-     * M6 on-change hook (e.g. re-render the gateway on ssh_password_enabled)
-     * would attach here.
+     * ({@code vm.setting_update}) but kept per-key for future divergence.
+     * Settings are pure pickle-side state: enforcement is pull-based (feature
+     * code reads the getters). The one eager-sync hook we ever had —
+     * deletion_protection mirrored to the PVE flag — was removed when the
+     * hypervisor flag became always-on platform state; avoid reintroducing
+     * request-time external syncs here.
      */
     private record VmSettingDef(String key, VmSettingValueType type, List<String> allowedValues,
             JsonNode defaultValue, GroupMemberRole requiredRole, String label, String description,
@@ -79,22 +79,17 @@ public class VmSettingsService {
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
-    private final NodeRepository nodeRepository;
-    private final ProxmoxClient proxmoxClient;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Map<String, VmSettingDef> registry;
 
     public VmSettingsService(VmSettingRepository settingRepository, VmRepository vmRepository,
             GroupMemberRepository groupMemberRepository, UserRepository userRepository,
-            NodeRepository nodeRepository, ProxmoxClient proxmoxClient,
             AuditService auditService, ObjectMapper objectMapper) {
         this.settingRepository = settingRepository;
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
-        this.nodeRepository = nodeRepository;
-        this.proxmoxClient = proxmoxClient;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
         this.registry = buildRegistry(objectMapper);
@@ -132,22 +127,24 @@ public class VmSettingsService {
     }
 
     /**
-     * The subset of {@code vmIds} whose {@code deletion_protection} is on — one
-     * query for the drift reconciler (checks the PVE flag only for these).
+     * System write for the SYS_ADMIN force-delete override: persists
+     * {@code deletion_protection=false} so the destroy pipeline's logical gate
+     * lets the VM through — including the sweeper-recovered run after a crash.
+     * Deliberately skips the role/state gates of {@link #patch} (the caller
+     * runs inside the force-delete transaction, which has already moved the VM
+     * to DELETING) and leaves auditing to the caller's force-delete audit.
      */
-    @Transactional(readOnly = true)
-    public Set<Long> deletionProtectedVmIds(java.util.Collection<Long> vmIds) {
-        if (vmIds.isEmpty()) {
-            return Set.of();
+    @Transactional
+    public void disableDeletionProtection(long vmId, Long actorId) {
+        Instant now = Instant.now();
+        String falseJson = objectMapper.writeValueAsString(Boolean.FALSE);
+        VmSetting row = settingRepository.findByVmIdAndKey(vmId, DELETION_PROTECTION).orElse(null);
+        if (row == null) {
+            settingRepository.save(new VmSetting(vmId, DELETION_PROTECTION, falseJson, actorId, now));
+        } else {
+            row.apply(falseJson, actorId, now);
+            settingRepository.save(row);
         }
-        Set<Long> protectedIds = new java.util.HashSet<>();
-        for (VmSetting row : settingRepository.findByKeyAndVmIdIn(DELETION_PROTECTION, vmIds)) {
-            JsonNode value = parse(row.getValue());
-            if (value.isBoolean() && value.asBoolean()) {
-                protectedIds.add(row.getVmId());
-            }
-        }
-        return protectedIds;
     }
 
     /**
@@ -236,17 +233,6 @@ public class VmSettingsService {
             String newJson = objectMapper.writeValueAsString(newValue);
             VmSetting row = settingRepository.findByVmIdAndKey(vmId, def.key()).orElse(null);
             JsonNode oldValue = row != null ? parse(row.getValue()) : def.defaultValue();
-            // On-change hook: deletion_protection is backed by the PVE native
-            // `protection` flag. Reflect it synchronously BEFORE the DB write so
-            // a Proxmox failure aborts the whole patch (contract: 반영 실패 시
-            // 변경 자체가 실패) — the tx rollback then undoes any sibling keys.
-            if (DELETION_PROTECTION.equals(def.key())) {
-                boolean newProtect = newValue.isBoolean() && newValue.asBoolean();
-                boolean oldProtect = oldValue.isBoolean() && oldValue.asBoolean();
-                if (newProtect != oldProtect) {
-                    applyPveProtection(vm, newProtect);
-                }
-            }
             if (row == null) {
                 settingRepository.save(new VmSetting(vmId, def.key(), newJson, actor.id(), now));
             } else {
@@ -337,25 +323,6 @@ public class VmSettingsService {
         return def;
     }
 
-    /**
-     * Reflects {@code deletion_protection} onto the PVE native protection flag.
-     * A VM without a {@code proxmox_vmid} (provisioning not complete) has no
-     * guest to flag, so the change is refused with a clear 409 rather than
-     * silently diverging.
-     */
-    private void applyPveProtection(Vm vm, boolean protect) {
-        Integer vmid = vm.getProxmoxVmid();
-        if (vmid == null) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "프로비저닝이 완료되지 않아 삭제 보호를 설정할 수 없습니다. 생성이 끝난 뒤 다시 시도해 주세요.");
-        }
-        Node node = nodeRepository.findById(vm.getNodeId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
-        proxmoxClient.setProtection(node.getApiHost(), node.getName(), vmid, protect);
-    }
-
     private GroupMemberRole memberRole(Vm vm, AuthenticatedUser actor) {
         return groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
                 .map(GroupMember::getRole)
@@ -382,9 +349,10 @@ public class VmSettingsService {
         map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
                 GroupMemberRole.OWNER, "삭제 보호",
-                "켜면 본인·관리자 일반·강제 삭제 접수가 모두 거부됩니다. Proxmox 네이티브 "
-                        + "protection 플래그로 하이퍼바이저 수준에서도 파기가 백킹되며, 설정 변경은 "
-                        + "즉시 반영됩니다(반영 실패 시 변경 자체가 실패). 삭제하려면 먼저 해제하세요.",
+                "켜면 본인·관리자 일반·강제 삭제 접수가 모두 거부됩니다(논리적 잠금 — 파기 "
+                        + "시점에도 재확인). 이와 별개로 모든 VM은 Proxmox 네이티브 protection "
+                        + "플래그로 하이퍼바이저 수준에서 상시 보호되며, 실제 파기 직전에만 "
+                        + "플랫폼이 해제합니다. 삭제하려면 먼저 이 설정을 해제하세요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(STOP_PROTECTION, new VmSettingDef(STOP_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),

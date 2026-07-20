@@ -18,12 +18,9 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.inventory.Node;
-import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
-import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
@@ -88,8 +85,6 @@ public class VmDeletionService {
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
     private final VmSettingsService vmSettingsService;
-    private final NodeRepository nodeRepository;
-    private final ProxmoxClient proxmoxClient;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             UserRepository userRepository, VmEventRepository vmEventRepository,
@@ -97,8 +92,7 @@ public class VmDeletionService {
             DeleteVmJob deleteVmJob, AuditService auditService,
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
-            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService,
-            NodeRepository nodeRepository, ProxmoxClient proxmoxClient) {
+            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -112,8 +106,6 @@ public class VmDeletionService {
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
         this.vmSettingsService = vmSettingsService;
-        this.nodeRepository = nodeRepository;
-        this.proxmoxClient = proxmoxClient;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -262,7 +254,9 @@ public class VmDeletionService {
                     "입력한 이름이 VM 이름과 일치하지 않습니다. VM 이름을 정확히 입력해 주세요.");
         }
         // Deletion protection: refused by default; the SYS_ADMIN escalation path
-        // (overrideProtection) bypasses it and clears the PVE flag before destroy.
+        // (overrideProtection) bypasses it by persisting the setting to false —
+        // the destroy pipeline re-checks the flag and clears the hypervisor-side
+        // protection itself, immediately before the delete.
         boolean protectedVm = vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION);
         if (protectedVm && !request.overridesProtection()) {
             throw deletionProtected(
@@ -276,9 +270,10 @@ public class VmDeletionService {
                     "현재 상태에서는 수행할 수 없는 작업입니다", "이미 파기된 VM입니다.");
         }
         if (overrodeProtection) {
-            // Clear the hypervisor flag now so the async destroy is not itself
-            // refused by PVE; a failure here fails the whole force-delete.
-            clearPveProtection(vm);
+            // Persist the override in the same tx: the destroy pipeline's
+            // logical gate (and its sweeper-recovered run after a crash) sees
+            // the flag OFF and proceeds. Audited below via overrodeProtection.
+            vmSettingsService.disableDeletionProtection(vmId, actor.id());
         }
         failLiveProvisionTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
@@ -372,17 +367,6 @@ public class VmDeletionService {
     private static ApiException deletionProtected(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_DELETION_PROTECTED,
                 "삭제 보호가 설정된 VM입니다", detail);
-    }
-
-    /** Clears the PVE native protection flag (override path); no-op without a vmid. */
-    private void clearPveProtection(Vm vm) {
-        if (vm.getProxmoxVmid() == null) {
-            return;
-        }
-        Node node = nodeRepository.findById(vm.getNodeId())
-                .orElseThrow(() -> new IllegalStateException(
-                        "노드 정보를 찾을 수 없습니다 (node " + vm.getNodeId() + ")"));
-        proxmoxClient.setProtection(node.getApiHost(), node.getName(), vm.getProxmoxVmid(), false);
     }
 
     private void requireStatusOutside(Vm vm, Set<VmStatus> forbidden, String baseDetail) {

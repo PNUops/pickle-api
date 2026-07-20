@@ -25,6 +25,7 @@ import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.scheduling.JobScheduler;
 import org.slf4j.Logger;
@@ -37,6 +38,17 @@ import org.springframework.stereotype.Component;
  * (ACPI with a 120 s guest timeout, force-stop fallback — the real pve1
  * capture shows freshly booted guests ignoring ACPI), destroy with purge,
  * release the IP into quarantine, then CAS the vm row to DELETED.
+ *
+ * <p>Protection model: every managed VM keeps the PVE {@code protection} flag
+ * ON (armed at provisioning CONFIG); this pipeline is the only code that clears
+ * it, immediately before the destroy. Two protection-related park modes exist:
+ * the destroy-time re-check of the pickle {@code deletion_protection} setting
+ * (a still-ON flag means a race like an ADMIN-notice-window re-enable, or a
+ * path that skipped the API gate — parked without touching the PVE flag), and
+ * the PVE "protected" destroy refusal (the flag was re-set out-of-band between
+ * clear and delete — parked, never retried). A crash after the clear but
+ * before the delete leaves the guest unprotected only until the sweeper
+ * resumes the run — bounded minutes, on a VM already destined for destruction.</p>
  *
  * <p>Idempotency/serialization comes from the {@code provisioning_tasks} DELETE
  * task: the partial unique index allows one live task per VM, and the CAS
@@ -77,12 +89,13 @@ public class DeleteVmJob {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final PublishingTeardownService publishingTeardown;
+    private final VmSettingsService vmSettingsService;
 
     public DeleteVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
             UserRepository userRepository, NotificationService notificationService,
-            PublishingTeardownService publishingTeardown) {
+            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -93,6 +106,7 @@ public class DeleteVmJob {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.publishingTeardown = publishingTeardown;
+        this.vmSettingsService = vmSettingsService;
     }
 
     /**
@@ -150,6 +164,22 @@ public class DeleteVmJob {
             log.info("Delete job aborted for vm {}: cancellation raced the destroy", vmId);
             return;
         }
+        // Destroy-time logical gate: deletion_protection ON at this point means
+        // the acceptance-time check was raced (e.g. an owner re-enabled it
+        // during the ADMIN notice window — a deliberate objection surface) or a
+        // path skipped the API gate. Park for an operator BEFORE any teardown
+        // (publishing must survive) and leave the PVE flag armed. Resolution:
+        // cancel the deletion, or override force-delete (persists the flag off).
+        if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
+            Instant now = Instant.now();
+            String detail = "삭제 보호가 켜진 상태로 파기 시점에 도달했습니다 — 관리자가 삭제를 "
+                    + "취소하거나 오버라이드 강제 삭제로 회수해야 합니다";
+            log.error("Delete pipeline parked for vm {}: deletion_protection is on at destroy time",
+                    vmId);
+            taskRepository.park(task.getId(), detail, now);
+            vmRepository.updateStatusDetail(vmId, VmStatus.DELETING, detail, now);
+            return;
+        }
         try {
             // Tear down HTTP publishing BEFORE the guest/IP goes away: a vhost
             // surviving past the 24h IP quarantine would route the deleted VM's
@@ -178,9 +208,9 @@ public class DeleteVmJob {
                     e.getMessage() + " — 관리자 확인이 필요합니다", now);
         } catch (RuntimeException e) {
             if (isProtectionError(e)) {
-                // Out-of-band `qm set --protection 1` (or a non-override force
-                // delete that reached destroy): PVE refuses the destroy. Never
-                // retry — park for an operator to clear the flag / override.
+                // PVE refused the destroy as protected even though the pipeline
+                // cleared the flag just before — someone re-set it out-of-band
+                // in that window. Never retry — park for an operator.
                 Instant now = Instant.now();
                 String detail = "Proxmox 보호(protection) 플래그로 파기가 거부되었습니다 — "
                         + "관리자가 보호를 해제하거나 오버라이드 강제 삭제로 회수해야 합니다";
@@ -276,6 +306,12 @@ public class DeleteVmJob {
                             + "'과 다르고 pickle 태그도 없습니다");
         }
         shutdownIfRunning(node, vmid);
+        // Disarm the always-on PVE protection as late as possible — after the
+        // identity check and shutdown, immediately before the destroy. The
+        // clear is an idempotent config PUT, so a retry re-clears harmlessly;
+        // a transport failure here retries via handleFailure (its message
+        // never matches isProtectionError).
+        proxmoxClient.setProtection(node.getApiHost(), node.getName(), vmid, false);
         String upid = proxmoxClient.delete(node.getApiHost(), node.getName(), vmid);
         proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
     }

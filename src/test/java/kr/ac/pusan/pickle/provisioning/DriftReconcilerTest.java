@@ -193,16 +193,13 @@ class DriftReconcilerTest {
     }
 
     @Test
-    void deletionProtectionDriftIsFlaggedWhenPveFlagCleared() {
+    void protectionDriftIsFlaggedForAnyVmWhenPveFlagClearedAndResolvesWhenRestored() {
         long nodeId = createNode(wm.apiHost());
         String nodeName = jdbcTemplate.queryForObject("select name from nodes where id = ?",
                 String.class, nodeId);
         long vmId = createVm(nodeId, 62501, "RUNNING", 1, 1024);
-        // user desires protection ON …
-        jdbcTemplate.update(
-                "insert into vm_settings (vm_id, key, value) values (?, 'deletion_protection', 'true'::jsonb)",
-                vmId);
-        // … guest present with matching spec, but PVE reports protection cleared
+        // Always-on invariant: no vm_settings row exists at all, yet a cleared
+        // PVE protection flag (out-of-band qm set --protection 0) is drift.
         stubClusterResources(wm, qemu(62501, "running", 1, 1024, "pickle"));
         wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
                         com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo(
@@ -216,9 +213,26 @@ class DriftReconcilerTest {
         Long findings = jdbcTemplate.queryForObject("""
                 select count(*) from drift_findings
                  where vm_id = ? and kind = 'SPEC_MISMATCH' and status = 'OPEN'
-                   and summary like '%삭제 보호%'
+                   and summary like '%보호 플래그 불일치%'
                 """, Long.class, vmId);
         assertThat(findings).isEqualTo(1L);
+
+        // the operator re-armed the flag → the finding auto-resolves
+        wm.reset();
+        stubClusterResources(wm, qemu(62501, "running", 1, 1024, "pickle"));
+        wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
+                        com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo(
+                                "/api2/json/nodes/" + nodeName + "/qemu/62501/config"))
+                .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
+                        .withStatus(200).withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":{\"cores\":1,\"protection\":1}}")));
+        reconciler.reconcile();
+        Long open = jdbcTemplate.queryForObject("""
+                select count(*) from drift_findings
+                 where vm_id = ? and kind = 'SPEC_MISMATCH' and status = 'OPEN'
+                   and summary like '%보호 플래그 불일치%'
+                """, Long.class, vmId);
+        assertThat(open).isZero();
     }
 
     // --- fixtures (same shape as VmStatusPollerTest) ----------------------------

@@ -507,6 +507,7 @@ class VmDeletionTest {
                 .willReturn(okFixture("70-delete")));
         wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(DELETE_UPID)))
                 .willReturn(okFixture("70-delete-status")));
+        stubConfigPut(proxmoxVmid); // always-on protection cleared before destroy
 
         deleteVmJob.deleteVm(vmId);
 
@@ -527,6 +528,19 @@ class VmDeletionTest {
                 .withRequestBody(containing("timeout=120")));
         wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath("status/stop"))));
         wm.server().verify(deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
+        // the protection clear happened, and strictly before the destroy
+        wm.server().verify(WireMock.putRequestedFor(urlPathEqualTo(qemuPath("config")))
+                .withRequestBody(containing("protection=0")));
+        List<com.github.tomakehurst.wiremock.stubbing.ServeEvent> events =
+                new java.util.ArrayList<>(wm.server().getAllServeEvents());
+        java.util.Collections.reverse(events); // journal is newest-first
+        List<String> ordered = events.stream()
+                .filter(event -> ("PUT".equals(event.getRequest().getMethod().getName())
+                        && event.getRequest().getUrl().startsWith(qemuPath("config")))
+                        || "DELETE".equals(event.getRequest().getMethod().getName()))
+                .map(event -> event.getRequest().getMethod().getName())
+                .toList();
+        assertThat(ordered).containsExactly("PUT", "DELETE");
         // org admin notified of the final destruction
         notificationDispatchJob.dispatch();
         assertThat(mockMailSender.lastMessageTo("orgadmin@pickle.local").body()).contains("파기");
@@ -770,7 +784,9 @@ class VmDeletionTest {
     void deletePipelineParksNeedsAdminOnProtectedDestroyError() {
         long vmId = createVm(VmStatus.DELETING);
         markPendingDeletion(vmId, "FORCE", Instant.now().minus(Duration.ofMinutes(1)));
-        // guest present but stopped (shutdown skipped); destroy refused by PVE
+        // Guest present but stopped (shutdown skipped). The pipeline clears the
+        // always-on flag, yet PVE still refuses the destroy as protected — the
+        // out-of-band re-set race the park branch exists for.
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json;charset=UTF-8")
@@ -778,6 +794,7 @@ class VmDeletionTest {
                                 {"data":[{"vmid":%d,"type":"qemu","status":"stopped",
                                           "node":"%s","name":"test","tags":"pickle"}]}
                                 """.formatted(proxmoxVmid, NODE_NAME))));
+        stubConfigPut(proxmoxVmid);
         wm.server().stubFor(WireMock.delete(urlPathEqualTo(qemuBasePath()))
                 .willReturn(aResponse().withStatus(500)
                         .withHeader("Content-Type", "application/json;charset=UTF-8")
@@ -792,7 +809,48 @@ class VmDeletionTest {
     }
 
     @Test
-    void deletionProtectionRefusesAllPathsAndOverrideForceDeletesClearingPveFlag() throws Exception {
+    void deletePipelineParksWhenDeletionProtectionStillOnAtDestroyTime() {
+        // Reachable via an ADMIN-notice-window re-enable (or a skipped gate):
+        // the destroy-time logical gate parks BEFORE any teardown or PVE call.
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "ADMIN", Instant.now().minus(Duration.ofMinutes(1)));
+        setSetting(vmId, "deletion_protection", "true");
+
+        deleteVmJob.deleteVm(vmId);
+
+        assertThat(taskState(vmId)).containsExactly("NEEDS_ADMIN", 1);
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
+        assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜진 상태");
+        // no Proxmox interaction at all: PVE protection stays armed, no destroy
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+    }
+
+    @Test
+    void deleteClearFailureRetriesInsteadOfProtectionPark() {
+        long vmId = createVm(VmStatus.DELETING);
+        markPendingDeletion(vmId, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("""
+                                {"data":[{"vmid":%d,"type":"qemu","status":"stopped",
+                                          "node":"%s","name":"test","tags":"pickle"}]}
+                                """.formatted(proxmoxVmid, NODE_NAME))));
+        // the protection-clear config PUT fails with a generic 500 (no
+        // "protect" in the message) → backoff retry, not the protection park
+        wm.server().stubFor(WireMock.put(urlPathEqualTo(qemuPath("config")))
+                .willReturn(aResponse().withStatus(500)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("{\"data\":null,\"message\":\"boom\"}")));
+
+        deleteVmJob.deleteVm(vmId);
+
+        assertThat(taskState(vmId)).containsExactly("RETRYING", 1);
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuBasePath())));
+    }
+
+    @Test
+    void deletionProtectionRefusesAllPathsAndOverridePersistsSettingOff() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
@@ -818,8 +876,9 @@ class VmDeletionTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
 
-        // override force-delete clears the PVE protection flag before destroy
-        stubConfigPut(proxmoxVmid);
+        // Override force-delete persists deletion_protection=false in the same
+        // tx (the destroy pipeline re-checks it — incl. a sweeper-recovered run
+        // after a lost enqueue) and never touches PVE in the request thread.
         mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -827,10 +886,10 @@ class VmDeletionTest {
                                 "confirmName", vmName, "overrideProtection", true))))
                 .andExpect(status().isAccepted());
         assertThat(statusOf(vmId)).isEqualTo("DELETING");
-        wm.server().verify(WireMock.putRequestedFor(
-                        urlPathEqualTo("/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid
-                                + "/config"))
-                .withRequestBody(containing("protection=0")));
+        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("false");
+        wm.server().verify(0, WireMock.putRequestedFor(
+                urlPathEqualTo("/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid
+                        + "/config")));
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action='vm.force_delete' and target_id=? and detail::text like '%overrodeProtection%'
@@ -838,35 +897,22 @@ class VmDeletionTest {
     }
 
     @Test
-    void deletionProtectionOnChangeReflectsToPveAtomically() throws Exception {
+    void deletionProtectionToggleIsPveSilentAndAllowedWithoutVmid() throws Exception {
+        // The setting is a pure logical gate: toggling never calls Proxmox
+        // (the hypervisor flag is always-on platform state) …
         long vmId = createVm(VmStatus.RUNNING);
-        stubConfigPut(proxmoxVmid);
-        // OWNER turns protection on → PVE receives protection=1, row persists
         patchSetting(ownerToken, vmId, "deletion_protection", true).andExpect(status().isOk());
-        wm.server().verify(WireMock.putRequestedFor(
-                        urlPathEqualTo("/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid
-                                + "/config"))
-                .withRequestBody(containing("protection=1")));
         assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("true");
+        patchSetting(ownerToken, vmId, "deletion_protection", false).andExpect(status().isOk());
+        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("false");
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
 
-        // PVE failure → the setting change fails atomically (row unchanged)
-        wm.server().stubFor(WireMock.put(urlPathEqualTo(
-                        "/api2/json/nodes/" + NODE_NAME + "/qemu/" + proxmoxVmid + "/config"))
-                .willReturn(aResponse().withStatus(500)
-                        .withHeader("Content-Type", "application/json;charset=UTF-8")
-                        .withBody("{\"data\":null,\"message\":\"boom\"}")));
-        patchSetting(ownerToken, vmId, "deletion_protection", false)
-                .andExpect(status().is5xxServerError());
-        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("true");
-    }
-
-    @Test
-    void deletionProtectionRejectedWithoutProxmoxVmid() throws Exception {
-        long vmId = createVm(VmStatus.CREATING);
-        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
-        patchSetting(ownerToken, vmId, "deletion_protection", true)
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+        // … so a vmid-less (still-provisioning) VM can toggle it too
+        long creatingVmId = createVm(VmStatus.CREATING);
+        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", creatingVmId);
+        patchSetting(ownerToken, creatingVmId, "deletion_protection", true)
+                .andExpect(status().isOk());
+        assertThat(settingValue(creatingVmId, "deletion_protection")).isEqualTo("true");
     }
 
     @Test
