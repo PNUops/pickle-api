@@ -164,6 +164,8 @@ class ProvisionPipelineTest {
                 .delete(urlPathEqualTo(qemuPath(vmid)))
                 .willReturn(okFixture("70-delete")));
         stubTaskStatus(DELETE_UPID, "70-delete-status");
+        // compensation clears the always-on protection flag before the destroy
+        stubConfig(vmid);
 
         // attempts 1–3: transient 500 → RETRYING with a scheduled backoff run
         for (int attempt = 1; attempt <= 3; attempt++) {
@@ -178,6 +180,8 @@ class ProvisionPipelineTest {
         job.provisionVm(vmId);
 
         wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
+        wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
+                .withRequestBody(containing("protection=0")));
         wm.server().verify(1, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
         ProvisioningTask task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.FAILED);
@@ -346,6 +350,7 @@ class ProvisionPipelineTest {
                 .withRequestBody(containing("ipconfig0=" + expectedIpconfig))
                 .withRequestBody(containing("sshkeys=" + sshkeysWire))
                 .withRequestBody(containing("onboot=1"))
+                .withRequestBody(containing("protection=1"))
                 .withRequestBody(containing("tags=pickle")));
         // HOSTKEY step collected ALL host-key types, normalized (comment dropped),
         // newline-joined in the order read (ed25519, ecdsa, rsa)
@@ -485,8 +490,10 @@ class ProvisionPipelineTest {
             job.provisionVm(vmId);
         }
 
-        // destroy was never called; the task parked for an operator instead
+        // destroy was never called — and neither was the protection clear,
+        // which sits behind the same identity guard; the task parked instead
         wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+        wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
         ProvisioningTask task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
         assertThat(task.getLastError()).contains("보상 실패");

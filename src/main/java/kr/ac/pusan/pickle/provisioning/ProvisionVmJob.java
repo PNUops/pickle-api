@@ -347,6 +347,13 @@ public class ProvisionVmJob implements ProvisioningService {
      * ciphertext + BCrypt hash on the vms row (plaintext is never persisted).
      * A re-run regenerates and overwrites both sides, so DB and guest can
      * never disagree after the step completes.
+     *
+     * <p>Also arms the always-on hypervisor safety net: every managed VM keeps
+     * PVE {@code protection=1} from this step until {@link DeleteVmJob} clears
+     * it immediately before the physical destroy. The user-facing
+     * {@code deletion_protection} setting is a purely logical API gate and is
+     * never mirrored here. {@link #compensate} must clear the flag before its
+     * rollback destroy.
      */
     private void configure(Vm vm) {
         Node node = node(vm);
@@ -378,6 +385,7 @@ public class ProvisionVmJob implements ProvisioningService {
         firstDns(pool).ifPresent(dns -> params.put("nameserver", dns));
         params.put("net0", "virtio,bridge=" + node.getVmBridge());
         params.put("onboot", "1");
+        params.put("protection", "1");
         params.put("tags", "pickle");
         proxmox.config(node.getApiHost(), node.getName(), requireVmid(vm), params);
 
@@ -593,6 +601,11 @@ public class ProvisionVmJob implements ProvisioningService {
      * release the IP, clear the vmid, then FAILED/ERROR (contract: ERROR is
      * terminal with no underlying VM). If the cleanup itself fails the task is
      * parked instead, so a Proxmox outage never strands invisible resources.
+     *
+     * <p>CONFIG may already have applied the always-on {@code protection=1}
+     * flag (and after a CONFIG-PUT failure the flag state is unknown), so the
+     * flag is unconditionally cleared before the destroy — otherwise PVE would
+     * refuse it. The clear is an idempotent config PUT.
      */
     private void compensate(long taskId, long vmId, String error, Exception cause) {
         Instant now = Instant.now();
@@ -610,6 +623,7 @@ public class ProvisionVmJob implements ProvisioningService {
                                 + "의 게스트 이름 '" + resource.name() + "'이(가) 호스트명 '"
                                 + vm.getHostname() + "'과 다르고 pickle 태그도 없습니다");
                     }
+                    proxmox.setProtection(node.getApiHost(), node.getName(), vmid, false);
                     String upid = proxmox.delete(node.getApiHost(), node.getName(), vmid);
                     proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
                     log.info("provision vm {}: compensation destroyed half-created vmid {}",
