@@ -169,11 +169,13 @@ public class DeleteVmJob {
         // during the ADMIN notice window — a deliberate objection surface) or a
         // path skipped the API gate. Park for an operator BEFORE any teardown
         // (publishing must survive) and leave the PVE flag armed. Resolution:
-        // cancel the deletion, or override force-delete (persists the flag off).
+        // override force-delete (persists the setting off AND resumes this
+        // parked task) — a plain cancel is impossible here, the schedule has
+        // already passed.
         if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
             Instant now = Instant.now();
-            String detail = "삭제 보호가 켜진 상태로 파기 시점에 도달했습니다 — 관리자가 삭제를 "
-                    + "취소하거나 오버라이드 강제 삭제로 회수해야 합니다";
+            String detail = "삭제 보호가 켜진 상태로 파기 시점에 도달했습니다 — 소유자 이의 제기"
+                    + " 여부를 확인한 뒤, 회수하려면 오버라이드 강제 삭제를 실행하세요";
             log.error("Delete pipeline parked for vm {}: deletion_protection is on at destroy time",
                     vmId);
             taskRepository.park(task.getId(), detail, now);
@@ -206,25 +208,30 @@ public class DeleteVmJob {
             taskRepository.park(task.getId(), e.getMessage(), now);
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING,
                     e.getMessage() + " — 관리자 확인이 필요합니다", now);
+        } catch (ProtectedDestroyRefusalException e) {
+            // PVE refused the destroy as protected even though the pipeline
+            // cleared the flag just before — someone re-set it out-of-band
+            // in that window. Never retry — park for an operator.
+            Instant now = Instant.now();
+            String detail = "Proxmox 보호(protection) 플래그로 파기가 거부되었습니다 — "
+                    + "관리자가 오버라이드 강제 삭제로 회수해야 합니다"
+                    + " (out-of-band 재설정 여부 확인)";
+            log.error("Delete pipeline parked for vm {} (protected guest): {}", vmId,
+                    e.getMessage());
+            taskRepository.park(task.getId(), detail, now);
+            vmRepository.updateStatusDetail(vmId, VmStatus.DELETING, detail, now);
         } catch (RuntimeException e) {
-            if (isProtectionError(e)) {
-                // PVE refused the destroy as protected even though the pipeline
-                // cleared the flag just before — someone re-set it out-of-band
-                // in that window. Never retry — park for an operator.
-                Instant now = Instant.now();
-                String detail = "Proxmox 보호(protection) 플래그로 파기가 거부되었습니다 — "
-                        + "관리자가 보호를 해제하거나 오버라이드 강제 삭제로 회수해야 합니다";
-                log.error("Delete pipeline parked for vm {} (protected guest): {}", vmId,
-                        e.getMessage());
-                taskRepository.park(task.getId(), detail, now);
-                vmRepository.updateStatusDetail(vmId, VmStatus.DELETING, detail, now);
-                return;
-            }
             handleFailure(task.getId(), vmId, e);
         }
     }
 
-    /** A PVE "VM is protected" destroy refusal, anywhere in the cause chain. */
+    /**
+     * A PVE "VM is protected" refusal, anywhere in the cause chain. Only
+     * consulted for the destroy call itself ({@link #destroyOnProxmox}) — a
+     * failure of the preceding protection-clear PUT must never match, even if
+     * PVE's error text happens to mention the protection option, so it stays
+     * on the generic retry path.
+     */
     private static boolean isProtectionError(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             String message = t.getMessage();
@@ -233,6 +240,13 @@ public class DeleteVmJob {
             }
         }
         return false;
+    }
+
+    /** Destroy refused by PVE as protected — parked, never retried. */
+    static final class ProtectedDestroyRefusalException extends RuntimeException {
+        ProtectedDestroyRefusalException(Throwable cause) {
+            super(cause.getMessage(), cause);
+        }
     }
 
     /**
@@ -309,11 +323,18 @@ public class DeleteVmJob {
         // Disarm the always-on PVE protection as late as possible — after the
         // identity check and shutdown, immediately before the destroy. The
         // clear is an idempotent config PUT, so a retry re-clears harmlessly;
-        // a transport failure here retries via handleFailure (its message
-        // never matches isProtectionError).
+        // any failure here (transport or PVE-side) retries via handleFailure —
+        // only the destroy itself may raise the never-retried protection park.
         proxmoxClient.setProtection(node.getApiHost(), node.getName(), vmid, false);
-        String upid = proxmoxClient.delete(node.getApiHost(), node.getName(), vmid);
-        proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
+        try {
+            String upid = proxmoxClient.delete(node.getApiHost(), node.getName(), vmid);
+            proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
+        } catch (RuntimeException e) {
+            if (isProtectionError(e)) {
+                throw new ProtectedDestroyRefusalException(e);
+            }
+            throw e;
+        }
     }
 
     /** The guest at the stored vmid does not look like ours — never retried. */

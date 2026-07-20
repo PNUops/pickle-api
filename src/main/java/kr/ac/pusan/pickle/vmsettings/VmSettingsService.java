@@ -137,13 +137,9 @@ public class VmSettingsService {
     @Transactional
     public void disableDeletionProtection(long vmId, Long actorId) {
         Instant now = Instant.now();
-        String falseJson = objectMapper.writeValueAsString(Boolean.FALSE);
-        VmSetting row = settingRepository.findByVmIdAndKey(vmId, DELETION_PROTECTION).orElse(null);
-        if (row == null) {
-            settingRepository.save(new VmSetting(vmId, DELETION_PROTECTION, falseJson, actorId, now));
-        } else {
-            row.apply(falseJson, actorId, now);
-            settingRepository.save(row);
+        if (settingRepository.forceValueFalse(vmId, DELETION_PROTECTION, actorId, now) == 0) {
+            settingRepository.save(new VmSetting(vmId, DELETION_PROTECTION,
+                    objectMapper.writeValueAsString(Boolean.FALSE), actorId, now));
         }
     }
 

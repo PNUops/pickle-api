@@ -276,6 +276,7 @@ public class VmDeletionService {
             vmSettingsService.disableDeletionProtection(vmId, actor.id());
         }
         failLiveProvisionTask(vmId);
+        resumeParkedDeleteTask(vmId);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
                 overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
@@ -310,6 +311,23 @@ public class VmDeletionService {
                 return;
             }
         }
+    }
+
+    /**
+     * A previous destroy run may have parked the DELETE task as NEEDS_ADMIN
+     * (destroy-time protection gate, PVE protected refusal, retry exhaustion).
+     * {@code DeleteVmJob.claimTask} deliberately never claims NEEDS_ADMIN, so
+     * without this the enqueued run below would be a silent no-op and the VM
+     * would stay wedged in DELETING — force-delete is the advertised recovery
+     * path for those parks, so it resumes the task to PENDING here.
+     */
+    private void resumeParkedDeleteTask(long vmId) {
+        provisioningTaskRepository
+                .findFirstByVmIdAndKindAndStatusInOrderByIdDesc(vmId, ProvisioningTaskKind.DELETE,
+                        Set.of(ProvisioningTaskStatus.NEEDS_ADMIN))
+                .ifPresent(task -> provisioningTaskRepository.transitionStatus(task.getId(),
+                        ProvisioningTaskStatus.NEEDS_ADMIN, ProvisioningTaskStatus.PENDING,
+                        "오버라이드 강제 삭제로 파기 재개", Instant.now()));
     }
 
     // ── shared guards ──────────────────────────────────────────────────────

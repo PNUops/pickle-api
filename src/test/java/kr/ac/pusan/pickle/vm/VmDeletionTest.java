@@ -809,7 +809,7 @@ class VmDeletionTest {
     }
 
     @Test
-    void deletePipelineParksWhenDeletionProtectionStillOnAtDestroyTime() {
+    void deletePipelineParksWhenDeletionProtectionStillOnAtDestroyTime() throws Exception {
         // Reachable via an ADMIN-notice-window re-enable (or a skipped gate):
         // the destroy-time logical gate parks BEFORE any teardown or PVE call.
         long vmId = createVm(VmStatus.DELETING);
@@ -823,6 +823,37 @@ class VmDeletionTest {
         assertThat(statusDetailOf(vmId)).contains("삭제 보호가 켜진 상태");
         // no Proxmox interaction at all: PVE protection stays armed, no destroy
         assertThat(wm.server().getAllServeEvents()).isEmpty();
+
+        // Recovery path (the park detail's advertised escape): override
+        // force-delete persists the setting off AND resumes the parked task —
+        // claimTask never claims NEEDS_ADMIN, so without the resume the
+        // enqueued run would silently no-op and the VM would wedge.
+        String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
+                String.class, vmId);
+        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "confirmName", vmName, "overrideProtection", true))))
+                .andExpect(status().isAccepted());
+        assertThat(taskState(vmId)).containsExactly("PENDING", 1);
+        assertThat(settingValue(vmId, "deletion_protection")).isEqualTo("false");
+
+        // the resumed run now destroys clean (guest stopped → shutdown skipped)
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json;charset=UTF-8")
+                        .withBody("""
+                                {"data":[{"vmid":%d,"type":"qemu","status":"stopped",
+                                          "node":"%s","name":"test","tags":"pickle"}]}
+                                """.formatted(proxmoxVmid, NODE_NAME))));
+        stubConfigPut(proxmoxVmid);
+        wm.server().stubFor(WireMock.delete(urlPathEqualTo(qemuBasePath()))
+                .willReturn(okFixture("70-delete")));
+        wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(DELETE_UPID)))
+                .willReturn(okFixture("70-delete-status")));
+        deleteVmJob.deleteVm(vmId);
+        assertThat(statusOf(vmId)).isEqualTo("DELETED");
     }
 
     @Test
@@ -836,12 +867,13 @@ class VmDeletionTest {
                                 {"data":[{"vmid":%d,"type":"qemu","status":"stopped",
                                           "node":"%s","name":"test","tags":"pickle"}]}
                                 """.formatted(proxmoxVmid, NODE_NAME))));
-        // the protection-clear config PUT fails with a generic 500 (no
-        // "protect" in the message) → backoff retry, not the protection park
+        // The protection-clear config PUT fails — deliberately with "protect"
+        // in the PVE message: the never-retried park is scoped to the destroy
+        // call only, so even this must take the backoff retry path.
         wm.server().stubFor(WireMock.put(urlPathEqualTo(qemuPath("config")))
                 .willReturn(aResponse().withStatus(500)
                         .withHeader("Content-Type", "application/json;charset=UTF-8")
-                        .withBody("{\"data\":null,\"message\":\"boom\"}")));
+                        .withBody("{\"data\":null,\"message\":\"protection option boom\"}")));
 
         deleteVmJob.deleteVm(vmId);
 
