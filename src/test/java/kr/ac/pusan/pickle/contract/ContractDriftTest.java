@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * currently v0.6.0) and the springdoc runtime spec.
+ * currently v0.10.0) and the springdoc runtime spec.
  *
  * <p>The comparison is bidirectional over path+method sets: the contract must
  * equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}, and the runtime must expose
@@ -202,7 +202,7 @@ class ContractDriftTest {
         JsonNode runtime = new com.fasterxml.jackson.databind.ObjectMapper().readTree(runtimeJson);
 
         // doesNotContainAnyElementsOf rejects an empty iterable with an
-        // IllegalArgumentException, so guard the end-of-M3 state (PLANNED empty).
+        // IllegalArgumentException, so guard the milestone-end state (PLANNED empty).
         if (!PLANNED.isEmpty()) {
             assertThat(IMPLEMENTED)
                     .as("IMPLEMENTED and PLANNED must be disjoint — an endpoint that "
