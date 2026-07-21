@@ -369,7 +369,7 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("cipassword", password);
         // Authorize the platform keys on the guest (docs/plan/05): the SSH gateway
         // upstream key (M5.5) and, when configured, the web-terminal bridge key
-        // (M6.5 — independent revocation, docs/plan/05 D6). The two authorized_keys
+        // (M6.5 — independent revocation, docs/plan/05 Path B). The two authorized_keys
         // one-liners are newline-joined before encoding.
         // PVE's sshkeys param is format=urlencoded and its validator forbids both
         // space and '+' (^[-%a-zA-Z0-9_.!~*'()]*$, PVE::JSONSchema pve_verify_urlencoded).

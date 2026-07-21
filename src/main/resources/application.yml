@@ -120,11 +120,11 @@ pickle:
     bridge-control-token: ${PICKLE_TERMINAL_CONTROL_TOKEN:}
     bridge-connect-timeout: 2s
     bridge-read-timeout: 3s
-    # One-time ticket lifetime from mint (docs/plan/05 D4). Short — the bridge
+    # One-time ticket lifetime from mint (docs/plan/05 Path B). Short — the bridge
     # redeems within one WS handshake.
     ticket-ttl: 60s
     # Concurrent live-session caps enforced at mint over tickets + mirror
-    # (docs/plan/05 D7 M6; per-org avoids a single global shared-fate cap).
+    # (docs/plan/05 Path B; per-org avoids a single global shared-fate cap).
     per-user-cap: ${PICKLE_TERMINAL_PER_USER_CAP:3}
     per-vm-cap: ${PICKLE_TERMINAL_PER_VM_CAP:5}
     per-org-cap: ${PICKLE_TERMINAL_PER_ORG_CAP:20}

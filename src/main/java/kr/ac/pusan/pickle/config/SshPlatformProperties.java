@@ -13,7 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *       Required — provisioning fails closed when unset.</li>
  *   <li>{@code terminalPublicKey} — the web-terminal bridge's key (M6.5, LXC 102,
  *       env {@code PICKLE_TERMINAL_PUBLIC_KEY}). Kept separate from the gateway key
- *       for independent revocation (docs/plan/05 D6/I3). <b>Optional</b>: when
+ *       for independent revocation (docs/plan/05 Path B). <b>Optional</b>: when
  *       unset only the gateway key is injected (a warning is logged) — dev VMs are
  *       re-provisioned once W2 sets it.</li>
  * </ul>

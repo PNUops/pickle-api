@@ -428,7 +428,7 @@ public class ProxmoxClient {
 
     /**
      * SSLContext trusting only the certificate chain in the given PEM file
-     * (the pve1 API cert/CA — docs/domains-tls.md). No verification-bypass
+     * (the pinned PVE root CA — docs/credentials.md, docs/hosts.md LXC 101 note). No verification-bypass
      * variant exists on purpose.
      */
     private static SSLContext pinnedSslContext(String pemPath) {

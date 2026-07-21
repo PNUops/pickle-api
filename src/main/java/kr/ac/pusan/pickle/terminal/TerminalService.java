@@ -56,7 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TerminalService {
 
-    /** Dual-key mint rate limit (docs/plan/05 B3c): IP is spoofable, userId is not. */
+    /** Dual-key mint rate limit (docs/plan/05 Path B): IP is spoofable, userId is not. */
     static final String RATE_LIMIT_SCOPE_IP = "terminal_mint_ip";
     static final String RATE_LIMIT_SCOPE_USER = "terminal_mint_user";
     private static final int SSH_PORT = 22;

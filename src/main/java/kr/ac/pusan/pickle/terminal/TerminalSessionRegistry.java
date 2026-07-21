@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * In-memory <b>mirror</b> of live web-terminal sessions (docs/api/internal.md
- * Link 3, docs/plan/05 D7 I2). The real sessions (WS + SSH) are owned by the
+ * Link 3, docs/plan/05 Path B). The real sessions (WS + SSH) are owned by the
  * bridge on LXC 102; pickle-api holds only a reported mirror, used for the admin
  * list and for concurrent-session cap accounting.
  *

@@ -20,7 +20,7 @@ import kr.ac.pusan.pickle.user.UserRole;
 import org.junit.jupiter.api.Test;
 
 /**
- * Ticket store invariants (docs/api/internal.md Link 3 I1): user/VM binding, TTL
+ * Ticket store invariants (docs/api/internal.md Link 3): user/VM binding, TTL
  * expiry (deterministic via an injected clock), atomic single-use under a
  * concurrent-redeem race, and cap counting. Pure unit — no Spring context.
  */
