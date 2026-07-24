@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code ApproveVmRequest} — the approve form, pre-filled from
@@ -27,9 +28,9 @@ public record ApproveVmRequestRequest(
         @NotNull(message = "부여 템플릿(grantedTemplateId)을 지정해 주세요.")
         Long grantedTemplateId,
 
-        LocalDate grantedStartDate,
+        @Nullable LocalDate grantedStartDate,
 
-        LocalDate grantedEndDate,
+        @Nullable LocalDate grantedEndDate,
 
         @NotNull(message = "SSH 허용 여부를 지정해 주세요.")
         Boolean grantSsh,
@@ -42,7 +43,7 @@ public record ApproveVmRequestRequest(
 
         // Validated server-side by SubdomainPolicy (RFC 1123 + reserved +
         // profanity + uniqueness); null/blank ⇒ AUTO at publish.
-        String grantedSubdomain,
+        @Nullable String grantedSubdomain,
 
         String grantedRootDomain,
 
@@ -51,10 +52,10 @@ public record ApproveVmRequestRequest(
         // 서버(VmSlugPolicy + ApprovalService)에서 검증한다.
         @Pattern(regexp = "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
                 message = "호스트명(슬러그)은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
-        String grantedSlug,
+        @Nullable String grantedSlug,
 
-        Long nodeId,
+        @Nullable Long nodeId,
 
         @Size(max = 2000, message = "승인 의견은 2000자 이하여야 합니다.")
-        String comment) {
+        @Nullable String comment) {
 }

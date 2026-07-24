@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code CreateVmRequest}. Cross-field rules (spec-reason,
@@ -26,13 +27,13 @@ public record CreateVmRequestRequest(
         String purpose,
 
         @Size(max = 200, message = "수업/프로젝트명은 200자 이하여야 합니다.")
-        String courseOrProject,
+        @Nullable String courseOrProject,
 
         @Size(max = 2000, message = "사양 사유는 2000자 이하여야 합니다.")
         String specReason,
 
         @Size(max = 2000, message = "기타 참고 사항은 2000자 이하여야 합니다.")
-        String extraNote,
+        @Nullable String extraNote,
 
         @NotNull(message = "요청 vCPU 수를 입력해 주세요.")
         @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")
@@ -46,7 +47,7 @@ public record CreateVmRequestRequest(
         @Min(value = 1, message = "디스크는 1GiB 이상이어야 합니다.")
         Integer reqDiskGb,
 
-        LocalDate reqStartDate,
+        @Nullable LocalDate reqStartDate,
 
         LocalDate reqEndDate,
 
@@ -61,18 +62,18 @@ public record CreateVmRequestRequest(
 
         @Pattern(regexp = "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
                 message = "서브도메인은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
-        String desiredSubdomain,
+        @Nullable String desiredSubdomain,
 
         @Size(max = 253, message = "루트 도메인이 올바르지 않습니다.")
         String rootDomain,
 
         @Pattern(regexp = "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
                 message = "커스텀 도메인이 올바른 호스트명 형식이 아닙니다.")
-        String customDomain,
+        @Nullable String customDomain,
 
         // Blank ≡ null (미지정 → 승인 시 자동 생성) — 예약어·중복(파기 VM 포함)은
         // 서버(VmSlugPolicy + 서비스)에서 검증.
         @Pattern(regexp = "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
                 message = "호스트명(슬러그)은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
-        String desiredSlug) {
+        @Nullable String desiredSlug) {
 }

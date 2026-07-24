@@ -374,9 +374,7 @@ components:
           type: "string"
         groupId:
           format: "int64"
-          type:
-          - "integer"
-          - "null"
+          type: "integer"
         orgId:
           format: "int64"
           type:
@@ -509,9 +507,7 @@ components:
           minimum: 256
           type: "integer"
         grantedRootDomain:
-          type:
-          - "string"
-          - "null"
+          type: "string"
         grantedSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
           type:
@@ -754,9 +750,7 @@ components:
         description:
           maxLength: 500
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
         name:
           maxLength: 100
           minLength: 0
@@ -820,9 +814,7 @@ components:
           type: "integer"
         reqEndDate:
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         reqMemoryMb:
           format: "int32"
           minimum: 256
@@ -839,15 +831,11 @@ components:
         rootDomain:
           maxLength: 253
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
         specReason:
           maxLength: 2000
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
         templateId:
           format: "int64"
           type: "integer"
@@ -867,16 +855,12 @@ components:
       properties:
         code:
           pattern: "^[0-9]{6}$"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         password:
           minLength: 1
           type: "string"
         recoveryCode:
-          type:
-          - "string"
-          - "null"
+          type: "string"
       required:
       - "password"
       type: "object"
@@ -1094,9 +1078,7 @@ components:
           minLength: 1
           type: "string"
         overrideProtection:
-          type:
-          - "boolean"
-          - "null"
+          type: "boolean"
       required:
       - "confirmName"
       type: "object"
@@ -1393,16 +1375,12 @@ components:
       properties:
         code:
           pattern: "^[0-9]{6}$"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         mfaToken:
           minLength: 1
           type: "string"
         recoveryCode:
-          type:
-          - "string"
-          - "null"
+          type: "string"
       required:
       - "mfaToken"
       type: "object"
@@ -2203,9 +2181,7 @@ components:
           - "null"
         port:
           format: "int32"
-          type:
-          - "integer"
-          - "null"
+          type: "integer"
       type: "object"
     ReadAllResponse:
       properties:
@@ -2293,9 +2269,7 @@ components:
         note:
           maxLength: 2000
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
       type: "object"
     Resource:
       properties:
@@ -2805,21 +2779,15 @@ components:
           - "null"
         port:
           format: "int32"
-          type:
-          - "integer"
-          - "null"
+          type: "integer"
       type: "object"
     UpdateUserAdminRequest:
       properties:
         orgId:
           format: "int64"
-          type:
-          - "integer"
-          - "null"
+          type: "integer"
         role:
-          anyOf:
-          - $ref: "#/components/schemas/UserRole"
-          - type: "null"
+          $ref: "#/components/schemas/UserRole"
       type: "object"
     UserAdminDetailResponse:
       properties:
@@ -3265,9 +3233,7 @@ components:
           type: "string"
         startDate:
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
       required:
       - "endDate"
       type: "object"
@@ -3645,14 +3611,10 @@ components:
           minLength: 1
           type: "string"
         recoveryCode:
-          type:
-          - "string"
-          - "null"
+          type: "string"
         totpCode:
           pattern: "^[0-9]{6}$"
-          type:
-          - "string"
-          - "null"
+          type: "string"
       required:
       - "password"
       type: "object"

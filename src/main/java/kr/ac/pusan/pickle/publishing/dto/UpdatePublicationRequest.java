@@ -11,6 +11,6 @@ import org.jspecify.annotations.Nullable;
  * controller's field handling.
  */
 public record UpdatePublicationRequest(
-        @Nullable Integer port,
+        Integer port,
         @Nullable String customDomain) {
 }

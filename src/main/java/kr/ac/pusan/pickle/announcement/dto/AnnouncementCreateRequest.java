@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.announcement.AnnouncementScope;
+import org.jspecify.annotations.Nullable;
 
 /** Contract {@code AnnouncementCreateRequest}. */
 public record AnnouncementCreateRequest(
@@ -15,6 +16,6 @@ public record AnnouncementCreateRequest(
         String body,
         @NotNull(message = "공지 범위를 선택해 주세요.")
         AnnouncementScope scope,
-        Long orgId,
+        @Nullable Long orgId,
         Long groupId) {
 }

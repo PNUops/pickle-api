@@ -81,25 +81,35 @@ final class NullabilityOpenApiCustomizer {
             if (schema == null || schema.getEnum() != null || schema.getProperties() == null) {
                 continue;
             }
-            // Request bodies may be presence-tracking CLASSES (not records) —
-            // the record lookup is best-effort here, only for JsonNode fields.
             List<Class<?>> candidates = index.getOrDefault(
                     name.startsWith(PAGE_PREFIX) ? PAGE_PREFIX : name, List.of());
             if (candidates.size() == 1 && candidates.get(0).isRecord()) {
+                // Records: nullability is an explicit @Nullable opt-in, exactly
+                // like responses — an optional-but-non-null field (e.g. a port
+                // whose omission means "default") must NOT accept null.
+                // required[] stays as computed from bean validation.
                 for (RecordComponent component : candidates.get(0).getRecordComponents()) {
                     Schema<?> prop = (Schema<?>) schema.getProperties().get(component.getName());
-                    if (prop != null) {
-                        freeFormIfJsonNode(component, prop);
+                    if (prop == null) {
+                        continue;
+                    }
+                    freeFormIfJsonNode(component, prop);
+                    if (component.getAnnotatedType().isAnnotationPresent(Nullable.class)) {
+                        markNullable(prop, schema, component.getName());
                     }
                 }
-            }
-            Set<String> required = schema.getRequired() != null
-                    ? new LinkedHashSet<>(schema.getRequired())
-                    : Set.of();
-            for (Map.Entry<String, Schema> prop
-                    : ((Map<String, Schema>) schema.getProperties()).entrySet()) {
-                if (!required.contains(prop.getKey())) {
-                    markNullable(prop.getValue(), schema, prop.getKey());
+            } else {
+                // Presence-tracking request CLASSES (UpdateOrgRequest etc.)
+                // distinguish absent vs explicit null by design — every
+                // optional field genuinely accepts null.
+                Set<String> required = schema.getRequired() != null
+                        ? new LinkedHashSet<>(schema.getRequired())
+                        : Set.of();
+                for (Map.Entry<String, Schema> prop
+                        : ((Map<String, Schema>) schema.getProperties()).entrySet()) {
+                    if (!required.contains(prop.getKey())) {
+                        markNullable(prop.getValue(), schema, prop.getKey());
+                    }
                 }
             }
         }

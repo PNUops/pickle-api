@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.common.validation.Slugs;
 import kr.ac.pusan.pickle.group.GroupKind;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code CreateGroupRequest} (kind TEAM/PROJECT only — enforced in the service). */
 public record CreateGroupRequest(
@@ -23,5 +24,5 @@ public record CreateGroupRequest(
         String slug,
 
         @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
-        String description) {
+        @Nullable String description) {
 }
