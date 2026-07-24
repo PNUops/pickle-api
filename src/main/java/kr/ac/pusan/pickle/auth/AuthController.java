@@ -2,6 +2,9 @@ package kr.ac.pusan.pickle.auth;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
@@ -57,6 +60,11 @@ public class AuthController {
                 .body(authService.resendVerification(request.email(), clientIp(httpRequest)));
     }
 
+    // The runtime returns one of two bodies from a sealed outcome, which
+    // springdoc cannot infer from ResponseEntity<Object> — declare the union.
+    @ApiResponse(responseCode = "200", description = "로그인 성공(토큰 발급) 또는 2FA 챌린지",
+            content = @Content(schema = @Schema(
+                    oneOf = {AuthTokenResponse.class, MfaChallengeResponse.class})))
     @PostMapping("/login")
     public ResponseEntity<Object> login(@Valid @RequestBody LoginRequest request,
             @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,

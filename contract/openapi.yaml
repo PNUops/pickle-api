@@ -18,7 +18,7 @@ components:
           format: "date-time"
           type: "string"
         detail:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         id:
           format: "int64"
           type: "integer"
@@ -36,12 +36,7 @@ components:
           minLength: 1
           type: "string"
         role:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
       required:
       - "email"
       - "role"
@@ -58,10 +53,7 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "ORIGIN_CA_WILDCARD"
-          - "LETS_ENCRYPT"
-          type: "string"
+          $ref: "#/components/schemas/CertificateKind"
         lastError:
           type: "string"
         notAfter:
@@ -70,22 +62,12 @@ components:
         scope:
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "RENEWING"
-          - "FAILED"
-          - "REVOKED"
-          type: "string"
+          $ref: "#/components/schemas/CertificateStatus"
       type: "object"
     AdminDomainView:
       properties:
         certificateStatus:
-          enum:
-          - "ACTIVE"
-          - "RENEWING"
-          - "FAILED"
-          - "REVOKED"
-          type: "string"
+          $ref: "#/components/schemas/CertificateStatus"
         createdAt:
           format: "date-time"
           type: "string"
@@ -100,11 +82,7 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "AUTO"
-          - "REQUESTED"
-          - "CUSTOM"
-          type: "string"
+          $ref: "#/components/schemas/DomainKind"
         orgId:
           format: "int64"
           type: "integer"
@@ -113,20 +91,9 @@ components:
         rootDomain:
           type: "string"
         routeStatus:
-          enum:
-          - "PENDING"
-          - "APPLIED"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/RouteStatus"
         status:
-          enum:
-          - "PENDING"
-          - "VERIFYING"
-          - "ACTIVE"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/DomainStatus"
         updatedAt:
           format: "date-time"
           type: "string"
@@ -160,9 +127,7 @@ components:
         body:
           type: "string"
         channel:
-          enum:
-          - "EMAIL"
-          type: "string"
+          $ref: "#/components/schemas/NotificationChannel"
         createdAt:
           format: "date-time"
           type: "string"
@@ -172,10 +137,7 @@ components:
           format: "int64"
           type: "integer"
         importance:
-          enum:
-          - "NORMAL"
-          - "HIGH"
-          type: "string"
+          $ref: "#/components/schemas/NotificationImportance"
         lastError:
           type: "string"
         linkPath:
@@ -187,12 +149,7 @@ components:
           format: "date-time"
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "SENT"
-          - "FAILED"
-          - "SKIPPED"
-          type: "string"
+          $ref: "#/components/schemas/NotificationStatus"
         title:
           type: "string"
         userEmail:
@@ -210,11 +167,7 @@ components:
           format: "int64"
           type: "integer"
         domainKind:
-          enum:
-          - "AUTO"
-          - "REQUESTED"
-          - "CUSTOM"
-          type: "string"
+          $ref: "#/components/schemas/DomainKind"
         fqdn:
           type: "string"
         groupId:
@@ -235,12 +188,7 @@ components:
         protocol:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "APPLIED"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/RouteStatus"
         targetPort:
           format: "int32"
           type: "integer"
@@ -271,11 +219,7 @@ components:
         jobrunrJobId:
           type: "string"
         kind:
-          enum:
-          - "PROVISION"
-          - "DELETE"
-          - "REINSTALL"
-          type: "string"
+          $ref: "#/components/schemas/ProvisioningTaskKind"
         lastError:
           type: "string"
         orgId:
@@ -284,14 +228,7 @@ components:
         orgName:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "RUNNING"
-          - "DONE"
-          - "FAILED"
-          - "RETRYING"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/ProvisioningTaskStatus"
         stepLabel:
           type: "string"
         taskId:
@@ -309,6 +246,11 @@ components:
         vmName:
           type: "string"
       type: "object"
+    AllocationStatus:
+      enum:
+      - "ALLOCATED"
+      - "RELEASED"
+      type: "string"
     AnnouncementCreateRequest:
       properties:
         body:
@@ -322,11 +264,7 @@ components:
           format: "int64"
           type: "integer"
         scope:
-          enum:
-          - "ALL"
-          - "ORG"
-          - "GROUP"
-          type: "string"
+          $ref: "#/components/schemas/AnnouncementScope"
         title:
           maxLength: 200
           minLength: 0
@@ -336,6 +274,12 @@ components:
       - "scope"
       - "title"
       type: "object"
+    AnnouncementScope:
+      enum:
+      - "ALL"
+      - "ORG"
+      - "GROUP"
+      type: "string"
     AnnouncementView:
       properties:
         createdAt:
@@ -354,11 +298,7 @@ components:
           format: "int32"
           type: "integer"
         scope:
-          enum:
-          - "ALL"
-          - "ORG"
-          - "GROUP"
-          type: "string"
+          $ref: "#/components/schemas/AnnouncementScope"
         title:
           type: "string"
       type: "object"
@@ -479,7 +419,7 @@ components:
           format: "date-time"
           type: "string"
         detail:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         id:
           format: "int64"
           type: "integer"
@@ -516,25 +456,29 @@ components:
           format: "int64"
           type: "integer"
       type: "object"
+    CertificateKind:
+      enum:
+      - "ORIGIN_CA_WILDCARD"
+      - "LETS_ENCRYPT"
+      type: "string"
+    CertificateStatus:
+      enum:
+      - "ACTIVE"
+      - "RENEWING"
+      - "FAILED"
+      - "REVOKED"
+      type: "string"
     CertificateView:
       properties:
         kind:
-          enum:
-          - "ORIGIN_CA_WILDCARD"
-          - "LETS_ENCRYPT"
-          type: "string"
+          $ref: "#/components/schemas/CertificateKind"
         lastError:
           type: "string"
         notAfter:
           format: "date-time"
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "RENEWING"
-          - "FAILED"
-          - "REVOKED"
-          type: "string"
+          $ref: "#/components/schemas/CertificateStatus"
       type: "object"
     ChangePasswordRequest:
       properties:
@@ -552,10 +496,7 @@ components:
     ConsentInput:
       properties:
         docType:
-          enum:
-          - "TERMS_OF_SERVICE"
-          - "PRIVACY_POLICY"
-          type: "string"
+          $ref: "#/components/schemas/TermsDocType"
         version:
           format: "int32"
           type: "integer"
@@ -578,10 +519,7 @@ components:
           format: "date-time"
           type: "string"
         docType:
-          enum:
-          - "TERMS_OF_SERVICE"
-          - "PRIVACY_POLICY"
-          type: "string"
+          $ref: "#/components/schemas/TermsDocType"
         version:
           format: "int32"
           type: "integer"
@@ -593,11 +531,7 @@ components:
           minLength: 0
           type: "string"
         kind:
-          enum:
-          - "PERSONAL"
-          - "TEAM"
-          - "PROJECT"
-          type: "string"
+          $ref: "#/components/schemas/GroupKind"
         name:
           maxLength: 100
           minLength: 0
@@ -738,21 +672,11 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "AUTO"
-          - "REQUESTED"
-          - "CUSTOM"
-          type: "string"
+          $ref: "#/components/schemas/DomainKind"
         rootDomain:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "VERIFYING"
-          - "ACTIVE"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/DomainStatus"
         verification:
           $ref: "#/components/schemas/DomainVerificationView"
         verifiedAt:
@@ -762,6 +686,20 @@ components:
           format: "int64"
           type: "integer"
       type: "object"
+    DomainKind:
+      enum:
+      - "AUTO"
+      - "REQUESTED"
+      - "CUSTOM"
+      type: "string"
+    DomainStatus:
+      enum:
+      - "PENDING"
+      - "VERIFYING"
+      - "ACTIVE"
+      - "FAILED"
+      - "REMOVED"
+      type: "string"
     DomainSummaryView:
       properties:
         createdAt:
@@ -773,21 +711,11 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "AUTO"
-          - "REQUESTED"
-          - "CUSTOM"
-          type: "string"
+          $ref: "#/components/schemas/DomainKind"
         rootDomain:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "VERIFYING"
-          - "ACTIVE"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/DomainStatus"
         verifiedAt:
           format: "date-time"
           type: "string"
@@ -813,10 +741,16 @@ components:
         txtVerified:
           type: "boolean"
       type: "object"
+    DriftFindingKind:
+      enum:
+      - "MISSING_IN_PROXMOX"
+      - "UNMANAGED_GUEST"
+      - "SPEC_MISMATCH"
+      type: "string"
     DriftFindingResponse:
       properties:
         detail:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         firstSeenAt:
           format: "date-time"
           type: "string"
@@ -824,11 +758,7 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "MISSING_IN_PROXMOX"
-          - "UNMANAGED_GUEST"
-          - "SPEC_MISMATCH"
-          type: "string"
+          $ref: "#/components/schemas/DriftFindingKind"
         lastSeenAt:
           format: "date-time"
           type: "string"
@@ -848,10 +778,7 @@ components:
           format: "int64"
           type: "integer"
         status:
-          enum:
-          - "OPEN"
-          - "RESOLVED"
-          type: "string"
+          $ref: "#/components/schemas/DriftFindingStatus"
         summary:
           type: "string"
         vmId:
@@ -859,6 +786,24 @@ components:
           type: "integer"
         vmName:
           type: "string"
+      type: "object"
+    DriftFindingStatus:
+      enum:
+      - "OPEN"
+      - "RESOLVED"
+      type: "string"
+    FieldValidationError:
+      description: "검증 실패 필드 한 건 (422 응답의 errors[] 원소)"
+      properties:
+        field:
+          description: "실패한 요청 필드 이름"
+          type: "string"
+        message:
+          description: "한국어 오류 메시지"
+          type: "string"
+      required:
+      - "field"
+      - "message"
       type: "object"
     ForceDeleteVmRequest:
       properties:
@@ -881,27 +826,24 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "PERSONAL"
-          - "TEAM"
-          - "PROJECT"
-          type: "string"
+          $ref: "#/components/schemas/GroupKind"
         members:
           items:
             $ref: "#/components/schemas/GroupMemberResponse"
           type: "array"
         myRole:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         name:
           type: "string"
         slug:
           type: "string"
       type: "object"
+    GroupKind:
+      enum:
+      - "PERSONAL"
+      - "TEAM"
+      - "PROJECT"
+      type: "string"
     GroupMemberResponse:
       properties:
         email:
@@ -909,16 +851,18 @@ components:
         name:
           type: "string"
         role:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         userId:
           format: "int64"
           type: "integer"
       type: "object"
+    GroupMemberRole:
+      enum:
+      - "OWNER"
+      - "EDITOR"
+      - "MEMBER"
+      - "VIEWER"
+      type: "string"
     GroupPanel:
       properties:
         activeVms:
@@ -929,11 +873,7 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "PERSONAL"
-          - "TEAM"
-          - "PROJECT"
-          type: "string"
+          $ref: "#/components/schemas/GroupKind"
         members:
           items:
             $ref: "#/components/schemas/MemberBrief"
@@ -951,21 +891,12 @@ components:
           format: "int64"
           type: "integer"
         kind:
-          enum:
-          - "PERSONAL"
-          - "TEAM"
-          - "PROJECT"
-          type: "string"
+          $ref: "#/components/schemas/GroupKind"
         memberCount:
           format: "int64"
           type: "integer"
         myRole:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         name:
           type: "string"
         slug:
@@ -976,22 +907,14 @@ components:
         comment:
           type: "string"
         decision:
-          enum:
-          - "APPROVE"
-          - "REJECT"
-          type: "string"
+          $ref: "#/components/schemas/ReviewDecision"
         requestId:
           format: "int64"
           type: "integer"
         reviewerName:
           type: "string"
         status:
-          enum:
-          - "SUBMITTED"
-          - "APPROVED"
-          - "REJECTED"
-          - "CANCELED"
-          type: "string"
+          $ref: "#/components/schemas/VmRequestStatus"
         submittedAt:
           format: "date-time"
           type: "string"
@@ -1017,10 +940,7 @@ components:
           format: "date-time"
           type: "string"
         status:
-          enum:
-          - "ALLOCATED"
-          - "RELEASED"
-          type: "string"
+          $ref: "#/components/schemas/AllocationStatus"
         vmId:
           format: "int64"
           type: "integer"
@@ -1057,68 +977,6 @@ components:
         name:
           type: "string"
       type: "object"
-    JsonNode:
-      properties:
-        array:
-          type: "boolean"
-        bigDecimal:
-          type: "boolean"
-        bigInteger:
-          type: "boolean"
-        binary:
-          type: "boolean"
-        boolean:
-          type: "boolean"
-        container:
-          type: "boolean"
-        double:
-          type: "boolean"
-        embeddedValue:
-          type: "boolean"
-        empty:
-          type: "boolean"
-        float:
-          type: "boolean"
-        floatingPointNumber:
-          type: "boolean"
-        int:
-          type: "boolean"
-        integralNumber:
-          type: "boolean"
-        long:
-          type: "boolean"
-        missingNode:
-          type: "boolean"
-        nodeType:
-          enum:
-          - "ARRAY"
-          - "BINARY"
-          - "BOOLEAN"
-          - "MISSING"
-          - "NULL"
-          - "NUMBER"
-          - "OBJECT"
-          - "POJO"
-          - "STRING"
-          type: "string"
-        "null":
-          type: "boolean"
-        number:
-          type: "boolean"
-        object:
-          type: "boolean"
-        pojo:
-          type: "boolean"
-        short:
-          type: "boolean"
-        string:
-          type: "boolean"
-        textual:
-          deprecated: true
-          type: "boolean"
-        valueNode:
-          type: "boolean"
-      type: "object"
     LoginRequest:
       properties:
         email:
@@ -1136,12 +994,7 @@ components:
         name:
           type: "string"
         role:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         userId:
           format: "int64"
           type: "integer"
@@ -1152,24 +1005,22 @@ components:
           format: "int64"
           type: "integer"
         groupKind:
-          enum:
-          - "PERSONAL"
-          - "TEAM"
-          - "PROJECT"
-          type: "string"
+          $ref: "#/components/schemas/GroupKind"
         groupName:
           type: "string"
         role:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
       type: "object"
     MessageResponse:
       properties:
         message:
+          type: "string"
+      type: "object"
+    MfaChallengeResponse:
+      properties:
+        mfaRequired:
+          type: "boolean"
+        mfaToken:
           type: "string"
       type: "object"
     MfaLoginRequest:
@@ -1213,14 +1064,16 @@ components:
         name:
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "MAINTENANCE"
-          - "OFFLINE"
-          type: "string"
+          $ref: "#/components/schemas/NodeStatus"
         warn:
           type: "boolean"
       type: "object"
+    NodeStatus:
+      enum:
+      - "ACTIVE"
+      - "MAINTENANCE"
+      - "OFFLINE"
+      type: "string"
     NodeSummaryResponse:
       properties:
         allocatedMemoryMb:
@@ -1258,16 +1111,28 @@ components:
           format: "int64"
           type: "integer"
         status:
-          enum:
-          - "ACTIVE"
-          - "MAINTENANCE"
-          - "OFFLINE"
-          type: "string"
+          $ref: "#/components/schemas/NodeStatus"
         storage:
           type: "string"
         vmBridge:
           type: "string"
       type: "object"
+    NotificationChannel:
+      enum:
+      - "EMAIL"
+      type: "string"
+    NotificationImportance:
+      enum:
+      - "NORMAL"
+      - "HIGH"
+      type: "string"
+    NotificationStatus:
+      enum:
+      - "PENDING"
+      - "SENT"
+      - "FAILED"
+      - "SKIPPED"
+      type: "string"
     NotificationView:
       properties:
         body:
@@ -1281,10 +1146,7 @@ components:
           format: "int64"
           type: "integer"
         importance:
-          enum:
-          - "NORMAL"
-          - "HIGH"
-          type: "string"
+          $ref: "#/components/schemas/NotificationImportance"
         linkPath:
           type: "string"
         readAt:
@@ -1335,10 +1197,7 @@ components:
         slug:
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "DISABLED"
-          type: "string"
+          $ref: "#/components/schemas/OrgStatus"
       type: "object"
     OrgHeadroom:
       properties:
@@ -1357,6 +1216,11 @@ components:
             type: "string"
           type: "array"
       type: "object"
+    OrgStatus:
+      enum:
+      - "ACTIVE"
+      - "DISABLED"
+      type: "string"
     OrgSummaryResponse:
       properties:
         description:
@@ -1369,10 +1233,7 @@ components:
         slug:
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "DISABLED"
-          type: "string"
+          $ref: "#/components/schemas/OrgStatus"
       type: "object"
     PageResponseActivityEntryResponse:
       properties:
@@ -1700,6 +1561,45 @@ components:
       required:
       - "email"
       type: "object"
+    Problem:
+      description: "RFC 9457 오류 응답 + Pickle 확장(code, errors). 모든 비정상 응답은 이 형태로 반환됩\
+        니다."
+      properties:
+        code:
+          description: "기계 판독용 안정 오류 코드 (클라이언트 분기 기준)"
+          type: "string"
+        detail:
+          description: "이 발생 건에 대한 설명"
+          type: "string"
+        errors:
+          description: "검증 실패 상세 (422에서만 존재)"
+          items:
+            $ref: "#/components/schemas/FieldValidationError"
+          type: "array"
+        instance:
+          description: "발생 경로"
+          type: "string"
+        status:
+          description: "HTTP 상태 코드"
+          format: "int32"
+          type: "integer"
+        title:
+          description: "사람이 읽는 짧은 제목"
+          type: "string"
+        type:
+          description: "문제 유형 URI (기본 about:blank)"
+          type: "string"
+      required:
+      - "title"
+      - "status"
+      - "code"
+      type: "object"
+    ProvisioningTaskKind:
+      enum:
+      - "PROVISION"
+      - "DELETE"
+      - "REINSTALL"
+      type: "string"
     ProvisioningTaskResponse:
       properties:
         attempts:
@@ -1709,22 +1609,11 @@ components:
           format: "int32"
           type: "integer"
         kind:
-          enum:
-          - "PROVISION"
-          - "DELETE"
-          - "REINSTALL"
-          type: "string"
+          $ref: "#/components/schemas/ProvisioningTaskKind"
         lastError:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "RUNNING"
-          - "DONE"
-          - "FAILED"
-          - "RETRYING"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/ProvisioningTaskStatus"
         stepLabel:
           type: "string"
         totalSteps:
@@ -1734,6 +1623,15 @@ components:
           format: "date-time"
           type: "string"
       type: "object"
+    ProvisioningTaskStatus:
+      enum:
+      - "PENDING"
+      - "RUNNING"
+      - "DONE"
+      - "FAILED"
+      - "RETRYING"
+      - "NEEDS_ADMIN"
+      type: "string"
     PublicationView:
       properties:
         certificate:
@@ -1869,6 +1767,18 @@ components:
         totals:
           $ref: "#/components/schemas/ResourceTotalsResponse"
       type: "object"
+    ReviewDecision:
+      enum:
+      - "APPROVE"
+      - "REJECT"
+      type: "string"
+    RouteStatus:
+      enum:
+      - "PENDING"
+      - "APPLIED"
+      - "FAILED"
+      - "REMOVED"
+      type: "string"
     RouteView:
       properties:
         appliedAt:
@@ -1879,12 +1789,7 @@ components:
         protocol:
           type: "string"
         status:
-          enum:
-          - "PENDING"
-          - "APPLIED"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/RouteStatus"
         targetPort:
           format: "int32"
           type: "integer"
@@ -1905,8 +1810,16 @@ components:
     SettingUpdateRequest:
       properties:
         value:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
       type: "object"
+    SettingValueType:
+      enum:
+      - "BOOLEAN"
+      - "INTEGER"
+      - "NUMBER"
+      - "STRING"
+      - "JSON"
+      type: "string"
     SettingView:
       properties:
         description:
@@ -1919,15 +1832,9 @@ components:
           format: "date-time"
           type: "string"
         value:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         valueType:
-          enum:
-          - "BOOLEAN"
-          - "INTEGER"
-          - "NUMBER"
-          - "STRING"
-          - "JSON"
-          type: "string"
+          $ref: "#/components/schemas/SettingValueType"
       type: "object"
     SignupRequest:
       properties:
@@ -1954,6 +1861,11 @@ components:
       - "name"
       - "password"
       type: "object"
+    SshKeyAlgorithm:
+      enum:
+      - "ED25519"
+      - "RSA"
+      type: "string"
     SshKeyCreateRequest:
       properties:
         name:
@@ -1987,10 +1899,7 @@ components:
     SshKeyView:
       properties:
         algorithm:
-          enum:
-          - "ED25519"
-          - "RSA"
-          type: "string"
+          $ref: "#/components/schemas/SshKeyAlgorithm"
         createdAt:
           format: "date-time"
           type: "string"
@@ -2065,6 +1974,11 @@ components:
           format: "int64"
           type: "integer"
       type: "object"
+    TemplateStatus:
+      enum:
+      - "ACTIVE"
+      - "DISABLED"
+      type: "string"
     TerminalSessionView:
       properties:
         clientIp:
@@ -2108,15 +2022,17 @@ components:
         wsPath:
           type: "string"
       type: "object"
+    TermsDocType:
+      enum:
+      - "TERMS_OF_SERVICE"
+      - "PRIVACY_POLICY"
+      type: "string"
     TermsDocumentView:
       properties:
         body:
           type: "string"
         docType:
-          enum:
-          - "TERMS_OF_SERVICE"
-          - "PRIVACY_POLICY"
-          type: "string"
+          $ref: "#/components/schemas/TermsDocType"
         effectiveAt:
           format: "date-time"
           type: "string"
@@ -2129,10 +2045,7 @@ components:
     TermsVersionView:
       properties:
         docType:
-          enum:
-          - "TERMS_OF_SERVICE"
-          - "PRIVACY_POLICY"
-          type: "string"
+          $ref: "#/components/schemas/TermsDocType"
         effectiveAt:
           format: "date-time"
           type: "string"
@@ -2162,12 +2075,7 @@ components:
     UpdateGroupMemberRequest:
       properties:
         role:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
       required:
       - "role"
       type: "object"
@@ -2205,10 +2113,7 @@ components:
         nameSet:
           type: "boolean"
         status:
-          enum:
-          - "ACTIVE"
-          - "DISABLED"
-          type: "string"
+          $ref: "#/components/schemas/OrgStatus"
         statusSet:
           type: "boolean"
       type: "object"
@@ -2220,13 +2125,7 @@ components:
           format: "int64"
           type: "integer"
         role:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
       type: "object"
     UserAdminDetailResponse:
       properties:
@@ -2258,20 +2157,9 @@ components:
           format: "int64"
           type: "integer"
         role:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
         status:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
         statusChanges:
           items:
             $ref: "#/components/schemas/UserStatusChangeResponse"
@@ -2298,20 +2186,9 @@ components:
           format: "int64"
           type: "integer"
         role:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
         status:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
       type: "object"
     UserProfileResponse:
       properties:
@@ -2336,21 +2213,25 @@ components:
             $ref: "#/components/schemas/TermsVersionView"
           type: "array"
         role:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
         status:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
       type: "object"
+    UserRole:
+      enum:
+      - "USER"
+      - "ORG_MANAGER"
+      - "ORG_ADMIN"
+      - "SYS_MANAGER"
+      - "SYS_ADMIN"
+      type: "string"
+    UserStatus:
+      enum:
+      - "PENDING_VERIFICATION"
+      - "ACTIVE"
+      - "DISABLED"
+      - "WITHDRAWN"
+      type: "string"
     UserStatusChangeResponse:
       properties:
         actorEmail:
@@ -2362,21 +2243,11 @@ components:
           format: "date-time"
           type: "string"
         fromStatus:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
         reason:
           type: "string"
         toStatus:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
       type: "object"
     UserSummaryResponse:
       properties:
@@ -2388,13 +2259,7 @@ components:
         name:
           type: "string"
         role:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
       type: "object"
     VerifyEmailRequest:
       properties:
@@ -2421,30 +2286,23 @@ components:
         name:
           type: "string"
         status:
-          enum:
-          - "CREATING"
-          - "RUNNING"
-          - "STOPPED"
-          - "REBOOTING"
-          - "DELETING"
-          - "DELETED"
-          - "ERROR"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/VmStatus"
         vcpu:
           format: "int32"
           type: "integer"
       type: "object"
+    VmDeleteKind:
+      enum:
+      - "SELF"
+      - "ADMIN"
+      - "FORCE"
+      type: "string"
     VmDeletionResponse:
       properties:
         cancelable:
           type: "boolean"
         kind:
-          enum:
-          - "SELF"
-          - "ADMIN"
-          - "FORCE"
-          type: "string"
+          $ref: "#/components/schemas/VmDeleteKind"
         reason:
           type: "string"
         requestedAt:
@@ -2493,12 +2351,7 @@ components:
           format: "int32"
           type: "integer"
         myGroupRole:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         name:
           type: "string"
         orgId:
@@ -2525,16 +2378,7 @@ components:
           format: "date"
           type: "string"
         status:
-          enum:
-          - "CREATING"
-          - "RUNNING"
-          - "STOPPED"
-          - "REBOOTING"
-          - "DELETING"
-          - "DELETED"
-          - "ERROR"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/VmStatus"
         statusDetail:
           type: "string"
         templateId:
@@ -2561,24 +2405,26 @@ components:
           format: "int64"
           type: "integer"
         type:
-          enum:
-          - "CREATE"
-          - "START"
-          - "STOP"
-          - "REBOOT"
-          - "FORCE_STOP"
-          - "DELETE"
-          - "SELF_DELETE"
-          - "FORCE_DELETE"
-          - "REINSTALL"
-          - "SCHEDULE_DELETE"
-          - "CANCEL_SCHEDULED_DELETE"
-          - "PUBLISH"
-          - "UNPUBLISH"
-          - "EXPIRE_STOP"
-          - "PERIOD_UPDATE"
-          type: "string"
+          $ref: "#/components/schemas/VmEventType"
       type: "object"
+    VmEventType:
+      enum:
+      - "CREATE"
+      - "START"
+      - "STOP"
+      - "REBOOT"
+      - "FORCE_STOP"
+      - "DELETE"
+      - "SELF_DELETE"
+      - "FORCE_DELETE"
+      - "REINSTALL"
+      - "SCHEDULE_DELETE"
+      - "CANCEL_SCHEDULED_DELETE"
+      - "PUBLISH"
+      - "UNPUBLISH"
+      - "EXPIRE_STOP"
+      - "PERIOD_UPDATE"
+      type: "string"
     VmPasswordResponse:
       properties:
         password:
@@ -2665,12 +2511,7 @@ components:
         specReason:
           type: "string"
         status:
-          enum:
-          - "SUBMITTED"
-          - "APPROVED"
-          - "REJECTED"
-          - "CANCELED"
-          type: "string"
+          $ref: "#/components/schemas/VmRequestStatus"
         templateId:
           format: "int64"
           type: "integer"
@@ -2686,10 +2527,7 @@ components:
           format: "date-time"
           type: "string"
         decision:
-          enum:
-          - "APPROVE"
-          - "REJECT"
-          type: "string"
+          $ref: "#/components/schemas/ReviewDecision"
         grantHttp:
           type: "boolean"
         grantPublic:
@@ -2727,6 +2565,20 @@ components:
         reviewerName:
           type: "string"
       type: "object"
+    VmRequestStatus:
+      enum:
+      - "SUBMITTED"
+      - "APPROVED"
+      - "REJECTED"
+      - "CANCELED"
+      type: "string"
+    VmSettingValueType:
+      enum:
+      - "BOOLEAN"
+      - "ENUM"
+      - "INTEGER"
+      - "STRING"
+      type: "string"
     VmSettingView:
       properties:
         allowedValues:
@@ -2734,7 +2586,7 @@ components:
             type: "string"
           type: "array"
         defaultValue:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         description:
           type: "string"
         editable:
@@ -2744,36 +2596,37 @@ components:
         label:
           type: "string"
         requiredRole:
-          enum:
-          - "OWNER"
-          - "EDITOR"
-          - "MEMBER"
-          - "VIEWER"
-          type: "string"
+          $ref: "#/components/schemas/GroupMemberRole"
         updatedAt:
           format: "date-time"
           type: "string"
         updatedByName:
           type: "string"
         value:
-          $ref: "#/components/schemas/JsonNode"
+          type: "object"
         valueType:
-          enum:
-          - "BOOLEAN"
-          - "ENUM"
-          - "INTEGER"
-          - "STRING"
-          type: "string"
+          $ref: "#/components/schemas/VmSettingValueType"
       type: "object"
     VmSettingsUpdateRequest:
       properties:
         settings:
           additionalProperties:
-            $ref: "#/components/schemas/JsonNode"
+            type: "object"
           type: "object"
       required:
       - "settings"
       type: "object"
+    VmStatus:
+      enum:
+      - "CREATING"
+      - "RUNNING"
+      - "STOPPED"
+      - "REBOOTING"
+      - "DELETING"
+      - "DELETED"
+      - "ERROR"
+      - "NEEDS_ADMIN"
+      type: "string"
     VmSummaryResponse:
       properties:
         createdAt:
@@ -2811,16 +2664,7 @@ components:
           format: "int64"
           type: "integer"
         status:
-          enum:
-          - "CREATING"
-          - "RUNNING"
-          - "STOPPED"
-          - "REBOOTING"
-          - "DELETING"
-          - "DELETED"
-          - "ERROR"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/VmStatus"
         statusDetail:
           type: "string"
         vcpu:
@@ -2851,10 +2695,7 @@ components:
         notes:
           type: "string"
         status:
-          enum:
-          - "ACTIVE"
-          - "DISABLED"
-          type: "string"
+          $ref: "#/components/schemas/TemplateStatus"
         version:
           format: "int32"
           type: "integer"
@@ -2873,8 +2714,10 @@ components:
       - "password"
       type: "object"
 info:
-  title: "OpenAPI definition"
-  version: "v0"
+  description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
+    \ 스키마)을 따릅니다."
+  title: "Pickle API"
+  version: "0.13.0"
 openapi: "3.1.0"
 paths:
   /api/v1/admin/announcements:
@@ -2905,6 +2748,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAnnouncementView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "announcement-controller"
     post:
@@ -2922,6 +2771,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/AnnouncementView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "announcement-controller"
   /api/v1/admin/audit:
@@ -2990,6 +2845,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAuditLogViewResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-audit-controller"
   /api/v1/admin/certificates:
@@ -3006,12 +2867,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "ACTIVE"
-          - "RENEWING"
-          - "FAILED"
-          - "REVOKED"
-          type: "string"
+          $ref: "#/components/schemas/CertificateStatus"
       - in: "query"
         name: "expiringInDays"
         required: false
@@ -3043,6 +2899,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAdminCertificateView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
   /api/v1/admin/domains:
@@ -3059,22 +2921,12 @@ paths:
         name: "kind"
         required: false
         schema:
-          enum:
-          - "AUTO"
-          - "REQUESTED"
-          - "CUSTOM"
-          type: "string"
+          $ref: "#/components/schemas/DomainKind"
       - in: "query"
         name: "status"
         required: false
         schema:
-          enum:
-          - "PENDING"
-          - "VERIFYING"
-          - "ACTIVE"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/DomainStatus"
       - in: "query"
         name: "page"
         required: false
@@ -3099,6 +2951,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAdminDomainView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
   /api/v1/admin/drift-findings:
@@ -3109,19 +2967,12 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "OPEN"
-          - "RESOLVED"
-          type: "string"
+          $ref: "#/components/schemas/DriftFindingStatus"
       - in: "query"
         name: "kind"
         required: false
         schema:
-          enum:
-          - "MISSING_IN_PROXMOX"
-          - "UNMANAGED_GUEST"
-          - "SPEC_MISMATCH"
-          type: "string"
+          $ref: "#/components/schemas/DriftFindingKind"
       - in: "query"
         name: "page"
         required: false
@@ -3146,6 +2997,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseDriftFindingResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
   /api/v1/admin/drift-findings/{findingId}/resolve:
@@ -3170,6 +3027,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/DriftFindingResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
   /api/v1/admin/groups:
@@ -3191,6 +3054,12 @@ paths:
                   $ref: "#/components/schemas/AdminGroupOptionResponse"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-group-controller"
   /api/v1/admin/ip-allocations:
@@ -3207,10 +3076,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "ALLOCATED"
-          - "RELEASED"
-          type: "string"
+          $ref: "#/components/schemas/AllocationStatus"
       - in: "query"
         name: "page"
         required: false
@@ -3235,6 +3101,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseIpAllocationResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-ip-allocation-controller"
   /api/v1/admin/nodes:
@@ -3249,6 +3121,12 @@ paths:
                   $ref: "#/components/schemas/NodeSummaryResponse"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-node-controller"
   /api/v1/admin/notifications:
@@ -3259,12 +3137,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "PENDING"
-          - "SENT"
-          - "FAILED"
-          - "SKIPPED"
-          type: "string"
+          $ref: "#/components/schemas/NotificationStatus"
       - in: "query"
         name: "event"
         required: false
@@ -3299,6 +3172,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAdminNotificationResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-notification-controller"
   /api/v1/admin/notifications/{notificationId}/resend:
@@ -3318,6 +3197,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-notification-controller"
   /api/v1/admin/orgs:
@@ -3336,6 +3221,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
   /api/v1/admin/orgs/{orgId}:
@@ -3361,6 +3252,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
   /api/v1/admin/routes:
@@ -3377,12 +3274,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "PENDING"
-          - "APPLIED"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/RouteStatus"
       - in: "query"
         name: "page"
         required: false
@@ -3407,6 +3299,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAdminRouteView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
   /api/v1/admin/routes/resync:
@@ -3419,6 +3317,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
   /api/v1/admin/settings:
@@ -3433,6 +3337,12 @@ paths:
                   $ref: "#/components/schemas/SettingView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-settings-controller"
   /api/v1/admin/settings/{key}:
@@ -3457,6 +3367,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SettingView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-settings-controller"
   /api/v1/admin/summary:
@@ -3476,6 +3392,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/OrgDashboardSummaryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-summary-controller"
   /api/v1/admin/system-summary:
@@ -3488,6 +3410,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SystemDashboardSummaryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-summary-controller"
   /api/v1/admin/tasks:
@@ -3499,24 +3427,13 @@ paths:
         required: false
         schema:
           items:
-            enum:
-            - "PENDING"
-            - "RUNNING"
-            - "DONE"
-            - "FAILED"
-            - "RETRYING"
-            - "NEEDS_ADMIN"
-            type: "string"
+            $ref: "#/components/schemas/ProvisioningTaskStatus"
           type: "array"
       - in: "query"
         name: "kind"
         required: false
         schema:
-          enum:
-          - "PROVISION"
-          - "DELETE"
-          - "REINSTALL"
-          type: "string"
+          $ref: "#/components/schemas/ProvisioningTaskKind"
       - in: "query"
         name: "vmId"
         required: false
@@ -3547,6 +3464,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseAdminTaskResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-task-controller"
   /api/v1/admin/tasks/{taskId}/retry:
@@ -3566,6 +3489,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-task-controller"
   /api/v1/admin/terminal-sessions:
@@ -3580,6 +3509,12 @@ paths:
                   $ref: "#/components/schemas/TerminalSessionView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-terminal-controller"
   /api/v1/admin/terminal-sessions/{sessionId}/terminate:
@@ -3594,6 +3529,12 @@ paths:
       responses:
         "200":
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-terminal-controller"
   /api/v1/admin/users:
@@ -3611,23 +3552,12 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "PENDING_VERIFICATION"
-          - "ACTIVE"
-          - "DISABLED"
-          - "WITHDRAWN"
-          type: "string"
+          $ref: "#/components/schemas/UserStatus"
       - in: "query"
         name: "role"
         required: false
         schema:
-          enum:
-          - "USER"
-          - "ORG_MANAGER"
-          - "ORG_ADMIN"
-          - "SYS_MANAGER"
-          - "SYS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/UserRole"
       - in: "query"
         name: "orgId"
         required: false
@@ -3663,6 +3593,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseUserAdminViewResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
   /api/v1/admin/users/{userId}:
@@ -3682,6 +3618,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserAdminDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
     patch:
@@ -3706,6 +3648,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserSummaryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
   /api/v1/admin/users/{userId}/disable:
@@ -3731,6 +3679,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserAdminDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
   /api/v1/admin/users/{userId}/enable:
@@ -3750,6 +3704,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserAdminDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
   /api/v1/admin/users/{userId}/mfa-reset:
@@ -3769,6 +3729,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
   /api/v1/admin/vm-requests:
@@ -3779,12 +3745,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "SUBMITTED"
-          - "APPROVED"
-          - "REJECTED"
-          - "CANCELED"
-          type: "string"
+          $ref: "#/components/schemas/VmRequestStatus"
       - in: "query"
         name: "orgId"
         required: false
@@ -3815,6 +3776,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
   /api/v1/admin/vm-requests/{requestId}:
@@ -3834,6 +3801,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
   /api/v1/admin/vm-requests/{requestId}/approve:
@@ -3859,6 +3832,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
   /api/v1/admin/vm-requests/{requestId}/context:
@@ -3878,6 +3857,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ApprovalContextResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
   /api/v1/admin/vm-requests/{requestId}/reject:
@@ -3903,6 +3888,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
   /api/v1/admin/vms:
@@ -3925,16 +3916,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "CREATING"
-          - "RUNNING"
-          - "STOPPED"
-          - "REBOOTING"
-          - "DELETING"
-          - "DELETED"
-          - "ERROR"
-          - "NEEDS_ADMIN"
-          type: "string"
+          $ref: "#/components/schemas/VmStatus"
       - in: "query"
         name: "expiringInDays"
         required: false
@@ -3983,6 +3965,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseVmSummaryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
   /api/v1/admin/vms/{vmId}/cancel-scheduled-delete:
@@ -4002,6 +3990,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
   /api/v1/admin/vms/{vmId}/force-delete:
@@ -4027,6 +4021,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
   /api/v1/admin/vms/{vmId}/period:
@@ -4052,6 +4052,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
   /api/v1/admin/vms/{vmId}/schedule-delete:
@@ -4077,6 +4083,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmDeletionResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
   /api/v1/auth/login:
@@ -4099,8 +4111,16 @@ paths:
           content:
             '*/*':
               schema:
-                type: "object"
-          description: "OK"
+                oneOf:
+                - $ref: "#/components/schemas/AuthTokenResponse"
+                - $ref: "#/components/schemas/MfaChallengeResponse"
+          description: "로그인 성공(토큰 발급) 또는 2FA 챌린지"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/logout:
@@ -4115,6 +4135,12 @@ paths:
       responses:
         "200":
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/mfa:
@@ -4139,6 +4165,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthTokenResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/password-reset:
@@ -4157,6 +4189,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/password-reset/confirm:
@@ -4175,6 +4213,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/refresh:
@@ -4198,6 +4242,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthTokenResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/resend-verification:
@@ -4216,6 +4266,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/signup:
@@ -4234,6 +4290,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/auth/verify-email:
@@ -4252,6 +4314,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
   /api/v1/domains:
@@ -4268,13 +4336,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "PENDING"
-          - "VERIFYING"
-          - "ACTIVE"
-          - "FAILED"
-          - "REMOVED"
-          type: "string"
+          $ref: "#/components/schemas/DomainStatus"
       - in: "query"
         name: "page"
         required: false
@@ -4299,6 +4361,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseDomainSummaryView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
   /api/v1/domains/{domainId}:
@@ -4318,6 +4386,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
     get:
@@ -4336,6 +4410,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/DomainDetailView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
   /api/v1/domains/{domainId}/verify:
@@ -4355,6 +4435,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/DomainDetailView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
   /api/v1/groups:
@@ -4369,6 +4455,12 @@ paths:
                   $ref: "#/components/schemas/GroupSummaryResponse"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
     post:
@@ -4386,6 +4478,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/GroupDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
   /api/v1/groups/{groupId}:
@@ -4401,6 +4499,12 @@ paths:
       responses:
         "200":
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
     get:
@@ -4419,6 +4523,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/GroupDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
     patch:
@@ -4443,6 +4553,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/GroupDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
   /api/v1/groups/{groupId}/members:
@@ -4468,6 +4584,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/GroupMemberResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
   /api/v1/groups/{groupId}/members/{userId}:
@@ -4489,6 +4611,12 @@ paths:
       responses:
         "200":
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
     patch:
@@ -4519,6 +4647,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/GroupMemberResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
   /api/v1/me:
@@ -4531,6 +4665,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UserProfileResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-controller"
   /api/v1/me/activity:
@@ -4578,6 +4718,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseActivityEntryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-activity-controller"
   /api/v1/me/consents:
@@ -4592,6 +4738,12 @@ paths:
                   $ref: "#/components/schemas/ConsentView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "consent-controller"
     post:
@@ -4611,6 +4763,12 @@ paths:
                   $ref: "#/components/schemas/ConsentView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "consent-controller"
   /api/v1/me/mfa/disable:
@@ -4629,6 +4787,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
   /api/v1/me/mfa/recovery-codes:
@@ -4647,6 +4811,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MfaRecoveryCodesResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
   /api/v1/me/mfa/totp:
@@ -4665,6 +4835,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MfaSetupResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
   /api/v1/me/mfa/totp/activate:
@@ -4683,6 +4859,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MfaRecoveryCodesResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
   /api/v1/me/password:
@@ -4707,6 +4889,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthTokenResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "account-controller"
   /api/v1/me/ssh-keys:
@@ -4721,6 +4909,12 @@ paths:
                   $ref: "#/components/schemas/SshKeyView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
     post:
@@ -4738,6 +4932,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SshKeyView"
           description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
   /api/v1/me/ssh-keys/generate:
@@ -4756,6 +4956,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SshKeyView"
           description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
   /api/v1/me/ssh-keys/{keyId}:
@@ -4771,6 +4977,12 @@ paths:
       responses:
         "204":
           description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
   /api/v1/me/ssh-keys/{keyId}/private-key:
@@ -4790,6 +5002,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SshKeyPrivateKeyResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
   /api/v1/me/withdraw:
@@ -4808,6 +5026,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "account-controller"
   /api/v1/meta/request-options:
@@ -4820,6 +5044,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/RequestOptionsResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
   /api/v1/meta/status:
@@ -4832,6 +5062,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/SystemStatusResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
   /api/v1/meta/terms:
@@ -4846,6 +5082,12 @@ paths:
                   $ref: "#/components/schemas/TermsVersionView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
   /api/v1/meta/terms/{docType}:
@@ -4856,10 +5098,7 @@ paths:
         name: "docType"
         required: true
         schema:
-          enum:
-          - "TERMS_OF_SERVICE"
-          - "PRIVACY_POLICY"
-          type: "string"
+          $ref: "#/components/schemas/TermsDocType"
       responses:
         "200":
           content:
@@ -4867,6 +5106,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/TermsDocumentView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
   /api/v1/notifications:
@@ -4903,6 +5148,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseNotificationView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
   /api/v1/notifications/read-all:
@@ -4915,6 +5166,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReadAllResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
   /api/v1/notifications/unread-count:
@@ -4927,6 +5184,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/UnreadCountResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
   /api/v1/notifications/{notificationId}/read:
@@ -4946,6 +5209,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/NotificationView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
   /api/v1/orgs:
@@ -4960,6 +5229,12 @@ paths:
                   $ref: "#/components/schemas/OrgSummaryResponse"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "org-controller"
   /api/v1/templates:
@@ -4974,6 +5249,12 @@ paths:
                   $ref: "#/components/schemas/VmTemplateResponse"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-template-controller"
   /api/v1/vm-requests:
@@ -4984,12 +5265,7 @@ paths:
         name: "status"
         required: false
         schema:
-          enum:
-          - "SUBMITTED"
-          - "APPROVED"
-          - "REJECTED"
-          - "CANCELED"
-          type: "string"
+          $ref: "#/components/schemas/VmRequestStatus"
       - in: "query"
         name: "groupId"
         required: false
@@ -5020,6 +5296,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
     post:
@@ -5037,6 +5319,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
   /api/v1/vm-requests/{requestId}:
@@ -5056,6 +5344,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
   /api/v1/vm-requests/{requestId}/cancel:
@@ -5075,6 +5369,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
   /api/v1/vms:
@@ -5111,6 +5411,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseVmSummaryResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}:
@@ -5130,6 +5436,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmDeletionResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
     get:
@@ -5148,6 +5460,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmDetailResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/events:
@@ -5184,6 +5502,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PageResponseVmEventResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/force-stop:
@@ -5203,6 +5527,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/password:
@@ -5222,6 +5552,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmPasswordResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/password/regenerate:
@@ -5241,6 +5577,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/VmPasswordResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/publication:
@@ -5260,6 +5602,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
     patch:
@@ -5275,7 +5623,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/JsonNode"
+              type: "object"
         required: true
       responses:
         "200":
@@ -5284,6 +5632,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublicationView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
   /api/v1/vms/{vmId}/publish:
@@ -5308,6 +5662,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/PublicationView"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
   /api/v1/vms/{vmId}/reboot:
@@ -5327,6 +5687,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/settings:
@@ -5348,6 +5714,12 @@ paths:
                   $ref: "#/components/schemas/VmSettingView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
     patch:
@@ -5374,6 +5746,12 @@ paths:
                   $ref: "#/components/schemas/VmSettingView"
                 type: "array"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/shutdown:
@@ -5393,6 +5771,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/start:
@@ -5412,6 +5796,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
   /api/v1/vms/{vmId}/terminal-sessions:
@@ -5431,6 +5821,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/TerminalTicketResponse"
           description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "terminal-controller"
 servers:
