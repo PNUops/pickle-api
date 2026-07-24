@@ -35,12 +35,13 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * M3 milestone done-when proof in one flow: signup → verify (token from the
- * mock mail) → login → TEAM group → vm-request → seeded ORG_ADMIN queue →
- * approval context → approve → the JobRunr background server runs the REAL
- * provision pipeline against a WireMock Proxmox (pve1 captures, happy path)
- * → /vms shows RUNNING with the allocated IP, one-shot password availability
- * and provisioning DONE → vm_events CREATE + owner mail → audit trail exists.
+ * End-to-end proof of the real provisioning path in one flow: signup → verify
+ * (token from the mock mail) → login → TEAM group → vm-request → seeded
+ * ORG_ADMIN queue → approval context → approve → the JobRunr background server
+ * runs the REAL provision pipeline against a WireMock Proxmox (pve1 captures,
+ * happy path) → /vms shows RUNNING with the allocated IP, one-shot password
+ * availability and provisioning DONE → vm_events CREATE + owner mail → audit
+ * trail exists.
  *
  * <p>The background job server is enabled just for this test (it stays off in
  * application-test.yml), so the enqueued job is genuinely picked up from the
@@ -58,13 +59,13 @@ import tools.jackson.databind.ObjectMapper;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class M3EndToEndTest {
+class ProvisioningEndToEndTest {
 
     private static final Pattern TOKEN_IN_LINK = Pattern.compile("[?&]token=([A-Za-z0-9_-]+)");
 
-    private static final String USER_EMAIL = "m3.e2e@pusan.ac.kr";
-    private static final String USER_PASSWORD = "M3-e2e-Corr3ct-horse!";
-    private static final String GROUP_SLUG = "m3-e2e-team";
+    private static final String USER_EMAIL = "e2e.student@pusan.ac.kr";
+    private static final String USER_PASSWORD = "E2e-Corr3ct-horse!";
+    private static final String GROUP_SLUG = "e2e-team";
 
     /** VMID the stubbed {@code /cluster/nextid} hands out (fixture 02). */
     private static final int VMID = 102;
@@ -111,14 +112,14 @@ class M3EndToEndTest {
     }
 
     @Test
-    void m3FlowFromSignupToProvisionedVm() throws Exception {
+    void flowFromSignupToProvisionedVm() throws Exception {
         // 0. the seeded node answers Proxmox calls from WireMock (happy path)
         jdbcTemplate.update("update nodes set api_host = ? where name = 'pve1'", wm.apiHost());
         stubProxmoxHappyPath();
 
         // 1. signup + email verification (token comes from the mock mail)
         postJson("/api/v1/auth/signup", null,
-                Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "엠쓰리학생",
+                Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "종단테스트학생",
                         "consents", java.util.List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))
@@ -135,7 +136,7 @@ class M3EndToEndTest {
 
         // 3. create a TEAM group
         MvcResult groupResult = postJson("/api/v1/groups", studentToken,
-                Map.of("kind", "TEAM", "name", "M3 종단 테스트 팀", "slug", GROUP_SLUG))
+                Map.of("kind", "TEAM", "name", "종단 테스트 팀", "slug", GROUP_SLUG))
                 .andExpect(status().isCreated())
                 .andReturn();
         long groupId = objectMapper.readTree(groupResult.getResponse().getContentAsString())
@@ -153,7 +154,7 @@ class M3EndToEndTest {
                 "groupId", groupId,
                 "orgId", orgId,
                 "templateId", templateId,
-                "purpose", "M3 종단 검증용 서버",
+                "purpose", "종단 검증용 서버",
                 "reqVcpu", template.get("defaultVcpu").asInt(),
                 "reqMemoryMb", template.get("defaultMemoryMb").asInt(),
                 "reqDiskGb", template.get("defaultDiskGb").asInt(),
