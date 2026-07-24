@@ -4,25 +4,26 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.provisioning.DriftFinding;
 import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
 /** Contract {@code DriftFindingView}. */
 public record DriftFindingResponse(
         Long id,
         DriftFindingKind kind,
-        Long vmId,
-        String vmName,
-        Integer proxmoxVmid,
-        String nodeName,
+        @Nullable Long vmId,
+        @Nullable String vmName,
+        @Nullable Integer proxmoxVmid,
+        @Nullable String nodeName,
         String summary,
-        JsonNode detail,
+        @Nullable JsonNode detail,
         DriftFindingStatus status,
         Instant firstSeenAt,
         Instant lastSeenAt,
-        Instant resolvedAt,
-        Long resolvedById,
-        String resolvedByEmail,
-        String resolutionNote) {
+        @Nullable Instant resolvedAt,
+        @Nullable Long resolvedById,
+        @Nullable String resolvedByEmail,
+        @Nullable String resolutionNote) {
 
     public static DriftFindingResponse from(DriftFinding finding, JsonNode detail,
             String resolvedByEmail, String vmName) {

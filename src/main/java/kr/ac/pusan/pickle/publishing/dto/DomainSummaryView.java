@@ -4,6 +4,7 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.publishing.Domain;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code DomainSummary}. */
 public record DomainSummaryView(
@@ -11,9 +12,9 @@ public record DomainSummaryView(
         Long vmId,
         DomainKind kind,
         String fqdn,
-        String rootDomain,
+        @Nullable String rootDomain,
         DomainStatus status,
-        Instant verifiedAt,
+        @Nullable Instant verifiedAt,
         Instant createdAt) {
 
     public static DomainSummaryView from(Domain domain) {

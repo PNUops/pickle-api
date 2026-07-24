@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.group.dto;
 import kr.ac.pusan.pickle.group.GroupKind;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code GroupSummary} (my-groups list). */
 public record GroupSummaryResponse(
@@ -10,7 +11,7 @@ public record GroupSummaryResponse(
         GroupKind kind,
         String name,
         String slug,
-        String description,
+        @Nullable String description,
         GroupMemberRole myRole,
         long memberCount) {
 

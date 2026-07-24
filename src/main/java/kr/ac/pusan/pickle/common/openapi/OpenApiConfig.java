@@ -95,6 +95,10 @@ public class OpenApiConfig {
             openApi.getPaths().values().forEach(pathItem ->
                     pathItem.readOperations().forEach(op ->
                             op.getResponses().addApiResponse("default", problemResponse)));
+
+            // Runs after the error envelope is in place so response reachability
+            // (incl. FieldValidationError) is complete.
+            NullabilityOpenApiCustomizer.apply(openApi);
         };
     }
 }

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.vmsettings.VmSettingValueType;
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -15,12 +16,12 @@ public record VmSettingView(
         String key,
         JsonNode value,
         VmSettingValueType valueType,
-        List<String> allowedValues,
+        @Nullable List<String> allowedValues,
         JsonNode defaultValue,
         String label,
         String description,
         GroupMemberRole requiredRole,
         boolean editable,
-        String updatedByName,
-        Instant updatedAt) {
+        @Nullable String updatedByName,
+        @Nullable Instant updatedAt) {
 }

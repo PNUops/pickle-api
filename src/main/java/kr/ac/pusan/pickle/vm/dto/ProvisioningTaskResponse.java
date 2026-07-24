@@ -8,6 +8,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningStep;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code ProvisioningTaskView}: progress of the in-flight or
@@ -22,7 +23,7 @@ public record ProvisioningTaskResponse(
         int totalSteps,
         String stepLabel,
         int attempts,
-        String lastError,
+        @Nullable String lastError,
         Instant updatedAt) {
 
     /** Provision pipeline steps 0–9 — the single source of the

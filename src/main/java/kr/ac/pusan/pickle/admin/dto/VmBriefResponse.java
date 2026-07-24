@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import java.time.LocalDate;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmBrief} (approval-context VM line). */
 public record VmBriefResponse(
@@ -12,7 +13,7 @@ public record VmBriefResponse(
         int vcpu,
         int memoryMb,
         int diskGb,
-        LocalDate endDate) {
+        @Nullable LocalDate endDate) {
 
     public static VmBriefResponse from(Vm vm) {
         return new VmBriefResponse(vm.getId(), vm.getName(), vm.getStatus(),

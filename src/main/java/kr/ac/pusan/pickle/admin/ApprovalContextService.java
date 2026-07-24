@@ -85,7 +85,7 @@ public class ApprovalContextService {
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
 
-        OrgHeadroomService.OrgHeadroom headroom = orgHeadroomService.headroom(request.getOrgId());
+        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(request.getOrgId());
         return new ApprovalContextResponse(
                 applicantPanel(request, applicant),
                 applicantResources(request.getRequesterId()),

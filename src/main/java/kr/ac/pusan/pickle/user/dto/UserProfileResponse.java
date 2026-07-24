@@ -8,6 +8,7 @@ import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code UserProfile}. */
 public record UserProfileResponse(
@@ -15,7 +16,7 @@ public record UserProfileResponse(
         String email,
         String name,
         UserRole role,
-        Long orgId,
+        @Nullable Long orgId,
         UserStatus status,
         List<Membership> memberships,
         boolean mfaEnabled,

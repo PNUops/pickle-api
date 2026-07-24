@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.notification.dto;
 import java.time.Instant;
 import kr.ac.pusan.pickle.notification.Notification;
 import kr.ac.pusan.pickle.notification.NotificationImportance;
+import org.jspecify.annotations.Nullable;
 
 /** Contract {@code NotificationView}: one in-app notification (own rows only). */
 public record NotificationView(
@@ -10,10 +11,10 @@ public record NotificationView(
         String event,
         String title,
         String body,
-        String linkPath,
+        @Nullable String linkPath,
         NotificationImportance importance,
         Instant createdAt,
-        Instant readAt) {
+        @Nullable Instant readAt) {
 
     public static NotificationView from(Notification notification) {
         return new NotificationView(notification.getId(), notification.getEvent(),

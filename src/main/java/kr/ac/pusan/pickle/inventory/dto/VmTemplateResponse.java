@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.inventory.dto;
 
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmTemplate}. */
 public record VmTemplateResponse(
@@ -14,7 +15,7 @@ public record VmTemplateResponse(
         int defaultDiskGb,
         int minDiskGb,
         TemplateStatus status,
-        String notes) {
+        @Nullable String notes) {
 
     public static VmTemplateResponse from(VmTemplate template) {
         return new VmTemplateResponse(template.getId(), template.getName(), template.getDisplayName(),

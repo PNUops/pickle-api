@@ -6,6 +6,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminTaskView}: {@code ProvisioningTaskView} plus the
@@ -15,19 +16,19 @@ import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 public record AdminTaskResponse(
         Long taskId,
         Long vmId,
-        String vmName,
-        String hostname,
-        Long orgId,
-        String orgName,
-        String groupName,
+        @Nullable String vmName,
+        @Nullable String hostname,
+        @Nullable Long orgId,
+        @Nullable String orgName,
+        @Nullable String groupName,
         ProvisioningTaskKind kind,
         ProvisioningTaskStatus status,
         int currentStep,
         int totalSteps,
         String stepLabel,
         int attempts,
-        String lastError,
-        String jobrunrJobId,
+        @Nullable String lastError,
+        @Nullable String jobrunrJobId,
         Instant createdAt,
         Instant updatedAt) {
 

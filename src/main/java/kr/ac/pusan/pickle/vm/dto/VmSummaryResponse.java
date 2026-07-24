@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code VmSummary}. {@code groupName} is joined for the list
@@ -20,12 +21,12 @@ public record VmSummaryResponse(
         int diskGb,
         Long groupId,
         String groupName,
-        String orgName,
-        String displayName,
+        @Nullable String orgName,
+        @Nullable String displayName,
         Long requestId,
-        String statusDetail,
-        LocalDate endDate,
-        Instant expiryStoppedAt,
+        @Nullable String statusDetail,
+        @Nullable LocalDate endDate,
+        @Nullable Instant expiryStoppedAt,
         Instant createdAt) {
 
     public static VmSummaryResponse from(Vm vm, String groupName, String orgName, String displayName) {

@@ -5,6 +5,7 @@ import kr.ac.pusan.pickle.publishing.CertificateStatus;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.RouteStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminDomainView} (= DomainSummary + VM/group/org context
@@ -15,16 +16,16 @@ public record AdminDomainView(
         Long vmId,
         DomainKind kind,
         String fqdn,
-        String rootDomain,
+        @Nullable String rootDomain,
         DomainStatus status,
-        Instant verifiedAt,
+        @Nullable Instant verifiedAt,
         Instant createdAt,
         String vmName,
         Long groupId,
         String groupName,
         Long orgId,
         String orgName,
-        RouteStatus routeStatus,
-        CertificateStatus certificateStatus,
-        Instant updatedAt) {
+        @Nullable RouteStatus routeStatus,
+        @Nullable CertificateStatus certificateStatus,
+        @Nullable Instant updatedAt) {
 }

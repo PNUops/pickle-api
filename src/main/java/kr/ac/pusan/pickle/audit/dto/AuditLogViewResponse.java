@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.audit.dto;
 
 import java.time.Instant;
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -11,15 +12,15 @@ import tools.jackson.databind.JsonNode;
  */
 public record AuditLogViewResponse(
         long id,
-        Long actorId,
-        String actorEmail,
-        String actorName,
-        String actorRole,
+        @Nullable Long actorId,
+        @Nullable String actorEmail,
+        @Nullable String actorName,
+        @Nullable String actorRole,
         String action,
-        String targetType,
-        String targetId,
-        JsonNode detail,
-        String ip,
-        String orgName,
+        @Nullable String targetType,
+        @Nullable String targetId,
+        @Nullable JsonNode detail,
+        @Nullable String ip,
+        @Nullable String orgName,
         Instant createdAt) {
 }

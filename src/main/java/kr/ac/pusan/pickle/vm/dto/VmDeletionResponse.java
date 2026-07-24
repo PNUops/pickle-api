@@ -4,6 +4,7 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmDeleteKind;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code VmDeletion} — the pending (or just-accepted)
@@ -16,7 +17,7 @@ public record VmDeletionResponse(
         Instant scheduledFor,
         Instant requestedAt,
         Long requestedById,
-        String reason,
+        @Nullable String reason,
         boolean cancelable) {
 
     /** Maps the {@code delete_*} columns; null when no deletion is pending. */

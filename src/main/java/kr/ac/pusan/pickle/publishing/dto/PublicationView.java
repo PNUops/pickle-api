@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.publishing.dto;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Contract schema {@code PublicationView} — a VM's HTTP publish state
  * (domain + route + certificate). v1: one per VM; null in VmDetail when
@@ -8,6 +10,6 @@ package kr.ac.pusan.pickle.publishing.dto;
 public record PublicationView(
         String fqdn,
         DomainDetailView domain,
-        RouteView route,
-        CertificateView certificate) {
+        @Nullable RouteView route,
+        @Nullable CertificateView certificate) {
 }

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.sshkey.dto;
 import java.time.Instant;
 import kr.ac.pusan.pickle.common.crypto.SshKeyAlgorithm;
 import kr.ac.pusan.pickle.sshkey.UserSshKey;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code SshKeyView} — a registered SSH public key. */
 public record SshKeyView(
@@ -13,7 +14,7 @@ public record SshKeyView(
         String fingerprint,
         boolean privateKeyStored,
         Instant createdAt,
-        Instant lastUsedAt) {
+        @Nullable Instant lastUsedAt) {
 
     public static SshKeyView from(UserSshKey key) {
         return new SshKeyView(key.getId(), key.getName(), key.algorithmEnum(), key.getPublicKey(),

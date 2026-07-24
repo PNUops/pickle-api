@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 import java.time.Instant;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code DomainDetail} (= DomainSummary + verification). Flat
@@ -14,9 +15,9 @@ public record DomainDetailView(
         Long vmId,
         DomainKind kind,
         String fqdn,
-        String rootDomain,
+        @Nullable String rootDomain,
         DomainStatus status,
-        Instant verifiedAt,
+        @Nullable Instant verifiedAt,
         Instant createdAt,
-        DomainVerificationView verification) {
+        @Nullable DomainVerificationView verification) {
 }

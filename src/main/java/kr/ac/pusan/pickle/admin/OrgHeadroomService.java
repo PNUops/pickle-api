@@ -48,7 +48,7 @@ public class OrgHeadroomService {
      * org — or platform-wide (all orgs) when {@code orgId} is null (SYS_ADMIN
      * dashboard without a drill-in).
      */
-    public OrgHeadroom headroom(Long orgId) {
+    public HeadroomResult headroom(Long orgId) {
         List<Vm> orgVms = vmRepository.findActiveByOrgId(orgId, VmStatus.DELETED);
         ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
         List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
@@ -71,7 +71,7 @@ public class OrgHeadroomService {
             warnings.add("메모리 할당 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f)."
                     .formatted(memoryRatio, memoryWarn));
         }
-        return new OrgHeadroom(allocated, cpuThreads, memoryMb, vcpuRatio, memoryRatio,
+        return new HeadroomResult(allocated, cpuThreads, memoryMb, vcpuRatio, memoryRatio,
                 List.copyOf(warnings), guidance(vcpuRatio >= vcpuWarn, memoryRatio >= memoryWarn));
     }
 
@@ -93,7 +93,7 @@ public class OrgHeadroomService {
     }
 
     /** One org's headroom snapshot (capacity = platform ACTIVE nodes). */
-    public record OrgHeadroom(
+    public record HeadroomResult(
             ResourceTotalsResponse allocated,
             long capacityVcpu,
             long capacityMemoryMb,

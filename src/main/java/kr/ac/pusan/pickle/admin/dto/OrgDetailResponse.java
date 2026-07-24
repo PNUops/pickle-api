@@ -3,13 +3,14 @@ package kr.ac.pusan.pickle.admin.dto;
 import java.time.Instant;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code OrgDetail}. */
 public record OrgDetailResponse(
         Long id,
         String name,
         String slug,
-        String description,
+        @Nullable String description,
         OrgStatus status,
         Instant createdAt) {
 

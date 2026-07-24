@@ -6,6 +6,7 @@ import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code VmDetail} (= VmSummary + org/template/access fields
@@ -23,24 +24,24 @@ public record VmDetailResponse(
         int diskGb,
         Long groupId,
         String groupName,
-        String orgName,
-        String displayName,
+        @Nullable String orgName,
+        @Nullable String displayName,
         Long requestId,
-        String statusDetail,
+        @Nullable String statusDetail,
         Instant createdAt,
         Long orgId,
         Long templateId,
-        String ipAddress,
+        @Nullable String ipAddress,
         String sshUsername,
         String sshHost,
-        GroupMemberRole myGroupRole,
-        LocalDate startDate,
-        LocalDate endDate,
-        Instant expiryStoppedAt,
-        ProvisioningTaskResponse provisioning,
-        VmDeletionResponse deletion,
+        @Nullable GroupMemberRole myGroupRole,
+        @Nullable LocalDate startDate,
+        @Nullable LocalDate endDate,
+        @Nullable Instant expiryStoppedAt,
+        @Nullable ProvisioningTaskResponse provisioning,
+        @Nullable VmDeletionResponse deletion,
         boolean httpPublishGranted,
-        PublicationView publication,
+        @Nullable PublicationView publication,
         boolean passwordAvailable,
         boolean passwordRevealAllowed,
         Instant updatedAt) {

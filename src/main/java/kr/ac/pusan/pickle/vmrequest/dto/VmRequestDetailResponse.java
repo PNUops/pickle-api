@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.vmrequest.dto;
 import java.time.Instant;
 import java.time.LocalDate;
 import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code VmRequestDetail}. {@code review} is null until the
@@ -18,23 +19,23 @@ public record VmRequestDetailResponse(
         String requesterName,
         Long templateId,
         String purpose,
-        String courseOrProject,
-        String specReason,
-        String extraNote,
+        @Nullable String courseOrProject,
+        @Nullable String specReason,
+        @Nullable String extraNote,
         int reqVcpu,
         int reqMemoryMb,
         int reqDiskGb,
-        LocalDate reqStartDate,
-        LocalDate reqEndDate,
+        @Nullable LocalDate reqStartDate,
+        @Nullable LocalDate reqEndDate,
         boolean needSsh,
         boolean needHttp,
         boolean needPublic,
-        String desiredSubdomain,
-        String rootDomain,
-        String customDomain,
-        String desiredSlug,
+        @Nullable String desiredSubdomain,
+        @Nullable String rootDomain,
+        @Nullable String customDomain,
+        @Nullable String desiredSlug,
         VmRequestStatus status,
-        VmRequestReviewResponse review,
+        @Nullable VmRequestReviewResponse review,
         Instant createdAt,
         Instant updatedAt) {
 }

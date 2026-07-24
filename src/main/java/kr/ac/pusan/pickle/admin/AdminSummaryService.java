@@ -91,7 +91,7 @@ public class AdminSummaryService {
                 rs.getLong("rejected")), scopedOrgId, scopedOrgId,
                 java.sql.Timestamp.from(decidedSince));
 
-        OrgHeadroomService.OrgHeadroom headroom = orgHeadroomService.headroom(scopedOrgId);
+        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(scopedOrgId);
         Resource resource = new Resource(headroom.allocated().vcpu(),
                 headroom.allocated().memoryMb(), headroom.allocated().diskGb(),
                 headroom.capacityVcpu(), headroom.capacityMemoryMb(), headroom.guidance());

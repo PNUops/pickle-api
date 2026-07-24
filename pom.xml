@@ -36,6 +36,12 @@
 
 	<dependencies>
 		<dependency>
+			<!-- Nullability contract on response DTO record components; read via
+			     reflection by the openapi nullability customizer. -->
+			<groupId>org.jspecify</groupId>
+			<artifactId>jspecify</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>

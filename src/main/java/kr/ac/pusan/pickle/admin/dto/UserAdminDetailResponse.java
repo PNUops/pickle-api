@@ -5,6 +5,7 @@ import java.util.List;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code UserAdminDetail} (allOf {@code UserAdminView}) — the
@@ -15,13 +16,13 @@ public record UserAdminDetailResponse(
         String email,
         String name,
         UserRole role,
-        Long orgId,
+        @Nullable Long orgId,
         UserStatus status,
         boolean mfaEnabled,
         Instant createdAt,
-        Instant withdrawnAt,
-        Instant disabledAt,
-        String disabledReason,
+        @Nullable Instant withdrawnAt,
+        @Nullable Instant disabledAt,
+        @Nullable String disabledReason,
         List<UserProfileResponse.Membership> memberships,
         int activeVmCount,
         List<UserStatusChangeResponse> statusChanges) {

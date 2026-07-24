@@ -5,6 +5,7 @@ import java.util.List;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupKind;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code GroupDetail} (group with members + my role in it). */
 public record GroupDetailResponse(
@@ -12,7 +13,7 @@ public record GroupDetailResponse(
         GroupKind kind,
         String name,
         String slug,
-        String description,
+        @Nullable String description,
         GroupMemberRole myRole,
         List<GroupMemberResponse> members,
         Instant createdAt) {

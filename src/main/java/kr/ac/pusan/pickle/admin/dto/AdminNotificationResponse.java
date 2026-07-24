@@ -4,6 +4,7 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.notification.NotificationChannel;
 import kr.ac.pusan.pickle.notification.NotificationImportance;
 import kr.ac.pusan.pickle.notification.NotificationStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminNotificationView}: one delivery-log row —
@@ -14,15 +15,15 @@ public record AdminNotificationResponse(
         String event,
         String title,
         String body,
-        String linkPath,
+        @Nullable String linkPath,
         NotificationImportance importance,
         Instant createdAt,
-        Instant readAt,
+        @Nullable Instant readAt,
         Long userId,
         String userEmail,
         NotificationChannel channel,
         NotificationStatus status,
         int attempts,
-        String lastError,
-        Instant sentAt) {
+        @Nullable String lastError,
+        @Nullable Instant sentAt) {
 }

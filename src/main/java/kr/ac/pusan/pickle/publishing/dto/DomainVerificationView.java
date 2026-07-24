@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 
 import java.time.Instant;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code DomainVerification} — custom-domain ownership/propagation
@@ -12,8 +13,8 @@ public record DomainVerificationView(
         List<RequiredRecord> requiredRecords,
         boolean aVerified,
         boolean txtVerified,
-        Instant lastCheckedAt,
-        String lastError) {
+        @Nullable Instant lastCheckedAt,
+        @Nullable String lastError) {
 
     /** A DNS record the user must create (A → proxy IP, TXT → ownership token). */
     public record RequiredRecord(String type, String name, String value) {

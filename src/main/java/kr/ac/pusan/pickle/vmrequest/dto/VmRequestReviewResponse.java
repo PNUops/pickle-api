@@ -5,25 +5,26 @@ import java.time.LocalDate;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.vmrequest.ReviewDecision;
 import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmRequestReview} (decision embedded in the request detail). */
 public record VmRequestReviewResponse(
         Long reviewerId,
         String reviewerName,
         ReviewDecision decision,
-        String comment,
-        Integer grantedVcpu,
-        Integer grantedMemoryMb,
-        Integer grantedDiskGb,
-        Long grantedTemplateId,
-        LocalDate grantedStartDate,
-        LocalDate grantedEndDate,
-        Boolean grantSsh,
-        Boolean grantHttp,
-        Boolean grantPublic,
-        String grantedSubdomain,
-        String grantedRootDomain,
-        Long nodeId,
+        @Nullable String comment,
+        @Nullable Integer grantedVcpu,
+        @Nullable Integer grantedMemoryMb,
+        @Nullable Integer grantedDiskGb,
+        @Nullable Long grantedTemplateId,
+        @Nullable LocalDate grantedStartDate,
+        @Nullable LocalDate grantedEndDate,
+        @Nullable Boolean grantSsh,
+        @Nullable Boolean grantHttp,
+        @Nullable Boolean grantPublic,
+        @Nullable String grantedSubdomain,
+        @Nullable String grantedRootDomain,
+        @Nullable Long nodeId,
         Instant decidedAt) {
 
     public static VmRequestReviewResponse from(VmRequestReview review, User reviewer) {
