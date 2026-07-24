@@ -34,7 +34,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 /**
- * DELETE pipeline worker (docs/plan/03 deletion): shut down if running
+ * DELETE pipeline worker: shut down if running
  * (ACPI with a 120 s guest timeout, force-stop fallback — the real pve1
  * capture shows freshly booted guests ignoring ACPI), destroy with purge,
  * release the IP into quarantine, then CAS the vm row to DELETED.
@@ -59,7 +59,7 @@ import org.springframework.stereotype.Component;
  * end for automation: {@link #claimTask} never claims NEEDS_ADMIN and the
  * live-task unique index blocks a fresh task, so recovery is currently DB
  * surgery (flip the task to RETRYING or FAILED by hand); an admin re-run API
- * is planned for M4+.</p>
+ * is planned for a later release.</p>
  */
 @Component
 public class DeleteVmJob {
@@ -185,7 +185,7 @@ public class DeleteVmJob {
         try {
             // Tear down HTTP publishing BEFORE the guest/IP goes away: a vhost
             // surviving past the 24h IP quarantine would route the deleted VM's
-            // FQDN to whoever gets the address next (internal.md Link 2). A
+            // FQDN to whoever gets the address next. A
             // failed teardown throws → backoff retry → NEEDS_ADMIN park.
             publishingTeardown.teardownForVmDeletion(vmId);
             destroyOnProxmox(vm);

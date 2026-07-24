@@ -8,7 +8,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
  * trace rendering with the same secret masking as {@code %maskedMsg}.
  * Exception messages routinely embed request context (URLs with tokens, JDBC
  * messages with credentials), so throwable output must not bypass the
- * docs/plan/07 no-secrets-in-logs rule.
+ * no-secrets-in-logs rule.
  */
 public class MaskingThrowableConverter extends ThrowableProxyConverter {
 

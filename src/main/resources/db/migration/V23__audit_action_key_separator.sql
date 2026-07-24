@@ -1,4 +1,4 @@
--- Terminology standardization (2026-07-16, docs/glossary.md): audit action
+-- Terminology standardization (2026-07-16): audit action
 -- keys follow `domain.verb_snake` with a single dot — vm.password.reveal was
 -- the only outlier. V7 made audit_logs append-only by REVOKE; the owner may
 -- deliberately re-grant itself (V7's documented intentional-change path).

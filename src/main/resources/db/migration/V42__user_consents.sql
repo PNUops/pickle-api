@@ -1,4 +1,4 @@
--- Per-user consent to a specific terms version (M6 W2-A). A user is "pending
+-- Per-user consent to a specific terms version. A user is "pending
 -- consent" for a document when the current version has no matching row here;
 -- signup records the initial rows and re-consent adds rows for new versions.
 
@@ -13,7 +13,7 @@ create table user_consents (
 create index user_consents_user_id_idx on user_consents (user_id);
 
 comment on table user_consents is
-    'User consent to a specific terms_versions row (M6). Missing current-version row = pending consent.';
+    'User consent to a specific terms_versions row. Missing current-version row = pending consent.';
 
 -- Backfill: pre-production users (seeded admins + dev accounts) predate consent
 -- enforcement, so grant them consent to every existing (v1) document as of now.

@@ -3,8 +3,8 @@ package kr.ac.pusan.pickle.sshgw.dto;
 import jakarta.validation.constraints.NotBlank;
 
 /**
- * sshpiper → pickle-api route-resolution request (docs/api/internal.md Link 1,
- * v2). v2 adds the auth method and (for public-key auth) the offered key's
+ * sshpiper → pickle-api route-resolution request (the per-user SSH gateway
+ * route contract (v2)). v2 adds the auth method and (for public-key auth) the offered key's
  * fingerprint, so the API can attribute the connection to a user.
  *
  * @param slug                 the SSH username the client supplied ({@code vms.hostname})

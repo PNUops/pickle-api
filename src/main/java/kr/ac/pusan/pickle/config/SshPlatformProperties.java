@@ -3,19 +3,19 @@ package kr.ac.pusan.pickle.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Platform SSH identities injected into every VM (M5.5 + M6.5, docs/plan/05). Two
+ * Platform SSH identities injected into every VM. Two
  * <b>independent</b> platform keys are authorized on the guest {@code student}
  * account via cloud-init {@code sshkeys}:
  *
  * <ul>
- *   <li>{@code platformPublicKey} — the SSH gateway's upstream key (M5.5), so the
+ *   <li>{@code platformPublicKey} — the SSH gateway's upstream key, so the
  *       gateway can pipe publickey SSH sessions without a per-user key on the VM.
  *       Required — provisioning fails closed when unset.</li>
- *   <li>{@code terminalPublicKey} — the web-terminal bridge's key (M6.5, LXC 102,
+ *   <li>{@code terminalPublicKey} — the web-terminal bridge's key (LXC 102,
  *       env {@code PICKLE_TERMINAL_PUBLIC_KEY}). Kept separate from the gateway key
- *       for independent revocation (docs/plan/05 Path B). <b>Optional</b>: when
+ *       for independent revocation. <b>Optional</b>: when
  *       unset only the gateway key is injected (a warning is logged) — dev VMs are
- *       re-provisioned once W2 sets it.</li>
+ *       re-provisioned once the bridge key is set.</li>
  * </ul>
  *
  * @param platformPublicKey the gateway's platform public key ({@code authorized_keys}
@@ -36,7 +36,7 @@ public record SshPlatformProperties(String platformPublicKey, String terminalPub
         return platformPublicKey;
     }
 
-    /** True when the terminal bridge key is configured (M6.5). */
+    /** True when the terminal bridge key is configured. */
     public boolean hasTerminalPublicKey() {
         return terminalPublicKey != null && !terminalPublicKey.isBlank();
     }

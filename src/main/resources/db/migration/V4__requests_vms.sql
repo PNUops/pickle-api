@@ -1,5 +1,5 @@
--- VM requests, approval reviews and the M2 subset of vms (WP-B3).
--- See docs/plan/02-data-model.md. Rows are never physically deleted:
+-- VM requests, approval reviews and the initial subset of vms.
+-- Rows are never physically deleted:
 -- vm_requests keep their final status, vms use status/deleted_at columns.
 
 create type vm_request_status as enum ('SUBMITTED', 'APPROVED', 'REJECTED', 'CANCELED');
@@ -55,7 +55,7 @@ create table vm_request_reviews (
     grant_ssh           boolean,
     grant_http          boolean,
     grant_public        boolean,
-    -- null = auto placement (docs/plan/03 place step).
+    -- null = auto placement (place step).
     node_id             bigint references nodes (id),
     created_at          timestamptz not null default now(),
     updated_at          timestamptz not null default now()
@@ -63,7 +63,7 @@ create table vm_request_reviews (
 
 create table vms (
     id               bigint generated always as identity primary key,
-    -- Assigned at clone time by the real M3 pipeline; always null in M2.
+    -- Assigned at clone time by the real provision pipeline; always null before provisioning.
     proxmox_vmid     int unique,
     node_id          bigint not null references nodes (id),
     group_id         bigint not null references groups (id),
@@ -75,7 +75,7 @@ create table vms (
     vcpu             int not null,
     memory_mb        int not null,
     disk_gb          int not null,
-    -- Will reference ip_allocations(id); that table lands with the M3 IPAM
+    -- Will reference ip_allocations(id); that table lands with the IPAM
     -- migration, which also adds the FK (same pattern as nodes.ip_pool_id).
     ip_allocation_id bigint,
     ssh_username     text not null default 'student',

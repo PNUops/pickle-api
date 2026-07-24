@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Recurring 30-second status poll (docs/plan/03 "Status polling"): reads
+ * Recurring 30-second status poll ("Status polling"): reads
  * {@code GET /cluster/resources?type=vm} per node and mirrors UPID-less power
  * state changes (e.g. {@code poweroff} inside the guest) into {@code vms.status}.
  *
@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * only toward the observed RUNNING/STOPPED guest state (REBOOTING converges
  * once the reboot settles, so a crashed reboot job cannot strand the status);
  * VMs with a live provisioning task or an in-flight power-action claim
- * (docs/plan/03; {@code pending_power_action}) are skipped so
+ * ({@code pending_power_action}) are skipped so
  * the poller never races the pipeline or a deliberate power op. The transition itself is the
  * {@link VmRepository#transitionStatus CAS update}, so losing a race is a
  * harmless no-op. Any error is logged and swallowed — one broken node (or one

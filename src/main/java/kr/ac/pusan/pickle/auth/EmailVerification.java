@@ -14,7 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
-/** Single-use, hashed email verification token (24 h expiry, docs/plan/07). */
+/** Single-use, hashed email verification token (24 h expiry). */
 @Entity
 @Table(name = "email_verifications")
 public class EmailVerification {

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Pattern;
 
 /**
  * Request body of {@code POST /me/withdraw}. {@code totpCode}/{@code
- * recoveryCode} are accepted now but only enforced once W2-A (2FA) lands.
+ * recoveryCode} are accepted now but only enforced once 2FA lands.
  */
 public record WithdrawRequest(
         @NotBlank(message = "비밀번호를 입력해 주세요.")

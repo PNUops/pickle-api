@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code me}: self-service 2FA(TOTP) enrollment (M6 W2-A). */
+/** Contract tag {@code me}: self-service 2FA(TOTP) enrollment. */
 @RestController
 @RequestMapping("/api/v1/me/mfa")
 public class MfaController {

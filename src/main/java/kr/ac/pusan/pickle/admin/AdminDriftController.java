@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, drift report subset (M5) — findings persisted by
+ * Contract tag {@code admin}, drift report subset — findings persisted by
  * {@link kr.ac.pusan.pickle.provisioning.DriftReconciler}, SYS_ADMIN only.
  */
 @RestController

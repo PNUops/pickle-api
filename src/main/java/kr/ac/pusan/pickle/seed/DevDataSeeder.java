@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Idempotent dev/test seed (insert-if-absent by email/slug): SYS_ADMIN, one
  * org (SW교육센터/sw-edu) and its ORG_ADMIN. Runs at startup instead of a
- * migration so no password hash lands in git (docs/plan/02, 07). Seed accounts
+ * migration so no password hash lands in git. Seed accounts
  * are pre-verified (they bypass the @pusan.ac.kr self-signup restriction).
  *
  * <p>The configured PICKLE_SEED_* password is the source of truth: if an

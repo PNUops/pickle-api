@@ -1,4 +1,4 @@
--- V9: proxmox_vmid uniqueness must not survive destruction (M3 review gate 2).
+-- V9: proxmox_vmid uniqueness must not survive destruction.
 --
 -- V4 declared vms.proxmox_vmid globally unique, but markDeleted keeps the vmid
 -- on the DELETED row (audit trail; the drift reconciler also relies on vmid

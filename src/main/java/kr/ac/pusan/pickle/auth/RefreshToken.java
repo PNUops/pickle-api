@@ -12,7 +12,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 /**
  * Opaque refresh token, stored hashed. Rotation keeps a {@code rotated_from}
- * chain; reuse of a revoked token revokes the whole chain (docs/plan/07).
+ * chain; reuse of a revoked token revokes the whole chain.
  */
 @Entity
 @Table(name = "refresh_tokens")

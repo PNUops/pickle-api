@@ -37,7 +37,7 @@ import tools.jackson.databind.ObjectMapper;
  * sender-org list visibility, the per-author 10/hour rate budget
  * (429 + Retry-After), and {@code GET /admin/groups} scoping.
  *
- * <p><b>Org-membership semantics</b> (M5 operator decision): regular users carry
+ * <p><b>Org-membership semantics</b> (operator decision): regular users carry
  * no {@code users.org_id} (V11 {@code chk_users_org_role}); a user belongs to
  * an org iff they are an ACTIVE member of a group with ≥1 vm_request or
  * non-DELETED VM in that org, or an ORG_ADMIN of it. The GROUP scope is gated

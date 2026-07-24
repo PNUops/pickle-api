@@ -26,9 +26,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin user surface (M6, contract tag admin). List/detail are visible to
+ * Admin user surface (contract tag admin). List/detail are visible to
  * ORG_ADMIN (own-org derived scope) and SYS_ADMIN; disable/enable are
- * SYS_ADMIN-only (permission-matrix.md).
+ * SYS_ADMIN-only (per the permission matrix).
  */
 @RestController
 @RequestMapping("/api/v1/admin/users")

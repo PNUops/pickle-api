@@ -1,8 +1,8 @@
--- Per-VM settings (M5.5, product-spec §9). A sparse key/value store: a row
+-- Per-VM settings. A sparse key/value store: a row
 -- exists only once a setting is changed from its code-side registry default, so
 -- the catalog can grow without a migration per key. Today's keys:
 --   * ssh_password_enabled       (BOOLEAN, default false) — SSH gateway
---     password passthrough opt-in (launch gate G6 default-deny).
+--     password passthrough opt-in (default-deny).
 --   * password_reveal_min_role   (ENUM MEMBER|EDITOR|OWNER, default MEMBER) —
 --     minimum group role to reveal the VM password (= the in-VM sudo gate).
 -- The registry (VmSettingsService) owns type/default/required-role; this table

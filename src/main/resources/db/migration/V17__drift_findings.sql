@@ -1,8 +1,8 @@
--- Drift findings (M5): persisted DB↔Proxmox drift report rows written by
+-- Drift findings: persisted DB↔Proxmox drift report rows written by
 -- DriftReconciler each 10-minute cycle. One OPEN row per (kind, dedup_key);
 -- re-observation bumps last_seen_at, disappearance auto-resolves (resolved_by
--- null), and admins may resolve manually with a note. See docs/plan/03
--- "reconciliation" and the M5 drift report ops in the contract.
+-- null), and admins may resolve manually with a note. The drift report ops
+-- are exposed in the contract.
 
 create type drift_finding_kind as enum
     ('MISSING_IN_PROXMOX', 'UNMANAGED_GUEST', 'SPEC_MISMATCH');

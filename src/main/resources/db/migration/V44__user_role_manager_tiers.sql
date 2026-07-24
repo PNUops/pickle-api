@@ -1,4 +1,4 @@
--- M6 operator tiers (permission-matrix.md §2): two reduced-permission roles
+-- Operator tiers: two reduced-permission roles
 -- below the admin roles — ORG_MANAGER (기관 운영자, below ORG_ADMIN) and
 -- SYS_MANAGER (시스템 운영자, below SYS_ADMIN). Adds the enum values and widens
 -- the users.org_id ⇔ role invariant so ORG_MANAGER, like ORG_ADMIN, carries a

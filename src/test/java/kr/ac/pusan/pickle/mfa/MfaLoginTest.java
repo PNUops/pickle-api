@@ -30,7 +30,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** M6 W2-A: two-stage login (/auth/login → MfaChallengeResponse → /auth/mfa). */
+/** Two-stage login (/auth/login → MfaChallengeResponse → /auth/mfa). */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 /**
  * Real SMTP sender for staging/prod. Connection settings come from
  * {@code spring.mail.*}, mapped from {@code PICKLE_SMTP_*} env vars in
- * application.yml. Config only in WP-B1 — no real sends are exercised.
+ * application.yml. Config only — no real sends are exercised.
  */
 @Component
 @Profile({"staging", "prod"})

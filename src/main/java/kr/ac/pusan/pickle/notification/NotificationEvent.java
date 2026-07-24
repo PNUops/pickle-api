@@ -7,7 +7,7 @@ package kr.ac.pusan.pickle.notification;
  * never mailed). {@code VM_EXPIRY_NOTICE} renders a per-stage id
  * ({@code vm.expiry.d7} …) in the composer.
  *
- * <p>The two expiry events are published by the M5 expiry job (api-B lane);
+ * <p>The two expiry events are published by the expiry job;
  * they are defined here so the catalog is complete from the start.</p>
  */
 public enum NotificationEvent {
@@ -29,8 +29,8 @@ public enum NotificationEvent {
     VM_EXPIRY_STOPPED("vm.expiry.stopped", NotificationImportance.HIGH),
     ANNOUNCEMENT("announcement", NotificationImportance.NORMAL),
 
-    // M6 (contract v0.9.0) — all M6 events are pre-registered at kickoff so
-    // parallel lanes never edit this enum concurrently (W0 decision).
+    // Account-lifecycle events (contract v0.9.0) — pre-registered at kickoff so
+    // parallel work never edits this enum concurrently.
     ACCOUNT_PASSWORD_CHANGED("account.password.changed", NotificationImportance.HIGH),
     ACCOUNT_DISABLED("account.disabled", NotificationImportance.HIGH),
     ACCOUNT_ENABLED("account.enabled", NotificationImportance.NORMAL),

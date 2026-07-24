@@ -1,9 +1,9 @@
-# Machine-readable transcription of docs/security/permission-matrix.md (M6.5,
-# contract v0.10.0 / 106 ops). One entry per operationId. This file is POLICY;
-# PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1 and that
-# the runtime op set equals this file exactly.
+# Operator-confirmed permission matrix (contract v0.10.0, 106 ops × 6 roles),
+# enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
+# POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
+# and that the runtime op set equals this file exactly.
 #
-# Tokens (permission-matrix.md §1 legend):
+# Tokens (legend):
 #   public                       — no authentication (security: []); no role gate
 #   allow                        — allowed, authentication only (no org scoping)
 #   allow_org_scoped             — allowed; service layer forces caller's own org
@@ -79,7 +79,7 @@ operations:
   - { id: getVm,                method: GET,    path: "/vms/{vmId}",                      roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
   # deleteVm: group OWNER for everyone, plus ORG_ADMIN (own org) / SYS_ADMIN admin
   # override in VmDeletionService. ORG_MANAGER/SYS_MANAGER keep ONLY the group-OWNER
-  # path (permission-matrix.md footnotes 1/2). No role is denied -> no @PreAuthorize.
+  # path. No role is denied -> no @PreAuthorize.
   - { id: deleteVm,             method: DELETE, path: "/vms/{vmId}",                      roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow } }
   - { id: startVm,              method: POST,   path: "/vms/{vmId}/start",                roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
   - { id: shutdownVm,           method: POST,   path: "/vms/{vmId}/shutdown",             roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
@@ -93,7 +93,7 @@ operations:
   - { id: publishVm,            method: POST,   path: "/vms/{vmId}/publish",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: updatePublication,    method: PATCH,  path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: unpublishVm,          method: DELETE, path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
-  # createTerminalSession (M6.5): group MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
+  # createTerminalSession: group MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
 
   # ── 3.7 Domains (group-role-scoped) ───────────────────────────────────────
@@ -172,7 +172,7 @@ operations:
   - { id: listDriftFindings,    method: GET,  path: "/admin/drift-findings",                    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: resolveDriftFinding,  method: POST, path: "/admin/drift-findings/{findingId}/resolve", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
-  # ── 3.22 Admin — web terminal sessions (M6.5) ─────────────────────────────
+  # ── 3.22 Admin — web terminal sessions ────────────────────────────────────
   # list: SYS tier all; ORG tier own-org sessions only (allow_org_scoped, service-layer). terminate: SYS_ADMIN only.
   - { id: listAdminTerminalSessions, method: GET, path: "/admin/terminal-sessions", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: terminateTerminalSession, method: POST, path: "/admin/terminal-sessions/{sessionId}/terminate", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

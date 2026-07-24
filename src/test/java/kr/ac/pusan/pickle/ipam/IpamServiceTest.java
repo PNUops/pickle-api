@@ -23,7 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * IPAM guarantees per docs/plan/03: sequential allocation skipping gateway
+ * IPAM guarantees: sequential allocation skipping gateway
  * and reserved ranges, race-safe concurrent allocation (unique ip index),
  * idempotent release, the 24 h quarantine on released addresses, and an
  * explicit exhaustion failure. Runs against the V5 schema on embedded PG.

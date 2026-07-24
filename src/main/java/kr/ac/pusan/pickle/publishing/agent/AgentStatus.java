@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /**
  * The subset of the proxy-agent {@code GET /status} response pickle-api
- * consumes (docs/api/internal.md Link 2): per-FQDN applied route state and
+ * consumes (the proxy-agent control contract): per-FQDN applied route state and
  * cert-issuance results. The agent surfaces certbot failures ONLY here — an
  * {@code /apply} answers 200 even when issuance failed.
  */

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Contract tag {@code reference}: GET /meta/request-options (authed), the
  * public terms endpoints (GET /meta/terms, /meta/terms/{docType}), and
- * GET /meta/status (M6) — the public system status (maintenance mode, banner,
+ * GET /meta/status — the public system status (maintenance mode, banner,
  * contact email).
  */
 @RestController

@@ -30,8 +30,8 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
- * 1:1 authorization audit (permission-matrix.md §1, closing the audit item
- * deferred M2→M6). Transcribes {@code permission-matrix.yaml} — the operator-
+ * 1:1 authorization audit (closing the long-deferred audit item).
+ * Transcribes {@code permission-matrix.yaml} — the operator-
  * approved policy — and asserts the live API enforces it exactly:
  *
  * <ul>

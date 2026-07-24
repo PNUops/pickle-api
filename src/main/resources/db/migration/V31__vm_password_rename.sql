@@ -1,4 +1,4 @@
--- M5.5: with password regeneration (POST /vms/{vmId}/password/regenerate) the
+-- With password regeneration (POST /vms/{vmId}/password/regenerate) the
 -- "initial" qualifier is retired — the stored value is simply the VM's current
 -- password. Rename the columns to drop it (contract v0.8.0 schema rename
 -- InitialPasswordResponse→VmPasswordResponse, VmDetail.initialPasswordAvailable→

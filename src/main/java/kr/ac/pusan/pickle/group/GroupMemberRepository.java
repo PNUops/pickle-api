@@ -13,7 +13,7 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 
     /**
      * A user's memberships with their groups fetched, excluding soft-deleted
-     * groups (M6) — this is the single derived-groups query behind the group
+     * groups — this is the single derived-groups query behind the group
      * list, profile, VM-request scope, publishing scope and org derivation, so
      * a deleted group disappears from all of them at once.
      */

@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Recurring scan (every 5 min) for pending deletions whose destroy time
- * arrived (docs/plan/03 deletion): SELF grace elapsed (VM already DELETING),
+ * arrived: SELF grace elapsed (VM already DELETING),
  * ADMIN notice date reached (VM still in its power state — {@link DeleteVmJob}
  * transitions it at destroy time), or a FORCE whose direct enqueue was
  * lost to a crash. Enqueues are idempotent: the single live DELETE task and

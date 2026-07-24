@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * JDK JNDI DNS resolver (docs/plan/06 custom-domain verification). A lookup
+ * JDK JNDI DNS resolver for custom-domain verification. A lookup
  * failure (NXDOMAIN, timeout, SERVFAIL) surfaces as an empty list — the verifier
  * treats "no matching record yet" and "not resolvable" the same way.
  */

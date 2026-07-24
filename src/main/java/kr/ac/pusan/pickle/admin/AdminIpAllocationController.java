@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, IP allocation registry (M5) — read-only list of
+ * Contract tag {@code admin}, IP allocation registry — read-only list of
  * {@code ip_allocations} with pool/VM context, SYS_ADMIN only. RELEASED rows
  * stay visible as history. Query-only, so no separate service layer.
  */

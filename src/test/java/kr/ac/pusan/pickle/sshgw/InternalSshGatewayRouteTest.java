@@ -31,7 +31,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * B1 internal SSH-gateway route endpoint, v2 (docs/api/internal.md Link 1 v2):
+ * Internal SSH-gateway route endpoint, v2:
  * the {@code /internal/**} filter chain (bearer + source-IP allowlist + global
  * backstop), the per-client rate limit, and the normative v2 chain — kill
  * switch &gt; slug &gt; RUNNING &gt; per-VM block &gt; identity (publickey
@@ -214,7 +214,7 @@ class InternalSshGatewayRouteTest {
         String slug = uniqueSlug();
         long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.15", false, HOST_KEY);
 
-        // default-deny (G6): ssh_password_enabled off → denied, actor null
+        // default-deny: ssh_password_enabled off → denied, actor null
         password(slug, CLIENT_IP, SSHGW_IP)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.reason").value("SSHGW_PASSWORD_DISABLED"));

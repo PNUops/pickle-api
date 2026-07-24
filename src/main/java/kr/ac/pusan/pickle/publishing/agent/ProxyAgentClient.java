@@ -22,8 +22,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Client for the proxy-agent reverse-proxy control link (docs/api/internal.md
- * Link 2). pickle-api pushes desired routing state; the Go agent renders nginx
+ * Client for the proxy-agent reverse-proxy control link (the proxy-agent
+ * control contract). pickle-api pushes desired routing state; the Go agent renders nginx
  * and reports back. Truth is the DB, nginx config is derived.
  *
  * <p>Fail-closed: the shared bearer token has no default outside dev/test — an
@@ -203,7 +203,7 @@ public class ProxyAgentClient {
         }
     }
 
-    /** {@code POST /sync-all} body (docs/api/internal.md Link 2). */
+    /** {@code POST /sync-all} body (the proxy-agent control contract). */
     private record SyncAllRequest(long snapshotGeneration, List<ApplyRequest> routes) {
     }
 }

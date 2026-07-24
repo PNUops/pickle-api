@@ -1,6 +1,6 @@
 package kr.ac.pusan.pickle.inventory;
 
-/** Proxmox node availability (docs/plan/02). */
+/** Proxmox node availability. */
 public enum NodeStatus {
     ACTIVE,
     MAINTENANCE,

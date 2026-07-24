@@ -14,7 +14,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 /**
  * Dedicated, highest-precedence security chain for the infra-to-infra
- * {@code /internal/**} surface (docs/api/internal.md, docs/plan/07). It is
+ * {@code /internal/**} surface (internal route contract). It is
  * matched ahead of the user-JWT chain in {@link SecurityConfig} and shares
  * nothing with it: no JWT filter, no user authentication. Access is decided
  * solely by {@link InternalSshGatewayAuthFilter} (source-IP allowlist + static

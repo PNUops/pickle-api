@@ -7,7 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Creates the implicit PERSONAL group (one OWNER row) when an account becomes
- * ACTIVE (docs/plan/02). Idempotent per user.
+ * ACTIVE. Idempotent per user.
  */
 @Service
 public class PersonalGroupService {
@@ -39,7 +39,7 @@ public class PersonalGroupService {
         return candidate;
     }
 
-    /** Lowercase/digit/hyphen slug (default-subdomain constraint, docs/plan/02). */
+    /** Lowercase/digit/hyphen slug (default-subdomain constraint). */
     private static String slugify(String source, Long fallbackId) {
         String slug = source.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]+", "-")

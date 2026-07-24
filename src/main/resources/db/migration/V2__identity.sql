@@ -1,6 +1,5 @@
--- Identity & auth foundation (WP-B1): users, orgs, groups, verification/refresh
+-- Identity & auth foundation: users, orgs, groups, verification/refresh
 -- tokens, audit log, and the PostgreSQL rate-limit counter table.
--- See docs/plan/02-data-model.md and docs/plan/07-security.md.
 
 create extension if not exists citext;
 
@@ -89,11 +88,11 @@ create table refresh_tokens (
 create index refresh_tokens_user_id_idx on refresh_tokens (user_id);
 create index refresh_tokens_rotated_from_idx on refresh_tokens (rotated_from);
 
--- Append-only audit trail (07: the app DB role gets no UPDATE/DELETE grant on
+-- Append-only audit trail: the app DB role gets no UPDATE/DELETE grant on
 -- this table; grants are applied by ops on managed environments).
 -- actor_id is intentionally NOT a foreign key: audit rows are written from
 -- independent transactions (they must not depend on uncommitted business rows)
--- and keep the opaque user id even after account anonymization (02).
+-- and keep the opaque user id even after account anonymization.
 create table audit_logs (
     id          bigint generated always as identity primary key,
     actor_id    bigint,
@@ -109,7 +108,7 @@ create table audit_logs (
 create index audit_logs_action_created_at_idx on audit_logs (action, created_at);
 create index audit_logs_actor_id_idx on audit_logs (actor_id);
 
--- Sliding-window counters + escalating login lockout (07: PG counter table, no
+-- Sliding-window counters + escalating login lockout (PG counter table, no
 -- Redis). Counter rows use time-bucketed window_start; the login-lockout row per
 -- account uses a fixed epoch window_start and carries locked_until.
 create table auth_rate_limits (

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, task queue subset (M5) — list of VM async tasks
+ * Contract tag {@code admin}, task queue subset — list of VM async tasks
  * and the NEEDS_ADMIN retry, SYS_ADMIN only.
  */
 @RestController

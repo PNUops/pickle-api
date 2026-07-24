@@ -15,8 +15,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Proxmox node (docs/plan/02): identity/capacity for placement and headroom,
- * plus the per-node config the M3 pipeline reads (vm_bridge, storage,
+ * Proxmox node: identity/capacity for placement and headroom,
+ * plus the per-node config the provision pipeline reads (vm_bridge, storage,
  * ip_pool_id — never hardcoded). Only {@code labels} stays unmapped for now.
  */
 @Entity

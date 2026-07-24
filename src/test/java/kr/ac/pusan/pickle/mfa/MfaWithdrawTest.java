@@ -24,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
-/** M6 W2-A: withdrawal requires a valid 2FA code when the account is enrolled. */
+/** Withdrawal requires a valid 2FA code when the account is enrolled. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

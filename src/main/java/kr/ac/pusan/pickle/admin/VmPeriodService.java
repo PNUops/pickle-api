@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code PATCH /admin/vms/{vmId}/period} (M5): synchronous usage
+ * Contract {@code PATCH /admin/vms/{vmId}/period}: synchronous usage
  * period change. Clearing both expiry markers in the same CAS is the whole
  * point — an expiry-stopped VM becomes startable again ({@code VM_EXPIRED}
  * lifted) and the notice ladder re-arms for the new end date. ORG_ADMIN is

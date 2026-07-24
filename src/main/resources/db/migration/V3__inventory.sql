@@ -1,7 +1,6 @@
--- Infrastructure inventory (WP-B2): nodes and vm_templates, plus reference
--- seed rows (single pve1 node, the three template presets from
--- docs/plan/00-overview.md) and the settings keys later phases read.
--- See docs/plan/02-data-model.md.
+-- Infrastructure inventory: nodes and vm_templates, plus reference
+-- seed rows (single pve1 node, the three template presets) and the
+-- settings keys later phases read.
 
 create type node_status as enum ('ACTIVE', 'MAINTENANCE', 'OFFLINE');
 create type template_status as enum ('ACTIVE', 'DISABLED');
@@ -22,7 +21,7 @@ create table nodes (
 );
 
 comment on column nodes.ip_pool_id is
-    'Will reference ip_pools(id); that table lands with the M3 IPAM migration, which also adds the FK.';
+    'Will reference ip_pools(id); that table lands with the IPAM migration, which also adds the FK.';
 
 create table vm_templates (
     id                bigint generated always as identity primary key,
@@ -45,11 +44,11 @@ create table vm_templates (
 
 create index vm_templates_node_id_idx on vm_templates (node_id);
 
--- ── Reference seed: the single Proxmox node (docs/plan/00, 01) ──
+-- ── Reference seed: the single Proxmox node ──
 insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)
 values ('pve1', 'https://172.30.0.1:8006', 40, 79872, 'vmbr2', 'local-lvm');
 
--- ── Reference seed: request-form template presets (docs/plan/00) ──
+-- ── Reference seed: request-form template presets ──
 insert into vm_templates
     (name, display_name, proxmox_vmid, node_id, default_vcpu, default_memory_mb,
      default_disk_gb, min_disk_gb, notes)
@@ -65,8 +64,8 @@ select t.name, t.display_name, 9000, n.id, t.vcpu, t.memory_mb, t.disk_gb, 10, t
        ) as t (name, display_name, vcpu, memory_mb, disk_gb, notes)
  where n.name = 'pve1';
 
--- ── Settings keys read by the request wizard (M2) and approval/publishing
---    phases (M3+). Values are operator-tunable at runtime. ──
+-- ── Settings keys read by the request wizard and approval/publishing
+--    phases. Values are operator-tunable at runtime. ──
 insert into settings (key, value, description) values
     ('allowed_root_domains', '["pickle.pnuops.com"]'::jsonb,
      'Root domains selectable as rootDomain in VM requests (GET /meta/request-options).'),

@@ -24,15 +24,15 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Recurring 10-minute DB↔Proxmox drift detection (docs/plan/03
- * "reconciliation"): DB is intent, Proxmox is reality, humans resolve. Three
+ * Recurring 10-minute DB↔Proxmox drift detection
+ * ("reconciliation"): DB is intent, Proxmox is reality, humans resolve. Three
  * drift classes, <b>none of which ever destroys anything</b>:
  *
  * <ol>
  *   <li>DB VM missing in Proxmox → CAS to NEEDS_ADMIN ({@link #DETAIL_MISSING})
  *       + persisted {@code MISSING_IN_PROXMOX} finding.</li>
  *   <li>pickle-tagged Proxmox qemu VM unknown to the DB → persisted
- *       {@code UNMANAGED_GUEST} finding (M5 drift report); never touched.</li>
+ *       {@code UNMANAGED_GUEST} finding; never touched.</li>
  *   <li>Spec mismatch (maxcpu/maxmem vs granted vcpu/memory_mb) →
  *       informational {@code status_detail} flag + persisted
  *       {@code SPEC_MISMATCH} finding, no state transition. The always-on PVE
@@ -165,7 +165,7 @@ public class DriftReconciler {
         }
 
         // Drift ②: pickle-tagged guests nobody in the DB claims — persisted as
-        // UNMANAGED_GUEST findings; auto-destroying is forbidden (docs/plan/03).
+        // UNMANAGED_GUEST findings; auto-destroying is forbidden.
         for (ClusterResource resource : qemuByVmid.values()) {
             if (!knownVmids.contains(resource.vmid())
                     && ManagedGuestIdentity.hasManagedTag(resource.tags())) {
@@ -182,7 +182,7 @@ public class DriftReconciler {
                             dedupKey, Instant.now());
                 }
                 log.warn("unmanaged pickle-tagged VM on Proxmox: vmid {} name '{}' node {} status {}"
-                                + " — not in DB, leaving untouched (docs/plan/03)",
+                                + " — not in DB, leaving untouched",
                         resource.vmid(), resource.name(), resource.node(), resource.status());
             }
         }
@@ -278,7 +278,7 @@ public class DriftReconciler {
      * from the cpu/mem key). Costs one {@code GET config} per live VM per cycle
      * ({@code clusterResources} does not expose the flag) — fine at current
      * fleet size; lower the cadence before ever considering self-heal
-     * (reconciler stays report-only, docs/plan/03). VMs with live tasks are
+     * (reconciler stays report-only). VMs with live tasks are
      * skipped and their keys held, so the clear-before-destroy never flaps a
      * finding. A config-read failure likewise holds the key. Matched → key not
      * marked → auto-resolves a prior finding.

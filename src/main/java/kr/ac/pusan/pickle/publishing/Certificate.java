@@ -15,7 +15,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A TLS certificate (docs/plan/02 certificates, docs/plan/06). The shared
+ * A TLS certificate. The shared
  * Cloudflare Origin CA wildcard has {@code domainId} null and a root-domain
  * scope; per-custom-domain Let's Encrypt certs point at the domain and scope the
  * FQDN.

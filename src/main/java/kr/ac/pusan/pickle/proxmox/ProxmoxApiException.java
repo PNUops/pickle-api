@@ -7,7 +7,7 @@ package kr.ac.pusan.pickle.proxmox;
  * {@code 0} and the cause carries the I/O detail).
  *
  * <p>{@link #isTransient()} is the retry-classification contract for the
- * provisioning pipeline (docs/plan/03): 5xx / timeout / I/O count as
+ * provisioning pipeline: 5xx / timeout / I/O count as
  * transient, 4xx as permanent. Note that PVE also answers 500 for some
  * logically-permanent errors ("config file already exists"), so retrying
  * callers must pair this with idempotent step guards — checking actual state

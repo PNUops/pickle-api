@@ -5,8 +5,8 @@ import kr.ac.pusan.pickle.settings.SettingsService;
 import org.springframework.stereotype.Service;
 
 /**
- * Cached read of the public system status (point 2/3 of the M6 maintenance
- * work): the {@code maintenance_mode}/{@code maintenance_message}/
+ * Cached read of the public system status (part of the maintenance
+ * feature): the {@code maintenance_mode}/{@code maintenance_message}/
  * {@code banner_message}/{@code contact_email} settings, refreshed at most once
  * per {@link #TTL}. Shared by {@link MetaController} (GET /meta/status) and the
  * maintenance filter so a settings toggle propagates within the TTL to both,

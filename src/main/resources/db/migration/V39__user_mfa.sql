@@ -1,4 +1,4 @@
--- 2FA (TOTP) enrollment state + login step-up tokens (M6 W2-A, launch gate G5).
+-- 2FA (TOTP) enrollment state + login step-up tokens.
 --
 -- One user_mfa row per user carries both the ACTIVE secret (set on activation)
 -- and a PENDING secret for a begun-but-not-yet-activated setup, so a repeated
@@ -20,7 +20,7 @@ create table user_mfa (
 );
 
 comment on table user_mfa is
-    '2FA(TOTP) enrollment (M6). enabled_at not null = enrolled; pending_secret_enc = begun-but-not-activated setup.';
+    '2FA(TOTP) enrollment. enabled_at not null = enrolled; pending_secret_enc = begun-but-not-activated setup.';
 comment on column user_mfa.totp_secret_enc is
     'Active TOTP secret, AES-256-GCM (CredentialCipher). Null until activation.';
 comment on column user_mfa.pending_secret_enc is
@@ -41,4 +41,4 @@ create table mfa_login_tokens (
 create index mfa_login_tokens_user_id_idx on mfa_login_tokens (user_id);
 
 comment on table mfa_login_tokens is
-    'Single-use 5-minute login step-up tokens (M6): issued by /auth/login for an enrolled account, consumed by /auth/mfa. token_hash = sha256 hex of the raw token.';
+    'Single-use 5-minute login step-up tokens: issued by /auth/login for an enrolled account, consumed by /auth/mfa. token_hash = sha256 hex of the raw token.';

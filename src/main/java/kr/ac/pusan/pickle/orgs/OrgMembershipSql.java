@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.orgs;
 
 /**
- * Canonical <b>derived org membership</b> SQL (M5 operator decision,
+ * Canonical <b>derived org membership</b> SQL (operator decision,
  * 2026-07-13): user U belongs to org O iff U is an ACTIVE member of a group
  * that has ≥1 {@code vm_request} or non-DELETED VM with {@code org_id = O},
  * or U is an ORG_ADMIN with {@code users.org_id = O}. Regular users carry no

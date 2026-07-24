@@ -34,7 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Dashboard summaries (M5, docs/plan/11): the org panel for ORG_ADMIN home /
+ * Dashboard summaries: the org panel for ORG_ADMIN home /
  * SYS_ADMIN drill-in ({@code GET /admin/summary}) and the platform panel for
  * SYS_ADMIN ({@code GET /admin/system-summary}). Read-only aggregation; the
  * resource block reuses {@link OrgHeadroomService} and the node ratios reuse

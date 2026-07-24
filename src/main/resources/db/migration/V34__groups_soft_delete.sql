@@ -1,8 +1,8 @@
--- Group soft delete (M6 Lane B + Lane A withdrawal, plan/02). Group rows are
+-- Group soft delete (also used by account withdrawal). Group rows are
 -- referenced by VM history and audit trails, so deletion keeps the row and
 -- stamps deleted_at. The slug uniqueness moves to a partial index over live
 -- rows so a new group can reuse a deleted group's slug (contract: deleteGroup).
--- Shared at kickoff because withdrawal (Lane A) soft-deletes the PERSONAL
+-- Shared because account withdrawal soft-deletes the PERSONAL
 -- group through the same column.
 
 alter table groups
@@ -10,7 +10,7 @@ alter table groups
     add column deleted_by bigint references users (id);
 
 comment on column groups.deleted_at is
-    'Soft-delete stamp (M6). Deleted groups keep their row for VM/audit history but disappear from every list and lookup.';
+    'Soft-delete stamp. Deleted groups keep their row for VM/audit history but disappear from every list and lookup.';
 comment on column groups.deleted_by is
     'Who deleted the group: the OWNER (deleteGroup) or the withdrawing user (PERSONAL group cleanup).';
 

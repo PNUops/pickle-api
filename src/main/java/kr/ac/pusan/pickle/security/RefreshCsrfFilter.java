@@ -18,8 +18,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * CSRF double-submit-cookie check for the two endpoints that authenticate via
- * the {@code pickle_refresh} cookie instead of a Bearer token (docs/plan/07,
- * contract v0.3.1): {@code POST /api/v1/auth/refresh} and
+ * the {@code pickle_refresh} cookie instead of a Bearer token
+ * (contract v0.3.1): {@code POST /api/v1/auth/refresh} and
  * {@code POST /api/v1/auth/logout}. The {@code X-Pickle-Csrf} header must
  * equal the {@code pickle_csrf} cookie; otherwise 403 {@code AUTH_CSRF_INVALID}.
  *

@@ -32,8 +32,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Internal terminal control link, bridge → pickle-api (docs/api/internal.md Link
- * 3a): atomic single-use redeem with authorization re-check, session lifecycle
+ * Internal terminal control link, bridge → pickle-api:
+ * atomic single-use redeem with authorization re-check, session lifecycle
  * audit (proving <b>no frame content</b> ever reaches the detail map), the 60s
  * revalidation poll, and the shared {@code /internal/**} auth (bearer + source).
  */

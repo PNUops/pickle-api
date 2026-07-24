@@ -46,16 +46,16 @@ public class SettingsService {
     public static final String VM_DELETE_GRACE_HOURS = "vm_delete_grace_hours";
     public static final String ADMIN_DELETE_MIN_NOTICE_DAYS = "vm_admin_delete_min_notice_days";
     public static final String SSH_GATEWAY_ENABLED = "ssh_gateway_enabled";
-    // M5 (V16 seeds the first two; vm_expiry_autostop_enabled arrives with V18).
+    // V16 seeds the first two; vm_expiry_autostop_enabled arrives with V18.
     public static final String VM_EXPIRY_NOTICE_DAYS = "vm_expiry_notice_days";
     public static final String NOTIFICATION_RETENTION_DAYS = "notification_retention_days";
     public static final String VM_EXPIRY_AUTOSTOP_ENABLED = "vm_expiry_autostop_enabled";
-    // M6 점검 모드·공지 배너·문의처 (V43, GET /meta/status).
+    // 점검 모드·공지 배너·문의처 (V43, GET /meta/status).
     public static final String MAINTENANCE_MODE = "maintenance_mode";
     public static final String MAINTENANCE_MESSAGE = "maintenance_message";
     public static final String BANNER_MESSAGE = "banner_message";
     public static final String CONTACT_EMAIL = "contact_email";
-    /** M6.5 web-terminal global kill switch (V46, default false). */
+    /** Web-terminal global kill switch (V46, default false). */
     public static final String WEB_TERMINAL_ENABLED = "web_terminal_enabled";
 
     /** Hostname-safe entry: lowercase dot-separated labels, ≤63 chars total. */

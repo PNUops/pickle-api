@@ -9,7 +9,7 @@ import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
 
 /**
  * Contract schema {@code ApprovalContext} — the decision-support panels shown
- * beside a request (docs/plan/11): applicant summary, current resources of
+ * beside a request: applicant summary, current resources of
  * applicant and group, request history, org headroom and a Korean guidance
  * line derived from the warning thresholds.
  */

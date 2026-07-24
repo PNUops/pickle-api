@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Terms/privacy documents and per-user consent (M6 W2-A). The "current" version
+ * Terms/privacy documents and per-user consent. The "current" version
  * of a document is the highest already-effective {@link TermsVersion}; a user is
  * "pending consent" for a document until they hold a row for its current
  * version. Signup must cover every current document; re-consent adds rows for

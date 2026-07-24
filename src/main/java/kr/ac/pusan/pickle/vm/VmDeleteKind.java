@@ -1,6 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
-/** Who initiated a pending VM deletion (docs/plan/03 deletion flows). */
+/** Who initiated a pending VM deletion (deletion flows). */
 public enum VmDeleteKind {
     /** User self-delete: hard delete after the grace period. */
     SELF,

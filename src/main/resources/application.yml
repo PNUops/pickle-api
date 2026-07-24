@@ -43,7 +43,7 @@ springdoc:
 pickle:
   jwt:
     # HS256 signing key, >= 32 bytes. No default outside dev/test: startup fails
-    # fast when unset (docs/plan/07 secrets policy, /etc/pickle/api.env).
+    # fast when unset (secrets policy; set via /etc/pickle/api.env).
     secret: ${PICKLE_JWT_SECRET:}
     access-token-ttl: 15m
   credentials:
@@ -51,7 +51,7 @@ pickle:
     # (VM initial passwords). Same fail-fast policy as the JWT secret.
     encryption-key: ${PICKLE_CREDENTIALS_KEY:}
   mfa:
-    # G5: enforce 2FA enrollment for admin-tier accounts (scope-restrict the
+    # Enforce 2FA enrollment for admin-tier accounts (scope-restrict the
     # unenrolled). Off in dev/test; the prod profile turns it on.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:false}
   auth:
@@ -62,7 +62,7 @@ pickle:
     # Console URL the password-reset mail links to; token is appended as ?token=
     password-reset-base-url: ${PICKLE_PASSWORD_RESET_BASE_URL:https://pickle.pnuops.com/reset-password}
   proxmox:
-    # PVE API token (docs/plan/03). Deliberately no startup fail-fast: dev/test
+    # PVE API token. Deliberately no startup fail-fast: dev/test
     # profiles that never touch Proxmox may leave these unset — ProxmoxClient
     # throws a clear error at first use instead.
     token-id: ${PICKLE_PROXMOX_TOKEN_ID:}
@@ -76,18 +76,18 @@ pickle:
   ssh:
     # SSH gateway advertised in the initial-password response (contract
     # InitialPasswordResponse.sshHost/sshPort). Empty/0 → null in responses
-    # (sshgw live since M4B — dev sets these via /etc/pickle/api.env).
+    # (dev sets these via /etc/pickle/api.env).
     advertised-host: ${PICKLE_SSH_HOST:}
     advertised-port: ${PICKLE_SSH_PORT:0}
-    # SSH gateway upstream public key, authorized on every VM (M5.5). No default:
-    # provisioning fails closed when unset (docs/plan/05).
+    # SSH gateway upstream public key, authorized on every VM. No default:
+    # provisioning fails closed when unset.
     platform-public-key: ${PICKLE_SSH_PLATFORM_PUBLIC_KEY:}
-    # Web-terminal bridge public key, injected alongside the gateway key (M6.5,
-    # independent revocation). Optional — when blank only the gateway key is
-    # injected (warning logged); dev VMs are re-provisioned once W2 sets it.
+    # Web-terminal bridge public key, injected alongside the gateway key
+    # (independent revocation). Optional — when blank only the gateway key is
+    # injected (warning logged); dev VMs are re-provisioned once it is set.
     terminal-public-key: ${PICKLE_TERMINAL_PUBLIC_KEY:}
   sshgw:
-    # Internal route endpoint (docs/api/internal.md Link 1). No token default
+    # Internal SSH gateway route endpoint. No token default
     # outside dev/test: when blank the /internal filter chain fails closed
     # (rejects every request) instead of trusting an empty bearer.
     token: ${PICKLE_SSHGW_TOKEN:}
@@ -98,7 +98,7 @@ pickle:
     # Whole-gateway backstop at the /internal filter, across all clients.
     global-rate-limit-per-minute: ${PICKLE_SSHGW_GLOBAL_RATE_LIMIT:600}
   proxy-agent:
-    # Reverse-proxy control link (docs/api/internal.md Link 2). pickle-api is the
+    # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.
     # No token default outside dev/test: when blank the client fails closed at
     # first use instead of sending an empty bearer.
@@ -108,7 +108,7 @@ pickle:
     connect-timeout: 5s
     read-timeout: 30s
   terminal:
-    # M6.5 web terminal control link (docs/api/internal.md Link 3b). pickle-api is
+    # Web terminal control link. pickle-api is
     # the client for force-terminate only; the browser WS + SSH bytes live on the
     # sshgw-terminal-bridge (LXC 102). The inbound redeem/session/revalidate calls
     # reuse the /internal filter (PICKLE_SSHGW_TOKEN, source 172.30.1.30).
@@ -120,16 +120,16 @@ pickle:
     bridge-control-token: ${PICKLE_TERMINAL_CONTROL_TOKEN:}
     bridge-connect-timeout: 2s
     bridge-read-timeout: 3s
-    # One-time ticket lifetime from mint (docs/plan/05 Path B). Short — the bridge
+    # One-time ticket lifetime from mint. Short — the bridge
     # redeems within one WS handshake.
     ticket-ttl: 60s
     # Concurrent live-session caps enforced at mint over tickets + mirror
-    # (docs/plan/05 Path B; per-org avoids a single global shared-fate cap).
+    # (per-org avoids a single global shared-fate cap).
     per-user-cap: ${PICKLE_TERMINAL_PER_USER_CAP:3}
     per-vm-cap: ${PICKLE_TERMINAL_PER_VM_CAP:5}
     per-org-cap: ${PICKLE_TERMINAL_PER_ORG_CAP:20}
     # Ticket-mint rate limit, applied on BOTH the client IP and the JWT userId
-    # (dual key, B3c — IP is spoofable, userId is the fixed axis).
+    # (dual key — IP is spoofable, userId is the fixed axis).
     rate-limit-per-minute: ${PICKLE_TERMINAL_RATE_LIMIT:10}
     # Mirror leak pruning: a redeemed-but-never-started entry is evicted after
     # pending-grace; a started entry with no revalidation heartbeat after
@@ -137,11 +137,11 @@ pickle:
     pending-grace: 120s
     stale-after: 330s
     # Boot-time single-instance assertion (PG advisory lock): the in-memory
-    # session mirror + cap accounting require exactly one api instance (I2).
+    # session mirror + cap accounting require exactly one api instance.
     enforce-single-instance: ${PICKLE_TERMINAL_SINGLE_INSTANCE:true}
   publishing:
     # Reverse-proxy public IPv4 a custom domain's A record must point at
-    # (docs/plan/06 verified campus proxy address).
+    # (verified campus proxy address).
     proxy-public-ip: ${PICKLE_PROXY_PUBLIC_IP:164.125.249.87}
     origin-ca-cert-ref: origin-wildcard
     lets-encrypt-cert-ref: letsencrypt
@@ -193,7 +193,7 @@ spring:
 
 pickle:
   mfa:
-    # Admin-tier 2FA is mandatory in production (G5); override per env if needed.
+    # Admin-tier 2FA is mandatory in production; override per env if needed.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
   mail:
     from: ${PICKLE_SMTP_USERNAME}

@@ -1,8 +1,7 @@
--- M4A HTTP service publishing (docs/plan/06-domains-tls.md, docs/plan/02-data-model.md
--- "Publishing"). Three tables — domains, routes, certificates — plus the DB-owned
--- monotonic generation the proxy-agent contract relies on (docs/api/internal.md
--- Link 2). Also extends the approval review so the admin finalizes the platform
--- subdomain name at approval time (docs/product-spec §12).
+-- HTTP service publishing. Three tables — domains, routes, certificates — plus
+-- the DB-owned monotonic generation the proxy-agent contract relies on. Also
+-- extends the approval review so the admin finalizes the platform subdomain
+-- name at approval time.
 
 create type domain_kind as enum ('AUTO', 'REQUESTED', 'CUSTOM');
 create type domain_status as enum ('PENDING', 'VERIFYING', 'ACTIVE', 'FAILED', 'REMOVED');
@@ -39,7 +38,7 @@ create unique index domains_fqdn_live_idx on domains (fqdn) where status <> 'REM
 create index domains_vm_id_idx on domains (vm_id);
 create index domains_status_idx on domains (status);
 
--- Global monotonic generation source (docs/api/internal.md Link 2). A single
+-- Global monotonic generation source (the proxy-agent control contract). A single
 -- sequence is monotonic per-FQDN too (each FQDN's generations are a strictly
 -- increasing subsequence), and — unlike a per-route counter reset to 1 on
 -- re-publish — it can never let a re-created route for a reused FQDN start below
@@ -59,7 +58,7 @@ create table routes (
     generation         bigint not null,
     applied_generation bigint,
     applied_at         timestamptz,
-    -- Last response from proxy-agent (docs/plan/02): audit/debug aid.
+    -- Last response from proxy-agent: audit/debug aid.
     agent_state        jsonb,
     last_error         text,
     created_at         timestamptz not null default now(),
@@ -89,21 +88,21 @@ create table certificates (
 
 create index certificates_domain_id_idx on certificates (domain_id);
 
--- Shared platform wildcard (docs/plan/06: Cloudflare Origin CA, 15-year validity,
+-- Shared platform wildcard (Cloudflare Origin CA, 15-year validity,
 -- operator-installed once). Tracked as a row for expiry monitoring in the admin
 -- certificate list. Default dev root is pickle.pnuops.com (settings
 -- allowed_root_domains); additional roots get their own row when introduced.
 insert into certificates (domain_id, kind, scope, not_after, status) values
     (null, 'ORIGIN_CA_WILDCARD', '*.pickle.pnuops.com', '2040-01-01T00:00:00+09:00', 'ACTIVE');
 
--- Admin-finalized platform subdomain (docs/product-spec §12 "승인 시 관리자 최종
--- 부여"). Null granted_subdomain ⇒ AUTO subdomain generated at first publish.
+-- Admin-finalized platform subdomain (승인 시 관리자 최종
+-- 부여). Null granted_subdomain ⇒ AUTO subdomain generated at first publish.
 alter table vm_request_reviews
     add column granted_subdomain text,
     add column granted_root_domain text;
 
--- Profanity/impersonation denylist for subdomain labels (docs/plan/06). Small
+-- Profanity/impersonation denylist for subdomain labels. Small
 -- admin-extendable wordlist; validated alongside reserved_subdomains at approval.
 insert into settings (key, value, description) values
     ('profanity_subdomains', '["fuck","shit","porn","sex","admin-official","pnu-official"]'::jsonb,
-     'Profanity/impersonation denylist for platform subdomain labels (docs/plan/06). Admin-extendable.');
+     'Profanity/impersonation denylist for platform subdomain labels. Admin-extendable.');

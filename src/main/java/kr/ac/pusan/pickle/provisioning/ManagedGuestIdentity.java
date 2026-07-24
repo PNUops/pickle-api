@@ -4,7 +4,7 @@ import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.vm.Vm;
 
 /**
- * Destroy-target verification (M3 review gate 2): a vmid alone is not proof
+ * Destroy-target verification: a vmid alone is not proof
  * of identity — Proxmox recycles vmids, and destroying whatever currently
  * sits at the number could kill a foreign guest. A guest counts as ours when
  * its name equals the VM's hostname (the clone step names it that) or it

@@ -48,8 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * User HTTP publishing (contract tag {@code publishing}): publish/update/
  * unpublish a VM's HTTP service and manage its domains. Endpoints only validate
  * and write intent (domain/route rows + generation); every proxy-agent call and
- * DNS check happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}
- * (docs/plan/06).
+ * DNS check happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}.
  *
  * <p>Authorization: mutating ops require the owning group's OWNER/EDITOR (a
  * VIEWER is 403, a non-member 404 — same masking as the power path); reads

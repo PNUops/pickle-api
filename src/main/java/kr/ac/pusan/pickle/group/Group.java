@@ -35,7 +35,7 @@ public class Group {
 
     private String description;
 
-    /** Soft-delete stamp (M6). A non-null value hides the group everywhere. */
+    /** Soft-delete stamp. A non-null value hides the group everywhere. */
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
@@ -106,7 +106,7 @@ public class Group {
     }
 
     /**
-     * Soft-delete stamp (M6): group delete and PERSONAL-group cleanup on
+     * Soft-delete stamp: group delete and PERSONAL-group cleanup on
      * withdrawal — the row is kept for VM/audit history.
      */
     public void softDelete(Long actorId, Instant when) {

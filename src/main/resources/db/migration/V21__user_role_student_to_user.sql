@@ -1,4 +1,4 @@
--- Terminology standardization (2026-07-16, docs/glossary.md): the general
+-- Terminology standardization (2026-07-16): the general
 -- platform role is 사용자/USER, not 학생/STUDENT. Dev-only data, irreversible —
 -- take a manual DB backup before deploying (the deploy-api.sh health-check
 -- auto-rollback restores the OLD jar on top of the renamed enum, which breaks

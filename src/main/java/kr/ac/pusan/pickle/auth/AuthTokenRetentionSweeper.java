@@ -10,7 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Weekly retention sweep (Mon 04:40 KST, M6) of spent auth artifacts:
+ * Weekly retention sweep (Mon 04:40 KST) of spent auth artifacts:
  * {@code refresh_tokens} past their expiry (unusable — the reuse-detection
  * window has closed), {@code email_verifications} that were used or expired, and
  * {@code mfa_login_tokens} that were consumed or expired (single-use step-up

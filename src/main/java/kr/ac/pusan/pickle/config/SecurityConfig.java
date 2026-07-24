@@ -19,7 +19,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Stateless bearer-token security (docs/plan/07). Spring's session-based CSRF
+ * Stateless bearer-token security. Spring's session-based CSRF
  * protection stays disabled for the pure-Bearer API; the two cookie-authed
  * endpoints (refresh/logout) are instead guarded by {@link RefreshCsrfFilter}
  * (double-submit cookie), on top of the /api/v1/auth-scoped SameSite=Lax
@@ -58,7 +58,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 // Deterministic post-auth gate order: maintenance 503 first
-                // (system-wide), then the MFA enrollment scope gate (G5) —
+                // (system-wide), then the MFA enrollment scope gate —
                 // an unenrolled admin still passes maintenance and can enroll.
                 .addFilterAfter(maintenanceModeFilter, JwtAuthenticationFilter.class)
                 .addFilterAfter(mfaEnrollmentFilter, MaintenanceModeFilter.class)
@@ -68,7 +68,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** BCrypt cost 12 (docs/plan/07). */
+    /** BCrypt cost 12. */
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);

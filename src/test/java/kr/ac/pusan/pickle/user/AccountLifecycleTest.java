@@ -43,7 +43,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * M6 Lane A: password change / reset and account withdrawal end-to-end.
+ * Password change / reset and account withdrawal end-to-end.
  * Sessions are minted via {@link JwtService} (not {@code /auth/login}) so this
  * suite never contends on the per-IP login rate limit; the few real logins
  * that verify a password actually changed carry a unique {@code

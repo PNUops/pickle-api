@@ -1,7 +1,6 @@
--- IPAM (M3 WP-B1): ip_pools / ip_allocations, the FKs deferred by V3
+-- IPAM: ip_pools / ip_allocations, the FKs deferred by V3
 -- (nodes.ip_pool_id) and V4 (vms.ip_allocation_id), the vmbr2 student pool
 -- seed and the quarantine setting.
--- See docs/plan/02-data-model.md and docs/plan/03-provisioning.md.
 
 create type allocation_status as enum ('ALLOCATED', 'RELEASED');
 
@@ -41,7 +40,7 @@ comment on column nodes.ip_pool_id is 'IP pool VMs on this node allocate from.';
 alter table vms
     add constraint vms_ip_allocation_id_fkey foreign key (ip_allocation_id) references ip_allocations (id);
 
--- ── Reference seed: the vmbr2 student pool (docs/network.md). Reserved:
+-- ── Reference seed: the vmbr2 student pool. Reserved:
 --    172.29.0.0/24 (gateway + infra headroom) and 172.29.255.0/24 (spike
 --    VMs / management headroom, incl. the broadcast address). ──
 insert into ip_pools (name, cidr, gateway, dns, reserved_ranges) values
@@ -53,7 +52,7 @@ update nodes
    set ip_pool_id = (select id from ip_pools where name = 'student-vmbr2')
  where name = 'pve1';
 
--- ── Settings key read by IpamService (M3+). Operator-tunable at runtime. ──
+-- ── Settings key read by IpamService. Operator-tunable at runtime. ──
 insert into settings (key, value, description) values
     ('ip_quarantine_hours', '24'::jsonb,
-     'Hours a RELEASED IP stays unassignable before reuse (docs/plan/03 IPAM quarantine).');
+     'Hours a RELEASED IP stays unassignable before reuse (IPAM quarantine).');

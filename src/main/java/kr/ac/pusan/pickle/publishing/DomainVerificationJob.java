@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Drives custom-domain DNS verification (docs/plan/06). Two entry points, both
+ * Drives custom-domain DNS verification. Two entry points, both
  * delegating to {@link DomainVerifier#verifyOne(long)} and enqueuing a
  * {@link RouteApplyJob} apply when a domain verifies (its vhost + LE cert can go
  * live):

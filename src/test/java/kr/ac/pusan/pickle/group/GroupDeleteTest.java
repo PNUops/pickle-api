@@ -27,7 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Group deletion (M6, contract {@code deleteGroup}): OWNER-only with non-member
+ * Group deletion (contract {@code deleteGroup}): OWNER-only with non-member
  * 404 masking, PERSONAL and active-VM blockers, soft-delete semantics
  * (list/get exclusion + slug reuse), member notification and audit.
  */

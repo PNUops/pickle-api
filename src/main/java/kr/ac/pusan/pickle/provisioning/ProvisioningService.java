@@ -1,11 +1,11 @@
 package kr.ac.pusan.pickle.provisioning;
 
 /**
- * Provisioning seam executed inside JobRunr workers (docs/plan/03: API
+ * Provisioning seam executed inside JobRunr workers (API
  * endpoints only write intent and enqueue; every Proxmox mutation happens in a
  * job). Approval enqueues {@code provisionVm(vmId)} against this interface, so
  * the stored job resolves whichever implementation is the current bean:
- * {@link ProvisionVmJob}, the real Proxmox pipeline, since M3 (the M2
+ * {@link ProvisionVmJob}, the real Proxmox pipeline (the earlier
  * MockProvisionVmJob is gone).
  *
  * <p>Implementations must be idempotent — a re-run of a finished or

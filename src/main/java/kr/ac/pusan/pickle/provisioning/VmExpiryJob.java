@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Hourly VM usage-period sweep (M5, docs/product-spec §expiry). Two phases,
+ * Hourly VM usage-period sweep. Two phases,
  * both idempotent under hourly re-runs and crash recovery:
  *
  * <ol>

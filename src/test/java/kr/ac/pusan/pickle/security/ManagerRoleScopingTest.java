@@ -28,13 +28,13 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Service-layer scoping for the two M6 operator tiers, complementing the
+ * Service-layer scoping for the two operator tiers, complementing the
  * annotation-level {@link PermissionMatrixTest}:
  *
  * <ul>
  *   <li>ORG_MANAGER is pinned to its own org exactly like ORG_ADMIN — foreign-org
  *       targets are masked as 404 across the admin read surfaces, and it may
- *       reject/approve its own org's requests (permission-matrix.md §3.9 †15);</li>
+ *       reject/approve its own org's requests;</li>
  *   <li>SYS_MANAGER reaches every SYS_ADMIN read surface (200) but is refused
  *       (403) every dangerous op on the §4 backstop list.</li>
  * </ul>

@@ -10,8 +10,7 @@ public final class ClientIps {
 
     /**
      * Resolves the caller IP behind the two-hop reverse-proxy chain
-     * (Cloudflare → edge nginx on LXC100 → app-LXC nginx → pickle-api —
-     * docs/plan/01/08).
+     * (Cloudflare → edge nginx on LXC100 → app-LXC nginx → pickle-api).
      *
      * <p>Because two trusted hops append to {@code X-Forwarded-For}, the
      * rightmost entry is the app-LXC nginx's own peer (LXC100 172.30.1.10) for

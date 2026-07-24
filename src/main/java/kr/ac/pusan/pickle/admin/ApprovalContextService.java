@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Builds the {@code ApprovalContext} decision-support payload (docs/plan/11):
+ * Builds the {@code ApprovalContext} decision-support payload:
  * applicant history and current resources, group panel, prior decisions, and
  * org headroom with threshold warnings from {@code settings} plus the derived
  * Korean guidance line. "Active" VMs are all non-deleted rows — they hold
@@ -45,7 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ApprovalContextService {
 
     // Aliases kept for existing callers/tests; the single home of the
-    // headroom math and guidance wording is OrgHeadroomService (M5 extract).
+    // headroom math and guidance wording is OrgHeadroomService.
     static final String GUIDANCE_AMPLE = OrgHeadroomService.GUIDANCE_AMPLE;
     static final String GUIDANCE_MEMORY = OrgHeadroomService.GUIDANCE_MEMORY;
     static final String GUIDANCE_VCPU = OrgHeadroomService.GUIDANCE_VCPU;
@@ -80,7 +80,7 @@ public class ApprovalContextService {
     public ApprovalContextResponse context(AuthenticatedUser actor, long requestId) {
         VmRequest request = approvalService.findScoped(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
-        // (WITHDRAWN + later anonymization keep the row, docs/plan/02), so
+        // (WITHDRAWN + later anonymization keep the row), so
         // applicant.signupAt/email are always non-null per contract.
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();

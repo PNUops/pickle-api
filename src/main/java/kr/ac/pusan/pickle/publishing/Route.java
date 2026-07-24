@@ -15,10 +15,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A published HTTP route for a domain (docs/plan/02 routes, docs/plan/06). One
+ * A published HTTP route for a domain. One
  * live route per domain in v1. {@code generation} is a DB-owned monotonic token
  * (route_generation_seq) bumped on every desired-state change so a stale apply
- * can never clobber a newer one (docs/api/internal.md Link 2); {@code applied*}
+ * can never clobber a newer one (the proxy-agent control contract); {@code applied*}
  * mirror what proxy-agent last confirmed.
  */
 @Entity

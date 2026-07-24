@@ -22,7 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Stateless bearer-token authentication. The {@code token_version} claim is
  * checked against the DB on every request so password change / admin disable
- * invalidates outstanding tokens immediately (docs/plan/07).
+ * invalidates outstanding tokens immediately.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {

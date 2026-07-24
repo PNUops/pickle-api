@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Daily retention sweep (04:30 KST) that deletes notifications older than
- * {@code settings.notification_retention_days} (M6). Deletes are batched in a
+ * {@code settings.notification_retention_days}. Deletes are batched in a
  * bounded LIMIT loop so a large backlog never holds a long lock. This touches
  * ONLY the {@code notifications} table — never {@code audit_logs}/
  * {@code vm_events}, which are permanent records.

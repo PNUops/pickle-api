@@ -36,7 +36,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Thin client for the Proxmox VE REST API ({@code /api2/json}, docs/plan/03).
+ * Thin client for the Proxmox VE REST API ({@code /api2/json}).
  * The API host is a per-call argument ({@code https://<node>:8006}) because it
  * can differ per node — and tests point it at WireMock.
  *
@@ -125,7 +125,7 @@ public class ProxmoxClient {
 
     /**
      * {@code PUT /nodes/{n}/qemu/{id}/config} (form-urlencoded; synchronous —
-     * {@code data} is null). Params per docs/plan/03: cores, memory, ciuser,
+     * {@code data} is null). Params: cores, memory, ciuser,
      * cipassword, ipconfig0, nameserver, onboot…
      */
     public void config(String apiHost, String node, int vmid, Map<String, String> params) {
@@ -137,7 +137,7 @@ public class ProxmoxClient {
      * Sets or clears the PVE native {@code protection} flag on the VM config
      * (synchronous, form-urlencoded — mirrors {@link #config}). A protected VM
      * refuses destroy/disk-remove at the hypervisor level, backing the
-     * {@code deletion_protection} VM setting (M6, docs/plan/03).
+     * {@code deletion_protection} VM setting.
      */
     public void setProtection(String apiHost, String node, int vmid, boolean protect) {
         config(apiHost, node, vmid, Map.of("protection", protect ? "1" : "0"));
@@ -147,7 +147,7 @@ public class ProxmoxClient {
      * {@code GET /nodes/{n}/qemu/{id}/config} → the live PVE {@code protection}
      * flag (absent/0 = false). Used by the reconciler to detect out-of-band
      * {@code qm set --protection} divergence from the {@code deletion_protection}
-     * VM setting (M6).
+     * VM setting.
      */
     public boolean isProtected(String apiHost, String node, int vmid) {
         Map<String, Object> config = call(HttpMethod.GET,
@@ -428,7 +428,7 @@ public class ProxmoxClient {
 
     /**
      * SSLContext trusting only the certificate chain in the given PEM file
-     * (the pinned PVE root CA — docs/credentials.md, docs/hosts.md LXC 101 note). No verification-bypass
+     * (the pinned PVE root CA). No verification-bypass
      * variant exists on purpose.
      */
     private static SSLContext pinnedSslContext(String pemPath) {

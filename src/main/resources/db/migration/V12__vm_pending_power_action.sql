@@ -6,7 +6,7 @@
 -- StaleTaskRecoveryJob frees claims a crashed worker never released, and the
 -- status poller skips VMs with a live claim so it never fights an in-flight op.
 -- Contract v0.3.2 stays frozen: no new vm_status values, no endpoint changes.
--- See docs/plan/03-provisioning.md (power operations).
+-- Power operations.
 alter table vms
     add column pending_power_action    text,
     add column pending_power_action_at timestamptz;

@@ -11,9 +11,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByEmail(String email);
 
-    /** The admins of an org (deletion notifications, docs/plan/03). */
+    /** The admins of an org (deletion notifications). */
     List<User> findByRoleAndOrgId(UserRole role, Long orgId);
 
-    /** All users holding a global role (SYS_ADMIN notification fan-out, M5). */
+    /** All users holding a global role (SYS_ADMIN notification fan-out). */
     List<User> findByRole(UserRole role);
 }

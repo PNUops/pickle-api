@@ -13,8 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * Writes append-only {@code audit_logs} rows. Runs in its own transaction so
  * audit entries survive business-transaction rollbacks (e.g. failed logins).
- * Detail maps are whitelisted field-by-field at call sites — never secrets
- * (docs/plan/07).
+ * Detail maps are whitelisted field-by-field at call sites — never secrets.
  */
 @Service
 public class AuditService {
@@ -37,12 +36,12 @@ public class AuditService {
     public static final String ORG_CREATE = "org.create";
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
-    // M6 account lifecycle (contract v0.9.0). Never the password material —
+    // Account lifecycle (contract v0.9.0). Never the password material —
     // only the fact of the change.
     public static final String ACCOUNT_PASSWORD_CHANGE = "account.password_change";
     public static final String ACCOUNT_PASSWORD_RESET = "account.password_reset";
     public static final String ACCOUNT_WITHDRAW = "account.withdraw";
-    // M6 2FA (contract v0.9.0). Secrets/codes are never recorded, only the event.
+    // 2FA (contract v0.9.0). Secrets/codes are never recorded, only the event.
     public static final String ACCOUNT_MFA_ENROLL = "account.mfa_enroll";
     public static final String ACCOUNT_MFA_DISABLE = "account.mfa_disable";
     public static final String ACCOUNT_MFA_RESET = "account.mfa_reset";
@@ -54,21 +53,22 @@ public class AuditService {
     public static final String VM_FORCE_DELETE = "vm.force_delete";
     /** Initial-password reveal (every reveal since v0.7.0) — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password_reveal";
-    // HTTP publishing (M4A, docs/plan/06).
+    // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";
     public static final String VM_PUBLICATION_UPDATE = "vm.publication_update";
     public static final String VM_UNPUBLISH = "vm.unpublish";
     public static final String DOMAIN_DELETE = "domain.delete";
     public static final String DOMAIN_VERIFY = "domain.verify";
     public static final String ROUTE_RESYNC = "route.resync";
-    // Operations (M5, contract tag admin).
+    // Operations (contract tag admin).
     public static final String DRIFT_RESOLVE = "drift.resolve";
     public static final String TASK_RETRY = "task.retry";
     public static final String NOTIFICATION_RESEND = "notification.resend";
     public static final String VM_PERIOD_UPDATE = "vm.period_update";
     /**
-     * SSH gateway route resolved (docs/api/internal.md Link 1). Retired as an
-     * audit action by the gate-C split (2026-07-18): the route lookup runs on an
+     * SSH gateway route resolved (internal route contract). Retired as an
+     * audit action when route lookup and session auth were split (2026-07-18):
+     * the route lookup runs on an
      * unauthenticated offered key, so an allowed lookup is no longer audited —
      * the authenticated record is {@link #SSHGW_SESSION}. Kept only for reading
      * pre-split rows.
@@ -77,22 +77,23 @@ public class AuditService {
     /** SSH gateway route denied (unknown/blocked/not-running/kill-switch). Actor null. */
     public static final String SSHGW_ROUTE_DENIED = "sshgw.route_denied";
     /**
-     * Authenticated SSH session established (docs/api/internal.md Link 1
-     * {@code /session}, gate-C fix). Emitted from sshpiperd's PipeStart, after
-     * signature verification — this is the per-user attribution G6 requires.
+     * Authenticated SSH session established (internal route contract
+     * {@code /session}). Emitted from sshpiperd's PipeStart, after
+     * signature verification — this is the per-user attribution the internal
+     * route contract requires.
      */
     public static final String SSHGW_SESSION = "sshgw.session";
-    // M5 admin surfaces (contract v0.5.0).
+    // Admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";
-    // M6.5 web terminal (contract v0.10.0, docs/api/internal.md Link 3). Actor is
+    // Web terminal (contract v0.10.0, internal route contract). Actor is
     // the mint-time user (session-start/end) or the admin (force_terminate). The
     // detail map NEVER carries terminal frame/keystroke content — only lifecycle
     // metadata (byte/duration counts, reasons, clientIp); this is asserted by test.
     public static final String TERMINAL_SESSION_START = "terminal.session_start";
     public static final String TERMINAL_SESSION_END = "terminal.session_end";
     public static final String TERMINAL_FORCE_TERMINATE = "terminal.force_terminate";
-    // M5.5 SSH keys / VM settings / password (contract v0.8.0). Never the key
+    // SSH keys / VM settings / password (contract v0.8.0). Never the key
     // material — only the fact and non-secret metadata (fingerprint/keyId).
     public static final String USER_SSH_KEY_ADD = "user.ssh_key_add";
     public static final String USER_SSH_KEY_GENERATE = "user.ssh_key_generate";

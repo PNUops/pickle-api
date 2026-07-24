@@ -41,8 +41,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Web-terminal control plane (M6.5, docs/api/internal.md Link 3, docs/plan/05
- * Path B). pickle-api mints one-time tickets, answers the bridge's redeem /
+ * Web-terminal control plane (the internal web-terminal contract). pickle-api
+ * mints one-time tickets, answers the bridge's redeem /
  * session / revalidate calls, mirrors reported sessions for the admin view, and
  * force-terminates via the bridge control port. It never touches terminal bytes.
  *
@@ -56,7 +56,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TerminalService {
 
-    /** Dual-key mint rate limit (docs/plan/05 Path B): IP is spoofable, userId is not. */
+    /** Dual-key mint rate limit (independent-revocation key path): IP is spoofable, userId is not. */
     static final String RATE_LIMIT_SCOPE_IP = "terminal_mint_ip";
     static final String RATE_LIMIT_SCOPE_USER = "terminal_mint_user";
     private static final int SSH_PORT = 22;
@@ -250,7 +250,7 @@ public class TerminalService {
             return; // idempotent no-op
         }
         MirrorSession s = removed.get();
-        // detail carries counts/reasons ONLY — never frame/keystroke content (M5).
+        // detail carries counts/reasons ONLY — never frame/keystroke content.
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("sessionId", request.sessionId());
         detail.put("vmId", s.vmId());

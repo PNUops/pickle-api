@@ -1,4 +1,4 @@
--- M5 notifications & announcements (contract v0.5.0, docs/plan/02 §retention).
+-- Notifications & announcements (contract v0.5.0).
 -- Expand-only: new enums/tables/indexes plus settings seeds; no existing
 -- object is altered structurally.
 
@@ -29,7 +29,7 @@ create table announcements (
 create index announcements_org_id_idx on announcements (org_id);
 
 -- ── notifications: the per-user inbox row IS the email delivery log
---    (docs/plan/02: single table, channel EMAIL in v1). Titles/bodies are
+--    (single table, channel EMAIL in v1). Titles/bodies are
 --    rendered Korean at publish time; payload carries whitelisted display
 --    fields only — never tokens or passwords. ──
 create table notifications (
@@ -60,7 +60,7 @@ create index notifications_status_created_idx on notifications (status, created_
 create unique index notifications_user_dedup_uq on notifications (user_id, dedup_key)
     where dedup_key is not null;
 
--- ── M5 settings seeds (operator-tunable, docs/product-spec §expiry/§retention). ──
+-- ── Settings seeds (operator-tunable). ──
 insert into settings (key, value, description) values
     ('notification_retention_days', '365'::jsonb,
      '알림 보관 기간(일). 기간이 지난 알림은 정리 작업이 삭제합니다. (30~3650)'),

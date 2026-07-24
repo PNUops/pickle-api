@@ -124,7 +124,7 @@ public interface ProvisioningTaskRepository
     }
 
     /**
-     * Admin retry API (M5): parks the task back in the queue instead of
+     * Admin retry API: parks the task back in the queue instead of
      * claiming it — NEEDS_ADMIN → RETRYING with the attempt budget and error
      * cleared, so the re-enqueued job claims RETRYING → RUNNING like any
      * backoff retry and counts the fresh attempt itself. (Claiming RUNNING
@@ -165,7 +165,7 @@ public interface ProvisioningTaskRepository
                 ProvisioningTaskStatus.DONE, null, now);
     }
 
-    /** RUNNING → FAILED (terminal; compensation already ran, docs/plan/03). */
+    /** RUNNING → FAILED (terminal; compensation already ran). */
     default int fail(Long id, String lastError, Instant now) {
         return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
                 ProvisioningTaskStatus.FAILED, lastError, now);

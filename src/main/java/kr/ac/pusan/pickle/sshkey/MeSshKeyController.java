@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code me}: /me/ssh-keys — per-user SSH key management (M5.5). */
+/** Contract tag {@code me}: /me/ssh-keys — per-user SSH key management. */
 @RestController
 @RequestMapping("/api/v1/me/ssh-keys")
 public class MeSshKeyController {

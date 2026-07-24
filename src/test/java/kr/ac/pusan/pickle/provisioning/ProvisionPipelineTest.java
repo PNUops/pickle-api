@@ -40,7 +40,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Fault-injection tests of the M3 provision pipeline (docs/plan/03 M3 gate)
+ * Fault-injection tests of the provision pipeline
  * against WireMock serving the captured pve1 responses. The JobRunr background
  * server stays off (application-test.yml), so each "run" is a direct
  * {@code provisionVm} call — the retry runs a live system would get from the

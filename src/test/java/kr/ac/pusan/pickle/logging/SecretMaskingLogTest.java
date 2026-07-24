@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * "No secrets in logs" gate (docs/plan/07): captures root-logger events with a
+ * "No secrets in logs" gate: captures root-logger events with a
  * ListAppender, renders them through the same %maskedMsg pattern configured in
  * logback-spring.xml, and asserts passwords/tokens never appear raw.
  */

@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.publishing.agent;
 
 /**
- * Result of a proxy-agent {@code /apply} call (docs/api/internal.md Link 2):
+ * Result of a proxy-agent {@code /apply} call (the proxy-agent control contract):
  *
  * <ul>
  *   <li>{@code APPLIED} — 200, the vhost was rendered/removed and reloaded;</li>

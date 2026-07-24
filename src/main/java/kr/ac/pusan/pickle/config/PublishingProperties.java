@@ -4,13 +4,13 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * HTTP publishing settings ({@code pickle.publishing.*}, docs/plan/06).
+ * HTTP publishing settings ({@code pickle.publishing.*}).
  *
  * @param proxyPublicIp     the reverse-proxy public IPv4 a custom domain's A
  *                          record must point at (verification target). Defaults
- *                          to the campus proxy address from plan/06.
+ *                          to the campus proxy address.
  * @param originCaCertRef   certRef the proxy-agent maps to the shared Origin CA
- *                          wildcard for platform subdomains (docs/api/internal.md)
+ *                          wildcard for platform subdomains
  * @param letsEncryptCertRef certRef the proxy-agent maps to a per-domain LE cert
  *                          for custom domains
  * @param leCertValidityDays modelled validity of a freshly issued LE cert

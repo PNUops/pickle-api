@@ -37,7 +37,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     /**
      * Revokes the given token and every descendant in its rotation chain
-     * (theft signal on reuse, docs/plan/07).
+     * (theft signal on reuse).
      */
     @Modifying
     @Query(value = """

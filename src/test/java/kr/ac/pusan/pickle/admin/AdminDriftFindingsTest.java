@@ -36,7 +36,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * M5 drift report: DriftReconciler persistence (upsert/bump/auto-resolve for
+ * Drift report: DriftReconciler persistence (upsert/bump/auto-resolve for
  * all three drift classes, including the previously log-only unmanaged-guest
  * class ②) and the SYS_ADMIN drift-findings API (list default-OPEN + kind
  * filter, CAS resolve with 409/404). Assertions are per-dedup-key — the

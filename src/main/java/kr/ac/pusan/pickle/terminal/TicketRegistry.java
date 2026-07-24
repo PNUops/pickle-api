@@ -16,8 +16,8 @@ import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.stereotype.Component;
 
 /**
- * In-memory one-time ticket store for the web terminal (docs/api/internal.md
- * Link 3, docs/plan/05 Path B). Mint issues a 256-bit CSPRNG token carried to the
+ * In-memory one-time ticket store for the web terminal (the internal
+ * web-terminal contract). Mint issues a 256-bit CSPRNG token carried to the
  * bridge as the {@code ticket.<t>} WS subprotocol element; redeem consumes it
  * exactly once.
  *

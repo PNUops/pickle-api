@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.provisioning;
 
 /**
- * The eleven ordered steps of the provision pipeline (docs/plan/03).
+ * The eleven ordered steps of the provision pipeline.
  * {@code index} is what {@code provisioning_tasks.current_step} stores;
  * {@code label} is the Korean step name the contract exposes as
  * {@code ProvisioningTaskView.stepLabel}.

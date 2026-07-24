@@ -15,7 +15,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * User-visible provisioning/deletion/reinstall task (docs/plan/02). All state
+ * User-visible provisioning/deletion/reinstall task. All state
  * transitions go through the CAS JPQL methods on
  * {@link ProvisioningTaskRepository} so crashed or duplicated JobRunr job runs
  * are idempotent; the partial unique index on (vm_id, kind) blocks a second
@@ -37,7 +37,7 @@ public class ProvisioningTask {
     @Column(nullable = false, columnDefinition = "provisioning_task_kind")
     private ProvisioningTaskKind kind;
 
-    /** Index into the pipeline's ordered step list (docs/plan/03). */
+    /** Index into the pipeline's ordered step list. */
     @Column(name = "current_step", nullable = false)
     private int currentStep;
 

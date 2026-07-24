@@ -9,7 +9,7 @@ import kr.ac.pusan.pickle.vm.VmStatus;
 
 /**
  * Contract schema {@code VmDetail} (= VmSummary + org/template/access fields
- * plus the M3 lifecycle surface, the M4A publish surface, and the M5.5 SSH
+ * plus the lifecycle surface, the publish surface, and the SSH
  * surface: the requester's group role, whether the stored password is available
  * and revealable by the requester, and the SSH gateway host for connect hints).
  */

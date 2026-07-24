@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Internal SSH-gateway route resolution (docs/api/internal.md Link 1). Called by
+ * Internal SSH-gateway route resolution (the internal SSH gateway route contract). Called by
  * sshpiper on the sshgw LXC on every incoming SSH connection. Access is gated by
  * the dedicated {@code /internal/**} filter chain (bearer + source-IP allowlist
  * + rate limit); this controller assumes an authenticated caller.
@@ -52,7 +52,7 @@ public class InternalSshGatewayController {
     /**
      * Authenticated session audit (PipeStart, post-verification). Fire-and-forget:
      * always 204, even on a best-effort resolution miss — the session is already
-     * live and must not be torn down by this call (docs/api/internal.md Link 1).
+     * live and must not be torn down by this call (the internal SSH gateway route contract).
      */
     @PostMapping("/session")
     public ResponseEntity<Void> session(@Valid @RequestBody SessionRequest request,

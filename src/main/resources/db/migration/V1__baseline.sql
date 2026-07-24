@@ -1,5 +1,5 @@
 -- Baseline schema: runtime-tunable settings store.
--- Domain tables are added by subsequent migrations as features land (see docs/plan/02-data-model.md).
+-- Domain tables are added by subsequent migrations as features land.
 
 create table settings (
     key         text primary key,

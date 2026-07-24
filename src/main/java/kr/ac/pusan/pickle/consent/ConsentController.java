@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code me}: consent history and re-consent (M6 W2-A). */
+/** Contract tag {@code me}: consent history and re-consent. */
 @RestController
 @RequestMapping("/api/v1/me/consents")
 public class ConsentController {

@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Step-1 node placement (docs/plan/03): among ACTIVE nodes that host an
+ * Step-1 node placement: among ACTIVE nodes that host an
  * ACTIVE template of the same name, pick the one with the best headroom
  * score; an admin-forced node (approval form {@code nodeId}) always wins.
  *

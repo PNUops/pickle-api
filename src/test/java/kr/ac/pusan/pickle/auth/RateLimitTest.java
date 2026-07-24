@@ -28,7 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * PG counter-table rate limiting: sliding window (10/min per IP+account) and
- * escalating lockout after 5 consecutive login failures (docs/plan/07).
+ * escalating lockout after 5 consecutive login failures.
  * Distinct client IPs per test so windows do not bleed into other tests.
  */
 @SpringBootTest

@@ -12,7 +12,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 /**
  * Contract schema {@code ProvisioningTaskView}: progress of the in-flight or
  * last-failed async pipeline of a VM. Step labels are the user-facing Korean
- * names of the docs/plan/03 pipeline steps (0–9 for PROVISION); async
+ * names of the provision pipeline steps (0–9 for PROVISION); async
  * failures surface here (status/lastError), never as HTTP errors.
  */
 public record ProvisioningTaskResponse(
@@ -25,7 +25,7 @@ public record ProvisioningTaskResponse(
         String lastError,
         Instant updatedAt) {
 
-    /** docs/plan/03 provision pipeline steps 0–9 — the single source of the
+    /** Provision pipeline steps 0–9 — the single source of the
      *  user-facing Korean labels is {@link ProvisioningStep}. */
     private static final List<String> PROVISION_STEPS =
             Arrays.stream(ProvisioningStep.values()).map(ProvisioningStep::label).toList();

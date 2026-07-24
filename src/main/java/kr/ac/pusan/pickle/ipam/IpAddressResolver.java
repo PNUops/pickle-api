@@ -4,7 +4,7 @@ import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 /**
- * Single source of truth for "the VM's <b>own</b> live IP" (docs/plan/07 SSRF
+ * Single source of truth for "the VM's <b>own</b> live IP" (SSRF
  * rule: a route/proxy target is forced to the VM's own address). Resolving by
  * allocation id alone is not enough — a stale pointer left by a crashed release
  * can point at an allocation that has since been released or re-claimed by a

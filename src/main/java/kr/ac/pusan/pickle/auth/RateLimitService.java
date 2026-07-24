@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * PostgreSQL counter-table rate limiting (no Redis, docs/plan/07):
+ * PostgreSQL counter-table rate limiting (no Redis):
  *
  * <ul>
  *   <li>Sliding window: 15-second buckets in {@code auth_rate_limits}; a
@@ -77,7 +77,7 @@ public class RateLimitService {
 
     /**
      * Sliding 1-hour window (15-minute buckets) over the same counter table —
-     * used by low-frequency admin actions (M5 announcements: 10/hour/author).
+     * used by low-frequency admin actions (announcements: 10/hour/author).
      * Counts this request and throws 429 RATE_LIMITED with Retry-After when
      * the window total exceeds {@code limitPerHour}.
      */

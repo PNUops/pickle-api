@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enforces the basics of docs/commit-convention.md on every commit message.
+# Enforces the basic commit-message convention on every commit message.
 # Hard failures: missing/unknown type prefix, subject > 72 chars, trailing period.
 # Warnings (non-blocking): enumeration patterns, em dash, Korean in the subject.
 set -euo pipefail
@@ -15,7 +15,7 @@ esac
 fail() {
   echo "commit-msg: $1" >&2
   echo "  subject: $subject" >&2
-  echo "  see docs/commit-convention.md (pickle-docs repo)" >&2
+  echo "  format: 'type: subject' (feat|fix|docs|test|chore|refactor|perf|build|style|ci|revert|merge), imperative, <=72 chars, no trailing period" >&2
   exit 1
 }
 

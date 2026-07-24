@@ -185,7 +185,7 @@ public class NotificationComposer {
                     payload(args, "vmId", "vmName", "endDate"));
             case ANNOUNCEMENT -> new Composed(event.id(), str(args, "title"), str(args, "body"),
                     null, event.defaultImportance(), null);
-            // M6 account-lifecycle events — templates registered with the enum
+            // account-lifecycle events — templates registered with the enum
             // at kickoff (the compose switch is exhaustive by design; a new
             // event without a template must fail the build, not runtime).
             case ACCOUNT_PASSWORD_CHANGED -> new Composed(event.id(), "계정 비밀번호 변경 안내",

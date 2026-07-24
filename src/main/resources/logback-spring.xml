@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Console logging with secret masking (%maskedMsg for messages, %maskedEx
      for stack traces): password/token/secret/cipassword values never appear
-     raw in log output (docs/plan/07). -->
+     raw in log output. -->
 <configuration>
     <conversionRule conversionWord="maskedMsg"
                     class="kr.ac.pusan.pickle.common.logging.MaskingMessageConverter"/>

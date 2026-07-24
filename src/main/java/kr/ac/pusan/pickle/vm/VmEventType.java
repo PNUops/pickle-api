@@ -1,6 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
-/** Kinds of entries in the permanent per-VM history (docs/plan/02 vm_events). */
+/** Kinds of entries in the permanent per-VM history (vm_events). */
 public enum VmEventType {
     CREATE,
     START,
@@ -18,12 +18,12 @@ public enum VmEventType {
     SCHEDULE_DELETE,
     /** Admin canceled a scheduled delete before it ran. */
     CANCEL_SCHEDULED_DELETE,
-    /** HTTP service publish accepted (route/domain created — M4A). */
+    /** HTTP service publish accepted (route/domain created). */
     PUBLISH,
-    /** HTTP service publish revoked (route removed — M4A). */
+    /** HTTP service publish revoked (route removed). */
     UNPUBLISH,
-    /** Expiry sweeper auto-stopped the VM past its end date (M5, actor null). */
+    /** Expiry sweeper auto-stopped the VM past its end date (actor null). */
     EXPIRE_STOP,
-    /** Admin changed the usage period (M5 {@code PATCH /admin/vms/{vmId}/period}). */
+    /** Admin changed the usage period ({@code PATCH /admin/vms/{vmId}/period}). */
     PERIOD_UPDATE
 }

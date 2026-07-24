@@ -16,10 +16,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Virtual machine (docs/plan/02 vms). Created on approval with the granted
+ * Virtual machine. Created on approval with the granted
  * spec; {@code proxmox_vmid} and {@code ip_allocation_id} are filled by the
- * M3 pipeline, which also manages the initial-credential and scheduled-delete
- * columns (V6). Rows are never physically deleted.
+ * provision pipeline, which also manages the initial-credential and
+ * scheduled-delete columns (V6). Rows are never physically deleted.
  */
 @Entity
 @Table(name = "vms")
@@ -65,12 +65,12 @@ public class Vm {
     @Column(name = "ip_allocation_id")
     private Long ipAllocationId;
 
-    /** Fixed {@code student} (docs/plan/03 initial credentials). */
+    /** Fixed {@code student} (initial credentials). */
     @Column(name = "ssh_username", nullable = false)
     private String sshUsername = "student";
 
     /**
-     * Per-VM SSH gateway block (docs/plan/05 kill switch): when true the route
+     * Per-VM SSH gateway block (kill switch): when true the route
      * endpoint denies SSH for this VM alone, leaving the global switch and other
      * VMs untouched. Set on member removal / suspected compromise (V13).
      */
@@ -80,7 +80,7 @@ public class Vm {
     /**
      * Pinned SSH host public key (authorized_keys one-liner), collected at
      * provisioning (HOSTKEY step). NULL means the gateway route is denied rather
-     * than piped unverified (docs/api/internal.md Link 1 v2).
+     * than piped unverified (the internal SSH gateway route contract).
      */
     @Column(name = "ssh_host_key")
     private String sshHostKey;
@@ -91,11 +91,11 @@ public class Vm {
     @Column(name = "end_date")
     private LocalDate endDate;
 
-    /** Set when the expiry sweeper auto-stopped this VM; cleared on period extension (M5). */
+    /** Set when the expiry sweeper auto-stopped this VM; cleared on period extension. */
     @Column(name = "expiry_stopped_at")
     private Instant expiryStoppedAt;
 
-    /** Smallest already-notified D-day stage for the current end date (M5 expiry notices). */
+    /** Smallest already-notified D-day stage for the current end date (expiry notices). */
     @Column(name = "last_expiry_notice_stage")
     private Integer lastExpiryNoticeStage;
 
@@ -147,7 +147,7 @@ public class Vm {
     @Column(name = "delete_kind", columnDefinition = "vm_delete_kind")
     private VmDeleteKind deleteKind;
 
-    /** When the deletion sweeper may hard-delete (docs/plan/03 grace/notice). */
+    /** When the deletion sweeper may hard-delete (grace/notice). */
     @Column(name = "delete_scheduled_for")
     private Instant deleteScheduledFor;
 

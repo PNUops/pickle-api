@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.provisioning;
 
 /**
- * User-visible task state (docs/plan/02; the console renders it directly).
+ * User-visible task state (the console renders it directly).
  * PENDING/RUNNING/RETRYING/NEEDS_ADMIN count as "live" — the partial unique
  * index on (vm_id, kind) allows at most one live task per VM and kind.
  */

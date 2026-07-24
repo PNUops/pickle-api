@@ -14,7 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
-/** VM template preset offered in the request wizard (docs/plan/02). */
+/** VM template preset offered in the request wizard. */
 @Entity
 @Table(name = "vm_templates")
 public class VmTemplate {

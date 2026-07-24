@@ -28,8 +28,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Authenticated session audit endpoint (docs/api/internal.md Link 1
- * {@code /internal/sshgw/session}, gate C-2): the <b>distinct-owner rule</b> over
+ * Authenticated session audit endpoint
+ * ({@code /internal/sshgw/session}): the <b>distinct-owner rule</b> over
  * the candidate fingerprint set — one owner ⇒ verified attribution + last_used_at
  * bump, two+ owners ⇒ null actor + {@code ambiguous} (framing prevention), zero
  * resolve / password ⇒ null actor — all fire-and-forget 204, never a 5xx.

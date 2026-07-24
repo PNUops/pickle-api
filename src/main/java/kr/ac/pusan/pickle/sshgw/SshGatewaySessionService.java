@@ -19,13 +19,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Records the authenticated SSH session audit (docs/api/internal.md Link 1
- * {@code /internal/sshgw/session}, gate C/C-2). sshpiperd calls this from its
+ * Records the authenticated SSH session audit (the internal SSH gateway route
+ * contract, {@code /internal/sshgw/session}). sshpiperd calls this from its
  * {@code PipeStart} callback — <b>after</b> signature verification (public-key)
  * or password acceptance — so it is the one point where a per-user attribution
- * is sound. It is the record G6 requires.
+ * is sound. It is the per-user attribution the route contract requires.
  *
- * <p><b>Distinct-owner rule (gate C-2).</b> {@code PipeStart} does not reveal
+ * <p><b>Distinct-owner rule.</b> {@code PipeStart} does not reveal
  * which key actually signed, so the gateway forwards the full set of
  * route-allowed candidate fingerprints. Attribution:
  * <ul>

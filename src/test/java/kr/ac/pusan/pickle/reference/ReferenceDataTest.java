@@ -104,7 +104,7 @@ class ReferenceDataTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[?(@.name == 'ubuntu-22.04')]").isEmpty())
-                // V3 presets per docs/plan/00-overview
+                // V3 presets
                 .andExpect(jsonPath("$[0].name").value("ubuntu-24.04"))
                 .andExpect(jsonPath("$[0].defaultVcpu").value(2))
                 .andExpect(jsonPath("$[0].defaultMemoryMb").value(2048))

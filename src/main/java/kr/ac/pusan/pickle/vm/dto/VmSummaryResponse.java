@@ -7,7 +7,7 @@ import kr.ac.pusan.pickle.vm.VmStatus;
 
 /**
  * Contract schema {@code VmSummary}. {@code groupName} is joined for the list
- * view; {@code orgName} (M5 carryover) and {@code displayName} (M6 VM setting,
+ * view; {@code orgName} and {@code displayName} (VM setting,
  * null when unset) are joined for the console list/admin surfaces.
  */
 public record VmSummaryResponse(

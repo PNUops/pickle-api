@@ -44,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * events mask a VM's existence from non-members as 404 (contract v0.3.2,
  * same policy as the power/delete paths).
  *
- * <p>The detail view assembles the M3 lifecycle surface: {@code provisioning}
+ * <p>The detail view assembles the lifecycle surface: {@code provisioning}
  * is the newest task unless it finished cleanly (contract: in-flight or
  * last-failed; DONE → null), {@code deletion} maps the delete_* intent,
  * {@code passwordAvailable} mirrors the stored ciphertext column (re-viewable —
@@ -140,7 +140,7 @@ public class VmQueryService {
     /**
      * Assembles the full contract {@code VmDetail} for an <b>already
      * authorized</b> VM — shared by the member-scoped {@link #get} and admin
-     * flows (period update, M5) whose authorization is org-scoped instead.
+     * flows (period update) whose authorization is org-scoped instead.
      * {@code myGroupRole} is the requester's role in the owning group (null for
      * a non-member admin); it drives {@code passwordRevealAllowed} and the
      * console's settings-section visibility.

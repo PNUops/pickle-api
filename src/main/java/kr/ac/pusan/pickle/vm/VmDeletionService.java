@@ -44,7 +44,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * The three deletion flows (contract v0.3.1, docs/plan/03):
+ * The three deletion flows (contract v0.3.1):
  *
  * <ul>
  *   <li><b>Self-delete</b> (group OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
@@ -378,7 +378,7 @@ public class VmDeletionService {
         }
     }
 
-    /** Refuses any delete acceptance while {@code deletion_protection} is on (M6). */
+    /** Refuses any delete acceptance while {@code deletion_protection} is on. */
     private void requireNotDeletionProtected(long vmId) {
         if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
             throw deletionProtected("삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "

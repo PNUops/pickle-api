@@ -20,7 +20,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** M6 W2-A: SYS_ADMIN 2FA reset (lockout recovery). */
+/** SYS_ADMIN 2FA reset (lockout recovery). */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

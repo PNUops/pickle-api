@@ -13,7 +13,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Persisted DB↔Proxmox drift observation (V17, M5 drift report). Rows are
+ * Persisted DB↔Proxmox drift observation (V17). Rows are
  * written exclusively by {@link DriftReconciler} through the native upsert on
  * {@link DriftFindingRepository} — one OPEN row per (kind, dedup_key), bumped
  * on re-observation, auto-resolved when the condition disappears, or manually

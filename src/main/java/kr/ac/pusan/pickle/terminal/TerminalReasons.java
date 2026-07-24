@@ -2,7 +2,7 @@ package kr.ac.pusan.pickle.terminal;
 
 /**
  * Machine-readable deny reasons for the internal redeem/revalidate calls
- * (docs/api/internal.md Link 3a). These are infra-to-infra reason strings the
+ * (the internal web-terminal contract). These are infra-to-infra reason strings the
  * bridge maps to WS close codes — distinct from the public {@code Problem.code}
  * values in {@link kr.ac.pusan.pickle.common.error.ErrorCodes}.
  */

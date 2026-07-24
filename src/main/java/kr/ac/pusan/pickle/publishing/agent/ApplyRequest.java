@@ -3,7 +3,7 @@ package kr.ac.pusan.pickle.publishing.agent;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
- * Full desired state for one FQDN (docs/api/internal.md Link 2 {@code POST
+ * Full desired state for one FQDN (the proxy-agent control contract, {@code POST
  * /apply}). For {@code ABSENT} the target/cert fields are omitted (null →
  * dropped from the JSON body).
  */

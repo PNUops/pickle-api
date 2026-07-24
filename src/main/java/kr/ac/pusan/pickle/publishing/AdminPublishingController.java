@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/admin")
-// Read surfaces: org tier + sys tier (permission-matrix.md §3.12). resyncRoutes
+// Read surfaces: org tier + sys tier. resyncRoutes
 // is a sys-tier-only routine recovery via a method-level override below.
 @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
 public class AdminPublishingController {

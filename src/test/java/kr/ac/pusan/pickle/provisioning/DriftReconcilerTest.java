@@ -31,7 +31,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * DriftReconciler behavior for the three drift classes of docs/plan/03 —
+ * DriftReconciler behavior for the three drift classes —
  * missing-in-Proxmox → NEEDS_ADMIN, unmanaged pickle-tagged guest → WARN log
  * only (never any write to Proxmox), spec mismatch → informational
  * status_detail — plus the live-task guard and per-node exception isolation.

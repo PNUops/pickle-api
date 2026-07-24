@@ -31,7 +31,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * M5 expiry API surface: {@code GET /admin/vms} expiringInDays/expired filters
+ * Expiry API surface: {@code GET /admin/vms} expiringInDays/expired filters
  * (+ the VmSummary endDate/expiryStoppedAt fields), the {@code VM_EXPIRED}
  * start guard, and {@code PATCH /admin/vms/{vmId}/period} (validation 422,
  * deletion-bound 409, ORG_ADMIN 404 mask, marker clearing that re-enables

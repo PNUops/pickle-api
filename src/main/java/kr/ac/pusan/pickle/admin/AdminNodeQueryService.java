@@ -17,7 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Contract {@code GET /admin/nodes} (SYS_ADMIN): per-node capacity vs
  * allocation aggregates with the operator-tunable warning thresholds
- * (docs/plan/03 overcommit view) and the node pool's occupancy.
+ * (overcommit view) and the node pool's occupancy.
  */
 @Service
 public class AdminNodeQueryService {

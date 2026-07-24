@@ -19,8 +19,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Fail-closed guarantee of the {@code /internal/**} chain (docs/api/internal.md,
- * docs/plan/07): when {@code PICKLE_SSHGW_TOKEN} is unset the filter must reject
+ * Fail-closed guarantee of the {@code /internal/**} chain: when
+ * {@code PICKLE_SSHGW_TOKEN} is unset the filter must reject
  * <b>every</b> call rather than accept an empty bearer. A separate context from
  * {@link InternalSshGatewayRouteTest} because it needs the token blank at
  * startup — a mis-provisioned prod profile hands out no routes.

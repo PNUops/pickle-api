@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 /**
  * User-facing VM power control (contract ops startVm/shutdownVm/rebootVm/
  * forceStopVm). Endpoints only validate and write intent; every Proxmox call
- * happens in {@link VmPowerJobs} enqueued after commit (docs/plan/03).
+ * happens in {@link VmPowerJobs} enqueued after commit.
  *
  * <p>Authorization per contract: group <b>MEMBER+</b>. A non-member answers
  * 404 (existence of other groups' VMs stays private, same masking convention
@@ -37,7 +37,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * {@code VM_INVALID_STATE}. Reboot records its intent as the {@code REBOOTING}
  * transition so force-stop can target a hung reboot.</p>
  *
- * <p>Duplicate actions are serialized by a claim (C1): start/shutdown/
+ * <p>Duplicate actions are serialized by a claim: start/shutdown/
  * force-stop atomically claim {@code vms.pending_power_action} (CAS on
  * "no action in flight AND status is an allowed source") before enqueuing the
  * worker, so two rapid duplicates get exactly one 202 and one 409. The worker
@@ -71,7 +71,7 @@ public class VmLifecycleService {
     @Transactional
     public MessageResponse start(AuthenticatedUser actor, long vmId) {
         Vm vm = requireMemberControllableVm(actor, vmId).vm();
-        // M5 expiry guard: a past end date (KST, inclusive end) refuses start
+        // Expiry guard: a past end date (KST, inclusive end) refuses start
         // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
         if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
@@ -154,7 +154,7 @@ public class VmLifecycleService {
     /**
      * Resolves the VM for a power op: unknown id and non-member both answer
      * 404 (masking), a member below MEMBER answers 403. The role is returned so
-     * stop-protected ops can additionally require EDITOR (M6).
+     * stop-protected ops can additionally require EDITOR.
      */
     private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmLifecycleService::vmNotFound);
@@ -170,7 +170,7 @@ public class VmLifecycleService {
     }
 
     /**
-     * Stop protection (M6): when {@code stop_protection} is on, shutdown/reboot/
+     * Stop protection: when {@code stop_protection} is on, shutdown/reboot/
      * force-stop require group EDITOR+; a MEMBER is refused 409
      * {@code VM_STOP_PROTECTED}. Start is deliberately unaffected. Admins reach
      * these ops only as group members, so no separate admin bypass exists.

@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Internal web-terminal control link, bridge → pickle-api (docs/api/internal.md
- * Link 3a). Called by {@code sshgw-terminal-bridge} on LXC 102. Access is gated
+ * Internal web-terminal control link, bridge → pickle-api (the internal
+ * web-terminal contract). Called by {@code sshgw-terminal-bridge} on LXC 102. Access is gated
  * by the shared {@code /internal/**} filter chain (bearer {@code PICKLE_SSHGW_TOKEN}
  * + source 172.30.1.30 + rate limit); this controller assumes an authorized caller.
  *

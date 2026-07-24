@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class PublicationAssembler {
 
-    /** TXT ownership record prefix (docs/plan/06: {@code _pickle-verify.<fqdn>}). */
+    /** TXT ownership record prefix ({@code _pickle-verify.<fqdn>}). */
     public static final String VERIFY_RECORD_PREFIX = "_pickle-verify.";
 
     private final RouteRepository routeRepository;

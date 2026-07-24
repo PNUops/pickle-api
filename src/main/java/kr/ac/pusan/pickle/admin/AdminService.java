@@ -107,7 +107,7 @@ public class AdminService {
         UserRole previousRole = user.getRole();
         UserRole targetRole = request.role() != null ? request.role() : user.getRole();
         if (targetRole.isOrgTier()) {
-            // ORG_ADMIN and ORG_MANAGER both manage one org (permission-matrix.md §2).
+            // ORG_ADMIN and ORG_MANAGER both manage one org (per the permission matrix).
             Long orgId = request.orgId() != null ? request.orgId() : user.getOrgId();
             if (orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",

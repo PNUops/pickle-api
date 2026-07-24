@@ -79,7 +79,7 @@ public class AdminUserQueryService {
         List<Object> params = new ArrayList<>();
         if (scopedOrgId != null) {
             // Derived-org scoping in SQL: the org's ORG_ADMINs plus ACTIVE
-            // members of a group linked to the org (product-spec §14 rule).
+            // members of a group linked to the org (derived org membership rule).
             where.append(" and (u.org_id = ? or (u.status = 'ACTIVE' and ")
                     .append(OrgMembershipSql.memberOfOrgLinkedGroup("u.id"))
                     .append("))");

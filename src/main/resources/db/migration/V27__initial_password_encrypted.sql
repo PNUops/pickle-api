@@ -1,4 +1,4 @@
--- 2026-07-17 policy change (product-spec §8): the one-shot initial-password
+-- 2026-07-17 policy change: the one-shot initial-password
 -- reveal is retired. The plaintext-until-first-view column is replaced by a
 -- reversible AES-256-GCM ciphertext (key = PICKLE_CREDENTIALS_KEY, env only)
 -- so the console can show the password again at any time; every reveal is

@@ -14,7 +14,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * IP allocation with duplicate-IP and quarantine guarantees (docs/plan/03).
+ * IP allocation with duplicate-IP and quarantine guarantees.
  *
  * <p>Concurrency safety comes from the database, not application locks:
  * fresh addresses are claimed with {@code INSERT .. ON CONFLICT (ip) DO
@@ -26,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class IpamService {
 
-    /** Fallback when the settings row is missing (docs/plan/03: default 1 day). */
+    /** Fallback when the settings row is missing (default 1 day). */
     static final int DEFAULT_QUARANTINE_HOURS = 24;
 
     private final JdbcTemplate jdbcTemplate;
@@ -118,7 +118,7 @@ public class IpamService {
         long gateway = Ipv4.toLong(pool.getGateway());
         List<ReservedRange> reserved = parseReservedRanges(pool.getReservedRanges());
         long usable = cidr.lastUsable() - cidr.firstUsable() + 1;
-        // Reserved ranges are operator-seeded and non-overlapping (docs/plan/03).
+        // Reserved ranges are operator-seeded and non-overlapping.
         for (ReservedRange range : reserved) {
             long from = Math.max(range.from(), cidr.firstUsable());
             long to = Math.min(range.to(), cidr.lastUsable());

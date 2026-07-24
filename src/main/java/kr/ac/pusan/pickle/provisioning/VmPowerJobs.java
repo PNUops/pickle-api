@@ -18,14 +18,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Single-shot power jobs (docs/plan/03 power operations). The API endpoint
+ * Single-shot power jobs. The API endpoint
  * validated permission and state and enqueued after commit; this worker calls
  * Proxmox, awaits the UPID and records the outcome:
  *
  * <ul>
  *   <li>success — CAS status transition + a {@code vm_events} row with the
  *       requesting user as actor;</li>
- *   <li>failure — the status is left alone (the M3 status poller converges it
+ *   <li>failure — the status is left alone (the status poller converges it
  *       with reality); the failure is recorded in {@code vms.status_detail}
  *       and in the event's {@code detail}.</li>
  * </ul>

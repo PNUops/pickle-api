@@ -44,7 +44,7 @@ public class StaleTaskRecoveryJob {
     /**
      * Power actions are single-shot (retries = 0) and short; a claim older than
      * this means the worker died before releasing it, so free it lest the VM's
-     * power controls stay bricked (docs/plan/03; C1).
+     * power controls stay bricked.
      */
     static final Duration POWER_CLAIM_STALE_AFTER = Duration.ofMinutes(10);
 
@@ -129,7 +129,7 @@ public class StaleTaskRecoveryJob {
         switch (kind) {
             case PROVISION -> jobScheduler.enqueue(() -> provisioningService.provisionVm(vmId));
             case DELETE -> jobScheduler.enqueue(() -> deleteVmJob.deleteVm(vmId));
-            // REINSTALL is contract-reserved; no pipeline exists yet (M4+)
+            // REINSTALL is contract-reserved; no pipeline exists yet
             case REINSTALL -> log.warn("stale REINSTALL task for vm {} ignored (no pipeline)", vmId);
         }
     }

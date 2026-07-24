@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, dashboard summaries (M5) — the org panel
+ * Contract tag {@code admin}, dashboard summaries — the org panel
  * (ORG_ADMIN pinned to their org, SYS_ADMIN drills in via {@code orgId}) and
  * the SYS_ADMIN-only platform panel.
  */

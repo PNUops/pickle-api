@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * M6 retention sweepers: old notifications and spent auth tokens are batch
+ * Retention sweepers: old notifications and spent auth tokens are batch
  * deleted while fresh rows survive — and the permanent {@code audit_logs}
  * table is never touched.
  */

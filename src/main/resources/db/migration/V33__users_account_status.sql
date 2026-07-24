@@ -1,4 +1,4 @@
--- Account-lifecycle columns + status-change history (M6 Lane A, plan/02).
+-- Account-lifecycle columns + status-change history.
 -- users.withdrawn_at already exists (V2); this adds the admin-disable pair and
 -- a queryable history table backing the admin user-detail view. audit_logs
 -- still records every transition — user_status_changes exists so the detail
@@ -28,6 +28,6 @@ create table user_status_changes (
 create index user_status_changes_user_id_idx on user_status_changes (user_id);
 
 comment on table user_status_changes is
-    'Account status transition history (M6): admin disable/enable and self-withdrawal. Enable restores from_status of the matching disable row.';
+    'Account status transition history: admin disable/enable and self-withdrawal. Enable restores from_status of the matching disable row.';
 comment on column user_status_changes.actor_id is
     'Who performed the transition (the user themself for withdrawal; null only for future system-driven transitions).';

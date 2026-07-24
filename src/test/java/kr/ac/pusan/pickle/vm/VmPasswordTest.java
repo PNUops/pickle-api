@@ -201,7 +201,7 @@ class VmPasswordTest {
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/password"))
                 .andExpect(status().isUnauthorized());
 
-        // a VM without a stored password (e.g. M2 mock-provisioned) → 410
+        // a VM without a stored password (e.g. a mock-provisioned VM) → 410
         long mockVm = createVm(VmStatus.RUNNING, null);
         mockMvc.perform(get("/api/v1/vms/" + mockVm + "/password")
                         .header("Authorization", "Bearer " + ownerToken))

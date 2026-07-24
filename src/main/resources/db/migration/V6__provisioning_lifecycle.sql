@@ -1,7 +1,6 @@
--- Provisioning & lifecycle schema (M3 WP-B1): provisioning_tasks (user-visible
+-- Provisioning & lifecycle schema: provisioning_tasks (user-visible
 -- task state), vm_events (permanent per-VM history) and the vms lifecycle
 -- columns (one-shot initial credentials, scheduled deletion).
--- See docs/plan/02-data-model.md and docs/plan/03-provisioning.md.
 
 create type provisioning_task_kind as enum ('PROVISION', 'DELETE', 'REINSTALL');
 create type provisioning_task_status as enum
@@ -56,14 +55,14 @@ alter table vms
     add column delete_reason              text;
 
 comment on column vms.initial_password is
-    'Plaintext by design, but only until first view: the one-shot password endpoint returns it once and nulls this column (docs/plan/03 initial credentials). Only the BCrypt hash in initial_password_hash is kept for support verification.';
+    'Plaintext by design, but only until first view: the one-shot password endpoint returns it once and nulls this column. Only the BCrypt hash in initial_password_hash is kept for support verification.';
 comment on column vms.delete_scheduled_for is
     'When the deletion sweeper may hard-delete: self-delete now()+vm_delete_grace_hours, admin delete >= admin_delete_min_notice_days out.';
 
--- ── Settings keys read by the M3 deletion flow. Operator-tunable at runtime.
---    168 h = 7 days grace (operator decision 2026-07-08, docs/plan/03). ──
+-- ── Settings keys read by the deletion flow. Operator-tunable at runtime.
+--    168 h = 7 days grace (operator decision 2026-07-08). ──
 insert into settings (key, value, description) values
     ('vm_delete_grace_hours', '168'::jsonb,
-     'Grace period between a self-delete request and the hard delete (docs/plan/03).'),
+     'Grace period between a self-delete request and the hard delete.'),
     ('admin_delete_min_notice_days', '7'::jsonb,
-     'Minimum notice an admin-scheduled routine delete must give the owner (docs/plan/03).');
+     'Minimum notice an admin-scheduled routine delete must give the owner.');

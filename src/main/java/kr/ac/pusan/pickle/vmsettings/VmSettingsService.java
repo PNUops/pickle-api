@@ -30,7 +30,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Per-VM settings (contract v0.8.0, product-spec §9). A code-side registry owns
+ * Per-VM settings (contract v0.8.0). A code-side registry owns
  * each key's type, default, and required role; the {@code vm_settings} table
  * holds only overrides. Two surfaces: the console GET/PATCH (EDITOR+; per-key
  * role for changes) and the enforcement getters used by feature code (the SSH

@@ -29,8 +29,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Web-terminal ticket mint gate chain (contract {@code createTerminalSession},
- * docs/plan/05): kill switch (503) → visible VM + MEMBER+ (404 mask for
+ * Web-terminal ticket mint gate chain (contract {@code createTerminalSession}):
+ * kill switch (503) → visible VM + MEMBER+ (404 mask for
  * non-member/VIEWER) → RUNNING (409) → per-VM admin block (403) → dual-key rate
  * limit (429) → concurrent cap (409), then a 201 with a no-store one-time ticket.
  */

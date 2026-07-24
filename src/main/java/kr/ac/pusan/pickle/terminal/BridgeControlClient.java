@@ -17,7 +17,7 @@ import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Client for the bridge control link (docs/api/internal.md Link 3b,
+ * Client for the bridge control link (the internal web-terminal contract,
  * {@code POST 172.30.1.30:8083/control/terminate}). pickle-api is the client:
  * a SYS_ADMIN force-terminate calls here and the bridge closes the WS (4002) and
  * tears down SSH.

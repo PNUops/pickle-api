@@ -778,7 +778,7 @@ class VmDeletionTest {
         return allocationId;
     }
 
-    // ── M6 deletion / stop protection ────────────────────────────────────────
+    // ── deletion / stop protection ───────────────────────────────────────────
 
     @Test
     void deletePipelineParksNeedsAdminOnProtectedDestroyError() {

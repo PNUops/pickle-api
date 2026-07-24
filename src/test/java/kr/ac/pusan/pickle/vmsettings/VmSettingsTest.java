@@ -200,7 +200,7 @@ class VmSettingsTest {
                 .andExpect(status().isOk());
         assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME))
                 .isEqualTo("실습 서버 A");
-        // VmDetail carries the displayName + orgName join (M6/M5 display fields)
+        // VmDetail carries the displayName + orgName join (display fields)
         mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + editorToken))
                 .andExpect(status().isOk())

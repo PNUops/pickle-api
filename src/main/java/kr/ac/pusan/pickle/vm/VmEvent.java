@@ -14,7 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Permanent per-VM history entry (docs/plan/02 vm_events, product brief §20).
+ * Permanent per-VM history entry (vm_events).
  * Append-only: rows are inserted and read, never updated or deleted.
  * {@code actorId} is null for system-initiated events (sweeper, reconciler).
  */

@@ -77,7 +77,7 @@ public class VmRequestService {
 
     @Transactional
     public VmRequestDetailResponse create(AuthenticatedUser actor, CreateVmRequestRequest request, String ip) {
-        // A soft-deleted group cannot receive new VM requests (M6).
+        // A soft-deleted group cannot receive new VM requests.
         Group group = groupRepository.findByIdAndDeletedAtIsNull(request.groupId())
                 .orElseThrow(() -> notFound("해당 그룹이 존재하지 않습니다."));
         GroupMemberRole role = groupMemberRepository
@@ -256,7 +256,7 @@ public class VmRequestService {
                     "'" + rootDomain + "'은(는) 허용된 루트 도메인이 아닙니다."));
         }
         // Contract: duplicates are validated server-side — a pair is taken
-        // while another request holds it in a non-terminal state. (M4 domain
+        // while another request holds it in a non-terminal state. (Domain
         // issuance re-checks against actually published domains.)
         if (request.desiredSubdomain() != null && rootDomain != null
                 && requestRepository.existsByDesiredSubdomainAndRootDomainAndStatusIn(

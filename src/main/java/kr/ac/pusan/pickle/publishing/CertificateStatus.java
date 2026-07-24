@@ -1,6 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
-/** Certificate status (docs/plan/06). */
+/** Certificate status. */
 public enum CertificateStatus {
     ACTIVE,
     RENEWING,

@@ -15,7 +15,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A domain (FQDN) attached to a VM (docs/plan/02 domains, docs/plan/06). Platform
+ * A domain (FQDN) attached to a VM. Platform
  * subdomains (AUTO/REQUESTED) are ACTIVE on creation; custom domains carry a
  * verification token and flow PENDING→VERIFYING→ACTIVE via DNS polling.
  */

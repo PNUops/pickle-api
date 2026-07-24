@@ -16,8 +16,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Approve/reject decision with the granted values (docs/plan/02
- * vm_request_reviews). One row per request; granted columns are null on REJECT.
+ * Approve/reject decision with the granted values (vm_request_reviews).
+ * One row per request; granted columns are null on REJECT.
  */
 @Entity
 @Table(name = "vm_request_reviews")
@@ -67,11 +67,11 @@ public class VmRequestReview {
     @Column(name = "grant_public")
     private Boolean grantPublic;
 
-    /** Admin-granted platform subdomain label; null ⇒ AUTO at publish (M4A). */
+    /** Admin-granted platform subdomain label; null ⇒ AUTO at publish. */
     @Column(name = "granted_subdomain")
     private String grantedSubdomain;
 
-    /** Root domain for the granted subdomain (docs/plan/06). */
+    /** Root domain for the granted subdomain. */
     @Column(name = "granted_root_domain")
     private String grantedRootDomain;
 

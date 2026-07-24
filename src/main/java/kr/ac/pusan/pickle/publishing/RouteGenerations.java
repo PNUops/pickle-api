@@ -4,8 +4,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * Allocates the DB-owned monotonic generation token (docs/api/internal.md Link
- * 2) from {@code route_generation_seq}. A single global sequence is monotonic
+ * Allocates the DB-owned monotonic generation token (the proxy-agent control
+ * contract) from {@code route_generation_seq}. A single global sequence is monotonic
  * per-FQDN too, so a re-created route for a reused FQDN always outranks whatever
  * the agent last applied — a stale apply can never resurrect an old vhost.
  */

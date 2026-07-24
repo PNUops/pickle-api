@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 2FA(TOTP) enrollment, verification and login step-up (M6 W2-A, launch gate G5).
+ * 2FA(TOTP) enrollment, verification and login step-up (the MFA enrollment enforcement gate).
  *
  * <p>The active/pending secret split ({@link UserMfa}) lets a repeated
  * {@code begin} overwrite an un-activated secret without touching a live

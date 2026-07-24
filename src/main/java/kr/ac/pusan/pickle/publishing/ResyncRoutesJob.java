@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Full-manifest reconciliation (docs/api/internal.md Link 2 {@code POST
+ * Full-manifest reconciliation (the proxy-agent control contract, {@code POST
  * /sync-all}), backing {@code POST /admin/routes/resync}. Renders every live
  * route from the DB (the authoritative manifest) and pushes it to proxy-agent,
  * which prunes agent-managed vhosts not in the manifest. Used after a proxy

@@ -5,7 +5,7 @@ import java.util.List;
 
 /**
  * sshpiperd → pickle-api authenticated-session audit request
- * (docs/api/internal.md Link 1 {@code /internal/sshgw/session}, gate C-2). Sent
+ * (the internal SSH gateway route contract, {@code /internal/sshgw/session}). Sent
  * from {@code PipeStart} after signature verification.
  *
  * <p>Unlike the route lookup, this carries {@code candidateFingerprints} — the

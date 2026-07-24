@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Internal SSH-gateway route endpoint settings ({@code pickle.sshgw.*},
- * docs/api/internal.md Link 1). sshpiper on the sshgw LXC presents {@code token}
+ * internal route contract). sshpiper on the sshgw LXC presents {@code token}
  * as a static bearer; the endpoint additionally pins the caller's source IP to
  * {@code allowedSourceIp} (defence in depth on top of the vmbr1 firewall).
  *

@@ -8,8 +8,8 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import org.springframework.stereotype.Component;
 
 /**
- * Server-side weak-password rejection (docs/plan/07: min 10 chars plus a
- * zxcvbn-style weakness check). Length is enforced by bean validation; this
+ * Server-side weak-password rejection (min 10 chars plus a zxcvbn-style
+ * weakness check). Length is enforced by bean validation; this
  * component rejects structurally weak or well-known passwords with 422.
  */
 @Component

@@ -16,8 +16,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Sole access gate for {@code /internal/**} (docs/api/internal.md common
- * conventions, docs/plan/07). Runs three checks, in order, and passes the
+ * Sole access gate for {@code /internal/**} (the internal API contract common
+ * conventions). Runs three checks, in order, and passes the
  * request through only when all pass:
  *
  * <ol>

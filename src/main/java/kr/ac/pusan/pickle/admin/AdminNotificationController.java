@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, notification delivery log (M5) — email-channel
+ * Contract tag {@code admin}, notification delivery log — email-channel
  * send log with recipient/event/status filters and the FAILED-only resend,
  * SYS_ADMIN only.
  */

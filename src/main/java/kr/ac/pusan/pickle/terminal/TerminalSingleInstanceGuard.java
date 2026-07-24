@@ -13,8 +13,8 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 
 /**
- * Boot-time single-instance assertion for the web-terminal in-memory state
- * (docs/plan/05 Path B, docs/architecture.md). {@link TicketRegistry} and
+ * Boot-time single-instance assertion for the web-terminal in-memory state.
+ * {@link TicketRegistry} and
  * {@link TerminalSessionRegistry} are process-local; if two api instances ran,
  * cap accounting and the admin session view would each see only half the world.
  *
@@ -72,8 +72,8 @@ public class TerminalSingleInstanceGuard implements DisposableBean {
             closeQuietly(connection);
             throw new IllegalStateException("another pickle-api instance already holds the web "
                     + "terminal single-instance advisory lock. The in-memory session mirror and "
-                    + "cap accounting require exactly one api instance (docs/architecture.md, "
-                    + "plan/05 Path B). Run a single instance or disable "
+                    + "cap accounting require exactly one api instance. "
+                    + "Run a single instance or disable "
                     + "pickle.terminal.enforce-single-instance.");
         }
         // Keep the connection (and thus the session-level lock) for the process

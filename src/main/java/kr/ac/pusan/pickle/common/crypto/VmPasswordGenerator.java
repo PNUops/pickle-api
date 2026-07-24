@@ -4,7 +4,7 @@ import java.security.SecureRandom;
 import org.springframework.stereotype.Component;
 
 /**
- * Generates VM guest passwords (24-char CSPRNG, docs/plan/03 initial
+ * Generates VM guest passwords (24-char CSPRNG, initial
  * credentials). Shared by the provisioning pipeline (step 5) and the password
  * reset endpoint so both mint identical-strength credentials.
  */

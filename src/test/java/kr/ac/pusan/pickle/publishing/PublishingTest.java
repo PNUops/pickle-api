@@ -369,7 +369,7 @@ class PublishingTest {
         assertThat(domainStatus(domainId)).isEqualTo("ACTIVE");
     }
 
-    // ── cert confirmation via agent /status (M2) + verify re-trigger (M3) ───
+    // ── cert confirmation via agent /status + verify re-trigger ─────────────
 
     @Test
     void customDomainCertActivatesOnlyOnAgentConfirmedOk() throws Exception {
@@ -418,7 +418,7 @@ class PublishingTest {
         long appliedGen = jdbcTemplate.queryForObject(
                 "select applied_generation from routes where id = ?", Long.class, routeId);
 
-        // M3: a verify retry re-arms the FAILED cert and bumps the route
+        // a verify retry re-arms the FAILED cert and bumps the route
         // generation past the applied one, so the agent re-runs certbot instead
         // of rejecting the re-apply as stale (409).
         long retryRouteId = domainVerifier.verifyOne(domainId).orElseThrow();
@@ -530,7 +530,7 @@ class PublishingTest {
         assertThat(cert.get("daysUntilExpiry").isNull()).isTrue();
     }
 
-    // ── transport-failure retry + recurring reconcile (M4 hardening) ─────────
+    // ── transport-failure retry + recurring reconcile (hardening) ───────────
 
     /**
      * Marks every existing route confirmed so a reconcile-cycle test only sees

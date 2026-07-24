@@ -109,7 +109,7 @@
 			<!-- Runtime scope: springdoc's ObjectMapperProvider requires YAMLFactory
 			     at startup (NoClassDefFoundError in the packaged jar when test-scoped
 			     — found at first dev deploy). Also used by ContractDriftTest to parse
-			     docs/api/openapi.yaml. Version managed by the Spring Boot BOM
+			     the committed OpenAPI contract. Version managed by the Spring Boot BOM
 			     (2.21.x line; Central latest 2.22.0 — kept for Jackson 2 convergence). -->
 			<groupId>com.fasterxml.jackson.dataformat</groupId>
 			<artifactId>jackson-dataformat-yaml</artifactId>
@@ -154,7 +154,7 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<!-- Proxmox API stub harness (docs/plan/03): serves responses captured
+			<!-- Proxmox API stub harness: serves responses captured
 			     from the real pve1 (src/test/resources/wiremock/proxmox). 3.13.2 is
 			     the latest stable on Maven Central as of 2026-07-08; the 4.x line is
 			     still beta (4.0.0-beta.38) and therefore excluded. The standalone

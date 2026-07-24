@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Per-VM worker of the M5 expiry auto-stop: graceful ACPI shutdown with a
+ * Per-VM worker of the expiry auto-stop: graceful ACPI shutdown with a
  * bounded wait, then a force-stop fallback — an expiry stop MUST succeed
  * against a hung guest (same courtesy-then-force semantics as the deletion
  * flow, unlike the user shutdown op which never falls back).

@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
-/** M6 W2-A: /me pendingConsents and GET/POST /me/consents. */
+/** /me pendingConsents and GET/POST /me/consents. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

@@ -35,9 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * TEAM/PROJECT group management (contract tag {@code groups}). Authorization
- * is resolved in this layer from a single membership row per request
- * (docs/plan/07): OWNER edits group info, manages members and transfers
- * ownership; PERSONAL groups have immutable membership.
+ * is resolved in this layer from a single membership row per request:
+ * OWNER edits group info, manages members and transfers ownership;
+ * PERSONAL groups have immutable membership.
  */
 @Service
 public class GroupService {
@@ -235,7 +235,7 @@ public class GroupService {
     }
 
     /**
-     * Soft-deletes a group (contract {@code deleteGroup}, M6). OWNER only;
+     * Soft-deletes a group (contract {@code deleteGroup}). OWNER only;
      * non-members are masked as 404 and members below OWNER get 403. PERSONAL
      * groups are never deletable (409), and a group with any non-destroyed VM
      * (DELETED excluded, DELETING counts as blocking — shared

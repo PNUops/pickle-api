@@ -52,7 +52,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * ORG_ADMIN is hard-scoped to their own org — requests of other orgs answer
  * 404 (existence stays private, per contract). Approval is a single
  * transaction that writes intent only: review row + CREATING vm row + a
- * JobRunr provisioning job; no Proxmox call happens here (docs/plan/03).
+ * JobRunr provisioning job; no Proxmox call happens here.
  */
 @Service
 public class ApprovalService {
@@ -152,13 +152,13 @@ public class ApprovalService {
                 errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
             } else if (template != null && !templateRepository.existsByNameAndNodeIdAndStatus(
                     template.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
-                // Forced node must host the granted template — the M3 pipeline
-                // clones the template on the placed node, so a node without it
+                // Forced node must host the granted template — the provisioning
+                // pipeline clones the template on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure (finding A3).
                 errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
             }
         }
-        // Platform subdomain grant (M4A, docs/product-spec §12): the admin
+        // Platform subdomain grant (per the platform subdomain policy): the admin
         // finalizes the subdomain NAME here (issuance is deferred to publish).
         // Ignored when HTTP publishing was not granted.
         String grantedSubdomain = Boolean.TRUE.equals(form.grantHttp())
@@ -207,8 +207,8 @@ public class ApprovalService {
                 grantedSubdomain, grantedRootDomain, form.nodeId()));
         request.setStatus(VmRequestStatus.APPROVED);
 
-        // M2 auto placement: the template's node (single-node cluster; the
-        // scoring placement step arrives with the M3 pipeline, docs/plan/03).
+        // Auto placement: the template's node (single-node cluster; the
+        // scoring placement step arrives with the provisioning pipeline).
         Long nodeId = form.nodeId() != null ? form.nodeId() : template.getNodeId();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
         String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());

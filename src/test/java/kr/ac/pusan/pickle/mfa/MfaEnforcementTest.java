@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** M6 W2-A / G5: admin-tier 2FA enrollment enforcement is ON (prod behaviour). */
+/** Admin-tier 2FA enrollment enforcement is ON (prod behaviour). */
 @SpringBootTest(properties = "pickle.mfa.enforce-admin=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

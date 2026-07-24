@@ -42,7 +42,7 @@ class AuthFlowTest {
     private static final String EMAIL = "flow.tester@pusan.ac.kr";
     private static final String PASSWORD = "Corr3ct-horse-battery!";
 
-    /** Consent to both current (v1) documents — required for signup (M6 W2-A). */
+    /** Consent to both current (v1) documents — required for signup. */
     private static final Object FULL_CONSENTS = List.of(
             Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
             Map.of("docType", "PRIVACY_POLICY", "version", 1));
@@ -139,7 +139,7 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.memberships[0].groupKind").value("PERSONAL"))
                 .andExpect(jsonPath("$.memberships[0].role").value("OWNER"))
                 .andExpect(jsonPath("$.memberships[0].groupName").value("홍길동"))
-                // M6 contract-gate carryover: fields hardcoded until W2-A (2FA/consent)
+                // contract-gate carryover: fields reflect the 2FA/consent surface
                 .andExpect(jsonPath("$.mfaEnabled").value(false))
                 .andExpect(jsonPath("$.pendingConsents").isArray());
 

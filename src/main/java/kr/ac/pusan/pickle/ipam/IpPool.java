@@ -13,7 +13,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * IP pool a node's VMs allocate from (docs/plan/02). Rows are seeded by
+ * IP pool a node's VMs allocate from. Rows are seeded by
  * migration / managed by operators; the application only reads them, so the
  * PostgreSQL-native columns (cidr, inet, jsonb) are mapped as plain strings
  * and parsed in {@link IpamService}.

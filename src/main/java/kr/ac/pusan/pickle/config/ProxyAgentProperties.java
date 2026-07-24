@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * proxy-agent reverse-proxy control link settings ({@code pickle.proxy-agent.*},
- * docs/api/internal.md Link 2). pickle-api is the client; a JobRunr job pushes
+ * the proxy-agent control contract). pickle-api is the client; a JobRunr job pushes
  * desired routing state to the Go agent on LXC 100.
  *
  * <p>The token has no default outside dev/test: when blank the client fails

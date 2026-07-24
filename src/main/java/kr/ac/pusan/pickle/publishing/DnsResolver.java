@@ -3,7 +3,7 @@ package kr.ac.pusan.pickle.publishing;
 import java.util.List;
 
 /**
- * Minimal DNS lookup used by custom-domain verification (docs/plan/06). An
+ * Minimal DNS lookup used by custom-domain verification. An
  * interface so tests can supply deterministic records instead of hitting the
  * live resolver.
  */

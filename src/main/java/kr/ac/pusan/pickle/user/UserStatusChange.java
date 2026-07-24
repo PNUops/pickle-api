@@ -14,7 +14,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Account status transition history (M6): admin disable/enable and
+ * Account status transition history: admin disable/enable and
  * self-withdrawal. {@code enable} restores the {@code fromStatus} of the
  * matching disable row (contract: enable = restore, never an
  * email-verification bypass) — see V33.

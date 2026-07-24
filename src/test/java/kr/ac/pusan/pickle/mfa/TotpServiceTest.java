@@ -57,7 +57,7 @@ class TotpServiceTest {
 
     @Test
     void otpauthUriCarriesIssuerAndSecret() {
-        String uri = totp.otpauthUri("gildong.hong@pusan.ac.kr", "JBSWY3DPEHPK3PXP");
+        String uri = totp.otpauthUri("example@pusan.ac.kr", "JBSWY3DPEHPK3PXP");
         assertThat(uri).startsWith("otpauth://totp/Pickle:");
         assertThat(uri).contains("secret=JBSWY3DPEHPK3PXP").contains("issuer=Pickle");
     }

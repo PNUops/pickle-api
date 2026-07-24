@@ -1,7 +1,7 @@
--- Terminology standardization (2026-07-16, docs/glossary.md): align the
+-- Terminology standardization (2026-07-16): align the
 -- admin-delete notice key with the vm_* prefix used by every other VM setting
 -- (and with the contract wording), and standardize the Korean descriptions
--- seeded in V6/V16 (물리 파기/셀프 삭제 → glossary terms). Key rename runs
+-- seeded in V6/V16 (물리 파기/셀프 삭제 → standardized terms). Key rename runs
 -- BEFORE the description update that targets the new key.
 
 update settings set key = 'vm_admin_delete_min_notice_days'

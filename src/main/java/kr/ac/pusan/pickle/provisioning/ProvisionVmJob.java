@@ -50,14 +50,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The real M3 provision pipeline (docs/plan/03): ten idempotent steps from
+ * The real provision pipeline: ten idempotent steps from
  * guard to finalize, resumable at {@code provisioning_tasks.current_step}.
  * Runs inside a JobRunr worker; deliberately NOT transactional as a whole —
  * each step commits its own small DB writes so a crash between Proxmox calls
  * never holds a transaction open, and re-runs re-check actual state (vmid
  * reuse, clone-exists guard, CAS transitions) instead of trusting memory.
  *
- * <p>Failure policy (docs/plan/03): transient errors retry with backoff
+ * <p>Failure policy: transient errors retry with backoff
  * {@link #RETRY_BACKOFF} up to {@link #MAX_STEP_ATTEMPTS} attempts per step —
  * self-scheduled via {@link JobScheduler}, which is the only retry mechanism
  * ({@code @Job retries = 0}). Permanent failures compensate by step range:
@@ -96,7 +96,7 @@ public class ProvisionVmJob implements ProvisioningService {
             ProvisioningTaskStatus.PENDING, ProvisioningTaskStatus.RUNNING,
             ProvisioningTaskStatus.RETRYING, ProvisioningTaskStatus.NEEDS_ADMIN);
 
-    /** Guest-agent readiness poll after start (docs/plan/03: 5 s / 5 min). */
+    /** Guest-agent readiness poll after start (5 s / 5 min). */
     private static final Duration AGENT_PING_INTERVAL = Duration.ofSeconds(5);
     private static final Duration AGENT_PING_TIMEOUT = Duration.ofMinutes(5);
 
@@ -203,7 +203,7 @@ public class ProvisionVmJob implements ProvisioningService {
         int claimed = switch (task.getStatus()) {
             case PENDING -> taskRepository.startAttempt(task.getId(), now);
             case RETRYING -> taskRepository.resumeAttempt(task.getId(), now);
-            // parked task re-enqueued = admin re-run (docs/plan/03 guard step)
+            // parked task re-enqueued = admin re-run (guard step)
             case NEEDS_ADMIN -> taskRepository.reactivate(task.getId(), now);
             // RUNNING: a concurrent worker owns it; DONE/FAILED: nothing to do
             case RUNNING, DONE, FAILED -> 0;
@@ -367,9 +367,9 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("memory", String.valueOf(vm.getMemoryMb()));
         params.put("ciuser", vm.getSshUsername());
         params.put("cipassword", password);
-        // Authorize the platform keys on the guest (docs/plan/05): the SSH gateway
-        // upstream key (M5.5) and, when configured, the web-terminal bridge key
-        // (M6.5 — independent revocation, docs/plan/05 Path B). The two authorized_keys
+        // Authorize the platform keys on the guest: the SSH gateway
+        // upstream key and, when configured, the web-terminal bridge key
+        // (independent revocation). The two authorized_keys
         // one-liners are newline-joined before encoding.
         // PVE's sshkeys param is format=urlencoded and its validator forbids both
         // space and '+' (^[-%a-zA-Z0-9_.!~*'()]*$, PVE::JSONSchema pve_verify_urlencoded).
@@ -395,9 +395,9 @@ public class ProvisionVmJob implements ProvisioningService {
 
     /**
      * The cloud-init {@code sshkeys} value: the required SSH gateway platform key,
-     * plus the optional web-terminal bridge key (M6.5, newline-joined). When the
+     * plus the optional web-terminal bridge key (newline-joined). When the
      * terminal key is not yet configured only the gateway key is injected and a
-     * warning is logged — such VMs are re-provisioned once W2 sets
+     * warning is logged — such VMs are re-provisioned once the deployment sets
      * {@code PICKLE_TERMINAL_PUBLIC_KEY} (dev volatile policy).
      */
     private String platformSshKeys(Vm vm) {
@@ -552,7 +552,7 @@ public class ProvisionVmJob implements ProvisioningService {
         log.info("provision vm {} finished (vmid {})", vm.getId(), vm.getProxmoxVmid());
     }
 
-    // --- failure handling (docs/plan/03 retry & compensation) -----------------
+    // --- failure handling (retry & compensation) -----------------
 
     private void handleFailure(long taskId, long vmId, Exception e) {
         Instant now = Instant.now();

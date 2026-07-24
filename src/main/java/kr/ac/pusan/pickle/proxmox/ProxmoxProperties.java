@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * PICKLE_PROXMOX_CA_CERT). The token may stay unset in dev/test profiles:
  * unlike the JWT secret there is no startup fail-fast — {@link ProxmoxClient}
  * raises a clear error on first use instead, so profiles that never talk to
- * Proxmox can boot without it (docs/plan/03).
+ * Proxmox can boot without it.
  *
  * @param tokenId          API token id, e.g. {@code pickle@pve!pickle-api}
  * @param tokenSecret      API token secret (UUID issued by PVE)

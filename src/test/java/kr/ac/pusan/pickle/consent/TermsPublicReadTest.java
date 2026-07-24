@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** M6 W2-A: public terms endpoints (no auth) return the seeded v1 documents. */
+/** Public terms endpoints (no auth) return the seeded v1 documents. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

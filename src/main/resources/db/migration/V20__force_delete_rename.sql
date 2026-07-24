@@ -1,4 +1,4 @@
--- Terminology standardization (2026-07-16, docs/glossary.md): the SYS_ADMIN
+-- Terminology standardization (2026-07-16): the SYS_ADMIN
 -- immediate deletion is 강제 삭제/FORCE, symmetric with the power-control
 -- FORCE_STOP — the old EMERGENCY naming is retired. Dev-only data,
 -- irreversible — take a manual DB backup before deploying (the deploy-api.sh

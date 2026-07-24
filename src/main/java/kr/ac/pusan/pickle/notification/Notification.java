@@ -15,7 +15,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * One in-app notification row — which doubles as the email delivery-log entry
- * (single-table design, docs/plan/02). Rows are INSERTed by
+ * (single-table design). Rows are INSERTed by
  * {@link NotificationService} (raw SQL for the dedup upsert); this entity is
  * the read/paging side plus the read-receipt writes.
  */

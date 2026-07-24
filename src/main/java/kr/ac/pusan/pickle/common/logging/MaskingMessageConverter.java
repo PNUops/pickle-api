@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 /**
  * Logback conversion word {@code %maskedMsg}: masks values of secret-bearing
  * keys (password/token/secret/cipassword/recoveryCode/otpauth/…) in log messages
- * so credentials and tokens never land in logs raw (docs/plan/07 logging policy).
+ * so credentials and tokens never land in logs raw (logging policy).
  *
  * <p>The dev/test-only {@code MockMailSender} logger is exempted so developers
  * can copy the emailed verification link from the console; that bean never

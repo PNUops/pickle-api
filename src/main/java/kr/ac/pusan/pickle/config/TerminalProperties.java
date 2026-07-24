@@ -4,8 +4,8 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * M6.5 web-terminal settings ({@code pickle.terminal.*}, docs/api/internal.md
- * Link 3, docs/plan/05 Path B). pickle-api mints one-time tickets and answers the
+ * Web-terminal settings ({@code pickle.terminal.*}, internal route contract).
+ * pickle-api mints one-time tickets and answers the
  * bridge's control calls; it is the <b>client</b> only for the force-terminate
  * link (3b) to the bridge control port.
  *

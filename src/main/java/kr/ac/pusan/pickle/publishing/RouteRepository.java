@@ -35,7 +35,7 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
             """)
     List<Long> findUnconfirmedRouteIds(@Param("cutoff") Instant cutoff, Pageable pageable);
 
-    /** Every live route — the sync-all manifest source (docs/api/internal.md). */
+    /** Every live route — the sync-all manifest source. */
     List<Route> findByStatusNot(RouteStatus status);
 
     Optional<Route> findFirstByDomainId(Long domainId);

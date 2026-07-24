@@ -16,8 +16,8 @@ import org.springframework.stereotype.Service;
  * Shared org-headroom aggregation: allocated totals of an org's active
  * (non-deleted) VMs against platform ACTIVE-node capacity, with the
  * operator-tunable warning thresholds and the derived Korean guidance line.
- * Single home of this math — used by the approval-context panel (docs/plan/11)
- * and the org dashboard summary (M5), so both always judge by the same
+ * Single home of this math — used by the approval-context panel
+ * and the org dashboard summary, so both always judge by the same
  * numbers. Capacity is platform-wide: physical capacity cannot be attributed
  * per org on shared nodes.
  */

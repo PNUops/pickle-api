@@ -1,8 +1,8 @@
--- Pinned SSH host key per VM (M5.5, docs/api/internal.md Link 1 v2). The
+-- Pinned SSH host key per VM (the per-user SSH gateway route contract). The
 -- provisioning HOSTKEY step reads the guest's /etc/ssh/ssh_host_ed25519_key.pub
 -- (via the guest agent) and stores it here; the SSH gateway pins the upstream
 -- host key against this value instead of IgnoreHostKey. A VM without a collected
--- host key (pre-M5.5 VMs not yet re-provisioned) is denied at route resolution
+-- host key (VMs not yet re-provisioned) is denied at route resolution
 -- rather than piped unverified — re-provision to populate it.
 
 alter table vms

@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Resolves an incoming SSH slug to an upstream route for sshpiper
- * (docs/api/internal.md Link 1 v2, docs/plan/05). The check order is normative
+ * (the per-user SSH gateway route contract (v2)). The check order is normative
  * and fail-closed, encoding the precedence <b>global kill switch &gt; admin
  * per-VM block &gt; user setting</b>: rate limit → kill switch → slug exists →
  * RUNNING → per-VM block → identity (publickey fingerprint must map to a
@@ -58,7 +58,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SshGatewayRouteService {
 
-    /** Upstream SSH port on every guest VM (fixed; docs/plan/05). */
+    /** Upstream SSH port on every guest VM (fixed). */
     private static final int UPSTREAM_SSH_PORT = 22;
 
     /** Per-client (reported sourceIp) lookup budget — see class javadoc. */
@@ -221,7 +221,7 @@ public class SshGatewayRouteService {
 
     /**
      * Splits the newline-joined stored host keys into one entry per type. Shared
-     * with the M6.5 terminal redeem (docs/api/internal.md Link 3a) so both hops
+     * with the web-terminal redeem step (the internal web-terminal contract) so both hops
      * pin against the identical multi-type set.
      */
     public static List<String> splitHostKeys(String stored) {

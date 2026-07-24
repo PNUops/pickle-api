@@ -1,4 +1,4 @@
--- Terms of service + privacy policy documents (M6 W2-A). One row per
+-- Terms of service + privacy policy documents. One row per
 -- (doc_type, version); the "current" version per doc_type is the highest
 -- version whose effective_at has passed. v1 of both documents is seeded here
 -- with effective_at = now() so consent is enforceable immediately.
@@ -22,7 +22,7 @@ create table terms_versions (
 create index terms_versions_current_idx on terms_versions (doc_type, version desc);
 
 comment on table terms_versions is
-    'Versioned terms/privacy documents (M6). Current version per doc_type = max(version) with effective_at <= now().';
+    'Versioned terms/privacy documents. Current version per doc_type = max(version) with effective_at <= now().';
 
 insert into terms_versions (doc_type, version, title, body, effective_at) values
 ('TERMS_OF_SERVICE', 1, '피클 서비스 이용약관', $body$# 피클(Pickle) 서비스 이용약관

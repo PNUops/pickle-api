@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Pushes one route's desired state to proxy-agent (docs/api/internal.md Link 2).
+ * Pushes one route's desired state to proxy-agent (the proxy-agent control contract).
  * The endpoint wrote intent (route row + generation) and enqueued this after
  * commit; here we resolve the current desired state from the DB and call the
  * agent, recording the outcome on the route.
@@ -31,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p><b>SSRF enforcement point.</b> The upstream target IP is resolved
  * server-side from the VM's own live allocation ({@link IpAddressResolver}) —
  * never from any request field (there is none) — so a route can only ever point
- * at the VM's own vmbr2 address (docs/plan/06, product-spec §12).</p>
+ * at the VM's own vmbr2 address.</p>
  *
  * <p>Idempotent/desired-state: re-running is safe, and a stale generation is a
  * 409 no-op on the agent. Failure handling splits on what the agent said:
@@ -154,7 +154,7 @@ public class RouteApplyJob {
         if (!absent) {
             route.setStatus(RouteStatus.APPLIED);
             if (domain.getKind() == DomainKind.CUSTOM) {
-                // The agent drove certbot after the vhost went live (internal.md),
+                // The agent drove certbot after the vhost went live,
                 // but /apply answers 200 even when issuance failed — confirm via
                 // GET /status before calling the cert ACTIVE.
                 settleCertFromAgent(domain);

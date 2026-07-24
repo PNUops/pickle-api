@@ -37,7 +37,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * M5 expiry sweep, driven directly against a fixed KST clock: notice-stage
+ * Expiry sweep, driven directly against a fixed KST clock: notice-stage
  * ladder (smallest covering stage, late-VM skip-to-current, D-1 HIGH),
  * hourly-rerun idempotence (stage CAS + dedup key), the auto-stop boundary
  * (end date is inclusive — stops start the day after), claim-conflict skip,

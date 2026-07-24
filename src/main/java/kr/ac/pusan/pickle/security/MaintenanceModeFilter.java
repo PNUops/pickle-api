@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * M6 maintenance mode (contract v0.9.0, GET /meta/status semantics). When
+ * Maintenance mode (contract v0.9.0, GET /meta/status semantics). When
  * {@code maintenance_mode} is on, requests from anonymous users and from any
  * role below the admin tier are rejected with 503 {@code MAINTENANCE_MODE} so
  * the platform can be worked on while admins keep full access.
@@ -35,7 +35,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * per contract), the actuator health endpoint (deploy-api.sh polls it — a 503
  * would roll back a good deploy), and the springdoc {@code /openapi} document.
  * The admin tier is matched by role <em>name</em> — ORG_ADMIN/SYS_ADMIN plus the
- * ORG_MANAGER/SYS_MANAGER strings W3 introduces — so no change is needed when
+ * ORG_MANAGER/SYS_MANAGER operator-tier strings — so no change is needed when
  * the manager roles land.</p>
  */
 @Component

@@ -2,9 +2,9 @@ package kr.ac.pusan.pickle.user;
 
 /**
  * Global user role (single role per user, contract schema {@code UserRole}).
- * Ordered by increasing privilege. M6 adds two reduced-permission operator
- * tiers below the two admin roles (permission-matrix.md §2): {@code ORG_MANAGER}
- * sits below {@code ORG_ADMIN} and {@code SYS_MANAGER} below {@code SYS_ADMIN}.
+ * Ordered by increasing privilege. Two reduced-permission operator tiers sit
+ * below the two admin roles: {@code ORG_MANAGER} sits below {@code ORG_ADMIN}
+ * and {@code SYS_MANAGER} below {@code SYS_ADMIN}.
  */
 public enum UserRole {
     USER,
@@ -18,7 +18,7 @@ public enum UserRole {
      * ({@code ORG_MANAGER}). Both are pinned to their managed org (derived
      * membership) in the service layer identically; only their {@code @PreAuthorize}
      * grants differ. Kept out of {@code @PreAuthorize} strings, which stay
-     * explicit allow-lists (permission-matrix.md §1.3).
+     * explicit allow-lists.
      */
     public boolean isOrgTier() {
         return this == ORG_ADMIN || this == ORG_MANAGER;

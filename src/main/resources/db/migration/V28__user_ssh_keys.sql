@@ -1,4 +1,4 @@
--- Per-user SSH public keys (M5.5, docs/plan/05, product-spec §8). Registered
+-- Per-user SSH public keys. Registered
 -- keys are the primary SSH-gateway auth method: the route lookup matches the
 -- offered key's SHA-256 fingerprint to a row here and attributes the session to
 -- its owner. A key may also be server-generated ("키 만들기"), in which case the

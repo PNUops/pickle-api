@@ -13,7 +13,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A single IP handed to a VM (docs/plan/02). Rows are only ever written by
+ * A single IP handed to a VM. Rows are only ever written by
  * {@link IpamService} through race-safe SQL (unique-ip insert / CAS update);
  * this entity is the read-side mapping.
  */

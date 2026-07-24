@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-/** M6 W2-A: 2FA enrollment / activation / disable / recovery-code regeneration end-to-end. */
+/** 2FA enrollment / activation / disable / recovery-code regeneration end-to-end. */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

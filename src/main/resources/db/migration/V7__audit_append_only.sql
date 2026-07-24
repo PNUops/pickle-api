@@ -1,6 +1,6 @@
--- Append-only audit_logs, enforced at the DB level (docs/plan/07: "Audit log
--- table is append-only (app DB role lacks UPDATE/DELETE on it)"). Previously
--- left to ops (see the V2 comment); from M3 the migration itself revokes
+-- Append-only audit_logs, enforced at the DB level: the table is append-only
+-- (the app DB role lacks UPDATE/DELETE on it). Previously
+-- left to ops (see the V2 comment); this migration itself revokes
 -- row-mutation privileges from everyone, including the executing role.
 --
 -- Effect by environment:
@@ -12,7 +12,7 @@
 --   fail. The owner can still re-GRANT itself the privileges, but that takes
 --   a deliberate act — the boundary is "no accidental/implicit mutation", not
 --   protection against a malicious owner. Post-deploy verification is in the
---   runbook (infra/runbooks/m3-cutover §5).
+--   operator runbook.
 --
 -- current_user is resolved dynamically because the executing role differs per
 -- environment (postgres in zonky, pickle in dev/prod).

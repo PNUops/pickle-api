@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Launch gate G5: when enforcement is on (prod), an admin-tier account that has
+ * Launch gate: when enforcement is on (prod), an admin-tier account that has
  * not enrolled in 2FA is a <b>scope restriction, not a login block</b> — every
  * endpoint returns 403 {@code MFA_ENROLLMENT_REQUIRED} <i>except</i> the
  * enrollment/auth/profile/meta surfaces it needs to actually enroll. Runs right

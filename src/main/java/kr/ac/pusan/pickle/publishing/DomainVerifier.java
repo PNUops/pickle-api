@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * One custom-domain DNS verification pass (docs/plan/06). Polls the ownership TXT
+ * One custom-domain DNS verification pass. Polls the ownership TXT
  * ({@code _pickle-verify.<fqdn>}) and the A record (must point at the proxy IP),
  * flips the domain PENDING→VERIFYING→ACTIVE, and — on success — ensures a
  * Let's Encrypt certificate row exists and reports the live route to (re)apply.

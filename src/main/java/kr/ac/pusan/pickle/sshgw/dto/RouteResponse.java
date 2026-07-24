@@ -3,7 +3,7 @@ package kr.ac.pusan.pickle.sshgw.dto;
 import java.util.List;
 
 /**
- * Route granted (docs/api/internal.md Link 1, HTTP 200). sshpiper pipes the
+ * Route granted (the internal SSH gateway route contract, HTTP 200). sshpiper pipes the
  * session to {@code ip:port} as {@code user}.
  *
  * <p>{@code hostKeys} are the VM's pinned host public keys ({@code

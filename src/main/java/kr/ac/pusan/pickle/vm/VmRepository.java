@@ -34,7 +34,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * Currently allocated (= not deleted) VMs of an org, for headroom math —
-     * a null {@code orgId} means platform-wide (SYS_ADMIN dashboard, M5).
+     * a null {@code orgId} means platform-wide (SYS_ADMIN dashboard).
      */
     @Query("""
             select v from Vm v
@@ -45,10 +45,10 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     List<Vm> findActiveByOrgId(@Param("orgId") Long orgId, @Param("deleted") VmStatus deleted);
 
     /**
-     * M6 shared blocker query — group deletion (Lane B) and account withdrawal
-     * (Lane A) both refuse while a group still has non-destroyed VMs
-     * (everything but DELETED, DELETING included). Defined at kickoff so both
-     * lanes bind to one predicate instead of drifting apart (W0 / R4).
+     * Shared blocker query — group deletion and account withdrawal both refuse
+     * while a group still has non-destroyed VMs (everything but DELETED,
+     * DELETING included). Defined once so both callers bind to one predicate
+     * instead of drifting apart.
      */
     @Query("""
             select count(v) from Vm v
@@ -103,7 +103,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int transitionStatus(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 
-    // --- power-action serialization (docs/plan/03; C1) -----------------------
+    // --- power-action serialization -----------------------
 
     /**
      * Claims the single-writer power-action slot in one CAS: succeeds only
@@ -159,7 +159,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             """)
     int clearStalePowerActionClaims(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
 
-    // --- M5 usage-period expiry (single-writer: VmExpiryJob / VmPeriodService) ---
+    // --- usage-period expiry (single-writer: VmExpiryJob / VmPeriodService) ---
 
     /** Expiry-notice working set: dated, live, no pending deletion, ending by the horizon. */
     @Query("""
@@ -231,7 +231,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             @Param("endDate") java.time.LocalDate endDate,
             @Param("excluded") Collection<VmStatus> excluded, @Param("now") Instant now);
 
-    // --- M3 pipeline column updates (single-writer: the provisioning job) ----
+    // --- provision pipeline column updates (single-writer: the provisioning job) ----
 
     /** Step 1 (place) confirms/overrides the node chosen at approval time. */
     @Transactional
@@ -283,7 +283,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /**
      * Step 5 (config) and password reset store the generated credentials:
      * AES-GCM ciphertext for the (re-)viewable endpoint, BCrypt hash for
-     * support verification (docs/plan/03 initial credentials). The plaintext
+     * support verification (initial credentials). The plaintext
      * is never persisted or logged anywhere.
      */
     @Transactional
@@ -305,7 +305,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * Provisioning HOSTKEY step: pins the collected SSH host key. Idempotent — a
-     * re-run overwrites with the same collected value (docs/api/internal.md v2).
+     * re-run overwrites with the same collected value (the internal SSH gateway route contract).
      */
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -339,7 +339,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int updateStatusDetail(@Param("id") Long id, @Param("statusDetail") String statusDetail,
             @Param("now") Instant now);
 
-    // ── deletion lifecycle (docs/plan/03, contract v0.3.1) ─────────────────
+    // ── deletion lifecycle (contract v0.3.1) ─────────────────
 
     // Deletion CAS updates are native SQL: HQL renders enum *literals* with a
     // cast to the Java type name ('DELETING'::VmStatus), which does not match

@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Server-side validation of a platform subdomain label and its root domain
- * (docs/plan/06). Shared by admin approval (granting a subdomain) so the rules —
+ * Shared by admin approval (granting a subdomain) so the rules —
  * RFC 1123 label, reserved list, profanity denylist, allowed root — live in one
  * place. Uniqueness against live domains is checked at publish time (the final
  * gate is the partial unique index).
@@ -64,7 +64,7 @@ public class SubdomainPolicy {
 
     /**
      * True when {@code fqdn} is (or is under) any allowed platform root — a custom
-     * domain must not squat a platform zone (docs/plan/06, publish contract).
+     * domain must not squat a platform zone (publish contract).
      */
     public boolean isUnderPlatformRoot(String fqdn) {
         String value = fqdn.toLowerCase(Locale.ROOT);
