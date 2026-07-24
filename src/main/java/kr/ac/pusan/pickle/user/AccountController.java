@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.user;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import kr.ac.pusan.pickle.auth.AuthService;
@@ -41,7 +42,7 @@ public class AccountController {
     public ResponseEntity<AuthTokenResponse> changePassword(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody ChangePasswordRequest request,
-            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
         AuthService.AuthResult result = authService.changePassword(principal.id(),
                 request.currentPassword(), request.newPassword(), clientIp(httpRequest), userAgent);

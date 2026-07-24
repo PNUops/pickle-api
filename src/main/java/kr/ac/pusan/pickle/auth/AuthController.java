@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.auth;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -67,7 +69,7 @@ public class AuthController {
                     oneOf = {AuthTokenResponse.class, MfaChallengeResponse.class})))
     @PostMapping("/login")
     public ResponseEntity<Object> login(@Valid @RequestBody LoginRequest request,
-            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
         AuthService.LoginOutcome outcome = authService.login(request, clientIp(httpRequest), userAgent);
         // Enrolled account: return the step-up challenge, no cookies.
@@ -81,17 +83,20 @@ public class AuthController {
 
     @PostMapping("/mfa")
     public ResponseEntity<AuthTokenResponse> completeMfa(@Valid @RequestBody MfaLoginRequest request,
-            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
         AuthService.AuthResult result = authService.completeMfaLogin(request.mfaToken(), request.code(),
                 request.recoveryCode(), clientIp(httpRequest), userAgent);
         return withRefreshCookie(result);
     }
 
+    @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,
+            schema = @Schema(type = "string"),
+            description = "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
     @PostMapping("/refresh")
     public ResponseEntity<AuthTokenResponse> refresh(
             @CookieValue(value = SessionCookies.REFRESH_COOKIE, required = false) String refreshToken,
-            @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
             HttpServletRequest httpRequest) {
         AuthService.AuthResult result = authService.refresh(refreshToken, clientIp(httpRequest), userAgent);
         return withRefreshCookie(result);
@@ -111,6 +116,9 @@ public class AuthController {
                 clientIp(httpRequest));
     }
 
+    @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,
+            schema = @Schema(type = "string"),
+            description = "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(
             @CookieValue(value = SessionCookies.REFRESH_COOKIE, required = false) String refreshToken,

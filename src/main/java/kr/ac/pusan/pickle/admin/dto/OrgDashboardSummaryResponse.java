@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code OrgDashboardSummary} (ORG_ADMIN home / SYS_ADMIN org drill-in). */
 public record OrgDashboardSummaryResponse(
@@ -22,8 +23,8 @@ public record OrgDashboardSummaryResponse(
             long allocatedVcpu,
             long allocatedMemoryMb,
             long allocatedDiskGb,
-            Long capacityVcpu,
-            Long capacityMemoryMb,
+            @Nullable Long capacityVcpu,
+            @Nullable Long capacityMemoryMb,
             String guidance) {
     }
 

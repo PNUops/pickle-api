@@ -10,6 +10,8 @@ import kr.ac.pusan.pickle.group.GroupKind;
 /** Contract schema {@code CreateGroupRequest} (kind TEAM/PROJECT only — enforced in the service). */
 public record CreateGroupRequest(
         @NotNull(message = "kind는 TEAM 또는 PROJECT여야 합니다.")
+        @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"TEAM", "PROJECT"},
+                description = "그룹 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다")
         GroupKind kind,
 
         @NotBlank(message = "그룹 이름을 입력해 주세요.")

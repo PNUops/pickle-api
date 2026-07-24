@@ -41,7 +41,7 @@ public class AdminSettingsController {
     @PutMapping("/{key}")
     public SettingView updateSetting(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable String key,
-            @RequestBody SettingUpdateRequest request,
+            @jakarta.validation.Valid @RequestBody SettingUpdateRequest request,
             HttpServletRequest httpRequest) {
         return settingsService.update(principal, key,
                 request != null ? request.value() : null, clientIp(httpRequest));

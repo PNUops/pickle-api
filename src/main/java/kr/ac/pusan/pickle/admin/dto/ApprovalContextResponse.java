@@ -6,6 +6,7 @@ import kr.ac.pusan.pickle.group.GroupKind;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.vmrequest.ReviewDecision;
 import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code ApprovalContext} — the decision-support panels shown
@@ -49,9 +50,9 @@ public record ApprovalContextResponse(
             Long requestId,
             Instant submittedAt,
             VmRequestStatus status,
-            ReviewDecision decision,
-            String comment,
-            String reviewerName) {
+            @Nullable ReviewDecision decision,
+            @Nullable String comment,
+            @Nullable String reviewerName) {
     }
 
     public record OrgHeadroom(

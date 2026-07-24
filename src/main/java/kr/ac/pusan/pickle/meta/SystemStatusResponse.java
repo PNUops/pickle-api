@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.meta;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Contract: GET /meta/status response body. Public system status — the
  * maintenance flag and its notice, the global banner, and the operator contact
@@ -8,7 +10,7 @@ package kr.ac.pusan.pickle.meta;
  */
 public record SystemStatusResponse(
         boolean maintenance,
-        String maintenanceMessage,
-        String bannerMessage,
-        String contactEmail) {
+        @Nullable String maintenanceMessage,
+        @Nullable String bannerMessage,
+        @Nullable String contactEmail) {
 }

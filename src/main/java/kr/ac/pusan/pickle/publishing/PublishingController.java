@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.publishing;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -11,6 +13,7 @@ import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.publishing.dto.PublishRequest;
+import kr.ac.pusan.pickle.publishing.dto.UpdatePublicationRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -55,6 +58,8 @@ public class PublishingController {
      * {@code null} (detach the custom domain, revert to the platform subdomain).
      */
     @PatchMapping("/vms/{vmId}/publication")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+            schema = @Schema(implementation = UpdatePublicationRequest.class)))
     public ResponseEntity<PublicationView> updatePublication(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             @RequestBody JsonNode body, HttpServletRequest httpRequest) {

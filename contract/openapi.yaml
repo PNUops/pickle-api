@@ -683,6 +683,7 @@ components:
           type: "integer"
       required:
       - "docType"
+      - "version"
       type: "object"
     ConsentUpdateRequest:
       properties:
@@ -717,6 +718,10 @@ components:
           type: "string"
         kind:
           $ref: "#/components/schemas/GroupKind"
+          description: "그룹 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다"
+          enum:
+          - "TEAM"
+          - "PROJECT"
         name:
           maxLength: 100
           minLength: 0
@@ -1179,24 +1184,27 @@ components:
     HistoryEntry:
       properties:
         comment:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         decision:
-          $ref: "#/components/schemas/ReviewDecision"
+          anyOf:
+          - $ref: "#/components/schemas/ReviewDecision"
+          - type: "null"
         requestId:
           format: "int64"
           type: "integer"
         reviewerName:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         status:
           $ref: "#/components/schemas/VmRequestStatus"
         submittedAt:
           format: "date-time"
           type: "string"
       required:
-      - "comment"
-      - "decision"
       - "requestId"
-      - "reviewerName"
       - "status"
       - "submittedAt"
       type: "object"
@@ -2255,18 +2263,20 @@ components:
           type: "integer"
         capacityMemoryMb:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         capacityVcpu:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         guidance:
           type: "string"
       required:
       - "allocatedDiskGb"
       - "allocatedMemoryMb"
       - "allocatedVcpu"
-      - "capacityMemoryMb"
-      - "capacityVcpu"
       - "guidance"
       type: "object"
     ResourceTotalsResponse:
@@ -2349,6 +2359,8 @@ components:
       properties:
         value:
           type: "object"
+      required:
+      - "value"
       type: "object"
     SettingValueType:
       enum:
@@ -2518,18 +2530,21 @@ components:
     SystemStatusResponse:
       properties:
         bannerMessage:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         contactEmail:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         maintenance:
           type: "boolean"
         maintenanceMessage:
-          type: "string"
+          type:
+          - "string"
+          - "null"
       required:
-      - "bannerMessage"
-      - "contactEmail"
       - "maintenance"
-      - "maintenanceMessage"
       type: "object"
     Tasks:
       properties:
@@ -2728,6 +2743,14 @@ components:
           $ref: "#/components/schemas/OrgStatus"
         statusSet:
           type: "boolean"
+      type: "object"
+    UpdatePublicationRequest:
+      properties:
+        customDomain:
+          type: "string"
+        port:
+          format: "int32"
+          type: "integer"
       type: "object"
     UpdateUserAdminRequest:
       properties:
@@ -4952,12 +4975,6 @@ paths:
   /auth/login:
     post:
       operationId: "login"
-      parameters:
-      - in: "header"
-        name: "User-Agent"
-        required: false
-        schema:
-          type: "string"
       requestBody:
         content:
           application/json:
@@ -4990,6 +5007,12 @@ paths:
         required: false
         schema:
           type: "string"
+      - description: "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)"
+        in: "header"
+        name: "X-Pickle-Csrf"
+        required: true
+        schema:
+          type: "string"
       responses:
         "200":
           description: "OK"
@@ -5004,12 +5027,6 @@ paths:
   /auth/mfa:
     post:
       operationId: "completeMfa"
-      parameters:
-      - in: "header"
-        name: "User-Agent"
-        required: false
-        schema:
-          type: "string"
       requestBody:
         content:
           application/json:
@@ -5088,9 +5105,10 @@ paths:
         required: false
         schema:
           type: "string"
-      - in: "header"
-        name: "User-Agent"
-        required: false
+      - description: "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)"
+        in: "header"
+        name: "X-Pickle-Csrf"
+        required: true
         schema:
           type: "string"
       responses:
@@ -5728,12 +5746,6 @@ paths:
   /me/password:
     put:
       operationId: "changePassword"
-      parameters:
-      - in: "header"
-        name: "User-Agent"
-        required: false
-        schema:
-          type: "string"
       requestBody:
         content:
           application/json:
@@ -6481,7 +6493,7 @@ paths:
         content:
           application/json:
             schema:
-              type: "object"
+              $ref: "#/components/schemas/UpdatePublicationRequest"
         required: true
       responses:
         "200":

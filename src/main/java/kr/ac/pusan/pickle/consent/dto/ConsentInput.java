@@ -7,5 +7,6 @@ import kr.ac.pusan.pickle.consent.TermsDocType;
 public record ConsentInput(
         @NotNull(message = "문서 종류를 지정해 주세요.")
         TermsDocType docType,
-        int version) {
+        @NotNull(message = "약관 버전을 지정해 주세요.")
+        Integer version) {
 }
