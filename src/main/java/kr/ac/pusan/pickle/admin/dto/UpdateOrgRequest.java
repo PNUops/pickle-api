@@ -29,6 +29,7 @@ public class UpdateOrgRequest {
         this.nameSet = true;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isNameSet() {
         return nameSet;
     }
@@ -42,6 +43,7 @@ public class UpdateOrgRequest {
         this.descriptionSet = true;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isDescriptionSet() {
         return descriptionSet;
     }
@@ -55,10 +57,12 @@ public class UpdateOrgRequest {
         this.statusSet = true;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isStatusSet() {
         return statusSet;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
         return !nameSet && !descriptionSet && !statusSet;
     }

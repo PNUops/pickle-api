@@ -17,10 +17,7 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
-        detail:
-          type:
-          - "object"
-          - "null"
+        detail: {}
         id:
           format: "int64"
           type: "integer"
@@ -377,10 +374,14 @@ components:
           type: "string"
         groupId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         orgId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         scope:
           $ref: "#/components/schemas/AnnouncementScope"
         title:
@@ -485,7 +486,9 @@ components:
         comment:
           maxLength: 2000
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantHttp:
           type: "boolean"
         grantPublic:
@@ -498,21 +501,31 @@ components:
           type: "integer"
         grantedEndDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedMemoryMb:
           format: "int32"
           minimum: 256
           type: "integer"
         grantedRootDomain:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedStartDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedSubdomain:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedTemplateId:
           format: "int64"
           type: "integer"
@@ -522,7 +535,9 @@ components:
           type: "integer"
         nodeId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
       required:
       - "grantHttp"
       - "grantPublic"
@@ -572,10 +587,7 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
-        detail:
-          type:
-          - "object"
-          - "null"
+        detail: {}
         id:
           format: "int64"
           type: "integer"
@@ -715,7 +727,9 @@ components:
         description:
           maxLength: 500
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         kind:
           $ref: "#/components/schemas/GroupKind"
           description: "그룹 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다"
@@ -740,7 +754,9 @@ components:
         description:
           maxLength: 500
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         name:
           maxLength: 100
           minLength: 0
@@ -758,20 +774,30 @@ components:
         courseOrProject:
           maxLength: 200
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         customDomain:
           pattern: "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         desiredSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         desiredSubdomain:
           pattern: "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         extraNote:
           maxLength: 2000
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         groupId:
           format: "int64"
           type: "integer"
@@ -794,14 +820,18 @@ components:
           type: "integer"
         reqEndDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         reqMemoryMb:
           format: "int32"
           minimum: 256
           type: "integer"
         reqStartDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         reqVcpu:
           format: "int32"
           minimum: 1
@@ -809,11 +839,15 @@ components:
         rootDomain:
           maxLength: 253
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         specReason:
           maxLength: 2000
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         templateId:
           format: "int64"
           type: "integer"
@@ -833,12 +867,16 @@ components:
       properties:
         code:
           pattern: "^[0-9]{6}$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         password:
           minLength: 1
           type: "string"
         recoveryCode:
-          type: "string"
+          type:
+          - "string"
+          - "null"
       required:
       - "password"
       type: "object"
@@ -972,10 +1010,7 @@ components:
       type: "string"
     DriftFindingResponse:
       properties:
-        detail:
-          type:
-          - "object"
-          - "null"
+        detail: {}
         firstSeenAt:
           format: "date-time"
           type: "string"
@@ -1059,7 +1094,9 @@ components:
           minLength: 1
           type: "string"
         overrideProtection:
-          type: "boolean"
+          type:
+          - "boolean"
+          - "null"
       required:
       - "confirmName"
       type: "object"
@@ -1356,12 +1393,16 @@ components:
       properties:
         code:
           pattern: "^[0-9]{6}$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         mfaToken:
           minLength: 1
           type: "string"
         recoveryCode:
-          type: "string"
+          type:
+          - "string"
+          - "null"
       required:
       - "mfaToken"
       type: "object"
@@ -2157,10 +2198,14 @@ components:
     PublishRequest:
       properties:
         customDomain:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         port:
           format: "int32"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
       type: "object"
     ReadAllResponse:
       properties:
@@ -2248,7 +2293,9 @@ components:
         note:
           maxLength: 2000
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
       type: "object"
     Resource:
       properties:
@@ -2357,8 +2404,7 @@ components:
       type: "object"
     SettingUpdateRequest:
       properties:
-        value:
-          type: "object"
+        value: {}
       required:
       - "value"
       type: "object"
@@ -2381,8 +2427,7 @@ components:
         updatedAt:
           format: "date-time"
           type: "string"
-        value:
-          type: "object"
+        value: {}
         valueType:
           $ref: "#/components/schemas/SettingValueType"
       required:
@@ -2711,56 +2756,70 @@ components:
         description:
           maxLength: 500
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         descriptionSet:
-          type: "boolean"
+          type:
+          - "boolean"
+          - "null"
         empty:
-          type: "boolean"
+          type:
+          - "boolean"
+          - "null"
         name:
           maxLength: 100
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         nameSet:
-          type: "boolean"
+          type:
+          - "boolean"
+          - "null"
       type: "object"
     UpdateOrgRequest:
       properties:
         description:
           maxLength: 500
           minLength: 0
-          type: "string"
-        descriptionSet:
-          type: "boolean"
-        empty:
-          type: "boolean"
+          type:
+          - "string"
+          - "null"
         name:
           maxLength: 100
           minLength: 0
-          type: "string"
-        nameSet:
-          type: "boolean"
+          type:
+          - "string"
+          - "null"
         status:
-          $ref: "#/components/schemas/OrgStatus"
-        statusSet:
-          type: "boolean"
+          anyOf:
+          - $ref: "#/components/schemas/OrgStatus"
+          - type: "null"
       type: "object"
     UpdatePublicationRequest:
       properties:
         customDomain:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         port:
           format: "int32"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
       type: "object"
     UpdateUserAdminRequest:
       properties:
-        empty:
-          type: "boolean"
         orgId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         role:
-          $ref: "#/components/schemas/UserRole"
+          anyOf:
+          - $ref: "#/components/schemas/UserRole"
+          - type: "null"
       type: "object"
     UserAdminDetailResponse:
       properties:
@@ -3206,7 +3265,9 @@ components:
           type: "string"
         startDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
       required:
       - "endDate"
       type: "object"
@@ -3419,8 +3480,7 @@ components:
           type:
           - "array"
           - "null"
-        defaultValue:
-          type: "object"
+        defaultValue: {}
         description:
           type: "string"
         editable:
@@ -3440,8 +3500,7 @@ components:
           type:
           - "string"
           - "null"
-        value:
-          type: "object"
+        value: {}
         valueType:
           $ref: "#/components/schemas/VmSettingValueType"
       required:
@@ -3457,8 +3516,7 @@ components:
     VmSettingsUpdateRequest:
       properties:
         settings:
-          additionalProperties:
-            type: "object"
+          additionalProperties: {}
           type: "object"
       required:
       - "settings"
@@ -3587,10 +3645,14 @@ components:
           minLength: 1
           type: "string"
         recoveryCode:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         totpCode:
           pattern: "^[0-9]{6}$"
-          type: "string"
+          type:
+          - "string"
+          - "null"
       required:
       - "password"
       type: "object"
@@ -4449,6 +4511,13 @@ paths:
         name: "sort"
         required: false
         schema:
+          enum:
+          - "name"
+          - "-name"
+          - "email"
+          - "-email"
+          - "createdAt"
+          - "-createdAt"
           type: "string"
       - in: "query"
         name: "page"
@@ -4821,6 +4890,13 @@ paths:
         name: "sort"
         required: false
         schema:
+          enum:
+          - "name"
+          - "-name"
+          - "endDate"
+          - "-endDate"
+          - "createdAt"
+          - "-createdAt"
           type: "string"
       - in: "query"
         name: "page"

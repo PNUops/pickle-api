@@ -51,6 +51,8 @@ public class AdminUserController {
             @RequestParam(required = false) UserStatus status,
             @RequestParam(required = false) UserRole role,
             @RequestParam(required = false) Long orgId,
+            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(
+                    allowableValues = {"name", "-name", "email", "-email", "createdAt", "-createdAt"}))
             @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {

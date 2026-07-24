@@ -54,7 +54,8 @@ final class NullabilityOpenApiCustomizer {
             return;
         }
         Map<String, List<Class<?>>> index = recordIndex();
-        for (String name : reachableFromResponses(openApi, schemas)) {
+        Set<String> responseReachable = reachableFromResponses(openApi, schemas);
+        for (String name : responseReachable) {
             if (HAND_DEFINED.contains(name)) {
                 continue;
             }
@@ -65,6 +66,60 @@ final class NullabilityOpenApiCustomizer {
             Class<?> record = resolveRecord(name, index);
             applyToSchema(name, schema, record);
         }
+
+        // Request-side nullability: an optional (not bean-validation-required)
+        // request field accepts an explicit null — Jackson binds it as-is and
+        // several PATCH bodies rely on null-means-clear semantics. Emit the
+        // null union so typed clients can send it. required[] stays as
+        // computed from @NotNull/@NotBlank; response-shared schemas keep the
+        // response rule.
+        for (String name : reachableFromRequests(openApi, schemas)) {
+            if (responseReachable.contains(name) || HAND_DEFINED.contains(name)) {
+                continue;
+            }
+            Schema<?> schema = schemas.get(name);
+            if (schema == null || schema.getEnum() != null || schema.getProperties() == null) {
+                continue;
+            }
+            // Request bodies may be presence-tracking CLASSES (not records) —
+            // the record lookup is best-effort here, only for JsonNode fields.
+            List<Class<?>> candidates = index.getOrDefault(
+                    name.startsWith(PAGE_PREFIX) ? PAGE_PREFIX : name, List.of());
+            if (candidates.size() == 1 && candidates.get(0).isRecord()) {
+                for (RecordComponent component : candidates.get(0).getRecordComponents()) {
+                    Schema<?> prop = (Schema<?>) schema.getProperties().get(component.getName());
+                    if (prop != null) {
+                        freeFormIfJsonNode(component, prop);
+                    }
+                }
+            }
+            Set<String> required = schema.getRequired() != null
+                    ? new LinkedHashSet<>(schema.getRequired())
+                    : Set.of();
+            for (Map.Entry<String, Schema> prop
+                    : ((Map<String, Schema>) schema.getProperties()).entrySet()) {
+                if (!required.contains(prop.getKey())) {
+                    markNullable(prop.getValue(), schema, prop.getKey());
+                }
+            }
+        }
+    }
+
+    /** Every schema name reachable from any operation request body via $refs. */
+    private static Set<String> reachableFromRequests(OpenAPI openApi, Map<String, Schema> schemas) {
+        Set<String> reachable = new LinkedHashSet<>();
+        if (openApi.getPaths() == null) {
+            return reachable;
+        }
+        openApi.getPaths().values().forEach(pathItem ->
+                pathItem.readOperations().forEach(op -> {
+                    if (op.getRequestBody() == null || op.getRequestBody().getContent() == null) {
+                        return;
+                    }
+                    op.getRequestBody().getContent().values()
+                            .forEach(mt -> walk(mt.getSchema(), schemas, reachable));
+                }));
+        return reachable;
     }
 
     private static void applyToSchema(String name, Schema<?> schema, Class<?> record) {
@@ -74,6 +129,7 @@ final class NullabilityOpenApiCustomizer {
             if (!props.contains(component.getName())) {
                 continue; // e.g. @JsonIgnore or naming strategy mismatch
             }
+            freeFormIfJsonNode(component, (Schema<?>) schema.getProperties().get(component.getName()));
             boolean nullable = component.getAnnotatedType().isAnnotationPresent(Nullable.class);
             if (nullable) {
                 markNullable((Schema<?>) schema.getProperties().get(component.getName()),
@@ -83,6 +139,33 @@ final class NullabilityOpenApiCustomizer {
             }
         }
         schema.setRequired(required);
+    }
+
+    /**
+     * A {@code JsonNode}-typed component (or a map of them) holds ARBITRARY
+     * JSON, scalars included — springdoc still emits {@code type: object} for
+     * it, which typed clients render as an empty object. Strip the type so the
+     * property is a true free-form schema ({@code unknown} on the client).
+     */
+    private static void freeFormIfJsonNode(RecordComponent component, Schema<?> prop) {
+        if (prop == null) {
+            return;
+        }
+        if (component.getType() == tools.jackson.databind.JsonNode.class) {
+            clearType(prop);
+        } else if (Map.class.isAssignableFrom(component.getType())
+                && prop.getAdditionalProperties() instanceof Schema<?> ap
+                && component.getGenericType() instanceof java.lang.reflect.ParameterizedType pt
+                && pt.getActualTypeArguments().length == 2
+                && pt.getActualTypeArguments()[1] == tools.jackson.databind.JsonNode.class) {
+            clearType(ap);
+        }
+    }
+
+    private static void clearType(Schema<?> schema) {
+        schema.setType(null);
+        schema.setTypes(null);
+        schema.setProperties(null);
     }
 
     /** Adds the JSON-Schema {@code "null"} type; refs get an anyOf wrapper. */
@@ -97,9 +180,10 @@ final class NullabilityOpenApiCustomizer {
             wrapper.setAnyOf(List.of(refPart, nullPart));
             wrapper.setDescription(prop.getDescription());
             ((Map<String, Schema>) owner.getProperties()).put(propName, wrapper);
-        } else {
+        } else if (prop.getType() != null || prop.getTypes() != null) {
             prop.addType("null");
         }
+        // A free-form schema (no type at all) already admits null — leave it.
     }
 
     /** Every schema name reachable from any operation response via $refs. */

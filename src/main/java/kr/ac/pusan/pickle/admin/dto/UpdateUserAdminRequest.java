@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.user.UserRole;
  */
 public record UpdateUserAdminRequest(UserRole role, Long orgId) {
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
         return role == null && orgId == null;
     }

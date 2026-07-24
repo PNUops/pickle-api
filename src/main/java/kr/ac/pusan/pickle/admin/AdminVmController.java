@@ -63,6 +63,8 @@ public class AdminVmController {
             @RequestParam(required = false) @Min(1) Integer expiringInDays,
             @RequestParam(required = false) Boolean expired,
             @RequestParam(required = false) @Size(min = 1, max = 100) String q,
+            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(
+                    allowableValues = {"name", "-name", "endDate", "-endDate", "createdAt", "-createdAt"}))
             @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {

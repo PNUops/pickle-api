@@ -42,10 +42,11 @@ public class OpenApiConfig {
         // console side) instead of inline copies at every usage site.
         ModelResolver.enumsAsRef = true;
         // Jackson 3 JsonNode is not special-cased by springdoc; without this it
-        // is bean-introspected into ~24 bogus properties. Free-form object is
-        // the honest contract for these values.
+        // is bean-introspected into ~24 bogus properties. An EMPTY schema (not
+        // type:object) is the honest contract: these values are arbitrary JSON,
+        // scalars included (typed clients render it as `unknown`).
         SpringDocUtils.getConfig().replaceWithSchema(tools.jackson.databind.JsonNode.class,
-                new ObjectSchema());
+                new Schema<>());
     }
 
     @Bean
