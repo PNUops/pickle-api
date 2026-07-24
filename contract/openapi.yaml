@@ -1,0 +1,5435 @@
+---
+components:
+  schemas:
+    ActivateMfaRequest:
+      properties:
+        code:
+          minLength: 1
+          pattern: "^[0-9]{6}$"
+          type: "string"
+      required:
+      - "code"
+      type: "object"
+    ActivityEntryResponse:
+      properties:
+        action:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        detail:
+          $ref: "#/components/schemas/JsonNode"
+        id:
+          format: "int64"
+          type: "integer"
+        ip:
+          type: "string"
+        targetId:
+          type: "string"
+        targetType:
+          type: "string"
+      type: "object"
+    AddGroupMemberRequest:
+      properties:
+        email:
+          format: "email"
+          minLength: 1
+          type: "string"
+        role:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+      required:
+      - "email"
+      - "role"
+      type: "object"
+    AdminCertificateView:
+      properties:
+        daysUntilExpiry:
+          format: "int32"
+          type: "integer"
+        domainId:
+          format: "int64"
+          type: "integer"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "ORIGIN_CA_WILDCARD"
+          - "LETS_ENCRYPT"
+          type: "string"
+        lastError:
+          type: "string"
+        notAfter:
+          format: "date-time"
+          type: "string"
+        scope:
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "RENEWING"
+          - "FAILED"
+          - "REVOKED"
+          type: "string"
+      type: "object"
+    AdminDomainView:
+      properties:
+        certificateStatus:
+          enum:
+          - "ACTIVE"
+          - "RENEWING"
+          - "FAILED"
+          - "REVOKED"
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        fqdn:
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "AUTO"
+          - "REQUESTED"
+          - "CUSTOM"
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        rootDomain:
+          type: "string"
+        routeStatus:
+          enum:
+          - "PENDING"
+          - "APPLIED"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "VERIFYING"
+          - "ACTIVE"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        verifiedAt:
+          format: "date-time"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    AdminGroupOptionResponse:
+      properties:
+        id:
+          format: "int64"
+          type: "integer"
+        memberCount:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        slug:
+          type: "string"
+      type: "object"
+    AdminNotificationResponse:
+      properties:
+        attempts:
+          format: "int32"
+          type: "integer"
+        body:
+          type: "string"
+        channel:
+          enum:
+          - "EMAIL"
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        event:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        importance:
+          enum:
+          - "NORMAL"
+          - "HIGH"
+          type: "string"
+        lastError:
+          type: "string"
+        linkPath:
+          type: "string"
+        readAt:
+          format: "date-time"
+          type: "string"
+        sentAt:
+          format: "date-time"
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "SENT"
+          - "FAILED"
+          - "SKIPPED"
+          type: "string"
+        title:
+          type: "string"
+        userEmail:
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    AdminRouteView:
+      properties:
+        appliedAt:
+          format: "date-time"
+          type: "string"
+        appliedGeneration:
+          format: "int64"
+          type: "integer"
+        domainKind:
+          enum:
+          - "AUTO"
+          - "REQUESTED"
+          - "CUSTOM"
+          type: "string"
+        fqdn:
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        lastError:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        protocol:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "APPLIED"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        targetPort:
+          format: "int32"
+          type: "integer"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    AdminTaskResponse:
+      properties:
+        attempts:
+          format: "int32"
+          type: "integer"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        currentStep:
+          format: "int32"
+          type: "integer"
+        groupName:
+          type: "string"
+        hostname:
+          type: "string"
+        jobrunrJobId:
+          type: "string"
+        kind:
+          enum:
+          - "PROVISION"
+          - "DELETE"
+          - "REINSTALL"
+          type: "string"
+        lastError:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "RUNNING"
+          - "DONE"
+          - "FAILED"
+          - "RETRYING"
+          - "NEEDS_ADMIN"
+          type: "string"
+        stepLabel:
+          type: "string"
+        taskId:
+          format: "int64"
+          type: "integer"
+        totalSteps:
+          format: "int32"
+          type: "integer"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    AnnouncementCreateRequest:
+      properties:
+        body:
+          maxLength: 10000
+          minLength: 0
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        orgId:
+          format: "int64"
+          type: "integer"
+        scope:
+          enum:
+          - "ALL"
+          - "ORG"
+          - "GROUP"
+          type: "string"
+        title:
+          maxLength: 200
+          minLength: 0
+          type: "string"
+      required:
+      - "body"
+      - "scope"
+      - "title"
+      type: "object"
+    AnnouncementView:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        id:
+          format: "int64"
+          type: "integer"
+        orgId:
+          format: "int64"
+          type: "integer"
+        recipientCount:
+          format: "int32"
+          type: "integer"
+        scope:
+          enum:
+          - "ALL"
+          - "ORG"
+          - "GROUP"
+          type: "string"
+        title:
+          type: "string"
+      type: "object"
+    Applicant:
+      properties:
+        approvedCount:
+          format: "int64"
+          type: "integer"
+        email:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        rejectedCount:
+          format: "int64"
+          type: "integer"
+        signupAt:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    ApprovalContextResponse:
+      properties:
+        applicant:
+          $ref: "#/components/schemas/Applicant"
+        applicantResources:
+          $ref: "#/components/schemas/Resources"
+        group:
+          $ref: "#/components/schemas/GroupPanel"
+        guidance:
+          type: "string"
+        history:
+          items:
+            $ref: "#/components/schemas/HistoryEntry"
+          type: "array"
+        orgHeadroom:
+          $ref: "#/components/schemas/OrgHeadroom"
+      type: "object"
+    ApproveVmRequestRequest:
+      properties:
+        comment:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        grantHttp:
+          type: "boolean"
+        grantPublic:
+          type: "boolean"
+        grantSsh:
+          type: "boolean"
+        grantedDiskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        grantedEndDate:
+          format: "date"
+          type: "string"
+        grantedMemoryMb:
+          format: "int32"
+          minimum: 256
+          type: "integer"
+        grantedRootDomain:
+          type: "string"
+        grantedSlug:
+          pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
+          type: "string"
+        grantedStartDate:
+          format: "date"
+          type: "string"
+        grantedSubdomain:
+          type: "string"
+        grantedTemplateId:
+          format: "int64"
+          type: "integer"
+        grantedVcpu:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        nodeId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "grantHttp"
+      - "grantPublic"
+      - "grantSsh"
+      - "grantedDiskGb"
+      - "grantedMemoryMb"
+      - "grantedTemplateId"
+      - "grantedVcpu"
+      type: "object"
+    Attention:
+      properties:
+        expiredVmCount:
+          format: "int64"
+          type: "integer"
+        failedTaskCount:
+          format: "int64"
+          type: "integer"
+        needsAdminVmCount:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    AuditLogViewResponse:
+      properties:
+        action:
+          type: "string"
+        actorEmail:
+          type: "string"
+        actorId:
+          format: "int64"
+          type: "integer"
+        actorName:
+          type: "string"
+        actorRole:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        detail:
+          $ref: "#/components/schemas/JsonNode"
+        id:
+          format: "int64"
+          type: "integer"
+        ip:
+          type: "string"
+        orgName:
+          type: "string"
+        targetId:
+          type: "string"
+        targetType:
+          type: "string"
+      type: "object"
+    AuthTokenResponse:
+      properties:
+        accessToken:
+          type: "string"
+        user:
+          $ref: "#/components/schemas/UserSummaryResponse"
+      type: "object"
+    BeginMfaRequest:
+      properties:
+        password:
+          minLength: 1
+          type: "string"
+      required:
+      - "password"
+      type: "object"
+    Capacity:
+      properties:
+        cpuThreads:
+          format: "int64"
+          type: "integer"
+        memoryMb:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    CertificateView:
+      properties:
+        kind:
+          enum:
+          - "ORIGIN_CA_WILDCARD"
+          - "LETS_ENCRYPT"
+          type: "string"
+        lastError:
+          type: "string"
+        notAfter:
+          format: "date-time"
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "RENEWING"
+          - "FAILED"
+          - "REVOKED"
+          type: "string"
+      type: "object"
+    ChangePasswordRequest:
+      properties:
+        currentPassword:
+          minLength: 1
+          type: "string"
+        newPassword:
+          maxLength: 72
+          minLength: 10
+          type: "string"
+      required:
+      - "currentPassword"
+      - "newPassword"
+      type: "object"
+    ConsentInput:
+      properties:
+        docType:
+          enum:
+          - "TERMS_OF_SERVICE"
+          - "PRIVACY_POLICY"
+          type: "string"
+        version:
+          format: "int32"
+          type: "integer"
+      required:
+      - "docType"
+      type: "object"
+    ConsentUpdateRequest:
+      properties:
+        consents:
+          items:
+            $ref: "#/components/schemas/ConsentInput"
+          minItems: 1
+          type: "array"
+      required:
+      - "consents"
+      type: "object"
+    ConsentView:
+      properties:
+        consentedAt:
+          format: "date-time"
+          type: "string"
+        docType:
+          enum:
+          - "TERMS_OF_SERVICE"
+          - "PRIVACY_POLICY"
+          type: "string"
+        version:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    CreateGroupRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type: "string"
+        kind:
+          enum:
+          - "PERSONAL"
+          - "TEAM"
+          - "PROJECT"
+          type: "string"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+        slug:
+          minLength: 1
+          pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
+          type: "string"
+      required:
+      - "kind"
+      - "name"
+      - "slug"
+      type: "object"
+    CreateOrgRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type: "string"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+        slug:
+          minLength: 1
+          pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
+          type: "string"
+      required:
+      - "name"
+      - "slug"
+      type: "object"
+    CreateVmRequestRequest:
+      properties:
+        courseOrProject:
+          maxLength: 200
+          minLength: 0
+          type: "string"
+        customDomain:
+          pattern: "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+          type: "string"
+        desiredSlug:
+          pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
+          type: "string"
+        desiredSubdomain:
+          pattern: "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
+          type: "string"
+        extraNote:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        needHttp:
+          type: "boolean"
+        needPublic:
+          type: "boolean"
+        needSsh:
+          type: "boolean"
+        orgId:
+          format: "int64"
+          type: "integer"
+        purpose:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        reqDiskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        reqEndDate:
+          format: "date"
+          type: "string"
+        reqMemoryMb:
+          format: "int32"
+          minimum: 256
+          type: "integer"
+        reqStartDate:
+          format: "date"
+          type: "string"
+        reqVcpu:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        rootDomain:
+          maxLength: 253
+          minLength: 0
+          type: "string"
+        specReason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        templateId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "groupId"
+      - "needHttp"
+      - "needPublic"
+      - "needSsh"
+      - "orgId"
+      - "purpose"
+      - "reqDiskGb"
+      - "reqMemoryMb"
+      - "reqVcpu"
+      - "templateId"
+      type: "object"
+    DisableMfaRequest:
+      properties:
+        code:
+          pattern: "^[0-9]{6}$"
+          type: "string"
+        password:
+          minLength: 1
+          type: "string"
+        recoveryCode:
+          type: "string"
+      required:
+      - "password"
+      type: "object"
+    DisableUserRequest:
+      properties:
+        reason:
+          maxLength: 500
+          minLength: 1
+          type: "string"
+      required:
+      - "reason"
+      type: "object"
+    DomainDetailView:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        fqdn:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "AUTO"
+          - "REQUESTED"
+          - "CUSTOM"
+          type: "string"
+        rootDomain:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "VERIFYING"
+          - "ACTIVE"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        verification:
+          $ref: "#/components/schemas/DomainVerificationView"
+        verifiedAt:
+          format: "date-time"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    DomainSummaryView:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        fqdn:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "AUTO"
+          - "REQUESTED"
+          - "CUSTOM"
+          type: "string"
+        rootDomain:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "VERIFYING"
+          - "ACTIVE"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        verifiedAt:
+          format: "date-time"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    DomainVerificationView:
+      properties:
+        aVerified:
+          type: "boolean"
+        lastCheckedAt:
+          format: "date-time"
+          type: "string"
+        lastError:
+          type: "string"
+        requiredRecords:
+          items:
+            $ref: "#/components/schemas/RequiredRecord"
+          type: "array"
+        token:
+          type: "string"
+        txtVerified:
+          type: "boolean"
+      type: "object"
+    DriftFindingResponse:
+      properties:
+        detail:
+          $ref: "#/components/schemas/JsonNode"
+        firstSeenAt:
+          format: "date-time"
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "MISSING_IN_PROXMOX"
+          - "UNMANAGED_GUEST"
+          - "SPEC_MISMATCH"
+          type: "string"
+        lastSeenAt:
+          format: "date-time"
+          type: "string"
+        nodeName:
+          type: "string"
+        proxmoxVmid:
+          format: "int32"
+          type: "integer"
+        resolutionNote:
+          type: "string"
+        resolvedAt:
+          format: "date-time"
+          type: "string"
+        resolvedByEmail:
+          type: "string"
+        resolvedById:
+          format: "int64"
+          type: "integer"
+        status:
+          enum:
+          - "OPEN"
+          - "RESOLVED"
+          type: "string"
+        summary:
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    ForceDeleteVmRequest:
+      properties:
+        confirmName:
+          minLength: 1
+          type: "string"
+        overrideProtection:
+          type: "boolean"
+      required:
+      - "confirmName"
+      type: "object"
+    GroupDetailResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        description:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "PERSONAL"
+          - "TEAM"
+          - "PROJECT"
+          type: "string"
+        members:
+          items:
+            $ref: "#/components/schemas/GroupMemberResponse"
+          type: "array"
+        myRole:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        name:
+          type: "string"
+        slug:
+          type: "string"
+      type: "object"
+    GroupMemberResponse:
+      properties:
+        email:
+          type: "string"
+        name:
+          type: "string"
+        role:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    GroupPanel:
+      properties:
+        activeVms:
+          items:
+            $ref: "#/components/schemas/VmBriefResponse"
+          type: "array"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "PERSONAL"
+          - "TEAM"
+          - "PROJECT"
+          type: "string"
+        members:
+          items:
+            $ref: "#/components/schemas/MemberBrief"
+          type: "array"
+        name:
+          type: "string"
+        totals:
+          $ref: "#/components/schemas/ResourceTotalsResponse"
+      type: "object"
+    GroupSummaryResponse:
+      properties:
+        description:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          enum:
+          - "PERSONAL"
+          - "TEAM"
+          - "PROJECT"
+          type: "string"
+        memberCount:
+          format: "int64"
+          type: "integer"
+        myRole:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        name:
+          type: "string"
+        slug:
+          type: "string"
+      type: "object"
+    HistoryEntry:
+      properties:
+        comment:
+          type: "string"
+        decision:
+          enum:
+          - "APPROVE"
+          - "REJECT"
+          type: "string"
+        requestId:
+          format: "int64"
+          type: "integer"
+        reviewerName:
+          type: "string"
+        status:
+          enum:
+          - "SUBMITTED"
+          - "APPROVED"
+          - "REJECTED"
+          - "CANCELED"
+          type: "string"
+        submittedAt:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    IpAllocationResponse:
+      properties:
+        allocatedAt:
+          format: "date-time"
+          type: "string"
+        hostname:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        ip:
+          type: "string"
+        poolId:
+          format: "int64"
+          type: "integer"
+        poolName:
+          type: "string"
+        releasedAt:
+          format: "date-time"
+          type: "string"
+        status:
+          enum:
+          - "ALLOCATED"
+          - "RELEASED"
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    IpPoolSummaryResponse:
+      properties:
+        allocatedCount:
+          format: "int64"
+          type: "integer"
+        cidr:
+          type: "string"
+        freeCount:
+          format: "int64"
+          type: "integer"
+        id:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    IpPoolUsage:
+      properties:
+        allocatedCount:
+          format: "int64"
+          type: "integer"
+        cidr:
+          type: "string"
+        freeCount:
+          format: "int64"
+          type: "integer"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+      type: "object"
+    JsonNode:
+      properties:
+        array:
+          type: "boolean"
+        bigDecimal:
+          type: "boolean"
+        bigInteger:
+          type: "boolean"
+        binary:
+          type: "boolean"
+        boolean:
+          type: "boolean"
+        container:
+          type: "boolean"
+        double:
+          type: "boolean"
+        embeddedValue:
+          type: "boolean"
+        empty:
+          type: "boolean"
+        float:
+          type: "boolean"
+        floatingPointNumber:
+          type: "boolean"
+        int:
+          type: "boolean"
+        integralNumber:
+          type: "boolean"
+        long:
+          type: "boolean"
+        missingNode:
+          type: "boolean"
+        nodeType:
+          enum:
+          - "ARRAY"
+          - "BINARY"
+          - "BOOLEAN"
+          - "MISSING"
+          - "NULL"
+          - "NUMBER"
+          - "OBJECT"
+          - "POJO"
+          - "STRING"
+          type: "string"
+        "null":
+          type: "boolean"
+        number:
+          type: "boolean"
+        object:
+          type: "boolean"
+        pojo:
+          type: "boolean"
+        short:
+          type: "boolean"
+        string:
+          type: "boolean"
+        textual:
+          deprecated: true
+          type: "boolean"
+        valueNode:
+          type: "boolean"
+      type: "object"
+    LoginRequest:
+      properties:
+        email:
+          minLength: 1
+          type: "string"
+        password:
+          minLength: 1
+          type: "string"
+      required:
+      - "email"
+      - "password"
+      type: "object"
+    MemberBrief:
+      properties:
+        name:
+          type: "string"
+        role:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    Membership:
+      properties:
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupKind:
+          enum:
+          - "PERSONAL"
+          - "TEAM"
+          - "PROJECT"
+          type: "string"
+        groupName:
+          type: "string"
+        role:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+      type: "object"
+    MessageResponse:
+      properties:
+        message:
+          type: "string"
+      type: "object"
+    MfaLoginRequest:
+      properties:
+        code:
+          pattern: "^[0-9]{6}$"
+          type: "string"
+        mfaToken:
+          minLength: 1
+          type: "string"
+        recoveryCode:
+          type: "string"
+      required:
+      - "mfaToken"
+      type: "object"
+    MfaRecoveryCodesResponse:
+      properties:
+        recoveryCodes:
+          items:
+            type: "string"
+          type: "array"
+      type: "object"
+    MfaSetupResponse:
+      properties:
+        otpauthUri:
+          type: "string"
+        secret:
+          type: "string"
+      type: "object"
+    NodeRatio:
+      properties:
+        cpuOvercommitRatio:
+          format: "double"
+          type: "number"
+        id:
+          format: "int64"
+          type: "integer"
+        memoryAllocRatio:
+          format: "double"
+          type: "number"
+        name:
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "MAINTENANCE"
+          - "OFFLINE"
+          type: "string"
+        warn:
+          type: "boolean"
+      type: "object"
+    NodeSummaryResponse:
+      properties:
+        allocatedMemoryMb:
+          format: "int64"
+          type: "integer"
+        allocatedVcpu:
+          format: "int64"
+          type: "integer"
+        cpuOvercommitRatio:
+          format: "double"
+          type: "number"
+        cpuThreads:
+          format: "int32"
+          type: "integer"
+        cpuWarnThreshold:
+          format: "double"
+          type: "number"
+        id:
+          format: "int64"
+          type: "integer"
+        ipPool:
+          $ref: "#/components/schemas/IpPoolSummaryResponse"
+        memoryAllocRatio:
+          format: "double"
+          type: "number"
+        memoryMb:
+          format: "int32"
+          type: "integer"
+        memoryWarnThreshold:
+          format: "double"
+          type: "number"
+        name:
+          type: "string"
+        runningVms:
+          format: "int64"
+          type: "integer"
+        status:
+          enum:
+          - "ACTIVE"
+          - "MAINTENANCE"
+          - "OFFLINE"
+          type: "string"
+        storage:
+          type: "string"
+        vmBridge:
+          type: "string"
+      type: "object"
+    NotificationView:
+      properties:
+        body:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        event:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        importance:
+          enum:
+          - "NORMAL"
+          - "HIGH"
+          type: "string"
+        linkPath:
+          type: "string"
+        readAt:
+          format: "date-time"
+          type: "string"
+        title:
+          type: "string"
+      type: "object"
+    OrgDashboardSummaryResponse:
+      properties:
+        attention:
+          $ref: "#/components/schemas/Attention"
+        expiringVmCount30d:
+          format: "int64"
+          type: "integer"
+        pendingRequestCount:
+          format: "int64"
+          type: "integer"
+        publishedServiceCount:
+          format: "int64"
+          type: "integer"
+        recentDecisions14d:
+          $ref: "#/components/schemas/RecentDecisions"
+        resource:
+          $ref: "#/components/schemas/Resource"
+        topGroupsByVmCount:
+          items:
+            $ref: "#/components/schemas/TopGroup"
+          type: "array"
+        vmCountsByStatus:
+          additionalProperties:
+            format: "int64"
+            type: "integer"
+          type: "object"
+      type: "object"
+    OrgDetailResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        description:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        slug:
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "DISABLED"
+          type: "string"
+      type: "object"
+    OrgHeadroom:
+      properties:
+        allocated:
+          $ref: "#/components/schemas/ResourceTotalsResponse"
+        capacity:
+          $ref: "#/components/schemas/Capacity"
+        memoryUsageRatio:
+          format: "double"
+          type: "number"
+        vcpuOvercommitRatio:
+          format: "double"
+          type: "number"
+        warnings:
+          items:
+            type: "string"
+          type: "array"
+      type: "object"
+    OrgSummaryResponse:
+      properties:
+        description:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        slug:
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "DISABLED"
+          type: "string"
+      type: "object"
+    PageResponseActivityEntryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/ActivityEntryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAdminCertificateView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminCertificateView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAdminDomainView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminDomainView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAdminNotificationResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminNotificationResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAdminRouteView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminRouteView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAdminTaskResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminTaskResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAnnouncementView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AnnouncementView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseAuditLogViewResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AuditLogViewResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseDomainSummaryView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/DomainSummaryView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseDriftFindingResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/DriftFindingResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseIpAllocationResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/IpAllocationResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseNotificationView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/NotificationView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseUserAdminViewResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/UserAdminViewResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseVmEventResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/VmEventResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseVmRequestDetailResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/VmRequestDetailResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PageResponseVmSummaryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/VmSummaryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    PasswordResetConfirmRequest:
+      properties:
+        newPassword:
+          maxLength: 72
+          minLength: 10
+          type: "string"
+        token:
+          minLength: 1
+          type: "string"
+      required:
+      - "newPassword"
+      - "token"
+      type: "object"
+    PasswordResetRequest:
+      properties:
+        email:
+          minLength: 1
+          pattern: "^[A-Za-z0-9._%+-]+@pusan\\.ac\\.kr$"
+          type: "string"
+      required:
+      - "email"
+      type: "object"
+    ProvisioningTaskResponse:
+      properties:
+        attempts:
+          format: "int32"
+          type: "integer"
+        currentStep:
+          format: "int32"
+          type: "integer"
+        kind:
+          enum:
+          - "PROVISION"
+          - "DELETE"
+          - "REINSTALL"
+          type: "string"
+        lastError:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "RUNNING"
+          - "DONE"
+          - "FAILED"
+          - "RETRYING"
+          - "NEEDS_ADMIN"
+          type: "string"
+        stepLabel:
+          type: "string"
+        totalSteps:
+          format: "int32"
+          type: "integer"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    PublicationView:
+      properties:
+        certificate:
+          $ref: "#/components/schemas/CertificateView"
+        domain:
+          $ref: "#/components/schemas/DomainDetailView"
+        fqdn:
+          type: "string"
+        route:
+          $ref: "#/components/schemas/RouteView"
+      type: "object"
+    PublishRequest:
+      properties:
+        customDomain:
+          type: "string"
+        port:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    ReadAllResponse:
+      properties:
+        updatedCount:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    RecentDecisions:
+      properties:
+        approvedCount:
+          format: "int64"
+          type: "integer"
+        rejectedCount:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    RegenerateRecoveryCodesRequest:
+      properties:
+        code:
+          minLength: 1
+          pattern: "^[0-9]{6}$"
+          type: "string"
+        password:
+          minLength: 1
+          type: "string"
+      required:
+      - "code"
+      - "password"
+      type: "object"
+    RejectVmRequestRequest:
+      properties:
+        comment:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+      required:
+      - "comment"
+      type: "object"
+    RequestOptionsResponse:
+      properties:
+        allowedRootDomains:
+          items:
+            type: "string"
+          type: "array"
+        reservedSubdomains:
+          items:
+            type: "string"
+          type: "array"
+        sshHost:
+          type: "string"
+      type: "object"
+    RequiredRecord:
+      properties:
+        name:
+          type: "string"
+        type:
+          type: "string"
+        value:
+          type: "string"
+      type: "object"
+    ResendVerificationRequest:
+      properties:
+        email:
+          minLength: 1
+          pattern: "^[A-Za-z0-9._%+-]+@pusan\\.ac\\.kr$"
+          type: "string"
+      required:
+      - "email"
+      type: "object"
+    ResolveDriftFindingRequest:
+      properties:
+        note:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+      type: "object"
+    Resource:
+      properties:
+        allocatedDiskGb:
+          format: "int64"
+          type: "integer"
+        allocatedMemoryMb:
+          format: "int64"
+          type: "integer"
+        allocatedVcpu:
+          format: "int64"
+          type: "integer"
+        capacityMemoryMb:
+          format: "int64"
+          type: "integer"
+        capacityVcpu:
+          format: "int64"
+          type: "integer"
+        guidance:
+          type: "string"
+      type: "object"
+    ResourceTotalsResponse:
+      properties:
+        diskGb:
+          format: "int64"
+          type: "integer"
+        memoryMb:
+          format: "int64"
+          type: "integer"
+        vcpu:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    Resources:
+      properties:
+        activeVms:
+          items:
+            $ref: "#/components/schemas/VmBriefResponse"
+          type: "array"
+        totals:
+          $ref: "#/components/schemas/ResourceTotalsResponse"
+      type: "object"
+    RouteView:
+      properties:
+        appliedAt:
+          format: "date-time"
+          type: "string"
+        lastError:
+          type: "string"
+        protocol:
+          type: "string"
+        status:
+          enum:
+          - "PENDING"
+          - "APPLIED"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+        targetPort:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    ScheduleVmDeletionRequest:
+      properties:
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        scheduledFor:
+          format: "date-time"
+          type: "string"
+      required:
+      - "reason"
+      - "scheduledFor"
+      type: "object"
+    SettingUpdateRequest:
+      properties:
+        value:
+          $ref: "#/components/schemas/JsonNode"
+      type: "object"
+    SettingView:
+      properties:
+        description:
+          type: "string"
+        editable:
+          type: "boolean"
+        key:
+          type: "string"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        value:
+          $ref: "#/components/schemas/JsonNode"
+        valueType:
+          enum:
+          - "BOOLEAN"
+          - "INTEGER"
+          - "NUMBER"
+          - "STRING"
+          - "JSON"
+          type: "string"
+      type: "object"
+    SignupRequest:
+      properties:
+        consents:
+          items:
+            $ref: "#/components/schemas/ConsentInput"
+          minItems: 1
+          type: "array"
+        email:
+          minLength: 1
+          pattern: "^[A-Za-z0-9._%+-]+@pusan\\.ac\\.kr$"
+          type: "string"
+        name:
+          maxLength: 50
+          minLength: 0
+          type: "string"
+        password:
+          maxLength: 72
+          minLength: 10
+          type: "string"
+      required:
+      - "consents"
+      - "email"
+      - "name"
+      - "password"
+      type: "object"
+    SshKeyCreateRequest:
+      properties:
+        name:
+          maxLength: 100
+          minLength: 1
+          type: "string"
+        publicKey:
+          maxLength: 8192
+          minLength: 0
+          type: "string"
+      required:
+      - "name"
+      - "publicKey"
+      type: "object"
+    SshKeyGenerateRequest:
+      properties:
+        name:
+          maxLength: 100
+          minLength: 1
+          type: "string"
+      required:
+      - "name"
+      type: "object"
+    SshKeyPrivateKeyResponse:
+      properties:
+        fileName:
+          type: "string"
+        privateKey:
+          type: "string"
+      type: "object"
+    SshKeyView:
+      properties:
+        algorithm:
+          enum:
+          - "ED25519"
+          - "RSA"
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        fingerprint:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        lastUsedAt:
+          format: "date-time"
+          type: "string"
+        name:
+          type: "string"
+        privateKeyStored:
+          type: "boolean"
+        publicKey:
+          type: "string"
+      type: "object"
+    SystemDashboardSummaryResponse:
+      properties:
+        certExpiring30dCount:
+          format: "int64"
+          type: "integer"
+        ipPools:
+          items:
+            $ref: "#/components/schemas/IpPoolUsage"
+          type: "array"
+        nodes:
+          items:
+            $ref: "#/components/schemas/NodeRatio"
+          type: "array"
+        notificationFailureCount:
+          format: "int64"
+          type: "integer"
+        openDriftFindingCount:
+          format: "int64"
+          type: "integer"
+        tasks:
+          $ref: "#/components/schemas/Tasks"
+        vmCountsByStatus:
+          additionalProperties:
+            format: "int64"
+            type: "integer"
+          type: "object"
+      type: "object"
+    SystemStatusResponse:
+      properties:
+        bannerMessage:
+          type: "string"
+        contactEmail:
+          type: "string"
+        maintenance:
+          type: "boolean"
+        maintenanceMessage:
+          type: "string"
+      type: "object"
+    Tasks:
+      properties:
+        failed24hCount:
+          format: "int64"
+          type: "integer"
+        needsAdminCount:
+          format: "int64"
+          type: "integer"
+        retryingCount:
+          format: "int64"
+          type: "integer"
+        runningCount:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    TerminalSessionView:
+      properties:
+        clientIp:
+          type: "string"
+        groupName:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        sessionId:
+          type: "string"
+        startedAt:
+          format: "date-time"
+          type: "string"
+        userEmail:
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+        userName:
+          type: "string"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type: "string"
+      type: "object"
+    TerminalTicketResponse:
+      properties:
+        expiresAt:
+          format: "date-time"
+          type: "string"
+        sessionId:
+          type: "string"
+        subprotocol:
+          type: "string"
+        ticket:
+          type: "string"
+        wsPath:
+          type: "string"
+      type: "object"
+    TermsDocumentView:
+      properties:
+        body:
+          type: "string"
+        docType:
+          enum:
+          - "TERMS_OF_SERVICE"
+          - "PRIVACY_POLICY"
+          type: "string"
+        effectiveAt:
+          format: "date-time"
+          type: "string"
+        title:
+          type: "string"
+        version:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    TermsVersionView:
+      properties:
+        docType:
+          enum:
+          - "TERMS_OF_SERVICE"
+          - "PRIVACY_POLICY"
+          type: "string"
+        effectiveAt:
+          format: "date-time"
+          type: "string"
+        title:
+          type: "string"
+        version:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    TopGroup:
+      properties:
+        groupId:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        vmCount:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    UnreadCountResponse:
+      properties:
+        unreadCount:
+          format: "int64"
+          type: "integer"
+      type: "object"
+    UpdateGroupMemberRequest:
+      properties:
+        role:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+      required:
+      - "role"
+      type: "object"
+    UpdateGroupRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type: "string"
+        descriptionSet:
+          type: "boolean"
+        empty:
+          type: "boolean"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+        nameSet:
+          type: "boolean"
+      type: "object"
+    UpdateOrgRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type: "string"
+        descriptionSet:
+          type: "boolean"
+        empty:
+          type: "boolean"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+        nameSet:
+          type: "boolean"
+        status:
+          enum:
+          - "ACTIVE"
+          - "DISABLED"
+          type: "string"
+        statusSet:
+          type: "boolean"
+      type: "object"
+    UpdateUserAdminRequest:
+      properties:
+        empty:
+          type: "boolean"
+        orgId:
+          format: "int64"
+          type: "integer"
+        role:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+      type: "object"
+    UserAdminDetailResponse:
+      properties:
+        activeVmCount:
+          format: "int32"
+          type: "integer"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        disabledAt:
+          format: "date-time"
+          type: "string"
+        disabledReason:
+          type: "string"
+        email:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        memberships:
+          items:
+            $ref: "#/components/schemas/Membership"
+          type: "array"
+        mfaEnabled:
+          type: "boolean"
+        name:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        role:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+        status:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+        statusChanges:
+          items:
+            $ref: "#/components/schemas/UserStatusChangeResponse"
+          type: "array"
+        withdrawnAt:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    UserAdminViewResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        email:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        mfaEnabled:
+          type: "boolean"
+        name:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        role:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+        status:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+      type: "object"
+    UserProfileResponse:
+      properties:
+        email:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        memberships:
+          items:
+            $ref: "#/components/schemas/Membership"
+          type: "array"
+        mfaEnabled:
+          type: "boolean"
+        name:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        pendingConsents:
+          items:
+            $ref: "#/components/schemas/TermsVersionView"
+          type: "array"
+        role:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+        status:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+      type: "object"
+    UserStatusChangeResponse:
+      properties:
+        actorEmail:
+          type: "string"
+        actorId:
+          format: "int64"
+          type: "integer"
+        changedAt:
+          format: "date-time"
+          type: "string"
+        fromStatus:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+        reason:
+          type: "string"
+        toStatus:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+      type: "object"
+    UserSummaryResponse:
+      properties:
+        email:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        role:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+      type: "object"
+    VerifyEmailRequest:
+      properties:
+        token:
+          minLength: 1
+          type: "string"
+      required:
+      - "token"
+      type: "object"
+    VmBriefResponse:
+      properties:
+        diskGb:
+          format: "int32"
+          type: "integer"
+        endDate:
+          format: "date"
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        memoryMb:
+          format: "int32"
+          type: "integer"
+        name:
+          type: "string"
+        status:
+          enum:
+          - "CREATING"
+          - "RUNNING"
+          - "STOPPED"
+          - "REBOOTING"
+          - "DELETING"
+          - "DELETED"
+          - "ERROR"
+          - "NEEDS_ADMIN"
+          type: "string"
+        vcpu:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    VmDeletionResponse:
+      properties:
+        cancelable:
+          type: "boolean"
+        kind:
+          enum:
+          - "SELF"
+          - "ADMIN"
+          - "FORCE"
+          type: "string"
+        reason:
+          type: "string"
+        requestedAt:
+          format: "date-time"
+          type: "string"
+        requestedById:
+          format: "int64"
+          type: "integer"
+        scheduledFor:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    VmDetailResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        deletion:
+          $ref: "#/components/schemas/VmDeletionResponse"
+        diskGb:
+          format: "int32"
+          type: "integer"
+        displayName:
+          type: "string"
+        endDate:
+          format: "date"
+          type: "string"
+        expiryStoppedAt:
+          format: "date-time"
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupName:
+          type: "string"
+        hostname:
+          type: "string"
+        httpPublishGranted:
+          type: "boolean"
+        id:
+          format: "int64"
+          type: "integer"
+        ipAddress:
+          type: "string"
+        memoryMb:
+          format: "int32"
+          type: "integer"
+        myGroupRole:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        name:
+          type: "string"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        passwordAvailable:
+          type: "boolean"
+        passwordRevealAllowed:
+          type: "boolean"
+        provisioning:
+          $ref: "#/components/schemas/ProvisioningTaskResponse"
+        publication:
+          $ref: "#/components/schemas/PublicationView"
+        requestId:
+          format: "int64"
+          type: "integer"
+        sshHost:
+          type: "string"
+        sshUsername:
+          type: "string"
+        startDate:
+          format: "date"
+          type: "string"
+        status:
+          enum:
+          - "CREATING"
+          - "RUNNING"
+          - "STOPPED"
+          - "REBOOTING"
+          - "DELETING"
+          - "DELETED"
+          - "ERROR"
+          - "NEEDS_ADMIN"
+          type: "string"
+        statusDetail:
+          type: "string"
+        templateId:
+          format: "int64"
+          type: "integer"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        vcpu:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    VmEventResponse:
+      properties:
+        actorId:
+          format: "int64"
+          type: "integer"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        detail:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        type:
+          enum:
+          - "CREATE"
+          - "START"
+          - "STOP"
+          - "REBOOT"
+          - "FORCE_STOP"
+          - "DELETE"
+          - "SELF_DELETE"
+          - "FORCE_DELETE"
+          - "REINSTALL"
+          - "SCHEDULE_DELETE"
+          - "CANCEL_SCHEDULED_DELETE"
+          - "PUBLISH"
+          - "UNPUBLISH"
+          - "EXPIRE_STOP"
+          - "PERIOD_UPDATE"
+          type: "string"
+      type: "object"
+    VmPasswordResponse:
+      properties:
+        password:
+          type: "string"
+        sshHost:
+          type: "string"
+        sshPort:
+          format: "int32"
+          type: "integer"
+        sshUsername:
+          type: "string"
+      type: "object"
+    VmPeriodUpdateRequest:
+      properties:
+        endDate:
+          format: "date"
+          type: "string"
+        startDate:
+          format: "date"
+          type: "string"
+      required:
+      - "endDate"
+      type: "object"
+    VmRequestDetailResponse:
+      properties:
+        courseOrProject:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        customDomain:
+          type: "string"
+        desiredSlug:
+          type: "string"
+        desiredSubdomain:
+          type: "string"
+        extraNote:
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        needHttp:
+          type: "boolean"
+        needPublic:
+          type: "boolean"
+        needSsh:
+          type: "boolean"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        purpose:
+          type: "string"
+        reqDiskGb:
+          format: "int32"
+          type: "integer"
+        reqEndDate:
+          format: "date"
+          type: "string"
+        reqMemoryMb:
+          format: "int32"
+          type: "integer"
+        reqStartDate:
+          format: "date"
+          type: "string"
+        reqVcpu:
+          format: "int32"
+          type: "integer"
+        requesterId:
+          format: "int64"
+          type: "integer"
+        requesterName:
+          type: "string"
+        review:
+          $ref: "#/components/schemas/VmRequestReviewResponse"
+        rootDomain:
+          type: "string"
+        specReason:
+          type: "string"
+        status:
+          enum:
+          - "SUBMITTED"
+          - "APPROVED"
+          - "REJECTED"
+          - "CANCELED"
+          type: "string"
+        templateId:
+          format: "int64"
+          type: "integer"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+      type: "object"
+    VmRequestReviewResponse:
+      properties:
+        comment:
+          type: "string"
+        decidedAt:
+          format: "date-time"
+          type: "string"
+        decision:
+          enum:
+          - "APPROVE"
+          - "REJECT"
+          type: "string"
+        grantHttp:
+          type: "boolean"
+        grantPublic:
+          type: "boolean"
+        grantSsh:
+          type: "boolean"
+        grantedDiskGb:
+          format: "int32"
+          type: "integer"
+        grantedEndDate:
+          format: "date"
+          type: "string"
+        grantedMemoryMb:
+          format: "int32"
+          type: "integer"
+        grantedRootDomain:
+          type: "string"
+        grantedStartDate:
+          format: "date"
+          type: "string"
+        grantedSubdomain:
+          type: "string"
+        grantedTemplateId:
+          format: "int64"
+          type: "integer"
+        grantedVcpu:
+          format: "int32"
+          type: "integer"
+        nodeId:
+          format: "int64"
+          type: "integer"
+        reviewerId:
+          format: "int64"
+          type: "integer"
+        reviewerName:
+          type: "string"
+      type: "object"
+    VmSettingView:
+      properties:
+        allowedValues:
+          items:
+            type: "string"
+          type: "array"
+        defaultValue:
+          $ref: "#/components/schemas/JsonNode"
+        description:
+          type: "string"
+        editable:
+          type: "boolean"
+        key:
+          type: "string"
+        label:
+          type: "string"
+        requiredRole:
+          enum:
+          - "OWNER"
+          - "EDITOR"
+          - "MEMBER"
+          - "VIEWER"
+          type: "string"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        updatedByName:
+          type: "string"
+        value:
+          $ref: "#/components/schemas/JsonNode"
+        valueType:
+          enum:
+          - "BOOLEAN"
+          - "ENUM"
+          - "INTEGER"
+          - "STRING"
+          type: "string"
+      type: "object"
+    VmSettingsUpdateRequest:
+      properties:
+        settings:
+          additionalProperties:
+            $ref: "#/components/schemas/JsonNode"
+          type: "object"
+      required:
+      - "settings"
+      type: "object"
+    VmSummaryResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        diskGb:
+          format: "int32"
+          type: "integer"
+        displayName:
+          type: "string"
+        endDate:
+          format: "date"
+          type: "string"
+        expiryStoppedAt:
+          format: "date-time"
+          type: "string"
+        groupId:
+          format: "int64"
+          type: "integer"
+        groupName:
+          type: "string"
+        hostname:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        memoryMb:
+          format: "int32"
+          type: "integer"
+        name:
+          type: "string"
+        orgName:
+          type: "string"
+        requestId:
+          format: "int64"
+          type: "integer"
+        status:
+          enum:
+          - "CREATING"
+          - "RUNNING"
+          - "STOPPED"
+          - "REBOOTING"
+          - "DELETING"
+          - "DELETED"
+          - "ERROR"
+          - "NEEDS_ADMIN"
+          type: "string"
+        statusDetail:
+          type: "string"
+        vcpu:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    VmTemplateResponse:
+      properties:
+        defaultDiskGb:
+          format: "int32"
+          type: "integer"
+        defaultMemoryMb:
+          format: "int32"
+          type: "integer"
+        defaultVcpu:
+          format: "int32"
+          type: "integer"
+        displayName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        minDiskGb:
+          format: "int32"
+          type: "integer"
+        name:
+          type: "string"
+        notes:
+          type: "string"
+        status:
+          enum:
+          - "ACTIVE"
+          - "DISABLED"
+          type: "string"
+        version:
+          format: "int32"
+          type: "integer"
+      type: "object"
+    WithdrawRequest:
+      properties:
+        password:
+          minLength: 1
+          type: "string"
+        recoveryCode:
+          type: "string"
+        totpCode:
+          pattern: "^[0-9]{6}$"
+          type: "string"
+      required:
+      - "password"
+      type: "object"
+info:
+  title: "OpenAPI definition"
+  version: "v0"
+openapi: "3.1.0"
+paths:
+  /api/v1/admin/announcements:
+    get:
+      operationId: "listAnnouncements"
+      parameters:
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAnnouncementView"
+          description: "OK"
+      tags:
+      - "announcement-controller"
+    post:
+      operationId: "createAnnouncement"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnnouncementCreateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AnnouncementView"
+          description: "OK"
+      tags:
+      - "announcement-controller"
+  /api/v1/admin/audit:
+    get:
+      operationId: "listAuditLogs"
+      parameters:
+      - in: "query"
+        name: "actorEmail"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "action"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "targetType"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "targetId"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "from"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "to"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAuditLogViewResponse"
+          description: "OK"
+      tags:
+      - "admin-audit-controller"
+  /api/v1/admin/certificates:
+    get:
+      operationId: "listAdminCertificates"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "ACTIVE"
+          - "RENEWING"
+          - "FAILED"
+          - "REVOKED"
+          type: "string"
+      - in: "query"
+        name: "expiringInDays"
+        required: false
+        schema:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminCertificateView"
+          description: "OK"
+      tags:
+      - "admin-publishing-controller"
+  /api/v1/admin/domains:
+    get:
+      operationId: "listAdminDomains"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "kind"
+        required: false
+        schema:
+          enum:
+          - "AUTO"
+          - "REQUESTED"
+          - "CUSTOM"
+          type: "string"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "PENDING"
+          - "VERIFYING"
+          - "ACTIVE"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminDomainView"
+          description: "OK"
+      tags:
+      - "admin-publishing-controller"
+  /api/v1/admin/drift-findings:
+    get:
+      operationId: "listDriftFindings"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "OPEN"
+          - "RESOLVED"
+          type: "string"
+      - in: "query"
+        name: "kind"
+        required: false
+        schema:
+          enum:
+          - "MISSING_IN_PROXMOX"
+          - "UNMANAGED_GUEST"
+          - "SPEC_MISMATCH"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDriftFindingResponse"
+          description: "OK"
+      tags:
+      - "admin-drift-controller"
+  /api/v1/admin/drift-findings/{findingId}/resolve:
+    post:
+      operationId: "resolveDriftFinding"
+      parameters:
+      - in: "path"
+        name: "findingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResolveDriftFindingRequest"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DriftFindingResponse"
+          description: "OK"
+      tags:
+      - "admin-drift-controller"
+  /api/v1/admin/groups:
+    get:
+      operationId: "listAdminGroups"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminGroupOptionResponse"
+                type: "array"
+          description: "OK"
+      tags:
+      - "admin-group-controller"
+  /api/v1/admin/ip-allocations:
+    get:
+      operationId: "listIpAllocations"
+      parameters:
+      - in: "query"
+        name: "poolId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "ALLOCATED"
+          - "RELEASED"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseIpAllocationResponse"
+          description: "OK"
+      tags:
+      - "admin-ip-allocation-controller"
+  /api/v1/admin/nodes:
+    get:
+      operationId: "listAdminNodes"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/NodeSummaryResponse"
+                type: "array"
+          description: "OK"
+      tags:
+      - "admin-node-controller"
+  /api/v1/admin/notifications:
+    get:
+      operationId: "listAdminNotifications"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "PENDING"
+          - "SENT"
+          - "FAILED"
+          - "SKIPPED"
+          type: "string"
+      - in: "query"
+        name: "event"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "email"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminNotificationResponse"
+          description: "OK"
+      tags:
+      - "admin-notification-controller"
+  /api/v1/admin/notifications/{notificationId}/resend:
+    post:
+      operationId: "resendAdminNotification"
+      parameters:
+      - in: "path"
+        name: "notificationId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-notification-controller"
+  /api/v1/admin/orgs:
+    post:
+      operationId: "createOrg"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrgRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrgDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-controller"
+  /api/v1/admin/orgs/{orgId}:
+    patch:
+      operationId: "updateOrg"
+      parameters:
+      - in: "path"
+        name: "orgId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrgRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrgDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-controller"
+  /api/v1/admin/routes:
+    get:
+      operationId: "listAdminRoutes"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "PENDING"
+          - "APPLIED"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminRouteView"
+          description: "OK"
+      tags:
+      - "admin-publishing-controller"
+  /api/v1/admin/routes/resync:
+    post:
+      operationId: "resyncRoutes"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-publishing-controller"
+  /api/v1/admin/settings:
+    get:
+      operationId: "listSettings"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/SettingView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "admin-settings-controller"
+  /api/v1/admin/settings/{key}:
+    put:
+      operationId: "updateSetting"
+      parameters:
+      - in: "path"
+        name: "key"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SettingView"
+          description: "OK"
+      tags:
+      - "admin-settings-controller"
+  /api/v1/admin/summary:
+    get:
+      operationId: "getAdminSummary"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OrgDashboardSummaryResponse"
+          description: "OK"
+      tags:
+      - "admin-summary-controller"
+  /api/v1/admin/system-summary:
+    get:
+      operationId: "getSystemSummary"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SystemDashboardSummaryResponse"
+          description: "OK"
+      tags:
+      - "admin-summary-controller"
+  /api/v1/admin/tasks:
+    get:
+      operationId: "listAdminTasks"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          items:
+            enum:
+            - "PENDING"
+            - "RUNNING"
+            - "DONE"
+            - "FAILED"
+            - "RETRYING"
+            - "NEEDS_ADMIN"
+            type: "string"
+          type: "array"
+      - in: "query"
+        name: "kind"
+        required: false
+        schema:
+          enum:
+          - "PROVISION"
+          - "DELETE"
+          - "REINSTALL"
+          type: "string"
+      - in: "query"
+        name: "vmId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminTaskResponse"
+          description: "OK"
+      tags:
+      - "admin-task-controller"
+  /api/v1/admin/tasks/{taskId}/retry:
+    post:
+      operationId: "retryAdminTask"
+      parameters:
+      - in: "path"
+        name: "taskId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-task-controller"
+  /api/v1/admin/terminal-sessions:
+    get:
+      operationId: "listAdminTerminalSessions"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/TerminalSessionView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "admin-terminal-controller"
+  /api/v1/admin/terminal-sessions/{sessionId}/terminate:
+    post:
+      operationId: "terminateTerminalSession"
+      parameters:
+      - in: "path"
+        name: "sessionId"
+        required: true
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+      tags:
+      - "admin-terminal-controller"
+  /api/v1/admin/users:
+    get:
+      operationId: "listUsers"
+      parameters:
+      - in: "query"
+        name: "q"
+        required: false
+        schema:
+          maxLength: 100
+          minLength: 1
+          type: "string"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "PENDING_VERIFICATION"
+          - "ACTIVE"
+          - "DISABLED"
+          - "WITHDRAWN"
+          type: "string"
+      - in: "query"
+        name: "role"
+        required: false
+        schema:
+          enum:
+          - "USER"
+          - "ORG_MANAGER"
+          - "ORG_ADMIN"
+          - "SYS_MANAGER"
+          - "SYS_ADMIN"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "sort"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserAdminViewResponse"
+          description: "OK"
+      tags:
+      - "admin-user-controller"
+  /api/v1/admin/users/{userId}:
+    get:
+      operationId: "getUser"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserAdminDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-user-controller"
+    patch:
+      operationId: "updateUser"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserAdminRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserSummaryResponse"
+          description: "OK"
+      tags:
+      - "admin-controller"
+  /api/v1/admin/users/{userId}/disable:
+    post:
+      operationId: "disableUser"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableUserRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserAdminDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-user-controller"
+  /api/v1/admin/users/{userId}/enable:
+    post:
+      operationId: "enableUser"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserAdminDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-user-controller"
+  /api/v1/admin/users/{userId}/mfa-reset:
+    post:
+      operationId: "resetUserMfa"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-user-controller"
+  /api/v1/admin/vm-requests:
+    get:
+      operationId: "listAdminVmRequests"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "SUBMITTED"
+          - "APPROVED"
+          - "REJECTED"
+          - "CANCELED"
+          type: "string"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-request-controller"
+  /api/v1/admin/vm-requests/{requestId}:
+    get:
+      operationId: "getAdminVmRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-request-controller"
+  /api/v1/admin/vm-requests/{requestId}/approve:
+    post:
+      operationId: "approveVmRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveVmRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-request-controller"
+  /api/v1/admin/vm-requests/{requestId}/context:
+    get:
+      operationId: "getApprovalContext"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalContextResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-request-controller"
+  /api/v1/admin/vm-requests/{requestId}/reject:
+    post:
+      operationId: "rejectVmRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectVmRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-request-controller"
+  /api/v1/admin/vms:
+    get:
+      operationId: "listAdminVms"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "groupId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "CREATING"
+          - "RUNNING"
+          - "STOPPED"
+          - "REBOOTING"
+          - "DELETING"
+          - "DELETED"
+          - "ERROR"
+          - "NEEDS_ADMIN"
+          type: "string"
+      - in: "query"
+        name: "expiringInDays"
+        required: false
+        schema:
+          format: "int32"
+          minimum: 1
+          type: "integer"
+      - in: "query"
+        name: "expired"
+        required: false
+        schema:
+          type: "boolean"
+      - in: "query"
+        name: "q"
+        required: false
+        schema:
+          maxLength: 100
+          minLength: 1
+          type: "string"
+      - in: "query"
+        name: "sort"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVmSummaryResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-controller"
+  /api/v1/admin/vms/{vmId}/cancel-scheduled-delete:
+    post:
+      operationId: "cancelScheduledVmDeletion"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-controller"
+  /api/v1/admin/vms/{vmId}/force-delete:
+    post:
+      operationId: "forceDeleteVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForceDeleteVmRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-controller"
+  /api/v1/admin/vms/{vmId}/period:
+    patch:
+      operationId: "updateVmPeriod"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VmPeriodUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmDetailResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-controller"
+  /api/v1/admin/vms/{vmId}/schedule-delete:
+    post:
+      operationId: "scheduleVmDeletion"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleVmDeletionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmDeletionResponse"
+          description: "OK"
+      tags:
+      - "admin-vm-controller"
+  /api/v1/auth/login:
+    post:
+      operationId: "login"
+      parameters:
+      - in: "header"
+        name: "User-Agent"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: "object"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/logout:
+    post:
+      operationId: "logout"
+      parameters:
+      - in: "cookie"
+        name: "pickle_refresh"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/mfa:
+    post:
+      operationId: "completeMfa"
+      parameters:
+      - in: "header"
+        name: "User-Agent"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaLoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/password-reset:
+    post:
+      operationId: "requestPasswordReset"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/password-reset/confirm:
+    post:
+      operationId: "confirmPasswordReset"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordResetConfirmRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/refresh:
+    post:
+      operationId: "refresh"
+      parameters:
+      - in: "cookie"
+        name: "pickle_refresh"
+        required: false
+        schema:
+          type: "string"
+      - in: "header"
+        name: "User-Agent"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/resend-verification:
+    post:
+      operationId: "resendVerification"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerificationRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/signup:
+    post:
+      operationId: "signup"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/auth/verify-email:
+    post:
+      operationId: "verifyEmail"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "auth-controller"
+  /api/v1/domains:
+    get:
+      operationId: "listDomains"
+      parameters:
+      - in: "query"
+        name: "vmId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "PENDING"
+          - "VERIFYING"
+          - "ACTIVE"
+          - "FAILED"
+          - "REMOVED"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseDomainSummaryView"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+  /api/v1/domains/{domainId}:
+    delete:
+      operationId: "deleteDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+    get:
+      operationId: "getDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DomainDetailView"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+  /api/v1/domains/{domainId}/verify:
+    post:
+      operationId: "verifyDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DomainDetailView"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+  /api/v1/groups:
+    get:
+      operationId: "listGroups"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/GroupSummaryResponse"
+                type: "array"
+          description: "OK"
+      tags:
+      - "group-controller"
+    post:
+      operationId: "createGroup"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroupRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupDetailResponse"
+          description: "OK"
+      tags:
+      - "group-controller"
+  /api/v1/groups/{groupId}:
+    delete:
+      operationId: "deleteGroup"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          description: "OK"
+      tags:
+      - "group-controller"
+    get:
+      operationId: "getGroup"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupDetailResponse"
+          description: "OK"
+      tags:
+      - "group-controller"
+    patch:
+      operationId: "updateGroup"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGroupRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupDetailResponse"
+          description: "OK"
+      tags:
+      - "group-controller"
+  /api/v1/groups/{groupId}/members:
+    post:
+      operationId: "addGroupMember"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddGroupMemberRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupMemberResponse"
+          description: "OK"
+      tags:
+      - "group-controller"
+  /api/v1/groups/{groupId}/members/{userId}:
+    delete:
+      operationId: "removeGroupMember"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          description: "OK"
+      tags:
+      - "group-controller"
+    patch:
+      operationId: "updateGroupMember"
+      parameters:
+      - in: "path"
+        name: "groupId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGroupMemberRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GroupMemberResponse"
+          description: "OK"
+      tags:
+      - "group-controller"
+  /api/v1/me:
+    get:
+      operationId: "me"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+          description: "OK"
+      tags:
+      - "me-controller"
+  /api/v1/me/activity:
+    get:
+      operationId: "listMyActivity"
+      parameters:
+      - in: "query"
+        name: "action"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "from"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "to"
+        required: false
+        schema:
+          format: "date"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseActivityEntryResponse"
+          description: "OK"
+      tags:
+      - "me-activity-controller"
+  /api/v1/me/consents:
+    get:
+      operationId: "listMyConsents"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/ConsentView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "consent-controller"
+    post:
+      operationId: "acceptConsents"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsentUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/ConsentView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "consent-controller"
+  /api/v1/me/mfa/disable:
+    post:
+      operationId: "disable"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisableMfaRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "mfa-controller"
+  /api/v1/me/mfa/recovery-codes:
+    post:
+      operationId: "regenerateRecoveryCodes"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegenerateRecoveryCodesRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MfaRecoveryCodesResponse"
+          description: "OK"
+      tags:
+      - "mfa-controller"
+  /api/v1/me/mfa/totp:
+    post:
+      operationId: "begin"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BeginMfaRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MfaSetupResponse"
+          description: "OK"
+      tags:
+      - "mfa-controller"
+  /api/v1/me/mfa/totp/activate:
+    post:
+      operationId: "activate"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActivateMfaRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MfaRecoveryCodesResponse"
+          description: "OK"
+      tags:
+      - "mfa-controller"
+  /api/v1/me/password:
+    put:
+      operationId: "changePassword"
+      parameters:
+      - in: "header"
+        name: "User-Agent"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: "OK"
+      tags:
+      - "account-controller"
+  /api/v1/me/ssh-keys:
+    get:
+      operationId: "listKeys"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/SshKeyView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "me-ssh-key-controller"
+    post:
+      operationId: "registerKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SshKeyCreateRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SshKeyView"
+          description: "Created"
+      tags:
+      - "me-ssh-key-controller"
+  /api/v1/me/ssh-keys/generate:
+    post:
+      operationId: "generateKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SshKeyGenerateRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SshKeyView"
+          description: "Created"
+      tags:
+      - "me-ssh-key-controller"
+  /api/v1/me/ssh-keys/{keyId}:
+    delete:
+      operationId: "deleteKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "204":
+          description: "No Content"
+      tags:
+      - "me-ssh-key-controller"
+  /api/v1/me/ssh-keys/{keyId}/private-key:
+    get:
+      operationId: "downloadPrivateKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SshKeyPrivateKeyResponse"
+          description: "OK"
+      tags:
+      - "me-ssh-key-controller"
+  /api/v1/me/withdraw:
+    post:
+      operationId: "withdraw"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WithdrawRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "account-controller"
+  /api/v1/meta/request-options:
+    get:
+      operationId: "requestOptions"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestOptionsResponse"
+          description: "OK"
+      tags:
+      - "meta-controller"
+  /api/v1/meta/status:
+    get:
+      operationId: "systemStatus"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SystemStatusResponse"
+          description: "OK"
+      tags:
+      - "meta-controller"
+  /api/v1/meta/terms:
+    get:
+      operationId: "listTerms"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/TermsVersionView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "meta-controller"
+  /api/v1/meta/terms/{docType}:
+    get:
+      operationId: "getTerms"
+      parameters:
+      - in: "path"
+        name: "docType"
+        required: true
+        schema:
+          enum:
+          - "TERMS_OF_SERVICE"
+          - "PRIVACY_POLICY"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TermsDocumentView"
+          description: "OK"
+      tags:
+      - "meta-controller"
+  /api/v1/notifications:
+    get:
+      operationId: "listNotifications"
+      parameters:
+      - in: "query"
+        name: "unreadOnly"
+        required: false
+        schema:
+          default: false
+          type: "boolean"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNotificationView"
+          description: "OK"
+      tags:
+      - "notification-controller"
+  /api/v1/notifications/read-all:
+    post:
+      operationId: "markAllNotificationsRead"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReadAllResponse"
+          description: "OK"
+      tags:
+      - "notification-controller"
+  /api/v1/notifications/unread-count:
+    get:
+      operationId: "getUnreadNotificationCount"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UnreadCountResponse"
+          description: "OK"
+      tags:
+      - "notification-controller"
+  /api/v1/notifications/{notificationId}/read:
+    post:
+      operationId: "markNotificationRead"
+      parameters:
+      - in: "path"
+        name: "notificationId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationView"
+          description: "OK"
+      tags:
+      - "notification-controller"
+  /api/v1/orgs:
+    get:
+      operationId: "listOrgs"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/OrgSummaryResponse"
+                type: "array"
+          description: "OK"
+      tags:
+      - "org-controller"
+  /api/v1/templates:
+    get:
+      operationId: "listTemplates"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmTemplateResponse"
+                type: "array"
+          description: "OK"
+      tags:
+      - "vm-template-controller"
+  /api/v1/vm-requests:
+    get:
+      operationId: "listVmRequests"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          enum:
+          - "SUBMITTED"
+          - "APPROVED"
+          - "REJECTED"
+          - "CANCELED"
+          type: "string"
+      - in: "query"
+        name: "groupId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "vm-request-controller"
+    post:
+      operationId: "createVmRequest"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVmRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "vm-request-controller"
+  /api/v1/vm-requests/{requestId}:
+    get:
+      operationId: "getVmRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "vm-request-controller"
+  /api/v1/vm-requests/{requestId}/cancel:
+    post:
+      operationId: "cancelVmRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmRequestDetailResponse"
+          description: "OK"
+      tags:
+      - "vm-request-controller"
+  /api/v1/vms:
+    get:
+      operationId: "listVms"
+      parameters:
+      - in: "query"
+        name: "groupId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVmSummaryResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}:
+    delete:
+      operationId: "deleteVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmDeletionResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+    get:
+      operationId: "getVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmDetailResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/events:
+    get:
+      operationId: "listVmEvents"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseVmEventResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/force-stop:
+    post:
+      operationId: "forceStopVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/password:
+    get:
+      operationId: "revealVmPassword"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmPasswordResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/password/regenerate:
+    post:
+      operationId: "regenerateVmPassword"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmPasswordResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/publication:
+    delete:
+      operationId: "unpublishVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+    patch:
+      operationId: "updatePublication"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JsonNode"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PublicationView"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+  /api/v1/vms/{vmId}/publish:
+    post:
+      operationId: "publishVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PublicationView"
+          description: "OK"
+      tags:
+      - "publishing-controller"
+  /api/v1/vms/{vmId}/reboot:
+    post:
+      operationId: "rebootVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/settings:
+    get:
+      operationId: "getVmSettings"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmSettingView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "vm-controller"
+    patch:
+      operationId: "updateVmSettings"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VmSettingsUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmSettingView"
+                type: "array"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/shutdown:
+    post:
+      operationId: "shutdownVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/start:
+    post:
+      operationId: "startVm"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "OK"
+      tags:
+      - "vm-controller"
+  /api/v1/vms/{vmId}/terminal-sessions:
+    post:
+      operationId: "createTerminalSession"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TerminalTicketResponse"
+          description: "OK"
+      tags:
+      - "terminal-controller"
+servers:
+- description: "Generated server url"
+  url: "http://localhost"

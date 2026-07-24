@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,24 +26,27 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Guards against drift between the frozen contract (docs/api/openapi.yaml,
- * currently v0.10.0) and the springdoc runtime spec.
+ * Guards the API contract surface from three directions.
  *
- * <p>The comparison is bidirectional over path+method sets: the contract must
- * equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}, and the runtime must expose
- * exactly {@link #IMPLEMENTED} — nothing more, nothing less. Both sets are
- * named explicitly so a drift failure points at the exact endpoint instead of
- * a set diff of unknown origin.</p>
+ * <p><b>1. Published spec snapshot</b> — {@code contract/openapi.yaml} (the
+ * committed, generated as-built spec) must equal the springdoc runtime spec.
+ * Regenerate it after any endpoint change with
+ * {@code mvn test -Dtest=ContractDriftTest -Dcontract.update=true}.</p>
  *
- * <p>{@link #PLANNED} holds contract operations not yet implemented,
- * enabling parallel per-milestone development against a frozen contract. As each endpoint
- * lands, move its entry from PLANNED to IMPLEMENTED. <b>PLANNED must be empty
- * at each milestone end.</b></p>
+ * <p><b>2. Implemented set</b> — the runtime must expose exactly
+ * {@link #IMPLEMENTED}, nothing more, nothing less. Both directions are named
+ * explicitly so a drift failure points at the exact endpoint.</p>
  *
- * <p><b>Limitation:</b> only METHOD+path sets are compared. Parameters,
- * request/response schema shapes, and error codes are NOT checked here —
- * shape conformance is verified by manual contract review at each milestone
- * review gate.</p>
+ * <p><b>3. Design contract (optional)</b> — when the environment variable
+ * {@code PICKLE_CONTRACT_MASTER} points at the hand-written design contract,
+ * its path+method set must equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}.
+ * {@link #PLANNED} holds contract operations not yet implemented, enabling
+ * parallel development against a frozen design contract; it must be empty at
+ * the end of each work package.</p>
+ *
+ * <p><b>Limitation:</b> checks 2 and 3 compare METHOD+path sets only.
+ * Parameters, schema shapes and error codes are covered by check 1 (the
+ * published snapshot is byte-stable) and by contract review.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,8 +54,8 @@ import org.springframework.test.web.servlet.MockMvc;
 @Import(EmbeddedPostgresConfig.class)
 class ContractDriftTest {
 
-    /** Contract file, relative to the api module (surefire cwd = module root). */
-    private static final Path CONTRACT = Path.of("..", "docs", "api", "openapi.yaml");
+    /** Published generated spec, relative to the module root (surefire cwd). */
+    private static final Path PUBLISHED = Path.of("contract", "openapi.yaml");
 
     /** Contract server prefix stripped from runtime paths before comparison. */
     private static final String SERVER_PREFIX = "/api/v1";
@@ -100,7 +106,7 @@ class ContractDriftTest {
             "PATCH /admin/users/{userId}",
             "GET /admin/nodes",
             "GET /admin/vms",
-            // M4A HTTP publishing (contract v0.4.0).
+            // HTTP publishing (contract v0.4.0).
             "POST /vms/{vmId}/publish",
             "PATCH /vms/{vmId}/publication",
             "DELETE /vms/{vmId}/publication",
@@ -112,7 +118,7 @@ class ContractDriftTest {
             "GET /admin/domains",
             "GET /admin/certificates",
             "POST /admin/routes/resync",
-            // M5 api-A (contract v0.5.0).
+            // Notifications, announcements, audit views (contract v0.5.0).
             "GET /admin/settings",
             "PUT /admin/settings/{key}",
             "GET /notifications",
@@ -124,7 +130,7 @@ class ContractDriftTest {
             "GET /admin/groups",
             "GET /me/activity",
             "GET /admin/audit",
-            // M5 api-B (contract v0.5.0).
+            // Ops dashboards, drift, tasks, expiry (contract v0.5.0).
             "GET /admin/drift-findings",
             "POST /admin/drift-findings/{findingId}/resolve",
             "GET /admin/tasks",
@@ -135,7 +141,7 @@ class ContractDriftTest {
             "PATCH /admin/vms/{vmId}/period",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
-            // M5.5 per-user SSH keys (contract v0.8.0).
+            // Per-user SSH keys and VM settings (contract v0.8.0).
             "GET /me/ssh-keys",
             "POST /me/ssh-keys",
             "POST /me/ssh-keys/generate",
@@ -144,44 +150,41 @@ class ContractDriftTest {
             "GET /vms/{vmId}/settings",
             "PATCH /vms/{vmId}/settings",
             "POST /vms/{vmId}/password/regenerate",
-            // M6 account self-service — Lane A (contract v0.9.0).
+            // Account self-service (contract v0.9.0).
             "POST /auth/password-reset",
             "POST /auth/password-reset/confirm",
             "POST /me/withdraw",
             "PUT /me/password",
-            // M6 admin user surface — Lane A (contract v0.9.0).
+            // Admin user surface (contract v0.9.0).
             "GET /admin/users",
             "GET /admin/users/{userId}",
             "POST /admin/users/{userId}/disable",
             "POST /admin/users/{userId}/enable",
-            // M6 2FA enrollment — W2-A (contract v0.9.0).
+            // 2FA enrollment (contract v0.9.0).
             "POST /me/mfa/totp",
             "POST /me/mfa/totp/activate",
             "POST /me/mfa/disable",
             "POST /me/mfa/recovery-codes",
             "POST /auth/mfa",
             "POST /admin/users/{userId}/mfa-reset",
-            // M6 terms/consent — W2-A (contract v0.9.0).
+            // Terms and consent (contract v0.9.0).
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
             "GET /me/consents",
             "POST /me/consents",
-            // M6 maintenance/contact — W2-B (contract v0.9.0).
+            // Maintenance and contact (contract v0.9.0).
             "GET /meta/status",
-            // M6.5 web terminal (contract v0.10.0).
+            // Web terminal (contract v0.10.0).
             "POST /vms/{vmId}/terminal-sessions",
             "GET /admin/terminal-sessions",
             "POST /admin/terminal-sessions/{sessionId}/terminate");
 
     /**
-     * Contract v0.9.0 (M6 account &amp; ops readiness) operations not implemented
-     * yet. Contract = {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED.
-     * Each entry moves to IMPLEMENTED as its endpoint lands, and PLANNED must be
-     * empty again by the end of M6.
-     *
-     * <p>W2 merge complete — all 20 v0.9.0 ops moved to IMPLEMENTED (W3 adds
-     * no new operations, only role-gate changes). Keep entries alphabetized
-     * one-per-line if a future rev repopulates this set.</p>
+     * Design-contract operations not implemented yet. Design contract =
+     * {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each entry moves
+     * to IMPLEMENTED as its endpoint lands; PLANNED must be empty again by the
+     * end of the work package. Keep entries alphabetized one-per-line if a
+     * future rev repopulates this set.
      */
     private static final Set<String> PLANNED = Set.of();
 
@@ -192,17 +195,42 @@ class ContractDriftTest {
     private MockMvc mockMvc;
 
     @Test
-    void fullContractSurfaceMatchesRuntimeSpecBidirectionally() throws Exception {
-        assertThat(CONTRACT).as("contract file docs/api/openapi.yaml").exists();
-        JsonNode contract = new YAMLMapper().readTree(Files.readString(CONTRACT));
+    void publishedSpecMatchesRuntime() throws Exception {
+        JsonNode runtime = fetchRuntimeSpec();
+        String canonical = toCanonicalYaml(runtime);
 
-        String runtimeJson = mockMvc.perform(get("/api/v1/openapi"))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        JsonNode runtime = new com.fasterxml.jackson.databind.ObjectMapper().readTree(runtimeJson);
+        if (Boolean.getBoolean("contract.update")) {
+            Files.createDirectories(PUBLISHED.getParent());
+            Files.writeString(PUBLISHED, canonical);
+        }
+
+        assertThat(PUBLISHED)
+                .as("published spec contract/openapi.yaml — regenerate with -Dcontract.update=true")
+                .exists();
+        assertThat(Files.readString(PUBLISHED))
+                .as("contract/openapi.yaml is stale — regenerate with -Dcontract.update=true")
+                .isEqualTo(canonical);
+    }
+
+    @Test
+    void runtimeExposesExactlyTheImplementedSet() throws Exception {
+        assertThat(endpointsOf(fetchRuntimeSpec(), SERVER_PREFIX))
+                .as("springdoc runtime spec path+method set vs the implemented set")
+                .isEqualTo(new TreeSet<>(IMPLEMENTED));
+    }
+
+    @Test
+    void designContractSurfaceMatchesImplementedPlusPlanned() throws Exception {
+        String master = System.getenv("PICKLE_CONTRACT_MASTER");
+        Assumptions.assumeTrue(master != null && !master.isBlank(),
+                "PICKLE_CONTRACT_MASTER not set — design-contract comparison skipped");
+
+        Path masterPath = Path.of(master);
+        assertThat(masterPath).as("design contract at $PICKLE_CONTRACT_MASTER").exists();
+        JsonNode contract = new YAMLMapper().readTree(Files.readString(masterPath));
 
         // doesNotContainAnyElementsOf rejects an empty iterable with an
-        // IllegalArgumentException, so guard the milestone-end state (PLANNED empty).
+        // IllegalArgumentException, so guard the package-end state (PLANNED empty).
         if (!PLANNED.isEmpty()) {
             assertThat(IMPLEMENTED)
                     .as("IMPLEMENTED and PLANNED must be disjoint — an endpoint that "
@@ -213,12 +241,27 @@ class ContractDriftTest {
         Set<String> contractSurface = new TreeSet<>(IMPLEMENTED);
         contractSurface.addAll(PLANNED);
         assertThat(endpointsOf(contract, ""))
-                .as("contract path+method set vs IMPLEMENTED ∪ PLANNED")
+                .as("design contract path+method set vs IMPLEMENTED ∪ PLANNED")
                 .isEqualTo(contractSurface);
+    }
 
-        assertThat(endpointsOf(runtime, SERVER_PREFIX))
-                .as("springdoc runtime spec path+method set vs the implemented set")
-                .isEqualTo(new TreeSet<>(IMPLEMENTED));
+    private JsonNode fetchRuntimeSpec() throws Exception {
+        String runtimeJson = mockMvc.perform(get("/api/v1/openapi"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return new ObjectMapper().readTree(runtimeJson);
+    }
+
+    /**
+     * Serializes the spec as YAML with alphabetically ordered keys so the
+     * published file is byte-stable across regenerations (array order — e.g.
+     * parameter lists — is preserved as emitted by springdoc).
+     */
+    private static String toCanonicalYaml(JsonNode spec) throws Exception {
+        YAMLMapper yaml = new YAMLMapper();
+        yaml.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
+        Object tree = new ObjectMapper().convertValue(spec, Object.class);
+        return yaml.writeValueAsString(tree);
     }
 
     /** Extracts "METHOD path" pairs, normalizing away {@code stripPrefix}. */
