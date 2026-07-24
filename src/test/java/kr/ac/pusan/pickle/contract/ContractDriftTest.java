@@ -197,7 +197,7 @@ class ContractDriftTest {
     @Test
     void publishedSpecMatchesRuntime() throws Exception {
         JsonNode runtime = fetchRuntimeSpec();
-        String canonical = toCanonicalYaml(runtime);
+        String canonical = toCanonicalYaml(toPublishedSpec(runtime));
 
         if (Boolean.getBoolean("contract.update")) {
             Files.createDirectories(PUBLISHED.getParent());
@@ -243,6 +243,32 @@ class ContractDriftTest {
         assertThat(endpointsOf(contract, ""))
                 .as("design contract path+method set vs IMPLEMENTED ∪ PLANNED")
                 .isEqualTo(contractSurface);
+    }
+
+    /**
+     * Published-spec convention: path keys are server-relative and the prefix
+     * lives in {@code servers[0].url} — matching how typed clients (the console
+     * openapi-fetch client) key operations on unprefixed literals and prepend
+     * the base URL themselves.
+     */
+    private static JsonNode toPublishedSpec(JsonNode runtime) {
+        com.fasterxml.jackson.databind.node.ObjectNode spec = runtime.deepCopy();
+        com.fasterxml.jackson.databind.node.ObjectNode strippedPaths =
+                spec.objectNode();
+        JsonNode paths = spec.path("paths");
+        for (Iterator<Map.Entry<String, JsonNode>> it = paths.properties().iterator(); it.hasNext(); ) {
+            Map.Entry<String, JsonNode> entry = it.next();
+            String path = entry.getKey();
+            if (path.startsWith(SERVER_PREFIX)) {
+                path = path.substring(SERVER_PREFIX.length());
+            }
+            strippedPaths.set(path, entry.getValue());
+        }
+        spec.set("paths", strippedPaths);
+        com.fasterxml.jackson.databind.node.ArrayNode servers = spec.arrayNode();
+        servers.add(spec.objectNode().put("url", SERVER_PREFIX));
+        spec.set("servers", servers);
+        return spec;
     }
 
     private JsonNode fetchRuntimeSpec() throws Exception {

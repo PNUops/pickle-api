@@ -3578,7 +3578,7 @@ info:
   version: "0.13.0"
 openapi: "3.1.0"
 paths:
-  /api/v1/admin/announcements:
+  /admin/announcements:
     get:
       operationId: "listAnnouncements"
       parameters:
@@ -3637,7 +3637,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "announcement-controller"
-  /api/v1/admin/audit:
+  /admin/audit:
     get:
       operationId: "listAuditLogs"
       parameters:
@@ -3711,7 +3711,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-audit-controller"
-  /api/v1/admin/certificates:
+  /admin/certificates:
     get:
       operationId: "listAdminCertificates"
       parameters:
@@ -3765,7 +3765,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
-  /api/v1/admin/domains:
+  /admin/domains:
     get:
       operationId: "listAdminDomains"
       parameters:
@@ -3817,7 +3817,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
-  /api/v1/admin/drift-findings:
+  /admin/drift-findings:
     get:
       operationId: "listDriftFindings"
       parameters:
@@ -3863,7 +3863,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
-  /api/v1/admin/drift-findings/{findingId}/resolve:
+  /admin/drift-findings/{findingId}/resolve:
     post:
       operationId: "resolveDriftFinding"
       parameters:
@@ -3893,7 +3893,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
-  /api/v1/admin/groups:
+  /admin/groups:
     get:
       operationId: "listAdminGroups"
       parameters:
@@ -3920,7 +3920,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-group-controller"
-  /api/v1/admin/ip-allocations:
+  /admin/ip-allocations:
     get:
       operationId: "listIpAllocations"
       parameters:
@@ -3967,7 +3967,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-ip-allocation-controller"
-  /api/v1/admin/nodes:
+  /admin/nodes:
     get:
       operationId: "listAdminNodes"
       responses:
@@ -3987,7 +3987,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-node-controller"
-  /api/v1/admin/notifications:
+  /admin/notifications:
     get:
       operationId: "listAdminNotifications"
       parameters:
@@ -4038,7 +4038,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-notification-controller"
-  /api/v1/admin/notifications/{notificationId}/resend:
+  /admin/notifications/{notificationId}/resend:
     post:
       operationId: "resendAdminNotification"
       parameters:
@@ -4063,7 +4063,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-notification-controller"
-  /api/v1/admin/orgs:
+  /admin/orgs:
     post:
       operationId: "createOrg"
       requestBody:
@@ -4087,7 +4087,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
-  /api/v1/admin/orgs/{orgId}:
+  /admin/orgs/{orgId}:
     patch:
       operationId: "updateOrg"
       parameters:
@@ -4118,7 +4118,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
-  /api/v1/admin/routes:
+  /admin/routes:
     get:
       operationId: "listAdminRoutes"
       parameters:
@@ -4165,7 +4165,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
-  /api/v1/admin/routes/resync:
+  /admin/routes/resync:
     post:
       operationId: "resyncRoutes"
       responses:
@@ -4183,7 +4183,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
-  /api/v1/admin/settings:
+  /admin/settings:
     get:
       operationId: "listSettings"
       responses:
@@ -4203,7 +4203,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-settings-controller"
-  /api/v1/admin/settings/{key}:
+  /admin/settings/{key}:
     put:
       operationId: "updateSetting"
       parameters:
@@ -4233,7 +4233,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-settings-controller"
-  /api/v1/admin/summary:
+  /admin/summary:
     get:
       operationId: "getAdminSummary"
       parameters:
@@ -4258,7 +4258,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-summary-controller"
-  /api/v1/admin/system-summary:
+  /admin/system-summary:
     get:
       operationId: "getSystemSummary"
       responses:
@@ -4276,7 +4276,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-summary-controller"
-  /api/v1/admin/tasks:
+  /admin/tasks:
     get:
       operationId: "listAdminTasks"
       parameters:
@@ -4330,7 +4330,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-task-controller"
-  /api/v1/admin/tasks/{taskId}/retry:
+  /admin/tasks/{taskId}/retry:
     post:
       operationId: "retryAdminTask"
       parameters:
@@ -4355,7 +4355,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-task-controller"
-  /api/v1/admin/terminal-sessions:
+  /admin/terminal-sessions:
     get:
       operationId: "listAdminTerminalSessions"
       responses:
@@ -4375,7 +4375,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-terminal-controller"
-  /api/v1/admin/terminal-sessions/{sessionId}/terminate:
+  /admin/terminal-sessions/{sessionId}/terminate:
     post:
       operationId: "terminateTerminalSession"
       parameters:
@@ -4395,7 +4395,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-terminal-controller"
-  /api/v1/admin/users:
+  /admin/users:
     get:
       operationId: "listUsers"
       parameters:
@@ -4459,7 +4459,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
-  /api/v1/admin/users/{userId}:
+  /admin/users/{userId}:
     get:
       operationId: "getUser"
       parameters:
@@ -4514,7 +4514,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
-  /api/v1/admin/users/{userId}/disable:
+  /admin/users/{userId}/disable:
     post:
       operationId: "disableUser"
       parameters:
@@ -4545,7 +4545,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
-  /api/v1/admin/users/{userId}/enable:
+  /admin/users/{userId}/enable:
     post:
       operationId: "enableUser"
       parameters:
@@ -4570,7 +4570,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
-  /api/v1/admin/users/{userId}/mfa-reset:
+  /admin/users/{userId}/mfa-reset:
     post:
       operationId: "resetUserMfa"
       parameters:
@@ -4595,7 +4595,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
-  /api/v1/admin/vm-requests:
+  /admin/vm-requests:
     get:
       operationId: "listAdminVmRequests"
       parameters:
@@ -4642,7 +4642,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
-  /api/v1/admin/vm-requests/{requestId}:
+  /admin/vm-requests/{requestId}:
     get:
       operationId: "getAdminVmRequest"
       parameters:
@@ -4667,7 +4667,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
-  /api/v1/admin/vm-requests/{requestId}/approve:
+  /admin/vm-requests/{requestId}/approve:
     post:
       operationId: "approveVmRequest"
       parameters:
@@ -4698,7 +4698,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
-  /api/v1/admin/vm-requests/{requestId}/context:
+  /admin/vm-requests/{requestId}/context:
     get:
       operationId: "getApprovalContext"
       parameters:
@@ -4723,7 +4723,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
-  /api/v1/admin/vm-requests/{requestId}/reject:
+  /admin/vm-requests/{requestId}/reject:
     post:
       operationId: "rejectVmRequest"
       parameters:
@@ -4754,7 +4754,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-request-controller"
-  /api/v1/admin/vms:
+  /admin/vms:
     get:
       operationId: "listAdminVms"
       parameters:
@@ -4831,7 +4831,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
-  /api/v1/admin/vms/{vmId}/cancel-scheduled-delete:
+  /admin/vms/{vmId}/cancel-scheduled-delete:
     post:
       operationId: "cancelScheduledVmDeletion"
       parameters:
@@ -4856,7 +4856,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
-  /api/v1/admin/vms/{vmId}/force-delete:
+  /admin/vms/{vmId}/force-delete:
     post:
       operationId: "forceDeleteVm"
       parameters:
@@ -4887,7 +4887,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
-  /api/v1/admin/vms/{vmId}/period:
+  /admin/vms/{vmId}/period:
     patch:
       operationId: "updateVmPeriod"
       parameters:
@@ -4918,7 +4918,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
-  /api/v1/admin/vms/{vmId}/schedule-delete:
+  /admin/vms/{vmId}/schedule-delete:
     post:
       operationId: "scheduleVmDeletion"
       parameters:
@@ -4949,7 +4949,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
-  /api/v1/auth/login:
+  /auth/login:
     post:
       operationId: "login"
       parameters:
@@ -4981,7 +4981,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/logout:
+  /auth/logout:
     post:
       operationId: "logout"
       parameters:
@@ -5001,7 +5001,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/mfa:
+  /auth/mfa:
     post:
       operationId: "completeMfa"
       parameters:
@@ -5031,7 +5031,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/password-reset:
+  /auth/password-reset:
     post:
       operationId: "requestPasswordReset"
       requestBody:
@@ -5055,7 +5055,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/password-reset/confirm:
+  /auth/password-reset/confirm:
     post:
       operationId: "confirmPasswordReset"
       requestBody:
@@ -5079,7 +5079,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/refresh:
+  /auth/refresh:
     post:
       operationId: "refresh"
       parameters:
@@ -5108,7 +5108,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/resend-verification:
+  /auth/resend-verification:
     post:
       operationId: "resendVerification"
       requestBody:
@@ -5132,7 +5132,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/signup:
+  /auth/signup:
     post:
       operationId: "signup"
       requestBody:
@@ -5156,7 +5156,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/auth/verify-email:
+  /auth/verify-email:
     post:
       operationId: "verifyEmail"
       requestBody:
@@ -5180,7 +5180,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "auth-controller"
-  /api/v1/domains:
+  /domains:
     get:
       operationId: "listDomains"
       parameters:
@@ -5227,7 +5227,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /api/v1/domains/{domainId}:
+  /domains/{domainId}:
     delete:
       operationId: "deleteDomain"
       parameters:
@@ -5276,7 +5276,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /api/v1/domains/{domainId}/verify:
+  /domains/{domainId}/verify:
     post:
       operationId: "verifyDomain"
       parameters:
@@ -5301,7 +5301,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /api/v1/groups:
+  /groups:
     get:
       operationId: "listGroups"
       responses:
@@ -5344,7 +5344,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
-  /api/v1/groups/{groupId}:
+  /groups/{groupId}:
     delete:
       operationId: "deleteGroup"
       parameters:
@@ -5419,7 +5419,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
-  /api/v1/groups/{groupId}/members:
+  /groups/{groupId}/members:
     post:
       operationId: "addGroupMember"
       parameters:
@@ -5450,7 +5450,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
-  /api/v1/groups/{groupId}/members/{userId}:
+  /groups/{groupId}/members/{userId}:
     delete:
       operationId: "removeGroupMember"
       parameters:
@@ -5513,7 +5513,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "group-controller"
-  /api/v1/me:
+  /me:
     get:
       operationId: "me"
       responses:
@@ -5531,7 +5531,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-controller"
-  /api/v1/me/activity:
+  /me/activity:
     get:
       operationId: "listMyActivity"
       parameters:
@@ -5584,7 +5584,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-activity-controller"
-  /api/v1/me/consents:
+  /me/consents:
     get:
       operationId: "listMyConsents"
       responses:
@@ -5629,7 +5629,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "consent-controller"
-  /api/v1/me/mfa/disable:
+  /me/mfa/disable:
     post:
       operationId: "disable"
       requestBody:
@@ -5653,7 +5653,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
-  /api/v1/me/mfa/recovery-codes:
+  /me/mfa/recovery-codes:
     post:
       operationId: "regenerateRecoveryCodes"
       requestBody:
@@ -5677,7 +5677,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
-  /api/v1/me/mfa/totp:
+  /me/mfa/totp:
     post:
       operationId: "begin"
       requestBody:
@@ -5701,7 +5701,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
-  /api/v1/me/mfa/totp/activate:
+  /me/mfa/totp/activate:
     post:
       operationId: "activate"
       requestBody:
@@ -5725,7 +5725,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "mfa-controller"
-  /api/v1/me/password:
+  /me/password:
     put:
       operationId: "changePassword"
       parameters:
@@ -5755,7 +5755,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "account-controller"
-  /api/v1/me/ssh-keys:
+  /me/ssh-keys:
     get:
       operationId: "listKeys"
       responses:
@@ -5798,7 +5798,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
-  /api/v1/me/ssh-keys/generate:
+  /me/ssh-keys/generate:
     post:
       operationId: "generateKey"
       requestBody:
@@ -5822,7 +5822,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
-  /api/v1/me/ssh-keys/{keyId}:
+  /me/ssh-keys/{keyId}:
     delete:
       operationId: "deleteKey"
       parameters:
@@ -5843,7 +5843,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
-  /api/v1/me/ssh-keys/{keyId}/private-key:
+  /me/ssh-keys/{keyId}/private-key:
     get:
       operationId: "downloadPrivateKey"
       parameters:
@@ -5868,7 +5868,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "me-ssh-key-controller"
-  /api/v1/me/withdraw:
+  /me/withdraw:
     post:
       operationId: "withdraw"
       requestBody:
@@ -5892,7 +5892,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "account-controller"
-  /api/v1/meta/request-options:
+  /meta/request-options:
     get:
       operationId: "requestOptions"
       responses:
@@ -5910,7 +5910,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
-  /api/v1/meta/status:
+  /meta/status:
     get:
       operationId: "systemStatus"
       responses:
@@ -5928,7 +5928,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
-  /api/v1/meta/terms:
+  /meta/terms:
     get:
       operationId: "listTerms"
       responses:
@@ -5948,7 +5948,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
-  /api/v1/meta/terms/{docType}:
+  /meta/terms/{docType}:
     get:
       operationId: "getTerms"
       parameters:
@@ -5972,7 +5972,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "meta-controller"
-  /api/v1/notifications:
+  /notifications:
     get:
       operationId: "listNotifications"
       parameters:
@@ -6014,7 +6014,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
-  /api/v1/notifications/read-all:
+  /notifications/read-all:
     post:
       operationId: "markAllNotificationsRead"
       responses:
@@ -6032,7 +6032,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
-  /api/v1/notifications/unread-count:
+  /notifications/unread-count:
     get:
       operationId: "getUnreadNotificationCount"
       responses:
@@ -6050,7 +6050,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
-  /api/v1/notifications/{notificationId}/read:
+  /notifications/{notificationId}/read:
     post:
       operationId: "markNotificationRead"
       parameters:
@@ -6075,7 +6075,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "notification-controller"
-  /api/v1/orgs:
+  /orgs:
     get:
       operationId: "listOrgs"
       responses:
@@ -6095,7 +6095,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "org-controller"
-  /api/v1/templates:
+  /templates:
     get:
       operationId: "listTemplates"
       responses:
@@ -6115,7 +6115,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-template-controller"
-  /api/v1/vm-requests:
+  /vm-requests:
     get:
       operationId: "listVmRequests"
       parameters:
@@ -6185,7 +6185,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
-  /api/v1/vm-requests/{requestId}:
+  /vm-requests/{requestId}:
     get:
       operationId: "getVmRequest"
       parameters:
@@ -6210,7 +6210,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
-  /api/v1/vm-requests/{requestId}/cancel:
+  /vm-requests/{requestId}/cancel:
     post:
       operationId: "cancelVmRequest"
       parameters:
@@ -6235,7 +6235,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-request-controller"
-  /api/v1/vms:
+  /vms:
     get:
       operationId: "listVms"
       parameters:
@@ -6277,7 +6277,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}:
+  /vms/{vmId}:
     delete:
       operationId: "deleteVm"
       parameters:
@@ -6326,7 +6326,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/events:
+  /vms/{vmId}/events:
     get:
       operationId: "listVmEvents"
       parameters:
@@ -6368,7 +6368,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/force-stop:
+  /vms/{vmId}/force-stop:
     post:
       operationId: "forceStopVm"
       parameters:
@@ -6393,7 +6393,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/password:
+  /vms/{vmId}/password:
     get:
       operationId: "revealVmPassword"
       parameters:
@@ -6418,7 +6418,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/password/regenerate:
+  /vms/{vmId}/password/regenerate:
     post:
       operationId: "regenerateVmPassword"
       parameters:
@@ -6443,7 +6443,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/publication:
+  /vms/{vmId}/publication:
     delete:
       operationId: "unpublishVm"
       parameters:
@@ -6498,7 +6498,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /api/v1/vms/{vmId}/publish:
+  /vms/{vmId}/publish:
     post:
       operationId: "publishVm"
       parameters:
@@ -6528,7 +6528,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /api/v1/vms/{vmId}/reboot:
+  /vms/{vmId}/reboot:
     post:
       operationId: "rebootVm"
       parameters:
@@ -6553,7 +6553,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/settings:
+  /vms/{vmId}/settings:
     get:
       operationId: "getVmSettings"
       parameters:
@@ -6612,7 +6612,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/shutdown:
+  /vms/{vmId}/shutdown:
     post:
       operationId: "shutdownVm"
       parameters:
@@ -6637,7 +6637,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/start:
+  /vms/{vmId}/start:
     post:
       operationId: "startVm"
       parameters:
@@ -6662,7 +6662,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
-  /api/v1/vms/{vmId}/terminal-sessions:
+  /vms/{vmId}/terminal-sessions:
     post:
       operationId: "createTerminalSession"
       parameters:
@@ -6688,5 +6688,4 @@ paths:
       tags:
       - "terminal-controller"
 servers:
-- description: "Generated server url"
-  url: "http://localhost"
+- url: "/api/v1"
