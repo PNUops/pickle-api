@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Admin disable revokes lingering refresh tokens (sec m4): access tokens die on
+ * Admin disable revokes lingering refresh tokens: access tokens die on
  * the version bump, but a refresh token left unspent during the disable window
  * must be revoked too, or a later enable would let it resurrect the session.
  */

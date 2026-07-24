@@ -12,6 +12,7 @@ public record SystemDashboardSummaryResponse(
         long notificationFailureCount,
         long certExpiring30dCount,
         long openDriftFindingCount,
+        long sshPasswordEnabledVmCount,
         List<IpPoolUsage> ipPools) {
 
     /** Per-node allocation ratios (same aggregates as {@code GET /admin/nodes}). */

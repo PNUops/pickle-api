@@ -2028,6 +2028,9 @@ components:
         openDriftFindingCount:
           format: "int64"
           type: "integer"
+        sshPasswordEnabledVmCount:
+          format: "int64"
+          type: "integer"
         tasks:
           $ref: "#/components/schemas/Tasks"
         vmCountsByStatus:

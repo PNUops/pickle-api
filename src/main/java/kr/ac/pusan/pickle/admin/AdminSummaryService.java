@@ -169,9 +169,18 @@ public class AdminSummaryService {
                     usage.allocatedCount(), usage.freeCount()));
         });
 
+        // Password-SSH is a per-VM opt-in exception to key-only identity, so the
+        // count of opted-in live VMs stays visible on the system dashboard.
+        long sshPasswordEnabledVms = count("""
+                select count(*) from vms v
+                  join vm_settings s on s.vm_id = v.id and s.key = 'ssh_password_enabled'
+                 where s.value = 'true'::jsonb and v.status <> 'DELETED'
+                """);
+
         return new SystemDashboardSummaryResponse(nodes, vmCountsByStatus(null), tasks,
                 notificationFailureCount(), certExpiring30d,
-                driftFindingRepository.countByStatus(DriftFindingStatus.OPEN), pools);
+                driftFindingRepository.countByStatus(DriftFindingStatus.OPEN),
+                sshPasswordEnabledVms, pools);
     }
 
     /** FAILED notification deliveries (surfaced on the system dashboard). */

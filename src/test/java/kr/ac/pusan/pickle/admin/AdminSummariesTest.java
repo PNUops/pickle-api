@@ -197,6 +197,7 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.notificationFailureCount").isNumber())
                 .andExpect(jsonPath("$.certExpiring30dCount").isNumber())
                 .andExpect(jsonPath("$.openDriftFindingCount").isNumber())
+                .andExpect(jsonPath("$.sshPasswordEnabledVmCount").isNumber())
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].allocatedCount")
                         .exists())
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].freeCount").exists());

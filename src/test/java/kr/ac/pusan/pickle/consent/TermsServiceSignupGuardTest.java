@@ -18,7 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 /**
- * Fail-closed guard for signup consent (sec m6): with no configured terms/privacy
+ * Fail-closed guard for signup consent: with no configured terms/privacy
  * document the per-document requirement loop finds nothing to enforce, so signup
  * must refuse rather than record a consent-free account. Pure unit test — the
  * empty-document state is awkward to reach against the seeded test DB.
