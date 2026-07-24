@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract: PATCH /admin/orgs/{orgId} body ({@code minProperties: 1}).
@@ -14,7 +15,7 @@ public class UpdateOrgRequest {
     private boolean nameSet;
 
     @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
-    private String description;
+    private @Nullable String description;
     private boolean descriptionSet;
 
     private OrgStatus status;

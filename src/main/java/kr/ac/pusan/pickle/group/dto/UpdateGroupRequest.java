@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.group.dto;
 
 import jakarta.validation.constraints.Size;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract: PATCH /groups/{groupId} body ({@code minProperties: 1}).
@@ -15,7 +16,7 @@ public class UpdateGroupRequest {
     private boolean nameSet;
 
     @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
-    private String description;
+    private @Nullable String description;
     private boolean descriptionSet;
 
     public String getName() {
@@ -27,6 +28,7 @@ public class UpdateGroupRequest {
         this.nameSet = true;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isNameSet() {
         return nameSet;
     }
@@ -40,10 +42,12 @@ public class UpdateGroupRequest {
         this.descriptionSet = true;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isDescriptionSet() {
         return descriptionSet;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
         return !nameSet && !descriptionSet;
     }

@@ -45,7 +45,7 @@ public record ApproveVmRequestRequest(
         // profanity + uniqueness); null/blank ⇒ AUTO at publish.
         @Nullable String grantedSubdomain,
 
-        String grantedRootDomain,
+        @Nullable String grantedRootDomain,
 
         // 최종 호스트명(슬러그, v0.12.0) — null/공백이면 기존처럼 자동 생성.
         // Blank ≡ null이므로 패턴이 공백을 허용하고, 예약어·중복(파기 VM 포함)은

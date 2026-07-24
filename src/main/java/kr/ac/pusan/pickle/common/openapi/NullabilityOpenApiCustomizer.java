@@ -98,17 +98,16 @@ final class NullabilityOpenApiCustomizer {
                         markNullable(prop, schema, component.getName());
                     }
                 }
-            } else {
-                // Presence-tracking request CLASSES (UpdateOrgRequest etc.)
-                // distinguish absent vs explicit null by design — every
-                // optional field genuinely accepts null.
-                Set<String> required = schema.getRequired() != null
-                        ? new LinkedHashSet<>(schema.getRequired())
-                        : Set.of();
-                for (Map.Entry<String, Schema> prop
-                        : ((Map<String, Schema>) schema.getProperties()).entrySet()) {
-                    if (!required.contains(prop.getKey())) {
-                        markNullable(prop.getValue(), schema, prop.getKey());
+            } else if (candidates.size() == 1) {
+                // Presence-tracking request CLASSES (UpdateOrgRequest etc.):
+                // same explicit @Nullable opt-in, read from the declared
+                // fields — "optional" alone does not imply null-accepting
+                // (e.g. a name whose omission means "keep").
+                for (java.lang.reflect.Field field : candidates.get(0).getDeclaredFields()) {
+                    Schema<?> prop = (Schema<?>) schema.getProperties().get(field.getName());
+                    if (prop != null
+                            && field.getAnnotatedType().isAnnotationPresent(Nullable.class)) {
+                        markNullable(prop, schema, field.getName());
                     }
                 }
             }
@@ -256,8 +255,11 @@ final class NullabilityOpenApiCustomizer {
                         return true; // include nested (non-independent) records
                     }
                 };
+        // Records (schema-backing DTOs) plus the few presence-tracking request
+        // CLASSES (…Request) that back PATCH bodies.
         TypeFilter recordFilter = (metadataReader, metadataReaderFactory) ->
-                "java.lang.Record".equals(metadataReader.getClassMetadata().getSuperClassName());
+                "java.lang.Record".equals(metadataReader.getClassMetadata().getSuperClassName())
+                        || metadataReader.getClassMetadata().getClassName().endsWith("Request");
         scanner.addIncludeFilter(recordFilter);
         Map<String, List<Class<?>>> index = new HashMap<>();
         for (BeanDefinition bd : scanner.findCandidateComponents(BASE_PACKAGE)) {

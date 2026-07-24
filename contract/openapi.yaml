@@ -374,7 +374,9 @@ components:
           type: "string"
         groupId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         orgId:
           format: "int64"
           type:
@@ -507,7 +509,9 @@ components:
           minimum: 256
           type: "integer"
         grantedRootDomain:
-          type: "string"
+          type:
+          - "string"
+          - "null"
         grantedSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
           type:
@@ -750,7 +754,9 @@ components:
         description:
           maxLength: 500
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         name:
           maxLength: 100
           minLength: 0
@@ -814,7 +820,9 @@ components:
           type: "integer"
         reqEndDate:
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         reqMemoryMb:
           format: "int32"
           minimum: 256
@@ -831,11 +839,15 @@ components:
         rootDomain:
           maxLength: 253
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         specReason:
           maxLength: 2000
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         templateId:
           format: "int64"
           type: "integer"
@@ -2733,24 +2745,10 @@ components:
           type:
           - "string"
           - "null"
-        descriptionSet:
-          type:
-          - "boolean"
-          - "null"
-        empty:
-          type:
-          - "boolean"
-          - "null"
         name:
           maxLength: 100
           minLength: 0
-          type:
-          - "string"
-          - "null"
-        nameSet:
-          type:
-          - "boolean"
-          - "null"
+          type: "string"
       type: "object"
     UpdateOrgRequest:
       properties:
@@ -2763,13 +2761,9 @@ components:
         name:
           maxLength: 100
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
         status:
-          anyOf:
-          - $ref: "#/components/schemas/OrgStatus"
-          - type: "null"
+          $ref: "#/components/schemas/OrgStatus"
       type: "object"
     UpdatePublicationRequest:
       properties:
@@ -2785,7 +2779,9 @@ components:
       properties:
         orgId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         role:
           $ref: "#/components/schemas/UserRole"
       type: "object"

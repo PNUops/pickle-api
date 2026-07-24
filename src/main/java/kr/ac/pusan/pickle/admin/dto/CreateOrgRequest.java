@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.common.validation.Slugs;
+import org.jspecify.annotations.Nullable;
 
 /** Contract: POST /admin/orgs body. */
 public record CreateOrgRequest(
@@ -16,5 +17,5 @@ public record CreateOrgRequest(
         String slug,
 
         @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
-        String description) {
+        @Nullable String description) {
 }

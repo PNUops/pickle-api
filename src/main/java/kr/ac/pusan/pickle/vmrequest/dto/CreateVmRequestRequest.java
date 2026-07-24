@@ -30,7 +30,7 @@ public record CreateVmRequestRequest(
         @Nullable String courseOrProject,
 
         @Size(max = 2000, message = "사양 사유는 2000자 이하여야 합니다.")
-        String specReason,
+        @Nullable String specReason,
 
         @Size(max = 2000, message = "기타 참고 사항은 2000자 이하여야 합니다.")
         @Nullable String extraNote,
@@ -49,7 +49,7 @@ public record CreateVmRequestRequest(
 
         @Nullable LocalDate reqStartDate,
 
-        LocalDate reqEndDate,
+        @Nullable LocalDate reqEndDate,
 
         @NotNull(message = "SSH 접속 필요 여부를 지정해 주세요.")
         Boolean needSsh,
@@ -65,7 +65,7 @@ public record CreateVmRequestRequest(
         @Nullable String desiredSubdomain,
 
         @Size(max = 253, message = "루트 도메인이 올바르지 않습니다.")
-        String rootDomain,
+        @Nullable String rootDomain,
 
         @Pattern(regexp = "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
                 message = "커스텀 도메인이 올바른 호스트명 형식이 아닙니다.")

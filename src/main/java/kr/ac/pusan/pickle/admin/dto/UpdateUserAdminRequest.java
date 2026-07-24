@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import kr.ac.pusan.pickle.user.UserRole;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Contract: PATCH /admin/users/{userId} body ({@code minProperties: 1}).
@@ -8,7 +9,7 @@ import kr.ac.pusan.pickle.user.UserRole;
  * {@code orgId}; other roles require it to be null/absent — validated in the
  * service.
  */
-public record UpdateUserAdminRequest(UserRole role, Long orgId) {
+public record UpdateUserAdminRequest(UserRole role, @Nullable Long orgId) {
 
     @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
