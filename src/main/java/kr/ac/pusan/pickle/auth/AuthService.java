@@ -59,6 +59,9 @@ public class AuthService {
     private static final String TIMING_EQUALIZER_HASH =
             "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7uHhZ8mCEyXbNP9qhrPQicvBSl2Fx16";
 
+    /** Suppression window for the already-registered notice mail (1 per hour). */
+    private static final String NOTICE_SCOPE = "signup_notice:acct";
+
     /** Password-reset link validity (contract: 30 minutes, single use). */
     private static final Duration PASSWORD_RESET_TOKEN_TTL = Duration.ofMinutes(30);
 
@@ -130,7 +133,11 @@ public class AuthService {
         String email = normalize(request.email());
         rateLimitService.hit("signup:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("signup:acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        // Every request-shape rejection has to happen before the address is
+        // looked at, or the validation order becomes the enumeration oracle the
+        // uniform 202 below is meant to remove.
         passwordPolicy.validate(request.password(), email);
+        termsService.validateSignupConsents(request.consents());
 
         if (userRepository.existsByEmail(email)) {
             // Burn the same BCrypt cost the creation path pays, so the two paths
@@ -141,8 +148,12 @@ public class AuthService {
         }
         try {
             transactionTemplate.executeWithoutResult(status -> createAccount(request, email, ip));
-        } catch (DataIntegrityViolationException raceWithConcurrentSignup) {
-            // Concurrent signup won the unique-email race → same uniform 202.
+        } catch (DataIntegrityViolationException integrityViolation) {
+            // Only the unique-email race answers 202; any other constraint failure
+            // is a real fault and must not be dressed up as a completed signup.
+            if (!userRepository.existsByEmail(email)) {
+                throw integrityViolation;
+            }
             sendAlreadyRegisteredNotice(email);
         }
         return signupAccepted();
@@ -452,6 +463,14 @@ public class AuthService {
      * notice, not an action mail.
      */
     private void sendAlreadyRegisteredNotice(String email) {
+        try {
+            // At most one notice per address per hour: the response is uniform, so
+            // signup must not become a way to flood a mailbox either. Suppression
+            // is silent — the caller still gets the same 202.
+            rateLimitService.hitHourly(NOTICE_SCOPE, email, 1);
+        } catch (ApiException suppressed) {
+            return;
+        }
         mailSender.send(verificationMailComposer.composeAlreadyRegistered(email));
     }
 

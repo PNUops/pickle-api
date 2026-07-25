@@ -78,14 +78,26 @@ class AuthFlowTest {
 
         // duplicate signup → the very same 202 (no account enumeration); the
         // address that is already registered gets a notice mail, not an account
-        postJson("/api/v1/auth/signup",
-                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
+        postSignup(Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동",
+                "consents", FULL_CONSENTS))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
         MailMessage notice = mockMailSender.lastMessageTo(EMAIL);
         assertThat(notice.subject()).contains("가입 안내");
         assertThat(notice.body()).contains("이미 가입된 계정");
         assertThat(notice.body()).as("a notice mail carries no token").doesNotContain("token=");
+
+        // ...and a request that fails validation fails identically for a taken and
+        // a free address, so the validation order is not an oracle either
+        Object staleConsents = List.of(Map.of("docType", "TERMS_OF_SERVICE", "version", 999));
+        postSignup(Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동",
+                "consents", staleConsents))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        postSignup(Map.of("email", "flow.free@pusan.ac.kr", "password", PASSWORD, "name", "홍길동",
+                "consents", staleConsents))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
         // verify-email → 200, account ACTIVE + PERSONAL group
         postJson("/api/v1/auth/verify-email", Map.of("token", verificationToken))
@@ -251,6 +263,22 @@ class AuthFlowTest {
     private org.springframework.test.web.servlet.ResultActions postJson(String uri, Map<String, ?> body)
             throws Exception {
         return mockMvc.perform(post(uri)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)));
+    }
+
+    /**
+     * Same, from a client IP of this test's own — the anti-enumeration cases below
+     * post several signups, and the default MockMvc address shares the per-IP
+     * signup window with every other test class.
+     */
+    private org.springframework.test.web.servlet.ResultActions postSignup(Map<String, ?> body)
+            throws Exception {
+        return mockMvc.perform(post("/api/v1/auth/signup")
+                .with(request -> {
+                    request.setRemoteAddr("10.96.0.1");
+                    return request;
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }

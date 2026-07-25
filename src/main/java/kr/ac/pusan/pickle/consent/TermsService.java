@@ -84,12 +84,14 @@ public class TermsService {
     // ── signup + seeding ─────────────────────────────────────────────────────
 
     /**
-     * Validates a signup's consents cover <b>every</b> current document at its
-     * current version (422 with field errors otherwise) and records the rows in
-     * the caller's transaction.
+     * Validates that a signup's consents cover <b>every</b> current document at
+     * its current version (422 with field errors otherwise). Takes no user, so
+     * signup can run it before it decides whether the address is free — an
+     * account-existence-dependent validation order would be an enumeration
+     * oracle in itself.
      */
-    @Transactional
-    public void recordSignupConsents(long userId, List<ConsentInput> inputs) {
+    @Transactional(readOnly = true)
+    public void validateSignupConsents(List<ConsentInput> inputs) {
         List<TermsVersion> current = currentVersionEntities();
         // Fail closed: with no configured documents the per-document loop below
         // finds nothing to require and would let a consent-free account through.
@@ -112,7 +114,13 @@ public class TermsService {
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
-        for (TermsVersion doc : current) {
+    }
+
+    /** Re-validates and records the signup consents in the caller's transaction. */
+    @Transactional
+    public void recordSignupConsents(long userId, List<ConsentInput> inputs) {
+        validateSignupConsents(inputs);
+        for (TermsVersion doc : currentVersionEntities()) {
             recordConsent(userId, doc.getId());
         }
     }
