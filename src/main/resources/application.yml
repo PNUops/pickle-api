@@ -150,24 +150,25 @@ pickle:
     # still succeeds whenever the records finally match.
     verification-timeout: 72h
   seed:
+    # Passwords have no default: the seeder runs only under dev/test and refuses
+    # to start on a blank value, so a reachable environment cannot end up with a
+    # seed account whose password is published in this file.
     sysadmin-email: ${PICKLE_SEED_SYSADMIN_EMAIL:admin@pickle.local}
-    sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:pickle-sysadmin-dev!}
+    sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:}
     orgadmin-email: ${PICKLE_SEED_ORGADMIN_EMAIL:orgadmin@pickle.local}
-    orgadmin-password: ${PICKLE_SEED_ORGADMIN_PASSWORD:pickle-orgadmin-dev!}
+    orgadmin-password: ${PICKLE_SEED_ORGADMIN_PASSWORD:}
 
 ---
-# dev: local/LXC development. Mock mail, permissive JWT secret default.
+# dev: local/LXC development. Mock mail. No secret defaults here on purpose —
+# the JWT secret and the credentials key come from the env only (base document),
+# so an unset value fails startup instead of silently signing tokens and
+# encrypting credentials with a value that is public in git.
 spring:
   config:
     activate:
       on-profile: dev
 
 pickle:
-  jwt:
-    secret: ${PICKLE_JWT_SECRET:pickle-dev-only-jwt-secret-0123456789abcdef}
-  credentials:
-    # dev-only default (like the JWT secret above) — real envs set the env var
-    encryption-key: ${PICKLE_CREDENTIALS_KEY:QxUeRChMTsvTKefqkSaWyxt17nWc2Iykf2Q9abjdcxs=}
   mail:
     # full mock-mail bodies (verification links = bearer tokens) go to this
     # service-user-only (rw-------) spool, not the journal

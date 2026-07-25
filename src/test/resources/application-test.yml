@@ -16,6 +16,11 @@ spring:
     enabled: true
 
 pickle:
+  seed:
+    # Test-only fixtures: the base document carries no seed password, so the
+    # dev/test seeder takes its values from here (dev takes them from the env).
+    sysadmin-password: pickle-test-sysadmin!
+    orgadmin-password: pickle-test-orgadmin!
   jwt:
     secret: pickle-test-jwt-secret-0123456789abcdef-test
   credentials:

@@ -1,7 +1,6 @@
 package kr.ac.pusan.pickle.seed;
 
 import java.time.Instant;
-import java.util.Set;
 import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -15,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
-import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>The configured PICKLE_SEED_* password is the source of truth: if an
  * existing seed account's hash no longer matches it, the hash is re-encoded at
- * startup, so rotating the env value rotates the account. Under the dev
- * profile (reachable beyond localhost) running on the application.yml default
- * passwords logs a WARN — set PICKLE_SEED_*_PASSWORD in /etc/pickle/api.env.
+ * startup, so rotating the env value rotates the account. There is no built-in
+ * default (it would be public in git), so a blank value fails startup — set
+ * PICKLE_SEED_*_PASSWORD in /etc/pickle/api.env.
  */
 @Component
 @Profile({"dev", "test"})
@@ -41,27 +39,21 @@ public class DevDataSeeder implements ApplicationRunner {
     static final String ORG_NAME = "SW교육센터";
     static final String ORG_SLUG = "sw-edu";
 
-    /** application.yml fallback values — public in git, never for a reachable env. */
-    private static final Set<String> KNOWN_DEFAULT_PASSWORDS =
-            Set.of("pickle-sysadmin-dev!", "pickle-orgadmin-dev!");
-
     private final UserRepository userRepository;
     private final OrgRepository orgRepository;
     private final PersonalGroupService personalGroupService;
     private final PasswordEncoder passwordEncoder;
     private final SeedProperties properties;
-    private final Environment environment;
     private final TermsService termsService;
 
     public DevDataSeeder(UserRepository userRepository, OrgRepository orgRepository,
             PersonalGroupService personalGroupService, PasswordEncoder passwordEncoder,
-            SeedProperties properties, Environment environment, TermsService termsService) {
+            SeedProperties properties, TermsService termsService) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.personalGroupService = personalGroupService;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
-        this.environment = environment;
         this.termsService = termsService;
     }
 
@@ -82,9 +74,10 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     private void seedUser(String email, String password, String name, UserRole role, Long orgId) {
-        if (environment.matchesProfiles("dev") && KNOWN_DEFAULT_PASSWORDS.contains(password)) {
-            log.warn("Seed account {} uses the public application.yml default password — "
-                    + "set PICKLE_SEED_*_PASSWORD env values for any reachable environment", email);
+        if (password == null || password.isBlank()) {
+            throw new IllegalStateException("Seed password for " + email + " is not set. Provide "
+                    + "PICKLE_SEED_SYSADMIN_PASSWORD / PICKLE_SEED_ORGADMIN_PASSWORD via "
+                    + "/etc/pickle/api.env (there is no default: it would be public in git).");
         }
         userRepository.findByEmail(email).ifPresentOrElse(existing -> {
             if (!passwordEncoder.matches(password, existing.getPasswordHash())) {

@@ -168,7 +168,7 @@ class ProvisioningEndToEndTest {
                 .get("id").asLong();
 
         // 6. the seeded ORG_ADMIN logs in and finds the request in the queue
-        String adminToken = login("orgadmin@pickle.local", "pickle-orgadmin-dev!");
+        String adminToken = login("orgadmin@pickle.local", "pickle-test-orgadmin!");
         mockMvc.perform(get("/api/v1/admin/vm-requests?status=SUBMITTED")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())

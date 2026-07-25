@@ -44,14 +44,15 @@ scripts/verify.sh        # 빌드 + 전체 테스트 (= mvn verify)
 
 ## 환경 변수
 
-관리형 환경에서는 비밀값을 `/etc/pickle/api.env`로 주입한다. 로컬에서는 직접
-export 하거나 dev/test 프로파일의 기본값에 의존한다.
+관리형 환경에서는 비밀값을 `/etc/pickle/api.env`로 주입한다. 로컬 실행도
+마찬가지로 비밀값을 직접 export 해야 한다 — 비밀값에는 커밋된 기본값이 없다
+(test 프로파일만 자체 고정값을 쓴다).
 
 | 변수 | 용도 | 기본값 |
 |---|---|---|
 | `PICKLE_DB_URL` / `PICKLE_DB_USER` / `PICKLE_DB_PASSWORD` | PostgreSQL 접속 정보 | `jdbc:postgresql://localhost:5432/pickle_dev` / `pickle` / `pickle` |
-| `PICKLE_JWT_SECRET` | HS256 서명 키(32바이트 이상). dev/test 외에는 **필수** — 없으면 기동 즉시 실패 | dev/test 전용 내장 기본값 |
-| `PICKLE_CREDENTIALS_KEY` | 가역 자격증명 저장(`vms.initial_password_enc`)용 AES-256-GCM 키(base64 32바이트). dev/test 외에는 **필수** — 없으면 기동 즉시 실패 | dev/test 전용 내장 기본값 |
+| `PICKLE_JWT_SECRET` | HS256 서명 키(32바이트 이상). **필수** — 없으면 기동 즉시 실패 | 없음 (test 프로파일만 자체 고정값) |
+| `PICKLE_CREDENTIALS_KEY` | 가역 자격증명 저장(`vms.initial_password_enc`)용 AES-256-GCM 키(base64 32바이트). **필수** — 없으면 기동 즉시 실패 | 없음 (test 프로파일만 자체 고정값) |
 | `PICKLE_VERIFICATION_BASE_URL` | 인증 메일이 링크하는 콘솔 이메일 인증 페이지 기본 URL | `https://pickle.pnuops.com/verify-email` |
 | `PICKLE_SMTP_HOST` / `PICKLE_SMTP_PORT` / `PICKLE_SMTP_USERNAME` / `PICKLE_SMTP_PASSWORD` | 실제 SMTP(staging/prod 프로파일 전용. dev/test는 `MockMailSender`로 메일을 로깅) | — |
 
@@ -59,13 +60,14 @@ export 하거나 dev/test 프로파일의 기본값에 의존한다.
 
 `DevDataSeeder`가 이메일/슬러그 기준으로 없을 때만 삽입한다(멱등).
 
-| 계정 | 환경 변수 | dev 기본값 |
+| 계정 | 환경 변수 | 기본값 |
 |---|---|---|
-| SYS_ADMIN | `PICKLE_SEED_SYSADMIN_EMAIL` / `PICKLE_SEED_SYSADMIN_PASSWORD` | `admin@pickle.local` / `pickle-sysadmin-dev!` |
+| SYS_ADMIN | `PICKLE_SEED_SYSADMIN_EMAIL` / `PICKLE_SEED_SYSADMIN_PASSWORD` | `admin@pickle.local` / 없음 |
 | 조직 `SW교육센터` (slug `sw-edu`) | — | 자동 생성 |
-| ORG_ADMIN (`sw-edu` 소속) | `PICKLE_SEED_ORGADMIN_EMAIL` / `PICKLE_SEED_ORGADMIN_PASSWORD` | `orgadmin@pickle.local` / `pickle-orgadmin-dev!` |
+| ORG_ADMIN (`sw-edu` 소속) | `PICKLE_SEED_ORGADMIN_EMAIL` / `PICKLE_SEED_ORGADMIN_PASSWORD` | `orgadmin@pickle.local` / 없음 |
 
-기본값은 개발 전용이므로 공유 환경에서는 반드시 환경 변수를 설정한다.
+비밀번호에는 기본값이 없다. dev 프로파일로 기동하려면 두 `*_PASSWORD` 값을
+반드시 설정해야 하며, 비어 있으면 기동이 실패한다.
 
 ## 구조
 

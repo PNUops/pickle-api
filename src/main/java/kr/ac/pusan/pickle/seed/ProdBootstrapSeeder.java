@@ -42,7 +42,7 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
     static final String PASSWORD_ENV = "PICKLE_BOOTSTRAP_ADMIN_PASSWORD";
     private static final int MIN_PASSWORD_LENGTH = 12;
 
-    /** Obvious placeholders (incl. the dev seed defaults) refused outright, case-insensitive. */
+    /** Obvious placeholders (incl. the retired dev seed defaults) refused outright, case-insensitive. */
     private static final Set<String> FORBIDDEN_PASSWORDS = Set.of(
             "changeme", "change-me", "password", "passw0rd", "admin", "administrator",
             "secret", "pickle", "pickle-sysadmin-dev!", "pickle-orgadmin-dev!",
