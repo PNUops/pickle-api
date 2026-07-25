@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -46,6 +47,11 @@ public class MfaService {
     private static final int RECOVERY_GROUP_LEN = 4;
     private static final Duration LOGIN_CHALLENGE_TTL = Duration.ofMinutes(5);
 
+    /** Rate-limit scopes for the password re-verification points (see {@link #guardPasswordAttempt}). */
+    private static final String SCOPE_BEGIN = "mfa_begin";
+    private static final String SCOPE_DISABLE = "mfa_disable";
+    private static final String SCOPE_RECOVERY = "mfa_recovery";
+
     private final SecureRandom random = new SecureRandom();
 
     private final UserRepository userRepository;
@@ -55,6 +61,7 @@ public class MfaService {
     private final TotpService totpService;
     private final CredentialCipher credentialCipher;
     private final PasswordEncoder passwordEncoder;
+    private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
 
@@ -62,6 +69,7 @@ public class MfaService {
             MfaRecoveryCodeRepository recoveryCodeRepository,
             MfaLoginTokenRepository loginTokenRepository, TotpService totpService,
             CredentialCipher credentialCipher, PasswordEncoder passwordEncoder,
+            RateLimitService rateLimitService,
             AuditService auditService, NotificationService notificationService) {
         this.userRepository = userRepository;
         this.userMfaRepository = userMfaRepository;
@@ -70,6 +78,7 @@ public class MfaService {
         this.totpService = totpService;
         this.credentialCipher = credentialCipher;
         this.passwordEncoder = passwordEncoder;
+        this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
     }
@@ -82,11 +91,14 @@ public class MfaService {
     // ── enrollment (/me/mfa/*) ───────────────────────────────────────────────
 
     @Transactional
-    public MfaSetupResponse begin(long userId, String password) {
+    public MfaSetupResponse begin(long userId, String password, String ip) {
         User user = loadUser(userId);
+        guardPasswordAttempt(SCOPE_BEGIN, user.getEmail(), ip);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            rateLimitService.registerLoginFailure(user.getEmail());
             throw passwordMismatch();
         }
+        rateLimitService.clearLoginFailures(user.getEmail());
         UserMfa mfa = userMfaRepository.findById(userId).orElseGet(() -> new UserMfa(userId));
         if (mfa.isEnrolled()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_ALREADY_ENROLLED,
@@ -124,14 +136,17 @@ public class MfaService {
     @Transactional
     public void disable(long userId, String password, String code, String recoveryCode, String ip) {
         User user = loadUser(userId);
+        guardPasswordAttempt(SCOPE_DISABLE, user.getEmail(), ip);
         UserMfa mfa = enrolledOrThrow(userId);
         requireExactlyOneCode(code, recoveryCode);
         boolean passwordOk = passwordEncoder.matches(password, user.getPasswordHash());
         // Consume a recovery code only when the password also checks out, so a
         // failed disable never burns a code.
         if (!passwordOk || !verifyEnrolledCode(mfa, userId, code, recoveryCode)) {
+            rateLimitService.registerLoginFailure(user.getEmail());
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
+        rateLimitService.clearLoginFailures(user.getEmail());
         userMfaRepository.deleteByUserId(userId);
         recoveryCodeRepository.deleteByUserId(userId);
 
@@ -142,14 +157,31 @@ public class MfaService {
     }
 
     @Transactional
-    public MfaRecoveryCodesResponse regenerateRecoveryCodes(long userId, String password, String code) {
+    public MfaRecoveryCodesResponse regenerateRecoveryCodes(long userId, String password, String code,
+            String ip) {
         User user = loadUser(userId);
+        guardPasswordAttempt(SCOPE_RECOVERY, user.getEmail(), ip);
         UserMfa mfa = enrolledOrThrow(userId);
         boolean passwordOk = passwordEncoder.matches(password, user.getPasswordHash());
         if (!passwordOk || !totpService.verify(activeSecret(mfa), code, Instant.now())) {
+            rateLimitService.registerLoginFailure(user.getEmail());
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
+        rateLimitService.clearLoginFailures(user.getEmail());
         return new MfaRecoveryCodesResponse(replaceRecoveryCodes(userId));
+    }
+
+    /**
+     * Guards a session-scoped password re-verification: the same dual-key sliding
+     * window as login (per IP and per account) plus the shared login lockout, so a
+     * hijacked session cannot brute-force the account password through the 2FA
+     * management endpoints. Failures below feed {@code registerLoginFailure}, so
+     * the lockout is one counter across login and every re-verification point.
+     */
+    private void guardPasswordAttempt(String scope, String email, String ip) {
+        rateLimitService.hit(scope + ":ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit(scope + ":acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.checkLoginLock(email);
     }
 
     // ── login step-up (/auth/login → /auth/mfa) ─────────────────────────────

@@ -31,8 +31,8 @@ public class MfaController {
 
     @PostMapping("/totp")
     public MfaSetupResponse begin(@AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody BeginMfaRequest request) {
-        return mfaService.begin(principal.id(), request.password());
+            @Valid @RequestBody BeginMfaRequest request, HttpServletRequest httpRequest) {
+        return mfaService.begin(principal.id(), request.password(), clientIp(httpRequest));
     }
 
     @PostMapping("/totp/activate")
@@ -52,7 +52,9 @@ public class MfaController {
     @PostMapping("/recovery-codes")
     public MfaRecoveryCodesResponse regenerateRecoveryCodes(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody RegenerateRecoveryCodesRequest request) {
-        return mfaService.regenerateRecoveryCodes(principal.id(), request.password(), request.code());
+            @Valid @RequestBody RegenerateRecoveryCodesRequest request,
+            HttpServletRequest httpRequest) {
+        return mfaService.regenerateRecoveryCodes(principal.id(), request.password(), request.code(),
+                clientIp(httpRequest));
     }
 }

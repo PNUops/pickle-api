@@ -89,7 +89,7 @@ class MfaLoginTest {
         User user = createActiveUser("mfa.login.recovery@pusan.ac.kr");
         String secret = enroll(user.getId());
         String recoveryCode = mfaService.regenerateRecoveryCodes(user.getId(), PASSWORD,
-                codeFor(secret)).recoveryCodes().get(0);
+                codeFor(secret), "10.98.3.1").recoveryCodes().get(0);
 
         MvcResult challenged = login(user.getEmail(), PASSWORD).andExpect(status().isOk()).andReturn();
         String mfaToken = json(challenged).get("mfaToken").asText();
@@ -127,7 +127,7 @@ class MfaLoginTest {
         User user = createActiveUser("mfa.race.recovery@pusan.ac.kr");
         String secret = enroll(user.getId());
         String recoveryCode = mfaService.regenerateRecoveryCodes(user.getId(), PASSWORD,
-                codeFor(secret)).recoveryCodes().get(0);
+                codeFor(secret), "10.98.3.1").recoveryCodes().get(0);
 
         // First consume wins; a second consume of the same code (parallel login)
         // loses the conditional used_at UPDATE and returns false.
@@ -152,8 +152,8 @@ class MfaLoginTest {
 
     /** Enrolls the user in-process and returns the raw Base32 secret. */
     private String enroll(long userId) {
-        MfaSetupResponse setup = mfaService.begin(userId, PASSWORD);
-        mfaService.activate(userId, codeFor(setup.secret()), "127.0.0.1");
+        MfaSetupResponse setup = mfaService.begin(userId, PASSWORD, "10.98.3.1");
+        mfaService.activate(userId, codeFor(setup.secret()), "10.98.3.1");
         return setup.secret();
     }
 

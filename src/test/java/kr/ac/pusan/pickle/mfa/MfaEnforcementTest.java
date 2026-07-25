@@ -71,7 +71,7 @@ class MfaEnforcementTest {
     }
 
     private void enroll(long userId) {
-        var setup = mfaService.begin(userId, PASSWORD);
+        var setup = mfaService.begin(userId, PASSWORD, "10.98.4.1");
         mfaService.activate(userId, totpService.generate(setup.secret(),
                 Instant.now().getEpochSecond() / 30), "127.0.0.1");
     }

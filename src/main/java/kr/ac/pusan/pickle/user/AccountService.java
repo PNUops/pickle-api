@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.RefreshTokenRepository;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -40,6 +41,7 @@ public class AccountService {
     private final UserSshKeyRepository userSshKeyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
+    private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final MfaService mfaService;
@@ -47,7 +49,8 @@ public class AccountService {
     public AccountService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             GroupMemberRepository groupMemberRepository, VmRepository vmRepository,
             UserSshKeyRepository userSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
-            UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
+            UserStatusChangeRepository userStatusChangeRepository,
+            RateLimitService rateLimitService, AuditService auditService,
             NotificationService notificationService, MfaService mfaService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -56,6 +59,7 @@ public class AccountService {
         this.userSshKeyRepository = userSshKeyRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
+        this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.mfaService = mfaService;
@@ -65,7 +69,13 @@ public class AccountService {
     public MessageResponse withdraw(long userId, String password, String totpCode, String recoveryCode,
             String ip) {
         User user = userRepository.findById(userId).orElseThrow(AccountService::sessionUserGone);
+        // Password-only oracle for a hijacked session (the mismatch below throws
+        // before the 2FA check): same dual-key window and shared lockout as login.
+        rateLimitService.hit("withdraw:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit("withdraw:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.checkLoginLock(user.getEmail());
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            rateLimitService.registerLoginFailure(user.getEmail());
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
@@ -73,9 +83,11 @@ public class AccountService {
         // 2FA-enrolled accounts must also present a valid TOTP or recovery code.
         if (mfaService.isEnrolled(user.getId())
                 && !mfaService.verifyEnrolledCode(user.getId(), totpCode, recoveryCode)) {
+            rateLimitService.registerLoginFailure(user.getEmail());
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
                     "본인 확인에 실패했습니다", "인증 코드를 다시 확인해 주세요.");
         }
+        rateLimitService.clearLoginFailures(user.getEmail());
 
         List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
                 .filter(member -> member.getGroup().getDeletedAt() == null)
