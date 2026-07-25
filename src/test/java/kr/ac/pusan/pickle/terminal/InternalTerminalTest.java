@@ -163,6 +163,39 @@ class InternalTerminalTest {
     }
 
     @Test
+    void redeemAfterPasswordChangeIsAccessRevoked() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING, "172.29.5.18", false, HOST_KEY);
+        String ticket = mintTicket(UUID.randomUUID().toString(), vmId);
+        // a password change or reset bumps token_version, invalidating every session
+        // of the account — including a ticket already handed out.
+        bumpTokenVersion();
+        redeem(ticket, SSHGW_IP)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("ACCESS_REVOKED"));
+    }
+
+    @Test
+    void revalidateAfterPasswordChangeRevokesTheLiveSession() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING, "172.29.5.19", false, HOST_KEY);
+        String sessionId = UUID.randomUUID().toString();
+        redeem(mintTicket(sessionId, vmId), SSHGW_IP).andExpect(status().isOk());
+        internal("/internal/terminal/session-start", SSHGW_IP,
+                Map.of("sessionId", sessionId, "clientIp", CLIENT_IP))
+                .andExpect(status().isNoContent());
+        internal("/internal/terminal/revalidate", SSHGW_IP, Map.of("sessionId", sessionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allow").value(true));
+
+        bumpTokenVersion();
+
+        // the next 60s poll ends the in-progress session
+        internal("/internal/terminal/revalidate", SSHGW_IP, Map.of("sessionId", sessionId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.allow").value(false))
+                .andExpect(jsonPath("$.reason").value("ACCESS_REVOKED"));
+    }
+
+    @Test
     void redeemWithNoHostKeyStillReturns200WithEmptyArray() throws Exception {
         // A VM whose host key was never collected redeems with an EMPTY hostKeys
         // array (200) — the bridge owns the fail-closed refusal (WS 4006), not api.
@@ -179,7 +212,8 @@ class InternalTerminalTest {
     void sessionStartAuditsLifecycleOnlyThenConflictsOnRepeat() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, "172.29.5.20", false, HOST_KEY);
         String sessionId = UUID.randomUUID().toString();
-        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId);
+        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId,
+                member.getTokenVersion());
 
         internal("/internal/terminal/session-start", SSHGW_IP,
                 Map.of("sessionId", sessionId, "clientIp", CLIENT_IP))
@@ -207,7 +241,8 @@ class InternalTerminalTest {
     void sessionEndAuditsCountsOnlyAndIsIdempotent() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, "172.29.5.21", false, HOST_KEY);
         String sessionId = UUID.randomUUID().toString();
-        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId);
+        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId,
+                member.getTokenVersion());
         sessionRegistry.markStarted(sessionId, CLIENT_IP);
 
         Map<String, Object> body = Map.of("sessionId", sessionId, "reason", "CLIENT_CLOSED",
@@ -232,7 +267,8 @@ class InternalTerminalTest {
     void revalidateAllowsThenDeniesOnKillSwitchAndUnknown() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, "172.29.5.22", false, HOST_KEY);
         String sessionId = UUID.randomUUID().toString();
-        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId);
+        sessionRegistry.registerPending(sessionId, member.getId(), UserRole.USER, vmId, orgId,
+                member.getTokenVersion());
         sessionRegistry.markStarted(sessionId, CLIENT_IP);
 
         internal("/internal/terminal/revalidate", SSHGW_IP, Map.of("sessionId", sessionId))
@@ -272,7 +308,8 @@ class InternalTerminalTest {
     // ── helpers ────────────────────────────────────────────────────────────
 
     private String mintTicket(String sessionId, long vmId) {
-        return ticketRegistry.mint(sessionId, member.getId(), vmId, orgId, UserRole.USER).ticket();
+        return ticketRegistry.mint(sessionId, member.getId(), vmId, orgId, UserRole.USER,
+                member.getTokenVersion()).ticket();
     }
 
     private ResultActions redeem(String ticket, String peerIp) throws Exception {
@@ -320,6 +357,12 @@ class InternalTerminalTest {
                 values ('term-redeem-test', 'https://127.0.0.1:8006', 8, 16384, 'vmbr2', 'local-lvm', ?)
                 returning id
                 """, Long.class, poolId);
+    }
+
+    /** Simulates what a password change/reset does to every session of the account. */
+    private void bumpTokenVersion() {
+        jdbcTemplate.update("update users set token_version = token_version + 1 where id = ?",
+                member.getId());
     }
 
     private User ensureUser(String email, String name) {

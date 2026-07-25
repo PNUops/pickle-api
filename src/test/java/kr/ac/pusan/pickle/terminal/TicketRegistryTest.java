@@ -66,7 +66,7 @@ class TicketRegistryTest {
         TestClock clock = new TestClock(T0);
         TicketRegistry registry = new TicketRegistry(clock, propsWithTtl(Duration.ofSeconds(60)));
 
-        Minted minted = registry.mint("sess-1", 42L, 55L, 7L, UserRole.USER);
+        Minted minted = registry.mint("sess-1", 42L, 55L, 7L, UserRole.USER, 0);
         assertThat(minted.ticket()).isNotBlank();
         assertThat(minted.expiresAt()).isEqualTo(T0.plusSeconds(60));
 
@@ -95,7 +95,7 @@ class TicketRegistryTest {
     void expiredTicketIsConsumedButRejected() {
         TestClock clock = new TestClock(T0);
         TicketRegistry registry = new TicketRegistry(clock, propsWithTtl(Duration.ofSeconds(60)));
-        Minted minted = registry.mint("sess-2", 1L, 2L, 3L, UserRole.USER);
+        Minted minted = registry.mint("sess-2", 1L, 2L, 3L, UserRole.USER, 0);
 
         clock.advance(Duration.ofSeconds(61));
         assertThat(registry.redeem(minted.ticket())).isEmpty();
@@ -107,8 +107,8 @@ class TicketRegistryTest {
     void capCountsTrackMintAndRedeem() {
         TicketRegistry registry = new TicketRegistry(new TestClock(T0),
                 propsWithTtl(Duration.ofSeconds(60)));
-        Minted a = registry.mint("s-a", 9L, 100L, 5L, UserRole.USER);
-        registry.mint("s-b", 9L, 100L, 5L, UserRole.USER);
+        Minted a = registry.mint("s-a", 9L, 100L, 5L, UserRole.USER, 0);
+        registry.mint("s-b", 9L, 100L, 5L, UserRole.USER, 0);
 
         assertThat(registry.countUser(9L)).isEqualTo(2);
         assertThat(registry.countVm(100L)).isEqualTo(2);
@@ -125,7 +125,7 @@ class TicketRegistryTest {
                 propsWithTtl(Duration.ofSeconds(60)));
         // Repeat to make a lost-update race, if any, observable.
         for (int iteration = 0; iteration < 500; iteration++) {
-            Minted minted = registry.mint("sess-" + iteration, 1L, 1L, 1L, UserRole.USER);
+            Minted minted = registry.mint("sess-" + iteration, 1L, 1L, 1L, UserRole.USER, 0);
             AtomicInteger winners = new AtomicInteger();
             int racers = 4;
             CountDownLatch start = new CountDownLatch(1);

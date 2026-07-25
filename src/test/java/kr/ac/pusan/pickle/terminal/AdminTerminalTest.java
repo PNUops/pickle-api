@@ -173,7 +173,7 @@ class AdminTerminalTest {
     private String startedSession(long orgId) {
         String sessionId = UUID.randomUUID().toString();
         long vmId = 800_000L + Math.abs(sessionId.hashCode() % 100_000);
-        sessionRegistry.registerPending(sessionId, sysAdmin.getId(), UserRole.USER, vmId, orgId);
+        sessionRegistry.registerPending(sessionId, sysAdmin.getId(), UserRole.USER, vmId, orgId, 0);
         sessionRegistry.markStarted(sessionId, "203.0.113.9");
         return sessionId;
     }

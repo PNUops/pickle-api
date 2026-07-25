@@ -146,9 +146,16 @@ public class TerminalService {
         //    reserved slot, so double-mint abuse in the 60s window is bounded).
         enforceCaps(actor.id(), vm.getId(), vm.getOrgId());
 
+        // 7) capture the session's account token version. A password change or
+        //    reset bumps it, and the shared redeem/revalidate gate refuses anything
+        //    minted under an older value — that is what ends a live terminal.
+        int tokenVersion = userRepository.findById(actor.id())
+                .map(User::getTokenVersion)
+                .orElseThrow(TerminalService::sessionUserGone);
+
         String sessionId = UUID.randomUUID().toString();
         TicketRegistry.Minted minted = ticketRegistry.mint(sessionId, actor.id(), vm.getId(),
-                vm.getOrgId(), actor.role());
+                vm.getOrgId(), actor.role(), tokenVersion);
         return TerminalTicketResponse.of(sessionId, minted.ticket(), minted.expiresAt());
     }
 
@@ -196,7 +203,7 @@ public class TerminalService {
             return RedeemOutcome.denied(TerminalReasons.TICKET_INVALID);
         }
         TicketRegistry.Ticket t = consumed.get();
-        Authz authz = authorize(t.vmId(), t.userId());
+        Authz authz = authorize(t.vmId(), t.userId(), t.tokenVersion());
         if (!authz.allowed()) {
             return RedeemOutcome.denied(authz.reason());
         }
@@ -210,7 +217,7 @@ public class TerminalService {
         // set, so the api returns 200 and lets the bridge own that refusal.
         List<String> hostKeys = SshGatewayRouteService.splitHostKeys(vm.getSshHostKey());
         sessionRegistry.registerPending(t.sessionId(), t.userId(), t.userRole(), vm.getId(),
-                vm.getOrgId());
+                vm.getOrgId(), t.tokenVersion());
         return RedeemOutcome.granted(new TerminalRedeemResponse(t.sessionId(), t.userId(),
                 vm.getId(), vmIp, SSH_PORT, vm.getSshUsername(), hostKeys));
     }
@@ -278,7 +285,7 @@ public class TerminalService {
         // the 60s poll is the session heartbeat — refresh liveness so the leak
         // pruner never evicts a genuinely-live session.
         sessionRegistry.touch(sessionId);
-        Authz authz = authorize(s.get().vmId(), s.get().userId());
+        Authz authz = authorize(s.get().vmId(), s.get().userId(), s.get().tokenVersion());
         return authz.allowed() ? TerminalRevalidateResponse.allowed()
                 : TerminalRevalidateResponse.denied(authz.reason());
     }
@@ -347,13 +354,23 @@ public class TerminalService {
 
     // ── internals ─────────────────────────────────────────────────────────────
 
-    /** Authorization re-check shared by redeem and revalidate. */
-    private Authz authorize(long vmId, long userId) {
+    /**
+     * Authorization re-check shared by redeem and revalidate. {@code tokenVersion}
+     * is the value captured when the ticket was minted; a mismatch means the
+     * account's sessions were invalidated in the meantime (password change or
+     * reset, withdrawal), so the terminal is revoked like any other session — the
+     * bridge polls every 60 seconds, which bounds how long a live session outlives
+     * the password change.
+     */
+    private Authz authorize(long vmId, long userId, int tokenVersion) {
         if (!settingsService.bool(SettingsService.WEB_TERMINAL_ENABLED, false)) {
             return Authz.deny(TerminalReasons.TERMINAL_DISABLED);
         }
         User user = userRepository.findById(userId).orElse(null);
         if (user == null || user.getStatus() != UserStatus.ACTIVE) {
+            return Authz.deny(TerminalReasons.ACCESS_REVOKED);
+        }
+        if (user.getTokenVersion() != tokenVersion) {
             return Authz.deny(TerminalReasons.ACCESS_REVOKED);
         }
         Vm vm = vmRepository.findById(vmId).orElse(null);
@@ -389,6 +406,11 @@ public class TerminalService {
 
     private static String roleName(UserRole role) {
         return role != null ? role.name() : null;
+    }
+
+    private static ApiException sessionUserGone() {
+        return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
+                "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
     }
 
     private static ApiException vmNotFound() {

@@ -61,7 +61,7 @@ class TerminalSessionRegistryTest {
     void pendingLeakIsPrunedAfterGraceAndFreesTheCap() {
         TestClock clock = new TestClock(T0);
         TerminalSessionRegistry registry = new TerminalSessionRegistry(clock, props());
-        registry.registerPending("pending-1", 42L, UserRole.USER, 55L, 7L);
+        registry.registerPending("pending-1", 42L, UserRole.USER, 55L, 7L, 0);
         assertThat(registry.countUser(42L)).isEqualTo(1);
 
         clock.advance(PENDING_GRACE.plusSeconds(1));
@@ -75,7 +75,7 @@ class TerminalSessionRegistryTest {
     void pendingSurvivesWithinGrace() {
         TestClock clock = new TestClock(T0);
         TerminalSessionRegistry registry = new TerminalSessionRegistry(clock, props());
-        registry.registerPending("pending-2", 1L, UserRole.USER, 2L, 3L);
+        registry.registerPending("pending-2", 1L, UserRole.USER, 2L, 3L, 0);
 
         clock.advance(PENDING_GRACE.minusSeconds(1));
         registry.prune();
@@ -87,7 +87,7 @@ class TerminalSessionRegistryTest {
     void startedLeakIsPrunedAfterStaleAndLeavesListAndCap() {
         TestClock clock = new TestClock(T0);
         TerminalSessionRegistry registry = new TerminalSessionRegistry(clock, props());
-        registry.registerPending("started-1", 9L, UserRole.USER, 100L, 5L);
+        registry.registerPending("started-1", 9L, UserRole.USER, 100L, 5L, 0);
         registry.markStarted("started-1", "203.0.113.5");
         assertThat(registry.started()).hasSize(1);
 
@@ -102,7 +102,7 @@ class TerminalSessionRegistryTest {
     void revalidationHeartbeatKeepsStartedSessionAlive() {
         TestClock clock = new TestClock(T0);
         TerminalSessionRegistry registry = new TerminalSessionRegistry(clock, props());
-        registry.registerPending("started-2", 9L, UserRole.USER, 101L, 5L);
+        registry.registerPending("started-2", 9L, UserRole.USER, 101L, 5L, 0);
         registry.markStarted("started-2", "203.0.113.6");
 
         // advance most of the stale window, then the bridge polls (touch)...

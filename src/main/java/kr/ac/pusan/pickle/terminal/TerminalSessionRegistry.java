@@ -60,10 +60,12 @@ public class TerminalSessionRegistry {
      * One reported session. {@code startedAt}/{@code clientIp} are null while
      * PENDING (redeemed, SSH not yet reported live). {@code lastSeenAt} is the
      * newest sign of life (redeem, start, or a revalidation heartbeat) and drives
-     * leak pruning.
+     * leak pruning. {@code tokenVersion} is the account token version the ticket
+     * was minted under, so the revalidation gate can end the session once a
+     * password change bumps it.
      */
     public record MirrorSession(String sessionId, long userId, UserRole userRole, long vmId,
-            long orgId, String clientIp, Instant startedAt, Instant lastSeenAt) {
+            long orgId, int tokenVersion, String clientIp, Instant startedAt, Instant lastSeenAt) {
 
         public boolean started() {
             return startedAt != null;
@@ -72,10 +74,10 @@ public class TerminalSessionRegistry {
 
     /** Registers a redeemed-but-not-started session (counts toward caps). */
     public void registerPending(String sessionId, long userId, UserRole userRole, long vmId,
-            long orgId) {
+            long orgId, int tokenVersion) {
         Instant now = clock.instant();
-        byId.put(sessionId,
-                new MirrorSession(sessionId, userId, userRole, vmId, orgId, null, null, now));
+        byId.put(sessionId, new MirrorSession(sessionId, userId, userRole, vmId, orgId,
+                tokenVersion, null, null, now));
     }
 
     /**
@@ -92,7 +94,7 @@ public class TerminalSessionRegistry {
             transitioned[0] = true;
             Instant now = clock.instant();
             return new MirrorSession(existing.sessionId(), existing.userId(), existing.userRole(),
-                    existing.vmId(), existing.orgId(), clientIp, now, now);
+                    existing.vmId(), existing.orgId(), existing.tokenVersion(), clientIp, now, now);
         });
         // false when the session is absent (never redeemed) or already started.
         return transitioned[0];
@@ -102,7 +104,7 @@ public class TerminalSessionRegistry {
     public void touch(String sessionId) {
         byId.computeIfPresent(sessionId, (id, existing) -> new MirrorSession(existing.sessionId(),
                 existing.userId(), existing.userRole(), existing.vmId(), existing.orgId(),
-                existing.clientIp(), existing.startedAt(), clock.instant()));
+                existing.tokenVersion(), existing.clientIp(), existing.startedAt(), clock.instant()));
     }
 
     /** Removes the mirror entry (session-end); returns it if it was present. */

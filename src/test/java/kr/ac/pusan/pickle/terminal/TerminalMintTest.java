@@ -151,7 +151,7 @@ class TerminalMintTest {
         // fill the per-user cap (3) with reported mirror sessions, then mint once.
         for (int i = 0; i < 3; i++) {
             sessionRegistry.registerPending("cap-" + UUID.randomUUID(), member.getId(),
-                    UserRole.USER, vmId, orgId);
+                    UserRole.USER, vmId, orgId, 0);
         }
         mint(memberToken, vmId)
                 .andExpect(status().isConflict())

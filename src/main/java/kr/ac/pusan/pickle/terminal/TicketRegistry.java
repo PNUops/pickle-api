@@ -55,9 +55,14 @@ public class TicketRegistry {
         this.ttl = properties.ticketTtl();
     }
 
-    /** The mint-time authorization decision bound to a ticket (redeem re-checks). */
+    /**
+     * The mint-time authorization decision bound to a ticket (redeem re-checks).
+     * {@code tokenVersion} is the issuing session's account token version: a
+     * password change or reset bumps it, and redeem refuses a ticket minted under
+     * an older version.
+     */
     public record Ticket(String sessionId, long userId, long vmId, long orgId, UserRole userRole,
-            Instant expiresAt) {
+            int tokenVersion, Instant expiresAt) {
     }
 
     /** The value handed to the caller — the raw ticket travels only here, once. */
@@ -68,13 +73,15 @@ public class TicketRegistry {
      * Issues a fresh one-time ticket bound to the session/user/VM. Returns the raw
      * ticket (to embed in the mint response) and its expiry.
      */
-    public Minted mint(String sessionId, long userId, long vmId, long orgId, UserRole userRole) {
+    public Minted mint(String sessionId, long userId, long vmId, long orgId, UserRole userRole,
+            int tokenVersion) {
         purgeExpired();
         byte[] raw = new byte[TOKEN_BYTES];
         random.nextBytes(raw);
         String ticket = base64Url.encodeToString(raw);
         Instant expiresAt = clock.instant().plus(ttl);
-        byHash.put(hash(ticket), new Ticket(sessionId, userId, vmId, orgId, userRole, expiresAt));
+        byHash.put(hash(ticket),
+                new Ticket(sessionId, userId, vmId, orgId, userRole, tokenVersion, expiresAt));
         return new Minted(ticket, expiresAt);
     }
 
