@@ -64,15 +64,6 @@ class AuthFlowTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
 
-        // duplicate signup → 409 AUTH_EMAIL_ALREADY_REGISTERED (problem+json)
-        postJson("/api/v1/auth/signup",
-                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
-                .andExpect(status().isConflict())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.code").value("AUTH_EMAIL_ALREADY_REGISTERED"))
-                .andExpect(jsonPath("$.title").isNotEmpty())
-                .andExpect(jsonPath("$.status").value(409));
-
         // login before verification → 403 AUTH_EMAIL_NOT_VERIFIED
         postJson("/api/v1/auth/login", Map.of("email", EMAIL, "password", PASSWORD))
                 .andExpect(status().isForbidden())
@@ -84,6 +75,17 @@ class AuthFlowTest {
         Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
         assertThat(matcher.find()).as("verification link with token in mail body").isTrue();
         String verificationToken = matcher.group(1);
+
+        // duplicate signup → the very same 202 (no account enumeration); the
+        // address that is already registered gets a notice mail, not an account
+        postJson("/api/v1/auth/signup",
+                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+        MailMessage notice = mockMailSender.lastMessageTo(EMAIL);
+        assertThat(notice.subject()).contains("가입 안내");
+        assertThat(notice.body()).contains("이미 가입된 계정");
+        assertThat(notice.body()).as("a notice mail carries no token").doesNotContain("token=");
 
         // verify-email → 200, account ACTIVE + PERSONAL group
         postJson("/api/v1/auth/verify-email", Map.of("token", verificationToken))

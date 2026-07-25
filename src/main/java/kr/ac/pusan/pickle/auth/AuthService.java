@@ -31,7 +31,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Signup / verification / login / refresh-rotation / logout. */
 @Service
@@ -75,6 +77,7 @@ public class AuthService {
     private final AuthProperties authProperties;
     private final MfaService mfaService;
     private final TermsService termsService;
+    private final TransactionTemplate transactionTemplate;
 
     public AuthService(UserRepository userRepository,
             EmailVerificationRepository emailVerificationRepository,
@@ -90,7 +93,8 @@ public class AuthService {
             VerificationMailComposer verificationMailComposer,
             AuthProperties authProperties,
             MfaService mfaService,
-            TermsService termsService) {
+            TermsService termsService,
+            PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
@@ -106,9 +110,22 @@ public class AuthService {
         this.authProperties = authProperties;
         this.mfaService = mfaService;
         this.termsService = termsService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * Signup. Anti-enumeration: the response is the same 202 whether or not the
+     * address is already on file, matching login (uniform 401) and password reset
+     * (uniform 202). An address that already has an account (in any status,
+     * including the permanently retained WITHDRAWN one) creates nothing and gets a
+     * notice mail instead, so the person who actually owns the address learns of
+     * the attempt while the requester learns nothing.
+     *
+     * <p>Not transactional as a whole: the unique-email race below has to answer
+     * 202 after the failed insert, which a rollback-only outer transaction could
+     * not commit. Account creation itself runs in {@link #transactionTemplate} so
+     * an incomplete consent set (422) still rolls the user back and sends no mail.</p>
+     */
     public MessageResponse signup(SignupRequest request, String ip) {
         String email = normalize(request.email());
         rateLimitService.hit("signup:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
@@ -116,23 +133,33 @@ public class AuthService {
         passwordPolicy.validate(request.password(), email);
 
         if (userRepository.existsByEmail(email)) {
-            throw emailAlreadyRegistered();
+            // Burn the same BCrypt cost the creation path pays, so the two paths
+            // are not told apart by response time (cf. TIMING_EQUALIZER_HASH).
+            passwordEncoder.encode(request.password());
+            sendAlreadyRegisteredNotice(email);
+            return signupAccepted();
         }
-
-        User user;
         try {
-            user = userRepository.save(
-                    new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
+            transactionTemplate.executeWithoutResult(status -> createAccount(request, email, ip));
         } catch (DataIntegrityViolationException raceWithConcurrentSignup) {
-            // Concurrent signup lost the unique-email race → same 409 as above.
-            throw emailAlreadyRegistered();
+            // Concurrent signup won the unique-email race → same uniform 202.
+            sendAlreadyRegisteredNotice(email);
         }
+        return signupAccepted();
+    }
+
+    private void createAccount(SignupRequest request, String email, String ip) {
+        User user = userRepository.save(
+                new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
         // Consent completeness is validated here (422 rolls the whole tx back, so
         // no verification mail is sent for an incomplete signup).
         termsService.recordSignupConsents(user.getId(), request.consents());
         sendVerificationMail(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_SIGNUP,
                 "user", user.getId(), Map.of("email", user.getEmail()), ip);
+    }
+
+    private static MessageResponse signupAccepted() {
         return new MessageResponse("인증 메일을 발송했습니다. 메일함을 확인해 주세요.");
     }
 
@@ -418,6 +445,16 @@ public class AuthService {
         mailSender.send(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken));
     }
 
+    /**
+     * Tells the owner of an already-registered address that someone tried to sign
+     * up with it, and how to recover the account. Deliberately identical for every
+     * account status (WITHDRAWN included) and carries no link or token — it is a
+     * notice, not an action mail.
+     */
+    private void sendAlreadyRegisteredNotice(String email) {
+        mailSender.send(verificationMailComposer.composeAlreadyRegistered(email));
+    }
+
     private void sendPasswordResetMail(User user) {
         Instant now = Instant.now();
         // Only the last link stays valid: invalidate the user's open reset rows.
@@ -430,11 +467,6 @@ public class AuthService {
 
     private static String normalize(String email) {
         return Texts.normalizeEmail(email);
-    }
-
-    private static ApiException emailAlreadyRegistered() {
-        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_EMAIL_ALREADY_REGISTERED,
-                "이미 가입된 이메일입니다", "해당 이메일로 가입된 계정이 이미 존재합니다.");
     }
 
     private static ApiException verificationTokenGone() {

@@ -35,7 +35,7 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfig {
 
     /** Contract version served in {@code info.version}; bump on any contract change. */
-    public static final String CONTRACT_VERSION = "0.13.0";
+    public static final String CONTRACT_VERSION = "0.14.0";
 
     static {
         // Domain enums become named components (shared TS union types on the

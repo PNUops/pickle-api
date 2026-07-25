@@ -220,14 +220,19 @@ class AccountLifecycleTest {
                 select count(*) from user_status_changes
                  where user_id = ? and to_status = 'WITHDRAWN' and actor_id = ?
                 """, Long.class, user.getId(), user.getId())).isEqualTo(1L);
-        // same email can never re-register (consents present so the 409 fires, not bean validation)
+        // the retained row still blocks re-registration, but the answer is the same
+        // 202 every signup gets (consents present so nothing fails bean validation)
         postPublic("/api/v1/auth/signup",
                 Map.of("email", user.getEmail(), "password", NEW_PASSWORD, "name", "재가입시도",
                         "consents", List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("AUTH_EMAIL_ALREADY_REGISTERED"));
+                .andExpect(status().isAccepted());
+        assertThat(jdbcTemplate.queryForObject("select count(*) from users where email = ?",
+                Long.class, user.getEmail())).as("no account is created for a taken address")
+                .isEqualTo(1L);
+        User stillWithdrawn = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(stillWithdrawn.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
