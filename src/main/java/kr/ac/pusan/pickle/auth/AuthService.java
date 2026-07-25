@@ -368,12 +368,17 @@ public class AuthService {
         User user = userRepository.findById(userId).orElseThrow(AuthService::sessionUserGone);
         rateLimitService.hit("password_change:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("password_change:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.checkLoginLock(user.getEmail());
 
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            // Same counter as login and the other re-verification points, so a
+            // hijacked session cannot switch endpoints to keep guessing.
+            rateLimitService.registerLoginFailure(user.getEmail());
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_PASSWORD_CHANGE,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
+        rateLimitService.clearLoginFailures(user.getEmail());
         passwordPolicy.validate(newPassword, user.getEmail());
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));

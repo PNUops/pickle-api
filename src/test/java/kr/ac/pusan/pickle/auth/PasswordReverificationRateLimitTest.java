@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.auth;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -25,7 +26,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Session-scoped password re-verification points (2FA enrollment/disable/recovery
- * regeneration and withdrawal) share the login rate limiter: the dual-key sliding
+ * regeneration, password change, withdrawal) share the login rate limiter: the dual-key sliding
  * window bounds the attempt rate, and a mismatch feeds the same escalating account
  * lockout as a failed login. Threat model: a hijacked session brute-forcing the
  * account password against an authenticated endpoint.
@@ -93,6 +94,24 @@ class PasswordReverificationRateLimitTest {
     }
 
     @Test
+    void passwordChangeFailuresLockTheAccountOut() throws Exception {
+        User user = createActiveUser("reverify.change.lockout@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        String ip = "10.97.4.1";
+
+        for (int i = 0; i < 5; i++) {
+            putJson("/api/v1/me/password", access,
+                    Map.of("currentPassword", WRONG_PASSWORD, "newPassword", "An0ther-good-pw!"), ip)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_MISMATCH"));
+        }
+        // the counter is shared, so switching endpoints does not buy more guesses
+        postJson("/api/v1/me/withdraw", access, Map.of("password", PASSWORD), ip)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
     void withdrawPasswordFailuresLockTheAccountOut() throws Exception {
         User user = createActiveUser("reverify.withdraw.lockout@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
@@ -140,6 +159,18 @@ class PasswordReverificationRateLimitTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    private ResultActions putJson(String path, String access, Map<String, Object> body, String ip)
+            throws Exception {
+        return mockMvc.perform(put(path)
+                .with(request -> {
+                    request.setRemoteAddr(ip);
+                    return request;
+                })
+                .header("Authorization", "Bearer " + access)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)));
     }
 
     private ResultActions postJson(String path, String access, Map<String, Object> body, String ip)
