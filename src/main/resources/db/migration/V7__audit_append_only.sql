@@ -11,8 +11,8 @@
 --   owner's own UPDATE/DELETE/TRUNCATE is effective and those statements now
 --   fail. The owner can still re-GRANT itself the privileges, but that takes
 --   a deliberate act — the boundary is "no accidental/implicit mutation", not
---   protection against a malicious owner. Post-deploy verification is in the
---   operator runbook.
+--   protection against a malicious owner. After deploying, verify that UPDATE
+--   and DELETE on audit_logs are refused for the application role.
 --
 -- current_user is resolved dynamically because the executing role differs per
 -- environment (postgres in zonky, pickle in dev/prod).

@@ -1,4 +1,4 @@
--- Defense-in-depth domain CHECK constraints (review finding C4). The service
+-- Defense-in-depth domain CHECK constraints. The service
 -- layer already enforces these invariants; the constraints guarantee no code
 -- path (or manual/JDBC write) can persist a row that contradicts them.
 -- Each constraint mirrors an invariant that already holds in the code:
