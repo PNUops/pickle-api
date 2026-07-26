@@ -45,7 +45,7 @@ export PICKLE_SEED_SYSADMIN_PASSWORD=...
 export PICKLE_SEED_ORGADMIN_PASSWORD=...
 
 mvn spring-boot:run -Dspring-boot.run.profiles=dev   # 로컬 PostgreSQL 18(citext 확장 필요), :8080 기동
-scripts/verify.sh        # checkstyle + 빌드 + 전체 테스트 (= mvn verify) + 의존성 감사
+scripts/verify.sh        # checkstyle + 빌드 + 전체 테스트 (= mvn verify) + 공개 위생 검사 + 의존성 감사
 ```
 
 프로파일을 지정하지 않으면 기동이 실패한다. `MailSender` 구현은 프로파일 한정
@@ -159,3 +159,5 @@ scripts/                            verify + 훅 헬퍼
 `type: subject` 형식, 영어 명령형, 72자 이내(git 훅이 강제). type은 feat, fix,
 docs, test, chore, refactor, perf, build, style, ci, revert, merge 중 하나이며
 제목 끝에 마침표를 붙이지 않는다.
+
+`scripts/hygiene.sh`는 이 저장소가 공개물이라는 전제를 검사한다 — 비공개 문서 저장소나 인프라 저장소를 가리키는 참조, 내부 진행 표기(마일스톤·웨이브 등)가 있으면 검증이 실패한다. 수동 점검이 두 차례 위반을 놓친 뒤 자동화했다.
