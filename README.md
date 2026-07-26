@@ -88,6 +88,7 @@ dev 프로파일에서는 메일이 실제로 발송되지 않는다. `MockMailS
 | `PICKLE_CREDENTIALS_KEY` | 가역 자격증명 저장(`vms.initial_password_enc`)용 AES-256-GCM 키(base64 32바이트). **필수** — 없으면 기동 즉시 실패 | 없음 (test 프로파일만 자체 고정값) |
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 계층 2FA 등록 강제(미등록 계정은 로그인은 되고 권한만 제한) | `false` (prod 프로파일은 `true`) |
 | `PICKLE_JOBRUNR_DASH_ENABLED` / `PICKLE_JOBRUNR_DASH_USER` / `PICKLE_JOBRUNR_DASH_PASS` | JobRunr 대시보드(:8000) 노출과 basic auth 자격. 활성화하고 자격을 비워 두면 `JobRunrDashboardGuard`가 기동을 거부한다(JobRunr 자체는 인증 없이 열어 주는 fail-open) | `false` / 없음 / 없음 |
+| `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `PICKLE_BOOTSTRAP_ADMIN_PASSWORD` | prod 최초 SYS_ADMIN 계정. **prod 배포 필수** — 비어 있거나 비밀번호가 12자 미만 또는 뻔한 값이면 `ProdBootstrapSeeder`가 기동을 중단한다 | 없음 |
 
 ### 메일
 
