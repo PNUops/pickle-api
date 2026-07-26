@@ -50,7 +50,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * M4A HTTP publishing per contract v0.4.0: publish/update/unpublish authz,
+ * HTTP publishing per contract v0.4.0: publish/update/unpublish authz,
  * the SSRF guard (target forced to the VM's own IP), port-22 and custom-domain
  * platform-zone rejection, the route PENDING→APPLIED apply against a WireMock
  * proxy-agent (incl. stale-generation no-op), custom-domain DNS verification via
