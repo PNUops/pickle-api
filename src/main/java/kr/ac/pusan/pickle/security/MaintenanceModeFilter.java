@@ -32,8 +32,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * {@code /auth/mfa} runs with an anonymous principal, so gating it would 503
  * every enrolled admin at stage 2; deploy health also refreshes tokens),
  * {@code /meta/**} (the status poll that surfaces the notice,
- * per contract), the actuator health endpoint (deploy-api.sh polls it — a 503
- * would roll back a good deploy), and the springdoc {@code /openapi} document.
+ * per contract), the actuator health endpoint (the deploy health gate polls it —
+ * a 503 would roll back a good deploy), and the springdoc {@code /openapi} document.
  * The admin tier is matched by role <em>name</em> — ORG_ADMIN/SYS_ADMIN plus the
  * ORG_MANAGER/SYS_MANAGER operator-tier strings — so no change is needed when
  * the manager roles land.</p>
