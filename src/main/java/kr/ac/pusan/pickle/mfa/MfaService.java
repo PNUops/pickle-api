@@ -51,6 +51,7 @@ public class MfaService {
     private static final String SCOPE_BEGIN = "mfa_begin";
     private static final String SCOPE_DISABLE = "mfa_disable";
     private static final String SCOPE_RECOVERY = "mfa_recovery";
+    private static final String SCOPE_ACTIVATE = "mfa_activate";
 
     private final SecureRandom random = new SecureRandom();
 
@@ -113,6 +114,13 @@ public class MfaService {
     @Transactional
     public MfaRecoveryCodesResponse activate(long userId, String code, String ip) {
         User user = loadUser(userId);
+        // Activation guesses a code like every other code path, so it is throttled like
+        // one: the caller already holds the pending secret, which makes brute force
+        // pointless here, but leaving one unthrottled code endpoint is a gap that only
+        // stays harmless as long as that stays true.
+        rateLimitService.hit(SCOPE_ACTIVATE + ":ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit(SCOPE_ACTIVATE + ":acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.checkCodeLock(user.getEmail());
         UserMfa mfa = userMfaRepository.findById(userId).orElse(null);
         if (mfa == null || !mfa.hasPendingSetup()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_SETUP_NOT_IN_PROGRESS,
@@ -120,8 +128,10 @@ public class MfaService {
         }
         String secret = credentialCipher.decrypt(mfa.getPendingSecretEnc());
         if (!totpService.verify(secret, code, Instant.now())) {
+            rateLimitService.registerCodeFailure(user.getEmail());
             throw codeInvalid("인증 앱의 최신 코드를 확인해 주세요.");
         }
+        rateLimitService.clearCodeFailures(user.getEmail());
         mfa.activate(Instant.now());
         userMfaRepository.save(mfa);
         List<String> codes = replaceRecoveryCodes(userId);

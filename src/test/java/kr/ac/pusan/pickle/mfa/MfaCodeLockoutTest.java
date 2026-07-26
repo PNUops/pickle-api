@@ -99,6 +99,29 @@ class MfaCodeLockoutTest {
     }
 
     @Test
+    void activateCodeFailuresAreThrottledOnTheCodeLockout() throws Exception {
+        User user = createActiveUser("mfa.codelock.activate@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        String ip = "10.98.4.1";
+
+        // begin enrollment, then feed wrong activation codes: the endpoint used to have
+        // no throttle at all, which made it the one unbounded code path.
+        postJson("/api/v1/me/mfa/totp", access, Map.of("password", PASSWORD), ip)
+                .andExpect(status().isOk());
+        for (int i = 0; i < 5; i++) {
+            postJson("/api/v1/me/mfa/totp/activate", access, Map.of("code", "000000"), ip)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("AUTH_MFA_CODE_INVALID"));
+        }
+        postJson("/api/v1/me/mfa/totp/activate", access, Map.of("code", "000000"), ip)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        // login stays on its own counter
+        login(user.getEmail(), "10.98.4.2").andExpect(status().isOk());
+    }
+
+    @Test
     void withdrawCodeFailuresDoNotLockLogin() throws Exception {
         User user = createActiveUser("mfa.codelock.withdraw@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
