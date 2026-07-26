@@ -99,6 +99,26 @@ class MfaCodeLockoutTest {
     }
 
     @Test
+    void withdrawCodeFailuresDoNotLockLogin() throws Exception {
+        User user = createActiveUser("mfa.codelock.withdraw@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        enroll(access, "10.98.3.1");
+        String ip = "10.98.3.2";
+
+        // withdrawal re-verifies the same two factors, so it follows the same rule:
+        // a wrong recovery code must not lock the account out of logging in.
+        for (int i = 0; i < 5; i++) {
+            postJson("/api/v1/me/withdraw", access,
+                    Map.of("password", PASSWORD, "recoveryCode", WRONG_RECOVERY_CODE), ip)
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("AUTH_MFA_CODE_INVALID"));
+        }
+        login(user.getEmail(), "10.98.3.3")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaRequired").value(true));
+    }
+
+    @Test
     void disablePasswordFailuresStillLockTheAccountOut() throws Exception {
         User user = createActiveUser("mfa.codelock.password@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);

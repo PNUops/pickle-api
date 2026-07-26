@@ -74,6 +74,7 @@ public class AccountService {
         rateLimitService.hit("withdraw:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("withdraw:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(user.getEmail());
+        rateLimitService.checkCodeLock(user.getEmail());
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail());
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
@@ -81,13 +82,18 @@ public class AccountService {
             throw passwordMismatch();
         }
         // 2FA-enrolled accounts must also present a valid TOTP or recovery code.
+        // A wrong code escalates the code lockout, never the login one: someone who
+        // lost their authenticator must not lock themselves out of logging in while
+        // working through their recovery codes (same rule as the 2FA management
+        // endpoints).
         if (mfaService.isEnrolled(user.getId())
                 && !mfaService.verifyEnrolledCode(user.getId(), totpCode, recoveryCode)) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerCodeFailure(user.getEmail());
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
                     "본인 확인에 실패했습니다", "인증 코드를 다시 확인해 주세요.");
         }
         rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearCodeFailures(user.getEmail());
 
         List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
                 .filter(member -> member.getGroup().getDeletedAt() == null)
