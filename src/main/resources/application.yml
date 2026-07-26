@@ -42,8 +42,9 @@ springdoc:
 
 pickle:
   jwt:
-    # HS256 signing key, >= 32 bytes. No default outside dev/test: startup fails
-    # fast when unset (secrets policy; set via /etc/pickle/api.env).
+    # HS256 signing key, >= 32 bytes. No default in any profile: startup fails
+    # fast when unset (secrets policy; set via /etc/pickle/api.env). Only the
+    # test profile carries a fixed value, from the test classpath.
     secret: ${PICKLE_JWT_SECRET:}
     access-token-ttl: 15m
   credentials:
