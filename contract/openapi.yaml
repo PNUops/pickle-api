@@ -3614,11 +3614,19 @@ components:
       required:
       - "password"
       type: "object"
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: "JWT"
+      description: "액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub, role, org_id, token_version.\
+        \ 비밀번호 변경·계정 비활성화 시 token_version이 올라가 기존 토큰이 즉시 무효화됩니다. 리프레시 토큰은 보안 스킴이 아\
+        니라 pickle_refresh httpOnly 쿠키로만 오갑니다."
+      scheme: "bearer"
+      type: "http"
 info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.14.0"
+  version: "0.14.1"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -5030,6 +5038,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/logout:
@@ -5056,6 +5065,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/mfa:
@@ -5080,6 +5090,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/password-reset:
@@ -5104,6 +5115,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/password-reset/confirm:
@@ -5128,6 +5140,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/refresh:
@@ -5158,6 +5171,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/resend-verification:
@@ -5182,6 +5196,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/signup:
@@ -5206,6 +5221,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /auth/verify-email:
@@ -5230,6 +5246,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "auth-controller"
   /domains:
@@ -5972,6 +5989,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "meta-controller"
   /meta/terms:
@@ -5992,6 +6010,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "meta-controller"
   /meta/terms/{docType}:
@@ -6016,6 +6035,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
       tags:
       - "meta-controller"
   /notifications:
@@ -6733,5 +6753,7 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "terminal-controller"
+security:
+- bearerAuth: []
 servers:
 - url: "/api/v1"

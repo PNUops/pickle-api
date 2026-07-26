@@ -43,15 +43,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-                        // Public consent documents (contract security: []).
+                        // Same patterns the contract publishes as security: [].
+                        .requestMatchers(PublicEndpoints.anyMethodPatterns()).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,
-                                "/api/v1/meta/terms", "/api/v1/meta/terms/**").permitAll()
-                        // Public system status poll (contract getSystemStatus, security: []).
-                        .requestMatchers("/api/v1/meta/status").permitAll()
-                        .requestMatchers("/api/v1/openapi", "/api/v1/openapi/**").permitAll()
-                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                                PublicEndpoints.getOnlyPatterns()).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)

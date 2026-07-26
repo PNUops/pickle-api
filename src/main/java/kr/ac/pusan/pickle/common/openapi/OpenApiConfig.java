@@ -1,7 +1,9 @@
 package kr.ac.pusan.pickle.common.openapi;
 
 import io.swagger.v3.core.jackson.ModelResolver;
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
+import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Content;
@@ -11,11 +13,15 @@ import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.responses.ApiResponse;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import java.util.List;
+import kr.ac.pusan.pickle.config.PublicEndpoints;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springdoc.core.utils.SpringDocUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.util.AntPathMatcher;
 
 /**
  * Shapes the springdoc-generated contract so it is the single, self-sufficient
@@ -35,7 +41,10 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfig {
 
     /** Contract version served in {@code info.version}; bump on any contract change. */
-    public static final String CONTRACT_VERSION = "0.14.0";
+    public static final String CONTRACT_VERSION = "0.14.1";
+
+    /** Name of the bearer-JWT security scheme in the published spec. */
+    private static final String BEARER_SCHEME = "bearerAuth";
 
     static {
         // Domain enums become named components (shared TS union types on the
@@ -51,11 +60,47 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI pickleOpenApi() {
-        return new OpenAPI().info(new Info()
-                .title("Pickle API")
-                .description("부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, "
-                        + "오류 응답은 RFC 9457 problem+json(Problem 스키마)을 따릅니다.")
-                .version(CONTRACT_VERSION));
+        return new OpenAPI()
+                .info(new Info()
+                        .title("Pickle API")
+                        .description("부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, "
+                                + "오류 응답은 RFC 9457 problem+json(Problem 스키마)을 따릅니다.")
+                        .version(CONTRACT_VERSION))
+                .components(new Components().addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("JWT")
+                        .description("액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub, role, org_id, "
+                                + "token_version. 비밀번호 변경·계정 비활성화 시 token_version이 올라가 "
+                                + "기존 토큰이 즉시 무효화됩니다. 리프레시 토큰은 보안 스킴이 아니라 "
+                                + "pickle_refresh httpOnly 쿠키로만 오갑니다.")))
+                // Applies to every operation unless the operation overrides it
+                // with an empty requirement (see publicOperationSecurityCustomizer).
+                .security(List.of(new SecurityRequirement().addList(BEARER_SCHEME)));
+    }
+
+    /**
+     * Publishes {@code security: []} on the operations {@link PublicEndpoints}
+     * serves without authentication, so a spec reader can tell them apart from
+     * the bearer-protected majority. The patterns come from the same list
+     * {@code SecurityConfig} uses for its {@code permitAll} rules, so the
+     * contract cannot drift from the runtime rule.
+     */
+    @Bean
+    public OpenApiCustomizer publicOperationSecurityCustomizer() {
+        AntPathMatcher matcher = new AntPathMatcher();
+        return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
+            boolean publicForAnyMethod = PublicEndpoints.ANY_METHOD.stream()
+                    .anyMatch(pattern -> matcher.match(pattern, path));
+            boolean publicForGet = PublicEndpoints.GET_ONLY.stream()
+                    .anyMatch(pattern -> matcher.match(pattern, path));
+            pathItem.readOperationsMap().forEach((method, operation) -> {
+                if (publicForAnyMethod
+                        || (publicForGet && method == PathItem.HttpMethod.GET)) {
+                    operation.setSecurity(List.of());
+                }
+            });
+        });
     }
 
     /**
