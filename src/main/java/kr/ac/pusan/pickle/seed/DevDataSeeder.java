@@ -5,6 +5,7 @@ import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import org.springframework.jdbc.core.JdbcTemplate;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -45,16 +46,18 @@ public class DevDataSeeder implements ApplicationRunner {
     private final PasswordEncoder passwordEncoder;
     private final SeedProperties properties;
     private final TermsService termsService;
+    private final JdbcTemplate jdbcTemplate;
 
     public DevDataSeeder(UserRepository userRepository, OrgRepository orgRepository,
             PersonalGroupService personalGroupService, PasswordEncoder passwordEncoder,
-            SeedProperties properties, TermsService termsService) {
+            SeedProperties properties, TermsService termsService, JdbcTemplate jdbcTemplate) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.personalGroupService = personalGroupService;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.termsService = termsService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
@@ -71,6 +74,29 @@ public class DevDataSeeder implements ApplicationRunner {
 
         seedUser(properties.orgadminEmail(), properties.orgadminPassword(), "기관 관리자",
                 UserRole.ORG_ADMIN, org.getId());
+
+        enableGatewayKillSwitches();
+    }
+
+    /**
+     * Turns the SSH-gateway and web-terminal kill switches on for development.
+     *
+     * <p>The migrations seed both to {@code false} on purpose: in production a
+     * capability is switched on deliberately, after its infrastructure is wired
+     * and verified. On a development database that default is a trap — recreating
+     * the database silently leaves user SSH and the web terminal dead while the
+     * code looks fine, and the last person to hit it has no reason to suspect a
+     * settings row. Only rows still holding the migration default are touched, so
+     * an operator who deliberately switched one off keeps it off.</p>
+     */
+    private void enableGatewayKillSwitches() {
+        int flipped = jdbcTemplate.update(
+                "update settings set value = 'true'::jsonb, updated_at = now()"
+                        + " where key in ('ssh_gateway_enabled', 'web_terminal_enabled')"
+                        + " and value = 'false'::jsonb");
+        if (flipped > 0) {
+            log.info("Enabled {} gateway kill switch(es) for development", flipped);
+        }
     }
 
     private void seedUser(String email, String password, String name, UserRole role, Long orgId) {
