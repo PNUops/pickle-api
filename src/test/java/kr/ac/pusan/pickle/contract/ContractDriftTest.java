@@ -230,7 +230,7 @@ class ContractDriftTest {
         JsonNode contract = new YAMLMapper().readTree(Files.readString(masterPath));
 
         // doesNotContainAnyElementsOf rejects an empty iterable with an
-        // IllegalArgumentException, so guard the package-end state (PLANNED empty).
+        // IllegalArgumentException, so guard the all-shipped state (PLANNED empty).
         if (!PLANNED.isEmpty()) {
             assertThat(IMPLEMENTED)
                     .as("IMPLEMENTED and PLANNED must be disjoint — an endpoint that "
