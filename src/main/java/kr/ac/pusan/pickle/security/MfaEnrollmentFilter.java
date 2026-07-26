@@ -18,11 +18,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * Launch gate: when enforcement is on (prod), an admin-tier account that has
- * not enrolled in 2FA is a <b>scope restriction, not a login block</b> — every
- * endpoint returns 403 {@code MFA_ENROLLMENT_REQUIRED} <i>except</i> the
- * enrollment/auth/profile/meta surfaces it needs to actually enroll. Runs right
- * after {@link JwtAuthenticationFilter} so the principal is already resolved.
+ * When admin 2FA enforcement is on (the default in production), an admin-tier
+ * account that has not enrolled in 2FA is a <b>scope restriction, not a login
+ * block</b> — every endpoint returns 403 {@code MFA_ENROLLMENT_REQUIRED}
+ * <i>except</i> the enrollment/auth/profile/meta surfaces it needs to actually
+ * enroll. Runs right after {@link JwtAuthenticationFilter} so the principal is
+ * already resolved.
  */
 @Component
 public class MfaEnrollmentFilter extends OncePerRequestFilter {

@@ -48,7 +48,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * B5 deletion flows per contract v0.3.1: self-delete grace scheduling (168 h)
+ * Deletion flows per contract v0.3.1: self-delete grace scheduling (168 h)
  * with the backup/cancellation-policy mails, the ERROR immediate path,
  * admin scheduled deletes (min-notice 422), kind-aware admin cancellation,
  * name-confirmed force deletes, the {@link DeleteVmJob} destroy pipeline

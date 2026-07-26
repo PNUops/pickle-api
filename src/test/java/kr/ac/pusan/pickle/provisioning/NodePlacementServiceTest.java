@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * Forced-node placement backstop (review finding A3): an admin-forced node
+ * Forced-node placement backstop: an admin-forced node
  * must host an ACTIVE copy of the granted template, or placement fails the
  * same way the no-candidate auto path does — cleanly at the place step,
  * never proceeding to a clone that would fail mid-pipeline. All rows are

@@ -246,7 +246,7 @@ class AnnouncementTest {
         burster = userRepository.save(burster);
         String bursterToken = jwtService.createAccessToken(burster);
         // rejected attempts (403/422/404) never consume the send budget —
-        // the limit covers SENDS, not tries (gate finding #2)
+        // the limit covers SENDS, not tries
         create(bursterToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
                 .andExpect(status().isForbidden());
         create(bursterToken, Map.of("title", "t", "body", "b", "scope", "GROUP"))

@@ -35,7 +35,7 @@ public class Route {
     @Column(name = "target_port", nullable = false)
     private int targetPort;
 
-    /** v1: always {@code HTTP} (upstream protocol; HTTPS passthrough is roadmap). */
+    /** Always {@code HTTP} (upstream protocol; HTTPS passthrough is not implemented yet). */
     @Column(nullable = false)
     private String protocol = "HTTP";
 

@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Lane-L user surface assembly per contract v0.3.1: the VM event history
+ * User surface assembly per contract v0.3.1: the VM event history
  * endpoint (visibility + newest-first paging), the VmDetail lifecycle fields
  * (provisioning task view with Korean step labels, pending deletion,
  * passwordAvailable, ipAddress), VmSummary.groupName,

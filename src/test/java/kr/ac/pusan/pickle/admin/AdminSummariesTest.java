@@ -32,8 +32,9 @@ import org.springframework.test.web.servlet.MockMvc;
  * VM statuses, resource guidance, top groups, published services, expiry and
  * attention counters — all scoped to a freshly created org so counts are
  * exact) with the ORG_ADMIN pinning/404-mask, and the SYS_ADMIN system panel
- * shape (nodes/tasks/ip pools; notificationFailureCount is 0 until the
- * notifications table lands with the api-A merge).
+ * shape (nodes/tasks/ip pools; the system-wide counters such as
+ * notificationFailureCount are shape-checked only, since they are global and
+ * other suites contribute rows).
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -46,7 +46,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * B4 power control per contract v0.3.1: the per-op 409 state matrix,
+ * Power control per contract v0.3.1: the per-op 409 state matrix,
  * group-role authorization (non-member 404 masking / VIEWER 403), the
  * accept-time REBOOTING intent transition + after-commit enqueue, and the
  * {@link VmPowerJobs} worker against WireMock-served real pve1 captures
@@ -373,7 +373,7 @@ class VmPowerControlTest {
 
     private void setStatus(long vmId, VmStatus status) {
         // Also release any prior claim: each matrix row simulates a VM whose
-        // previous power action has already completed (C1 serialization).
+        // previous power action has already completed (power-action serialization).
         jdbcTemplate.update("""
                 update vms set status = ?::vm_status,
                        pending_power_action = null, pending_power_action_at = null

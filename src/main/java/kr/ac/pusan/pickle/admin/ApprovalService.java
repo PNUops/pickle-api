@@ -154,7 +154,7 @@ public class ApprovalService {
                     template.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
                 // Forced node must host the granted template — the provisioning
                 // pipeline clones the template on the placed node, so a node without it
-                // guarantees a mid-pipeline clone failure (finding A3).
+                // guarantees a mid-pipeline clone failure.
                 errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
             }
         }

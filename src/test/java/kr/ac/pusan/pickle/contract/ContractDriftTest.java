@@ -41,8 +41,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * {@code PICKLE_CONTRACT_MASTER} points at the hand-written design contract,
  * its path+method set must equal {@link #IMPLEMENTED} ∪ {@link #PLANNED}.
  * {@link #PLANNED} holds contract operations not yet implemented, enabling
- * parallel development against a frozen design contract; it must be empty at
- * the end of each work package.</p>
+ * parallel development against a frozen design contract; it must be empty
+ * once the matching endpoints ship.</p>
  *
  * <p><b>Limitation:</b> checks 2 and 3 compare METHOD+path sets only.
  * Parameters, schema shapes and error codes are covered by check 1 (the
@@ -182,8 +182,8 @@ class ContractDriftTest {
     /**
      * Design-contract operations not implemented yet. Design contract =
      * {@link #IMPLEMENTED} ∪ PLANNED; runtime = IMPLEMENTED. Each entry moves
-     * to IMPLEMENTED as its endpoint lands; PLANNED must be empty again by the
-     * end of the work package. Keep entries alphabetized one-per-line if a
+     * to IMPLEMENTED as its endpoint lands; PLANNED must be empty again once
+     * every entry ships. Keep entries alphabetized one-per-line if a
      * future rev repopulates this set.
      */
     private static final Set<String> PLANNED = Set.of();

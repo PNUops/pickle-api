@@ -158,7 +158,7 @@ class AdminSettingsTest {
                         .content("{\"value\": 2}"))
                 .andExpect(status().isNotFound());
 
-        // whitelisted AND seeded since api-B's V18 → editable like any other key
+        // whitelisted AND seeded since V18 → editable like any other key
         mockMvc.perform(put("/api/v1/admin/settings/vm_expiry_autostop_enabled")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)

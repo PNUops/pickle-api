@@ -15,7 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * V11 defense-in-depth CHECK constraints (review finding C4): direct JDBC
+ * V11 defense-in-depth CHECK constraints: direct JDBC
  * writes that bypass the service layer must be refused by the database. The
  * embedded-PG suite already proves the migration applies to the seeded data;
  * these cases prove the constraints actually fire.

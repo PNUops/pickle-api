@@ -15,7 +15,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * C3: success audits must not survive a business-transaction rollback.
+ * Success audits must not survive a business-transaction rollback.
  * {@link AuditService#recordAfterCommit} defers the REQUIRES_NEW write to
  * afterCommit — a rolled-back business tx leaves no false success row, a
  * committed one records exactly one, and outside any transaction it writes

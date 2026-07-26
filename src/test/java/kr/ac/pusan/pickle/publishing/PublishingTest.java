@@ -774,7 +774,7 @@ class PublishingTest {
         assertThat(genAfter).isGreaterThan(genBefore);
     }
 
-    // ── VM deletion tears down publishing (B1) ──────────────────────────────
+    // ── VM deletion tears down publishing ───────────────────────────────────
 
     @Test
     void deletePipelineTearsDownPublishingBeforeIpRelease() throws Exception {

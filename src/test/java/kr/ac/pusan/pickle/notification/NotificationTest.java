@@ -234,7 +234,7 @@ class NotificationTest {
         User leaver = ensureUser("notif.leaver@pusan.ac.kr", "탈퇴자");
         jdbcTemplate.update("delete from notifications where user_id = ?", leaver.getId());
         publishAnnouncement(leaver.getId(), "지연 발송 알림", null);
-        // deactivated between enqueue and dispatch (보안 게이트 M-1)
+        // deactivated between enqueue and dispatch (비활성 계정 차단)
         jdbcTemplate.update("update users set status = 'DISABLED' where id = ?", leaver.getId());
 
         dispatchJob.dispatch();

@@ -60,7 +60,7 @@ public class NodePlacementService {
                     .filter(n -> n.getStatus() == NodeStatus.ACTIVE)
                     .orElseThrow(() -> new IllegalStateException(
                             "관리자 지정 노드 " + forcedNodeId + "를 사용할 수 없습니다"));
-            // Backstop for approval-time validation (A3): the template can be
+            // Backstop for approval-time validation: the template can be
             // deactivated between approval and provisioning. Fail here — the
             // same IllegalStateException the no-candidate path throws, so the
             // pipeline errors cleanly at the place step — instead of proceeding
