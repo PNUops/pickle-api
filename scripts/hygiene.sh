@@ -22,13 +22,20 @@
 HYGIENE_DOC_NAMES='internal\.md|permission-matrix\.md|hosts\.md|credentials\.md|domains-tls\.md|scheduled-jobs\.md|product-spec\.md|status\.md|architecture\.md|roadmap\.md|glossary\.md|commit-convention\.md|dev-setup\.md|production-gates\.md|backlog\.md|console-views\.md|ssh-access\.md|out-of-scope\.md|findings-triage\.md|data-model\.md|network-ipam\.md'
 
 # Internal process vocabulary. The trailing [A-Z]? is load-bearing: M4A, W2-B.
-HYGIENE_TOKENS='\b(M[0-9]+(\.[0-9]+)?[A-Z]?|W[0-9]+(\.[0-9]+)?(-[A-Z])?|G[0-9]|B[0-9]|A[0-9]|C[0-9]|R[12]|S1[0-3]|O1[0-9]|F[0-9]|H1|WP-[A-Z0-9]+|api-[A-Z]|Lane [A-Z])\b|보안 게이트|review finding|gate finding|work package'
+HYGIENE_TOKENS='\b(M[0-9]+(\.[0-9]+)?[A-Z]?|W[0-9]+(\.[0-9]+)?(-[A-Z])?|G[0-9]|B[0-9]|A[0-9]|C[0-9]|R[12]|S([1-9]|1[0-3])|O([1-9]|10)|F[0-9]|H1|WP-[A-Z0-9]+|api-[A-Z]|Lane [A-Z])\b|보안 게이트|review finding|gate finding|work package'
 
-# Lines that legitimately contain lookalikes. Excluding the line beats editing
-# icon data or renaming a real identifier. The `$R1`/`$R2` entries are shell
-# variable names appearing literally in a regex, not expansions.
+# Whole lines to skip: graphic path data, where stripping one command would leave
+# the next one (M12…) looking exactly like a milestone token.
+HYGIENE_SKIP_LINES='<path|d="M|d=\{|sha512-|"integrity"'
+
+# Substrings that merely LOOK like tokens. These are removed from a line before
+# the token test, not used to suppress the whole line — a line-level exclusion
+# would exempt any line that happens to also carry a version string or an IP,
+# which is a large hole in a codebase full of both.
+# The `$R1`/`$R2` entries are shell variable names appearing literally in a
+# regex, not expansions.
 # shellcheck disable=SC2016
-HYGIENE_ALLOW='<path|d="M[0-9]|d=\{|\bD-?(1|7|14|30)\b|V[0-9]+__|contract v[0-9]|v[0-9]+\.[0-9]+\.[0-9]+|[0-9]{1,3}(\.[0-9]{1,3}){3}|\bR3F\b|\bT0\b|-m[0-9]{3}|grep -m[0-9]|-w[0-9]\b|\bL4\b|PROXY v[0-9]|sha512-|integrity"|\bR[12]=|\$R[12]\b|"\$R[12]"'
+HYGIENE_ALLOW='\bD-?(1|7|14|30)\b|V[0-9]+__|contract v[0-9.]+|v[0-9]+\.[0-9]+\.[0-9]+|[0-9]{1,3}(\.[0-9]{1,3}){3}|\bR3F\b|\bT0\b|-m[0-9]{3}|grep -m[0-9]|-w[0-9]\b|\bL4\b|PROXY v[0-9]|\bR[12]=|\$R[12]\b|"\$R[12]"'
 
 # The files to scan. Two exclusions: this script necessarily contains every
 # pattern it searches for, and lockfiles are generated content whose hashes trip
@@ -60,7 +67,15 @@ hygiene_check() {
     fi
   fi
 
-  hits=$(hygiene_files | xargs -0 grep -nIE "$HYGIENE_TOKENS" 2>/dev/null | grep -vE "$HYGIENE_ALLOW" || true)
+  hits=$(hygiene_files | xargs -0 grep -nIE "$HYGIENE_TOKENS" 2>/dev/null \
+    | grep -vE "$HYGIENE_SKIP_LINES" \
+    | while IFS= read -r hit; do
+        # Re-test with the lookalikes removed: a line keeps its hit only if a real
+        # token survives, so "M4A ... v0.14.1" still fails while "v0.14.1" alone passes.
+        if printf '%s' "$hit" | sed -E "s/${HYGIENE_ALLOW}//g" | grep -qE "$HYGIENE_TOKENS"; then
+          printf '%s\n' "$hit"
+        fi
+      done || true)
   if [ -n "$hits" ]; then
     echo "hygiene: internal process token (state the fact instead):" >&2
     echo "$hits" >&2
