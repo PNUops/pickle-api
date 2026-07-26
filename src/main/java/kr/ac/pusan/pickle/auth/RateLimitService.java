@@ -17,8 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
  *       request is rejected once the sum over the last 60 seconds exceeds the
  *       endpoint limit (default 10/min per IP and per account).</li>
  *   <li>Escalating lockout: after {@value #LOCKOUT_THRESHOLD} consecutive
- *       login failures the account is locked, doubling from 1 minute up to
- *       15 minutes.</li>
+ *       failures the account is locked, doubling from 1 minute up to 15
+ *       minutes. Password failures and second-factor code failures are
+ *       counted, and locked, separately.</li>
  * </ul>
  *
  * Methods run in their own transaction so counters survive the business
@@ -32,7 +33,16 @@ public class RateLimitService {
 
     private static final Duration WINDOW = Duration.ofSeconds(60);
     private static final Duration BUCKET = Duration.ofSeconds(15);
+    /** Wrong password: locks the account out of logging in. */
     private static final String LOGIN_FAIL_SCOPE = "login_fail";
+    /**
+     * Wrong second-factor code on an account whose password did check out.
+     * Deliberately a separate counter from {@link #LOGIN_FAIL_SCOPE}: mistyping
+     * recovery codes is what someone who lost the authenticator device does, and
+     * it must throttle further code attempts without locking that person out of
+     * login as well.
+     */
+    private static final String CODE_FAIL_SCOPE = "code_fail";
 
     private record WindowState(long total, OffsetDateTime oldest) {
     }
@@ -113,11 +123,48 @@ public class RateLimitService {
     /** Throws 429 when the account is under an escalating login lockout. */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void checkLoginLock(String account) {
+        checkLock(LOGIN_FAIL_SCOPE, account);
+    }
+
+    /** Throws 429 when the account is under a second-factor code lockout. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void checkCodeLock(String account) {
+        checkLock(CODE_FAIL_SCOPE, account);
+    }
+
+    /**
+     * Registers a failed password check; from the {@value #LOCKOUT_THRESHOLD}th
+     * consecutive failure the lockout doubles (1 min → … → 15 min cap).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registerLoginFailure(String account) {
+        registerFailure(LOGIN_FAIL_SCOPE, account);
+    }
+
+    /** Same escalation as {@link #registerLoginFailure}, on the code counter. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registerCodeFailure(String account) {
+        registerFailure(CODE_FAIL_SCOPE, account);
+    }
+
+    /** Successful login resets the consecutive-failure counter. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void clearLoginFailures(String account) {
+        clearFailures(LOGIN_FAIL_SCOPE, account);
+    }
+
+    /** An accepted second-factor code resets the code-failure counter. */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void clearCodeFailures(String account) {
+        clearFailures(CODE_FAIL_SCOPE, account);
+    }
+
+    private void checkLock(String scope, String account) {
         OffsetDateTime lockedUntil = jdbcTemplate.query("""
                 select locked_until from auth_rate_limits
                  where scope = ? and subject = ? and window_start = timestamptz 'epoch'
                 """, rs -> rs.next() ? rs.getObject("locked_until", OffsetDateTime.class) : null,
-                LOGIN_FAIL_SCOPE, account);
+                scope, account);
         if (lockedUntil != null && lockedUntil.toInstant().isAfter(Instant.now())) {
             long retryAfter = Math.max(1,
                     Duration.between(Instant.now(), lockedUntil.toInstant()).toSeconds());
@@ -125,12 +172,7 @@ public class RateLimitService {
         }
     }
 
-    /**
-     * Registers a failed credential check; from the {@value #LOCKOUT_THRESHOLD}th
-     * consecutive failure the lockout doubles (1 min → … → 15 min cap).
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void registerLoginFailure(String account) {
+    private void registerFailure(String scope, String account) {
         jdbcTemplate.update("""
                 insert into auth_rate_limits (scope, subject, window_start, request_count)
                 values (?, ?, timestamptz 'epoch', 1)
@@ -143,15 +185,13 @@ public class RateLimitService {
                                 power(2, least(auth_rate_limits.request_count + 1 - %d, 4)), 15)
                         else null end,
                     updated_at = now()
-                """.formatted(LOCKOUT_THRESHOLD, LOCKOUT_THRESHOLD), LOGIN_FAIL_SCOPE, account);
+                """.formatted(LOCKOUT_THRESHOLD, LOCKOUT_THRESHOLD), scope, account);
     }
 
-    /** Successful login resets the consecutive-failure counter. */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void clearLoginFailures(String account) {
+    private void clearFailures(String scope, String account) {
         jdbcTemplate.update("""
                 delete from auth_rate_limits
                  where scope = ? and subject = ? and window_start = timestamptz 'epoch'
-                """, LOGIN_FAIL_SCOPE, account);
+                """, scope, account);
     }
 }

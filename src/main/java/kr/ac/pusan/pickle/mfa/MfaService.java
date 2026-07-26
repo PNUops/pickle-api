@@ -137,16 +137,21 @@ public class MfaService {
     public void disable(long userId, String password, String code, String recoveryCode, String ip) {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_DISABLE, user.getEmail(), ip);
+        rateLimitService.checkCodeLock(user.getEmail());
         UserMfa mfa = enrolledOrThrow(userId);
         requireExactlyOneCode(code, recoveryCode);
-        boolean passwordOk = passwordEncoder.matches(password, user.getPasswordHash());
-        // Consume a recovery code only when the password also checks out, so a
-        // failed disable never burns a code.
-        if (!passwordOk || !verifyEnrolledCode(mfa, userId, code, recoveryCode)) {
+        // The password is checked first and on its own, so a wrong code never
+        // burns a recovery code and never feeds the login lockout. The response
+        // stays the same either way, so which factor failed is not disclosed.
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail());
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
+        if (!verifyEnrolledCode(mfa, userId, code, recoveryCode)) {
+            rateLimitService.registerCodeFailure(user.getEmail());
+            throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
+        }
+        clearFailureCounters(user.getEmail());
         userMfaRepository.deleteByUserId(userId);
         recoveryCodeRepository.deleteByUserId(userId);
 
@@ -161,13 +166,17 @@ public class MfaService {
             String ip) {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_RECOVERY, user.getEmail(), ip);
+        rateLimitService.checkCodeLock(user.getEmail());
         UserMfa mfa = enrolledOrThrow(userId);
-        boolean passwordOk = passwordEncoder.matches(password, user.getPasswordHash());
-        if (!passwordOk || !totpService.verify(activeSecret(mfa), code, Instant.now())) {
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail());
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
+        if (!totpService.verify(activeSecret(mfa), code, Instant.now())) {
+            rateLimitService.registerCodeFailure(user.getEmail());
+            throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
+        }
+        clearFailureCounters(user.getEmail());
         return new MfaRecoveryCodesResponse(replaceRecoveryCodes(userId));
     }
 
@@ -175,13 +184,21 @@ public class MfaService {
      * Guards a session-scoped password re-verification: the same dual-key sliding
      * window as login (per IP and per account) plus the shared login lockout, so a
      * hijacked session cannot brute-force the account password through the 2FA
-     * management endpoints. Failures below feed {@code registerLoginFailure}, so
-     * the lockout is one counter across login and every re-verification point.
+     * management endpoints. A wrong password feeds {@code registerLoginFailure},
+     * so that lockout is one counter across login and every re-verification
+     * point; a wrong TOTP/recovery code is throttled on its own counter
+     * ({@code registerCodeFailure}) and leaves login alone.
      */
     private void guardPasswordAttempt(String scope, String email, String ip) {
         rateLimitService.hit(scope + ":ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit(scope + ":acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(email);
+    }
+
+    /** A fully accepted re-verification resets both failure counters. */
+    private void clearFailureCounters(String email) {
+        rateLimitService.clearLoginFailures(email);
+        rateLimitService.clearCodeFailures(email);
     }
 
     // ── login step-up (/auth/login → /auth/mfa) ─────────────────────────────
