@@ -153,6 +153,28 @@ class PasswordReverificationRateLimitTest {
     }
 
     @Test
+    void passwordChangeIsAllowedWhileLoginIsLockedOut() throws Exception {
+        User user = createActiveUser("reverify.change.locked@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        String ip = "10.97.7.1";
+
+        for (int i = 0; i < 5; i++) {
+            loginWith(user.getEmail(), WRONG_PASSWORD, ip)
+                    .andExpect(status().isUnauthorized());
+        }
+        login(user.getEmail(), ip).andExpect(status().isTooManyRequests());
+
+        // the locked-out account can still change its password from a live
+        // session — the remediation must not be blocked by the attack
+        putJson("/api/v1/me/password", access,
+                Map.of("currentPassword", PASSWORD, "newPassword", "An0ther-good-pw!"), ip)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
+        // and the successful re-verification lifted the lockout
+        loginWith(user.getEmail(), "An0ther-good-pw!", ip).andExpect(status().isOk());
+    }
+
+    @Test
     void recoveryCodeRegenerationIsSlidingWindowLimited() throws Exception {
         User user = createActiveUser("reverify.regen.window@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);

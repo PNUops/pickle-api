@@ -368,7 +368,10 @@ public class AuthService {
         User user = userRepository.findById(userId).orElseThrow(AuthService::sessionUserGone);
         rateLimitService.hit("password_change:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("password_change:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkLoginLock(user.getEmail());
+        // Deliberately NOT gated on the login lockout: changing the password is
+        // how someone answers a brute-force attempt on their account, and an
+        // attacker hammering login must not be able to block that from an
+        // already-valid session. The sliding window above still bounds the rate.
 
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             // Same counter as login and the other re-verification points, so a
