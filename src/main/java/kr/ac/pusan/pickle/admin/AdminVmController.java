@@ -18,7 +18,7 @@ import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -84,14 +85,14 @@ public class AdminVmController {
     }
 
     @PostMapping("/{vmId}/schedule-delete")
-    public ResponseEntity<VmDeletionResponse> scheduleVmDeletion(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public VmDeletionResponse scheduleVmDeletion(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
             @Valid @RequestBody ScheduleVmDeletionRequest request,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(vmDeletionService.scheduleDeletion(principal, vmId, request,
-                        clientIp(httpRequest)));
+        return vmDeletionService.scheduleDeletion(principal, vmId, request,
+                clientIp(httpRequest));
     }
 
     @PostMapping("/{vmId}/cancel-scheduled-delete")
@@ -103,13 +104,13 @@ public class AdminVmController {
 
     @PostMapping("/{vmId}/force-delete")
     @PreAuthorize("hasRole('SYS_ADMIN')")
-    public ResponseEntity<MessageResponse> forceDeleteVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse forceDeleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
             @Valid @RequestBody ForceDeleteVmRequest request,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(vmDeletionService.forceDelete(principal, vmId, request,
-                        clientIp(httpRequest)));
+        return vmDeletionService.forceDelete(principal, vmId, request,
+                clientIp(httpRequest));
     }
 }

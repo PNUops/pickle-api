@@ -14,7 +14,6 @@ import kr.ac.pusan.pickle.group.dto.UpdateGroupMemberRequest;
 import kr.ac.pusan.pickle.group.dto.UpdateGroupRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Contract tag {@code groups} (openapi.yaml v0.2.1, server /api/v1). */
@@ -42,12 +42,12 @@ public class GroupController {
     }
 
     @PostMapping
-    public ResponseEntity<GroupDetailResponse> createGroup(
+    @ResponseStatus(HttpStatus.CREATED)
+    public GroupDetailResponse createGroup(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody CreateGroupRequest request,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(groupService.create(principal, request, clientIp(httpRequest)));
+        return groupService.create(principal, request, clientIp(httpRequest));
     }
 
     @GetMapping("/{groupId}")
@@ -64,21 +64,21 @@ public class GroupController {
     }
 
     @DeleteMapping("/{groupId}")
-    public ResponseEntity<Void> deleteGroup(@AuthenticationPrincipal AuthenticatedUser principal,
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteGroup(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
             HttpServletRequest httpRequest) {
         groupService.delete(principal, groupId, clientIp(httpRequest));
-        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/members")
-    public ResponseEntity<GroupMemberResponse> addGroupMember(
+    @ResponseStatus(HttpStatus.CREATED)
+    public GroupMemberResponse addGroupMember(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
             @Valid @RequestBody AddGroupMemberRequest request,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(groupService.addMember(principal, groupId, request, clientIp(httpRequest)));
+        return groupService.addMember(principal, groupId, request, clientIp(httpRequest));
     }
 
     @PatchMapping("/{groupId}/members/{userId}")
@@ -91,11 +91,11 @@ public class GroupController {
     }
 
     @DeleteMapping("/{groupId}/members/{userId}")
-    public ResponseEntity<Void> removeGroupMember(@AuthenticationPrincipal AuthenticatedUser principal,
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeGroupMember(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
             @PathVariable long userId,
             HttpServletRequest httpRequest) {
         groupService.removeMember(principal, groupId, userId, clientIp(httpRequest));
-        return ResponseEntity.noContent().build();
     }
 }

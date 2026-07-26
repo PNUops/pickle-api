@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -31,6 +32,9 @@ public class TerminalController {
     }
 
     @PostMapping
+    // ResponseEntity carries the no-store cache directive; the annotation is
+    // what makes the 201 visible in the generated contract.
+    @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<TerminalTicketResponse> createTerminalSession(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,

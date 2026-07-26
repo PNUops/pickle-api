@@ -11,13 +11,14 @@ import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
 import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -74,9 +75,9 @@ public class AdminPublishingController {
 
     @PostMapping("/routes/resync")
     @PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
-    public ResponseEntity<MessageResponse> resyncRoutes(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse resyncRoutes(
             @AuthenticationPrincipal AuthenticatedUser principal, HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(adminPublishingService.resync(principal, clientIp(httpRequest)));
+        return adminPublishingService.resync(principal, clientIp(httpRequest));
     }
 }

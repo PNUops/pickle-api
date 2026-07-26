@@ -6,13 +6,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.terminal.dto.TerminalSessionView;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -39,11 +40,11 @@ public class AdminTerminalController {
 
     @PostMapping("/{sessionId}/terminate")
     @PreAuthorize("hasRole('SYS_ADMIN')")
-    public ResponseEntity<Void> terminateTerminalSession(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void terminateTerminalSession(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable String sessionId,
             HttpServletRequest httpRequest) {
         terminalService.terminate(principal, sessionId, clientIp(httpRequest));
-        return ResponseEntity.noContent().build();
     }
 }

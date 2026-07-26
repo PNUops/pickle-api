@@ -15,7 +15,7 @@ import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.publishing.dto.PublishRequest;
 import kr.ac.pusan.pickle.publishing.dto.UpdatePublicationRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
@@ -44,12 +45,13 @@ public class PublishingController {
     }
 
     @PostMapping("/vms/{vmId}/publish")
-    public ResponseEntity<PublicationView> publishVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public PublicationView publishVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             @RequestBody(required = false) PublishRequest request, HttpServletRequest httpRequest) {
         PublishRequest body = request != null ? request : new PublishRequest(null, null);
-        return ResponseEntity.accepted().body(publishingService.publish(principal, vmId,
-                body.port(), body.customDomain(), clientIp(httpRequest)));
+        return publishingService.publish(principal, vmId,
+                body.port(), body.customDomain(), clientIp(httpRequest));
     }
 
     /**
@@ -60,7 +62,8 @@ public class PublishingController {
     @PatchMapping("/vms/{vmId}/publication")
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             schema = @Schema(implementation = UpdatePublicationRequest.class)))
-    public ResponseEntity<PublicationView> updatePublication(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public PublicationView updatePublication(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             @RequestBody JsonNode body, HttpServletRequest httpRequest) {
         Integer port = null;
@@ -71,16 +74,16 @@ public class PublishingController {
         boolean customProvided = body.has("customDomain");
         String customDomain = customProvided && !body.get("customDomain").isNull()
                 ? body.get("customDomain").asString() : null;
-        return ResponseEntity.accepted().body(publishingService.updatePublication(principal, vmId,
-                port, customProvided, customDomain, clientIp(httpRequest)));
+        return publishingService.updatePublication(principal, vmId,
+                port, customProvided, customDomain, clientIp(httpRequest));
     }
 
     @DeleteMapping("/vms/{vmId}/publication")
-    public ResponseEntity<MessageResponse> unpublishVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse unpublishVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(publishingService.unpublish(principal, vmId, clientIp(httpRequest)));
+        return publishingService.unpublish(principal, vmId, clientIp(httpRequest));
     }
 
     @GetMapping("/domains")
@@ -100,18 +103,18 @@ public class PublishingController {
     }
 
     @DeleteMapping("/domains/{domainId}")
-    public ResponseEntity<MessageResponse> deleteDomain(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse deleteDomain(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(publishingService.deleteDomain(principal, domainId, clientIp(httpRequest)));
+        return publishingService.deleteDomain(principal, domainId, clientIp(httpRequest));
     }
 
     @PostMapping("/domains/{domainId}/verify")
-    public ResponseEntity<DomainDetailView> verifyDomain(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public DomainDetailView verifyDomain(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(publishingService.verifyDomain(principal, domainId, clientIp(httpRequest)));
+        return publishingService.verifyDomain(principal, domainId, clientIp(httpRequest));
     }
 }

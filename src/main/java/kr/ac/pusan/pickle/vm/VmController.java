@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import kr.ac.pusan.pickle.vmsettings.dto.VmSettingView;
 import kr.ac.pusan.pickle.vmsettings.dto.VmSettingsUpdateRequest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Contract tag {@code vms} (openapi.yaml v0.3.2, server /api/v1). */
@@ -68,35 +70,39 @@ public class VmController {
     }
 
     @DeleteMapping("/{vmId}")
-    public ResponseEntity<VmDeletionResponse> deleteVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public VmDeletionResponse deleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.accepted()
-                .body(vmDeletionService.selfDelete(principal, vmId, clientIp(httpRequest)));
+        return vmDeletionService.selfDelete(principal, vmId, clientIp(httpRequest));
     }
 
     @PostMapping("/{vmId}/start")
-    public ResponseEntity<MessageResponse> startVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse startVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return ResponseEntity.accepted().body(vmLifecycleService.start(principal, vmId));
+        return vmLifecycleService.start(principal, vmId);
     }
 
     @PostMapping("/{vmId}/shutdown")
-    public ResponseEntity<MessageResponse> shutdownVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse shutdownVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return ResponseEntity.accepted().body(vmLifecycleService.shutdown(principal, vmId));
+        return vmLifecycleService.shutdown(principal, vmId);
     }
 
     @PostMapping("/{vmId}/reboot")
-    public ResponseEntity<MessageResponse> rebootVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse rebootVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return ResponseEntity.accepted().body(vmLifecycleService.reboot(principal, vmId));
+        return vmLifecycleService.reboot(principal, vmId);
     }
 
     @PostMapping("/{vmId}/force-stop")
-    public ResponseEntity<MessageResponse> forceStopVm(
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse forceStopVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
-        return ResponseEntity.accepted().body(vmLifecycleService.forceStop(principal, vmId));
+        return vmLifecycleService.forceStop(principal, vmId);
     }
 
     @GetMapping("/{vmId}/events")

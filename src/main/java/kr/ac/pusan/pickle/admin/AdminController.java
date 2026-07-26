@@ -11,7 +11,6 @@ import kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest;
 import kr.ac.pusan.pickle.auth.dto.UserSummaryResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -19,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -37,12 +37,12 @@ public class AdminController {
     }
 
     @PostMapping("/orgs")
-    public ResponseEntity<OrgDetailResponse> createOrg(
+    @ResponseStatus(HttpStatus.CREATED)
+    public OrgDetailResponse createOrg(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody CreateOrgRequest request,
             HttpServletRequest httpRequest) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(adminService.createOrg(principal, request, clientIp(httpRequest)));
+        return adminService.createOrg(principal, request, clientIp(httpRequest));
     }
 
     @PatchMapping("/orgs/{orgId}")

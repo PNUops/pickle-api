@@ -3666,12 +3666,12 @@ paths:
               $ref: "#/components/schemas/AnnouncementCreateRequest"
         required: true
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/AnnouncementView"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
@@ -4092,12 +4092,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -4116,12 +4116,12 @@ paths:
               $ref: "#/components/schemas/CreateOrgRequest"
         required: true
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OrgDetailResponse"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
@@ -4212,12 +4212,12 @@ paths:
     post:
       operationId: "resyncRoutes"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -4384,12 +4384,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -4428,8 +4428,8 @@ paths:
         schema:
           type: "string"
       responses:
-        "200":
-          description: "OK"
+        "204":
+          description: "No Content"
         default:
           content:
             application/problem+json:
@@ -4930,12 +4930,12 @@ paths:
               $ref: "#/components/schemas/ForceDeleteVmRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -4992,12 +4992,12 @@ paths:
               $ref: "#/components/schemas/ScheduleVmDeletionRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VmDeletionResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5048,8 +5048,8 @@ paths:
         schema:
           type: "string"
       responses:
-        "200":
-          description: "OK"
+        "204":
+          description: "No Content"
         default:
           content:
             application/problem+json:
@@ -5092,12 +5092,12 @@ paths:
               $ref: "#/components/schemas/PasswordResetRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5170,12 +5170,12 @@ paths:
               $ref: "#/components/schemas/ResendVerificationRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5194,12 +5194,12 @@ paths:
               $ref: "#/components/schemas/SignupRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5290,12 +5290,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5339,12 +5339,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/DomainDetailView"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -5382,12 +5382,12 @@ paths:
               $ref: "#/components/schemas/CreateGroupRequest"
         required: true
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GroupDetailResponse"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
@@ -5407,8 +5407,8 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
-          description: "OK"
+        "204":
+          description: "No Content"
         default:
           content:
             application/problem+json:
@@ -5488,12 +5488,12 @@ paths:
               $ref: "#/components/schemas/AddGroupMemberRequest"
         required: true
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/GroupMemberResponse"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
@@ -5519,8 +5519,8 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
-          description: "OK"
+        "204":
+          description: "No Content"
         default:
           content:
             application/problem+json:
@@ -6217,12 +6217,12 @@ paths:
               $ref: "#/components/schemas/CreateVmRequestRequest"
         required: true
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
@@ -6334,12 +6334,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/VmDeletionResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6425,12 +6425,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6500,12 +6500,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6530,12 +6530,12 @@ paths:
               $ref: "#/components/schemas/UpdatePublicationRequest"
         required: true
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PublicationView"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6560,12 +6560,12 @@ paths:
             schema:
               $ref: "#/components/schemas/PublishRequest"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/PublicationView"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6585,12 +6585,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6669,12 +6669,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6694,12 +6694,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "202":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+          description: "Accepted"
         default:
           content:
             application/problem+json:
@@ -6719,12 +6719,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
+        "201":
           content:
             '*/*':
               schema:
                 $ref: "#/components/schemas/TerminalTicketResponse"
-          description: "OK"
+          description: "Created"
         default:
           content:
             application/problem+json:
