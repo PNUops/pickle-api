@@ -1,7 +1,7 @@
 -- Terminology standardization (2026-07-16): the SYS_ADMIN
 -- immediate deletion is 강제 삭제/FORCE, symmetric with the power-control
 -- FORCE_STOP — the old EMERGENCY naming is retired. Dev-only data,
--- irreversible — take a manual DB backup before deploying (the deploy
+-- irreversible — take a manual DB backup before deploying (the deploy-api.sh
 -- health-check auto-rollback restores the OLD jar on top of the renamed
 -- enums, which breaks immediately: fix forward instead).
 --
