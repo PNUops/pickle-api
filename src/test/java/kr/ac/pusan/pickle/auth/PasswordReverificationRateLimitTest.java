@@ -133,6 +133,26 @@ class PasswordReverificationRateLimitTest {
     }
 
     @Test
+    void mfaDisableIsSlidingWindowLimited() throws Exception {
+        User user = createActiveUser("reverify.disable.window@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        String ip = "10.97.5.1";
+
+        // not enrolled, so every call ends in 409 — but the limiter runs before the
+        // enrollment/password checks, so the 11th attempt is refused outright.
+        for (int i = 0; i < 10; i++) {
+            postJson("/api/v1/me/mfa/disable", access,
+                    Map.of("password", PASSWORD, "code", "000000"), ip)
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("MFA_NOT_ENROLLED"));
+        }
+        postJson("/api/v1/me/mfa/disable", access,
+                Map.of("password", PASSWORD, "code", "000000"), ip)
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
     void recoveryCodeRegenerationIsSlidingWindowLimited() throws Exception {
         User user = createActiveUser("reverify.regen.window@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
@@ -150,6 +170,20 @@ class PasswordReverificationRateLimitTest {
                 Map.of("password", PASSWORD, "code", "000000"), ip)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    private ResultActions login(String email, String ip) throws Exception {
+        return loginWith(email, PASSWORD, ip);
+    }
+
+    private ResultActions loginWith(String email, String password, String ip) throws Exception {
+        return mockMvc.perform(post("/api/v1/auth/login")
+                .with(request -> {
+                    request.setRemoteAddr(ip);
+                    return request;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of("email", email, "password", password))));
     }
 
     private User createActiveUser(String email) {
