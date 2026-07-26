@@ -79,23 +79,34 @@ public class DevDataSeeder implements ApplicationRunner {
     }
 
     /**
-     * Turns the SSH-gateway and web-terminal kill switches on for development.
+     * Turns the SSH-gateway and web-terminal kill switches on when the database is
+     * freshly created.
      *
      * <p>The migrations seed both to {@code false} on purpose: in production a
-     * capability is switched on deliberately, after its infrastructure is wired
-     * and verified. On a development database that default is a trap — recreating
-     * the database silently leaves user SSH and the web terminal dead while the
-     * code looks fine, and the last person to hit it has no reason to suspect a
-     * settings row. Only rows still holding the migration default are touched, so
-     * an operator who deliberately switched one off keeps it off.</p>
+     * capability is switched on deliberately, after its infrastructure is wired and
+     * verified. On a development database that default is a trap — recreating the
+     * database silently leaves user SSH and the web terminal dead while the code
+     * looks fine, and the last person to hit it has no reason to suspect a settings
+     * row.</p>
+     *
+     * <p>The guard is an <em>empty audit log</em>, not the switch value: a {@code false}
+     * an operator set deliberately is byte-identical to the migration default, so the
+     * value alone cannot tell the two apart. Any use of the system — including
+     * disabling a switch through the admin API, which is audited — leaves audit rows,
+     * so this runs on a fresh database and never undoes an incident-response decision
+     * on a restart.</p>
      */
     private void enableGatewayKillSwitches() {
+        Integer auditRows = jdbcTemplate.queryForObject("select count(*) from audit_logs", Integer.class);
+        if (auditRows == null || auditRows > 0) {
+            return;
+        }
         int flipped = jdbcTemplate.update(
                 "update settings set value = 'true'::jsonb, updated_at = now()"
                         + " where key in ('ssh_gateway_enabled', 'web_terminal_enabled')"
                         + " and value = 'false'::jsonb");
         if (flipped > 0) {
-            log.info("Enabled {} gateway kill switch(es) for development", flipped);
+            log.info("Fresh database: enabled {} gateway kill switch(es) for development", flipped);
         }
     }
 
