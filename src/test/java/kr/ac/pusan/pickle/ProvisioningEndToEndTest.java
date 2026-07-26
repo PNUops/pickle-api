@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -96,6 +97,9 @@ class ProvisioningEndToEndTest {
     private MockMailSender mockMailSender;
 
     @Autowired
+    private AsyncMailDispatcher mailDispatcher;
+
+    @Autowired
     private kr.ac.pusan.pickle.notification.NotificationDispatchJob notificationDispatchJob;
 
     @Autowired
@@ -124,6 +128,8 @@ class ProvisioningEndToEndTest {
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))
                 .andExpect(status().isAccepted());
+        assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10)))
+                .as("mail dispatcher drained").isTrue();
         MailMessage mail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
         Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -84,6 +86,9 @@ class AccountLifecycleTest {
     @Autowired
     private MockMailSender mockMailSender;
 
+    @Autowired
+    private AsyncMailDispatcher mailDispatcher;
+
     @Test
     void passwordChangeSurvivesCurrentSessionAndKillsOthers() throws Exception {
         User user = createActiveUser("pw.change@pusan.ac.kr", "비번변경");
@@ -131,6 +136,8 @@ class AccountLifecycleTest {
                 .andExpect(status().isAccepted());
         postPublic("/api/v1/auth/password-reset", Map.of("email", "nobody.here@pusan.ac.kr"))
                 .andExpect(status().isAccepted());
+        assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10)))
+                .as("mail dispatcher drained").isTrue();
         assertThat(mockMailSender.lastMessageTo("nobody.here@pusan.ac.kr")).isNull();
 
         MailMessage mail = mockMailSender.lastMessageTo(user.getEmail());

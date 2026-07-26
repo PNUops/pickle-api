@@ -19,7 +19,7 @@ import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.group.PersonalGroupService;
 import kr.ac.pusan.pickle.mfa.MfaLoginToken;
 import kr.ac.pusan.pickle.mfa.MfaService;
-import kr.ac.pusan.pickle.mail.MailSender;
+import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.VerificationMailComposer;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -75,7 +75,7 @@ public class AuthService {
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final JwtService jwtService;
-    private final MailSender mailSender;
+    private final AsyncMailDispatcher mailDispatcher;
     private final VerificationMailComposer verificationMailComposer;
     private final AuthProperties authProperties;
     private final MfaService mfaService;
@@ -92,7 +92,7 @@ public class AuthService {
             AuditService auditService,
             NotificationService notificationService,
             JwtService jwtService,
-            MailSender mailSender,
+            AsyncMailDispatcher mailDispatcher,
             VerificationMailComposer verificationMailComposer,
             AuthProperties authProperties,
             MfaService mfaService,
@@ -108,7 +108,7 @@ public class AuthService {
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.jwtService = jwtService;
-        this.mailSender = mailSender;
+        this.mailDispatcher = mailDispatcher;
         this.verificationMailComposer = verificationMailComposer;
         this.authProperties = authProperties;
         this.mfaService = mfaService;
@@ -458,7 +458,7 @@ public class AuthService {
         String rawToken = TokenHasher.newToken();
         emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
                 VerificationPurpose.SIGNUP, Instant.now().plus(authProperties.verificationTokenTtl())));
-        mailSender.send(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken));
+        mailDispatcher.dispatch(verificationMailComposer.compose(user.getEmail(), user.getName(), rawToken));
     }
 
     /**
@@ -471,12 +471,13 @@ public class AuthService {
         try {
             // At most one notice per address per hour: the response is uniform, so
             // signup must not become a way to flood a mailbox either. Suppression
-            // is silent — the caller still gets the same 202.
+            // is silent — the caller still gets the same 202, and just as fast,
+            // because the send itself never runs on the request thread.
             rateLimitService.hitHourly(NOTICE_SCOPE, email, 1);
         } catch (ApiException suppressed) {
             return;
         }
-        mailSender.send(verificationMailComposer.composeAlreadyRegistered(email));
+        mailDispatcher.dispatch(verificationMailComposer.composeAlreadyRegistered(email));
     }
 
     private void sendPasswordResetMail(User user) {
@@ -486,7 +487,8 @@ public class AuthService {
         String rawToken = TokenHasher.newToken();
         emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
                 VerificationPurpose.PASSWORD_RESET, now.plus(PASSWORD_RESET_TOKEN_TTL)));
-        mailSender.send(verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken));
+        mailDispatcher.dispatch(
+                verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken));
     }
 
     private static String normalize(String email) {

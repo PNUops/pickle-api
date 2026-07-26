@@ -9,10 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import jakarta.servlet.http.Cookie;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -56,6 +58,9 @@ class AuthFlowTest {
     @Autowired
     private MockMailSender mockMailSender;
 
+    @Autowired
+    private AsyncMailDispatcher mailDispatcher;
+
     @Test
     void fullAuthLifecycle() throws Exception {
         // signup → 202 and a verification mail
@@ -69,8 +74,9 @@ class AuthFlowTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("AUTH_EMAIL_NOT_VERIFIED"));
 
-        // token comes from the recorded mock mail, not from logs
-        MailMessage mail = mockMailSender.lastMessageTo(EMAIL);
+        // token comes from the recorded mock mail, not from logs (auth mail leaves
+        // on a background thread, so wait for the dispatcher to drain first)
+        MailMessage mail = flushMail(EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
         Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
         assertThat(matcher.find()).as("verification link with token in mail body").isTrue();
@@ -82,7 +88,7 @@ class AuthFlowTest {
                 "consents", FULL_CONSENTS))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
-        MailMessage notice = mockMailSender.lastMessageTo(EMAIL);
+        MailMessage notice = flushMail(EMAIL);
         assertThat(notice.subject()).contains("가입 안내");
         assertThat(notice.body()).contains("이미 가입된 계정");
         assertThat(notice.body()).as("a notice mail carries no token").doesNotContain("token=");
@@ -214,6 +220,25 @@ class AuthFlowTest {
     }
 
     @Test
+    void signupStillSucceedsWhenTheVerificationMailFailsToSend() throws Exception {
+        // The recipient tag makes the mock sender throw. The send runs after commit
+        // on a background thread, so the failure can neither roll the signup back
+        // nor change the uniform 202 the caller sees.
+        String email = "flow.smtpdown+fail@pusan.ac.kr";
+        postSignup(Map.of("email", email, "password", PASSWORD, "name", "발송실패",
+                "consents", FULL_CONSENTS))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+
+        assertThat(flushMail(email)).as("the failed send records no mail").isNull();
+        // the account was created all the same: an unknown address answers 401,
+        // this one answers 403 because it exists but is unverified
+        postJson("/api/v1/auth/login", Map.of("email", email, "password", PASSWORD))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_EMAIL_NOT_VERIFIED"));
+    }
+
+    @Test
     void signupRequiresConsentToEveryCurrentDocument() throws Exception {
         // Only one of the two required documents → 422 (server completeness check).
         Map<String, ?> partial = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
@@ -258,6 +283,13 @@ class AuthFlowTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("password"));
+    }
+
+    /** Drains the async dispatcher, then returns the last mail recorded for {@code email}. */
+    private MailMessage flushMail(String email) {
+        assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10)))
+                .as("mail dispatcher drained").isTrue();
+        return mockMailSender.lastMessageTo(email);
     }
 
     private org.springframework.test.web.servlet.ResultActions postJson(String uri, Map<String, ?> body)
