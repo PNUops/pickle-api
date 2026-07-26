@@ -85,3 +85,59 @@ hygiene_check() {
   [ "$rc" -eq 0 ] && echo "hygiene OK"
   return "$rc"
 }
+
+# Proves the patterns still detect what they are meant to detect. Without this a
+# weakened pattern passes silently — which already happened once: `S1[0-3]` matched
+# neither S1 nor S9, and a line-level exclusion let any line carrying a version
+# string through. Runs on a fixed sample, so it needs no repository.
+hygiene_selftest() {
+  local bad rc=0
+  local samples=(
+    'see docs/registry/hosts.md for the layout'
+    'described in credentials.md'
+    'provisioned by infra/scripts/create-app-lxc.sh'
+    'the vault at /root/pickle/secrets holds it'
+    'run deploy-api.sh after this'
+    'M6 shipped this'
+    'M4A publishing per contract v0.4.0'
+    'W1.5 lesson applied'
+    'phase roles (W3)'
+    'launch gate G5 pending'
+    'teardown on delete (B1)'
+    'review finding C4 addressed'
+    'prefill lock (R1)'
+    'S4 anti-enumeration'
+    'S13 cipher policy'
+    'O7 rotation runbook'
+    'O10 dashboard guard'
+    'discovered as H1'
+    'admin (WP-F3) queries'
+    'landed with the api-B merge'
+    'frame protocol (Lane C agreement)'
+    '보안 게이트 M-1'
+    'M4A gate mandated in contract v0.14.1 rollout'
+    'M4A gate applies to host 10.32.0.5'
+  )
+  for bad in "${samples[@]}"; do
+    if ! printf '%s' "$bad" \
+        | sed -E "s/${HYGIENE_ALLOW}//g" \
+        | grep -qE "(\.\./docs|(^|[^a-z])docs/|${HYGIENE_DOC_NAMES}|\binfra/|/root/pickle/secrets|deploy-(api|console|sshgw|proxy-agent)\.sh|create-(app|sshgw)-lxc\.sh|${HYGIENE_TOKENS})"; then
+      echo "hygiene selftest: pattern no longer detects: $bad" >&2
+      rc=1
+    fi
+  done
+  # And the opposite: legitimate content must not trip it.
+  local good=(
+    'released in contract v0.14.1 to host 10.32.0.5 on D-7'
+    'migration V47__vm_request_desired_slug.sql applied'
+    'the L4 forwarder sends PROXY v2'
+  )
+  for bad in "${good[@]}"; do
+    if printf '%s' "$bad" | sed -E "s/${HYGIENE_ALLOW}//g" | grep -qE "$HYGIENE_TOKENS"; then
+      echo "hygiene selftest: false positive on legitimate text: $bad" >&2
+      rc=1
+    fi
+  done
+  [ "$rc" -eq 0 ] && echo "hygiene selftest OK"
+  return "$rc"
+}

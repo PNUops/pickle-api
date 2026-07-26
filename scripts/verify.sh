@@ -17,6 +17,7 @@ mvn versions:display-dependency-updates -DprocessDependencyManagement=false 2>/d
 # both missed real violations.
 # shellcheck source=scripts/hygiene.sh
 . scripts/hygiene.sh   # cwd is the repo root (set above)
+hygiene_selftest
 hygiene_check public
 
 echo "api dependency audit done (informational)"
