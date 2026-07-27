@@ -1,5 +1,8 @@
 package kr.ac.pusan.pickle.publishing;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -37,6 +40,9 @@ public class DomainVerifier {
     private final VmRepository vmRepository;
     private final NotificationService notificationService;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     public DomainVerifier(DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             DnsResolver dnsResolver, PublishingProperties properties, VmRepository vmRepository,
@@ -68,6 +74,15 @@ public class DomainVerifier {
         boolean txtOk = dnsResolver.txtRecords(PublicationAssembler.VERIFY_RECORD_PREFIX + fqdn)
                 .contains(domain.getVerificationToken());
         boolean aOk = dnsResolver.aRecords(fqdn).contains(properties.proxyPublicIp());
+        // The DNS lookups above take seconds; without a version column, the
+        // dirty-checked flush below is last-write-wins. Re-read under a row
+        // lock so a force-release/teardown that committed meanwhile is seen
+        // (abort) instead of overwritten (which would resurrect a REMOVED
+        // domain as ACTIVE and could re-push its vhost).
+        entityManager.refresh(domain, LockModeType.PESSIMISTIC_WRITE);
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            return Optional.empty();
+        }
         domain.setTxtVerified(txtOk);
         domain.setAVerified(aOk);
         domain.setLastCheckedAt(Instant.now());
