@@ -187,6 +187,12 @@ class VmRequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
 
+        // profanity substring → 422 at submit, not first at the approval screen
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "team-porn-site", "pickle.pnuops.com"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
+                .andExpect(jsonPath("$.errors[0].message").value("사용할 수 없는 단어가 포함된 서브도메인입니다."));
+
         // valid http publication request → 201
         String httpResponse = postJson("/api/v1/vm-requests", requesterToken,
                 httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))

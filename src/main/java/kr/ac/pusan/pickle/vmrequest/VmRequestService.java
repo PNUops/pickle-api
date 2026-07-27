@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
+import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -55,13 +56,14 @@ public class VmRequestService {
     private final NotificationService notificationService;
     private final VmRepository vmRepository;
     private final VmSlugPolicy slugPolicy;
+    private final SubdomainPolicy subdomainPolicy;
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
             OrgRepository orgRepository, VmTemplateRepository templateRepository,
             SettingsService settingsService, AuditService auditService,
             NotificationService notificationService, VmRepository vmRepository,
-            VmSlugPolicy slugPolicy) {
+            VmSlugPolicy slugPolicy, SubdomainPolicy subdomainPolicy) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.groupRepository = groupRepository;
@@ -73,6 +75,7 @@ public class VmRequestService {
         this.notificationService = notificationService;
         this.vmRepository = vmRepository;
         this.slugPolicy = slugPolicy;
+        this.subdomainPolicy = subdomainPolicy;
     }
 
     @Transactional
@@ -243,12 +246,9 @@ public class VmRequestService {
                         "HTTP 게시를 신청하려면 루트 도메인을 선택해야 합니다."));
             }
         }
-        if (request.desiredSubdomain() != null
-                && settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS)
-                        .contains(request.desiredSubdomain())) {
-            errors.add(new FieldValidationError("desiredSubdomain",
-                    "'" + request.desiredSubdomain() + "'은(는) 사용할 수 없는 예약 서브도메인입니다."));
-        }
+        // Full subdomain policy — the same reserved/profanity/pattern gate the
+        // approval path runs, so a denied label never reaches the review screen.
+        subdomainPolicy.validateLabel(request.desiredSubdomain(), "desiredSubdomain", errors);
         String rootDomain = Texts.blankToNull(request.rootDomain());
         if (rootDomain != null
                 && !settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(rootDomain)) {
