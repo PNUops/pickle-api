@@ -61,9 +61,8 @@ public class PasswordPolicy {
                 || CONTEXT_PASSWORDS.contains(lower) || CONTEXT_PASSWORDS.contains(stripped)) {
             return error("너무 흔한 비밀번호입니다. 다른 비밀번호를 사용해 주세요.");
         }
-        if (characterClasses(rawPassword) < 2) {
-            return error("영문 대문자·소문자·숫자·특수문자 중 두 종류 이상을 섞어 주세요.");
-        }
+        // No character-class rule: NIST SP 800-63B forbids composition rules
+        // (users route around them predictably); the blocklist is the defense.
         if (lower.chars().distinct().count() <= 2) {
             return error("같은 문자가 반복되는 비밀번호는 사용할 수 없습니다.");
         }
@@ -97,23 +96,6 @@ public class PasswordPolicy {
 
     private static List<FieldValidationError> error(String message) {
         return List.of(new FieldValidationError("password", message));
-    }
-
-    private static int characterClasses(String password) {
-        int classes = 0;
-        if (password.chars().anyMatch(Character::isLowerCase)) {
-            classes++;
-        }
-        if (password.chars().anyMatch(Character::isUpperCase)) {
-            classes++;
-        }
-        if (password.chars().anyMatch(Character::isDigit)) {
-            classes++;
-        }
-        if (password.chars().anyMatch(c -> !Character.isLetterOrDigit(c))) {
-            classes++;
-        }
-        return classes;
     }
 
     private static boolean isSequential(String stripped) {

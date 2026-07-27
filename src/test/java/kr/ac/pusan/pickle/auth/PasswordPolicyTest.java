@@ -59,4 +59,12 @@ class PasswordPolicyTest {
         assertThat(policy.check("Corr3ct-horse-battery!", EMAIL)).isEmpty();
         assertThat(policy.check("purple-Monkey-dishwasher9", EMAIL)).isEmpty();
     }
+
+    @Test
+    void singleClassPassphrasesPassSinceTheCompositionRuleWasDropped() {
+        // NIST SP 800-63B: no composition rules — a lowercase-only passphrase
+        // is fine as long as it clears the blocklist and structure checks.
+        assertThat(policy.check("dogsandcats", EMAIL)).isEmpty();
+        assertThat(policy.check("seoulwinter", EMAIL)).isEmpty();
+    }
 }
