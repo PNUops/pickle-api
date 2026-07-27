@@ -173,7 +173,7 @@ public class DriftReconciler {
                 if (cycle.seen(DriftFindingKind.UNMANAGED_GUEST, dedupKey)) {
                     driftFindingRepository.observe(DriftFindingKind.UNMANAGED_GUEST, null,
                             resource.vmid(), resource.node(),
-                            "미관리 pickle 게스트: vmid %d '%s' (노드 %s, 상태 %s)".formatted(
+                            "플랫폼 미관리 게스트: vmid %d '%s' (노드 %s, 상태 %s)".formatted(
                                     resource.vmid(), resource.name(), resource.node(),
                                     resource.status()),
                             detailJson(Map.of(

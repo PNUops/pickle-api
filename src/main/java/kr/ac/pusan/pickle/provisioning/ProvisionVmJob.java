@@ -653,7 +653,7 @@ public class ProvisionVmJob implements ProvisioningService {
                     if (!ManagedGuestIdentity.matches(vm, resource)) {
                         throw new IllegalStateException("보상 파기 대상 불일치: vmid " + vmid
                                 + "의 게스트 이름 '" + resource.name() + "'이(가) 호스트명 '"
-                                + vm.getHostname() + "'과 다르고 pickle 태그도 없습니다");
+                                + vm.getHostname() + "'과 다르고 플랫폼 관리 태그도 없습니다");
                     }
                     proxmox.setProtection(node.getApiHost(), node.getName(), vmid, false);
                     String upid = proxmox.delete(node.getApiHost(), node.getName(), vmid);

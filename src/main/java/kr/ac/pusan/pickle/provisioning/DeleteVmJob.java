@@ -317,7 +317,7 @@ public class DeleteVmJob {
             throw new DestroyTargetMismatchException(
                     "파기 대상 불일치: vmid " + vmid + "의 게스트 이름 '" + resource.name()
                             + "'이(가) 호스트명 '" + vm.getHostname()
-                            + "'과 다르고 pickle 태그도 없습니다");
+                            + "'과 다르고 플랫폼 관리 태그도 없습니다");
         }
         shutdownIfRunning(node, vmid);
         // Disarm the always-on PVE protection as late as possible — after the
