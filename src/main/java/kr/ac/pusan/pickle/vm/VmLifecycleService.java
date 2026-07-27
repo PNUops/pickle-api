@@ -252,8 +252,9 @@ public class VmLifecycleService {
     /**
      * Stop protection: when {@code stop_protection} is on, shutdown/reboot/
      * force-stop require group EDITOR+; a MEMBER is refused 409
-     * {@code VM_STOP_PROTECTED}. Start is deliberately unaffected. Admins reach
-     * these ops only as group members, so no separate admin bypass exists.
+     * {@code VM_STOP_PROTECTED}. Start is deliberately unaffected. Only the
+     * member-facing power ops call this — the admin intervention path
+     * (contract v0.17.0) deliberately bypasses it, per the class javadoc.
      */
     private void requireStopAllowed(long vmId, GroupMemberRole role) {
         if (role.atLeast(GroupMemberRole.EDITOR)) {
