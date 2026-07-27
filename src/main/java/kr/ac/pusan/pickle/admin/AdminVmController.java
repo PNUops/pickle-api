@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
+import kr.ac.pusan.pickle.admin.dto.VmGatewayBlockUpdateRequest;
 import kr.ac.pusan.pickle.admin.dto.VmPeriodUpdateRequest;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -46,12 +47,15 @@ public class AdminVmController {
     private final AdminVmQueryService adminVmQueryService;
     private final VmDeletionService vmDeletionService;
     private final VmPeriodService vmPeriodService;
+    private final VmGatewayBlockService vmGatewayBlockService;
 
     public AdminVmController(AdminVmQueryService adminVmQueryService,
-            VmDeletionService vmDeletionService, VmPeriodService vmPeriodService) {
+            VmDeletionService vmDeletionService, VmPeriodService vmPeriodService,
+            VmGatewayBlockService vmGatewayBlockService) {
         this.adminVmQueryService = adminVmQueryService;
         this.vmDeletionService = vmDeletionService;
         this.vmPeriodService = vmPeriodService;
+        this.vmGatewayBlockService = vmGatewayBlockService;
     }
 
     @GetMapping
@@ -82,6 +86,20 @@ public class AdminVmController {
             @Valid @RequestBody VmPeriodUpdateRequest request,
             HttpServletRequest httpRequest) {
         return vmPeriodService.updatePeriod(principal, vmId, request, clientIp(httpRequest));
+    }
+
+    /**
+     * Per-VM SSH-gateway/web-terminal kill switch — synchronous flag flip
+     * (200 + full detail). SYS_ADMIN-only per the dangerous-op policy.
+     */
+    @PatchMapping("/{vmId}/gateway-block")
+    @PreAuthorize("hasRole('SYS_ADMIN')")
+    public VmDetailResponse updateVmGatewayBlock(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId,
+            @Valid @RequestBody VmGatewayBlockUpdateRequest request,
+            HttpServletRequest httpRequest) {
+        return vmGatewayBlockService.updateBlock(principal, vmId, request, clientIp(httpRequest));
     }
 
     @PostMapping("/{vmId}/schedule-delete")

@@ -25,5 +25,9 @@ public enum VmEventType {
     /** Expiry sweeper auto-stopped the VM past its end date (actor null). */
     EXPIRE_STOP,
     /** Admin changed the usage period ({@code PATCH /admin/vms/{vmId}/period}). */
-    PERIOD_UPDATE
+    PERIOD_UPDATE,
+    /** SYS_ADMIN blocked SSH-gateway/web-terminal access for this VM (contract v0.16.0). */
+    GATEWAY_BLOCK,
+    /** SYS_ADMIN lifted the per-VM SSH-gateway/web-terminal block. */
+    GATEWAY_UNBLOCK
 }

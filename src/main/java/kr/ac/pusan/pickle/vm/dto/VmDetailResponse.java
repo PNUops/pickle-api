@@ -28,6 +28,7 @@ public record VmDetailResponse(
         @Nullable String displayName,
         Long requestId,
         @Nullable String statusDetail,
+        boolean sshGatewayBlocked,
         Instant createdAt,
         Long orgId,
         Long templateId,
@@ -52,7 +53,8 @@ public record VmDetailResponse(
             boolean httpPublishGranted, PublicationView publication) {
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
-                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.getCreatedAt(), vm.getOrgId(),
+                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
+                vm.getCreatedAt(), vm.getOrgId(),
                 vm.getTemplateId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
                 VmDeletionResponse.from(vm), httpPublishGranted, publication,

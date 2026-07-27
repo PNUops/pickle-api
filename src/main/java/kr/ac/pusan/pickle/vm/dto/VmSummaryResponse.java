@@ -25,6 +25,7 @@ public record VmSummaryResponse(
         @Nullable String displayName,
         Long requestId,
         @Nullable String statusDetail,
+        boolean sshGatewayBlocked,
         @Nullable LocalDate endDate,
         @Nullable Instant expiryStoppedAt,
         Instant createdAt) {
@@ -32,7 +33,7 @@ public record VmSummaryResponse(
     public static VmSummaryResponse from(Vm vm, String groupName, String orgName, String displayName) {
         return new VmSummaryResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
-                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.getEndDate(),
-                vm.getExpiryStoppedAt(), vm.getCreatedAt());
+                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
+                vm.getEndDate(), vm.getExpiryStoppedAt(), vm.getCreatedAt());
     }
 }

@@ -65,6 +65,10 @@ public class AuditService {
     public static final String TASK_RETRY = "task.retry";
     public static final String NOTIFICATION_RESEND = "notification.resend";
     public static final String VM_PERIOD_UPDATE = "vm.period_update";
+    /** Per-VM SSH-gateway/web-terminal block toggled on (contract v0.16.0). */
+    public static final String VM_GATEWAY_BLOCK = "vm.gateway_block";
+    /** Per-VM SSH-gateway/web-terminal block toggled off. */
+    public static final String VM_GATEWAY_UNBLOCK = "vm.gateway_unblock";
     /**
      * SSH gateway route resolved (internal route contract). Retired as an
      * audit action when route lookup and session auth were split (2026-07-18):

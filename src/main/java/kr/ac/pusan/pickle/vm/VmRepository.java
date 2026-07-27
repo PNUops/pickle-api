@@ -231,6 +231,17 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             @Param("endDate") java.time.LocalDate endDate,
             @Param("excluded") Collection<VmStatus> excluded, @Param("now") Instant now);
 
+    /**
+     * Per-VM SSH-gateway/web-terminal block toggle. Declarative flag with no
+     * state guard — blocking a DELETED VM is harmless and unblocking must
+     * always be possible. The entity stays setter-free.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("update Vm v set v.sshGatewayBlocked = :blocked, v.updatedAt = :now where v.id = :id")
+    int updateSshGatewayBlocked(@Param("id") Long id, @Param("blocked") boolean blocked,
+            @Param("now") Instant now);
+
     // --- provision pipeline column updates (single-writer: the provisioning job) ----
 
     /** Step 1 (place) confirms/overrides the node chosen at approval time. */

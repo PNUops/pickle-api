@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.14.1, 106 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.16.0, 107 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -128,6 +128,7 @@ operations:
   # ── 3.11 Admin — VMs (force-delete SYS_ADMIN-only) ────────────────────────
   - { id: listAdminVms,             method: GET,   path: "/admin/vms",                                 roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateVmPeriod,           method: PATCH, path: "/admin/vms/{vmId}/period",                   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateVmGatewayBlock,     method: PATCH, path: "/admin/vms/{vmId}/gateway-block",            roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: scheduleVmDeletion,       method: POST,  path: "/admin/vms/{vmId}/schedule-delete",          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: cancelScheduledVmDeletion, method: POST, path: "/admin/vms/{vmId}/cancel-scheduled-delete", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: forceDeleteVm,            method: POST,  path: "/admin/vms/{vmId}/force-delete",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

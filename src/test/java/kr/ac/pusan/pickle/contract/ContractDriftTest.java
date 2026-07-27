@@ -139,6 +139,7 @@ class ContractDriftTest {
             "GET /admin/summary",
             "GET /admin/system-summary",
             "PATCH /admin/vms/{vmId}/period",
+            "PATCH /admin/vms/{vmId}/gateway-block",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
             // Per-user SSH keys and VM settings (contract v0.8.0).
