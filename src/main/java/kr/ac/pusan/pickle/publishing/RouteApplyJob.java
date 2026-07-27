@@ -114,6 +114,16 @@ public class RouteApplyJob {
         }
         Domain domain = domainRepository.findById(route.getDomainId()).orElseThrow();
         boolean absent = route.getStatus() == RouteStatus.REMOVED;
+        // Local backstop for the platform invariant: a PRESENT push may only
+        // serve a verified (ACTIVE) domain. Every enqueue site guards this
+        // already; enforcing it at the single execution choke point keeps the
+        // invariant from depending on all of them staying correct.
+        if (!absent && domain.getStatus() != DomainStatus.ACTIVE) {
+            log.warn("route-apply skipped: route {} is live but domain {} is {} — "
+                    + "refusing to push an unverified/released domain", routeId,
+                    domain.getFqdn(), domain.getStatus());
+            return null;
+        }
         ApplyRequest request = absent ? absentRequest(domain, route) : presentRequest(domain, route);
         if (request == null) {
             return ApplyOutcome.Kind.FAILED; // present() already recorded it (no live IP)
