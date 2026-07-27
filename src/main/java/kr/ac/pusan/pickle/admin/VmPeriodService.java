@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -42,14 +43,17 @@ public class VmPeriodService {
     private final VmRepository vmRepository;
     private final VmEventRepository vmEventRepository;
     private final VmQueryService vmQueryService;
+    private final AdminVmAccess adminVmAccess;
     private final AuditService auditService;
     private final Clock clock;
 
     public VmPeriodService(VmRepository vmRepository, VmEventRepository vmEventRepository,
-            VmQueryService vmQueryService, AuditService auditService, Clock clock) {
+            VmQueryService vmQueryService, AdminVmAccess adminVmAccess, AuditService auditService,
+            Clock clock) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.vmQueryService = vmQueryService;
+        this.adminVmAccess = adminVmAccess;
         this.auditService = auditService;
         this.clock = clock;
     }
@@ -57,7 +61,7 @@ public class VmPeriodService {
     @Transactional
     public VmDetailResponse updatePeriod(AuthenticatedUser actor, long vmId,
             VmPeriodUpdateRequest request, String ip) {
-        Vm vm = requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         validateDates(request.endDate(), newStart);
         requireNotDeletionBound(vm);
@@ -100,23 +104,10 @@ public class VmPeriodService {
         }
     }
 
-    /** Org tier sees only its own org's VMs — cross-org and unknown both 404. */
-    private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmPeriodService::vmNotFound);
-        if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
-            throw vmNotFound();
-        }
-        return vm;
-    }
-
     private static ApiException deletionBound() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 수행할 수 없는 작업입니다",
                 "삭제가 예약되었거나 진행 중인 VM은 기간을 변경할 수 없습니다.");
     }
 
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
-    }
 }

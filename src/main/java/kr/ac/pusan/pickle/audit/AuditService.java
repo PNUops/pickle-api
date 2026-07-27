@@ -69,6 +69,11 @@ public class AuditService {
     public static final String VM_GATEWAY_BLOCK = "vm.gateway_block";
     /** Per-VM SSH-gateway/web-terminal block toggled off. */
     public static final String VM_GATEWAY_UNBLOCK = "vm.gateway_unblock";
+    // Admin power intervention (contract v0.17.0) — org-scoped, stop-protection bypass.
+    public static final String VM_ADMIN_START = "vm.admin_start";
+    public static final String VM_ADMIN_SHUTDOWN = "vm.admin_shutdown";
+    public static final String VM_ADMIN_REBOOT = "vm.admin_reboot";
+    public static final String VM_ADMIN_FORCE_STOP = "vm.admin_force_stop";
     /**
      * SSH gateway route resolved (internal route contract). Retired as an
      * audit action when route lookup and session auth were split (2026-07-18):

@@ -15,9 +15,11 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmDeletionService;
+import kr.ac.pusan.pickle.vm.VmLifecycleService;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
+import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -33,11 +35,12 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, vms subset — list plus deletion management.
- * ORG_ADMIN acts on its own org (cross-org orgId filters and targets answer
- * 404, never 403, so the existence of other orgs stays private); SYS_ADMIN
- * covers all orgs. Force delete is SYS_ADMIN-only (method-level gate
- * overrides the class-level one).
+ * Contract tag {@code admin}, vms subset — list, detail/events, power
+ * intervention, and deletion management. ORG_ADMIN acts on its own org
+ * (cross-org orgId filters and targets answer 404, never 403, so the existence
+ * of other orgs stays private); SYS_ADMIN covers all orgs. Force delete and
+ * the gateway-block toggle are SYS_ADMIN-only (method-level gates override the
+ * class-level one).
  */
 @RestController
 @RequestMapping("/api/v1/admin/vms")
@@ -48,14 +51,16 @@ public class AdminVmController {
     private final VmDeletionService vmDeletionService;
     private final VmPeriodService vmPeriodService;
     private final VmGatewayBlockService vmGatewayBlockService;
+    private final VmLifecycleService vmLifecycleService;
 
     public AdminVmController(AdminVmQueryService adminVmQueryService,
             VmDeletionService vmDeletionService, VmPeriodService vmPeriodService,
-            VmGatewayBlockService vmGatewayBlockService) {
+            VmGatewayBlockService vmGatewayBlockService, VmLifecycleService vmLifecycleService) {
         this.adminVmQueryService = adminVmQueryService;
         this.vmDeletionService = vmDeletionService;
         this.vmPeriodService = vmPeriodService;
         this.vmGatewayBlockService = vmGatewayBlockService;
+        this.vmLifecycleService = vmLifecycleService;
     }
 
     @GetMapping
@@ -75,6 +80,61 @@ public class AdminVmController {
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return adminVmQueryService.list(principal, orgId, groupId, status, expiringInDays, expired,
                 q, sort, page, size);
+    }
+
+    /** Org-scoped admin view of the full VM detail (viewer is not a member). */
+    @GetMapping("/{vmId}")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    public VmDetailResponse getAdminVm(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId) {
+        return adminVmQueryService.get(principal, vmId);
+    }
+
+    @GetMapping("/{vmId}/events")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    public PageResponse<VmEventResponse> listAdminVmEvents(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
+        return adminVmQueryService.events(principal, vmId, page, size);
+    }
+
+    @PostMapping("/{vmId}/start")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse adminStartVm(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId, HttpServletRequest httpRequest) {
+        return vmLifecycleService.adminStart(principal, vmId, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{vmId}/shutdown")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse adminShutdownVm(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId, HttpServletRequest httpRequest) {
+        return vmLifecycleService.adminShutdown(principal, vmId, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{vmId}/reboot")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse adminRebootVm(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId, HttpServletRequest httpRequest) {
+        return vmLifecycleService.adminReboot(principal, vmId, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{vmId}/force-stop")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse adminForceStopVm(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId, HttpServletRequest httpRequest) {
+        return vmLifecycleService.adminForceStop(principal, vmId, clientIp(httpRequest));
     }
 
     /** Synchronous DB update per contract (200 + full detail, not 202). */

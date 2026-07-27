@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -46,6 +48,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * poller skips claimed VMs. Reboot serializes through its visible
  * {@code REBOOTING} transition instead of the claim column, so a force-stop can
  * still interrupt a hung reboot and the poller can converge a crashed one.</p>
+ *
+ * <p>Admin intervention (contract v0.17.0, {@code POST /admin/vms/{vmId}/…}):
+ * the same intents under org-scoped authorization instead of group membership.
+ * The admin path deliberately skips the group-role gates — including stop
+ * protection, which is a group-internal guard (MEMBER vs EDITOR); the admin is
+ * the emergency operator and every accepted intervention is audited. The
+ * expiry guard on start stays: the sanctioned path is a period extension
+ * first. State machine and claim protocol are identical to the user path.</p>
  */
 @Service
 public class VmLifecycleService {
@@ -53,16 +63,21 @@ public class VmLifecycleService {
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final VmSettingsService vmSettingsService;
+    private final AdminVmAccess adminVmAccess;
+    private final AuditService auditService;
     private final JobScheduler jobScheduler;
     private final VmPowerJobs vmPowerJobs;
     private final Clock clock;
 
     public VmLifecycleService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            VmSettingsService vmSettingsService, JobScheduler jobScheduler, VmPowerJobs vmPowerJobs,
+            VmSettingsService vmSettingsService, AdminVmAccess adminVmAccess,
+            AuditService auditService, JobScheduler jobScheduler, VmPowerJobs vmPowerJobs,
             Clock clock) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.vmSettingsService = vmSettingsService;
+        this.adminVmAccess = adminVmAccess;
+        this.auditService = auditService;
         this.jobScheduler = jobScheduler;
         this.vmPowerJobs = vmPowerJobs;
         this.clock = clock;
@@ -121,6 +136,71 @@ public class VmLifecycleService {
         long actorId = actor.id();
         enqueueAfterCommit(() -> vmPowerJobs.forceStop(vmId, actorId));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    /* ─── admin intervention (org-scoped, stop-protection bypass, audited) ─── */
+
+    @Transactional
+    public MessageResponse adminStart(AuthenticatedUser actor, long vmId, String ip) {
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        // Same expiry guard as the member path: extend the period first.
+        if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
+                    "사용 기간이 만료된 VM입니다",
+                    "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 먼저 기간을 연장해 주세요."
+                            .formatted(vm.getEndDate()));
+        }
+        claimPowerAction(vmId, PowerAction.START, List.of(VmStatus.STOPPED),
+                "STOPPED 상태의 VM만 시작할 수 있습니다.");
+        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, ip);
+        long actorId = actor.id();
+        enqueueAfterCommit(() -> vmPowerJobs.start(vmId, actorId));
+        return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    @Transactional
+    public MessageResponse adminShutdown(AuthenticatedUser actor, long vmId, String ip) {
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        claimPowerAction(vmId, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
+                "RUNNING 상태의 VM만 종료할 수 있습니다.");
+        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, ip);
+        long actorId = actor.id();
+        enqueueAfterCommit(() -> vmPowerJobs.shutdown(vmId, actorId));
+        return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    @Transactional
+    public MessageResponse adminReboot(AuthenticatedUser actor, long vmId, String ip) {
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        if (vmRepository.claimReboot(vmId, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
+            throw powerConflict(vmId, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+        }
+        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, ip);
+        long actorId = actor.id();
+        enqueueAfterCommit(() -> vmPowerJobs.reboot(vmId, actorId));
+        return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    @Transactional
+    public MessageResponse adminForceStop(AuthenticatedUser actor, long vmId, String ip) {
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        claimPowerAction(vmId, PowerAction.FORCE_STOP,
+                List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
+                "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
+        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, ip);
+        long actorId = actor.id();
+        enqueueAfterCommit(() -> vmPowerJobs.forceStop(vmId, actorId));
+        return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    /**
+     * Every accepted admin power intervention leaves an audit row (the VM event
+     * itself is written by the worker with the admin as actor, same as the
+     * member path). Reads are not audited, matching the other admin surfaces.
+     */
+    private void recordAdminPowerAudit(AuthenticatedUser actor, Vm vm, String action, String ip) {
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), action, "vm", vm.getId(),
+                Map.of("fromStatus", vm.getStatus().name()), ip);
     }
 
     /**

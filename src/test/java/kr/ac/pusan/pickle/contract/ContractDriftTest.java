@@ -140,6 +140,12 @@ class ContractDriftTest {
             "GET /admin/system-summary",
             "PATCH /admin/vms/{vmId}/period",
             "PATCH /admin/vms/{vmId}/gateway-block",
+            "GET /admin/vms/{vmId}",
+            "GET /admin/vms/{vmId}/events",
+            "POST /admin/vms/{vmId}/start",
+            "POST /admin/vms/{vmId}/shutdown",
+            "POST /admin/vms/{vmId}/reboot",
+            "POST /admin/vms/{vmId}/force-stop",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
             // Per-user SSH keys and VM settings (contract v0.8.0).

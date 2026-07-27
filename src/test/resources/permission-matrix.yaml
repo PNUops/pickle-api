@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.16.0, 107 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.17.0, 113 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -127,6 +127,12 @@ operations:
 
   # ── 3.11 Admin — VMs (force-delete SYS_ADMIN-only) ────────────────────────
   - { id: listAdminVms,             method: GET,   path: "/admin/vms",                                 roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminVm,               method: GET,   path: "/admin/vms/{vmId}",                          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminVmEvents,        method: GET,   path: "/admin/vms/{vmId}/events",                   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: adminStartVm,             method: POST,  path: "/admin/vms/{vmId}/start",                    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: adminShutdownVm,          method: POST,  path: "/admin/vms/{vmId}/shutdown",                 roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: adminRebootVm,            method: POST,  path: "/admin/vms/{vmId}/reboot",                   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: adminForceStopVm,         method: POST,  path: "/admin/vms/{vmId}/force-stop",               roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateVmPeriod,           method: PATCH, path: "/admin/vms/{vmId}/period",                   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateVmGatewayBlock,     method: PATCH, path: "/admin/vms/{vmId}/gateway-block",            roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: scheduleVmDeletion,       method: POST,  path: "/admin/vms/{vmId}/schedule-delete",          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }

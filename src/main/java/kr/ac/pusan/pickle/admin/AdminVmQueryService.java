@@ -15,9 +15,13 @@ import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmQueryService;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
+import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.springframework.data.domain.Page;
@@ -59,15 +63,39 @@ public class AdminVmQueryService {
     private final GroupRepository groupRepository;
     private final OrgRepository orgRepository;
     private final VmSettingsService vmSettingsService;
+    private final VmQueryService vmQueryService;
+    private final AdminVmAccess adminVmAccess;
     private final Clock clock;
 
     public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository,
-            OrgRepository orgRepository, VmSettingsService vmSettingsService, Clock clock) {
+            OrgRepository orgRepository, VmSettingsService vmSettingsService,
+            VmQueryService vmQueryService, AdminVmAccess adminVmAccess, Clock clock) {
         this.vmRepository = vmRepository;
         this.groupRepository = groupRepository;
         this.orgRepository = orgRepository;
         this.vmSettingsService = vmSettingsService;
+        this.vmQueryService = vmQueryService;
+        this.adminVmAccess = adminVmAccess;
         this.clock = clock;
+    }
+
+    /**
+     * Contract {@code GET /admin/vms/{vmId}} (v0.17.0): org-scoped admin view
+     * of the full detail — the viewer is not a group member, so
+     * {@code myGroupRole} is null and password reveal stays off.
+     */
+    @Transactional(readOnly = true)
+    public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        return vmQueryService.detailOf(vm, null);
+    }
+
+    /** Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): org-scoped history. */
+    @Transactional(readOnly = true)
+    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, long vmId, int page,
+            int size) {
+        adminVmAccess.requireOrgScopedVm(actor, vmId);
+        return vmQueryService.eventsOf(vmId, page, size);
     }
 
     @Transactional(readOnly = true)

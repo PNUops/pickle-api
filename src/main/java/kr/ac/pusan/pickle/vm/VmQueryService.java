@@ -181,6 +181,15 @@ public class VmQueryService {
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, long vmId, int page, int size) {
         requireVisibleVm(actor, vmId);
+        return eventsOf(vmId, page, size);
+    }
+
+    /**
+     * History page for an <b>already authorized</b> VM — shared by the
+     * member-scoped {@link #events} and the org-scoped admin surface.
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<VmEventResponse> eventsOf(long vmId, int page, int size) {
         Page<VmEvent> result = vmEventRepository.findByVmIdOrderByIdDesc(vmId,
                 PageRequest.of(page, size));
         return PageResponse.of(result.getContent().stream().map(VmEventResponse::from).toList(),
