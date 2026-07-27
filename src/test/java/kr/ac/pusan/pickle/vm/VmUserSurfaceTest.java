@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,7 +78,7 @@ class VmUserSurfaceTest {
         ownerToken = jwtService.createAccessToken(owner);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         String slug = "vmsurf-" + UUID.randomUUID().toString().substring(0, 8);
@@ -220,10 +221,15 @@ class VmUserSurfaceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("VIEWER"));
 
+        // USER tokens only see non-hidden ACTIVE orgs, so provide one
+        jdbcTemplate.update(
+                "insert into orgs (name, slug) values ('표면 공개 기관', 'vus-visible')"
+                        + " on conflict (slug) do nothing");
         mockMvc.perform(get("/api/v1/orgs")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+                .andExpect(jsonPath("$[?(@.slug == 'vus-visible')].status")
+                        .value(org.hamcrest.Matchers.contains("ACTIVE")));
     }
 
     // ── helpers ────────────────────────────────────────────────────────────

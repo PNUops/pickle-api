@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,13 +67,13 @@ class AuditReadApiTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug("sw-edu").orElseThrow();
+        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("aud-other").orElseGet(() ->
                 orgRepository.save(new Org("감사 타기관", "aud-other", null)));
         self = ensureStudent("aud.self@pusan.ac.kr", "감사본인");
         peer = ensureStudent("aud.peer@pusan.ac.kr", "감사동료");
         otherOrgUser = ensureStudent("aud.other@pusan.ac.kr", "감사타인");
-        // derived org membership: self+peer share a group with a sw-edu
+        // derived org membership: self+peer share a group with a seed-org
         // vm_request; the third user's group is linked to the other org only
         long ownGroup = createGroup("audown", self.getId(), peer.getId());
         linkGroupToOrg(ownGroup, org.getId(), self.getId());
@@ -80,9 +81,9 @@ class AuditReadApiTest {
         linkGroupToOrg(otherGroup, otherOrg.getId(), otherOrgUser.getId());
         selfToken = jwtService.createAccessToken(self);
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         runTag = UUID.randomUUID().toString().substring(0, 8);
 
         insertAudit(self.getId(), "USER", "auth.login", null, null, "10.0.0.1");
@@ -132,7 +133,7 @@ class AuditReadApiTest {
     void adminAuditScopesOrgAdminByDerivedMembershipInSql() throws Exception {
         String actionFilter = "?action=test." + runTag + ".vmdel&size=100";
         // ORG_ADMIN: derived own-org actors only (users via their group's
-        // sw-edu request) — the other org's actor is invisible
+        // seed-org request) — the other org's actor is invisible
         mockMvc.perform(get("/api/v1/admin/audit" + actionFilter)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())

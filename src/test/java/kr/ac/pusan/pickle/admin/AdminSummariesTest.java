@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,7 +77,7 @@ class AdminSummariesTest {
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         studentToken = jwtService.createAccessToken(student);
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         groupBig = createGroup();
         groupSmall = createGroup();
     }
@@ -137,8 +138,7 @@ class AdminSummariesTest {
 
     @Test
     void orgSummaryScopingFollowsThe404MaskConvention() throws Exception {
-        long otherOrgId = jdbcTemplate.queryForObject(
-                "select id from orgs where slug = 'sw-edu'", Long.class);
+        long otherOrgId = SeedFixtures.seedOrgId(jdbcTemplate);
 
         mockMvc.perform(get("/api/v1/admin/summary")
                         .header("Authorization", "Bearer " + studentToken))
@@ -229,8 +229,7 @@ class AdminSummariesTest {
 
     private long createRequest(long groupId, String status) {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        long requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         return jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
@@ -242,8 +241,7 @@ class AdminSummariesTest {
     }
 
     private void createReview(long requestId, String decision) {
-        long reviewerId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'admin@pickle.local'", Long.class);
+        long reviewerId = SeedFixtures.sysadminId(jdbcTemplate);
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         // APPROVE rows must carry the granted spec (chk_reviews_approve_granted)
         jdbcTemplate.update("""

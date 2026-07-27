@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,9 +51,8 @@ class NodePlacementServiceTest {
 
     @BeforeEach
     void setUp() {
-        orgId = jdbc.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
-        requesterId = jdbc.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbc);
+        requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "place-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",

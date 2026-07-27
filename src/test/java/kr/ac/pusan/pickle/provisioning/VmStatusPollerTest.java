@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -77,10 +78,9 @@ class VmStatusPollerTest {
         // The seeded pve1 keeps its real api_host; take it out of the loop so
         // poll cycles in this context never attempt a real connection.
         jdbcTemplate.update("update nodes set status = 'OFFLINE' where name = 'pve1'");
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "poll-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",

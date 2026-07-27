@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,7 +84,7 @@ class AnnouncementTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug("sw-edu").orElseThrow();
+        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("ann-other").orElseGet(() ->
                 orgRepository.save(new Org("공지 타기관", "ann-other", null)));
         ownMember = ensureStudent("ann.own.member@pusan.ac.kr", "공지자기관원", UserStatus.ACTIVE);
@@ -100,9 +101,9 @@ class AnnouncementTest {
         otherOrgAdmin.setStatus(UserStatus.ACTIVE);
         otherOrgAdmin = userRepository.save(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         studentToken = jwtService.createAccessToken(ownMember);
         // group linked to the caller's org (vm_request), ACTIVE + DISABLED members
@@ -171,7 +172,7 @@ class AnnouncementTest {
         long orgAnnId = createdId(orgSend);
         assertThat(recipientOf(orgAnnId, ownMember.getId())).isEqualTo(1);
         assertThat(recipientOf(orgAnnId, crossMember.getId())).isEqualTo(1);
-        Long seededOrgAdminId = userRepository.findByEmail("orgadmin@pickle.local")
+        Long seededOrgAdminId = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL)
                 .map(User::getId).orElseThrow();
         assertThat(recipientOf(orgAnnId, seededOrgAdminId)).isEqualTo(1);
         assertThat(recipientOf(orgAnnId, inactiveMember.getId())).isZero();

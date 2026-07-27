@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,7 +54,7 @@ class AdminUserDisableRevokeTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
     }
 
     @Test

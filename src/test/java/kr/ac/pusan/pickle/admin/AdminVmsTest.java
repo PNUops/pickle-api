@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,7 +68,7 @@ class AdminVmsTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug("sw-edu").orElseThrow();
+        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("advm-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "advm-other", null)));
         User student = ensureUser("advm.student@pusan.ac.kr", "목록학생", UserRole.USER, null);
@@ -75,10 +76,10 @@ class AdminVmsTest {
                 UserRole.ORG_ADMIN, otherOrg.getId());
         studentToken = jwtService.createAccessToken(student);
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         groupA1 = createGroup();
         groupA2 = createGroup();
         groupB = createGroup();
@@ -254,8 +255,7 @@ class AdminVmsTest {
     /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
     private long createVm(long orgId, long groupId, String status, String name) {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        long requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,

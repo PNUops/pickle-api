@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,12 +54,11 @@ class IpamServiceTest {
 
     @BeforeEach
     void setUp() {
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         templateId = jdbcTemplate.queryForObject(
                 "select min(id) from vm_templates", Long.class);
-        requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "ipam-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject("""
                 insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id

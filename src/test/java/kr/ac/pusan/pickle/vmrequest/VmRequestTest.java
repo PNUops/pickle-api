@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -97,7 +98,7 @@ class VmRequestTest {
         editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
-        org = orgRepository.findBySlug("sw-edu").orElseThrow();
+        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         template = templateRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
                 .findFirst().orElseThrow();
@@ -275,7 +276,7 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 호스트명입니다."));
 
         // a rejected request is terminal — its desired slug is submittable again
-        User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
+        User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         String orgAdminToken = jwtService.createAccessToken(orgAdmin);
         postJson("/api/v1/admin/vm-requests/" + mineId + "/reject", orgAdminToken,
                 Map.of("comment", "슬러그 재사용 테스트를 위해 반려합니다."))

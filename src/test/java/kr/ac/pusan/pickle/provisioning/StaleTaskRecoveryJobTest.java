@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,11 +40,10 @@ class StaleTaskRecoveryJobTest {
 
     @BeforeEach
     void setUp() {
-        orgId = jdbc.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select min(id) from nodes", Long.class);
         templateId = jdbc.queryForObject("select min(id) from vm_templates", Long.class);
-        requesterId = jdbc.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "stale-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",

@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.seed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -27,6 +29,9 @@ class DevDataSeederTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private OrgRepository orgRepository;
 
     @Autowired
     private SeedProperties properties;
@@ -58,5 +63,12 @@ class DevDataSeederTest {
         String after = userRepository.findByEmail(properties.orgadminEmail())
                 .orElseThrow().getPasswordHash();
         assertThat(after).isEqualTo(before);
+    }
+
+    @Test
+    void seedOrgIsNeutralAndHidden() {
+        Org org = orgRepository.findBySlug(DevDataSeeder.ORG_SLUG).orElseThrow();
+        assertThat(org.getName()).isEqualTo(DevDataSeeder.ORG_NAME);
+        assertThat(org.isHidden()).isTrue();
     }
 }

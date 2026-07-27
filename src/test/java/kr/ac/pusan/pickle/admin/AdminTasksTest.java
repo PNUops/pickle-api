@@ -11,6 +11,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,10 +58,10 @@ class AdminTasksTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         orgName = jdbcTemplate.queryForObject("select name from orgs where id = ?", String.class, orgId);
         long groupId = createGroup();
         vmA = createVm(groupId);
@@ -183,8 +184,7 @@ class AdminTasksTest {
 
     private long createVm(long groupId) {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        long requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,

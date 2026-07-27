@@ -35,6 +35,14 @@ public class Org {
     @Column(nullable = false, columnDefinition = "org_status")
     private OrgStatus status = OrgStatus.ACTIVE;
 
+    /**
+     * Hidden from USER-role org listings (test/seed orgs); everything else —
+     * requests targeting it, its admins, smokes — keeps working. Manager-tier
+     * callers still see hidden orgs (V49).
+     */
+    @Column(nullable = false)
+    private boolean hidden;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -82,6 +90,14 @@ public class Org {
 
     public void setStatus(OrgStatus status) {
         this.status = status;
+    }
+
+    public boolean isHidden() {
+        return hidden;
+    }
+
+    public void setHidden(boolean hidden) {
+        this.hidden = hidden;
     }
 
     public Instant getCreatedAt() {

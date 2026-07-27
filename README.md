@@ -131,8 +131,8 @@ dev 프로파일에서는 메일이 실제로 발송되지 않는다. `MockMailS
 | 계정 | 환경 변수 | 기본값 |
 |---|---|---|
 | SYS_ADMIN | `PICKLE_SEED_SYSADMIN_EMAIL` / `PICKLE_SEED_SYSADMIN_PASSWORD` | `admin@pickle.local` / 없음 |
-| 조직 `SW교육센터` (slug `sw-edu`) | — | 자동 생성 |
-| ORG_ADMIN (`sw-edu` 소속) | `PICKLE_SEED_ORGADMIN_EMAIL` / `PICKLE_SEED_ORGADMIN_PASSWORD` | `orgadmin@pickle.local` / 없음 |
+| 기관 `테스트 기관` (slug `test-org`, hidden — USER 롤의 `GET /orgs` 목록에서 제외) | — | 자동 생성 |
+| ORG_ADMIN (`test-org` 소속) | `PICKLE_SEED_ORGADMIN_EMAIL` / `PICKLE_SEED_ORGADMIN_PASSWORD` | `orgadmin@pickle.local` / 없음 |
 
 비밀번호에는 기본값이 없다. dev 프로파일로 기동하려면 두 `*_PASSWORD` 값을
 반드시 설정해야 하며, 비어 있으면 기동이 실패한다.

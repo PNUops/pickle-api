@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -85,7 +86,7 @@ class InternalSshGatewayRouteTest {
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         setGatewayEnabled(true);
 
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);

@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -148,9 +149,9 @@ class ProvisioningEndToEndTest {
         long groupId = objectMapper.readTree(groupResult.getResponse().getContentAsString())
                 .get("id").asLong();
 
-        // 4. reference data from the API: active org and template presets
-        JsonNode orgs = getJson("/api/v1/orgs", studentToken);
-        long orgId = findBy(orgs, "slug", "sw-edu").get("id").asLong();
+        // 4. reference data: template presets from the API; the seed org via
+        // JDBC because it is hidden and USER tokens do not see it in /orgs
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         JsonNode templates = getJson("/api/v1/templates", studentToken);
         JsonNode template = findBy(templates, "name", "ubuntu-24.04");
         long templateId = template.get("id").asLong();
@@ -174,7 +175,7 @@ class ProvisioningEndToEndTest {
                 .get("id").asLong();
 
         // 6. the seeded ORG_ADMIN logs in and finds the request in the queue
-        String adminToken = login("orgadmin@pickle.local", "pickle-test-orgadmin!");
+        String adminToken = login(SeedFixtures.ORGADMIN_EMAIL, "pickle-test-orgadmin!");
         mockMvc.perform(get("/api/v1/admin/vm-requests?status=SUBMITTED")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())

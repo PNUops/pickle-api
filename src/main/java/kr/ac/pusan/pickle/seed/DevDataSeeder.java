@@ -21,7 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Idempotent dev/test seed (insert-if-absent by email/slug): SYS_ADMIN, one
- * org (SW교육센터/sw-edu) and its ORG_ADMIN. Runs at startup instead of a
+ * hidden test org (테스트 기관/test-org) and its ORG_ADMIN. The org is a
+ * test/smoke fixture (an ORG_ADMIN cannot exist without an org), so it is
+ * seeded hidden and never shows up in USER-role org listings. Runs at startup instead of a
  * migration so no password hash lands in git. Seed accounts
  * are pre-verified (they bypass the @pusan.ac.kr self-signup restriction).
  *
@@ -37,8 +39,8 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
 
-    static final String ORG_NAME = "SW교육센터";
-    static final String ORG_SLUG = "sw-edu";
+    public static final String ORG_NAME = "테스트 기관";
+    public static final String ORG_SLUG = "test-org";
 
     private final UserRepository userRepository;
     private final OrgRepository orgRepository;
@@ -69,7 +71,9 @@ public class DevDataSeeder implements ApplicationRunner {
         Org org = orgRepository.findBySlug(ORG_SLUG)
                 .orElseGet(() -> {
                     log.info("Seeding org '{}' ({})", ORG_NAME, ORG_SLUG);
-                    return orgRepository.save(new Org(ORG_NAME, ORG_SLUG, "SW교육센터 (개발용 시드 기관)"));
+                    Org seedOrg = new Org(ORG_NAME, ORG_SLUG, ORG_NAME + " (개발용 시드 기관)");
+                    seedOrg.setHidden(true);
+                    return orgRepository.save(seedOrg);
                 });
 
         seedUser(properties.orgadminEmail(), properties.orgadminPassword(), "기관 관리자",

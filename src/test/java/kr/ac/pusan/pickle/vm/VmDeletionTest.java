@@ -31,6 +31,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -149,10 +150,10 @@ class VmDeletionTest {
         memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         poolId = jdbcTemplate.queryForObject(
                 "select id from ip_pools where name = 'guest-private'", Long.class);
@@ -199,7 +200,7 @@ class VmDeletionTest {
         notificationDispatchJob.dispatch();
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to)
-                .contains(owner.getEmail(), member.getEmail(), "orgadmin@pickle.local");
+                .contains(owner.getEmail(), member.getEmail(), SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
                 .contains("삭제 취소는 관리자만 가능합니다");
@@ -543,7 +544,7 @@ class VmDeletionTest {
         assertThat(ordered).containsExactly("PUT", "DELETE");
         // org admin notified of the final destruction
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo("orgadmin@pickle.local").body()).contains("파기");
+        assertThat(mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL).body()).contains("파기");
     }
 
     @Test

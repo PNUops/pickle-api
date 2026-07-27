@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,9 +57,9 @@ class AdminSettingsTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         graceHoursBackup = readValue("vm_delete_grace_hours");
         sshGatewayBackup = readValue("ssh_gateway_enabled");
     }
@@ -117,7 +118,7 @@ class AdminSettingsTest {
                 .andExpect(jsonPath("$.editable").value(true));
         assertThat(readValue("vm_delete_grace_hours")).isEqualTo("200");
 
-        Long sysAdminId = userRepository.findByEmail("admin@pickle.local").map(User::getId).orElseThrow();
+        Long sysAdminId = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).map(User::getId).orElseThrow();
         Integer audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'setting.update' and actor_id = ?

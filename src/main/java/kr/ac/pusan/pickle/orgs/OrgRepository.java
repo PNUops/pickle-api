@@ -10,5 +10,7 @@ public interface OrgRepository extends JpaRepository<Org, Long> {
 
     List<Org> findByStatusOrderByIdAsc(OrgStatus status);
 
+    List<Org> findByStatusAndHiddenFalseOrderByIdAsc(OrgStatus status);
+
     boolean existsBySlug(String slug);
 }

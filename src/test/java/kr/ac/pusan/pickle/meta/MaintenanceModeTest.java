@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import java.time.Instant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -65,7 +66,7 @@ class MaintenanceModeTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         User user = userRepository.findByEmail(USER_EMAIL).orElseGet(() -> {
             User u = new User(USER_EMAIL, passwordEncoder.encode("mm-user-pw!"), "점검 테스트 사용자");
             u.setRole(UserRole.USER);

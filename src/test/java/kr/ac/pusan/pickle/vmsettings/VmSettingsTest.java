@@ -18,6 +18,7 @@ import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -80,7 +81,7 @@ class VmSettingsTest {
         editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         groupId = createTeam("vmset-" + UUID.randomUUID().toString().substring(0, 8));

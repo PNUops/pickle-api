@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -28,8 +29,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Reference data per contract: GET /orgs (ACTIVE only), GET /templates
- * (ACTIVE only, V3 presets), GET /meta/request-options (settings-backed).
+ * Reference data per contract: GET /orgs (ACTIVE only; hidden orgs filtered
+ * for USER tokens, visible to manager tiers), GET /templates (ACTIVE only,
+ * V3 presets), GET /meta/request-options (settings-backed).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -76,19 +78,34 @@ class ReferenceDataTest {
     }
 
     @Test
-    void listsOnlyActiveOrgs() throws Exception {
+    void listsOnlyActiveVisibleOrgsForUsers() throws Exception {
         orgRepository.findBySlug("ref-disabled").orElseGet(() -> {
             Org disabled = new Org("비활성 기관", "ref-disabled", null);
             disabled.setStatus(OrgStatus.DISABLED);
             return orgRepository.save(disabled);
         });
+        orgRepository.findBySlug("ref-visible").orElseGet(() ->
+                orgRepository.save(new Org("공개 기관", "ref-visible", null)));
 
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                // seeded dev org (sw-edu) is ACTIVE and listed as a plain array
-                .andExpect(jsonPath("$[?(@.slug == 'sw-edu')].name")
-                        .value(org.hamcrest.Matchers.contains("SW교육센터")))
+                // a plain ACTIVE org is listed as a plain array
+                .andExpect(jsonPath("$[?(@.slug == 'ref-visible')].name")
+                        .value(org.hamcrest.Matchers.contains("공개 기관")))
+                // the seed org is hidden: filtered for USER tokens
+                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')]").isEmpty())
                 .andExpect(jsonPath("$[?(@.slug == 'ref-disabled')]").isEmpty());
+    }
+
+    @Test
+    void managerTierSeesHiddenOrgs() throws Exception {
+        User orgadmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
+        String managerToken = jwtService.createAccessToken(orgadmin);
+
+        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + managerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')].name")
+                        .value(org.hamcrest.Matchers.contains(SeedFixtures.ORG_NAME)));
     }
 
     @Test

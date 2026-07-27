@@ -9,6 +9,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,9 +55,9 @@ class AdminIpAllocationsTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         poolId = jdbcTemplate.queryForObject(
                 "select id from ip_pools where name = 'guest-private'", Long.class);
         otherPoolId = createPool();
@@ -144,10 +145,9 @@ class AdminIpAllocationsTest {
     }
 
     private long createVm() {
-        long orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        long requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String slug = "adip-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = jdbcTemplate.queryForObject(

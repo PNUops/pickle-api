@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,7 +88,7 @@ class AdminTerminalTest {
         sessionRegistry.all().forEach(s -> sessionRegistry.remove(s.sessionId()));
         jdbcTemplate.update("delete from audit_logs where action = 'terminal.force_terminate'");
         bridge.resetRequests();
-        orgA = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgA = SeedFixtures.seedOrgId(jdbcTemplate);
         orgB = ensureOrg("term-admin-orgb");
         User orgAdmin = ensureUser("term.admin.orga@pusan.ac.kr", "기관관리자", UserRole.ORG_ADMIN, orgA);
         sysAdmin = ensureUser("term.admin.sys@pusan.ac.kr", "시스템관리자", UserRole.SYS_ADMIN, null);

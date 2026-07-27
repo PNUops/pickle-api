@@ -31,6 +31,7 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -132,8 +133,8 @@ class PublishingTest {
         User editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
         User viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.USER, null);
         User outsider = ensureUser("pub.outsider@pusan.ac.kr", "공개외부인", UserRole.USER, null);
-        User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
-        User sysAdmin = userRepository.findByEmail("admin@pickle.local").orElseThrow();
+        User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
+        User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);
         editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
@@ -141,7 +142,7 @@ class PublishingTest {
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
 
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
@@ -443,7 +444,7 @@ class PublishingTest {
         long vmId = publishableVm(true, "team-admin", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
 
-        // ORG_ADMIN of sw-edu sees the route; a regular user cannot reach the admin list.
+        // ORG_ADMIN of the seed org sees the route; a regular user cannot reach the admin list.
         mockMvc.perform(get("/api/v1/admin/routes").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.vmId == %d)]".formatted(vmId)).exists());

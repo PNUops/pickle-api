@@ -8,6 +8,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,9 +52,9 @@ class AdminNodesTest {
     @BeforeEach
     void setUp() {
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
     }
 
     @Test
@@ -134,10 +135,9 @@ class AdminNodesTest {
 
     /** Minimal request→vm FK chain on the given node (dedicated group per VM). */
     private void createVm(long nodeId, String status, int vcpu, int memoryMb) {
-        long orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        long requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "nodesum-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = jdbcTemplate.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",

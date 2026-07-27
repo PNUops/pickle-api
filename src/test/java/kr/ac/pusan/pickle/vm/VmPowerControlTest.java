@@ -29,6 +29,7 @@ import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -136,7 +137,7 @@ class VmPowerControlTest {
         memberToken = jwtService.createAccessToken(member);
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         nodeId = ensureWireMockNode();
         groupId = createTeam("vmpow-" + UUID.randomUUID().toString().substring(0, 8));

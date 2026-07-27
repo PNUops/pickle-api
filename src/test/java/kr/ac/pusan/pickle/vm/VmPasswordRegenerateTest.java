@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,7 +93,7 @@ class VmPasswordRegenerateTest {
         jdbcTemplate.update("update nodes set api_host = ? where name = ?", wm.apiHost(), NODE);
         owner = ensureUser("vmpwregen.owner@pusan.ac.kr", "재생성소유자");
         ownerToken = jwtService.createAccessToken(owner);
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = ?", Long.class, NODE);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         groupId = createTeam("vmpwregen-" + UUID.randomUUID().toString().substring(0, 8));

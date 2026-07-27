@@ -24,6 +24,7 @@ import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -85,14 +86,14 @@ class ApprovalTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug("sw-edu").orElseThrow();
+        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("appr-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "appr-other", null)));
         student = ensureUser("appr.student@pusan.ac.kr", "승인학생", UserRole.USER, null);
-        User orgAdmin = userRepository.findByEmail("orgadmin@pickle.local").orElseThrow();
+        User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         User otherOrgAdmin = ensureUser("appr.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
-        User sysAdmin = userRepository.findByEmail("admin@pickle.local").orElseThrow();
+        User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
         studentToken = jwtService.createAccessToken(student);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);

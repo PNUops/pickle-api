@@ -28,6 +28,7 @@ import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -121,12 +122,11 @@ class ProvisionPipelineTest {
         mockMailSender.clear();
         // point the seeded node at WireMock — the pipeline reads api_host per run
         jdbc.update("update nodes set api_host = ? where name = ?", wm.apiHost(), NODE);
-        orgId = jdbc.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select id from nodes where name = ?", Long.class, NODE);
         poolId = jdbc.queryForObject("select ip_pool_id from nodes where id = ?", Long.class, nodeId);
         templateId = jdbc.queryForObject("select min(id) from vm_templates", Long.class);
-        adminUserId = jdbc.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        adminUserId = SeedFixtures.orgadminId(jdbc);
         String slug = "pipe-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
@@ -426,7 +426,7 @@ class ProvisionPipelineTest {
         // the completion notification is emailed by the dispatcher to the
         // group OWNER with the no-backup notice
         notificationDispatchJob.dispatch();
-        MailMessage mail = mockMailSender.lastMessageTo("orgadmin@pickle.local");
+        MailMessage mail = mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).contains(vm.getHostname());
         assertThat(mail.body())

@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -94,18 +95,17 @@ class AdminDriftFindingsTest {
         // All pre-existing nodes out of scope: leftover nodes from other test
         // classes must not fail listings and block ② auto-resolve here.
         jdbcTemplate.update("update nodes set status = 'OFFLINE'");
-        orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
+        orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        requesterId = jdbcTemplate.queryForObject(
-                "select id from users where email = 'orgadmin@pickle.local'", Long.class);
+        requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "adf-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         sysAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("admin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
-                userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
+                userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
     }
 
     @AfterEach
@@ -244,7 +244,7 @@ class AdminDriftFindingsTest {
                 .andExpect(jsonPath("$.id").value(findingId))
                 .andExpect(jsonPath("$.status").value("RESOLVED"))
                 .andExpect(jsonPath("$.resolvedById").isNumber())
-                .andExpect(jsonPath("$.resolvedByEmail").value("admin@pickle.local"))
+                .andExpect(jsonPath("$.resolvedByEmail").value(SeedFixtures.SYSADMIN_EMAIL))
                 .andExpect(jsonPath("$.resolutionNote").value("잔여 게스트를 수동 정리했습니다."));
 
         // manual resolve is audited
