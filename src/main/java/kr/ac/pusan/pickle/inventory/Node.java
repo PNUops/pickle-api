@@ -83,6 +83,15 @@ public class Node {
         return status;
     }
 
+    /**
+     * Admin status transition (contract v0.21.0). Placement only picks ACTIVE
+     * nodes, so MAINTENANCE/OFFLINE excludes the node from new VMs without
+     * touching existing guests.
+     */
+    public void setStatus(NodeStatus status) {
+        this.status = status;
+    }
+
     public int getCpuThreads() {
         return cpuThreads;
     }

@@ -106,6 +106,9 @@ class ContractDriftTest {
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}",
             "GET /admin/nodes",
+            "PATCH /admin/nodes/{nodeId}",
+            "GET /admin/templates",
+            "PATCH /admin/templates/{templateId}",
             "GET /admin/vms",
             // HTTP publishing (contract v0.4.0).
             "POST /vms/{vmId}/publish",

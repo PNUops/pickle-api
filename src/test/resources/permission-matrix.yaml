@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.20.0, 118 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.21.0, 121 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -165,7 +165,10 @@ operations:
   - { id: getSystemSummary,     method: GET,  path: "/admin/system-summary",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.17 Admin — infra read (SYS tier) ────────────────────────────────────
-  - { id: listAdminNodes,       method: GET,  path: "/admin/nodes",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminNodes,       method: GET,   path: "/admin/nodes",                    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminNode,      method: PATCH, path: "/admin/nodes/{nodeId}",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminTemplates,   method: GET,   path: "/admin/templates",                roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminTemplate,  method: PATCH, path: "/admin/templates/{templateId}",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listIpAllocations,    method: GET,  path: "/admin/ip-allocations",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.18 Admin — notifications ops (SYS tier) ─────────────────────────────

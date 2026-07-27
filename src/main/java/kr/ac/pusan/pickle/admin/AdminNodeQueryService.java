@@ -39,6 +39,18 @@ public class AdminNodeQueryService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /** Single-node summary — the status-transition op returns the refreshed row. */
+    @Transactional(readOnly = true)
+    public NodeSummaryResponse getNode(long nodeId) {
+        Node node = nodeRepository.findById(nodeId).orElseThrow();
+        double cpuWarn = settingsService.decimal(SettingsService.VCPU_OVERCOMMIT_WARN,
+                DEFAULT_VCPU_OVERCOMMIT_WARN);
+        double memoryWarn = settingsService.decimal(SettingsService.MEMORY_USAGE_WARN,
+                DEFAULT_MEMORY_USAGE_WARN);
+        return toSummary(node, loadAllocations().getOrDefault(node.getId(), NodeAllocation.EMPTY),
+                cpuWarn, memoryWarn);
+    }
+
     @Transactional(readOnly = true)
     public List<NodeSummaryResponse> listNodes() {
         double cpuWarn = settingsService.decimal(SettingsService.VCPU_OVERCOMMIT_WARN,

@@ -128,6 +128,11 @@ public class VmTemplate {
         return status;
     }
 
+    /** Admin status toggle (contract v0.21.0) — retiring old revisions needs a write path. */
+    public void setStatus(TemplateStatus status) {
+        this.status = status;
+    }
+
     public String getNotes() {
         return notes;
     }
