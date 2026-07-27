@@ -108,9 +108,8 @@ class NodePlacementServiceTest {
     private VmTemplate insertTemplate(long nodeId, String status) {
         long id = jdbc.queryForObject("""
                 insert into vm_templates (name, display_name, proxmox_vmid, node_id,
-                                          default_vcpu, default_memory_mb, default_disk_gb,
                                           min_disk_gb, status)
-                values (?, '배치 테스트 템플릿', 1003, ?, 1, 1024, 10, 10, cast(? as template_status))
+                values (?, '배치 테스트 템플릿', 1003, ?, 10, cast(? as template_status))
                 returning id
                 """, Long.class, templateName, nodeId, status);
         return templateRepository.findById(id).orElseThrow();

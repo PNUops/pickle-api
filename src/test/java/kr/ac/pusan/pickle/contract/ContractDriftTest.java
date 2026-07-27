@@ -192,7 +192,12 @@ class ContractDriftTest {
             // Web terminal (contract v0.10.0).
             "POST /vms/{vmId}/terminal-sessions",
             "GET /admin/terminal-sessions",
-            "POST /admin/terminal-sessions/{sessionId}/terminate");
+            "POST /admin/terminal-sessions/{sessionId}/terminate",
+            // Spec presets, the second request axis (contract v0.23.0).
+            "GET /vm-flavors",
+            "GET /admin/vm-flavors",
+            "POST /admin/vm-flavors",
+            "PATCH /admin/vm-flavors/{flavorId}");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

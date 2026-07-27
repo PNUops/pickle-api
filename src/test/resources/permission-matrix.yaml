@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.21.2, 121 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.23.0, 125 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -56,6 +56,7 @@ operations:
   # ── 3.3 Catalog / lookup (any authenticated) ──────────────────────────────
   - { id: listOrgs,             method: GET,    path: "/orgs",                        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listTemplates,        method: GET,    path: "/templates",                   roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listVmFlavors,        method: GET,    path: "/vm-flavors",                  roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getRequestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.4 Groups (group-role-scoped, service level) ─────────────────────────
@@ -169,6 +170,9 @@ operations:
   - { id: updateAdminNode,      method: PATCH, path: "/admin/nodes/{nodeId}",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listAdminTemplates,   method: GET,   path: "/admin/templates",                roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminTemplate,  method: PATCH, path: "/admin/templates/{templateId}",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminVmFlavors,   method: GET,   path: "/admin/vm-flavors",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createAdminVmFlavor,  method: POST,  path: "/admin/vm-flavors",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateAdminVmFlavor,  method: PATCH, path: "/admin/vm-flavors/{flavorId}",    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listIpAllocations,    method: GET,  path: "/admin/ip-allocations",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.18 Admin — notifications ops (SYS tier) ─────────────────────────────

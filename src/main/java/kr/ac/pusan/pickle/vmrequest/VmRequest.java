@@ -48,6 +48,10 @@ public class VmRequest {
     @Column(name = "template_id", nullable = false)
     private Long templateId;
 
+    /** Chosen spec preset (V58 axis split) — provenance + specReason baseline. */
+    @Column(name = "flavor_id")
+    private Long flavorId;
+
     @Column(name = "req_vcpu", nullable = false)
     private int reqVcpu;
 
@@ -94,14 +98,15 @@ public class VmRequest {
     protected VmRequest() {
     }
 
-    public VmRequest(Long groupId, Long orgId, Long requesterId, Long templateId, String purpose,
-            String courseOrProject, String specReason, String extraNote,
+    public VmRequest(Long groupId, Long orgId, Long requesterId, Long templateId, Long flavorId,
+            String purpose, String courseOrProject, String specReason, String extraNote,
             int reqVcpu, int reqMemoryMb, int reqDiskGb, LocalDate reqStartDate, LocalDate reqEndDate,
             String desiredSubdomain, String rootDomain, String displayName, String desiredSlug) {
         this.groupId = groupId;
         this.orgId = orgId;
         this.requesterId = requesterId;
         this.templateId = templateId;
+        this.flavorId = flavorId;
         this.purpose = purpose;
         this.courseOrProject = courseOrProject;
         this.specReason = specReason;
@@ -151,6 +156,10 @@ public class VmRequest {
 
     public Long getTemplateId() {
         return templateId;
+    }
+
+    public Long getFlavorId() {
+        return flavorId;
     }
 
     public int getReqVcpu() {

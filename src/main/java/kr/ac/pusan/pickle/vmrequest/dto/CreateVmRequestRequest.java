@@ -22,6 +22,9 @@ public record CreateVmRequestRequest(
         @NotNull(message = "템플릿(templateId)을 지정해 주세요.")
         Long templateId,
 
+        @NotNull(message = "사양 프리셋(flavorId)을 지정해 주세요.")
+        Long flavorId,
+
         @NotBlank(message = "사용 목적을 입력해 주세요.")
         @Size(max = 2000, message = "사용 목적은 2000자 이하여야 합니다.")
         String purpose,

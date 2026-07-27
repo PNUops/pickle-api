@@ -12,6 +12,8 @@ import java.util.HashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -38,8 +40,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * User VM request flow per contract: creation validation matrix (group
- * role, template rules, spec-reason rule, subdomain/domain rules), list/detail
+ * User VM request flow per contract: creation validation matrix (group role,
+ * the OS and spec-preset axes, spec-reason rule, subdomain/domain rules), list/detail
  * visibility incl. the 403 non-member groupId filter, and cancel permissions
  * with the 409 double-decision guard.
  */
@@ -65,6 +67,9 @@ class VmRequestTest {
     private VmTemplateRepository templateRepository;
 
     @Autowired
+    private VmFlavorRepository flavorRepository;
+
+    @Autowired
     private NodeRepository nodeRepository;
 
     @Autowired
@@ -86,6 +91,8 @@ class VmRequestTest {
     private String outsiderToken;
     private Org org;
     private VmTemplate template;
+    private VmFlavor basicFlavor;
+    private VmFlavor smallFlavor;
 
     @BeforeEach
     void setUp() {
@@ -101,6 +108,14 @@ class VmRequestTest {
         template = templateRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
                 .findFirst().orElseThrow();
+        basicFlavor = flavorByName("basic");
+        smallFlavor = flavorByName("small");
+    }
+
+    private VmFlavor flavorByName(String name) {
+        return flavorRepository.findAll().stream()
+                .filter(f -> f.getName().equals(name))
+                .findFirst().orElseThrow();
     }
 
     @Test
@@ -108,7 +123,7 @@ class VmRequestTest {
         long groupId = createTeam(requesterToken, "vmr-create-x1");
         addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
 
-        // OWNER submits with template defaults → 201 SUBMITTED, review null
+        // OWNER submits with the chosen preset's specs → 201 SUBMITTED, review null
         postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -118,7 +133,9 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.groupName").isNotEmpty())
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
                 .andExpect(jsonPath("$.requesterId").value(requester.getId()))
-                .andExpect(jsonPath("$.requesterName").value("신청자"));
+                .andExpect(jsonPath("$.requesterName").value("신청자"))
+                .andExpect(jsonPath("$.templateId").value(template.getId()))
+                .andExpect(jsonPath("$.flavorId").value(basicFlavor.getId()));
 
         // VIEWER / non-member cannot submit → 403 GROUP_ROLE_INSUFFICIENT
         postJson("/api/v1/vm-requests", viewerToken, validBody(groupId))
@@ -136,22 +153,26 @@ class VmRequestTest {
                 .andExpect(status().isNotFound());
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "templateId", 999_999))
                 .andExpect(status().isNotFound());
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "flavorId", 999_999))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
         // DISABLED template → 422
         VmTemplate disabled = templateRepository.save(new VmTemplate("vmr-disabled", "비활성 템플릿", 1002,
-                nodeRepository.findAll().getFirst().getId(), 1, 2, 2048, 20, 10,
+                nodeRepository.findAll().getFirst().getId(), 1, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
                 with(validBody(groupId), "templateId", disabled.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("templateId"));
 
-        // below template minimum disk → 422
+        // below the OS image's minimum disk → 422, whatever the preset offers
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"));
+                .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"))
+                .andExpect(jsonPath("$.errors[0].message").value("이 OS의 최소 디스크 크기는 10GiB입니다."));
 
-        // spec above template defaults requires specReason (contract prose rule)
+        // spec above the chosen preset requires specReason (contract prose rule)
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "reqMemoryMb", 4096))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("specReason"));
@@ -230,6 +251,72 @@ class VmRequestTest {
 
         // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * Axis split (v0.23.0): the spec-reason baseline is the CHOSEN flavor, not
+     * a per-OS default — the same numbers pass or need a reason depending on
+     * which preset the body names. The disk floor stays the OS image's.
+     */
+    @Test
+    void specReasonBaselineFollowsTheChosenFlavor() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-flavor-x1");
+
+        // 'small' as-is (1 vCPU / 1024MiB / 10GiB) → 201, no reason needed
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, smallFlavor))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.flavorId").value(smallFlavor.getId()))
+                .andExpect(jsonPath("$.reqVcpu").value(1));
+
+        // each axis independently: 2 vCPU exceeds 'small' → specReason required
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(bodyFor(groupId, smallFlavor), "reqVcpu", 2))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("specReason"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(bodyFor(groupId, smallFlavor), "reqMemoryMb", 2048))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("specReason"));
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(bodyFor(groupId, smallFlavor), "reqDiskGb", 20))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("specReason"));
+
+        // the very same spec against 'basic' (2 / 2048 / 20) is free
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, basicFlavor))
+                .andExpect(status().isCreated());
+
+        // the disk floor is the OS image's min, not the preset's
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(bodyFor(groupId, smallFlavor), "reqDiskGb", 5))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"));
+    }
+
+    @Test
+    void retiredFlavorIsRejectedAndBothAxesReportIndependently() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-flavor-x2");
+        VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 프리셋", 2, 2048, 20,
+                TemplateStatus.DISABLED, null));
+
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, retired))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("flavorId"))
+                .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양 프리셋입니다."));
+
+        // both axes retired → one error per axis, and the spec check is skipped
+        VmTemplate retiredTemplate = templateRepository.save(new VmTemplate("vmr-disabled-os",
+                "비활성 OS", 1004, nodeRepository.findAll().getFirst().getId(), 1, 10,
+                TemplateStatus.DISABLED, null));
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(bodyFor(groupId, retired), "templateId", retiredTemplate.getId()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors.length()").value(2))
+                .andExpect(jsonPath("$.errors[0].field").value("templateId"))
+                .andExpect(jsonPath("$.errors[1].field").value("flavorId"));
     }
 
     @Test
@@ -421,15 +508,21 @@ class VmRequestTest {
         assertThat(audits).isEqualTo(2);
     }
 
+    /** A body prefilled from the chosen flavor — exactly what the wizard posts. */
     private Map<String, Object> validBody(long groupId) {
+        return bodyFor(groupId, basicFlavor);
+    }
+
+    private Map<String, Object> bodyFor(long groupId, VmFlavor flavor) {
         Map<String, Object> body = new HashMap<>();
         body.put("groupId", groupId);
         body.put("orgId", org.getId());
         body.put("templateId", template.getId());
+        body.put("flavorId", flavor.getId());
         body.put("purpose", "수업 실습용 서버");
-        body.put("reqVcpu", template.getDefaultVcpu());
-        body.put("reqMemoryMb", template.getDefaultMemoryMb());
-        body.put("reqDiskGb", template.getDefaultDiskGb());
+        body.put("reqVcpu", flavor.getVcpu());
+        body.put("reqMemoryMb", flavor.getMemoryMb());
+        body.put("reqDiskGb", flavor.getDiskGb());
         return body;
     }
 

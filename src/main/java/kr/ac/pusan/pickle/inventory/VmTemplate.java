@@ -14,7 +14,8 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
-/** VM template preset offered in the request wizard. */
+/** OS catalog entry (which Proxmox image to clone + its disk floor); spec
+ * presets live in {@link VmFlavor} since the axis split (contract v0.23.0). */
 @Entity
 @Table(name = "vm_templates")
 public class VmTemplate {
@@ -38,15 +39,6 @@ public class VmTemplate {
     @Column(nullable = false)
     private int version = 1;
 
-    @Column(name = "default_vcpu", nullable = false)
-    private int defaultVcpu;
-
-    @Column(name = "default_memory_mb", nullable = false)
-    private int defaultMemoryMb;
-
-    @Column(name = "default_disk_gb", nullable = false)
-    private int defaultDiskGb;
-
     @Column(name = "min_disk_gb", nullable = false)
     private int minDiskGb;
 
@@ -69,16 +61,12 @@ public class VmTemplate {
     }
 
     public VmTemplate(String name, String displayName, int proxmoxVmid, Long nodeId, int version,
-            int defaultVcpu, int defaultMemoryMb, int defaultDiskGb, int minDiskGb,
-            TemplateStatus status, String notes) {
+            int minDiskGb, TemplateStatus status, String notes) {
         this.name = name;
         this.displayName = displayName;
         this.proxmoxVmid = proxmoxVmid;
         this.nodeId = nodeId;
         this.version = version;
-        this.defaultVcpu = defaultVcpu;
-        this.defaultMemoryMb = defaultMemoryMb;
-        this.defaultDiskGb = defaultDiskGb;
         this.minDiskGb = minDiskGb;
         this.status = status;
         this.notes = notes;
@@ -106,18 +94,6 @@ public class VmTemplate {
 
     public int getVersion() {
         return version;
-    }
-
-    public int getDefaultVcpu() {
-        return defaultVcpu;
-    }
-
-    public int getDefaultMemoryMb() {
-        return defaultMemoryMb;
-    }
-
-    public int getDefaultDiskGb() {
-        return defaultDiskGb;
     }
 
     public int getMinDiskGb() {

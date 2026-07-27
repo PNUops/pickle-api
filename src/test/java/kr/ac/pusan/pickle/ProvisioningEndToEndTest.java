@@ -152,22 +152,26 @@ class ProvisioningEndToEndTest {
         long groupId = objectMapper.readTree(groupResult.getResponse().getContentAsString())
                 .get("id").asLong();
 
-        // 4. reference data: template presets from the API; the seed org via
+        // 4. reference data: the two request axes from the API; the seed org via
         // JDBC because it is hidden and USER tokens do not see it in /orgs
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         JsonNode templates = getJson("/api/v1/templates", userToken);
         JsonNode template = findBy(templates, "name", "ubuntu-24.04");
         long templateId = template.get("id").asLong();
+        JsonNode flavors = getJson("/api/v1/vm-flavors", userToken);
+        JsonNode flavor = findBy(flavors, "name", "basic");
+        long flavorId = flavor.get("id").asLong();
 
-        // 5. submit the vm-request pre-filled with template defaults
+        // 5. submit the vm-request pre-filled with the chosen preset's specs
         MvcResult requestResult = postJson("/api/v1/vm-requests", userToken, Map.of(
                 "groupId", groupId,
                 "orgId", orgId,
                 "templateId", templateId,
+                "flavorId", flavorId,
                 "purpose", "종단 검증용 서버",
-                "reqVcpu", template.get("defaultVcpu").asInt(),
-                "reqMemoryMb", template.get("defaultMemoryMb").asInt(),
-                "reqDiskGb", template.get("defaultDiskGb").asInt()))
+                "reqVcpu", flavor.get("vcpu").asInt(),
+                "reqMemoryMb", flavor.get("memoryMb").asInt(),
+                "reqDiskGb", flavor.get("diskGb").asInt()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andReturn();
@@ -192,9 +196,9 @@ class ProvisioningEndToEndTest {
 
         // 8. approve with the requested spec
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", adminToken, Map.of(
-                "grantedVcpu", template.get("defaultVcpu").asInt(),
-                "grantedMemoryMb", template.get("defaultMemoryMb").asInt(),
-                "grantedDiskGb", template.get("defaultDiskGb").asInt(),
+                "grantedVcpu", flavor.get("vcpu").asInt(),
+                "grantedMemoryMb", flavor.get("memoryMb").asInt(),
+                "grantedDiskGb", flavor.get("diskGb").asInt(),
                 "grantedTemplateId", templateId,
                 "comment", "요청 사양 그대로 승인합니다."))
                 .andExpect(status().isOk())

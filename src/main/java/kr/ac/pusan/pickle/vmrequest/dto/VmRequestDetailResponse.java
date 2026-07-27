@@ -18,6 +18,7 @@ public record VmRequestDetailResponse(
         Long requesterId,
         String requesterName,
         Long templateId,
+        @Nullable Long flavorId,
         String purpose,
         @Nullable String courseOrProject,
         @Nullable String specReason,

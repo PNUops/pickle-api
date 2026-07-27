@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -30,8 +32,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Reference data per contract: GET /orgs (ACTIVE only; hidden orgs filtered
- * for USER tokens, visible to manager tiers), GET /templates (ACTIVE only,
- * V3 presets), GET /meta/request-options (settings-backed).
+ * for USER tokens, visible to manager tiers), the two request axes
+ * GET /templates (OS catalog) and GET /vm-flavors (spec presets), both
+ * ACTIVE only, and GET /meta/request-options (settings-backed).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -52,6 +55,9 @@ class ReferenceDataTest {
     private VmTemplateRepository vmTemplateRepository;
 
     @Autowired
+    private VmFlavorRepository vmFlavorRepository;
+
+    @Autowired
     private JwtService jwtService;
 
     private String accessToken;
@@ -69,7 +75,8 @@ class ReferenceDataTest {
 
     @Test
     void referenceEndpointsRequireAuthentication() throws Exception {
-        for (String path : new String[] {"/api/v1/orgs", "/api/v1/templates", "/api/v1/meta/request-options"}) {
+        for (String path : new String[] {"/api/v1/orgs", "/api/v1/templates", "/api/v1/vm-flavors",
+                "/api/v1/meta/request-options"}) {
             mockMvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -111,34 +118,61 @@ class ReferenceDataTest {
     }
 
     @Test
-    void listsOnlyActiveTemplatesWithPresetDefaults() throws Exception {
+    void listsOnlyActiveTemplatesAsAPureOsCatalog() throws Exception {
         // a DISABLED version row must not surface in the wizard list
         if (vmTemplateRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
             Long nodeId = vmTemplateRepository.findAll().getFirst().getNodeId();
             vmTemplateRepository.save(new VmTemplate("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 1001,
-                    nodeId, 1, 2, 2048, 20, 10, TemplateStatus.DISABLED, null));
+                    nodeId, 1, 10, TemplateStatus.DISABLED, null));
         }
 
         mockMvc.perform(get("/api/v1/templates").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
+                // the axis split folded the -small/-large preset rows away: one OS, one row
+                .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[?(@.name == 'ubuntu-22.04')]").isEmpty())
-                // V3 presets
                 .andExpect(jsonPath("$[0].name").value("ubuntu-24.04"))
-                .andExpect(jsonPath("$[0].defaultVcpu").value(2))
-                .andExpect(jsonPath("$[0].defaultMemoryMb").value(2048))
-                .andExpect(jsonPath("$[0].defaultDiskGb").value(20))
+                .andExpect(jsonPath("$[0].displayName").isNotEmpty())
+                .andExpect(jsonPath("$[0].version").value(1))
                 .andExpect(jsonPath("$[0].minDiskGb").value(10))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].notes").isNotEmpty())
-                .andExpect(jsonPath("$[1].name").value("ubuntu-24.04-small"))
-                .andExpect(jsonPath("$[1].defaultVcpu").value(1))
-                .andExpect(jsonPath("$[1].defaultMemoryMb").value(1024))
-                .andExpect(jsonPath("$[1].defaultDiskGb").value(10))
-                .andExpect(jsonPath("$[2].name").value("ubuntu-24.04-large"))
-                .andExpect(jsonPath("$[2].defaultVcpu").value(4))
-                .andExpect(jsonPath("$[2].defaultMemoryMb").value(8192))
-                .andExpect(jsonPath("$[2].defaultDiskGb").value(40));
+                // the spec fields moved to the flavor axis
+                .andExpect(jsonPath("$[0].defaultVcpu").doesNotExist())
+                .andExpect(jsonPath("$[0].defaultMemoryMb").doesNotExist())
+                .andExpect(jsonPath("$[0].defaultDiskGb").doesNotExist());
+    }
+
+    @Test
+    void listsOnlyActiveFlavorsWithTheirSpecs() throws Exception {
+        // a retired preset must not surface in the wizard list
+        if (vmFlavorRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
+            vmFlavorRepository.save(new VmFlavor("ref-retired", "은퇴 프리셋", 8, 16384, 80,
+                    TemplateStatus.DISABLED, null));
+        }
+
+        mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[?(@.name == 'ref-retired')]").isEmpty())
+                // V58 presets, ordered by id
+                .andExpect(jsonPath("$[0].name").value("small"))
+                .andExpect(jsonPath("$[0].displayName").value("소형"))
+                .andExpect(jsonPath("$[0].vcpu").value(1))
+                .andExpect(jsonPath("$[0].memoryMb").value(1024))
+                .andExpect(jsonPath("$[0].diskGb").value(10))
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$[0].notes").isNotEmpty())
+                .andExpect(jsonPath("$[1].name").value("basic"))
+                .andExpect(jsonPath("$[1].displayName").value("기본형"))
+                .andExpect(jsonPath("$[1].vcpu").value(2))
+                .andExpect(jsonPath("$[1].memoryMb").value(2048))
+                .andExpect(jsonPath("$[1].diskGb").value(20))
+                .andExpect(jsonPath("$[2].name").value("large"))
+                .andExpect(jsonPath("$[2].displayName").value("대형"))
+                .andExpect(jsonPath("$[2].vcpu").value(4))
+                .andExpect(jsonPath("$[2].memoryMb").value(8192))
+                .andExpect(jsonPath("$[2].diskGb").value(40));
     }
 
     @Test

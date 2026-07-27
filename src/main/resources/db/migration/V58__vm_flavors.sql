@@ -1,0 +1,64 @@
+-- Split the OS axis from the spec axis (2026-07-28 operator decision, pulled
+-- forward from the second-OS backlog item): vm_templates becomes a pure OS
+-- catalog (which Proxmox image to clone + its disk floor), and the request
+-- form's spec presets move to the new vm_flavors table. Without this, every
+-- added OS multiplies the preset rows (5 OS x 3 presets = 15 cards).
+-- The V3 seed's three rows were one OS x three presets: the plain
+-- 'ubuntu-24.04' row survives as the OS entry, the -small/-large rows are
+-- folded into it after their FK references are repointed.
+
+create table vm_flavors (
+    id bigint generated always as identity primary key,
+    name text not null unique,
+    display_name text not null,
+    vcpu int not null check (vcpu > 0),
+    memory_mb int not null check (memory_mb >= 256),
+    disk_gb int not null check (disk_gb > 0),
+    notes text,
+    -- Same lifecycle semantics as templates: ACTIVE = shown in the request
+    -- wizard, DISABLED = retired (existing requests/VMs unaffected).
+    status template_status not null default 'ACTIVE',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, notes) values
+    ('small', '소형',  1, 1024, 10, '봇, 크론 작업 등 초소형 서비스에 적합합니다.'),
+    ('basic', '기본형', 2, 2048, 20, '대부분의 수업·동아리 프로젝트에 적합합니다.'),
+    ('large', '대형',  4, 8192, 40, '대형 스펙은 신청 시 사용 사유를 반드시 적어 주세요.');
+
+-- Provenance of the chosen preset (specs themselves stay denormalized on
+-- vm_requests/vm_request_reviews/vms). Nullable in the DB — @NotNull on the
+-- DTO — so this backfill stays idempotent-shaped; every existing row gets one.
+alter table vm_requests add column flavor_id bigint references vm_flavors (id);
+
+update vm_requests r
+   set flavor_id = f.id
+  from vm_templates t, vm_flavors f
+ where t.id = r.template_id
+   and f.name = case t.name
+                    when 'ubuntu-24.04-small' then 'small'
+                    when 'ubuntu-24.04-large' then 'large'
+                    else 'basic'
+                end;
+
+-- Repoint every FK off the -small/-large preset rows, then fold them away.
+update vm_requests
+   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
+ where template_id in (select id from vm_templates
+                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
+update vms
+   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
+ where template_id in (select id from vm_templates
+                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
+update vm_request_reviews
+   set granted_template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
+ where granted_template_id in (select id from vm_templates
+                                where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
+
+delete from vm_templates where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large');
+
+alter table vm_templates
+    drop column default_vcpu,
+    drop column default_memory_mb,
+    drop column default_disk_gb;

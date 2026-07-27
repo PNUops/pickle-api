@@ -11,6 +11,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -67,6 +69,9 @@ class ApprovalTest {
     private VmTemplateRepository templateRepository;
 
     @Autowired
+    private VmFlavorRepository flavorRepository;
+
+    @Autowired
     private VmRepository vmRepository;
 
     @Autowired
@@ -83,6 +88,7 @@ class ApprovalTest {
     private Org org;
     private Org otherOrg;
     private VmTemplate template;
+    private VmFlavor flavor;
 
     @BeforeEach
     void setUp() {
@@ -100,6 +106,9 @@ class ApprovalTest {
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         template = templateRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
+                .findFirst().orElseThrow();
+        flavor = flavorRepository.findAll().stream()
+                .filter(f -> f.getName().equals("basic"))
                 .findFirst().orElseThrow();
     }
 
@@ -531,10 +540,11 @@ class ApprovalTest {
         body.put("groupId", groupId);
         body.put("orgId", orgId);
         body.put("templateId", template.getId());
+        body.put("flavorId", flavor.getId());
         body.put("purpose", "승인 흐름 테스트");
-        body.put("reqVcpu", template.getDefaultVcpu());
-        body.put("reqMemoryMb", template.getDefaultMemoryMb());
-        body.put("reqDiskGb", template.getDefaultDiskGb());
+        body.put("reqVcpu", flavor.getVcpu());
+        body.put("reqMemoryMb", flavor.getMemoryMb());
+        body.put("reqDiskGb", flavor.getDiskGb());
         String response = postJson("/api/v1/vm-requests", token, body)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();

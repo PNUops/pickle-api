@@ -54,6 +54,7 @@ class AdminInventoryTest {
     private String sysAdminToken;
     private String sysManagerToken;
     private long templateId;
+    private long flavorId;
     private String templateName;
 
     @BeforeEach
@@ -66,11 +67,12 @@ class AdminInventoryTest {
         templateName = "ait-" + UUID.randomUUID().toString().substring(0, 8);
         templateId = jdbcTemplate.queryForObject("""
                 insert into vm_templates (name, display_name, proxmox_vmid, node_id, version,
-                                          default_vcpu, default_memory_mb, default_disk_gb,
                                           min_disk_gb, status)
-                values (?, '상태 토글 테스트', 990001, ?, 1, 2, 2048, 20, 10, 'ACTIVE'::template_status)
+                values (?, '상태 토글 테스트', 990001, ?, 1, 10, 'ACTIVE'::template_status)
                 returning id
                 """, Long.class, templateName, nodeId);
+        flavorId = jdbcTemplate.queryForObject(
+                "select id from vm_flavors where name = 'basic'", Long.class);
     }
 
     @Test
@@ -82,7 +84,10 @@ class AdminInventoryTest {
                         .header("Authorization", "Bearer " + sysManagerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(templateId) + ".status").value("DISABLED"))
-                .andExpect(jsonPath(byId(templateId) + ".proxmoxVmid").value(990001));
+                .andExpect(jsonPath(byId(templateId) + ".proxmoxVmid").value(990001))
+                .andExpect(jsonPath(byId(templateId) + ".minDiskGb").value(10))
+                // spec presets are their own axis now (v0.23.0)
+                .andExpect(jsonPath(byId(templateId) + ".defaultVcpu").doesNotExist());
 
         mockMvc.perform(get("/api/v1/templates")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -145,9 +150,9 @@ class AdminInventoryTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"groupId": %d, "orgId": %d, "purpose": "은퇴 템플릿 거부 확인",
-                                 "templateId": %d, "reqVcpu": 2, "reqMemoryMb": 2048,
-                                 "reqDiskGb": 20}
-                                """.formatted(groupId, orgId, templateId)))
+                                 "templateId": %d, "flavorId": %d, "reqVcpu": 2,
+                                 "reqMemoryMb": 2048, "reqDiskGb": 20}
+                                """.formatted(groupId, orgId, templateId, flavorId)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("templateId"));
     }

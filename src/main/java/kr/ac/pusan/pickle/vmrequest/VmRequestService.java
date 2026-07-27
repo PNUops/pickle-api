@@ -16,6 +16,8 @@ import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
@@ -51,6 +53,7 @@ public class VmRequestService {
     private final GroupMemberRepository groupMemberRepository;
     private final OrgRepository orgRepository;
     private final VmTemplateRepository templateRepository;
+    private final VmFlavorRepository flavorRepository;
     private final SettingsService settingsService;
     private final AuditService auditService;
     private final NotificationService notificationService;
@@ -61,6 +64,7 @@ public class VmRequestService {
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
             OrgRepository orgRepository, VmTemplateRepository templateRepository,
+            VmFlavorRepository flavorRepository,
             SettingsService settingsService, AuditService auditService,
             NotificationService notificationService, VmRepository vmRepository,
             VmSlugPolicy slugPolicy, SubdomainPolicy subdomainPolicy) {
@@ -70,6 +74,7 @@ public class VmRequestService {
         this.groupMemberRepository = groupMemberRepository;
         this.orgRepository = orgRepository;
         this.templateRepository = templateRepository;
+        this.flavorRepository = flavorRepository;
         this.settingsService = settingsService;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -99,12 +104,21 @@ public class VmRequestService {
         }
         VmTemplate template = templateRepository.findById(request.templateId())
                 .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
+        VmFlavor flavor = flavorRepository.findById(request.flavorId())
+                .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
 
         List<FieldValidationError> errors = new ArrayList<>();
+        boolean axesActive = true;
         if (template.getStatus() != TemplateStatus.ACTIVE) {
             errors.add(new FieldValidationError("templateId", "더 이상 선택할 수 없는 템플릿입니다."));
-        } else {
-            validateSpec(request, template, errors);
+            axesActive = false;
+        }
+        if (flavor.getStatus() != TemplateStatus.ACTIVE) {
+            errors.add(new FieldValidationError("flavorId", "더 이상 선택할 수 없는 사양 프리셋입니다."));
+            axesActive = false;
+        }
+        if (axesActive) {
+            validateSpec(request, template, flavor, errors);
         }
         validateDates(request, errors);
         validateDomains(request, errors);
@@ -115,7 +129,7 @@ public class VmRequestService {
         }
 
         VmRequest saved = requestRepository.save(new VmRequest(group.getId(), org.getId(), actor.id(),
-                template.getId(), request.purpose().strip(),
+                template.getId(), flavor.getId(), request.purpose().strip(),
                 Texts.blankToNull(request.courseOrProject()), Texts.blankToNull(request.specReason()),
                 Texts.blankToNull(request.extraNote()),
                 request.reqVcpu(), request.reqMemoryMb(), request.reqDiskGb(),
@@ -212,18 +226,24 @@ public class VmRequestService {
         return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
     }
 
-    private void validateSpec(CreateVmRequestRequest request, VmTemplate template,
+    /**
+     * Axis-split validation (V58): the hard floor is the OS image's
+     * {@code minDiskGb}; the spec-reason baseline is the chosen flavor's
+     * values — requesting below a preset stays free, exceeding it needs a
+     * reason (same semantics the template defaults carried before the split).
+     */
+    private void validateSpec(CreateVmRequestRequest request, VmTemplate template, VmFlavor flavor,
             List<FieldValidationError> errors) {
         if (request.reqDiskGb() < template.getMinDiskGb()) {
             errors.add(new FieldValidationError("reqDiskGb",
-                    "이 템플릿의 최소 디스크 크기는 " + template.getMinDiskGb() + "GiB입니다."));
+                    "이 OS의 최소 디스크 크기는 " + template.getMinDiskGb() + "GiB입니다."));
         }
-        boolean exceedsDefaults = request.reqVcpu() > template.getDefaultVcpu()
-                || request.reqMemoryMb() > template.getDefaultMemoryMb()
-                || request.reqDiskGb() > template.getDefaultDiskGb();
-        if (exceedsDefaults && Texts.blankToNull(request.specReason()) == null) {
+        boolean exceedsFlavor = request.reqVcpu() > flavor.getVcpu()
+                || request.reqMemoryMb() > flavor.getMemoryMb()
+                || request.reqDiskGb() > flavor.getDiskGb();
+        if (exceedsFlavor && Texts.blankToNull(request.specReason()) == null) {
             errors.add(new FieldValidationError("specReason",
-                    "템플릿 기본 사양을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
+                    "선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
         }
     }
 

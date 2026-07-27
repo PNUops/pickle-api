@@ -1,18 +1,27 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.admin.dto.AdminTemplateResponse;
+import kr.ac.pusan.pickle.admin.dto.CreateVmFlavorRequest;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateNodeStatusRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateTemplateStatusRequest;
+import kr.ac.pusan.pickle.admin.dto.UpdateVmFlavorRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -34,14 +43,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminInventoryService {
 
     private final VmTemplateRepository vmTemplateRepository;
+    private final VmFlavorRepository vmFlavorRepository;
     private final NodeRepository nodeRepository;
     private final AdminNodeQueryService adminNodeQueryService;
     private final AuditService auditService;
 
     public AdminInventoryService(VmTemplateRepository vmTemplateRepository,
+            VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, AdminNodeQueryService adminNodeQueryService,
             AuditService auditService) {
         this.vmTemplateRepository = vmTemplateRepository;
+        this.vmFlavorRepository = vmFlavorRepository;
         this.nodeRepository = nodeRepository;
         this.adminNodeQueryService = adminNodeQueryService;
         this.auditService = auditService;
@@ -85,6 +97,78 @@ public class AdminInventoryService {
                             "toStatus", request.status().name()), ip);
         }
         return adminNodeQueryService.getNode(nodeId);
+    }
+
+    /** Contract {@code listAdminVmFlavors}: every preset, retired ones included. */
+    @Transactional(readOnly = true)
+    public List<VmFlavorResponse> listFlavors() {
+        return vmFlavorRepository.findAll(Sort.by("id")).stream()
+                .map(VmFlavorResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public VmFlavorResponse createFlavor(AuthenticatedUser actor, CreateVmFlavorRequest request,
+            String ip) {
+        if (vmFlavorRepository.existsByName(request.name())) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("name",
+                    "이미 존재하는 프리셋 이름입니다.")));
+        }
+        VmFlavor flavor = vmFlavorRepository.save(new VmFlavor(request.name(), request.displayName(),
+                request.vcpu(), request.memoryMb(), request.diskGb(), TemplateStatus.ACTIVE,
+                Texts.blankToNull(request.notes())));
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.FLAVOR_CREATE,
+                "vm_flavor", flavor.getId(),
+                Map.of("name", flavor.getName(), "vcpu", flavor.getVcpu(),
+                        "memoryMb", flavor.getMemoryMb(), "diskGb", flavor.getDiskGb()), ip);
+        return VmFlavorResponse.from(flavor);
+    }
+
+    /**
+     * Partial edit; audits only real changes (old→new per field) and answers
+     * idempotent re-application without an audit row, like the status toggles.
+     */
+    @Transactional
+    public VmFlavorResponse updateFlavor(AuthenticatedUser actor, long flavorId,
+            UpdateVmFlavorRequest request, String ip) {
+        VmFlavor flavor = vmFlavorRepository.findById(flavorId)
+                .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
+        if (request.displayName() == null && request.vcpu() == null && request.memoryMb() == null
+                && request.diskGb() == null && request.notes() == null && request.status() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("displayName",
+                    "변경할 필드를 최소 1개 지정해야 합니다.")));
+        }
+        Map<String, Object> changes = new LinkedHashMap<>();
+        if (request.displayName() != null && !request.displayName().equals(flavor.getDisplayName())) {
+            changes.put("displayName", flavor.getDisplayName() + " -> " + request.displayName());
+            flavor.setDisplayName(request.displayName());
+        }
+        if (request.vcpu() != null && request.vcpu() != flavor.getVcpu()) {
+            changes.put("vcpu", flavor.getVcpu() + " -> " + request.vcpu());
+            flavor.setVcpu(request.vcpu());
+        }
+        if (request.memoryMb() != null && request.memoryMb() != flavor.getMemoryMb()) {
+            changes.put("memoryMb", flavor.getMemoryMb() + " -> " + request.memoryMb());
+            flavor.setMemoryMb(request.memoryMb());
+        }
+        if (request.diskGb() != null && request.diskGb() != flavor.getDiskGb()) {
+            changes.put("diskGb", flavor.getDiskGb() + " -> " + request.diskGb());
+            flavor.setDiskGb(request.diskGb());
+        }
+        if (request.notes() != null && !request.notes().equals(flavor.getNotes())) {
+            changes.put("notes", "updated");
+            flavor.setNotes(Texts.blankToNull(request.notes()));
+        }
+        if (request.status() != null && request.status() != flavor.getStatus()) {
+            changes.put("status", flavor.getStatus().name() + " -> " + request.status().name());
+            flavor.setStatus(request.status());
+        }
+        if (!changes.isEmpty()) {
+            changes.put("name", flavor.getName());
+            auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                    AuditService.FLAVOR_UPDATE, "vm_flavor", flavorId, changes, ip);
+        }
+        return VmFlavorResponse.from(flavor);
     }
 
     private static ApiException notFound(String detail) {
