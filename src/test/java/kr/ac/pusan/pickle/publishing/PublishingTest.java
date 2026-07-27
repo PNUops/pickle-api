@@ -857,6 +857,123 @@ class PublishingTest {
                 String.class, vmId)).isEqualTo("DELETED");
     }
 
+    // ── admin post-hoc intervention (contract v0.18.0) ───────────────────────
+
+    @Test
+    void adminForceReleaseTearsDownLikeUserDeletion() throws Exception {
+        long vmId = publishableVm(true, "team-force", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        long routeId = routeIdForVm(vmId);
+        long generationBefore = routeGeneration(routeId);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
+        assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
+
+        // an already-REMOVED domain answers the same 404 as an unknown id
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminDomainInterventionIsOrgScopedWithThe404Mask() throws Exception {
+        long vmId = publishableVm(true, "team-scope", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        long routeId = routeIdForVm(vmId);
+
+        long otherOrgId = jdbcTemplate.queryForObject("""
+                insert into orgs (name, slug) values ('개입 타기관', 'pub-other-org')
+                on conflict (slug) do update set name = excluded.name returning id
+                """, Long.class);
+        User otherOrgAdmin = ensureUser("pub.other.admin@pusan.ac.kr", "타기관관리자",
+                UserRole.ORG_ADMIN, otherOrgId);
+        String otherToken = jwtService.createAccessToken(otherOrgAdmin);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+                        .header("Authorization", "Bearer " + otherToken))
+                .andExpect(status().isNotFound());
+        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
+
+        // a plain user is refused by the role gate
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminVerifyTriggersWithoutUserRateLimitAndRejectsPlatformDomains() throws Exception {
+        long vmId = publishableVm(true, "team-averify", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "av." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/verify")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isAccepted());
+        assertThat(auditCount("domain.admin_verify", domainId)).isEqualTo(1);
+        // no per-user rate-limit row is consumed by the admin trigger
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from auth_rate_limits where scope = 'domain_verify'
+                """, Long.class)).isZero();
+
+        long platformVm = publishableVm(true, "team-avplat", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(platformVm, "{\"port\":80}").andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainIdForVm(platformVm) + "/verify")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOMAIN_NOT_CUSTOM"));
+    }
+
+    @Test
+    void adminRouteApplyBumpsGenerationAndRepushesRemoval() throws Exception {
+        long vmId = publishableVm(true, "team-radm", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        long domainId = domainIdForVm(vmId);
+        long generationBefore = routeGeneration(routeId);
+
+        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isAccepted());
+        assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
+        assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+        assertThat(auditCount("route.apply", routeId)).isEqualTo(1);
+
+        // a REMOVED route re-pushes its removal (desired state), status stays REMOVED
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk());
+        long generationAfterRelease = routeGeneration(routeId);
+        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isAccepted());
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        assertThat(routeGeneration(routeId)).isGreaterThan(generationAfterRelease);
+    }
+
+    private long routeGeneration(long routeId) {
+        return jdbcTemplate.queryForObject("select generation from routes where id = ?",
+                Long.class, routeId);
+    }
+
+    private long auditCount(String action, long targetId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = ? and target_id = ?",
+                Long.class, action, targetId);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private org.springframework.test.web.servlet.ResultActions publish(long vmId, String body)

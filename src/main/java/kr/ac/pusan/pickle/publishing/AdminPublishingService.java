@@ -51,12 +51,18 @@ public class AdminPublishingService {
     private final AuditService auditService;
     private final JobScheduler jobScheduler;
     private final ResyncRoutesJob resyncRoutesJob;
+    private final PublishingService publishingService;
+    private final DomainVerificationJob domainVerificationJob;
+    private final RouteGenerations routeGenerations;
+    private final RouteApplyJob routeApplyJob;
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             GroupRepository groupRepository, OrgRepository orgRepository,
             PublicationAssembler assembler, AuditService auditService, JobScheduler jobScheduler,
-            ResyncRoutesJob resyncRoutesJob) {
+            ResyncRoutesJob resyncRoutesJob, PublishingService publishingService,
+            DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
+            RouteApplyJob routeApplyJob) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -67,6 +73,10 @@ public class AdminPublishingService {
         this.auditService = auditService;
         this.jobScheduler = jobScheduler;
         this.resyncRoutesJob = resyncRoutesJob;
+        this.publishingService = publishingService;
+        this.domainVerificationJob = domainVerificationJob;
+        this.routeGenerations = routeGenerations;
+        this.routeApplyJob = routeApplyJob;
     }
 
     @Transactional(readOnly = true)
@@ -80,7 +90,7 @@ public class AdminPublishingService {
         List<AdminRouteView> content = routes.getContent().stream().map(route -> {
             Domain domain = ctx.domains.get(route.getDomainId());
             Vm vm = domain != null ? ctx.vms.get(domain.getVmId()) : null;
-            return new AdminRouteView(route.getId(),
+            return new AdminRouteView(route.getId(), route.getDomainId(),
                     domain != null ? domain.getFqdn() : null,
                     domain != null ? domain.getKind() : null,
                     vm != null ? vm.getId() : null, name(vm),
@@ -147,6 +157,117 @@ public class AdminPublishingService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_RESYNC,
                 "route", null, Map.of(), ip);
         return new MessageResponse("라우트 전체 재동기화를 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
+    }
+
+    // ── post-hoc intervention (contract v0.18.0, all admin roles org-scoped) ──
+
+    /**
+     * Immediate admin release of a problem domain — identical semantics to the
+     * user-side domain deletion ({@code teardown(domain, true)}): route removal
+     * pushed to the proxy, domain REMOVED, custom certs revoked.
+     */
+    @Transactional
+    public MessageResponse forceRelease(AuthenticatedUser actor, long domainId, String ip) {
+        Domain domain = requireScopedDomain(actor, domainId);
+        publishingService.teardown(domain, /* archiveCustomCert */ true);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.DOMAIN_FORCE_RELEASE, "domain", domainId,
+                Map.of("fqdn", domain.getFqdn()), ip);
+        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용됩니다.");
+    }
+
+    /**
+     * Forced ownership re-verification of a custom domain. Same trigger as the
+     * user op minus the per-user rate limit — the per-domain in-flight dedupe
+     * in {@link DomainVerificationJob} still bounds the load.
+     */
+    @Transactional
+    public MessageResponse verify(AuthenticatedUser actor, long domainId, String ip) {
+        Domain domain = requireScopedDomain(actor, domainId);
+        if (domain.getKind() != DomainKind.CUSTOM) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
+                    "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
+        }
+        runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.DOMAIN_ADMIN_VERIFY, "domain", domainId,
+                Map.of("fqdn", domain.getFqdn()), ip);
+        return new MessageResponse("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+    }
+
+    /**
+     * Re-applies a single route's <em>current desired state</em> to the proxy:
+     * live routes go back to PENDING with a fresh generation (the agent 409s
+     * stale generations, so the bump is mandatory); a REMOVED route re-pushes
+     * its removal. Complements the platform-wide {@link #resync} without the
+     * authoritative prune.
+     */
+    @Transactional
+    public MessageResponse applyRoute(AuthenticatedUser actor, long routeId, String ip) {
+        Route route = routeRepository.findById(routeId)
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        Domain domain = domainRepository.findById(route.getDomainId())
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        requireScope(actor, domain);
+        route.setGeneration(routeGenerations.next());
+        if (route.getStatus() != RouteStatus.REMOVED) {
+            route.setStatus(RouteStatus.PENDING);
+            route.setLastError(null);
+        }
+        long id = route.getId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                jobScheduler.enqueue(() -> routeApplyJob.apply(id));
+            }
+        });
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_APPLY,
+                "route", routeId, Map.of("fqdn", domain.getFqdn()), ip);
+        return new MessageResponse("라우트 재적용을 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
+    }
+
+    /**
+     * Target resolution with the admin 404 mask: unknown id, already-REMOVED
+     * domain, and an org-tier actor naming another org's domain all answer the
+     * same 404.
+     */
+    private Domain requireScopedDomain(AuthenticatedUser actor, long domainId) {
+        Domain domain = domainRepository.findById(domainId)
+                .orElseThrow(AdminPublishingService::domainNotFound);
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            throw domainNotFound();
+        }
+        requireScope(actor, domain);
+        return domain;
+    }
+
+    private void requireScope(AuthenticatedUser actor, Domain domain) {
+        if (!actor.role().isOrgTier()) {
+            return;
+        }
+        Long vmOrgId = vmRepository.findById(domain.getVmId()).map(Vm::getOrgId).orElse(null);
+        if (vmOrgId == null || !vmOrgId.equals(actor.orgId())) {
+            throw domainNotFound();
+        }
+    }
+
+    private void runAfterCommit(Runnable action) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
+    private static ApiException domainNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 도메인이 존재하지 않습니다.");
+    }
+
+    private static ApiException routeNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 라우트가 존재하지 않습니다.");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

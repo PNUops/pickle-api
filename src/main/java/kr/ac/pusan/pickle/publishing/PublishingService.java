@@ -352,8 +352,12 @@ public class PublishingService {
                 .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
     }
 
-    /** Removes the live route (ABSENT apply) and cleans up the domain/cert per kind. */
-    private void teardown(Domain domain, boolean archiveCustomCert) {
+    /**
+     * Removes the live route (ABSENT apply) and cleans up the domain/cert per
+     * kind. Package-private: the admin force-release (contract v0.18.0) reuses
+     * the exact user-deletion semantics instead of duplicating them.
+     */
+    void teardown(Domain domain, boolean archiveCustomCert) {
         routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                 .ifPresent(route -> {
                     route.setStatus(RouteStatus.REMOVED);

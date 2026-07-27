@@ -118,6 +118,9 @@ class ContractDriftTest {
             "GET /admin/domains",
             "GET /admin/certificates",
             "POST /admin/routes/resync",
+            "POST /admin/routes/{routeId}/apply",
+            "POST /admin/domains/{domainId}/force-release",
+            "POST /admin/domains/{domainId}/verify",
             // Notifications, announcements, audit views (contract v0.5.0).
             "GET /admin/settings",
             "PUT /admin/settings/{key}",

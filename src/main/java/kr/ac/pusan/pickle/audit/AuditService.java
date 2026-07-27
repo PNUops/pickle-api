@@ -60,6 +60,10 @@ public class AuditService {
     public static final String DOMAIN_DELETE = "domain.delete";
     public static final String DOMAIN_VERIFY = "domain.verify";
     public static final String ROUTE_RESYNC = "route.resync";
+    // Admin post-hoc domain intervention (contract v0.18.0).
+    public static final String DOMAIN_FORCE_RELEASE = "domain.force_release";
+    public static final String DOMAIN_ADMIN_VERIFY = "domain.admin_verify";
+    public static final String ROUTE_APPLY = "route.apply";
     // Operations (contract tag admin).
     public static final String DRIFT_RESOLVE = "drift.resolve";
     public static final String TASK_RETRY = "task.retry";

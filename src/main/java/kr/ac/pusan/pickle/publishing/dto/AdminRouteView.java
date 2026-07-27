@@ -8,6 +8,7 @@ import org.jspecify.annotations.Nullable;
 /** Contract schema {@code AdminRouteView} — a route with VM/group/org context. */
 public record AdminRouteView(
         Long id,
+        Long domainId,
         String fqdn,
         DomainKind domainKind,
         Long vmId,

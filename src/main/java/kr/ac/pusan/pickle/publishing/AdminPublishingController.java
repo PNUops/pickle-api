@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,9 +24,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin publishing views (contract tag {@code admin}): route/domain/certificate
- * listings (ORG_ADMIN self-org, SYS_ADMIN all) and the SYS_ADMIN sync-all
- * trigger. The resync is SYS_ADMIN-only because the manifest is authoritative
- * (platform-wide prune), so it is not exposed to org-scoped admins.
+ * listings (ORG_ADMIN self-org, SYS_ADMIN all), the sys-tier sync-all trigger,
+ * and the post-hoc intervention ops (contract v0.18.0): force release, forced
+ * re-verification, and single-route re-apply — all four admin roles with the
+ * org tier limited to its own org's targets (cross-org answers 404).
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -79,5 +81,31 @@ public class AdminPublishingController {
     public MessageResponse resyncRoutes(
             @AuthenticationPrincipal AuthenticatedUser principal, HttpServletRequest httpRequest) {
         return adminPublishingService.resync(principal, clientIp(httpRequest));
+    }
+
+    /** Immediate release of a problem domain (route removal + cert revocation). */
+    @PostMapping("/domains/{domainId}/force-release")
+    public MessageResponse forceReleaseDomain(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long domainId, HttpServletRequest httpRequest) {
+        return adminPublishingService.forceRelease(principal, domainId, clientIp(httpRequest));
+    }
+
+    /** Forced ownership re-verification of a custom domain (no user rate limit). */
+    @PostMapping("/domains/{domainId}/verify")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse verifyAdminDomain(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long domainId, HttpServletRequest httpRequest) {
+        return adminPublishingService.verify(principal, domainId, clientIp(httpRequest));
+    }
+
+    /** Re-applies a single route's desired state to the proxy (generation bump). */
+    @PostMapping("/routes/{routeId}/apply")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public MessageResponse applyAdminRoute(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long routeId, HttpServletRequest httpRequest) {
+        return adminPublishingService.applyRoute(principal, routeId, clientIp(httpRequest));
     }
 }
