@@ -104,6 +104,7 @@ class AdminGroupsTest {
                 .andExpect(jsonPath("$.memberCount").value(1))
                 .andExpect(jsonPath("$.vmCount").value(0))
                 .andExpect(jsonPath("$.members.length()").value(2))
+                .andExpect(jsonPath("$.members[0].groupRole").value("OWNER"))
                 .andExpect(jsonPath("$.members[?(@.userId == %d)].groupRole".formatted(ownerId))
                         .value("OWNER"))
                 .andExpect(jsonPath("$.members[?(@.userId == %d)].userStatus"
