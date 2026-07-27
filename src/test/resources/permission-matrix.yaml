@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.19.0, 117 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.20.0, 118 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -116,6 +116,7 @@ operations:
   - { id: rejectVmRequest,      method: POST,   path: "/admin/vm-requests/{requestId}/reject",     roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
   # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
+  - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createOrg,            method: POST,   path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateOrg,            method: PATCH,  path: "/admin/orgs/{orgId}",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateUserRole,       method: PATCH,  path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

@@ -41,6 +41,14 @@ public class AdminService {
         this.auditService = auditService;
     }
 
+    /** Contract {@code listAdminOrgs} (v0.20.0): every org, all statuses + hidden. */
+    @Transactional(readOnly = true)
+    public java.util.List<OrgDetailResponse> listOrgs() {
+        return orgRepository.findAll(org.springframework.data.domain.Sort.by("id")).stream()
+                .map(OrgDetailResponse::from)
+                .toList();
+    }
+
     @Transactional
     public OrgDetailResponse createOrg(AuthenticatedUser actor, CreateOrgRequest request, String ip) {
         if (orgRepository.existsBySlug(request.slug())) {

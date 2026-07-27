@@ -101,6 +101,7 @@ class ContractDriftTest {
             "GET /admin/vm-requests/{requestId}/context",
             "POST /admin/vm-requests/{requestId}/approve",
             "POST /admin/vm-requests/{requestId}/reject",
+            "GET /admin/orgs",
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}",

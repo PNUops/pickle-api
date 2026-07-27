@@ -4,6 +4,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
@@ -13,6 +14,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code admin}, org/user management subset — SYS_ADMIN only
- * (ORG_ADMIN gets 403 ACCESS_DENIED via the method-security gate).
+ * (ORG_ADMIN gets 403 ACCESS_DENIED via the method-security gate). The
+ * v0.20.0 org list read widens to the sys tier so SYS_MANAGER can see
+ * DISABLED/hidden orgs too (writes stay SYS_ADMIN).
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -34,6 +38,17 @@ public class AdminController {
 
     public AdminController(AdminService adminService) {
         this.adminService = adminService;
+    }
+
+    /**
+     * Every org regardless of status/hidden — the public {@code GET /orgs}
+     * filters to ACTIVE for all roles, so a DISABLED org would otherwise be
+     * invisible everywhere (the gap that motivated this op).
+     */
+    @GetMapping("/orgs")
+    @PreAuthorize("hasAnyRole('SYS_MANAGER', 'SYS_ADMIN')")
+    public List<OrgDetailResponse> listAdminOrgs() {
+        return adminService.listOrgs();
     }
 
     @PostMapping("/orgs")

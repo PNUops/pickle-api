@@ -80,6 +80,41 @@ class AdminOrgUserTest {
     }
 
     @Test
+    void adminOrgListShowsEveryStatusToTheSysTier() throws Exception {
+        String disabledSlug = "adm-org-disabled";
+        Org disabled = orgRepository.findBySlug(disabledSlug).orElseGet(
+                () -> orgRepository.save(new Org("비활성 기관", disabledSlug, null)));
+        jdbcTemplate.update(
+                "update orgs set status = 'DISABLED'::org_status, hidden = true where id = ?",
+                disabled.getId());
+        User sysManager = ensureUser("adm.sysmanager@pusan.ac.kr", "시스템운영자",
+                UserRole.SYS_MANAGER, null);
+
+        // DISABLED + hidden org visible with both flags (invisible on public /orgs)
+        mockMvc.perform(get("/api/v1/admin/orgs")
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(sysManager)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(disabled.getId()) + ".status").value("DISABLED"))
+                .andExpect(jsonPath(byId(disabled.getId()) + ".hidden").value(true));
+        mockMvc.perform(get("/api/v1/orgs")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(disabled.getId())).doesNotExist());
+
+        // org tier and users are refused by the role gate
+        mockMvc.perform(get("/api/v1/admin/orgs")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/orgs")
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isForbidden());
+    }
+
+    private static String byId(long orgId) {
+        return "$[?(@.id == %d)]".formatted(orgId);
+    }
+
+    @Test
     void adminEndpointsAreSysAdminOnly() throws Exception {
         Map<String, ?> body = Map.of("name", "새 기관", "slug", "adm-gate-x1");
         // ORG_ADMIN and USER are rejected with 403 ACCESS_DENIED

@@ -279,15 +279,28 @@ class VmDeletionTest {
     void adminScheduleDeleteEnforcesNoticeAndMailsReason() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
 
-        // below the 7-day minimum notice → 422 with errors[]
+        // past instant → 422 with errors[] (the only remaining date rule —
+        // the minimum-notice floor was dropped 2026-07-27)
         mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "scheduledFor", Instant.now().plus(Duration.ofDays(3)).toString(),
+                                "scheduledFor", Instant.now().minus(Duration.ofHours(1)).toString(),
                                 "reason", "종료일 경과"))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("scheduledFor"));
+
+        // within the recommended 7-day window is accepted now (warning is
+        // console-side only)
+        long shortNoticeVm = createVm(VmStatus.RUNNING);
+        mockMvc.perform(post("/api/v1/admin/vms/" + shortNoticeVm + "/schedule-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "scheduledFor", Instant.now().plus(Duration.ofDays(1)).toString(),
+                                "reason", "빠른 정리"))))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.kind").value("ADMIN"));
 
         // blank reason → 422 (bean validation)
         mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")

@@ -53,8 +53,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *       ERROR VMs (compensated create failures) collapse to an immediate
  *       DELETED with the IP released — there is nothing to destroy.</li>
  *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
- *       {@code scheduledFor} at least {@code settings.vm_admin_delete_min_notice_days}
- *       out, reason mandatory and mailed to the group.</li>
+ *       {@code scheduledFor} any future instant (the minimum-notice floor was
+ *       dropped 2026-07-27 — it forced within-notice deletions into the
+ *       immediate force delete, erasing the cancellable middle state; the
+ *       console warns below the recommended 7 days instead), reason mandatory
+ *       and mailed to the group.</li>
  *   <li><b>Force delete</b> (SYS_ADMIN): name-confirmed immediate
  *       stop+destroy, never cancelable, audited separately.</li>
  * </ul>
@@ -67,7 +70,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class VmDeletionService {
 
     static final int DEFAULT_GRACE_HOURS = 168;
-    static final int DEFAULT_MIN_NOTICE_DAYS = 7;
 
     private static final DateTimeFormatter KST =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
@@ -180,11 +182,9 @@ public class VmDeletionService {
         requireNotDeletionProtected(vmId);
 
         Instant now = Instant.now();
-        int noticeDays = settingsService.integer(SettingsService.ADMIN_DELETE_MIN_NOTICE_DAYS,
-                DEFAULT_MIN_NOTICE_DAYS);
-        if (request.scheduledFor().isBefore(now.plus(Duration.ofDays(noticeDays)))) {
+        if (!request.scheduledFor().isAfter(now)) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("scheduledFor",
-                    "삭제 예정일은 최소 통보 기간(" + noticeDays + "일) 이후여야 합니다.")));
+                    "삭제 예정일은 미래 시각이어야 합니다.")));
         }
         String reason = request.reason().strip();
         if (vmRepository.scheduleAdminDeletion(vmId, request.scheduledFor(), actor.id(),
