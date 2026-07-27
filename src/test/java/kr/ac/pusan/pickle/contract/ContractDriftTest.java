@@ -131,6 +131,7 @@ class ContractDriftTest {
             "POST /admin/announcements",
             "GET /admin/announcements",
             "GET /admin/groups",
+            "GET /admin/groups/{groupId}",
             "GET /me/activity",
             "GET /admin/audit",
             // Ops dashboards, drift, tasks, expiry (contract v0.5.0).

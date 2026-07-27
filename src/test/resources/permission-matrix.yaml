@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.18.0, 116 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.19.0, 117 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -154,6 +154,7 @@ operations:
 
   # ── 3.14 Admin — groups ───────────────────────────────────────────────────
   - { id: listAdminGroups,      method: GET,  path: "/admin/groups",          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminGroup,        method: GET,  path: "/admin/groups/{groupId}", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.15 Admin — audit ────────────────────────────────────────────────────
   - { id: listAuditLogs,        method: GET,  path: "/admin/audit",           roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
