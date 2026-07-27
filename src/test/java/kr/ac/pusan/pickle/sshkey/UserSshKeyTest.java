@@ -195,7 +195,7 @@ class UserSshKeyTest {
         String body = mockMvc.perform(post("/api/v1/me/ssh-keys/generate")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("name", "피클에서 만든 키"))))
+                        .content(objectMapper.writeValueAsString(Map.of("name", "Pickle에서 만든 키"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.algorithm").value("ED25519"))
                 .andExpect(jsonPath("$.privateKeyStored").value(true))
