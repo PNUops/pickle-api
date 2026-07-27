@@ -145,7 +145,7 @@ class VmPasswordTest {
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.password").value(PASSWORD))
-                    .andExpect(jsonPath("$.sshUsername").value("student"));
+                    .andExpect(jsonPath("$.sshUsername").value("ubuntu"));
         }
 
         // ciphertext survives reveals; the reveal time is recorded

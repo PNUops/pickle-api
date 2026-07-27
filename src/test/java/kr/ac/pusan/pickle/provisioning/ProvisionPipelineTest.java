@@ -346,7 +346,7 @@ class ProvisionPipelineTest {
                 StandardCharsets.UTF_8)).isEqualTo(platformKey);
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("cipassword="))
-                .withRequestBody(containing("ciuser=student"))
+                .withRequestBody(containing("ciuser=ubuntu"))
                 .withRequestBody(containing("ipconfig0=" + expectedIpconfig))
                 .withRequestBody(containing("sshkeys=" + sshkeysWire))
                 .withRequestBody(containing("onboot=1"))

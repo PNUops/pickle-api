@@ -75,7 +75,7 @@ class InternalTerminalTest {
         sessionRegistry.all().forEach(s -> sessionRegistry.remove(s.sessionId()));
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'student-vmbr2'",
+        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         nodeId = ensureNode();
         member = ensureUser("term.redeem.member@pusan.ac.kr", "리딤멤버");
@@ -98,7 +98,7 @@ class InternalTerminalTest {
                 .andExpect(jsonPath("$.vmId").value((int) vmId))
                 .andExpect(jsonPath("$.vmIp").value("172.29.5.11"))
                 .andExpect(jsonPath("$.port").value(22))
-                .andExpect(jsonPath("$.user").value("student"))
+                .andExpect(jsonPath("$.user").value("ubuntu"))
                 .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
 
         assertThat(sessionRegistry.get(sessionId)).isPresent();

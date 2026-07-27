@@ -71,7 +71,7 @@ class SshGatewaySessionTest {
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'student-vmbr2'",
+        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         // Reuse a seeded node (do not create one) so this test does not add to the
         // org-headroom capacity other tests (e.g. ApprovalTest) assert against.

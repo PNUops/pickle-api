@@ -111,16 +111,16 @@ class VmPasswordRegenerateTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.sshUsername").value("student"))
+                .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
                 .andExpect(jsonPath("$.sshHost").value("ssh.pickle.pnuops.com"))
                 .andReturn().getResponse().getContentAsString();
         String newPassword = objectMapper.readTree(body).get("password").asString();
         assertThat(newPassword).hasSize(24).isNotEqualTo(OLD_PASSWORD);
 
-        // the guest agent was driven for the student account
+        // the guest agent was driven for the guest account
         wm.server().verify(1, postRequestedFor(urlPathEqualTo(
                 "/api2/json/nodes/" + NODE + "/qemu/" + vmid + "/agent/set-user-password"))
-                .withRequestBody(containing("username=student")));
+                .withRequestBody(containing("username=ubuntu")));
 
         // stored ciphertext now decrypts to the new password (not the old one)
         String enc = jdbcTemplate.queryForObject(

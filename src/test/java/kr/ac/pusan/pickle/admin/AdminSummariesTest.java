@@ -199,9 +199,9 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.certExpiring30dCount").isNumber())
                 .andExpect(jsonPath("$.openDriftFindingCount").isNumber())
                 .andExpect(jsonPath("$.sshPasswordEnabledVmCount").isNumber())
-                .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].allocatedCount")
+                .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].allocatedCount")
                         .exists())
-                .andExpect(jsonPath("$.ipPools[?(@.name == 'student-vmbr2')].freeCount").exists());
+                .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].freeCount").exists());
     }
 
     /** One RUNNING VM in groupBig so the platform-wide summary has this org's data. */

@@ -67,7 +67,7 @@ class IpamServiceTest {
 
     @Test
     void v5SeedWiresPoolNodeAndQuarantineSetting() {
-        IpPool pool = poolRepository.findByName("student-vmbr2").orElseThrow();
+        IpPool pool = poolRepository.findByName("guest-private").orElseThrow();
         assertThat(pool.getCidr()).isEqualTo("172.29.0.0/16");
         assertThat(pool.getGateway()).isEqualTo("172.29.0.1");
         assertThat(pool.getDns()).contains("8.8.8.8");

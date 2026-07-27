@@ -65,9 +65,9 @@ public class Vm {
     @Column(name = "ip_allocation_id")
     private Long ipAllocationId;
 
-    /** Fixed {@code student} (initial credentials). */
+    /** Guest admin account (initial credentials); {@code ubuntu} for the current template. */
     @Column(name = "ssh_username", nullable = false)
-    private String sshUsername = "student";
+    private String sshUsername = "ubuntu";
 
     /**
      * Per-VM SSH gateway block (kill switch): when true the route

@@ -953,7 +953,7 @@ class PublishingTest {
         String ip = "172.29.200." + IP_SEQ.getAndIncrement();
         long allocId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, vm_id, status)
-                values ((select id from ip_pools where name = 'student-vmbr2'), ?::inet, ?, 'ALLOCATED')
+                values ((select id from ip_pools where name = 'guest-private'), ?::inet, ?, 'ALLOCATED')
                 returning id
                 """, Long.class, ip, vmId);
         jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocId, vmId);

@@ -236,11 +236,11 @@ class ProxmoxClientTest {
                         .withHeader("Content-Type", "application/json;charset=UTF-8")
                         .withBody("{\"data\":null,\"message\":\"QEMU guest agent is not running\\n\"}")));
 
-        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 102, "student", "pw")).isTrue();
-        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 103, "student", "pw")).isFalse();
+        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 102, "ubuntu", "pw")).isTrue();
+        assertThat(client.agentSetUserPassword(wm.apiHost(), NODE, 103, "ubuntu", "pw")).isFalse();
         wm.server().verify(postRequestedFor(urlPathEqualTo(
                 "/api2/json/nodes/pve1/qemu/102/agent/set-user-password"))
-                .withRequestBody(containing("username=student")));
+                .withRequestBody(containing("username=ubuntu")));
     }
 
     @Test
@@ -307,14 +307,14 @@ class ProxmoxClientTest {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("cores", "1");
         params.put("memory", "1024");
-        params.put("ciuser", "student");
+        params.put("ciuser", "ubuntu");
         params.put("ipconfig0", "ip=172.29.255.250/16,gw=172.29.0.1");
         client.config(wm.apiHost(), NODE, 102, params);
 
         wm.server().verify(putRequestedFor(urlPathEqualTo("/api2/json/nodes/pve1/qemu/102/config"))
                 .withHeader("Content-Type", containing("application/x-www-form-urlencoded"))
                 .withRequestBody(containing("cores=1"))
-                .withRequestBody(containing("ciuser=student"))
+                .withRequestBody(containing("ciuser=ubuntu"))
                 // '=' '/' ',' inside values must be form-encoded.
                 .withRequestBody(containing(
                         "ipconfig0=ip%3D172.29.255.250%2F16%2Cgw%3D172.29.0.1")));

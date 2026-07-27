@@ -58,7 +58,7 @@ class AdminIpAllocationsTest {
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail("orgadmin@pickle.local").orElseThrow());
         poolId = jdbcTemplate.queryForObject(
-                "select id from ip_pools where name = 'student-vmbr2'", Long.class);
+                "select id from ip_pools where name = 'guest-private'", Long.class);
         otherPoolId = createPool();
         vmId = createVm();
         allocated = createAllocation(poolId, vmId, "ALLOCATED");
@@ -79,7 +79,7 @@ class AdminIpAllocationsTest {
                 .andExpect(jsonPath(byId(released)).exists())
                 .andExpect(jsonPath(byId(inOtherPool)).exists())
                 .andExpect(jsonPath(byId(allocated) + ".poolId").value((int) poolId))
-                .andExpect(jsonPath(byId(allocated) + ".poolName").value("student-vmbr2"))
+                .andExpect(jsonPath(byId(allocated) + ".poolName").value("guest-private"))
                 .andExpect(jsonPath(byId(allocated) + ".ip").isNotEmpty())
                 .andExpect(jsonPath(byId(allocated) + ".vmId").value((int) vmId))
                 .andExpect(jsonPath(byId(allocated) + ".vmName").isNotEmpty())

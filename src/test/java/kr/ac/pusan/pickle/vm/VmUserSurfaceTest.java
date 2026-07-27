@@ -165,7 +165,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.deletion.kind").value("SELF"))
                 .andExpect(jsonPath("$.deletion.requestedById").value(owner.getId()))
                 .andExpect(jsonPath("$.deletion.cancelable").value(true))
-                .andExpect(jsonPath("$.sshUsername").value("student"))
+                .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty());
 
         // a cleanly finished task and a consumed password flip the surface
@@ -231,7 +231,7 @@ class VmUserSurfaceTest {
     private long allocateIp(long vmId) {
         String ip = "172.29.78." + (IP_SEQ.incrementAndGet() % 250 + 1);
         long poolId = jdbcTemplate.queryForObject(
-                "select id from ip_pools where name = 'student-vmbr2'", Long.class);
+                "select id from ip_pools where name = 'guest-private'", Long.class);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, vm_id, status)
                 values (?, ?::inet, ?, 'ALLOCATED')

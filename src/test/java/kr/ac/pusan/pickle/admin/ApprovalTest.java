@@ -209,7 +209,7 @@ class ApprovalTest {
         assertThat(vm.getVcpu()).isEqualTo(2);
         assertThat(vm.getMemoryMb()).isEqualTo(2048);
         assertThat(vm.getDiskGb()).isEqualTo(20);
-        assertThat(vm.getSshUsername()).isEqualTo("student");
+        assertThat(vm.getSshUsername()).isEqualTo("ubuntu");
         assertThat(vm.getProxmoxVmid()).isNull();
         assertThat(vm.getOrgId()).isEqualTo(org.getId());
 

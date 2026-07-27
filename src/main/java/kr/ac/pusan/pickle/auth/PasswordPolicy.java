@@ -21,7 +21,7 @@ public class PasswordPolicy {
             "1234567890", "12345678910", "0123456789", "1q2w3e4r", "1q2w3e4r5t",
             "iloveyou", "letmein", "welcome", "monkey", "dragon", "sunshine", "princess",
             "football", "baseball", "superman", "batman", "trustno1", "admin", "administrator",
-            "pusan", "pusanuniv", "busan", "pickle", "student");
+            "pusan", "pusanuniv", "busan", "pickle", "student", "ubuntu");
 
     public void validate(String rawPassword, String email) {
         List<FieldValidationError> errors = check(rawPassword, email);

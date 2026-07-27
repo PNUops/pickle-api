@@ -72,7 +72,7 @@ class ProvisioningEndToEndTest {
     private static final int VMID = 102;
 
     /**
-     * First allocatable address of the seeded student-vmbr2 pool
+     * First allocatable address of the seeded guest-private pool
      * (172.29.0.0/16 minus the two reserved /24s) — deterministic because this
      * test class boots its own embedded PostgreSQL and allocates exactly once.
      */
@@ -223,7 +223,7 @@ class ProvisioningEndToEndTest {
                         .header("Authorization", "Bearer " + studentToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
-                .andExpect(jsonPath("$.sshUsername").value("student"))
+                .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
                 .andExpect(jsonPath("$.orgId").value(orgId))
                 .andExpect(jsonPath("$.ipAddress").value(EXPECTED_IP))
                 .andExpect(jsonPath("$.passwordAvailable").value(true))

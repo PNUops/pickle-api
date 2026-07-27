@@ -155,7 +155,7 @@ class VmDeletionTest {
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         poolId = jdbcTemplate.queryForObject(
-                "select id from ip_pools where name = 'student-vmbr2'", Long.class);
+                "select id from ip_pools where name = 'guest-private'", Long.class);
         nodeId = ensureWireMockNode();
         groupId = createTeam("vmdel-" + UUID.randomUUID().toString().substring(0, 8));
         addMember(groupId, member.getEmail(), "MEMBER");

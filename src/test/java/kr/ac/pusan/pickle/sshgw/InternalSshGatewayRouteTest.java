@@ -87,7 +87,7 @@ class InternalSshGatewayRouteTest {
 
         orgId = jdbcTemplate.queryForObject("select id from orgs where slug = 'sw-edu'", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
-        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'student-vmbr2'",
+        poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         nodeId = ensureNode();
         memberId = ensureUser("sshgw.member@pusan.ac.kr", "라우트멤버");
@@ -107,7 +107,7 @@ class InternalSshGatewayRouteTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ip").value("172.29.4.11"))
                 .andExpect(jsonPath("$.port").value(22))
-                .andExpect(jsonPath("$.user").value("student"))
+                .andExpect(jsonPath("$.user").value("ubuntu"))
                 .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
 
         // gate-C: an allowed lookup runs on an unauthenticated offered key, so it

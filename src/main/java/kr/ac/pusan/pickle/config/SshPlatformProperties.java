@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Platform SSH identities injected into every VM. Two
- * <b>independent</b> platform keys are authorized on the guest {@code student}
+ * <b>independent</b> platform keys are authorized on the guest admin
  * account via cloud-init {@code sshkeys}:
  *
  * <ul>
