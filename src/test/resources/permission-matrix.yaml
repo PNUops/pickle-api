@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.21.0, 121 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.21.1, 121 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.

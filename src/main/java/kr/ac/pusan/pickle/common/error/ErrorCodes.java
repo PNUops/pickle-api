@@ -52,6 +52,7 @@ public final class ErrorCodes {
     public static final String PUBLICATION_ALREADY_EXISTS = "PUBLICATION_ALREADY_EXISTS";
     public static final String DOMAIN_FQDN_TAKEN = "DOMAIN_FQDN_TAKEN";
     public static final String DOMAIN_NOT_CUSTOM = "DOMAIN_NOT_CUSTOM";
+    public static final String DOMAIN_NOT_ACTIVE = "DOMAIN_NOT_ACTIVE";
     // Operations (contract tag admin).
     public static final String VM_EXPIRED = "VM_EXPIRED";
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";

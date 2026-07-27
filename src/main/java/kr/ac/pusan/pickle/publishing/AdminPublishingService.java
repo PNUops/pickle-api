@@ -200,7 +200,10 @@ public class AdminPublishingService {
      * live routes go back to PENDING with a fresh generation (the agent 409s
      * stale generations, so the bump is mandatory); a REMOVED route re-pushes
      * its removal. Complements the platform-wide {@link #resync} without the
-     * authoritative prune.
+     * authoritative prune. A live push requires the domain to be ACTIVE — an
+     * unverified custom domain must never reach the proxy (the same invariant
+     * the resync and the unconfirmed-route sweep enforce), so anything else
+     * answers 409.
      */
     @Transactional
     public MessageResponse applyRoute(AuthenticatedUser actor, long routeId, String ip) {
@@ -209,6 +212,13 @@ public class AdminPublishingService {
         Domain domain = domainRepository.findById(route.getDomainId())
                 .orElseThrow(AdminPublishingService::routeNotFound);
         requireScope(actor, domain);
+        if (route.getStatus() != RouteStatus.REMOVED
+                && domain.getStatus() != DomainStatus.ACTIVE) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                    "적용할 수 없는 도메인 상태입니다",
+                    "소유권 검증이 완료(ACTIVE)된 도메인의 라우트만 재적용할 수 있습니다. (현재 상태 "
+                            + domain.getStatus() + ")");
+        }
         route.setGeneration(routeGenerations.next());
         if (route.getStatus() != RouteStatus.REMOVED) {
             route.setStatus(RouteStatus.PENDING);

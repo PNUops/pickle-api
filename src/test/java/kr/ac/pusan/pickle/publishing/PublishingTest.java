@@ -937,6 +937,28 @@ class PublishingTest {
     }
 
     @Test
+    void adminRouteApplyRefusesUnverifiedCustomDomains() throws Exception {
+        // Regression (2026-07-28 review): the single-route re-apply must honor
+        // the "unverified custom domain never goes live" invariant that the
+        // resync and the unconfirmed-route sweep enforce.
+        long vmId = publishableVm(true, "team-unver", "pickle.pnuops.com", VmStatus.RUNNING);
+        String fqdn = "uv." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        long generationBefore = routeGeneration(routeId);
+
+        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOMAIN_NOT_ACTIVE"));
+        // untouched: no generation bump, no audit, route stays PENDING
+        assertThat(routeGeneration(routeId)).isEqualTo(generationBefore);
+        assertThat(auditCount("route.apply", routeId)).isZero();
+        assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+    }
+
+    @Test
     void adminRouteApplyBumpsGenerationAndRepushesRemoval() throws Exception {
         long vmId = publishableVm(true, "team-radm", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
