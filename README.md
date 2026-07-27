@@ -56,8 +56,9 @@ scripts/verify.sh        # checkstyle + 빌드 + 전체 테스트 (= mvn verify)
 
 `scripts/verify.sh`는 checkstyle 하드 게이트(`pom.xml`의 validate 단계에 묶여
 있고 `failOnViolation=true`, 위반 시 빌드 실패) → 컴파일 → 전체 테스트를 실행한
-뒤, 마지막에 직접 의존성의 신규 버전 목록을 참고용으로 출력한다(이 감사는 빌드를
-실패시키지 않는다).
+뒤, 직접 의존성의 신규 버전 목록을 참고용으로 출력하고(이 감사는 빌드를
+실패시키지 않는다), 마지막으로 공개 위생 검사(`scripts/hygiene.sh`)를 돌린다 —
+이 검사는 **차단 게이트**라 위반이 있으면 검증이 실패한다.
 
 dev 프로파일에서는 메일이 실제로 발송되지 않는다. `MockMailSender`가 저널에는
 수신자/제목만 남기고, 본문 전체는 스풀 파일(`PICKLE_MOCK_MAIL_SPOOL`, 기본
