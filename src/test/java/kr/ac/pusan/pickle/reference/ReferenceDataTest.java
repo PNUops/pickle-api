@@ -147,8 +147,12 @@ class ReferenceDataTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.allowedRootDomains").value(
                         org.hamcrest.Matchers.contains("pickle.pnuops.com")))
-                .andExpect(jsonPath("$.reservedSubdomains").value(org.hamcrest.Matchers.containsInAnyOrder(
-                        "www", "api", "admin", "ssh", "mail", "console", "staging")))
+                // V55 expanded the seed to ~400 entries — assert the original head,
+                // representatives of each new family, and the exact size.
+                .andExpect(jsonPath("$.reservedSubdomains").value(org.hamcrest.Matchers.hasItems(
+                        "www", "api", "admin", "ssh", "mail", "console", "staging",
+                        "portal", "webmail", "jupyter", "vpn", "pickle", "grafana", "dev")))
+                .andExpect(jsonPath("$.reservedSubdomains.length()").value(388))
                 // v0.12.0: SSH gateway host for the request form's slug preview
                 .andExpect(jsonPath("$.sshHost").value("ssh.pickle.pnuops.com"));
     }
