@@ -212,6 +212,18 @@ class PublishingTest {
     }
 
     @Test
+    void publishRevalidatesTheStoredRequestFormSubdomain() throws Exception {
+        // A name stored on the request row before the reserved list grew must
+        // be refused when the publish falls back to it — the stored-value
+        // branch runs the same policy as the body branch.
+        long vmId = publishableVm("portal", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
+    }
+
+    @Test
     void publishRejectsProfanitySubdomain() throws Exception {
         long vmId = publishableVm(null, "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80,\"subdomain\":\"team-shit-lab\"}")

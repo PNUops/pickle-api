@@ -32,6 +32,7 @@ import kr.ac.pusan.pickle.vmrequest.VmRequest;
 import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -278,16 +279,24 @@ public class PublishingService {
             String subdomain, String rootDomain) {
         Domain domain;
         boolean applyNow;
-        if (customDomain != null) {
-            String fqdn = customDomain.toLowerCase(Locale.ROOT);
-            validateCustomDomain(fqdn);
-            requireFqdnFree(fqdn);
-            domain = domainRepository.save(Domain.custom(vm.getId(), fqdn, generateToken()));
-            certificateRepository.save(Certificate.letsEncrypt(domain.getId(), fqdn));
-            applyNow = false;
-        } else {
-            domain = domainRepository.save(platformDomain(vm, subdomain, rootDomain));
-            applyNow = true;
+        // saveAndFlush + catch: requireFqdnFree is a pre-check only — under a
+        // concurrent claim of the same name the partial unique index
+        // (domains_fqdn_live_idx) is the arbiter, and the loser must get the
+        // same 409 instead of a 500 at commit time.
+        try {
+            if (customDomain != null) {
+                String fqdn = customDomain.toLowerCase(Locale.ROOT);
+                validateCustomDomain(fqdn);
+                requireFqdnFree(fqdn);
+                domain = domainRepository.saveAndFlush(Domain.custom(vm.getId(), fqdn, generateToken()));
+                certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
+                applyNow = false;
+            } else {
+                domain = domainRepository.saveAndFlush(platformDomain(vm, subdomain, rootDomain));
+                applyNow = true;
+            }
+        } catch (DataIntegrityViolationException raced) {
+            throw fqdnTaken();
         }
         long generation = routeGenerations.next();
         Route route = routeRepository.save(new Route(domain.getId(), port, generation));
@@ -311,12 +320,16 @@ public class PublishingService {
     private Domain platformDomain(Vm vm, String requestedSubdomain, String requestedRootDomain) {
         VmRequest request = requestRepository.findById(vm.getRequestId()).orElse(null);
         String label = Texts.blankToNull(requestedSubdomain) != null
-                ? requestedSubdomain.toLowerCase(Locale.ROOT).strip()
+                ? requestedSubdomain
                 : (request != null ? request.getDesiredSubdomain() : null);
         if (label == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
                     "공개할 서브도메인을 입력해 주세요. (자동 생성은 지원하지 않습니다)")));
         }
+        // Normalize once for BOTH sources: validateLabel lowercases only its
+        // local copy, and the FQDN below must match what was validated (DNS is
+        // case-insensitive; the unique index is not).
+        label = label.strip().toLowerCase(Locale.ROOT);
         String rootDomain = Texts.blankToNull(requestedRootDomain);
         if (rootDomain == null) {
             rootDomain = request != null && request.getRootDomain() != null
@@ -437,10 +450,14 @@ public class PublishingService {
 
     private void requireFqdnFree(String fqdn) {
         if (domainRepository.existsByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
-                    "이미 사용 중인 도메인입니다",
-                    "요청한 도메인이 이미 다른 곳에 연결되어 있습니다. 다른 도메인을 사용해 주세요.");
+            throw fqdnTaken();
         }
+    }
+
+    private static ApiException fqdnTaken() {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
+                "이미 사용 중인 도메인입니다",
+                "요청한 도메인이 이미 다른 곳에 연결되어 있습니다. 다른 도메인을 사용해 주세요.");
     }
 
     // ── authorization helpers ────────────────────────────────────────────────

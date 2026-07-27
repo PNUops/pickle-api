@@ -246,10 +246,13 @@ public class VmRequestService {
         }
         // Contract: duplicates are validated server-side — a pair is taken
         // while another request holds it in a non-terminal state. (Domain
-        // issuance re-checks against actually published domains.)
-        if (request.desiredSubdomain() != null && rootDomain != null
+        // issuance re-checks against actually published domains.) A null root
+        // resolves to the default root here, so the soft reservation matches
+        // what publish would actually claim.
+        String effectiveRoot = rootDomain != null ? rootDomain : subdomainPolicy.defaultRootDomain();
+        if (request.desiredSubdomain() != null && effectiveRoot != null
                 && requestRepository.existsByDesiredSubdomainAndRootDomainAndStatusIn(
-                        request.desiredSubdomain(), rootDomain,
+                        request.desiredSubdomain(), effectiveRoot,
                         List.of(VmRequestStatus.SUBMITTED, VmRequestStatus.APPROVED))) {
             errors.add(new FieldValidationError("desiredSubdomain",
                     "이미 사용 중이거나 신청된 서브도메인입니다."));

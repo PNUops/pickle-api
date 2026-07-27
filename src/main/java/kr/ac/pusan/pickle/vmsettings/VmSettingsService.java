@@ -153,8 +153,18 @@ public class VmSettingsService {
      */
     @Transactional
     public void initializeDisplayName(long vmId, String displayName, Long requesterId) {
+        // Own the invariants here instead of trusting the request DTO: the
+        // patch() path caps length via the registry, and control/format chars
+        // (incl. zero-width/RTL overrides) would only serve display spoofing.
+        String sanitized = displayName.replaceAll("[\\p{Cc}\\p{Cf}]", "").strip();
+        if (sanitized.isEmpty()) {
+            return;
+        }
+        if (sanitized.length() > DISPLAY_NAME_MAX_LENGTH) {
+            sanitized = sanitized.substring(0, DISPLAY_NAME_MAX_LENGTH);
+        }
         settingRepository.save(new VmSetting(vmId, DISPLAY_NAME,
-                objectMapper.writeValueAsString(displayName), requesterId, Instant.now()));
+                objectMapper.writeValueAsString(sanitized), requesterId, Instant.now()));
     }
 
     /**
