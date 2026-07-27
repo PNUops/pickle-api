@@ -8,6 +8,11 @@
 # letter suffix like M4A. A grep that runs on every verify is the only version
 # of this that stays true.
 #
+# Design constraint: the gate itself is published, so it must not catalogue the
+# private world it protects. Rules are therefore shapes, not inventories — "any
+# .md file this repo does not contain", "any deploy-*.sh script" — and the
+# self-test samples are synthetic sentences that merely have the right shape.
+#
 # The script is duplicated per repo on purpose: a shared copy would have to live
 # somewhere central, and pointing at it from a published repo is itself the kind
 # of cross-reference these rules forbid. Keep the five copies identical.
@@ -15,15 +20,10 @@
 # Usage: hygiene_check public   # this repo is published
 #        hygiene_check infra    # private-but-shared: may name vault paths
 
-# Documentation-repo filenames. A bare mention is a reference too — that is how
-# the first scrub missed most of its targets. `network.md` is deliberately absent:
-# the infra repo has a runbook of the same name and the collision would make the
-# gate unusable there.
-HYGIENE_DOC_NAMES='internal\.md|permission-matrix\.md|hosts\.md|credentials\.md|domains-tls\.md|scheduled-jobs\.md|product-spec\.md|status\.md|architecture\.md|roadmap\.md|glossary\.md|commit-convention\.md|dev-setup\.md|production-gates\.md|backlog\.md|console-views\.md|ssh-access\.md|out-of-scope\.md|findings-triage\.md|data-model\.md|network-ipam\.md|ports\.md|security\.md|provisioning\.md|environments-deploy\.md|verification-gaps\.md'
-
-# The private repo and the secret vault, by path and by the names of the scripts
-# that live there.
-HYGIENE_PRIVATE='(\binfra/|/root/pickle/secrets|(^|[^a-z])secrets/|deploy-(api|console|sshgw|proxy-agent)\.sh|create-(app|sshgw)-lxc\.sh|apply-(log-retention|tls-ciphers|terminal-ingress)\.sh|smoke-[a-z-]+\.sh|sync-systemd-units\.sh|cron-wrap\.sh|health-check\.sh)'
+# The private repo and the secret vault, by path shape. Script names are matched
+# by their prefix families (deploy-/smoke-/apply-/create-/sync-), not by name;
+# a private script mentioned with its path is caught by the infra/ rule anyway.
+HYGIENE_PRIVATE='(\binfra/|pickle/secrets|(^|[^a-z])secrets/|\b(deploy|smoke|apply|create|sync|provision)-[a-z][a-z-]*\.sh\b)'
 
 # Internal process vocabulary. The trailing [A-Z]? is load-bearing: M4A, W2-B.
 HYGIENE_TOKENS='\b(M[0-9]+(\.[0-9]+)?[A-Z]?|W[0-9]+(\.[0-9]+)?(-[A-Z])?|G[0-9]|B[0-9]|A[0-9]|C[0-9]|R[12]|S([1-9]|1[0-3])|O([1-9]|10)|F[0-9]|H1|WP-[A-Z0-9]+|api-[A-Z]|Lane [A-Z])\b|보안 게이트|review finding|gate finding|work package'
@@ -41,14 +41,34 @@ HYGIENE_TOKENS='\b(M[0-9]+(\.[0-9]+)?[A-Z]?|W[0-9]+(\.[0-9]+)?(-[A-Z])?|G[0-9]|B
 # shellcheck disable=SC2016
 HYGIENE_ALLOW='d="[^"]*"|sha512-[A-Za-z0-9+/=]*|"integrity"|<path|\bD-?(1|7|14|30)\b|V[0-9]+__|contract v[0-9.]+|v[0-9]+\.[0-9]+\.[0-9]+|[0-9]{1,3}(\.[0-9]{1,3}){3}|\bR3F\b|\bT0\b|-m[0-9]{3}|grep -m[0-9]|-w[0-9]\b|-O[0-9]\b|\bS3\b|\bL4\b|PROXY v[0-9]|\bR[12]=|\$R[12]\b|"\$R[12]"'
 
+# Markdown files a published repo may always mention: the conventional
+# uppercase repo documents. Deliberately case-sensitive — the convention is
+# uppercase, and the case gap keeps every lowercase outside name detectable.
+HYGIENE_MD_STANDARD='README\.md|CHANGELOG\.md|LICENSE\.md|CONTRIBUTING\.md|AGENTS\.md|CLAUDE\.md'
+
+hygiene_root() {
+  cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
+}
+
 # Files to scan: everything tracked except this script (it necessarily contains
 # every pattern it searches for) and lockfiles (generated hashes trip the token
 # pattern). Anchored on the script's own location so the caller's cwd is
 # irrelevant.
 hygiene_files() {
   local root
-  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || return 1
+  root="$(hygiene_root)" || return 1
   git -C "$root" ls-files -z | grep -zvE '(^|/)(hygiene\.sh|package-lock\.json|go\.sum)$'
+}
+
+# Every .md name this repo may legitimately mention: its own tracked .md files
+# plus the uppercase standards — as an alternation regex.
+hygiene_md_allow() {
+  local root
+  root="$(hygiene_root)" || return 1
+  {
+    git -C "$root" ls-files '*.md' | sed 's|.*/||'
+    printf '%s\n' "$HYGIENE_MD_STANDARD" | tr '|' '\n' | sed 's/\\\././'
+  } | sort -u | sed 's/\./\\./g' | paste -sd'|' -
 }
 
 # Strip the lookalikes, then keep what still matches.
@@ -57,7 +77,7 @@ hygiene_match() {
 }
 
 hygiene_check() {
-  local kind="$1" rc=0 hits paths
+  local kind="$1" rc=0 hits paths mdallow
   local -a files
 
   # Fail closed: an empty file list means the scan did not run (not a git
@@ -69,10 +89,23 @@ hygiene_check() {
   fi
 
   hits=$(printf '%s\0' "${files[@]}" \
-    | xargs -0 grep -HnIE "(\.\./docs|(^|[^a-z])docs/|${HYGIENE_DOC_NAMES})" 2>/dev/null \
-    | hygiene_match "(\.\./docs|(^|[^a-z])docs/|${HYGIENE_DOC_NAMES})" || true)
+    | xargs -0 grep -HnIE "(\.\./docs|(^|[^a-z])docs/)" 2>/dev/null \
+    | hygiene_match "(\.\./docs|(^|[^a-z])docs/)" || true)
   if [ -n "$hits" ]; then
     echo "hygiene: reference to the documentation repository:" >&2
+    echo "$hits" >&2
+    rc=1
+  fi
+
+  # Any .md mention this repo cannot resolve to one of its own files is a
+  # reference to an outside document — no list of outside names required, and
+  # a document that does not exist yet is caught the day it is named.
+  mdallow="$(hygiene_md_allow)" || return 1
+  hits=$(printf '%s\0' "${files[@]}" \
+    | xargs -0 grep -HnoIE '[A-Za-z0-9._-]+\.md\b' 2>/dev/null \
+    | grep -vE ":(${mdallow})$" || true)
+  if [ -n "$hits" ]; then
+    echo "hygiene: mention of a markdown document this repo does not contain:" >&2
     echo "$hits" >&2
     rc=1
   fi
@@ -86,6 +119,17 @@ hygiene_check() {
       echo "$hits" >&2
       rc=1
     fi
+
+    # A published repo's own documents follow the uppercase convention; a
+    # lowercase .md appearing IN the tree would both look like an internal doc
+    # and silently join the allowlist above — refuse it outright.
+    paths=$(printf '%s\n' "${files[@]}" \
+      | grep -E '(^|/)[a-z][A-Za-z0-9._-]*\.md$' || true)
+    if [ -n "$paths" ]; then
+      echo "hygiene: lowercase markdown file in a published tree (use the uppercase convention):" >&2
+      echo "$paths" >&2
+      rc=1
+    fi
   fi
 
   hits=$(printf '%s\0' "${files[@]}" \
@@ -97,12 +141,12 @@ hygiene_check() {
     rc=1
   fi
 
-  # Path names carry the same rules: a file called hosts.md, or a directory
-  # M7-notes/, says as much as a comment would.
+  # Path names carry the same rules: a directory called M7-notes/ says as much
+  # as a comment would.
   paths=$(printf '%s\n' "${files[@]}" \
-    | hygiene_match "(${HYGIENE_DOC_NAMES}|${HYGIENE_TOKENS})" || true)
+    | hygiene_match "$HYGIENE_TOKENS" || true)
   if [ -n "$paths" ]; then
-    echo "hygiene: file or directory name carries a documentation name or a process token:" >&2
+    echo "hygiene: file or directory name carries a process token:" >&2
     echo "$paths" >&2
     rc=1
   fi
@@ -115,7 +159,8 @@ hygiene_check() {
 # commits one known violation at a time and asserts hygiene_check fails on each —
 # so it exercises file enumeration, the greps and the exclusion logic, not just
 # the pattern constants. An earlier version tested the patterns inline and so
-# stayed green while the plumbing was sabotaged.
+# stayed green while the plumbing was sabotaged. Every sample is synthetic: it
+# has the shape of a violation, not the content of one.
 # shellcheck disable=SC2030,SC2031  # the checks run in subshells by design; the
 # variables they read are assigned here and never written back.
 hygiene_selftest() {
@@ -127,6 +172,8 @@ hygiene_selftest() {
   git -C "$tmp" init -q
   git -C "$tmp" config user.email hygiene@example.invalid
   git -C "$tmp" config user.name hygiene
+  # An own tracked document, to prove the allowlist admits it below.
+  echo "sample guide" > "$tmp/GUIDE.md"
 
   while IFS= read -r line; do
     printf '%s\n' "$line" > "$tmp/sample.txt"
@@ -136,24 +183,25 @@ hygiene_selftest() {
       rc=1
     fi
   done <<'SAMPLES'
-see docs/registry/hosts.md for the layout
-described in credentials.md
-provisioned by infra/scripts/create-app-lxc.sh
-the vault at /root/pickle/secrets holds it
-restored from secrets/origin-ca/origin.key
-run deploy-api.sh after this
+see docs/registry/topology.md for the layout
+described in incident-playbook.md
+provisioned by infra/scripts/build-image.sh
+the vault at pickle/secrets holds it
+restored from secrets/ca/example.key
+run deploy-widgets.sh after this
+gated by smoke-widgets.sh
 M6 shipped this
-M4A publishing per contract v0.4.0
+M4A milestone per contract v0.4.0
 W1.5 lesson applied
 phase roles (W3)
 launch gate G5 pending
-teardown on delete (B1)
+teardown step (B1)
 review finding C4 addressed
-prefill lock (R1)
-S4 anti-enumeration
-S13 cipher policy
-O7 rotation runbook
-O10 dashboard guard
+prefill rule (R1)
+S4 hardening item
+S13 hardening item
+O7 operations item
+O10 operations item
 discovered as H1
 admin (WP-F3) queries
 landed with the api-B merge
@@ -164,6 +212,17 @@ M4A gate applies to host 10.32.0.5
 milestone M6 done <path d="M0 0"/>
 SAMPLES
 
+  # A lowercase document in the tree is refused even though tracking it would
+  # put it on the mention allowlist.
+  echo "notes" > "$tmp/design-notes.md"
+  printf 'clean line\n' > "$tmp/sample.txt"
+  git -C "$tmp" add -A >/dev/null 2>&1
+  if ( cd "$tmp" && . scripts/hygiene.sh && hygiene_check public ) >/dev/null 2>&1; then
+    echo "hygiene selftest: lowercase tracked markdown not refused" >&2
+    rc=1
+  fi
+  rm -f "$tmp/design-notes.md"
+
   # The opposite direction: legitimate content must pass, or the gate becomes
   # something people work around.
   cat > "$tmp/sample.txt" <<'CLEAN'
@@ -171,6 +230,8 @@ released in contract v0.14.1 to host 10.32.0.5 on D-7
 migration V47__vm_request_desired_slug.sql applied
 the L4 forwarder sends PROXY v2
 icon <path d="M17.5 19a4.5 4.5 0 0 0 .38-8.984"/>
+see README.md and CHANGELOG.md for details
+the local GUIDE.md covers this
 CLEAN
   git -C "$tmp" add -A >/dev/null 2>&1
   if ! ( cd "$tmp" && . scripts/hygiene.sh && hygiene_check public ) >/dev/null 2>&1; then
