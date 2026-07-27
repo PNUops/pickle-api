@@ -143,9 +143,10 @@ public class DeleteVmJob {
         }
         if (vm.getStatus() != VmStatus.DELETING) {
             // ADMIN-scheduled deletes keep the power state until destroy time.
+            // The claim CAS re-checks the intent so a raced cancel cannot leave
+            // an intent-less VM stranded in DELETING.
             if (!POWER_STATES.contains(vm.getStatus())
-                    || vmRepository.transitionStatus(vmId, vm.getStatus(), VmStatus.DELETING,
-                            null, Instant.now()) == 0) {
+                    || vmRepository.claimForDestruction(vmId, vm.getStatus(), Instant.now()) == 0) {
                 log.info("Delete job skipped for vm {} (status {})", vmId, vm.getStatus());
                 return;
             }

@@ -147,7 +147,7 @@ class PermissionMatrixTest {
         Map<String, Op> matrix = loadMatrix();
         Set<String> runtime = runtimeOps().keySet();
 
-        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.21.1)").hasSize(121);
+        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.21.2)").hasSize(121);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());

@@ -412,6 +412,28 @@ class VmDeletionTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void adminCancelStaysValidUntilDestructionClaimsTheVm() throws Exception {
+        // Past due but unswept: the VM is intact (the sweeper fires on a
+        // 5-minute cadence), so cancel must still succeed — the wall clock
+        // alone must not strand an intact VM in an uncancelable state.
+        long dueVm = createVm(VmStatus.RUNNING);
+        markPendingDeletion(dueVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + dueVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        assertThat(statusOf(dueVm)).isEqualTo("RUNNING");
+        assertThat(column(dueVm, "delete_kind")).isNull();
+
+        // Once the destroy pipeline claimed the VM (DELETING), cancel refuses.
+        long claimedVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(claimedVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
+        mockMvc.perform(post("/api/v1/admin/vms/" + claimedVm + "/cancel-scheduled-delete")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+    }
+
     // ── force delete ───────────────────────────────────────────────────────
 
     @Test

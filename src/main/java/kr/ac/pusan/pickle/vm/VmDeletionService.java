@@ -177,6 +177,9 @@ public class VmDeletionService {
             ScheduleVmDeletionRequest request, String ip) {
         Vm vm = requireOrgScopedVm(actor, vmId);
         requireNoPendingDeletion(vm);
+        // CREATING is deliberately accepted (unlike self-delete): the schedule
+        // is intent-only, and the sweeper waits for a sweepable power state —
+        // so a schedule placed mid-provision simply defers until the VM lands.
         requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
                 VmStatus.ERROR), "현재 상태에서는 삭제를 접수할 수 없습니다.");
         requireNotDeletionProtected(vmId);
@@ -210,25 +213,28 @@ public class VmDeletionService {
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId, String ip) {
         Vm vm = requireOrgScopedVm(actor, vmId);
         Instant now = Instant.now();
-        boolean cancelable = vm.getDeleteKind() != null
-                && vm.getDeleteKind() != VmDeleteKind.FORCE
-                && vm.getStatus() != VmStatus.DELETED
-                && vm.getDeleteScheduledFor() != null
-                && vm.getDeleteScheduledFor().isAfter(now);
-        if (!cancelable) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "취소할 수 있는 삭제가 없습니다. 유예 기간이 지났다면 이미 파기된 것입니다.");
+        if (vm.getDeleteKind() == VmDeleteKind.SELF) {
+            // SELF: the VM entered DELETING at acceptance — cancel restores
+            // STOPPED and is valid only inside the grace window.
+            boolean cancelable = vm.getStatus() != VmStatus.DELETED
+                    && vm.getDeleteScheduledFor() != null
+                    && vm.getDeleteScheduledFor().isAfter(now);
+            if (!cancelable || vmRepository.transitionStatus(vmId, VmStatus.DELETING,
+                    VmStatus.STOPPED, null, now) == 0) {
+                throw notCancelable();
+            }
+            vmRepository.clearDeletion(vmId, now);
+        } else if (vm.getDeleteKind() == VmDeleteKind.ADMIN) {
+            // ADMIN: intent-only until the sweeper fires — the schedule may sit
+            // past due for minutes with the VM intact, so cancel is gated on
+            // destruction-not-started (the CAS refuses once DELETING), not on
+            // the wall clock.
+            if (vmRepository.cancelAdminDeletion(vmId, now) == 0) {
+                throw notCancelable();
+            }
+        } else {
+            throw notCancelable(); // FORCE (immediate) or no pending deletion
         }
-        if (vm.getDeleteKind() == VmDeleteKind.SELF
-                && vmRepository.transitionStatus(vmId, VmStatus.DELETING, VmStatus.STOPPED,
-                        null, now) == 0) {
-            // Lost a race with the sweeper/pipeline — treat as already destroyed.
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    "취소할 수 있는 삭제가 없습니다. 유예 기간이 지났다면 이미 파기된 것입니다.");
-        }
-        vmRepository.clearDeletion(vmId, now);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(),
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
@@ -402,6 +408,12 @@ public class VmDeletionService {
     private static ApiException alreadyPendingDeletion() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 수행할 수 없는 작업입니다", "이미 삭제가 접수되었거나 진행 중인 VM입니다.");
+    }
+
+    private static ApiException notCancelable() {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                "현재 상태에서는 수행할 수 없는 작업입니다",
+                "취소할 수 있는 삭제가 없습니다. 이미 파기가 시작되었거나 완료된 상태일 수 있습니다.");
     }
 
     private static ApiException vmNotFound() {

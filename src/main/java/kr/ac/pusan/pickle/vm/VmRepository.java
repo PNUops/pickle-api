@@ -441,6 +441,38 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int clearDeletion(@Param("id") Long id, @Param("now") Instant now);
 
     /**
+     * Cancels an ADMIN-scheduled deletion in one CAS. Valid until destruction
+     * actually claims the VM (status flips to DELETING) — not until the wall
+     * clock passes the schedule: the schedule may sit minutes past due before
+     * the sweeper fires, and an intact VM must stay cancelable in that window.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update vms
+               set delete_kind = null, delete_scheduled_for = null, delete_requested_at = null,
+                   delete_requested_by = null, delete_reason = null, updated_at = :now
+             where id = :id and delete_kind = 'ADMIN' and status not in ('DELETING', 'DELETED')
+            """)
+    int cancelAdminDeletion(@Param("id") Long id, @Param("now") Instant now);
+
+    /**
+     * Destroy-time claim: flips a power state to DELETING only while the
+     * delete intent still stands, so a cancel racing the delete job can never
+     * strand an intent-less VM in DELETING.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update vms
+               set status = 'DELETING', status_detail = null, updated_at = :now
+             where id = :id and status = cast(:#{#from.name()} as vm_status)
+               and delete_kind is not null
+            """)
+    int claimForDestruction(@Param("id") Long id, @Param("from") VmStatus from,
+            @Param("now") Instant now);
+
+    /**
      * Final destruction: DELETING → DELETED, keeping the row forever — except
      * the stored initial-password ciphertext: credentials must not outlive the
      * VM (the BCrypt hash stays for support verification).
