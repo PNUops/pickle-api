@@ -101,14 +101,14 @@ class VmStatusPollerTest {
     @Test
     void mirrorsGuestPowerStateBothWaysAndLeavesMatchingVmsAlone() {
         long nodeId = createNode(wm.apiHost());
-        long poweredOff = createVm(nodeId, 61001, "RUNNING");
-        long poweredOn = createVm(nodeId, 61002, "STOPPED");
-        long unchanged = createVm(nodeId, 61003, "RUNNING");
+        long poweredOff = createVm(nodeId, 101001, "RUNNING");
+        long poweredOn = createVm(nodeId, 101002, "STOPPED");
+        long unchanged = createVm(nodeId, 101003, "RUNNING");
         stubClusterResources(wm,
-                qemu(61001, "stopped", 1, 1024, null),
-                qemu(61002, "running", 1, 1024, null),
-                qemu(61003, "running", 1, 1024, null),
-                lxc(61001, "running")); // lxc noise sharing a vmid must be ignored
+                qemu(101001, "stopped", 1, 1024, null),
+                qemu(101002, "running", 1, 1024, null),
+                qemu(101003, "running", 1, 1024, null),
+                lxc(101001, "running")); // lxc noise sharing a vmid must be ignored
 
         poller.poll();
 
@@ -128,11 +128,11 @@ class VmStatusPollerTest {
         // a crashed/failed reboot job leaves REBOOTING behind — the poller
         // converges it to whatever the guest actually reports
         long nodeId = createNode(wm.apiHost());
-        long rebootedFine = createVm(nodeId, 61031, "REBOOTING");
-        long diedOnReboot = createVm(nodeId, 61032, "REBOOTING");
+        long rebootedFine = createVm(nodeId, 101031, "REBOOTING");
+        long diedOnReboot = createVm(nodeId, 101032, "REBOOTING");
         stubClusterResources(wm,
-                qemu(61031, "running", 1, 1024, null),
-                qemu(61032, "stopped", 1, 1024, null));
+                qemu(101031, "running", 1, 1024, null),
+                qemu(101032, "stopped", 1, 1024, null));
 
         poller.poll();
 
@@ -145,15 +145,15 @@ class VmStatusPollerTest {
     @Test
     void skipsVmsOwnedByThePipeline() {
         long nodeId = createNode(wm.apiHost());
-        long withLiveTask = createVm(nodeId, 61011, "RUNNING");
+        long withLiveTask = createVm(nodeId, 101011, "RUNNING");
         taskRepository.save(new ProvisioningTask(withLiveTask, ProvisioningTaskKind.DELETE)); // PENDING = live
-        long creating = createVm(nodeId, 61012, "CREATING");
-        long needsAdmin = createVm(nodeId, 61013, "NEEDS_ADMIN");
+        long creating = createVm(nodeId, 101012, "CREATING");
+        long needsAdmin = createVm(nodeId, 101013, "NEEDS_ADMIN");
         // Proxmox reports them all stopped — none of them may move.
         stubClusterResources(wm,
-                qemu(61011, "stopped", 1, 1024, null),
-                qemu(61012, "stopped", 1, 1024, null),
-                qemu(61013, "stopped", 1, 1024, null));
+                qemu(101011, "stopped", 1, 1024, null),
+                qemu(101012, "stopped", 1, 1024, null),
+                qemu(101013, "stopped", 1, 1024, null));
 
         poller.poll();
 
@@ -169,10 +169,10 @@ class VmStatusPollerTest {
     void oneBrokenNodeDoesNotStopTheCycle() {
         // Created first → iterated first: connection refused, must be swallowed.
         long deadNodeId = createNode("http://127.0.0.1:1");
-        long onDeadNode = createVm(deadNodeId, 61021, "RUNNING");
+        long onDeadNode = createVm(deadNodeId, 101021, "RUNNING");
         long nodeId = createNode(wm.apiHost());
-        long onGoodNode = createVm(nodeId, 61022, "RUNNING");
-        stubClusterResources(wm, qemu(61022, "stopped", 1, 1024, null));
+        long onGoodNode = createVm(nodeId, 101022, "RUNNING");
+        stubClusterResources(wm, qemu(101022, "stopped", 1, 1024, null));
 
         assertThatCode(() -> poller.poll()).doesNotThrowAnyException();
 

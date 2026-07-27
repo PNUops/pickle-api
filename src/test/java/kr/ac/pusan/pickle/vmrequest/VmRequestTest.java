@@ -139,7 +139,7 @@ class VmRequestTest {
                 .andExpect(status().isNotFound());
 
         // DISABLED template → 422
-        VmTemplate disabled = templateRepository.save(new VmTemplate("vmr-disabled", "비활성 템플릿", 9000,
+        VmTemplate disabled = templateRepository.save(new VmTemplate("vmr-disabled", "비활성 템플릿", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 2, 2048, 20, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,

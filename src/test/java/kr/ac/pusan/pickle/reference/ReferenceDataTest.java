@@ -113,7 +113,7 @@ class ReferenceDataTest {
         // a DISABLED version row must not surface in the wizard list
         if (vmTemplateRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
             Long nodeId = vmTemplateRepository.findAll().getFirst().getNodeId();
-            vmTemplateRepository.save(new VmTemplate("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 9000,
+            vmTemplateRepository.save(new VmTemplate("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 1001,
                     nodeId, 1, 2, 2048, 20, 10, TemplateStatus.DISABLED, null));
         }
 

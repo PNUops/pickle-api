@@ -105,11 +105,11 @@ class DriftReconcilerTest {
     @Test
     void missingVmIsParkedNeedsAdminUnlessThePipelineOwnsIt() {
         long nodeId = createNode(wm.apiHost());
-        long missing = createVm(nodeId, 62001, "RUNNING", 1, 1024);
-        long missingButOwned = createVm(nodeId, 62002, "DELETING", 1, 1024);
+        long missing = createVm(nodeId, 102001, "RUNNING", 1, 1024);
+        long missingButOwned = createVm(nodeId, 102002, "DELETING", 1, 1024);
         taskRepository.save(new ProvisioningTask(missingButOwned, ProvisioningTaskKind.DELETE));
-        long present = createVm(nodeId, 62003, "RUNNING", 1, 1024);
-        stubClusterResources(wm, qemu(62003, "running", 1, 1024, "pickle"));
+        long present = createVm(nodeId, 102003, "RUNNING", 1, 1024);
+        stubClusterResources(wm, qemu(102003, "running", 1, 1024, "pickle"));
 
         reconciler.reconcile();
 
@@ -127,11 +127,11 @@ class DriftReconcilerTest {
     @Test
     void unmanagedPickleTaggedVmIsOnlyLoggedAndNeverTouched() {
         long nodeId = createNode(wm.apiHost());
-        long known = createVm(nodeId, 62011, "RUNNING", 1, 1024);
+        long known = createVm(nodeId, 102011, "RUNNING", 1, 1024);
         stubClusterResources(wm,
-                qemu(62011, "running", 1, 1024, "pickle"),
-                qemu(62999, "running", 2, 2048, "dev;pickle"), // unmanaged + tagged → WARN
-                qemu(63000, "running", 2, 2048, "dev")); // untagged stranger → ignored
+                qemu(102011, "running", 1, 1024, "pickle"),
+                qemu(102999, "running", 2, 2048, "dev;pickle"), // unmanaged + tagged → WARN
+                qemu(103000, "running", 2, 2048, "dev")); // untagged stranger → ignored
         long vmRowsBefore = jdbcTemplate.queryForObject("select count(*) from vms", Long.class);
 
         reconciler.reconcile();
@@ -140,8 +140,8 @@ class DriftReconcilerTest {
                 .filter(event -> event.getLevel().toString().equals("WARN"))
                 .map(ILoggingEvent::getFormattedMessage)
                 .toList();
-        assertThat(warnings).anySatisfy(message -> assertThat(message).contains("62999"));
-        assertThat(warnings).noneSatisfy(message -> assertThat(message).contains("63000"));
+        assertThat(warnings).anySatisfy(message -> assertThat(message).contains("102999"));
+        assertThat(warnings).noneSatisfy(message -> assertThat(message).contains("103000"));
         // absolutely no writes: no DB row appeared, and Proxmox saw GETs only
         assertThat(jdbcTemplate.queryForObject("select count(*) from vms", Long.class))
                 .isEqualTo(vmRowsBefore);
@@ -156,8 +156,8 @@ class DriftReconcilerTest {
     @Test
     void specMismatchSetsInformationalFlagWithoutTransitionAndClearsWhenResolved() {
         long nodeId = createNode(wm.apiHost());
-        long vmId = createVm(nodeId, 62021, "RUNNING", 2, 2048);
-        stubClusterResources(wm, qemu(62021, "running", 4, 4096, "pickle"));
+        long vmId = createVm(nodeId, 102021, "RUNNING", 2, 2048);
+        stubClusterResources(wm, qemu(102021, "running", 4, 4096, "pickle"));
 
         reconciler.reconcile();
 
@@ -168,7 +168,7 @@ class DriftReconcilerTest {
 
         // the operator fixed the guest → the informational flag clears again
         wm.reset();
-        stubClusterResources(wm, qemu(62021, "running", 2, 2048, "pickle"));
+        stubClusterResources(wm, qemu(102021, "running", 2, 2048, "pickle"));
         reconciler.reconcile();
         Vm cleared = vmRepository.findById(vmId).orElseThrow();
         assertThat(cleared.getStatus()).isEqualTo(VmStatus.RUNNING);
@@ -178,10 +178,10 @@ class DriftReconcilerTest {
     @Test
     void oneBrokenNodeDoesNotStopTheCycle() {
         long deadNodeId = createNode("http://127.0.0.1:1");
-        long onDeadNode = createVm(deadNodeId, 62031, "RUNNING", 1, 1024);
+        long onDeadNode = createVm(deadNodeId, 102031, "RUNNING", 1, 1024);
         long nodeId = createNode(wm.apiHost());
-        long missing = createVm(nodeId, 62032, "RUNNING", 1, 1024);
-        stubClusterResources(wm); // empty cluster → 62032 is missing
+        long missing = createVm(nodeId, 102032, "RUNNING", 1, 1024);
+        stubClusterResources(wm); // empty cluster → 102032 is missing
 
         assertThatCode(() -> reconciler.reconcile()).doesNotThrowAnyException();
 
@@ -197,13 +197,13 @@ class DriftReconcilerTest {
         long nodeId = createNode(wm.apiHost());
         String nodeName = jdbcTemplate.queryForObject("select name from nodes where id = ?",
                 String.class, nodeId);
-        long vmId = createVm(nodeId, 62501, "RUNNING", 1, 1024);
+        long vmId = createVm(nodeId, 102501, "RUNNING", 1, 1024);
         // Always-on invariant: no vm_settings row exists at all, yet a cleared
         // PVE protection flag (out-of-band qm set --protection 0) is drift.
-        stubClusterResources(wm, qemu(62501, "running", 1, 1024, "pickle"));
+        stubClusterResources(wm, qemu(102501, "running", 1, 1024, "pickle"));
         wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
                         com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo(
-                                "/api2/json/nodes/" + nodeName + "/qemu/62501/config"))
+                                "/api2/json/nodes/" + nodeName + "/qemu/102501/config"))
                 .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
                         .withStatus(200).withHeader("Content-Type", "application/json;charset=UTF-8")
                         .withBody("{\"data\":{\"cores\":1}}")));
@@ -219,10 +219,10 @@ class DriftReconcilerTest {
 
         // the operator re-armed the flag → the finding auto-resolves
         wm.reset();
-        stubClusterResources(wm, qemu(62501, "running", 1, 1024, "pickle"));
+        stubClusterResources(wm, qemu(102501, "running", 1, 1024, "pickle"));
         wm.server().stubFor(com.github.tomakehurst.wiremock.client.WireMock.get(
                         com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo(
-                                "/api2/json/nodes/" + nodeName + "/qemu/62501/config"))
+                                "/api2/json/nodes/" + nodeName + "/qemu/102501/config"))
                 .willReturn(com.github.tomakehurst.wiremock.client.WireMock.aResponse()
                         .withStatus(200).withHeader("Content-Type", "application/json;charset=UTF-8")
                         .withBody("{\"data\":{\"cores\":1,\"protection\":1}}")));

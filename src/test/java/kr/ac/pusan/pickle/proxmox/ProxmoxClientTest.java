@@ -48,7 +48,7 @@ class ProxmoxClientTest {
 
     /** UPIDs exactly as returned in the captured fixtures. */
     private static final String CLONE_UPID =
-            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:9000:pickle@pve!pickle-api:";
+            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:1000:pickle@pve!pickle-api:";
     private static final String SHUTDOWN_UPID =
             "UPID:pve1:0006DC5F:0054AA57:6A4E2D01:qmshutdown:102:pickle@pve!pickle-api:";
 
@@ -80,19 +80,8 @@ class ProxmoxClientTest {
     }
 
     @Test
-    void nextIdParsesStringDataAndSendsTokenHeader() {
-        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/nextid"))
-                .willReturn(okFixture("02-nextid")));
-
-        assertThat(client.nextId(wm.apiHost())).isEqualTo(102);
-
-        wm.server().verify(getRequestedFor(urlPathEqualTo("/api2/json/cluster/nextid"))
-                .withHeader("Authorization", equalTo(EXPECTED_AUTHORIZATION)));
-    }
-
-    @Test
     void cloneFlowReturnsUpidAndAwaitTaskPollsUntilStopped() {
-        wm.server().stubFor(post(urlPathEqualTo("/api2/json/nodes/pve1/qemu/9000/clone"))
+        wm.server().stubFor(post(urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
                 .willReturn(okFixture("10-clone")));
         // Scenario: first poll sees the task still running, second sees it done.
         wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(CLONE_UPID)))
@@ -105,14 +94,14 @@ class ProxmoxClientTest {
                 .whenScenarioStateIs("first-poll-done")
                 .willReturn(okFixture("10-clone-status")));
 
-        String upid = client.clone(wm.apiHost(), NODE, 9000, 102, "test-vm-1");
+        String upid = client.clone(wm.apiHost(), NODE, 1000, 102, "test-vm-1");
         assertThat(upid).isEqualTo(CLONE_UPID);
 
         TaskStatus done = client.awaitTask(wm.apiHost(), NODE, upid);
         assertThat(done.isOk()).isTrue();
         assertThat(done.exitstatus()).isEqualTo("OK");
 
-        wm.server().verify(postRequestedFor(urlPathEqualTo("/api2/json/nodes/pve1/qemu/9000/clone"))
+        wm.server().verify(postRequestedFor(urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
                 .withHeader("Content-Type", containing("application/x-www-form-urlencoded"))
                 .withRequestBody(containing("newid=102"))
                 .withRequestBody(containing("name=test-vm-1"))
@@ -122,11 +111,11 @@ class ProxmoxClientTest {
 
     @Test
     void duplicateVmidClonePreservesPveErrorMessage() {
-        wm.server().stubFor(post(urlPathEqualTo("/api2/json/nodes/pve1/qemu/9000/clone"))
+        wm.server().stubFor(post(urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
                 .willReturn(jsonFixture(500, "11-clone-dup-error")));
 
         ProxmoxApiException e = catchThrowableOfType(ProxmoxApiException.class,
-                () -> client.clone(wm.apiHost(), NODE, 9000, 102, "test-vm-1"));
+                () -> client.clone(wm.apiHost(), NODE, 1000, 102, "test-vm-1"));
 
         assertThat(e.statusCode()).isEqualTo(500);
         assertThat(e.apiMessage()).contains("unable to create VM 102: config file already exists");
@@ -252,7 +241,7 @@ class ProxmoxClientTest {
 
         assertThat(resources).hasSize(3);
         ClusterResource template = resources.stream()
-                .filter(r -> Integer.valueOf(9000).equals(r.vmid()))
+                .filter(r -> Integer.valueOf(1000).equals(r.vmid()))
                 .findFirst().orElseThrow();
         assertThat(template.type()).isEqualTo("qemu");
         assertThat(template.name()).isEqualTo("ubuntu-2404-template");
@@ -348,11 +337,11 @@ class ProxmoxClientTest {
 
     @Test
     void transportFailureIsTransientWithoutStatusCode() {
-        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/nextid"))
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
 
         ProxmoxApiException e = catchThrowableOfType(ProxmoxApiException.class,
-                () -> client.nextId(wm.apiHost()));
+                () -> client.clusterResources(wm.apiHost(), "vm"));
 
         assertThat(e.statusCode()).isZero();
         assertThat(e.isTransient()).isTrue();
@@ -364,7 +353,7 @@ class ProxmoxClientTest {
         ProxmoxClient unconfigured = new ProxmoxClient(new ProxmoxProperties(
                 "", "", null, null, null, null, null));
 
-        assertThatThrownBy(() -> unconfigured.nextId(wm.apiHost()))
+        assertThatThrownBy(() -> unconfigured.clusterResources(wm.apiHost(), "vm"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("PICKLE_PROXMOX_TOKEN_ID");
         // Nothing reached the server: the misconfiguration is caught client-side.

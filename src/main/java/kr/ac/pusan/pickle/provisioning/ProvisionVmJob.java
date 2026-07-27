@@ -111,6 +111,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final IpamService ipamService;
     private final NodePlacementService placementService;
     private final ProxmoxClient proxmox;
+    private final VmidSequence vmidSequence;
     private final JobScheduler jobScheduler;
     private final PasswordEncoder passwordEncoder;
     private final VmPasswordGenerator passwordGenerator;
@@ -124,7 +125,7 @@ public class ProvisionVmJob implements ProvisioningService {
             VmTemplateRepository templateRepository, VmRequestReviewRepository reviewRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
-            JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
+            VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
             VmPasswordGenerator passwordGenerator, CredentialCipher credentialCipher,
             NotificationService notificationService, ObjectMapper objectMapper,
             SshPlatformProperties sshPlatformProperties) {
@@ -139,6 +140,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.ipamService = ipamService;
         this.placementService = placementService;
         this.proxmox = proxmox;
+        this.vmidSequence = vmidSequence;
         this.jobScheduler = jobScheduler;
         this.passwordEncoder = passwordEncoder;
         this.passwordGenerator = passwordGenerator;
@@ -321,10 +323,11 @@ public class ProvisionVmJob implements ProvisioningService {
         if (vm.getProxmoxVmid() != null) {
             return;
         }
-        int vmid = proxmox.nextId(node(vm).getApiHost());
-        // vms.proxmox_vmid is globally unique; losing a nextid race to another
-        // pipeline throws DataIntegrityViolationException → retried (transient).
-        vmRepository.assignProxmoxVmid(vm.getId(), vmid, Instant.now());
+        // DB sequence (100000+, monotonic, never reused) — replaced Proxmox
+        // nextid, whose smallest-free allocation recycled destroyed guests'
+        // vmids and mixed their task history. Distinct value per call, so
+        // concurrent pipelines cannot collide.
+        vmRepository.assignProxmoxVmid(vm.getId(), vmidSequence.next(), Instant.now());
     }
 
     /** Step 4: full clone of the template — only if the VMID does not exist yet. */

@@ -48,7 +48,7 @@ public final class ProxmoxWireMockSupport implements AutoCloseable {
         server.stop();
     }
 
-    /** Raw captured response body, e.g. {@code fixture("02-nextid")}. */
+    /** Raw captured response body, e.g. {@code fixture("10-clone")}. */
     public static String fixture(String name) {
         String resource = "/wiremock/proxmox/" + name + ".json";
         try (InputStream in = ProxmoxWireMockSupport.class.getResourceAsStream(resource)) {

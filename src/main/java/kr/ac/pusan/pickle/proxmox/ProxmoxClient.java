@@ -88,13 +88,7 @@ public class ProxmoxClient {
                 .build();
     }
 
-    // --- VMID / inventory ---------------------------------------------------
-
-    /** {@code GET /cluster/nextid} — PVE returns the id as a JSON string. */
-    public int nextId(String apiHost) {
-        String data = call(HttpMethod.GET, uri(apiHost, "cluster", "nextid"), null, UPID_RESPONSE);
-        return Integer.parseInt(data);
-    }
+    // --- inventory -----------------------------------------------------------
 
     /** {@code GET /cluster/resources[?type=]} — {@code type} nullable (e.g. "vm"). */
     public List<ClusterResource> clusterResources(String apiHost, String type) {

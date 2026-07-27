@@ -69,8 +69,11 @@ class ProvisioningEndToEndTest {
     private static final String USER_PASSWORD = "E2e-Corr3ct-horse!";
     private static final String GROUP_SLUG = "e2e-team";
 
-    /** VMID the stubbed {@code /cluster/nextid} hands out (fixture 02). */
-    private static final int VMID = 102;
+    /**
+     * First value of {@code vmid_seq} (V50) — deterministic because this test
+     * class boots its own embedded PostgreSQL and provisions exactly one VM.
+     */
+    private static final int VMID = 100000;
 
     /**
      * First allocatable address of the seeded guest-private pool
@@ -80,7 +83,7 @@ class ProvisioningEndToEndTest {
     private static final String EXPECTED_IP = "172.29.1.0";
 
     private static final String CLONE_UPID =
-            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:9000:pickle@pve!pickle-api:";
+            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:1000:pickle@pve!pickle-api:";
     private static final String RESIZE_UPID =
             "UPID:pve1:0006D8A5:005490E8:6A4E2CC0:resize:102:pickle@pve!pickle-api:";
     private static final String START_UPID =
@@ -260,12 +263,10 @@ class ProvisioningEndToEndTest {
     /** Happy-path Proxmox stubs from the captured pve1 responses. */
     private void stubProxmoxHappyPath() {
         String qemu = "/api2/json/nodes/pve1/qemu/" + VMID;
-        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo("/api2/json/cluster/nextid"))
-                .willReturn(okFixture("02-nextid")));
-        // no VMID 102 in the capture → the clone-exists guard lets the clone run
+        // no VMID 100000 in the capture → the clone-exists guard lets the clone run
         wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));
-        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/9000/clone"))
+        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
                 .willReturn(okFixture("10-clone")));
         stubTaskStatus(CLONE_UPID, "10-clone-status");
         wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/config"))

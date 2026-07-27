@@ -62,7 +62,7 @@ class ProvisionPipelineTest {
 
     private static final String NODE = "pve1";
     private static final String CLONE_UPID =
-            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:9000:pickle@pve!pickle-api:";
+            "UPID:pve1:0006D77B:00548A83:6A4E2CB0:qmclone:1000:pickle@pve!pickle-api:";
     private static final String RESIZE_UPID =
             "UPID:pve1:0006D8A5:005490E8:6A4E2CC0:resize:102:pickle@pve!pickle-api:";
     private static final String START_UPID =
@@ -139,12 +139,12 @@ class ProvisionPipelineTest {
     void cloneFailureExhaustsRetriesAndCompensates() {
         long vmId = createVm();
         int vmid = 111;
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         // Scenario: 4 failing clone calls; after the 4th, the half-created VM
         // "exists" so the compensation existence check finds and destroys it.
         for (int attempt = 0; attempt < 4; attempt++) {
             String from = attempt == 0 ? Scenario.STARTED : "failed-" + attempt;
-            wm.server().stubFor(post(urlPathEqualTo(qemuPath(9000) + "/clone"))
+            wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
                     .inScenario("clone-fail")
                     .whenScenarioStateIs(from)
                     .willReturn(jsonFixture(500, "11-clone-dup-error"))
@@ -179,7 +179,7 @@ class ProvisionPipelineTest {
         // attempt 4: budget exhausted → compensation
         job.provisionVm(vmId);
 
-        wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
+        wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("protection=0")));
         wm.server().verify(1, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
@@ -199,7 +199,7 @@ class ProvisionPipelineTest {
     void startTimeoutParksNeedsAdminWithoutDestroying() {
         long vmId = createVm();
         int vmid = 112;
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));
         stubClone();
@@ -228,7 +228,7 @@ class ProvisionPipelineTest {
                 String.class, vmId)).isEqualTo("ALLOCATED");
         // start was retried on every run (steps 0–6 were not re-executed)
         wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/status/start")));
-        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
+        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
     }
 
     // ── ②b host-key collection keeps failing → NEEDS_ADMIN, VM intact ────────
@@ -238,7 +238,7 @@ class ProvisionPipelineTest {
         long vmId = createVm();
         int vmid = 117;
         String ip = preallocateIp(vmId);
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));
         stubClone();
@@ -278,13 +278,13 @@ class ProvisionPipelineTest {
         long vmId = createVm();
         int vmid = 113;
         String ip = preallocateIp(vmId);
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         // Run 1: clone starts, but polling its task fails (worker "crash") —
         // the VM materializes on Proxmox anyway, like a real interrupted clone.
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .inScenario("crash").whenScenarioStateIs(Scenario.STARTED)
                 .willReturn(okFixture("03-cluster-resources")));
-        wm.server().stubFor(post(urlPathEqualTo(qemuPath(9000) + "/clone"))
+        wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
                 .inScenario("crash").whenScenarioStateIs(Scenario.STARTED)
                 .willReturn(okFixture("10-clone"))
                 .willSetStateTo("vm-exists"));
@@ -311,7 +311,7 @@ class ProvisionPipelineTest {
 
         job.provisionVm(vmId); // the scheduled retry run
 
-        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
+        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
         task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
         assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.FINALIZE.index());
@@ -417,7 +417,7 @@ class ProvisionPipelineTest {
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
         Vm vm = vmRepository.findById(vmId).orElseThrow();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.RUNNING);
-        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(9000) + "/clone")));
+        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
         wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
         assertThat(jdbc.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
@@ -464,12 +464,12 @@ class ProvisionPipelineTest {
     void compensationParksInsteadOfDestroyingForeignGuest() {
         long vmId = createVm();
         int vmid = 118;
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         // clone fails permanently 4 times, then compensation looks the vmid up —
         // and finds a guest that is not ours (foreign name, no pickle tag)
         for (int attempt = 0; attempt < 4; attempt++) {
             String from = attempt == 0 ? Scenario.STARTED : "failed-" + attempt;
-            wm.server().stubFor(post(urlPathEqualTo(qemuPath(9000) + "/clone"))
+            wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
                     .inScenario("clone-fail-foreign")
                     .whenScenarioStateIs(from)
                     .willReturn(jsonFixture(500, "11-clone-dup-error"))
@@ -501,10 +501,13 @@ class ProvisionPipelineTest {
         assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
     }
 
-    // ── ⑧ Proxmox nextid re-issues a destroyed VM's vmid → provisioning works ─
+    // ── ⑧ a deleted row's vmid may be re-assigned manually (V9 partial unique) ─
 
     @Test
     void recycledVmidOfDeletedVmCanBeReassigned() {
+        // The V50 sequence never re-issues a vmid, but the schema deliberately
+        // only guards active rows (V9): a manually re-assigned number that a
+        // DELETED row still carries must provision fine.
         // a destroyed VM keeps its vmid on the DELETED row (V9 partial unique)
         int vmid = 116;
         long deletedVmId = createVm();
@@ -515,8 +518,7 @@ class ProvisionPipelineTest {
 
         long vmId = createVm();
         String ip = preallocateIp(vmId);
-        // Proxmox re-issued the destroyed guest's vmid
-        stubNextId(vmid);
+        preassignVmid(vmId, vmid);
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));
         stubClone();
@@ -535,6 +537,28 @@ class ProvisionPipelineTest {
         // the DELETED row still carries the vmid for the audit trail
         assertThat(jdbc.queryForObject("select proxmox_vmid from vms where id = ?",
                 Integer.class, deletedVmId)).isEqualTo(vmid);
+    }
+
+    // ── ⑨ vmid comes from the DB sequence (user-VM band, monotonic) ──────────
+
+    @Test
+    void assignsVmidFromTheSequenceBand() {
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        int vmid = jdbc.queryForObject("select nextval('vmid_seq')", Integer.class) + 1;
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(okFixture("03-cluster-resources")));
+        stubClone();
+        stubConfig(vmid);
+        stubResize(vmid);
+        stubStart(vmid);
+        stubAgent(vmid, ip);
+
+        job.provisionVm(vmId);
+
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertThat(vm.getProxmoxVmid()).isEqualTo(vmid).isGreaterThanOrEqualTo(100_000);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
@@ -570,15 +594,13 @@ class ProvisionPipelineTest {
         return taskRepository.findByVmIdOrderByIdDesc(vmId).getFirst();
     }
 
-    private void stubNextId(int vmid) {
-        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/nextid"))
-                .willReturn(aResponse().withStatus(200)
-                        .withHeader("Content-Type", "application/json")
-                        .withBody("{\"data\":\"" + vmid + "\"}")));
+    /** Pre-assigns the vmid, exercising the crash-guard path in assignVmid. */
+    private void preassignVmid(long vmId, int vmid) {
+        jdbc.update("update vms set proxmox_vmid = ? where id = ?", vmid, vmId);
     }
 
     private void stubClone() {
-        wm.server().stubFor(post(urlPathEqualTo(qemuPath(9000) + "/clone"))
+        wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
                 .willReturn(okFixture("10-clone")));
         stubTaskStatus(CLONE_UPID, "10-clone-status");
     }
