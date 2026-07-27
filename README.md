@@ -95,8 +95,8 @@ dev 프로파일에서는 메일이 실제로 발송되지 않는다. `MockMailS
 
 | 변수 | 용도 | 기본값 |
 |---|---|---|
-| `PICKLE_VERIFICATION_BASE_URL` | 인증 메일이 링크하는 콘솔 이메일 인증 페이지 기본 URL | `https://pickle.pnuops.com/verify-email` |
-| `PICKLE_PASSWORD_RESET_BASE_URL` | 비밀번호 재설정 메일이 링크하는 콘솔 페이지 기본 URL | `https://pickle.pnuops.com/reset-password` |
+| `PICKLE_VERIFICATION_BASE_URL` | 인증 메일이 링크하는 콘솔 이메일 인증 페이지 기본 URL | `https://pickle.pusan.ac.kr/verify-email` |
+| `PICKLE_PASSWORD_RESET_BASE_URL` | 비밀번호 재설정 메일이 링크하는 콘솔 페이지 기본 URL | `https://pickle.pusan.ac.kr/reset-password` |
 | `PICKLE_MOCK_MAIL_SPOOL` | dev 전용. `MockMailSender`가 메일 본문 전체를 적는 스풀 파일 경로 | `/var/lib/pickle/mock-mail.log` (dev 프로파일) |
 | `PICKLE_SMTP_HOST` / `PICKLE_SMTP_USERNAME` / `PICKLE_SMTP_PASSWORD` | 실제 SMTP 접속 정보(staging/prod 프로파일 전용. dev/test는 `MockMailSender`). 발신 주소도 `PICKLE_SMTP_USERNAME`을 쓴다 | 없음 (staging/prod에서 미설정이면 기동 실패) |
 | `PICKLE_SMTP_PORT` | SMTP 포트(STARTTLS) | `587` |
