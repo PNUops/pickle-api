@@ -597,9 +597,16 @@ public class ProvisionVmJob implements ProvisioningService {
         }
 
         if (e instanceof VmidConflict) {
-            // neither compensation (could destroy the resident) nor retry is
-            // safe — leave everything untouched for the operator
-            taskRepository.park(taskId, error, now);
+            // Neither compensation nor retry is safe: the resident may carry
+            // the pickle tag (orphan of a lost row), so no tag-trusting
+            // destroy guard may ever see it. Drop OUR claim on the number
+            // (DB only — the cluster is untouched) and regress to the VMID
+            // step: after the operator resyncs vmid_seq (db-restore runbook),
+            // an admin re-run draws a fresh number and proceeds. The cleared
+            // vmid also defuses a force-delete on the parked VM — the delete
+            // pipeline touches nothing on Proxmox without one.
+            vmRepository.clearProxmoxVmid(vmId, now);
+            taskRepository.parkAtStep(taskId, ProvisioningStep.VMID.index(), error, now);
             vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
                     "vmid 충돌로 관리자 확인 대기 중입니다 (vmid_seq 재동기화 필요)", now);
             publishCreateFailed(vmId, error);
@@ -765,11 +772,6 @@ public class ProvisionVmJob implements ProvisioningService {
         return allocationRepository.findById(vm.getIpAllocationId()).orElseThrow();
     }
 
-    /** Does the VMID exist on the cluster? Guards the clone-skip check. */
-    private boolean vmExists(Node node, int vmid) {
-        return findResource(node, vmid) != null;
-    }
-
     /** The cluster resource at the vmid, for existence + identity checks. */
     private ClusterResource findResource(Node node, int vmid) {
         return proxmox.clusterResources(node.getApiHost(), "vm").stream()
@@ -815,7 +817,6 @@ public class ProvisionVmJob implements ProvisioningService {
         }
     }
 
-    /** Control-flow stop: this run must not touch the task any further. */
     /**
      * A sequence-allocated vmid found occupied by a guest that is not our own
      * interrupted clone (DB/cluster truth divergence, e.g. after a DB restore
@@ -827,6 +828,7 @@ public class ProvisionVmJob implements ProvisioningService {
         }
     }
 
+    /** Control-flow stop: this run must not touch the task any further. */
     private static final class PipelineHalted extends RuntimeException {
         PipelineHalted(String message) {
             super(message);

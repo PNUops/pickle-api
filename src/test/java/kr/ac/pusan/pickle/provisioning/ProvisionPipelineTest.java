@@ -544,6 +544,7 @@ class ProvisionPipelineTest {
     @Test
     void vmidConflictParksWithoutTouchingResidentGuest() {
         long vmId = createVm();
+        String ip = preallocateIp(vmId);
         int vmid = 119;
         preassignVmid(vmId, vmid);
         // resident guest at our number with a foreign name — even pickle-tagged
@@ -559,12 +560,36 @@ class ProvisionPipelineTest {
         ProvisioningTask task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
         assertThat(task.getLastError()).contains("vmid_seq");
+        // the step regresses to VMID and our claim on the number is dropped
+        // (DB only), so force-delete touches nothing and a re-run draws fresh
+        assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.VMID.index());
         Vm vm = vmRepository.findById(vmId).orElseThrow();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
-        assertThat(vm.getProxmoxVmid()).isEqualTo(vmid);
+        assertThat(vm.getProxmoxVmid()).isNull();
         wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
         wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
         wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+
+        // recovery: the operator resyncs vmid_seq (a no-op here — the test
+        // sequence is already past the resident) and re-runs via the admin
+        // path (NEEDS_ADMIN → RETRYING, attempts reset — requeueForAdminRetry
+        // semantics), which must draw a FRESH number and complete
+        jdbc.update("update provisioning_tasks set status = 'RETRYING', attempts = 0,"
+                + " last_error = null where id = ?", task.getId());
+        jdbc.update("update vms set status = 'CREATING', status_detail = null where id = ?", vmId);
+        int fresh = jdbc.queryForObject("select nextval('vmid_seq')", Integer.class) + 1;
+        stubClone();
+        stubConfig(fresh);
+        stubResize(fresh);
+        stubStart(fresh);
+        stubAgent(fresh, ip);
+
+        job.provisionVm(vmId);
+
+        Vm recovered = vmRepository.findById(vmId).orElseThrow();
+        assertThat(recovered.getStatus()).isEqualTo(VmStatus.RUNNING);
+        assertThat(recovered.getProxmoxVmid()).isEqualTo(fresh);
+        assertThat(latestTask(vmId).getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
     }
 
     // ── ⑨ vmid comes from the DB sequence (user-VM band, monotonic) ──────────

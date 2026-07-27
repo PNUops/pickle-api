@@ -159,6 +159,29 @@ public interface ProvisioningTaskRepository
                 ProvisioningTaskStatus.NEEDS_ADMIN, lastError, now);
     }
 
+    /**
+     * Park with the step regressed (vmid conflict): the admin re-run must
+     * re-enter an earlier step (draw a fresh vmid) instead of resuming the
+     * conflicted one.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update ProvisioningTask t
+               set t.status = :to, t.currentStep = :step, t.lastError = :lastError,
+                   t.updatedAt = :now
+             where t.id = :id and t.status = :from
+            """)
+    int transitionStatusAtStep(@Param("id") Long id, @Param("from") ProvisioningTaskStatus from,
+            @Param("to") ProvisioningTaskStatus to, @Param("step") int step,
+            @Param("lastError") String lastError, @Param("now") Instant now);
+
+    /** RUNNING → NEEDS_ADMIN at an earlier step (vmid conflict park). */
+    default int parkAtStep(Long id, int step, String lastError, Instant now) {
+        return transitionStatusAtStep(id, ProvisioningTaskStatus.RUNNING,
+                ProvisioningTaskStatus.NEEDS_ADMIN, step, lastError, now);
+    }
+
     /** RUNNING → DONE, clearing lastError. */
     default int complete(Long id, Instant now) {
         return transitionStatus(id, ProvisioningTaskStatus.RUNNING,
