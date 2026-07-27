@@ -21,8 +21,8 @@ import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.PublicationAssembler;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
+import kr.ac.pusan.pickle.vmrequest.VmRequest;
+import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
 import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
@@ -61,7 +61,7 @@ public class VmQueryService {
     private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final VmEventRepository vmEventRepository;
-    private final VmRequestReviewRepository reviewRepository;
+    private final VmRequestRepository requestRepository;
     private final DomainRepository domainRepository;
     private final PublicationAssembler publicationAssembler;
     private final VmSettingsService vmSettingsService;
@@ -71,7 +71,7 @@ public class VmQueryService {
             GroupRepository groupRepository, OrgRepository orgRepository,
             IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
-            VmEventRepository vmEventRepository, VmRequestReviewRepository reviewRepository,
+            VmEventRepository vmEventRepository, VmRequestRepository requestRepository,
             DomainRepository domainRepository, PublicationAssembler publicationAssembler,
             VmSettingsService vmSettingsService,
             @Value("${pickle.ssh.advertised-host:}") String sshHost) {
@@ -82,7 +82,7 @@ public class VmQueryService {
         this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.vmEventRepository = vmEventRepository;
-        this.reviewRepository = reviewRepository;
+        this.requestRepository = requestRepository;
         this.domainRepository = domainRepository;
         this.publicationAssembler = publicationAssembler;
         this.vmSettingsService = vmSettingsService;
@@ -162,9 +162,11 @@ public class VmQueryService {
                 .filter(task -> task.getStatus() != ProvisioningTaskStatus.DONE)
                 .map(ProvisioningTaskResponse::from)
                 .orElse(null);
-        boolean httpPublishGranted = reviewRepository.findByRequestId(vm.getRequestId())
-                .map(VmRequestReview::getGrantHttp)
-                .orElse(false) == Boolean.TRUE;
+        // Request-form subdomain preference (v0.22.0): the publish form's
+        // prefill — publishing itself is self-service for every VM.
+        VmRequest originRequest = requestRepository.findById(vm.getRequestId()).orElse(null);
+        String requestedSubdomain = originRequest != null ? originRequest.getDesiredSubdomain() : null;
+        String requestedRootDomain = originRequest != null ? originRequest.getRootDomain() : null;
         PublicationView publication = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
                 // an unpublish tombstone (custom row, no live route) is not published
@@ -174,7 +176,8 @@ public class VmQueryService {
         boolean passwordRevealAllowed = myGroupRole != null && myGroupRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
         return VmDetailResponse.from(vm, groupName, orgName, displayName, ipAddress, sshHost,
-                myGroupRole, passwordRevealAllowed, provisioning, httpPublishGranted, publication);
+                myGroupRole, passwordRevealAllowed, provisioning,
+                requestedSubdomain, requestedRootDomain, publication);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

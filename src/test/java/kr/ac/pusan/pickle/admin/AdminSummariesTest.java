@@ -232,9 +232,8 @@ class AdminSummariesTest {
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         return jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public, status)
-                values (?, ?, ?, '요약 테스트', ?, 2, 2048, 10, true, false, false,
+                                         req_vcpu, req_memory_mb, req_disk_gb, status)
+                values (?, ?, ?, '요약 테스트', ?, 2, 2048, 10,
                         ?::vm_request_status)
                 returning id
                 """, Long.class, groupId, org.getId(), requesterId, templateId, status);
@@ -247,9 +246,8 @@ class AdminSummariesTest {
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision, granted_vcpu,
                                                 granted_memory_mb, granted_disk_gb,
-                                                granted_template_id, grant_ssh, grant_http,
-                                                grant_public)
-                values (?, ?, ?::review_decision, 2, 2048, 10, ?, true, false, false)
+                                                granted_template_id)
+                values (?, ?, ?::review_decision, 2, 2048, 10, ?)
                 """, requestId, reviewerId, decision, templateId);
     }
 

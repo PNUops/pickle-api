@@ -195,7 +195,6 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.review.reviewerName").value("기관 관리자"))
                 .andExpect(jsonPath("$.review.grantedVcpu").value(2))
                 .andExpect(jsonPath("$.review.grantedMemoryMb").value(2048))
-                .andExpect(jsonPath("$.review.grantSsh").value(true))
                 .andExpect(jsonPath("$.review.nodeId").value((Object) null))
                 .andExpect(jsonPath("$.review.decidedAt").isNotEmpty());
 
@@ -302,6 +301,43 @@ class ApprovalTest {
                 .filter(vm -> vm.getRequestId() == otherRequestId && vm.getDeletedAt() == null)
                 .findFirst().orElseThrow();
         assertThat(auto.getHostname()).matches("appr-slug-x1-[a-z0-9]{4}");
+    }
+
+    @Test
+    void approveSeedsRequestedDisplayNameIntoVmSettings() throws Exception {
+        long groupId = createTeam(userToken, "appr-dname-x1");
+        long requestId = submit(userToken, groupId, org.getId(), "학과 세미나 서버");
+
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken, approveBody())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"))
+                .andExpect(jsonPath("$.displayName").value("학과 세미나 서버"));
+
+        Vm vm = vmRepository.findAll().stream()
+                .filter(v -> v.getRequestId() == requestId)
+                .findFirst().orElseThrow();
+        // The vm_settings row is seeded with the requester as the writer.
+        assertThat(jdbcTemplate.queryForObject("""
+                select value #>> '{}' from vm_settings where vm_id = ? and key = 'display_name'
+                """, String.class, vm.getId())).isEqualTo("학과 세미나 서버");
+        assertThat(jdbcTemplate.queryForObject("""
+                select updated_by from vm_settings where vm_id = ? and key = 'display_name'
+                """, Long.class, vm.getId())).isEqualTo(regularUser.getId());
+        // The seeding has no vm.setting_update row of its own — request.approve
+        // carries the provenance instead.
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs where action = 'vm.setting_update' and target_id = ?
+                """, Long.class, vm.getId())).isEqualTo(0);
+        assertThat(jdbcTemplate.queryForObject("""
+                select detail ->> 'displayName' from audit_logs
+                 where action = 'request.approve' and target_id = ?
+                """, String.class, requestId)).isEqualTo("학과 세미나 서버");
+
+        // the seeded name surfaces on the VM detail
+        mockMvc.perform(get("/api/v1/vms/" + vm.getId())
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("학과 세미나 서버"));
     }
 
     @Test
@@ -461,9 +497,6 @@ class ApprovalTest {
         body.put("grantedMemoryMb", 2048);
         body.put("grantedDiskGb", 20);
         body.put("grantedTemplateId", template.getId());
-        body.put("grantSsh", true);
-        body.put("grantHttp", false);
-        body.put("grantPublic", false);
         body.put("comment", "요청 사양 그대로 승인합니다.");
         return body;
     }
@@ -487,7 +520,14 @@ class ApprovalTest {
     }
 
     private long submit(String token, long groupId, long orgId) throws Exception {
+        return submit(token, groupId, orgId, null);
+    }
+
+    private long submit(String token, long groupId, long orgId, String displayName) throws Exception {
         Map<String, Object> body = new HashMap<>();
+        if (displayName != null) {
+            body.put("displayName", displayName);
+        }
         body.put("groupId", groupId);
         body.put("orgId", orgId);
         body.put("templateId", template.getId());
@@ -495,9 +535,6 @@ class ApprovalTest {
         body.put("reqVcpu", template.getDefaultVcpu());
         body.put("reqMemoryMb", template.getDefaultMemoryMb());
         body.put("reqDiskGb", template.getDefaultDiskGb());
-        body.put("needSsh", true);
-        body.put("needHttp", false);
-        body.put("needPublic", false);
         String response = postJson("/api/v1/vm-requests", token, body)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();

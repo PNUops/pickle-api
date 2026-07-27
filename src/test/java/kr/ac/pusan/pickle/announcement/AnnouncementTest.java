@@ -340,10 +340,9 @@ class AnnouncementTest {
     private void linkGroupToOrg(long groupId, long orgId, long requesterId) {
         jdbcTemplate.update("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '조직 연계(테스트)', (select min(id) from vm_templates),
-                        1, 1024, 20, false, false, false)
+                        1, 1024, 20)
                 """, groupId, orgId, requesterId);
     }
 

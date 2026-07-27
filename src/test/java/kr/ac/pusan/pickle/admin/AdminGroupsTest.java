@@ -77,9 +77,8 @@ class AdminGroupsTest {
         long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
         jdbcTemplate.update("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, '그룹 조회 테스트', ?, 1, 1024, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '그룹 조회 테스트', ?, 1, 1024, 10)
                 """, groupId, orgId, ownerId, templateId);
     }
 

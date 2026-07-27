@@ -32,21 +32,6 @@ public record ApproveVmRequestRequest(
 
         @Nullable LocalDate grantedEndDate,
 
-        @NotNull(message = "SSH 허용 여부를 지정해 주세요.")
-        Boolean grantSsh,
-
-        @NotNull(message = "HTTP 게시 허용 여부를 지정해 주세요.")
-        Boolean grantHttp,
-
-        @NotNull(message = "외부 공개 허용 여부를 지정해 주세요.")
-        Boolean grantPublic,
-
-        // Validated server-side by SubdomainPolicy (RFC 1123 + reserved +
-        // profanity + uniqueness); null/blank ⇒ AUTO at publish.
-        @Nullable String grantedSubdomain,
-
-        @Nullable String grantedRootDomain,
-
         // 최종 호스트명(슬러그, v0.12.0) — null/공백이면 기존처럼 자동 생성.
         // Blank ≡ null이므로 패턴이 공백을 허용하고, 예약어·중복(파기 VM 포함)은
         // 서버(VmSlugPolicy + ApprovalService)에서 검증한다.

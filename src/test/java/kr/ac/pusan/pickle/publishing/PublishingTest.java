@@ -155,7 +155,7 @@ class PublishingTest {
 
     @Test
     void publishAuthorizesByGroupRole() throws Exception {
-        long vmId = publishableVm(true, "team-alpha", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-alpha", "pickle.pnuops.com", VmStatus.RUNNING);
 
         // non-member → 404 (existence masked)
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
@@ -180,21 +180,88 @@ class PublishingTest {
                 .andExpect(jsonPath("$.route.targetPort").value(8080));
     }
 
-    @Test
-    void publishRejectsWhenHttpNotGranted() throws Exception {
-        long vmId = publishableVm(false, "team-nohttp", "pickle.pnuops.com", VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("VM_HTTP_NOT_GRANTED"));
-    }
-
     // ── validation ─────────────────────────────────────────────────────────
 
     @Test
+    void publishRejectsWhenNoSubdomainAnywhere() throws Exception {
+        long vmId = publishableVm(null, null, VmStatus.RUNNING);
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
+    }
+
+    @Test
+    void publishBodySubdomainOverridesRequestFormValue() throws Exception {
+        long vmId = publishableVm("team-form", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-body\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.fqdn").value("team-body.pickle.pnuops.com"))
+                .andExpect(jsonPath("$.domain.kind").value("REQUESTED"));
+    }
+
+    @Test
+    void publishRejectsReservedSubdomain() throws Exception {
+        long vmId = publishableVm(null, "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"portal\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
+    }
+
+    @Test
+    void publishRejectsProfanitySubdomain() throws Exception {
+        long vmId = publishableVm(null, "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-shit-lab\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
+    }
+
+    @Test
+    void publishRejectsUnknownRootDomain() throws Exception {
+        long vmId = publishableVm(null, null, VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-root\",\"rootDomain\":\"evil.example.com\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("rootDomain"));
+    }
+
+    @Test
+    void publishRejectsSubdomainAndCustomDomainTogether() throws Exception {
+        long vmId = publishableVm("team-both", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-both2\","
+                + "\"customDomain\":\"both.example.com\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
+    }
+
+    @Test
+    void unpublishFreesTheNameForAnotherVm() throws Exception {
+        long first = publishableVm("team-reuse", "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(first, "{\"port\":80}").andExpect(status().isAccepted());
+        // Taken while live.
+        long second = publishableVm(null, "pickle.pnuops.com", VmStatus.RUNNING);
+        publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOMAIN_FQDN_TAKEN"));
+
+        mockMvc.perform(delete("/api/v1/vms/" + first + "/publication")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+
+        // The partial unique index only covers non-REMOVED rows — the name is free.
+        publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.fqdn").value("team-reuse.pickle.pnuops.com"));
+    }
+
+    @Test
     void publishRejectsPort22() throws Exception {
-        long vmId = publishableVm(true, "team-ssh", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-ssh", "pickle.pnuops.com", VmStatus.RUNNING);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":22}"))
@@ -205,7 +272,7 @@ class PublishingTest {
 
     @Test
     void publishRejectsCustomDomainUnderPlatformZone() throws Exception {
-        long vmId = publishableVm(true, "team-custom", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-custom", "pickle.pnuops.com", VmStatus.RUNNING);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -217,7 +284,7 @@ class PublishingTest {
 
     @Test
     void doublePublishConflicts() throws Exception {
-        long vmId = publishableVm(true, "team-dup", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-dup", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         publish(vmId, "{\"port\":80}").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PUBLICATION_ALREADY_EXISTS"));
@@ -227,7 +294,7 @@ class PublishingTest {
 
     @Test
     void applyForcesTargetToVmOwnIpAndMarksApplied() throws Exception {
-        long vmId = publishableVm(true, "team-apply", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-apply", "pickle.pnuops.com", VmStatus.RUNNING);
         String vmIp = vmIp(vmId);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
@@ -249,7 +316,7 @@ class PublishingTest {
 
     @Test
     void staleGenerationIsNoOp() throws Exception {
-        long vmId = publishableVm(true, "team-stale", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-stale", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         agent.resetAll();
@@ -266,7 +333,7 @@ class PublishingTest {
 
     @Test
     void applyFailureRecordsFailedWithStderr() throws Exception {
-        long vmId = publishableVm(true, "team-fail", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-fail", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         agent.resetAll();
@@ -286,7 +353,7 @@ class PublishingTest {
 
     @Test
     void customDomainPublishStaysPendingUntilDnsVerified() throws Exception {
-        long vmId = publishableVm(true, "team-cd", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-cd", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted())
@@ -312,7 +379,7 @@ class PublishingTest {
 
     @Test
     void verifyTriggerIsRateLimitedAndDeduplicated() throws Exception {
-        long vmId = publishableVm(true, "team-vrl", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-vrl", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "rl." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -348,7 +415,7 @@ class PublishingTest {
 
     @Test
     void unverifiedDomainParksFailedPastDeadline() throws Exception {
-        long vmId = publishableVm(true, "team-vto", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-vto", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "to." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -374,7 +441,7 @@ class PublishingTest {
 
     @Test
     void customDomainCertActivatesOnlyOnAgentConfirmedOk() throws Exception {
-        long vmId = publishableVm(true, "team-certok", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-certok", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "ok." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -395,7 +462,7 @@ class PublishingTest {
     @Test
     void certFailureOnAgentStatusMarksFailedAndVerifyRetriggersWithBumpedGeneration()
             throws Exception {
-        long vmId = publishableVm(true, "team-certfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-certfail", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "ko." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -441,7 +508,7 @@ class PublishingTest {
 
     @Test
     void adminRoutesAreOrgScoped() throws Exception {
-        long vmId = publishableVm(true, "team-admin", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-admin", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
 
         // ORG_ADMIN of the seed org sees the route; a regular user cannot reach the admin list.
@@ -473,7 +540,7 @@ class PublishingTest {
 
     @Test
     void resyncValidationFailureLeavesRouteStatusUntouched() throws Exception {
-        long vmId = publishableVm(true, "team-rsfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-rsfail", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         routeApplyJob.apply(routeId);
@@ -492,7 +559,7 @@ class PublishingTest {
 
     @Test
     void adminDomainRemovedFilterAndFailedCertHideExpiry() throws Exception {
-        long vmId = publishableVm(true, "team-admrm", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-admrm", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "adm." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":80,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -548,7 +615,7 @@ class PublishingTest {
     @Test
     void unpublishWithUnreachableAgentIsReconciledToAbsent() throws Exception {
         settleAllRoutes();
-        long vmId = publishableVm(true, "team-recon", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-recon", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         routeApplyJob.apply(routeId);
@@ -604,7 +671,7 @@ class PublishingTest {
     @Test
     void publishWithUnreachableAgentStaysPendingAndIsReconciledToPresent() throws Exception {
         settleAllRoutes();
-        long vmId = publishableVm(true, "team-recon2", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-recon2", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         agent.resetAll();
@@ -633,7 +700,7 @@ class PublishingTest {
     void reconcilerSkipsConfirmedAndAgentRejectedRoutes() throws Exception {
         settleAllRoutes();
         // Confirmed APPLIED route: nothing to reconcile.
-        long appliedVm = publishableVm(true, "team-recon3", "pickle.pnuops.com", VmStatus.RUNNING);
+        long appliedVm = publishableVm("team-recon3", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(appliedVm, "{\"port\":80}").andExpect(status().isAccepted());
         long appliedRoute = routeIdForVm(appliedVm);
         routeApplyJob.apply(appliedRoute);
@@ -641,7 +708,7 @@ class PublishingTest {
 
         // 422-FAILED route: a definitive agent verdict — re-pushing the same
         // config every cycle would thrash; recovery stays re-publish/resync.
-        long failedVm = publishableVm(true, "team-recon4", "pickle.pnuops.com", VmStatus.RUNNING);
+        long failedVm = publishableVm("team-recon4", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(failedVm, "{\"port\":80}").andExpect(status().isAccepted());
         long failedRoute = routeIdForVm(failedVm);
         agent.resetAll();
@@ -663,7 +730,7 @@ class PublishingTest {
 
     @Test
     void unreachableAgentOnTeardownBlocksDeletionAndIpRelease() throws Exception {
-        long vmId = publishableVm(true, "team-delnet", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-delnet", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
@@ -687,20 +754,20 @@ class PublishingTest {
 
     @Test
     void unpublishRemovesRoute() throws Exception {
-        long vmId = publishableVm(true, "team-unpub", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-unpub", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
-        // AUTO/REQUESTED domain row is cleaned up (REMOVED).
+        // Platform domain row is cleaned up (REMOVED).
         assertThat(domainStatus(domainIdForVm(vmId))).isEqualTo("REMOVED");
     }
 
     @Test
     void customDomainUnpublishLeavesVmCleanlyRepublishable() throws Exception {
-        long vmId = publishableVm(true, "team-tomb", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-tomb", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -742,7 +809,7 @@ class PublishingTest {
 
     @Test
     void platformPublishAfterCustomUnpublishRetiresTombstone() throws Exception {
-        long vmId = publishableVm(true, "team-tomb2", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-tomb2", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -760,7 +827,7 @@ class PublishingTest {
 
     @Test
     void portOnlyUpdateReappliesSameDomain() throws Exception {
-        long vmId = publishableVm(true, "team-port", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-port", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         long genBefore = jdbcTemplate.queryForObject("select generation from routes where id = ?",
@@ -779,7 +846,7 @@ class PublishingTest {
 
     @Test
     void deletePipelineTearsDownPublishingBeforeIpRelease() throws Exception {
-        long vmId = publishableVm(true, "team-delpub", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-delpub", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         long domainId = domainIdForVm(vmId);
@@ -825,7 +892,7 @@ class PublishingTest {
 
     @Test
     void failedTeardownBlocksDeletionAndIpRelease() throws Exception {
-        long vmId = publishableVm(true, "team-delfail", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-delfail", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
@@ -868,7 +935,7 @@ class PublishingTest {
 
     @Test
     void adminForceReleaseTearsDownLikeUserDeletion() throws Exception {
-        long vmId = publishableVm(true, "team-force", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-force", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
         long routeId = routeIdForVm(vmId);
@@ -891,7 +958,7 @@ class PublishingTest {
 
     @Test
     void adminDomainInterventionIsOrgScopedWithThe404Mask() throws Exception {
-        long vmId = publishableVm(true, "team-scope", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-scope", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
         long routeId = routeIdForVm(vmId);
@@ -920,7 +987,7 @@ class PublishingTest {
 
     @Test
     void adminVerifyTriggersWithoutUserRateLimitAndRejectsPlatformDomains() throws Exception {
-        long vmId = publishableVm(true, "team-averify", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-averify", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "av." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -935,7 +1002,7 @@ class PublishingTest {
                 select count(*) from auth_rate_limits where scope = 'domain_verify'
                 """, Long.class)).isZero();
 
-        long platformVm = publishableVm(true, "team-avplat", "pickle.pnuops.com", VmStatus.RUNNING);
+        long platformVm = publishableVm("team-avplat", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(platformVm, "{\"port\":80}").andExpect(status().isAccepted());
         mockMvc.perform(post("/api/v1/admin/domains/" + domainIdForVm(platformVm) + "/verify")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -948,7 +1015,7 @@ class PublishingTest {
         // Regression (2026-07-28 review): the single-route re-apply must honor
         // the "unverified custom domain never goes live" invariant that the
         // resync and the unconfirmed-route sweep enforce.
-        long vmId = publishableVm(true, "team-unver", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-unver", "pickle.pnuops.com", VmStatus.RUNNING);
         String fqdn = "uv." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
@@ -967,7 +1034,7 @@ class PublishingTest {
 
     @Test
     void adminRouteApplyBumpsGenerationAndRepushesRemoval() throws Exception {
-        long vmId = publishableVm(true, "team-radm", "pickle.pnuops.com", VmStatus.RUNNING);
+        long vmId = publishableVm("team-radm", "pickle.pnuops.com", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         long domainId = domainIdForVm(vmId);
@@ -1072,22 +1139,25 @@ class PublishingTest {
                 """, String.class, vmId);
     }
 
-    /** Inserts an approved+running VM with an ALLOCATED IP and a review grant. */
-    private long publishableVm(boolean grantHttp, String grantedSubdomain, String grantedRoot,
-            VmStatus status) {
+    /**
+     * Inserts an approved+running VM with an ALLOCATED IP. The request-form
+     * subdomain/root are the publish-time defaults (self-service publishing);
+     * null means the publish body must carry the name or answer 422.
+     */
+    private long publishableVm(String desiredSubdomain, String rootDomain, VmStatus status) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10, false, true, true)
+                                         desired_subdomain, root_domain)
+                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10, ?, ?)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), templateId,
+                desiredSubdomain, rootDomain);
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision,
-                        grant_ssh, grant_http, grant_public, granted_subdomain, granted_root_domain,
                         granted_vcpu, granted_memory_mb, granted_disk_gb, granted_template_id)
-                values (?, ?, 'APPROVE'::review_decision, false, ?, true, ?, ?, 1, 1024, 10, ?)
-                """, requestId, owner.getId(), grantHttp, grantedSubdomain, grantedRoot, templateId);
+                values (?, ?, 'APPROVE'::review_decision, 1, 1024, 10, ?)
+                """, requestId, owner.getId(), templateId);
         String hostname = "pub-" + UUID.randomUUID().toString().substring(0, 12);
         int vmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""

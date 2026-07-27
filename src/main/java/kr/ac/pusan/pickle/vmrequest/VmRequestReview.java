@@ -58,23 +58,6 @@ public class VmRequestReview {
     @Column(name = "granted_end_date")
     private LocalDate grantedEndDate;
 
-    @Column(name = "grant_ssh")
-    private Boolean grantSsh;
-
-    @Column(name = "grant_http")
-    private Boolean grantHttp;
-
-    @Column(name = "grant_public")
-    private Boolean grantPublic;
-
-    /** Admin-granted platform subdomain label; null ⇒ AUTO at publish. */
-    @Column(name = "granted_subdomain")
-    private String grantedSubdomain;
-
-    /** Root domain for the granted subdomain. */
-    @Column(name = "granted_root_domain")
-    private String grantedRootDomain;
-
     /** Reviewer-forced placement node; null = auto placement. */
     @Column(name = "node_id")
     private Long nodeId;
@@ -103,9 +86,7 @@ public class VmRequestReview {
     /** Approval: decision row carrying the granted spec. */
     public static VmRequestReview approve(Long requestId, Long reviewerId, String comment,
             int grantedVcpu, int grantedMemoryMb, int grantedDiskGb, Long grantedTemplateId,
-            LocalDate grantedStartDate, LocalDate grantedEndDate,
-            boolean grantSsh, boolean grantHttp, boolean grantPublic,
-            String grantedSubdomain, String grantedRootDomain, Long nodeId) {
+            LocalDate grantedStartDate, LocalDate grantedEndDate, Long nodeId) {
         VmRequestReview review = new VmRequestReview();
         review.requestId = requestId;
         review.reviewerId = reviewerId;
@@ -117,11 +98,6 @@ public class VmRequestReview {
         review.grantedTemplateId = grantedTemplateId;
         review.grantedStartDate = grantedStartDate;
         review.grantedEndDate = grantedEndDate;
-        review.grantSsh = grantSsh;
-        review.grantHttp = grantHttp;
-        review.grantPublic = grantPublic;
-        review.grantedSubdomain = grantedSubdomain;
-        review.grantedRootDomain = grantedRootDomain;
         review.nodeId = nodeId;
         return review;
     }
@@ -168,26 +144,6 @@ public class VmRequestReview {
 
     public LocalDate getGrantedEndDate() {
         return grantedEndDate;
-    }
-
-    public Boolean getGrantSsh() {
-        return grantSsh;
-    }
-
-    public Boolean getGrantHttp() {
-        return grantHttp;
-    }
-
-    public Boolean getGrantPublic() {
-        return grantPublic;
-    }
-
-    public String getGrantedSubdomain() {
-        return grantedSubdomain;
-    }
-
-    public String getGrantedRootDomain() {
-        return grantedRootDomain;
     }
 
     public Long getNodeId() {

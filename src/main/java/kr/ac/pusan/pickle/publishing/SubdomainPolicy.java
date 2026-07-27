@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Server-side validation of a platform subdomain label and its root domain
- * Shared by request submission and admin approval so the rules —
+ * Shared by request submission and publish-time finalization so the rules —
  * RFC 1123 label, reserved list, profanity denylist, allowed root — live in one
  * place. Uniqueness against live domains is checked at publish time (the final
  * gate is the partial unique index).

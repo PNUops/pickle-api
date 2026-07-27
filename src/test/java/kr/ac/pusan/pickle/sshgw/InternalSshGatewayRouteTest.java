@@ -445,9 +445,8 @@ class InternalSshGatewayRouteTest {
     private long createVm(String slug, VmStatus status, String ip, boolean blocked, String hostKey) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, 'SSH 라우트 테스트', ?, 1, 1024, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, 'SSH 라우트 테스트', ?, 1, 1024, 10)
                 returning id
                 """, Long.class, groupId, orgId, memberId, templateId);
         long allocationId = jdbcTemplate.queryForObject("""

@@ -123,10 +123,9 @@ class DomainCheckConstraintsTest {
         return jdbc.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
-                                         req_start_date, req_end_date,
-                                         need_ssh, need_http, need_public)
+                                         req_start_date, req_end_date)
                 values (?, ?, ?, '제약 테스트', ?, ?, ?, ?,
-                        cast(? as date), cast(? as date), true, false, false)
+                        cast(? as date), cast(? as date))
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId,
                 vcpu, memoryMb, diskGb, start, end);

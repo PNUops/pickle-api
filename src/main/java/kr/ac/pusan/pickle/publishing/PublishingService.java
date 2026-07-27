@@ -15,11 +15,9 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
@@ -30,8 +28,8 @@ import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
+import kr.ac.pusan.pickle.vmrequest.VmRequest;
+import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.data.domain.Page;
@@ -52,23 +50,21 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *
  * <p>Authorization: mutating ops require the owning group's OWNER/EDITOR (a
  * VIEWER is 403, a non-member 404 — same masking as the power path); reads
- * require VIEWER+. The platform subdomain NAME is fixed at approval and never
- * chosen here. The routing target IP is never accepted from the client — it is
+ * require VIEWER+. The platform subdomain NAME is chosen by the user — in the
+ * publish body or pre-picked on the request form (v0.22.0 self-service; no
+ * auto-generated fallback) — and validated here against the full subdomain
+ * policy. The routing target IP is never accepted from the client — it is
  * forced server-side to the VM's own allocation in the apply job (SSRF guard).</p>
  */
 @Service
 public class PublishingService {
 
-    private static final char[] SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
-    private static final int SUFFIX_LENGTH = 4;
-    private static final int MAX_AUTO_ATTEMPTS = 10;
     /** RFC 1123 hostname label. */
     private static final Pattern LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$");
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
-    private final GroupRepository groupRepository;
-    private final VmRequestReviewRepository reviewRepository;
+    private final VmRequestRepository requestRepository;
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
@@ -84,7 +80,7 @@ public class PublishingService {
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            GroupRepository groupRepository, VmRequestReviewRepository reviewRepository,
+            VmRequestRepository requestRepository,
             DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             PublicationAssembler assembler, SubdomainPolicy subdomainPolicy,
@@ -93,8 +89,7 @@ public class PublishingService {
             RateLimitService rateLimitService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
-        this.groupRepository = groupRepository;
-        this.reviewRepository = reviewRepository;
+        this.requestRepository = requestRepository;
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -113,10 +108,13 @@ public class PublishingService {
 
     @Transactional
     public PublicationView publish(AuthenticatedUser actor, long vmId, Integer port,
-            String customDomain, String ip) {
+            String subdomain, String rootDomain, String customDomain, String ip) {
         Vm vm = requireVmOwnerOrEditor(actor, vmId);
-        requireHttpGranted(vm);
         requirePublishableState(vm);
+        if (Texts.blankToNull(subdomain) != null && Texts.blankToNull(customDomain) != null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
+                    "플랫폼 서브도메인과 커스텀 도메인은 동시에 지정할 수 없습니다.")));
+        }
         Domain existing = domainRepository
                 .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
                 .orElse(null);
@@ -141,10 +139,10 @@ public class PublishingService {
                 domain = revive(existing, resolvedPort);
             } else {
                 retire(existing);
-                domain = createPublication(vm, resolvedPort, requestedCustom);
+                domain = createPublication(vm, resolvedPort, requestedCustom, subdomain, rootDomain);
             }
         } else {
-            domain = createPublication(vm, resolvedPort, requestedCustom);
+            domain = createPublication(vm, resolvedPort, requestedCustom, subdomain, rootDomain);
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(), domain.getFqdn()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_PUBLISH,
@@ -179,7 +177,10 @@ public class PublishingService {
             String newCustom = Texts.blankToNull(customDomain);
             int resolvedPort = port != null ? validatePort(port) : liveRoute.getTargetPort();
             teardown(current, /* archiveCustomCert */ true);
-            result = createPublication(vm, resolvedPort, newCustom);
+            // Reverting to the platform subdomain (newCustom == null) reuses the
+            // request-form name; PATCH carries no subdomain field — without a
+            // stored name the revert answers 422 (unpublish → publish with a name).
+            result = createPublication(vm, resolvedPort, newCustom, null, null);
         } else {
             int resolvedPort = validatePort(port);
             result = current;
@@ -273,7 +274,8 @@ public class PublishingService {
     // ── shared publication core ──────────────────────────────────────────────
 
     /** Creates the domain + route rows and enqueues apply (platform) or verification (custom). */
-    private Domain createPublication(Vm vm, int port, String customDomain) {
+    private Domain createPublication(Vm vm, int port, String customDomain,
+            String subdomain, String rootDomain) {
         Domain domain;
         boolean applyNow;
         if (customDomain != null) {
@@ -284,7 +286,7 @@ public class PublishingService {
             certificateRepository.save(Certificate.letsEncrypt(domain.getId(), fqdn));
             applyNow = false;
         } else {
-            domain = domainRepository.save(platformDomain(vm));
+            domain = domainRepository.save(platformDomain(vm, subdomain, rootDomain));
             applyNow = true;
         }
         long generation = routeGenerations.next();
@@ -299,23 +301,40 @@ public class PublishingService {
         return domain;
     }
 
-    /** Resolves the granted platform subdomain (REQUESTED) or a fresh AUTO one. */
-    private Domain platformDomain(Vm vm) {
-        VmRequestReview review = reviewRepository.findByRequestId(vm.getRequestId()).orElse(null);
-        String grantedSubdomain = review != null ? review.getGrantedSubdomain() : null;
-        String rootDomain = review != null && review.getGrantedRootDomain() != null
-                ? review.getGrantedRootDomain() : subdomainPolicy.defaultRootDomain();
+    /**
+     * Resolves the platform subdomain (v0.22.0 self-service): the publish body's
+     * {@code subdomain} wins, else the request-form value; neither ⇒ 422 (no
+     * auto-generated fallback). The label runs the full {@link SubdomainPolicy}
+     * (pattern/reserved/profanity) — the publish path is the final gate now that
+     * approval no longer confirms names.
+     */
+    private Domain platformDomain(Vm vm, String requestedSubdomain, String requestedRootDomain) {
+        VmRequest request = requestRepository.findById(vm.getRequestId()).orElse(null);
+        String label = Texts.blankToNull(requestedSubdomain) != null
+                ? requestedSubdomain.toLowerCase(Locale.ROOT).strip()
+                : (request != null ? request.getDesiredSubdomain() : null);
+        if (label == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
+                    "공개할 서브도메인을 입력해 주세요. (자동 생성은 지원하지 않습니다)")));
+        }
+        String rootDomain = Texts.blankToNull(requestedRootDomain);
+        if (rootDomain == null) {
+            rootDomain = request != null && request.getRootDomain() != null
+                    ? request.getRootDomain() : subdomainPolicy.defaultRootDomain();
+        }
         if (rootDomain == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                     "공개할 수 없습니다", "허용된 루트 도메인이 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
         }
-        if (grantedSubdomain != null) {
-            String fqdn = grantedSubdomain + "." + rootDomain;
-            requireFqdnFree(fqdn);
-            return Domain.platform(vm.getId(), DomainKind.REQUESTED, fqdn, rootDomain);
+        List<FieldValidationError> errors = new ArrayList<>();
+        subdomainPolicy.validateLabel(label, "subdomain", errors);
+        subdomainPolicy.validateRootDomain(rootDomain, "rootDomain", errors);
+        if (!errors.isEmpty()) {
+            throw ApiException.validationFailed(errors);
         }
-        return Domain.platform(vm.getId(), DomainKind.AUTO, generateAutoFqdn(vm.getGroupId(), rootDomain),
-                rootDomain);
+        String fqdn = label + "." + rootDomain;
+        requireFqdnFree(fqdn);
+        return Domain.platform(vm.getId(), DomainKind.REQUESTED, fqdn, rootDomain);
     }
 
     /**
@@ -375,21 +394,6 @@ public class PublishingService {
         } else {
             domain.setStatus(DomainStatus.REMOVED);
         }
-    }
-
-    private String generateAutoFqdn(long groupId, String rootDomain) {
-        String slug = groupRepository.findById(groupId).map(Group::getSlug).orElse("vm");
-        for (int attempt = 0; attempt < MAX_AUTO_ATTEMPTS; attempt++) {
-            StringBuilder suffix = new StringBuilder(SUFFIX_LENGTH);
-            for (int i = 0; i < SUFFIX_LENGTH; i++) {
-                suffix.append(SUFFIX_ALPHABET[random.nextInt(SUFFIX_ALPHABET.length)]);
-            }
-            String fqdn = slug + "-" + suffix + "." + rootDomain;
-            if (!domainRepository.existsByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)) {
-                return fqdn;
-            }
-        }
-        throw new IllegalStateException("Could not generate a unique auto subdomain for group " + groupId);
     }
 
     private String generateToken() {
@@ -460,17 +464,6 @@ public class PublishingService {
                     "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 도메인·포트를 설정할 수 있습니다.");
         }
         return vm;
-    }
-
-    private void requireHttpGranted(Vm vm) {
-        boolean granted = reviewRepository.findByRequestId(vm.getRequestId())
-                .map(VmRequestReview::getGrantHttp)
-                .orElse(false) == Boolean.TRUE;
-        if (!granted) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.VM_HTTP_NOT_GRANTED,
-                    "HTTP 공개가 허용되지 않은 VM입니다",
-                    "이 VM은 승인 시 HTTP 공개가 허용되지 않았습니다. 재신청이 필요합니다.");
-        }
     }
 
     private void requirePublishableState(Vm vm) {

@@ -41,7 +41,8 @@ public record VmDetailResponse(
         @Nullable Instant expiryStoppedAt,
         @Nullable ProvisioningTaskResponse provisioning,
         @Nullable VmDeletionResponse deletion,
-        boolean httpPublishGranted,
+        @Nullable String requestedSubdomain,
+        @Nullable String requestedRootDomain,
         @Nullable PublicationView publication,
         boolean passwordAvailable,
         boolean passwordRevealAllowed,
@@ -50,14 +51,14 @@ public record VmDetailResponse(
     public static VmDetailResponse from(Vm vm, String groupName, String orgName, String displayName,
             String ipAddress, String sshHost, GroupMemberRole myGroupRole,
             boolean passwordRevealAllowed, ProvisioningTaskResponse provisioning,
-            boolean httpPublishGranted, PublicationView publication) {
+            String requestedSubdomain, String requestedRootDomain, PublicationView publication) {
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
                 displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getCreatedAt(), vm.getOrgId(),
                 vm.getTemplateId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
-                VmDeletionResponse.from(vm), httpPublishGranted, publication,
+                VmDeletionResponse.from(vm), requestedSubdomain, requestedRootDomain, publication,
                 vm.getPasswordEnc() != null, passwordRevealAllowed, vm.getUpdatedAt());
     }
 }

@@ -167,10 +167,7 @@ class ProvisioningEndToEndTest {
                 "purpose", "종단 검증용 서버",
                 "reqVcpu", template.get("defaultVcpu").asInt(),
                 "reqMemoryMb", template.get("defaultMemoryMb").asInt(),
-                "reqDiskGb", template.get("defaultDiskGb").asInt(),
-                "needSsh", true,
-                "needHttp", false,
-                "needPublic", false))
+                "reqDiskGb", template.get("defaultDiskGb").asInt()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andReturn();
@@ -199,9 +196,6 @@ class ProvisioningEndToEndTest {
                 "grantedMemoryMb", template.get("defaultMemoryMb").asInt(),
                 "grantedDiskGb", template.get("defaultDiskGb").asInt(),
                 "grantedTemplateId", templateId,
-                "grantSsh", true,
-                "grantHttp", false,
-                "grantPublic", false,
                 "comment", "요청 사양 그대로 승인합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))

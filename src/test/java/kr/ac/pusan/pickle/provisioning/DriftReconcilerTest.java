@@ -251,9 +251,8 @@ class DriftReconcilerTest {
     private long createVm(long nodeId, int proxmoxVmid, String status, int vcpu, int memoryMb) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, '드리프트 테스트', ?, ?, ?, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '드리프트 테스트', ?, ?, ?, 10)
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId, vcpu, memoryMb);
         String hostname = "drift-vm-" + UUID.randomUUID().toString().substring(0, 12);

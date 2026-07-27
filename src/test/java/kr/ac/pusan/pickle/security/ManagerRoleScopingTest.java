@@ -241,8 +241,8 @@ class ManagerRoleScopingTest {
                 """, Long.class, "mgr-grp-" + slug(), "mgr-grp-" + slug());
         return jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb, need_ssh, need_http, need_public)
-                values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10)
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId);
     }
@@ -256,8 +256,8 @@ class ManagerRoleScopingTest {
                 """, Long.class, "mgr-vmgrp-" + slug(), "mgr-vmgrp-" + slug());
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb, need_ssh, need_http, need_public)
-                values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10)
                 returning id
                 """, Long.class, groupId, orgId, foreignAdminB.getId(), templateId);
         String hostname = "mgr-vm-" + slug();

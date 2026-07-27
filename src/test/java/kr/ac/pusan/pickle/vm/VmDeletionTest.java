@@ -1065,9 +1065,8 @@ class VmDeletionTest {
     private long createVm(VmStatus status) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, '삭제 테스트', ?, 1, 1024, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '삭제 테스트', ?, 1, 1024, 10)
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), templateId);
         String hostname = "vmdel-" + UUID.randomUUID().toString().substring(0, 12);

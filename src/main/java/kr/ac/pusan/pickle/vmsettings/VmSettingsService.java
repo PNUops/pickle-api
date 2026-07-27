@@ -144,6 +144,20 @@ public class VmSettingsService {
     }
 
     /**
+     * System write at approval time: seeds the requester-chosen display name
+     * (request form, v0.22.0) so the VM carries its name from the first list
+     * render. Deliberately skips the role/state gates of {@link #patch} (the
+     * caller runs inside the approval transaction, before the VM is usable)
+     * and leaves auditing to the caller's request.approve audit entry — this
+     * is an initial value, not an actor-driven change.
+     */
+    @Transactional
+    public void initializeDisplayName(long vmId, String displayName, Long requesterId) {
+        settingRepository.save(new VmSetting(vmId, DISPLAY_NAME,
+                objectMapper.writeValueAsString(displayName), requesterId, Instant.now()));
+    }
+
+    /**
      * Batch variant of {@code string(vmId, DISPLAY_NAME)} for list views —
      * one query for all VMs (avoids N+1). Absent/blank names are simply not in
      * the returned map.

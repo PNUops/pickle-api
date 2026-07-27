@@ -30,7 +30,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
-import org.hamcrest.Matchers;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -169,11 +168,12 @@ class VmRequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
 
-        // needHttp implies subdomain + allowed root domain
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "needHttp", true))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[*].field").value(
-                        Matchers.hasItems("desiredSubdomain", "rootDomain")));
+        // the subdomain is standalone-optional now — no root domain is fine
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSubdomain", "vmr-solo-x1"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSubdomain").value("vmr-solo-x1"))
+                .andExpect(jsonPath("$.rootDomain").value((Object) null));
         Map<String, Object> badRoot = httpBody(groupId, "vmr-svc-x1", "evil.example.com");
         postJson("/api/v1/vm-requests", requesterToken, badRoot)
                 .andExpect(status().isUnprocessableContent())
@@ -230,6 +230,34 @@ class VmRequestTest {
 
         // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void displayNameIsLengthCappedAndEchoed() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-dname-x1");
+
+        // over 100 chars → 422 (bean validation)
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "displayName", "가".repeat(101)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("displayName"));
+
+        // echoed in the detail; omitted → null
+        String response = postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "displayName", "데이터분석 실습 서버"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"))
+                .andReturn().getResponse().getContentAsString();
+        long requestId = objectMapper.readTree(response).get("id").asLong();
+        mockMvc.perform(get("/api/v1/vm-requests/" + requestId)
+                        .header("Authorization", "Bearer " + requesterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"));
+
+        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.displayName").value((Object) null));
     }
 
     @Test
@@ -402,15 +430,11 @@ class VmRequestTest {
         body.put("reqVcpu", template.getDefaultVcpu());
         body.put("reqMemoryMb", template.getDefaultMemoryMb());
         body.put("reqDiskGb", template.getDefaultDiskGb());
-        body.put("needSsh", true);
-        body.put("needHttp", false);
-        body.put("needPublic", false);
         return body;
     }
 
     private Map<String, Object> httpBody(long groupId, String subdomain, String rootDomain) {
         Map<String, Object> body = validBody(groupId);
-        body.put("needHttp", true);
         body.put("desiredSubdomain", subdomain);
         body.put("rootDomain", rootDomain);
         return body;

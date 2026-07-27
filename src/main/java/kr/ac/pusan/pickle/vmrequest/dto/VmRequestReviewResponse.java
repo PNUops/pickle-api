@@ -19,11 +19,6 @@ public record VmRequestReviewResponse(
         @Nullable Long grantedTemplateId,
         @Nullable LocalDate grantedStartDate,
         @Nullable LocalDate grantedEndDate,
-        @Nullable Boolean grantSsh,
-        @Nullable Boolean grantHttp,
-        @Nullable Boolean grantPublic,
-        @Nullable String grantedSubdomain,
-        @Nullable String grantedRootDomain,
         @Nullable Long nodeId,
         Instant decidedAt) {
 
@@ -33,8 +28,6 @@ public record VmRequestReviewResponse(
                 review.getDecision(), review.getComment(),
                 review.getGrantedVcpu(), review.getGrantedMemoryMb(), review.getGrantedDiskGb(),
                 review.getGrantedTemplateId(), review.getGrantedStartDate(), review.getGrantedEndDate(),
-                review.getGrantSsh(), review.getGrantHttp(), review.getGrantPublic(),
-                review.getGrantedSubdomain(), review.getGrantedRootDomain(),
                 review.getNodeId(), review.getCreatedAt());
     }
 }

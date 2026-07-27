@@ -51,15 +51,8 @@ public record CreateVmRequestRequest(
 
         @Nullable LocalDate reqEndDate,
 
-        @NotNull(message = "SSH 접속 필요 여부를 지정해 주세요.")
-        Boolean needSsh,
-
-        @NotNull(message = "HTTP 게시 필요 여부를 지정해 주세요.")
-        Boolean needHttp,
-
-        @NotNull(message = "외부 공개 필요 여부를 지정해 주세요.")
-        Boolean needPublic,
-
+        // 선택 입력 — 지정 시 공개(publish)의 기본 이름이 된다. 공개 옵션 제거
+        // (v0.22.0) 이후에도 신청 단계에서 미리 정해 둘 수 있다.
         @Pattern(regexp = "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
                 message = "서브도메인은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
         @Nullable String desiredSubdomain,
@@ -67,9 +60,9 @@ public record CreateVmRequestRequest(
         @Size(max = 253, message = "루트 도메인이 올바르지 않습니다.")
         @Nullable String rootDomain,
 
-        @Pattern(regexp = "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$",
-                message = "커스텀 도메인이 올바른 호스트명 형식이 아닙니다.")
-        @Nullable String customDomain,
+        // 선택 입력 — VM 표시명(vm_settings display_name)을 신청 단계에서 지정.
+        @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
+        @Nullable String displayName,
 
         // Blank ≡ null (미지정 → 승인 시 자동 생성) — 예약어·중복(파기 VM 포함)은
         // 서버(VmSlugPolicy + 서비스)에서 검증.

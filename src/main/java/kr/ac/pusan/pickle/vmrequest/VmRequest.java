@@ -63,23 +63,16 @@ public class VmRequest {
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;
 
-    @Column(name = "need_ssh", nullable = false)
-    private boolean needSsh;
-
-    @Column(name = "need_http", nullable = false)
-    private boolean needHttp;
-
-    @Column(name = "need_public", nullable = false)
-    private boolean needPublic;
-
+    /** Requester-desired platform subdomain; the publish-time default. */
     @Column(name = "desired_subdomain")
     private String desiredSubdomain;
 
     @Column(name = "root_domain")
     private String rootDomain;
 
-    @Column(name = "custom_domain")
-    private String customDomain;
+    /** Requester-chosen VM display name; seeds vm_settings at approval. */
+    @Column(name = "display_name")
+    private String displayName;
 
     /** Requester-desired hostname/slug (v0.12.0); null = auto-generate at approval. */
     @Column(name = "desired_slug")
@@ -104,8 +97,7 @@ public class VmRequest {
     public VmRequest(Long groupId, Long orgId, Long requesterId, Long templateId, String purpose,
             String courseOrProject, String specReason, String extraNote,
             int reqVcpu, int reqMemoryMb, int reqDiskGb, LocalDate reqStartDate, LocalDate reqEndDate,
-            boolean needSsh, boolean needHttp, boolean needPublic,
-            String desiredSubdomain, String rootDomain, String customDomain, String desiredSlug) {
+            String desiredSubdomain, String rootDomain, String displayName, String desiredSlug) {
         this.groupId = groupId;
         this.orgId = orgId;
         this.requesterId = requesterId;
@@ -119,12 +111,9 @@ public class VmRequest {
         this.reqDiskGb = reqDiskGb;
         this.reqStartDate = reqStartDate;
         this.reqEndDate = reqEndDate;
-        this.needSsh = needSsh;
-        this.needHttp = needHttp;
-        this.needPublic = needPublic;
         this.desiredSubdomain = desiredSubdomain;
         this.rootDomain = rootDomain;
-        this.customDomain = customDomain;
+        this.displayName = displayName;
         this.desiredSlug = desiredSlug;
     }
 
@@ -184,18 +173,6 @@ public class VmRequest {
         return reqEndDate;
     }
 
-    public boolean isNeedSsh() {
-        return needSsh;
-    }
-
-    public boolean isNeedHttp() {
-        return needHttp;
-    }
-
-    public boolean isNeedPublic() {
-        return needPublic;
-    }
-
     public String getDesiredSubdomain() {
         return desiredSubdomain;
     }
@@ -204,8 +181,8 @@ public class VmRequest {
         return rootDomain;
     }
 
-    public String getCustomDomain() {
-        return customDomain;
+    public String getDisplayName() {
+        return displayName;
     }
 
     public String getDesiredSlug() {

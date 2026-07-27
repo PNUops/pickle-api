@@ -146,8 +146,7 @@ class AdminInventoryTest {
                         .content("""
                                 {"groupId": %d, "orgId": %d, "purpose": "은퇴 템플릿 거부 확인",
                                  "templateId": %d, "reqVcpu": 2, "reqMemoryMb": 2048,
-                                 "reqDiskGb": 20, "needSsh": true, "needHttp": false,
-                                 "needPublic": false}
+                                 "reqDiskGb": 20}
                                 """.formatted(groupId, orgId, templateId)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("templateId"));

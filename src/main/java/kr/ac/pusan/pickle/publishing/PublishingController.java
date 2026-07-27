@@ -49,9 +49,10 @@ public class PublishingController {
     public PublicationView publishVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             @RequestBody(required = false) PublishRequest request, HttpServletRequest httpRequest) {
-        PublishRequest body = request != null ? request : new PublishRequest(null, null);
+        PublishRequest body = request != null ? request : new PublishRequest(null, null, null, null);
         return publishingService.publish(principal, vmId,
-                body.port(), body.customDomain(), clientIp(httpRequest));
+                body.port(), body.subdomain(), body.rootDomain(), body.customDomain(),
+                clientIp(httpRequest));
     }
 
     /**

@@ -22,9 +22,6 @@ import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
-import kr.ac.pusan.pickle.publishing.DomainRepository;
-import kr.ac.pusan.pickle.publishing.DomainStatus;
-import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -36,6 +33,7 @@ import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
 import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
 import kr.ac.pusan.pickle.vmrequest.VmSlugPolicy;
 import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -72,9 +70,8 @@ public class ApprovalService {
     private final ProvisioningService provisioningService;
     private final AuditService auditService;
     private final NotificationService notificationService;
-    private final SubdomainPolicy subdomainPolicy;
-    private final DomainRepository domainRepository;
     private final VmSlugPolicy slugPolicy;
+    private final VmSettingsService vmSettingsService;
     private final SecureRandom random = new SecureRandom();
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
@@ -82,8 +79,7 @@ public class ApprovalService {
             NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
             NotificationService notificationService,
-            SubdomainPolicy subdomainPolicy, DomainRepository domainRepository,
-            VmSlugPolicy slugPolicy) {
+            VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
@@ -95,9 +91,8 @@ public class ApprovalService {
         this.provisioningService = provisioningService;
         this.auditService = auditService;
         this.notificationService = notificationService;
-        this.subdomainPolicy = subdomainPolicy;
-        this.domainRepository = domainRepository;
         this.slugPolicy = slugPolicy;
+        this.vmSettingsService = vmSettingsService;
     }
 
     @Transactional(readOnly = true)
@@ -158,30 +153,9 @@ public class ApprovalService {
                 errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
             }
         }
-        // Platform subdomain grant (per the platform subdomain policy): the admin
-        // finalizes the subdomain NAME here (issuance is deferred to publish).
-        // Ignored when HTTP publishing was not granted.
-        String grantedSubdomain = Boolean.TRUE.equals(form.grantHttp())
-                ? Texts.blankToNull(form.grantedSubdomain()) : null;
-        String grantedRootDomain = Boolean.TRUE.equals(form.grantHttp())
-                ? Texts.blankToNull(form.grantedRootDomain()) : null;
-        if (grantedSubdomain != null) {
-            subdomainPolicy.validateLabel(grantedSubdomain, "grantedSubdomain", errors);
-            if (grantedRootDomain == null) {
-                errors.add(new FieldValidationError("grantedRootDomain",
-                        "서브도메인을 부여하려면 루트 도메인을 지정해야 합니다."));
-            } else {
-                subdomainPolicy.validateRootDomain(grantedRootDomain, "grantedRootDomain", errors);
-            }
-            if (grantedRootDomain != null && domainRepository.existsByFqdnAndStatusNot(
-                    grantedSubdomain + "." + grantedRootDomain, DomainStatus.REMOVED)) {
-                errors.add(new FieldValidationError("grantedSubdomain",
-                        "이미 사용 중인 서브도메인입니다."));
-            }
-        } else if (grantedRootDomain != null) {
-            // AUTO subdomain but a specific root was chosen — validate it.
-            subdomainPolicy.validateRootDomain(grantedRootDomain, "grantedRootDomain", errors);
-        }
+        // Publishing is self-service (v0.22.0): approval no longer touches
+        // subdomain names — they are validated at submit and finalized at
+        // publish time by PublishingService.
         // VM slug finalization (v0.12.0): the admin accepts/changes the
         // requester's desiredSlug here; null/blank keeps today's auto path.
         // vms.hostname is checked against ALL rows incl. soft-deleted —
@@ -202,9 +176,7 @@ public class ApprovalService {
         reviewRepository.save(VmRequestReview.approve(request.getId(), actor.id(),
                 Texts.blankToNull(form.comment()),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(), template.getId(),
-                form.grantedStartDate(), form.grantedEndDate(),
-                form.grantSsh(), form.grantHttp(), form.grantPublic(),
-                grantedSubdomain, grantedRootDomain, form.nodeId()));
+                form.grantedStartDate(), form.grantedEndDate(), form.nodeId()));
         request.setStatus(VmRequestStatus.APPROVED);
 
         // Auto placement: the template's node (single-node cluster; the
@@ -216,6 +188,12 @@ public class ApprovalService {
                 request.getId(), hostname, hostname, template.getId(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
                 form.grantedStartDate(), form.grantedEndDate()));
+        if (request.getDisplayName() != null) {
+            // Requester-chosen display name (request form) — seeded as the
+            // vm_settings row; audited via the request.approve entry below.
+            vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
+                    request.getRequesterId());
+        }
 
         long vmId = vm.getId();
         // The OSS JobRunr storage provider writes with its own connection and
@@ -234,11 +212,20 @@ public class ApprovalService {
             }
         });
 
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("vmId", vmId);
+        auditArgs.put("hostname", hostname);
+        auditArgs.put("grantedVcpu", form.grantedVcpu());
+        auditArgs.put("grantedMemoryMb", form.grantedMemoryMb());
+        auditArgs.put("grantedDiskGb", form.grantedDiskGb());
+        auditArgs.put("nodeId", nodeId);
+        if (request.getDisplayName() != null) {
+            // Records the seeded display name's provenance (initializeDisplayName
+            // itself does not audit — this entry is the audit trail).
+            auditArgs.put("displayName", request.getDisplayName());
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
-                "vm_request", request.getId(),
-                Map.of("vmId", vmId, "hostname", hostname, "grantedVcpu", form.grantedVcpu(),
-                        "grantedMemoryMb", form.grantedMemoryMb(), "grantedDiskGb", form.grantedDiskGb(),
-                        "nodeId", nodeId), ip);
+                "vm_request", request.getId(), auditArgs, ip);
         // In-tx insert: the notice exists iff the approval committed.
         Map<String, Object> notifyArgs = new LinkedHashMap<>();
         notifyArgs.put("requestId", request.getId());

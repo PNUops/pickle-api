@@ -256,9 +256,8 @@ class AdminVmPeriodTest {
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, '기간 테스트', ?, 2, 2048, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '기간 테스트', ?, 2, 2048, 10)
                 returning id
                 """, Long.class, vmGroupId, vmOrgId, requesterId, templateId);
         String hostname = "avp-vm-" + UUID.randomUUID().toString().substring(0, 12);

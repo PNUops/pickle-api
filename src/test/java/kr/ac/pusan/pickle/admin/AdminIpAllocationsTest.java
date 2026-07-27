@@ -155,9 +155,8 @@ class AdminIpAllocationsTest {
                 Long.class, slug, slug);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         need_ssh, need_http, need_public)
-                values (?, ?, ?, 'IP 할당 테스트', ?, 2, 2048, 10, true, false, false)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, 'IP 할당 테스트', ?, 2, 2048, 10)
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId);
         String hostname = "adip-vm-" + UUID.randomUUID().toString().substring(0, 12);

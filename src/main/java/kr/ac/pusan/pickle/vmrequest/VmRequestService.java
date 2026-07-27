@@ -120,9 +120,8 @@ public class VmRequestService {
                 Texts.blankToNull(request.extraNote()),
                 request.reqVcpu(), request.reqMemoryMb(), request.reqDiskGb(),
                 request.reqStartDate(), request.reqEndDate(),
-                request.needSsh(), request.needHttp(), request.needPublic(),
                 request.desiredSubdomain(), Texts.blankToNull(request.rootDomain()),
-                Texts.blankToNull(request.customDomain()), desiredSlug));
+                Texts.blankToNull(request.displayName()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
                 Map.of("groupId", group.getId(), "orgId", org.getId(), "templateId", template.getId(),
@@ -236,16 +235,6 @@ public class VmRequestService {
     }
 
     private void validateDomains(CreateVmRequestRequest request, List<FieldValidationError> errors) {
-        if (request.needHttp()) {
-            if (request.desiredSubdomain() == null) {
-                errors.add(new FieldValidationError("desiredSubdomain",
-                        "HTTP 게시를 신청하려면 희망 서브도메인을 입력해야 합니다."));
-            }
-            if (Texts.blankToNull(request.rootDomain()) == null) {
-                errors.add(new FieldValidationError("rootDomain",
-                        "HTTP 게시를 신청하려면 루트 도메인을 선택해야 합니다."));
-            }
-        }
         // Full subdomain policy — the same reserved/profanity/pattern gate the
         // approval path runs, so a denied label never reaches the review screen.
         subdomainPolicy.validateLabel(request.desiredSubdomain(), "desiredSubdomain", errors);

@@ -74,8 +74,7 @@ public class VmRequestAssembler {
                     request.getExtraNote(),
                     request.getReqVcpu(), request.getReqMemoryMb(), request.getReqDiskGb(),
                     request.getReqStartDate(), request.getReqEndDate(),
-                    request.isNeedSsh(), request.isNeedHttp(), request.isNeedPublic(),
-                    request.getDesiredSubdomain(), request.getRootDomain(), request.getCustomDomain(),
+                    request.getDesiredSubdomain(), request.getRootDomain(), request.getDisplayName(),
                     request.getDesiredSlug(),
                     request.getStatus(),
                     review != null
