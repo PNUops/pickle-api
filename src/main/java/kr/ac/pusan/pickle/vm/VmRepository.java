@@ -234,11 +234,17 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /**
      * Per-VM SSH-gateway/web-terminal block toggle. Declarative flag with no
      * state guard — blocking a DELETED VM is harmless and unblocking must
-     * always be possible. The entity stays setter-free.
+     * always be possible. The entity stays setter-free. The transition is
+     * CAS-style ({@code <> :blocked}) so concurrent opposite toggles each
+     * either win the flip (and record it) or observe 0 rows — an admin's
+     * intent is never silently dropped by a stale pre-read.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("update Vm v set v.sshGatewayBlocked = :blocked, v.updatedAt = :now where v.id = :id")
+    @Query("""
+            update Vm v set v.sshGatewayBlocked = :blocked, v.updatedAt = :now
+             where v.id = :id and v.sshGatewayBlocked <> :blocked
+            """)
     int updateSshGatewayBlocked(@Param("id") Long id, @Param("blocked") boolean blocked,
             @Param("now") Instant now);
 

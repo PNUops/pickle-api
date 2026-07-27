@@ -8,7 +8,6 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -45,10 +44,13 @@ public class VmGatewayBlockService {
     @Transactional
     public kr.ac.pusan.pickle.vm.dto.VmDetailResponse updateBlock(AuthenticatedUser actor,
             long vmId, VmGatewayBlockUpdateRequest request, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmGatewayBlockService::vmNotFound);
+        vmRepository.findById(vmId).orElseThrow(VmGatewayBlockService::vmNotFound);
         boolean blocked = request.blocked();
-        if (vm.isSshGatewayBlocked() != blocked) {
-            vmRepository.updateSshGatewayBlocked(vmId, blocked, Instant.now());
+        // The repo update is CAS-style (flips only when the value differs), so
+        // the rowcount — not a pre-read — decides whether this call is the
+        // recording transition. Concurrent opposite toggles each record their
+        // own flip instead of one being silently absorbed.
+        if (vmRepository.updateSshGatewayBlocked(vmId, blocked, Instant.now()) == 1) {
             String label = blocked ? "차단" : "차단 해제";
             String detail = request.reason() == null || request.reason().isBlank()
                     ? "SSH·웹 터미널 " + label
