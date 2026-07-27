@@ -539,6 +539,34 @@ class ProvisionPipelineTest {
                 Integer.class, deletedVmId)).isEqualTo(vmid);
     }
 
+    // ── ⑩ vmid occupied by a resident guest → park, touch nothing ────────────
+
+    @Test
+    void vmidConflictParksWithoutTouchingResidentGuest() {
+        long vmId = createVm();
+        int vmid = 119;
+        preassignVmid(vmId, vmid);
+        // resident guest at our number with a foreign name — even pickle-tagged
+        // (the DB-restore orphan case): must not be skipped over, configured,
+        // compensated away or retried
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(clusterResourcesWith(vmid, "restore-orphan", "dev;pickle"))));
+
+        job.provisionVm(vmId);
+
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
+        assertThat(task.getLastError()).contains("vmid_seq");
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
+        assertThat(vm.getProxmoxVmid()).isEqualTo(vmid);
+        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+    }
+
     // ── ⑨ vmid comes from the DB sequence (user-VM band, monotonic) ──────────
 
     @Test
@@ -663,8 +691,13 @@ class ProvisionPipelineTest {
 
     /** cluster/resources body where the given VMID exists (post-clone state). */
     private static String clusterResourcesWith(int vmid, String name) {
+        return clusterResourcesWith(vmid, name, null);
+    }
+
+    private static String clusterResourcesWith(int vmid, String name, String tags) {
         return "{\"data\":[{\"vmid\":" + vmid + ",\"type\":\"qemu\",\"node\":\"" + NODE
                 + "\",\"status\":\"stopped\",\"name\":\"" + name + "\",\"maxcpu\":1,"
+                + (tags != null ? "\"tags\":\"" + tags + "\"," : "")
                 + "\"maxmem\":1073741824,\"template\":0}]}";
     }
 

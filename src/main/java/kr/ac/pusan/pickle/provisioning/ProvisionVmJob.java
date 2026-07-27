@@ -334,7 +334,22 @@ public class ProvisionVmJob implements ProvisioningService {
     private void clone(Vm vm) {
         Node node = node(vm);
         int vmid = requireVmid(vm);
-        if (vmExists(node, vmid)) {
+        ClusterResource resident = findResource(node, vmid);
+        if (resident != null) {
+            // Only our own interrupted clone may be skipped over, and at this
+            // step that means exactly a name match (the clone names the guest
+            // after the hostname; CONFIG has not run, so no tag exists yet).
+            // Anything else is cluster/DB truth divergence — e.g. a DB restore
+            // rewound vmid_seq past guests provisioned after the backup. Such
+            // a resident may even carry the pickle tag (orphan of a lost row),
+            // so skipping (CONFIG would clobber it), compensating (the
+            // tag-trusting destroy guard would kill it) and retrying are all
+            // wrong: park for an operator (VmidConflict routes there).
+            if (!vm.getHostname().equals(resident.name())) {
+                throw new VmidConflict("vmid " + vmid + " 충돌: 클러스터의 기존 게스트 '"
+                        + resident.name() + "'이(가) 호스트명 '" + vm.getHostname()
+                        + "'과 다릅니다 — vmid_seq 재동기화 필요 (db-restore 런북)");
+            }
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             return;
         }
@@ -581,7 +596,14 @@ public class ProvisionVmJob implements ProvisioningService {
             return;
         }
 
-        if (step <= ProvisioningStep.ALLOC_IP.index()) {
+        if (e instanceof VmidConflict) {
+            // neither compensation (could destroy the resident) nor retry is
+            // safe — leave everything untouched for the operator
+            taskRepository.park(taskId, error, now);
+            vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
+                    "vmid 충돌로 관리자 확인 대기 중입니다 (vmid_seq 재동기화 필요)", now);
+            publishCreateFailed(vmId, error);
+        } else if (step <= ProvisioningStep.ALLOC_IP.index()) {
             // steps 0–2: nothing exists on Proxmox — release the IP and error out
             releaseIp(vmId);
             taskRepository.fail(taskId, error, now);
@@ -794,6 +816,17 @@ public class ProvisionVmJob implements ProvisioningService {
     }
 
     /** Control-flow stop: this run must not touch the task any further. */
+    /**
+     * A sequence-allocated vmid found occupied by a guest that is not our own
+     * interrupted clone (DB/cluster truth divergence, e.g. after a DB restore
+     * without a vmid_seq resync). Never retried, never compensated.
+     */
+    private static final class VmidConflict extends RuntimeException {
+        VmidConflict(String message) {
+            super(message);
+        }
+    }
+
     private static final class PipelineHalted extends RuntimeException {
         PipelineHalted(String message) {
             super(message);
