@@ -157,9 +157,14 @@ public class DeleteVmJob {
         }
         // Re-read after the task claim (TOCTOU guard): an admin cancel may have
         // raced the eligibility check above — destroying now would break the
-        // cancel's promise, so the task is closed and the run stops.
+        // cancel's promise, so the task is closed and the run stops. The
+        // due-time check also stops a stale enqueued job from executing a
+        // NEWER intent whose schedule lies in the future (cancel → re-schedule,
+        // or cancel → fresh self-delete grace, inside one poll interval).
         vm = vmRepository.findById(vmId).orElse(null);
-        if (vm == null || vm.getStatus() != VmStatus.DELETING || vm.getDeleteKind() == null) {
+        if (vm == null || vm.getStatus() != VmStatus.DELETING || vm.getDeleteKind() == null
+                || vm.getDeleteScheduledFor() == null
+                || vm.getDeleteScheduledFor().isAfter(Instant.now())) {
             taskRepository.fail(task.getId(),
                     "파기 직전 재검증 실패 — 삭제가 취소되었거나 상태가 변경되어 중단합니다", Instant.now());
             log.info("Delete job aborted for vm {}: cancellation raced the destroy", vmId);

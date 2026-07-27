@@ -434,6 +434,28 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
+    @Test
+    void staleDestroyJobNeverExecutesAFutureIntent() {
+        // Cancel → re-schedule inside one JobRunr poll interval: the stale
+        // enqueued job sees a fresh ADMIN intent, but its schedule lies in the
+        // future — the destroy claim must refuse (not destroy 7 days early).
+        long adminVm = createVm(VmStatus.RUNNING);
+        markPendingDeletion(adminVm, "ADMIN", Instant.now().plus(Duration.ofDays(7)));
+        deleteVmJob.deleteVm(adminVm);
+        assertThat(statusOf(adminVm)).isEqualTo("RUNNING");
+        assertThat(column(adminVm, "delete_kind")).isEqualTo("ADMIN");
+
+        // Cancel → fresh SELF grace: the VM is already DELETING, so the claim
+        // branch is skipped — the post-claim re-read must abort on the future
+        // schedule instead of wiping the whole grace window.
+        long selfVm = createVm(VmStatus.DELETING);
+        markPendingDeletion(selfVm, "SELF", Instant.now().plus(Duration.ofDays(7)));
+        deleteVmJob.deleteVm(selfVm);
+        assertThat(statusOf(selfVm)).isEqualTo("DELETING");
+        assertThat(column(selfVm, "delete_kind")).isEqualTo("SELF");
+        assertThat(eventTypes(selfVm)).doesNotContain("DELETE");
+    }
+
     // ── force delete ───────────────────────────────────────────────────────
 
     @Test

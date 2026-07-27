@@ -789,11 +789,15 @@ class PublishingTest {
                 "select applied_generation from routes where id = ?", Long.class, routeId);
 
         // Self-delete accepted, then run the destroy pipeline directly. The vmid
-        // is nulled so the (unstubbed) Proxmox destroy step skips.
+        // is nulled so the (unstubbed) Proxmox destroy step skips, and the
+        // grace deadline is fast-forwarded — the pipeline refuses undue intents.
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
-        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        jdbcTemplate.update("""
+                update vms set proxmox_vmid = null,
+                       delete_scheduled_for = now() - interval '1 minute' where id = ?
+                """, vmId);
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(okApply(999)));
@@ -827,7 +831,10 @@ class PublishingTest {
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
-        jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
+        jdbcTemplate.update("""
+                update vms set proxmox_vmid = null,
+                       delete_scheduled_for = now() - interval '1 minute' where id = ?
+                """, vmId);
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(aResponse().withStatus(422)

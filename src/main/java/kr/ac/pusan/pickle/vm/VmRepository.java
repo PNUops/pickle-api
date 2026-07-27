@@ -458,8 +458,11 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /**
      * Destroy-time claim: flips a power state to DELETING only while the
-     * delete intent still stands, so a cancel racing the delete job can never
-     * strand an intent-less VM in DELETING.
+     * delete intent still stands AND is actually due. The intent check keeps a
+     * cancel racing the delete job from stranding an intent-less VM in
+     * DELETING; the due-time check keeps a stale enqueued job (whose original
+     * intent was canceled) from executing a NEWER, future-scheduled intent
+     * years early.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
@@ -467,7 +470,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             update vms
                set status = 'DELETING', status_detail = null, updated_at = :now
              where id = :id and status = cast(:#{#from.name()} as vm_status)
-               and delete_kind is not null
+               and delete_kind is not null and delete_scheduled_for <= :now
             """)
     int claimForDestruction(@Param("id") Long id, @Param("from") VmStatus from,
             @Param("now") Instant now);
