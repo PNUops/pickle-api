@@ -107,7 +107,8 @@ public class AdminGroupQueryService {
                   from group_members gm
                   join users u on u.id = gm.user_id
                  where gm.group_id = ?
-                 order by gm.role desc, gm.user_id
+                 -- enum declaration order is OWNER first (V2), so asc = highest role first
+                 order by gm.role asc, gm.user_id
                 """, (rs, rowNum) -> new AdminGroupMemberResponse(rs.getLong("user_id"),
                         rs.getString("name"), rs.getString("email"),
                         GroupMemberRole.valueOf(rs.getString("role")),
