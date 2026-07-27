@@ -105,7 +105,9 @@ class ReferenceDataTest {
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')].name")
-                        .value(org.hamcrest.Matchers.contains(SeedFixtures.ORG_NAME)));
+                        .value(org.hamcrest.Matchers.contains(SeedFixtures.ORG_NAME)))
+                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')].hidden")
+                        .value(org.hamcrest.Matchers.contains(true)));
     }
 
     @Test

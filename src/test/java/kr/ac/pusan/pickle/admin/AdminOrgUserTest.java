@@ -131,6 +131,24 @@ class AdminOrgUserTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
 
+        // hidden toggle (v0.15.0): back to ACTIVE but hidden — USER list still
+        // filters it, manager tier sees it with hidden=true
+        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken,
+                Map.of("status", "ACTIVE", "hidden", true))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.hidden").value(true));
+        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + studentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
+        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')].hidden")
+                        .value(org.hamcrest.Matchers.contains(true)));
+        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken, Map.of("hidden", false))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hidden").value(false));
+
         // empty patch → 422, unknown org → 404
         patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken, Map.of())
                 .andExpect(status().isUnprocessableContent())

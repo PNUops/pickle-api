@@ -84,8 +84,16 @@ public class AdminService {
             }
             org.setStatus(request.getStatus());
         }
+        if (request.isHiddenSet()) {
+            if (request.getHidden() == null) {
+                throw ApiException.validationFailed(List.of(
+                        new FieldValidationError("hidden", "hidden은 true 또는 false여야 합니다.")));
+            }
+            org.setHidden(request.getHidden());
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ORG_UPDATE,
-                "org", org.getId(), Map.of("name", org.getName(), "status", org.getStatus().name()), ip);
+                "org", org.getId(), Map.of("name", org.getName(), "status", org.getStatus().name(),
+                        "hidden", org.isHidden()), ip);
         return OrgDetailResponse.from(org);
     }
 

@@ -21,6 +21,9 @@ public class UpdateOrgRequest {
     private OrgStatus status;
     private boolean statusSet;
 
+    private Boolean hidden;
+    private boolean hiddenSet;
+
     public String getName() {
         return name;
     }
@@ -63,8 +66,22 @@ public class UpdateOrgRequest {
         return statusSet;
     }
 
+    public Boolean getHidden() {
+        return hidden;
+    }
+
+    public void setHidden(Boolean hidden) {
+        this.hidden = hidden;
+        this.hiddenSet = true;
+    }
+
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    public boolean isHiddenSet() {
+        return hiddenSet;
+    }
+
     @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
-        return !nameSet && !descriptionSet && !statusSet;
+        return !nameSet && !descriptionSet && !statusSet && !hiddenSet;
     }
 }
