@@ -64,12 +64,13 @@ public class RouteApplyJob {
     private final PublishingProperties properties;
     private final TransactionTemplate transactionTemplate;
     private final NotificationService notificationService;
+    private final RouteGenerations routeGenerations;
 
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             IpAddressResolver ipAddressResolver, ProxyAgentClient proxyAgentClient,
             PublishingProperties properties, TransactionTemplate transactionTemplate,
-            NotificationService notificationService) {
+            NotificationService notificationService, RouteGenerations routeGenerations) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -79,6 +80,7 @@ public class RouteApplyJob {
         this.properties = properties;
         this.transactionTemplate = transactionTemplate;
         this.notificationService = notificationService;
+        this.routeGenerations = routeGenerations;
     }
 
     /**
@@ -119,6 +121,9 @@ public class RouteApplyJob {
         // already; enforcing it at the single execution choke point keeps the
         // invariant from depending on all of them staying correct.
         if (!absent && domain.getStatus() != DomainStatus.ACTIVE) {
+            // Surface the hold to operators (admin route view shows lastError).
+            route.setLastError("도메인이 검증 완료(ACTIVE) 상태가 아니어서 적용을 보류했습니다. (현재 "
+                    + domain.getStatus() + ")");
             log.warn("route-apply skipped: route {} is live but domain {} is {} — "
                     + "refusing to push an unverified/released domain", routeId,
                     domain.getFqdn(), domain.getStatus());
@@ -131,7 +136,7 @@ public class RouteApplyJob {
         ApplyOutcome outcome = proxyAgentClient.apply(request);
         switch (outcome.kind()) {
             case APPLIED -> recordApplied(route, domain, absent, outcome);
-            case STALE -> recordSuperseded(route, domain, outcome);
+            case STALE -> recordSuperseded(route, domain, absent, outcome);
             case FAILED -> recordFailed(route, domain, absent, outcome.error());
             case TRANSPORT -> recordTransport(route, domain, outcome.error());
         }
@@ -184,7 +189,18 @@ public class RouteApplyJob {
      * settles the route's desired-state check, so {@link RouteReconcileJob}
      * does not re-push a superseded apply forever.
      */
-    private void recordSuperseded(Route route, Domain domain, ApplyOutcome outcome) {
+    private void recordSuperseded(Route route, Domain domain, boolean absent,
+            ApplyOutcome outcome) {
+        if (absent) {
+            // A removal must never be "confirmed" by someone else's PRESENT
+            // apply winning the generation race — that would leave an orphan
+            // live vhost. Outrank the applied generation instead, so the
+            // reconciler re-pushes the ABSENT state with a winning token.
+            route.setGeneration(routeGenerations.next());
+            log.warn("route-apply removal superseded for {} — re-bumped to gen {} for re-push",
+                    domain.getFqdn(), route.getGeneration());
+            return;
+        }
         if (outcome.generation() != null && outcome.generation() >= route.getGeneration()) {
             route.setAppliedGeneration(outcome.generation());
         }

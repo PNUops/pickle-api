@@ -104,9 +104,14 @@ public class DomainVerifier {
             // The agent rejects a generation it already applied (409), so a
             // verify-triggered re-apply (cert re-issue, FAILED route retry) must
             // outrank the applied one — bump before handing the route back.
-            route.setGeneration(routeGenerations.next());
-            route.setStatus(RouteStatus.PENDING);
-            route.setLastError(null);
+            // CAS, not dirty checking: an unpublish flips the route REMOVED
+            // without touching the domain row (so the lock above cannot
+            // serialize it) — reviving that route would re-push a vhost the
+            // user just took down.
+            if (routeRepository.reviveForReapply(route.getId(), routeGenerations.next(),
+                    Instant.now()) == 0) {
+                return Optional.empty(); // lost to a concurrent unpublish
+            }
             return Optional.of(route.getId());
         }
 

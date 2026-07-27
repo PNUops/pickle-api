@@ -6,8 +6,10 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface RouteRepository extends JpaRepository<Route, Long> {
 
@@ -37,6 +39,26 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
 
     /** Every live route — the sync-all manifest source. */
     List<Route> findByStatusNot(RouteStatus status);
+
+    /**
+     * Revives a route for a verify-triggered re-apply in one CAS — an
+     * unpublish/teardown that flipped the route REMOVED meanwhile must never
+     * be overwritten back to PENDING (that would re-push a vhost the user
+     * just took down). Native SQL for the same reason as the VM CAS updates:
+     * HQL enum literals cast to the Java type name, not the pg enum.
+     * flushAutomatically so the verifier's pending domain/cert changes are
+     * written before the context is cleared.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update routes
+               set generation = :generation, status = 'PENDING', last_error = null,
+                   updated_at = :now
+             where id = :id and status <> 'REMOVED'
+            """)
+    int reviveForReapply(@Param("id") Long id, @Param("generation") long generation,
+            @Param("now") Instant now);
 
     Optional<Route> findFirstByDomainId(Long domainId);
 
