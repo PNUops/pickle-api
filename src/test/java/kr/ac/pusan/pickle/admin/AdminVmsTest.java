@@ -55,7 +55,7 @@ class AdminVmsTest {
 
     private Org org;
     private Org otherOrg;
-    private String studentToken;
+    private String userToken;
     private String orgAdminToken;
     private String otherOrgAdminToken;
     private String sysAdminToken;
@@ -71,10 +71,10 @@ class AdminVmsTest {
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("advm-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "advm-other", null)));
-        User student = ensureUser("advm.student@pusan.ac.kr", "목록학생", UserRole.USER, null);
+        User regularUser = ensureUser("advm.user@pusan.ac.kr", "목록학생", UserRole.USER, null);
         User otherOrgAdmin = ensureUser("advm.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
-        studentToken = jwtService.createAccessToken(student);
+        userToken = jwtService.createAccessToken(regularUser);
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
@@ -91,7 +91,7 @@ class AdminVmsTest {
     @Test
     void orgAdminIsPinnedToTheirOrgAndCrossOrgFilterAnswers404() throws Exception {
         // users have no admin VM list → 403 ACCESS_DENIED
-        mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + studentToken))
+        mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 

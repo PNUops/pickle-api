@@ -62,10 +62,10 @@ class AdminOrgUserTest {
 
     private User sysAdmin;
     private User orgAdmin;
-    private User student;
+    private User regularUser;
     private String sysAdminToken;
     private String orgAdminToken;
-    private String studentToken;
+    private String userToken;
 
     @BeforeEach
     void setUp() {
@@ -73,10 +73,10 @@ class AdminOrgUserTest {
                 () -> orgRepository.save(new Org("관리 테스트 기관", "adm-org-base", null)));
         sysAdmin = ensureUser("adm.sysadmin@pusan.ac.kr", "시스템관리자", UserRole.SYS_ADMIN, null);
         orgAdmin = ensureUser("adm.orgadmin@pusan.ac.kr", "기관관리자", UserRole.ORG_ADMIN, org.getId());
-        student = ensureUser("adm.student@pusan.ac.kr", "학생", UserRole.USER, null);
+        regularUser = ensureUser("adm.user@pusan.ac.kr", "학생", UserRole.USER, null);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
-        studentToken = jwtService.createAccessToken(student);
+        userToken = jwtService.createAccessToken(regularUser);
     }
 
     @Test
@@ -87,10 +87,10 @@ class AdminOrgUserTest {
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        postJson("/api/v1/admin/orgs", studentToken, body)
+        postJson("/api/v1/admin/orgs", userToken, body)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchJson("/api/v1/admin/users/" + student.getId(), orgAdminToken, Map.of("role", "SYS_ADMIN"))
+        patchJson("/api/v1/admin/users/" + regularUser.getId(), orgAdminToken, Map.of("role", "SYS_ADMIN"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         mockMvc.perform(post("/api/v1/admin/orgs").contentType(MediaType.APPLICATION_JSON)
@@ -127,7 +127,7 @@ class AdminOrgUserTest {
                 .andExpect(jsonPath("$.status").value("DISABLED"));
 
         // DISABLED orgs disappear from the user-facing reference list
-        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + studentToken))
+        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
 
@@ -138,7 +138,7 @@ class AdminOrgUserTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.hidden").value(true));
-        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + studentToken))
+        mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + sysAdminToken))

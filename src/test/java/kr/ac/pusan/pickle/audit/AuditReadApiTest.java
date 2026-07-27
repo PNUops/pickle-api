@@ -70,9 +70,9 @@ class AuditReadApiTest {
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("aud-other").orElseGet(() ->
                 orgRepository.save(new Org("감사 타기관", "aud-other", null)));
-        self = ensureStudent("aud.self@pusan.ac.kr", "감사본인");
-        peer = ensureStudent("aud.peer@pusan.ac.kr", "감사동료");
-        otherOrgUser = ensureStudent("aud.other@pusan.ac.kr", "감사타인");
+        self = ensureRegularUser("aud.self@pusan.ac.kr", "감사본인");
+        peer = ensureRegularUser("aud.peer@pusan.ac.kr", "감사동료");
+        otherOrgUser = ensureRegularUser("aud.other@pusan.ac.kr", "감사타인");
         // derived org membership: self+peer share a group with a seed-org
         // vm_request; the third user's group is linked to the other org only
         long ownGroup = createGroup("audown", self.getId(), peer.getId());
@@ -216,7 +216,7 @@ class AuditReadApiTest {
                 """, groupId, orgId, requesterId);
     }
 
-    private User ensureStudent(String email, String name) {
+    private User ensureRegularUser(String email, String name) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(UserRole.USER);

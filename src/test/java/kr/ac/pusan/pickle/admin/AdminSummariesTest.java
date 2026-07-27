@@ -63,7 +63,7 @@ class AdminSummariesTest {
     private Org org;
     private String orgAdminToken;
     private String sysAdminToken;
-    private String studentToken;
+    private String userToken;
     private long groupBig;
     private long groupSmall;
 
@@ -73,9 +73,9 @@ class AdminSummariesTest {
         org = orgRepository.save(new Org("요약 테스트 기관 " + slug, slug, null));
         User orgAdmin = createUser("ads.admin." + slug + "@pusan.ac.kr", UserRole.ORG_ADMIN,
                 org.getId());
-        User student = createUser("ads.student." + slug + "@pusan.ac.kr", UserRole.USER, null);
+        User regularUser = createUser("ads.user." + slug + "@pusan.ac.kr", UserRole.USER, null);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
-        studentToken = jwtService.createAccessToken(student);
+        userToken = jwtService.createAccessToken(regularUser);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         groupBig = createGroup();
@@ -141,7 +141,7 @@ class AdminSummariesTest {
         long otherOrgId = SeedFixtures.seedOrgId(jdbcTemplate);
 
         mockMvc.perform(get("/api/v1/admin/summary")
-                        .header("Authorization", "Bearer " + studentToken))
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
 
         // ORG_ADMIN: own org implicitly or explicitly, other org → 404

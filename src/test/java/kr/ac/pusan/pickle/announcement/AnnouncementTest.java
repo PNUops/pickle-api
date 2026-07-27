@@ -78,7 +78,7 @@ class AnnouncementTest {
     private String sysAdminToken;
     private String orgAdminToken;
     private String otherOrgAdminToken;
-    private String studentToken;
+    private String userToken;
     private long mixedGroupId;
     private long foreignGroupId;
 
@@ -87,12 +87,12 @@ class AnnouncementTest {
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("ann-other").orElseGet(() ->
                 orgRepository.save(new Org("공지 타기관", "ann-other", null)));
-        ownMember = ensureStudent("ann.own.member@pusan.ac.kr", "공지자기관원", UserStatus.ACTIVE);
-        inactiveMember = ensureStudent("ann.pending@pusan.ac.kr", "공지비활성",
+        ownMember = ensureRegularUser("ann.own.member@pusan.ac.kr", "공지자기관원", UserStatus.ACTIVE);
+        inactiveMember = ensureRegularUser("ann.pending@pusan.ac.kr", "공지비활성",
                 UserStatus.DISABLED);
-        crossMember = ensureStudent("ann.cross.member@pusan.ac.kr", "공지동반원",
+        crossMember = ensureRegularUser("ann.cross.member@pusan.ac.kr", "공지동반원",
                 UserStatus.ACTIVE);
-        farMember = ensureStudent("ann.far.member@pusan.ac.kr", "공지타기관원", UserStatus.ACTIVE);
+        farMember = ensureRegularUser("ann.far.member@pusan.ac.kr", "공지타기관원", UserStatus.ACTIVE);
         User otherOrgAdmin = userRepository.findByEmail("ann.other.admin@pusan.ac.kr")
                 .orElseGet(() -> userRepository.save(
                         new User("ann.other.admin@pusan.ac.kr", "{noop}unused", "공지타기관장")));
@@ -105,7 +105,7 @@ class AnnouncementTest {
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
-        studentToken = jwtService.createAccessToken(ownMember);
+        userToken = jwtService.createAccessToken(ownMember);
         // group linked to the caller's org (vm_request), ACTIVE + DISABLED members
         mixedGroupId = createGroup("annmix", ownMember.getId(), inactiveMember.getId(),
                 crossMember.getId());
@@ -119,7 +119,7 @@ class AnnouncementTest {
     @Test
     void scopeRulesGateAllOrgAndGroupSends() throws Exception {
         // users never reach the endpoint
-        create(studentToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
+        create(userToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
                 .andExpect(status().isForbidden());
         // ALL is SYS_ADMIN-only
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
@@ -232,7 +232,7 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$.content[?(@.id==" + otherOrgAnnId + ")]").exists());
         // users → 403
         mockMvc.perform(get("/api/v1/admin/announcements")
-                        .header("Authorization", "Bearer " + studentToken))
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
 
@@ -293,7 +293,7 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + ")]").doesNotExist());
         // users → 403
         mockMvc.perform(get("/api/v1/admin/groups")
-                        .header("Authorization", "Bearer " + studentToken))
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
 
@@ -347,7 +347,7 @@ class AnnouncementTest {
                 """, groupId, orgId, requesterId);
     }
 
-    private User ensureStudent(String email, String name, UserStatus status) {
+    private User ensureRegularUser(String email, String name, UserStatus status) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(UserRole.USER);

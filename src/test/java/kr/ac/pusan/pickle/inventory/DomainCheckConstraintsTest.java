@@ -48,7 +48,7 @@ class DomainCheckConstraintsTest {
     }
 
     @Test
-    void studentWithOrgIdIsRejected() {
+    void userWithOrgIdIsRejected() {
         assertThatThrownBy(() -> jdbc.update("""
                 insert into users (email, password_hash, name, role, org_id, status)
                 values (?, 'x', '학생', 'USER', ?, 'ACTIVE')

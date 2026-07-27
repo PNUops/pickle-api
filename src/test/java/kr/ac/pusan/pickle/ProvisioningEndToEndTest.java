@@ -65,7 +65,7 @@ class ProvisioningEndToEndTest {
 
     private static final Pattern TOKEN_IN_LINK = Pattern.compile("[?&]token=([A-Za-z0-9_-]+)");
 
-    private static final String USER_EMAIL = "e2e.student@pusan.ac.kr";
+    private static final String USER_EMAIL = "e2e.user@pusan.ac.kr";
     private static final String USER_PASSWORD = "E2e-Corr3ct-horse!";
     private static final String GROUP_SLUG = "e2e-team";
 
@@ -142,10 +142,10 @@ class ProvisioningEndToEndTest {
                 .andExpect(status().isOk());
 
         // 2. login as the user
-        String studentToken = login(USER_EMAIL, USER_PASSWORD);
+        String userToken = login(USER_EMAIL, USER_PASSWORD);
 
         // 3. create a TEAM group
-        MvcResult groupResult = postJson("/api/v1/groups", studentToken,
+        MvcResult groupResult = postJson("/api/v1/groups", userToken,
                 Map.of("kind", "TEAM", "name", "종단 테스트 팀", "slug", GROUP_SLUG))
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -155,12 +155,12 @@ class ProvisioningEndToEndTest {
         // 4. reference data: template presets from the API; the seed org via
         // JDBC because it is hidden and USER tokens do not see it in /orgs
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        JsonNode templates = getJson("/api/v1/templates", studentToken);
+        JsonNode templates = getJson("/api/v1/templates", userToken);
         JsonNode template = findBy(templates, "name", "ubuntu-24.04");
         long templateId = template.get("id").asLong();
 
         // 5. submit the vm-request pre-filled with template defaults
-        MvcResult requestResult = postJson("/api/v1/vm-requests", studentToken, Map.of(
+        MvcResult requestResult = postJson("/api/v1/vm-requests", userToken, Map.of(
                 "groupId", groupId,
                 "orgId", orgId,
                 "templateId", templateId,
@@ -211,20 +211,20 @@ class ProvisioningEndToEndTest {
         //    /vms must show RUNNING — the test fails if the VM stays CREATING
         await().atMost(Duration.ofSeconds(120)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() ->
                 mockMvc.perform(get("/api/v1/vms?groupId=" + groupId)
-                                .header("Authorization", "Bearer " + studentToken))
+                                .header("Authorization", "Bearer " + userToken))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.totalElements").value(1))
                         .andExpect(jsonPath("$.content[0].status").value("RUNNING")));
 
         // 10. VM summary/detail carry the granted spec and the pipeline results
-        JsonNode vms = getJson("/api/v1/vms", studentToken);
+        JsonNode vms = getJson("/api/v1/vms", userToken);
         JsonNode vm = vms.get("content").get(0);
         long vmId = vm.get("id").asLong();
         assertThat(vm.get("hostname").asString()).startsWith(GROUP_SLUG + "-");
         assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
         mockMvc.perform(get("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + studentToken))
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))

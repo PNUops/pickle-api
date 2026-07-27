@@ -75,8 +75,8 @@ class ApprovalTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    private User student;
-    private String studentToken;
+    private User regularUser;
+    private String userToken;
     private String orgAdminToken;
     private String otherOrgAdminToken;
     private String sysAdminToken;
@@ -89,12 +89,12 @@ class ApprovalTest {
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         otherOrg = orgRepository.findBySlug("appr-other").orElseGet(() ->
                 orgRepository.save(new Org("다른 기관", "appr-other", null)));
-        student = ensureUser("appr.student@pusan.ac.kr", "승인학생", UserRole.USER, null);
+        regularUser = ensureUser("appr.user@pusan.ac.kr", "승인학생", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         User otherOrgAdmin = ensureUser("appr.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
         User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
-        studentToken = jwtService.createAccessToken(student);
+        userToken = jwtService.createAccessToken(regularUser);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
@@ -105,14 +105,14 @@ class ApprovalTest {
 
     @Test
     void queueIsOrgScopedAndStatusFilterable() throws Exception {
-        long groupId = createTeam(studentToken, "appr-queue-x1");
-        long submitted = submit(studentToken, groupId);
-        long canceled = submit(studentToken, groupId);
-        postJson("/api/v1/vm-requests/" + canceled + "/cancel", studentToken, Map.of())
+        long groupId = createTeam(userToken, "appr-queue-x1");
+        long submitted = submit(userToken, groupId);
+        long canceled = submit(userToken, groupId);
+        postJson("/api/v1/vm-requests/" + canceled + "/cancel", userToken, Map.of())
                 .andExpect(status().isOk());
 
         // users have no admin queue → 403 ACCESS_DENIED
-        mockMvc.perform(get("/api/v1/admin/vm-requests").header("Authorization", "Bearer " + studentToken))
+        mockMvc.perform(get("/api/v1/admin/vm-requests").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
@@ -168,8 +168,8 @@ class ApprovalTest {
 
     @Test
     void approveWritesReviewCreatesVmAndEnqueuesJob() throws Exception {
-        long groupId = createTeam(studentToken, "appr-approve-x1");
-        long requestId = submit(studentToken, groupId);
+        long groupId = createTeam(userToken, "appr-approve-x1");
+        long requestId = submit(userToken, groupId);
 
         // granted form validation: unusable template / disk below minimum / unknown node → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
@@ -227,7 +227,7 @@ class ApprovalTest {
 
         // the requester sees the decision in the user detail view
         mockMvc.perform(get("/api/v1/vm-requests/" + requestId)
-                        .header("Authorization", "Bearer " + studentToken))
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));
 
@@ -239,7 +239,7 @@ class ApprovalTest {
                 Map.of("comment", "이미 승인된 신청"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
-        postJson("/api/v1/vm-requests/" + requestId + "/cancel", studentToken, Map.of())
+        postJson("/api/v1/vm-requests/" + requestId + "/cancel", userToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
@@ -249,8 +249,8 @@ class ApprovalTest {
 
     @Test
     void grantedSlugFinalizesHostnameAndBlankFallsBackToAuto() throws Exception {
-        long groupId = createTeam(studentToken, "appr-slug-x1");
-        long requestId = submit(studentToken, groupId);
+        long groupId = createTeam(userToken, "appr-slug-x1");
+        long requestId = submit(userToken, groupId);
 
         // malformed (bean validation) / reserved word (shared list) → 422 grantedSlug
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
@@ -264,7 +264,7 @@ class ApprovalTest {
 
         // taken hostname — even of a soft-deleted VM (slugs are never recycled) → 422,
         // and the request stays SUBMITTED (decidable again)
-        long otherRequestId = submit(studentToken, groupId);
+        long otherRequestId = submit(userToken, groupId);
         Vm taken = vmRepository.save(new Vm(
                 jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class),
                 groupId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
@@ -306,8 +306,8 @@ class ApprovalTest {
 
     @Test
     void approveRejectsForcedNodeWithoutTheGrantedTemplate() throws Exception {
-        long groupId = createTeam(studentToken, "appr-node-x1");
-        long requestId = submit(studentToken, groupId);
+        long groupId = createTeam(userToken, "appr-node-x1");
+        long requestId = submit(userToken, groupId);
 
         // a second ACTIVE node that hosts none of the seeded templates
         long emptyNodeId = jdbcTemplate.queryForObject("""
@@ -333,8 +333,8 @@ class ApprovalTest {
 
     @Test
     void rejectRequiresCommentAndDecidesOnce() throws Exception {
-        long groupId = createTeam(studentToken, "appr-reject-x1");
-        long requestId = submit(studentToken, groupId);
+        long groupId = createTeam(userToken, "appr-reject-x1");
+        long requestId = submit(userToken, groupId);
 
         // comment is mandatory → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/reject", orgAdminToken, Map.of())
@@ -374,24 +374,24 @@ class ApprovalTest {
                 orgRepository.save(new Org("컨텍스트 기관", "appr-ctx", null)));
         User ctxAdmin = ensureUser("appr.ctx.admin@pusan.ac.kr", "컨텍스트관리자",
                 UserRole.ORG_ADMIN, ctxOrg.getId());
-        User ctxStudent = ensureUser("appr.ctx.student@pusan.ac.kr", "컨텍스트학생",
+        User ctxUser = ensureUser("appr.ctx.user@pusan.ac.kr", "컨텍스트학생",
                 UserRole.USER, null);
         String ctxAdminToken = jwtService.createAccessToken(ctxAdmin);
-        String ctxStudentToken = jwtService.createAccessToken(ctxStudent);
+        String ctxUserToken = jwtService.createAccessToken(ctxUser);
 
-        long groupId = createTeam(ctxStudentToken, "appr-ctx-x1");
-        addMember(ctxStudentToken, groupId, "appr.other.admin@pusan.ac.kr", "VIEWER");
+        long groupId = createTeam(ctxUserToken, "appr-ctx-x1");
+        addMember(ctxUserToken, groupId, "appr.other.admin@pusan.ac.kr", "VIEWER");
 
         // history material: one rejected, one approved (creates an active VM)
-        long rejected = submit(ctxStudentToken, groupId, ctxOrg.getId());
+        long rejected = submit(ctxUserToken, groupId, ctxOrg.getId());
         postJson("/api/v1/admin/vm-requests/" + rejected + "/reject", ctxAdminToken,
                 Map.of("comment", "테스트 반려 사유"))
                 .andExpect(status().isOk());
-        long approved = submit(ctxStudentToken, groupId, ctxOrg.getId());
+        long approved = submit(ctxUserToken, groupId, ctxOrg.getId());
         postJson("/api/v1/admin/vm-requests/" + approved + "/approve", ctxAdminToken, approveBody())
                 .andExpect(status().isOk());
 
-        long current = submit(ctxStudentToken, groupId, ctxOrg.getId());
+        long current = submit(ctxUserToken, groupId, ctxOrg.getId());
 
         // capacity comes from the seeded ACTIVE node (pve1: 40 threads, 79872 MiB);
         // allocated in this org is exactly the one approved VM (2 vCPU / 2048 MiB / 20 GiB)
@@ -401,8 +401,8 @@ class ApprovalTest {
         mockMvc.perform(get("/api/v1/admin/vm-requests/" + current + "/context")
                         .header("Authorization", "Bearer " + ctxAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.applicant.id").value(ctxStudent.getId()))
-                .andExpect(jsonPath("$.applicant.email").value(ctxStudent.getEmail()))
+                .andExpect(jsonPath("$.applicant.id").value(ctxUser.getId()))
+                .andExpect(jsonPath("$.applicant.email").value(ctxUser.getEmail()))
                 .andExpect(jsonPath("$.applicant.signupAt").isNotEmpty())
                 .andExpect(jsonPath("$.applicant.approvedCount").value(1))
                 .andExpect(jsonPath("$.applicant.rejectedCount").value(1))

@@ -207,7 +207,7 @@ class AdminVmPeriodTest {
     }
 
     @Test
-    void orgAdminIsMaskedFromOtherOrgsVmsAndStudentsAreForbidden() throws Exception {
+    void orgAdminIsMaskedFromOtherOrgsVmsAndUsersAreForbidden() throws Exception {
         Org otherOrg = orgRepository.findBySlug("avp-other").orElseGet(() ->
                 orgRepository.save(new Org("기간 테스트 타기관", "avp-other", null)));
         User otherOrgAdmin = ensureUser("avp.other.admin@pusan.ac.kr", UserRole.ORG_ADMIN,
