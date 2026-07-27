@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -57,6 +58,7 @@ class GroupDeleteTest {
     private String ownerToken;
     private String editorToken;
     private String outsiderToken;
+    private String ownerReauth;
     private long orgId;
     private long nodeId;
     private long templateId;
@@ -69,6 +71,7 @@ class GroupDeleteTest {
         ownerToken = jwtService.createAccessToken(owner);
         editorToken = jwtService.createAccessToken(editor);
         outsiderToken = jwtService.createAccessToken(outsider);
+        ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
@@ -208,6 +211,7 @@ class GroupDeleteTest {
     private void addMember(long groupId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

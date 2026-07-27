@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.sshkey.dto.SshKeyCreateRequest;
 import kr.ac.pusan.pickle.sshkey.dto.SshKeyGenerateRequest;
 import kr.ac.pusan.pickle.sshkey.dto.SshKeyPrivateKeyResponse;
@@ -41,6 +42,7 @@ public class MeSshKeyController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @RequireReauth
     public SshKeyView registerKey(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody SshKeyCreateRequest request, HttpServletRequest httpRequest) {
         return service.register(principal, request.name(), request.publicKey(),
@@ -49,6 +51,7 @@ public class MeSshKeyController {
 
     @PostMapping("/generate")
     @ResponseStatus(HttpStatus.CREATED)
+    @RequireReauth
     public SshKeyView generateKey(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody SshKeyGenerateRequest request, HttpServletRequest httpRequest) {
         return service.generate(principal, request.name(), clientIp(httpRequest));
@@ -56,6 +59,7 @@ public class MeSshKeyController {
 
     @DeleteMapping("/{keyId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequireReauth
     public void deleteKey(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long keyId, HttpServletRequest httpRequest) {
         service.delete(principal, keyId, clientIp(httpRequest));
@@ -63,6 +67,7 @@ public class MeSshKeyController {
 
     /** Server-generated keys only; response is never cached (private key). */
     @GetMapping("/{keyId}/private-key")
+    @RequireReauth
     public ResponseEntity<SshKeyPrivateKeyResponse> downloadPrivateKey(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long keyId,
             HttpServletRequest httpRequest) {

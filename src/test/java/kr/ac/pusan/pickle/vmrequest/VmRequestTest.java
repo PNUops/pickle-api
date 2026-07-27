@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -553,8 +554,18 @@ class VmRequestTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
+    /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
+    }
+
     private void addMember(String token, long groupId, String email, String role) throws Exception {
-        postJson("/api/v1/groups/" + groupId + "/members", token, Map.of("email", email, "role", role))
+        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+                        .header("Authorization", "Bearer " + token)
+                        .header(ReauthTestSupport.HEADER, reauth(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());
     }
 

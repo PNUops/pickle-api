@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -240,10 +241,16 @@ class VmSettingsTest {
 
     // ── helpers ────────────────────────────────────────────────────────────
 
+    /** Settings patch and member management are sudo-mode gated. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
+    }
+
     private org.springframework.test.web.servlet.ResultActions patchSettings(String token,
             long vmId, Map<String, Object> settings) throws Exception {
         return mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
                 .header("Authorization", "Bearer " + token)
+                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("settings", settings))));
     }
@@ -279,6 +286,7 @@ class VmSettingsTest {
     private void addMember(long groupId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

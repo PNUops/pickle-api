@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.publishing.agent.ProxyAgentUnreachableException;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -746,7 +747,8 @@ class PublishingTest {
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
         agent.resetAll();
@@ -871,7 +873,8 @@ class PublishingTest {
         // is nulled so the (unstubbed) Proxmox destroy step skips, and the
         // grace deadline is fast-forwarded — the pipeline refuses undue intents.
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("""
                 update vms set proxmox_vmid = null,
@@ -908,7 +911,8 @@ class PublishingTest {
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("""
                 update vms set proxmox_vmid = null,
@@ -1200,9 +1204,15 @@ class PublishingTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
+    /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
+    }
+
     private void addMember(long groupId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

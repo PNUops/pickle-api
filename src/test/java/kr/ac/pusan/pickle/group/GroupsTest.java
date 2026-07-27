@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -79,6 +80,11 @@ class GroupsTest {
         editorToken = jwtService.createAccessToken(editor);
         memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
+    }
+
+    /** Member management is sudo-mode gated: mint the caller's X-Reauth-Token. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
     @Test
@@ -225,7 +231,8 @@ class GroupsTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + editor.getId())
-                        .header("Authorization", "Bearer " + memberToken))
+                        .header("Authorization", "Bearer " + memberToken)
+                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
 
@@ -241,7 +248,8 @@ class GroupsTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GROUP_SOLE_OWNER_REMOVAL"));
         mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + owner.getId())
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GROUP_SOLE_OWNER_REMOVAL"));
 
@@ -265,12 +273,14 @@ class GroupsTest {
 
         // non-OWNER may leave on their own
         mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + member.getId())
-                        .header("Authorization", "Bearer " + memberToken))
+                        .header("Authorization", "Bearer " + memberToken)
+                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isNoContent());
 
         // new OWNER removes the demoted previous owner
         mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + owner.getId())
-                        .header("Authorization", "Bearer " + editorToken))
+                        .header("Authorization", "Bearer " + editorToken)
+                        .header(ReauthTestSupport.HEADER, reauth(editorToken)))
                 .andExpect(status().isNoContent());
 
         // role change for someone who is not a member → 404
@@ -312,7 +322,8 @@ class GroupsTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/groups/" + personalGroupId + "/members/" + owner.getId())
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_MEMBER_MANAGE_FORBIDDEN"));
     }
@@ -332,6 +343,7 @@ class GroupsTest {
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
         return mockMvc.perform(post(uri)
                 .header("Authorization", "Bearer " + token)
+                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }
@@ -339,6 +351,7 @@ class GroupsTest {
     private ResultActions patchJson(String uri, String token, Map<String, ?> body) throws Exception {
         return mockMvc.perform(patch(uri)
                 .header("Authorization", "Bearer " + token)
+                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }

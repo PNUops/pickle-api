@@ -30,7 +30,21 @@ public final class PublicEndpoints {
     public static final List<String> GET_ONLY = List.of(
             "/api/v1/meta/terms", "/api/v1/meta/terms/**");
 
+    /**
+     * Carve-outs living under a public prefix that still demand a session:
+     * sudo-mode reverification (v0.24.0) sits under {@code /auth/**} but
+     * verifies the CURRENT user's password — anonymous callers get 401, and
+     * the published spec keeps its bearer requirement.
+     */
+    public static final List<String> AUTHENTICATED_EXCEPTIONS = List.of(
+            "/api/v1/auth/reverify");
+
     private PublicEndpoints() {
+    }
+
+    /** Patterns as an array, for the varargs matcher APIs. */
+    public static String[] authenticatedExceptionPatterns() {
+        return AUTHENTICATED_EXCEPTIONS.toArray(String[]::new);
     }
 
     /** Patterns as an array, for the varargs matcher APIs. */

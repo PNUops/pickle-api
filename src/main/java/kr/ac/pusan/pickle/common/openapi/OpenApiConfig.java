@@ -41,7 +41,7 @@ import org.springframework.util.AntPathMatcher;
 public class OpenApiConfig {
 
     /** Contract version served in {@code info.version}; bump on any contract change. */
-    public static final String CONTRACT_VERSION = "0.23.0";
+    public static final String CONTRACT_VERSION = "0.24.0";
 
     /** Name of the bearer-JWT security scheme in the published spec. */
     private static final String BEARER_SCHEME = "bearerAuth";
@@ -90,6 +90,11 @@ public class OpenApiConfig {
     public OpenApiCustomizer publicOperationSecurityCustomizer() {
         AntPathMatcher matcher = new AntPathMatcher();
         return openApi -> openApi.getPaths().forEach((path, pathItem) -> {
+            boolean authenticatedException = PublicEndpoints.AUTHENTICATED_EXCEPTIONS.stream()
+                    .anyMatch(pattern -> matcher.match(pattern, path));
+            if (authenticatedException) {
+                return;
+            }
             boolean publicForAnyMethod = PublicEndpoints.ANY_METHOD.stream()
                     .anyMatch(pattern -> matcher.match(pattern, path));
             boolean publicForGet = PublicEndpoints.GET_ONLY.stream()
@@ -101,6 +106,46 @@ public class OpenApiConfig {
                 }
             });
         });
+    }
+
+    /**
+     * Advertises the sudo-mode contract on every {@code @RequireReauth}
+     * operation: the optional {@code X-Reauth-Token} header parameter and a
+     * 403 {@code REAUTH_REQUIRED} note. Without this customizer the generated
+     * spec would silently omit the requirement — nothing else gates it.
+     */
+    @Bean
+    public org.springdoc.core.customizers.OperationCustomizer reauthOperationCustomizer() {
+        return (operation, handlerMethod) -> {
+            boolean required = org.springframework.core.annotation.AnnotatedElementUtils
+                    .hasAnnotation(handlerMethod.getMethod(), kr.ac.pusan.pickle.security.RequireReauth.class)
+                    || org.springframework.core.annotation.AnnotatedElementUtils.hasAnnotation(
+                            handlerMethod.getBeanType(), kr.ac.pusan.pickle.security.RequireReauth.class);
+            if (!required) {
+                return operation;
+            }
+            operation.addParametersItem(new io.swagger.v3.oas.models.parameters.HeaderParameter()
+                    .name("X-Reauth-Token")
+                    .required(false)
+                    .schema(new StringSchema())
+                    .description("재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, "
+                            + "다회용). 없거나 만료·무효면 403 REAUTH_REQUIRED."));
+            String reauthNote = "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)";
+            ApiResponse existing403 = operation.getResponses() != null
+                    ? operation.getResponses().get("403") : null;
+            if (existing403 != null) {
+                // Keep the op's own 403 semantics (role gates etc.) and append.
+                existing403.setDescription(existing403.getDescription() == null
+                        ? reauthNote : existing403.getDescription() + " / " + reauthNote);
+            } else {
+                operation.getResponses().addApiResponse("403", new ApiResponse()
+                        .description(reauthNote)
+                        .content(new Content().addMediaType("application/problem+json",
+                                new MediaType().schema(
+                                        new Schema<>().$ref("#/components/schemas/Problem")))));
+            }
+            return operation;
+        };
     }
 
     /**

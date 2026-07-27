@@ -68,6 +68,7 @@ class ContractDriftTest {
             "POST /auth/login",
             "POST /auth/refresh",
             "POST /auth/logout",
+            "POST /auth/reverify",
             "GET /me",
             "GET /orgs",
             "GET /templates",

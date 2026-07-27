@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.23.0, 125 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.24.0, 126 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -29,6 +29,7 @@ operations:
   - { id: login,                method: POST,   path: "/auth/login",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: refresh,              method: POST,   path: "/auth/refresh",                       roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: logout,               method: POST,   path: "/auth/logout",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: reverify,            method: POST,   path: "/auth/reverify",               roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: requestPasswordReset, method: POST,   path: "/auth/password-reset",                roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: confirmPasswordReset, method: POST,   path: "/auth/password-reset/confirm",        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: completeMfaLogin,     method: POST,   path: "/auth/mfa",                           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }

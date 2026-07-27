@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -277,9 +278,15 @@ class VmUserSurfaceTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
+    /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
+    }
+
     private void addMember(long groupId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

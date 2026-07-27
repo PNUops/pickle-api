@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -72,6 +73,7 @@ class VmPasswordRegenerateTest {
 
     private User owner;
     private String ownerToken;
+    private String ownerReauth;
     private long orgId;
     private long nodeId;
     private long templateId;
@@ -93,6 +95,7 @@ class VmPasswordRegenerateTest {
         jdbcTemplate.update("update nodes set api_host = ? where name = ?", wm.apiHost(), NODE);
         owner = ensureUser("vmpwregen.owner@pusan.ac.kr", "재생성소유자");
         ownerToken = jwtService.createAccessToken(owner);
+        ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = ?", Long.class, NODE);
         templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
@@ -109,7 +112,8 @@ class VmPasswordRegenerateTest {
                         .withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
 
         String body = mockMvc.perform(post("/api/v1/vms/" + vmId + "/password/regenerate")
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
@@ -148,7 +152,8 @@ class VmPasswordRegenerateTest {
                         .withBody("{\"data\":null,\"message\":\"QEMU guest agent is not running\"}")));
 
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/password/regenerate")
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
 

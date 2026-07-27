@@ -79,6 +79,8 @@ class RetentionSweeperTest {
         long consumedMfaToken = insertMfaLoginToken("+ interval '1 day'", true);
         long expiredMfaToken = insertMfaLoginToken("- interval '1 day'", false);
         long liveMfaToken = insertMfaLoginToken("+ interval '1 day'", false);
+        long expiredReverification = insertReverification("- interval '1 minute'");
+        long liveReverification = insertReverification("+ interval '10 minutes'");
 
         authTokenSweeper.sweep();
 
@@ -91,6 +93,9 @@ class RetentionSweeperTest {
         assertThat(exists("mfa_login_tokens", consumedMfaToken)).isFalse();
         assertThat(exists("mfa_login_tokens", expiredMfaToken)).isFalse();
         assertThat(exists("mfa_login_tokens", liveMfaToken)).isTrue();
+        // sudo-mode tokens are multi-use until they expire, then swept
+        assertThat(exists("auth_reverifications", expiredReverification)).isFalse();
+        assertThat(exists("auth_reverifications", liveReverification)).isTrue();
     }
 
     private long insertNotification(String age) {
@@ -122,6 +127,13 @@ class RetentionSweeperTest {
                 values (?, ?, now() %s, %s) returning id
                 """.formatted(expiryExpr, consumed ? "now()" : "null"),
                 Long.class, userId, UUID.randomUUID().toString());
+    }
+
+    private long insertReverification(String expiryExpr) {
+        return jdbcTemplate.queryForObject("""
+                insert into auth_reverifications (user_id, token_hash, token_version, expires_at)
+                values (?, ?, 0, now() %s) returning id
+                """.formatted(expiryExpr), Long.class, userId, UUID.randomUUID().toString());
     }
 
     private boolean exists(String table, long id) {

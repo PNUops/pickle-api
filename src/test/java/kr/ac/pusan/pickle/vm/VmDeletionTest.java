@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.provisioning.DeletionSweeper;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -170,7 +171,8 @@ class VmDeletionTest {
         Instant before = Instant.now();
 
         String body = mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.kind").value("SELF"))
                 .andExpect(jsonPath("$.requestedById").value(owner.getId()))
@@ -207,7 +209,8 @@ class VmDeletionTest {
 
         // stacking another deletion on top → 409
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
                 .andExpect(jsonPath("$.detail").value("이미 삭제가 접수되었거나 진행 중인 VM입니다."));
@@ -219,23 +222,27 @@ class VmDeletionTest {
 
         // MEMBER → 403 (owner-only), non-member → 404 (masked)
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + memberToken))
+                        .header("Authorization", "Bearer " + memberToken)
+                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + outsiderToken))
+                        .header("Authorization", "Bearer " + outsiderToken)
+                        .header(ReauthTestSupport.HEADER, reauth(outsiderToken)))
                 .andExpect(status().isNotFound());
 
         // ORG_ADMIN of another org → 404 (existence masked)
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + otherOrgAdminToken()))
+                        .header("Authorization", "Bearer " + otherOrgAdminToken())
+                        .header(ReauthTestSupport.HEADER, reauth(otherOrgAdminToken())))
                 .andExpect(status().isNotFound());
 
         // state guards: CREATING / NEEDS_ADMIN / DELETED → 409
         for (VmStatus status : List.of(VmStatus.CREATING, VmStatus.NEEDS_ADMIN, VmStatus.DELETED)) {
             setStatus(vmId, status);
             mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                            .header("Authorization", "Bearer " + ownerToken))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         }
@@ -243,7 +250,8 @@ class VmDeletionTest {
         // ORG_ADMIN of the VM's org may delete
         setStatus(vmId, VmStatus.STOPPED);
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + orgAdminToken))
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
                 .andExpect(status().isAccepted());
     }
 
@@ -253,7 +261,8 @@ class VmDeletionTest {
         long allocationId = allocateIp(vmId);
 
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.kind").value("SELF"))
                 .andExpect(jsonPath("$.cancelable").value(false));
@@ -950,7 +959,8 @@ class VmDeletionTest {
 
         // self-delete, admin schedule-delete, and force-delete are all refused
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
         mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
@@ -1045,6 +1055,7 @@ class VmDeletionTest {
         return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .patch("/api/v1/vms/" + vmId + "/settings")
                 .header("Authorization", "Bearer " + token)
+                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("settings", Map.of(key, value)))));
     }
@@ -1060,6 +1071,11 @@ class VmDeletionTest {
                 insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)
                 values (?, ?, 8, 16384, 'vmbr2', 'local-lvm') returning id
                 """, Long.class, NODE_NAME, wm.apiHost());
+    }
+
+    /** Self-delete, settings patch and member management are sudo-mode gated. */
+    private String reauth(String token) {
+        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
     private long createVm(VmStatus status) {
@@ -1094,6 +1110,7 @@ class VmDeletionTest {
     private void addMember(long groupId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

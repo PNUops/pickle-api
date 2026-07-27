@@ -11,6 +11,8 @@ public final class ErrorCodes {
     public static final String AUTH_CSRF_INVALID = "AUTH_CSRF_INVALID";
     // Account lifecycle (contract tag me/auth/admin, v0.9.0).
     public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
+    /** Sudo-mode (v0.24.0): the endpoint demands a valid X-Reauth-Token. */
+    public static final String REAUTH_REQUIRED = "REAUTH_REQUIRED";
     public static final String AUTH_RESET_TOKEN_EXPIRED = "AUTH_RESET_TOKEN_EXPIRED";
     // 2FA (TOTP) — contract tag me/auth/admin, v0.9.0.
     public static final String AUTH_MFA_CODE_INVALID = "AUTH_MFA_CODE_INVALID";

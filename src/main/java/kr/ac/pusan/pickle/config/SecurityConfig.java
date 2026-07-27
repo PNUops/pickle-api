@@ -43,6 +43,9 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
+                        // Authenticated carve-outs FIRST — they live under the
+                        // public prefixes below (first match wins).
+                        .requestMatchers(PublicEndpoints.authenticatedExceptionPatterns()).authenticated()
                         // Same patterns the contract publishes as security: [].
                         .requestMatchers(PublicEndpoints.anyMethodPatterns()).permitAll()
                         .requestMatchers(org.springframework.http.HttpMethod.GET,

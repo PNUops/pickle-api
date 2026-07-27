@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -65,6 +66,8 @@ class UserSshKeyTest {
     private User other;
     private String ownerToken;
     private String otherToken;
+    private String ownerReauth;
+    private String otherReauth;
 
     @BeforeEach
     void setUp() {
@@ -72,6 +75,8 @@ class UserSshKeyTest {
         other = ensureUser("sshkey.other@pusan.ac.kr", "다른사용자");
         ownerToken = jwtService.createAccessToken(owner);
         otherToken = jwtService.createAccessToken(other);
+        ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
+        otherReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, other.getId());
         jdbcTemplate.update("delete from user_ssh_keys where user_id in (?, ?)",
                 owner.getId(), other.getId());
     }
@@ -139,6 +144,7 @@ class UserSshKeyTest {
             java.nio.file.Path dir) throws Exception {
         String body = mockMvc.perform(post("/api/v1/me/ssh-keys/generate")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("name", "생성키 조회"))))
                 .andExpect(status().isCreated())
@@ -157,7 +163,8 @@ class UserSshKeyTest {
         // public key (what sshpiperd fingerprints) must match what we stored.
         String pem = objectMapper.readTree(mockMvc.perform(
                         get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
-                                .header("Authorization", "Bearer " + ownerToken))
+                                .header("Authorization", "Bearer " + ownerToken)
+                                .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
                 .get("privateKey").asString();
         org.junit.jupiter.api.Assumptions.assumeTrue(commandExists(), "ssh-keygen unavailable");
@@ -194,6 +201,7 @@ class UserSshKeyTest {
     void generatesKeyAndRedownloadsPrivateKeyEachAudited() throws Exception {
         String body = mockMvc.perform(post("/api/v1/me/ssh-keys/generate")
                         .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("name", "Pickle에서 만든 키"))))
                 .andExpect(status().isCreated())
@@ -204,7 +212,8 @@ class UserSshKeyTest {
 
         for (int i = 0; i < 2; i++) {
             mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
-                            .header("Authorization", "Bearer " + ownerToken))
+                            .header("Authorization", "Bearer " + ownerToken)
+                            .header(ReauthTestSupport.HEADER, ownerReauth))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.fileName").value("id_ed25519_pickle"))
@@ -225,7 +234,8 @@ class UserSshKeyTest {
                 .andReturn().getResponse().getContentAsString();
         long keyId = objectMapper.readTree(body).get("id").asLong();
         mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isNotFound());
     }
 
@@ -236,10 +246,12 @@ class UserSshKeyTest {
         long keyId = objectMapper.readTree(body).get("id").asLong();
 
         mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
-                        .header("Authorization", "Bearer " + otherToken))
+                        .header("Authorization", "Bearer " + otherToken)
+                        .header(ReauthTestSupport.HEADER, otherReauth))
                 .andExpect(status().isNotFound());
         mockMvc.perform(delete("/api/v1/me/ssh-keys/" + keyId)
-                        .header("Authorization", "Bearer " + otherToken))
+                        .header("Authorization", "Bearer " + otherToken)
+                        .header(ReauthTestSupport.HEADER, otherReauth))
                 .andExpect(status().isNotFound());
     }
 
@@ -250,7 +262,8 @@ class UserSshKeyTest {
         long keyId = objectMapper.readTree(body).get("id").asLong();
 
         mockMvc.perform(delete("/api/v1/me/ssh-keys/" + keyId)
-                        .header("Authorization", "Bearer " + ownerToken))
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/me/ssh-keys").header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
@@ -264,6 +277,7 @@ class UserSshKeyTest {
             String name, String publicKey) throws Exception {
         return mockMvc.perform(post("/api/v1/me/ssh-keys")
                 .header("Authorization", "Bearer " + token)
+                .header(ReauthTestSupport.HEADER, token.equals(ownerToken) ? ownerReauth : otherReauth)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("name", name, "publicKey", publicKey))));
     }

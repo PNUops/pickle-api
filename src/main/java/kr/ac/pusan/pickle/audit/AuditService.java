@@ -19,6 +19,8 @@ import tools.jackson.databind.ObjectMapper;
 public class AuditService {
 
     public static final String AUTH_SIGNUP = "auth.signup";
+    /** Sudo-mode issue attempt (v0.24.0) — meta.result = success/mismatch. */
+    public static final String AUTH_REVERIFY = "auth.reverify";
     public static final String AUTH_VERIFY = "auth.verify";
     public static final String AUTH_LOGIN = "auth.login";
     public static final String AUTH_LOGIN_FAILED = "auth.login_failed";

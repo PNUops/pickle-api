@@ -17,6 +17,8 @@ import kr.ac.pusan.pickle.auth.dto.MfaLoginRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetConfirmRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetRequest;
 import kr.ac.pusan.pickle.auth.dto.ResendVerificationRequest;
+import kr.ac.pusan.pickle.auth.dto.ReverifyRequest;
+import kr.ac.pusan.pickle.auth.dto.ReverifyResponse;
 import kr.ac.pusan.pickle.auth.dto.SignupRequest;
 import kr.ac.pusan.pickle.auth.dto.VerifyEmailRequest;
 import org.springframework.http.HttpHeaders;
@@ -37,10 +39,13 @@ public class AuthController {
 
     private final AuthService authService;
     private final SessionCookies sessionCookies;
+    private final ReauthService reauthService;
 
-    public AuthController(AuthService authService, SessionCookies sessionCookies) {
+    public AuthController(AuthService authService, SessionCookies sessionCookies,
+            ReauthService reauthService) {
         this.authService = authService;
         this.sessionCookies = sessionCookies;
+        this.reauthService = reauthService;
     }
 
     @PostMapping("/signup")
@@ -115,6 +120,14 @@ public class AuthController {
             @Valid @RequestBody PasswordResetConfirmRequest request, HttpServletRequest httpRequest) {
         return authService.confirmPasswordReset(request.token(), request.newPassword(),
                 clientIp(httpRequest));
+    }
+
+    @PostMapping("/reverify")
+    public ReverifyResponse reverify(
+            @org.springframework.security.core.annotation.AuthenticationPrincipal
+            kr.ac.pusan.pickle.security.AuthenticatedUser principal,
+            @Valid @RequestBody ReverifyRequest request, HttpServletRequest httpRequest) {
+        return reauthService.issue(principal, request.password(), clientIp(httpRequest));
     }
 
     @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,

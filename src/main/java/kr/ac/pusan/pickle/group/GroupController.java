@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.group.dto.GroupSummaryResponse;
 import kr.ac.pusan.pickle.group.dto.UpdateGroupMemberRequest;
 import kr.ac.pusan.pickle.group.dto.UpdateGroupRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -73,6 +74,7 @@ public class GroupController {
 
     @PostMapping("/{groupId}/members")
     @ResponseStatus(HttpStatus.CREATED)
+    @RequireReauth
     public GroupMemberResponse addGroupMember(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
@@ -82,6 +84,7 @@ public class GroupController {
     }
 
     @PatchMapping("/{groupId}/members/{userId}")
+    @RequireReauth
     public GroupMemberResponse updateGroupMember(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
             @PathVariable long userId,
@@ -92,6 +95,7 @@ public class GroupController {
 
     @DeleteMapping("/{groupId}/members/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @RequireReauth
     public void removeGroupMember(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long groupId,
             @PathVariable long userId,
