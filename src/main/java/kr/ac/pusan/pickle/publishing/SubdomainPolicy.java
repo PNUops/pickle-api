@@ -49,11 +49,15 @@ public class SubdomainPolicy {
 
     /** Validates a root domain is one of the allowed roots, under {@code field}. */
     public void validateRootDomain(String rootDomain, String field, List<FieldValidationError> errors) {
-        if (rootDomain != null
-                && !settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(rootDomain)) {
+        if (rootDomain != null && !isAllowedRootDomain(rootDomain)) {
             errors.add(new FieldValidationError(field,
                     "'" + rootDomain + "'은(는) 허용된 루트 도메인이 아닙니다."));
         }
+    }
+
+    /** True when {@code rootDomain} is currently in the allowed list. */
+    public boolean isAllowedRootDomain(String rootDomain) {
+        return settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(rootDomain);
     }
 
     /** The default root domain (first allowed root) — used for AUTO subdomains. */

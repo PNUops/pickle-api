@@ -340,8 +340,15 @@ public class PublishingService {
         label = label.strip().toLowerCase(Locale.ROOT);
         String rootDomain = Texts.blankToNull(requestedRootDomain);
         if (rootDomain == null) {
-            rootDomain = request != null && request.getRootDomain() != null
-                    ? request.getRootDomain() : subdomainPolicy.defaultRootDomain();
+            rootDomain = request != null ? request.getRootDomain() : null;
+            // The stored root may be a submit-time snapshot (possibly just the
+            // resolved default of that day) — if the operator has since retired
+            // it from the allowed list, fall back to the CURRENT default instead
+            // of stranding the request behind a 422 for a field the user never
+            // typed. A root supplied in the publish body still hard-fails below.
+            if (rootDomain == null || !subdomainPolicy.isAllowedRootDomain(rootDomain)) {
+                rootDomain = subdomainPolicy.defaultRootDomain();
+            }
         }
         if (rootDomain == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,

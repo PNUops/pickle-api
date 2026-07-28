@@ -97,9 +97,13 @@ class ReauthCoverageTest {
                 return;
             }
             for (String pattern : patternsOf(info)) {
-                if (!pattern.startsWith(API_PREFIX)) {
-                    return;
-                }
+                // The interceptor is registered for /api/v1/** only — an
+                // annotated handler outside that prefix would be silently
+                // UN-gated at runtime, so it must fail here, not be skipped.
+                assertThat(pattern)
+                        .as("@RequireReauth handler %s is mapped outside %s — the reauth "
+                                + "interceptor would never run for it", handler, API_PREFIX)
+                        .startsWith(API_PREFIX);
                 String path = pattern.substring(API_PREFIX.length());
                 info.getMethodsCondition().getMethods()
                         .forEach(method -> gated.add(method.name() + " " + path));
