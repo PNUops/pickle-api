@@ -43,7 +43,7 @@ class RelaySyncEndpointTest {
     private static final String RESTRICTED_SOURCE = "10.100.100.1";
     private static final AtomicInteger SOURCE_SEQ = new AtomicInteger(1);
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
-    private static final AtomicInteger VMID_SEQ = new AtomicInteger(960_000);
+    private static final AtomicInteger VMID_SEQ = new AtomicInteger(901_000);
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -121,6 +121,11 @@ class RelaySyncEndpointTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         // The sync surface itself passes the restriction and lands in the
         // relay auth filter (the seed relay has no token issued -> 401).
+        // Re-arm the seed row explicitly: another suite may have disabled it.
+        jdbcTemplate.update("""
+                update relays set enabled = true, token_hash = null
+                 where name = 'lightsail-1'
+                """);
         long seedRelayId = jdbcTemplate.queryForObject(
                 "select id from relays where name = 'lightsail-1'", Long.class);
         sync(seedRelayId, RESTRICTED_SOURCE, "whatever", Map.of("appliedGeneration", 0))

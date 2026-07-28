@@ -59,7 +59,7 @@ class PortForwardingTest {
 
     private static final AtomicInteger SOURCE_SEQ = new AtomicInteger(1);
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
-    private static final AtomicInteger VMID_SEQ = new AtomicInteger(970_000);
+    private static final AtomicInteger VMID_SEQ = new AtomicInteger(903_000);
 
     @Autowired
     private MockMvc mockMvc;

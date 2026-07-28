@@ -46,7 +46,7 @@ import tools.jackson.databind.ObjectMapper;
 class CampusIpRequestTest {
 
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
-    private static final AtomicInteger VMID_SEQ = new AtomicInteger(980_000);
+    private static final AtomicInteger VMID_SEQ = new AtomicInteger(905_000);
 
     @Autowired
     private MockMvc mockMvc;
