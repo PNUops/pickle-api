@@ -188,12 +188,14 @@ public class ApprovalService {
                 request.getId(), hostname, hostname, template.getId(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
                 form.grantedStartDate(), form.grantedEndDate()));
-        if (request.getDisplayName() != null) {
-            // Requester-chosen display name (request form) — seeded as the
-            // vm_settings row; audited via the request.approve entry below.
-            vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
-                    request.getRequesterId());
-        }
+        // Requester-chosen display name (request form) — seeded as the
+        // vm_settings row; audited via the request.approve entry below. The
+        // seeder sanitizes, so it returns what was actually stored (null when
+        // the name collapsed to nothing and no row was written).
+        String storedDisplayName = request.getDisplayName() != null
+                ? vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
+                        request.getRequesterId())
+                : null;
 
         long vmId = vm.getId();
         // The OSS JobRunr storage provider writes with its own connection and
@@ -219,10 +221,12 @@ public class ApprovalService {
         auditArgs.put("grantedMemoryMb", form.grantedMemoryMb());
         auditArgs.put("grantedDiskGb", form.grantedDiskGb());
         auditArgs.put("nodeId", nodeId);
-        if (request.getDisplayName() != null) {
+        if (storedDisplayName != null) {
             // Records the seeded display name's provenance (initializeDisplayName
-            // itself does not audit — this entry is the audit trail).
-            auditArgs.put("displayName", request.getDisplayName());
+            // itself does not audit — this entry is the audit trail). The stored
+            // value, not the raw request value: an entry claiming a name that was
+            // never written would be a lie in the audit trail.
+            auditArgs.put("displayName", storedDisplayName);
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
                 "vm_request", request.getId(), auditArgs, ip);

@@ -279,24 +279,16 @@ public class PublishingService {
             String subdomain, String rootDomain) {
         Domain domain;
         boolean applyNow;
-        // saveAndFlush + catch: requireFqdnFree is a pre-check only — under a
-        // concurrent claim of the same name the partial unique index
-        // (domains_fqdn_live_idx) is the arbiter, and the loser must get the
-        // same 409 instead of a 500 at commit time.
-        try {
-            if (customDomain != null) {
-                String fqdn = customDomain.toLowerCase(Locale.ROOT);
-                validateCustomDomain(fqdn);
-                requireFqdnFree(fqdn);
-                domain = domainRepository.saveAndFlush(Domain.custom(vm.getId(), fqdn, generateToken()));
-                certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
-                applyNow = false;
-            } else {
-                domain = domainRepository.saveAndFlush(platformDomain(vm, subdomain, rootDomain));
-                applyNow = true;
-            }
-        } catch (DataIntegrityViolationException raced) {
-            throw fqdnTaken();
+        if (customDomain != null) {
+            String fqdn = customDomain.toLowerCase(Locale.ROOT);
+            validateCustomDomain(fqdn);
+            requireFqdnFree(fqdn);
+            domain = saveDomainOrFqdnTaken(Domain.custom(vm.getId(), fqdn, generateToken()));
+            certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
+            applyNow = false;
+        } else {
+            domain = saveDomainOrFqdnTaken(platformDomain(vm, subdomain, rootDomain));
+            applyNow = true;
         }
         long generation = routeGenerations.next();
         Route route = routeRepository.save(new Route(domain.getId(), port, generation));
@@ -308,6 +300,22 @@ public class PublishingService {
             runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         }
         return domain;
+    }
+
+    /**
+     * saveAndFlush + catch, scoped to the one statement that can lose the race:
+     * {@code requireFqdnFree} is a pre-check only — under a concurrent claim of
+     * the same name the partial unique index ({@code domains_fqdn_live_idx}) is
+     * the arbiter, and the loser must get the same 409 instead of a 500 at
+     * commit time. Nothing else runs inside the catch, so a validation failure
+     * or a certificate-insert violation still surfaces as itself.
+     */
+    private Domain saveDomainOrFqdnTaken(Domain domain) {
+        try {
+            return domainRepository.saveAndFlush(domain);
+        } catch (DataIntegrityViolationException raced) {
+            throw fqdnTaken();
+        }
     }
 
     /**

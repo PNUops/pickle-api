@@ -350,6 +350,41 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.displayName").value("학과 세미나 서버"));
     }
 
+    /**
+     * The seeder strips control/format characters, so a name made of nothing
+     * else stores nothing — and the approval audit must say so. Auditing the
+     * raw request value would claim a display name that no vm_settings row
+     * ever carried.
+     */
+    @Test
+    void approveAuditsOnlyTheDisplayNameItActuallyStored() throws Exception {
+        long groupId = createTeam(userToken, "appr-dname-x2");
+        // zero-width space + ZWJ + BOM: not blank to Java, empty after sanitizing
+        String zeroWidthOnly = new String(new int[] {0x200B, 0x200D, 0xFEFF}, 0, 3);
+        long requestId = submit(userToken, groupId, org.getId(), zeroWidthOnly);
+
+        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken, approveBody())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        Vm vm = vmRepository.findAll().stream()
+                .filter(v -> v.getRequestId() == requestId)
+                .findFirst().orElseThrow();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_settings where vm_id = ? and key = 'display_name'
+                """, Long.class, vm.getId())).isEqualTo(0);
+        assertThat(jdbcTemplate.queryForObject("""
+                select detail ->> 'displayName' from audit_logs
+                 where action = 'request.approve' and target_id = ?
+                """, String.class, requestId)).isNull();
+
+        // and the VM simply has no display name
+        mockMvc.perform(get("/api/v1/vms/" + vm.getId())
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value((Object) null));
+    }
+
     @Test
     void approveRejectsForcedNodeWithoutTheGrantedTemplate() throws Exception {
         long groupId = createTeam(userToken, "appr-node-x1");

@@ -153,7 +153,8 @@ scripts/                            verify + 훅 헬퍼
 ```
 
 콘솔(pickle-console), SSH 게이트웨이(pickle-sshgw), 리버스 프록시
-제어 에이전트(pickle-proxy-agent)가 형제 저장소다.
+제어 에이전트(pickle-proxy-agent), 릴레이 포워딩 적용기(pickle-relay-agent)가
+형제 저장소다.
 
 ## 커밋 규약
 

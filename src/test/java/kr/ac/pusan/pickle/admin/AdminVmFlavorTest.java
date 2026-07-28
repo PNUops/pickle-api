@@ -201,6 +201,44 @@ class AdminVmFlavorTest {
                 .andExpect(status().isOk());
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
 
+        // notes are persisted blank-to-null, so a blank note against the
+        // already-null column is a no-op too — no audit row (the javadoc's
+        // idempotency promise held only for the typed fields before)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\": \"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes").value((Object) null));
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
+
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\": \"   \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes").value((Object) null));
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
+
+        // a real note IS a change...
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\": \"대형 배치 작업용입니다.\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes").value("대형 배치 작업용입니다."));
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(2);
+
+        // ...but re-sending it with surrounding whitespace stores the same
+        // stripped value, so it is a no-op as well
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"notes\": \"  대형 배치 작업용입니다.  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.notes").value("대형 배치 작업용입니다."));
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(2);
+
         // an empty body is a no-op request, not an edit → 422
         mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
                         .header("Authorization", "Bearer " + sysAdminToken)

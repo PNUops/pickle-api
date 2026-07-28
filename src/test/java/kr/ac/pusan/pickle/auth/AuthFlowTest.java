@@ -285,6 +285,30 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.errors[0].field").value("password"));
     }
 
+    /**
+     * The 8-character floor lives on the signup DTO ({@code @Size(min = 8)}),
+     * not in {@link PasswordPolicy} — which deliberately has no composition
+     * rule (NIST SP 800-63B). Only an end-to-end signup exercises it, so this
+     * pins both halves at once: exactly 8 characters of a single class is
+     * accepted, one character less is not.
+     */
+    @Test
+    void signupAcceptsAnEightCharacterSingleClassPassword() throws Exception {
+        postSignupFrom("10.96.0.2", Map.of("email", "floor.tester@pusan.ac.kr",
+                "password", "seoulwin", "name", "최소길이",
+                "consents", FULL_CONSENTS))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.message").isNotEmpty());
+
+        // one character short of the floor → 422 on the password field
+        postSignupFrom("10.96.0.2", Map.of("email", "floor.short@pusan.ac.kr",
+                "password", "seoulwi", "name", "짧은비번",
+                "consents", FULL_CONSENTS))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("password"));
+    }
+
     /** Drains the async dispatcher, then returns the last mail recorded for {@code email}. */
     private MailMessage flushMail(String email) {
         assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10)))
@@ -306,9 +330,15 @@ class AuthFlowTest {
      */
     private org.springframework.test.web.servlet.ResultActions postSignup(Map<String, ?> body)
             throws Exception {
+        return postSignupFrom("10.96.0.1", body);
+    }
+
+    /** Signup from an explicit client IP (each case gets its own rate-limit window). */
+    private org.springframework.test.web.servlet.ResultActions postSignupFrom(String ip,
+            Map<String, ?> body) throws Exception {
         return mockMvc.perform(post("/api/v1/auth/signup")
                 .with(request -> {
-                    request.setRemoteAddr("10.96.0.1");
+                    request.setRemoteAddr(ip);
                     return request;
                 })
                 .contentType(MediaType.APPLICATION_JSON)

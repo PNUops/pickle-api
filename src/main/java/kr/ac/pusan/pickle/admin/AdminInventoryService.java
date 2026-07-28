@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import kr.ac.pusan.pickle.admin.dto.AdminTemplateResponse;
 import kr.ac.pusan.pickle.admin.dto.CreateVmFlavorRequest;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
@@ -23,6 +24,7 @@ import kr.ac.pusan.pickle.inventory.VmTemplate;
 import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
 import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -111,12 +113,20 @@ public class AdminInventoryService {
     public VmFlavorResponse createFlavor(AuthenticatedUser actor, CreateVmFlavorRequest request,
             String ip) {
         if (vmFlavorRepository.existsByName(request.name())) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("name",
-                    "이미 존재하는 프리셋 이름입니다.")));
+            throw nameTaken();
         }
-        VmFlavor flavor = vmFlavorRepository.save(new VmFlavor(request.name(), request.displayName(),
-                request.vcpu(), request.memoryMb(), request.diskGb(), TemplateStatus.ACTIVE,
-                Texts.blankToNull(request.notes())));
+        // saveAndFlush + catch: the existsByName above is a pre-check only —
+        // under a concurrent create of the same name the unique constraint is
+        // the arbiter, and the loser must get the same 422 field error instead
+        // of a 500 at commit time.
+        VmFlavor flavor;
+        try {
+            flavor = vmFlavorRepository.saveAndFlush(new VmFlavor(request.name(),
+                    request.displayName(), request.vcpu(), request.memoryMb(), request.diskGb(),
+                    TemplateStatus.ACTIVE, Texts.blankToNull(request.notes())));
+        } catch (DataIntegrityViolationException raced) {
+            throw nameTaken();
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.FLAVOR_CREATE,
                 "vm_flavor", flavor.getId(),
                 Map.of("name", flavor.getName(), "vcpu", flavor.getVcpu(),
@@ -155,9 +165,13 @@ public class AdminInventoryService {
             changes.put("diskGb", flavor.getDiskGb() + " -> " + request.diskGb());
             flavor.setDiskGb(request.diskGb());
         }
-        if (request.notes() != null && !request.notes().equals(flavor.getNotes())) {
+        // Compare the value that would actually be stored: notes are persisted
+        // blank-to-null, so "" against an already-null column (or a
+        // whitespace-only re-send) is a no-op, not an audited change.
+        String notes = request.notes() != null ? Texts.blankToNull(request.notes()) : null;
+        if (request.notes() != null && !Objects.equals(notes, flavor.getNotes())) {
             changes.put("notes", "updated");
-            flavor.setNotes(Texts.blankToNull(request.notes()));
+            flavor.setNotes(notes);
         }
         if (request.status() != null && request.status() != flavor.getStatus()) {
             changes.put("status", flavor.getStatus().name() + " -> " + request.status().name());
@@ -169,6 +183,11 @@ public class AdminInventoryService {
                     AuditService.FLAVOR_UPDATE, "vm_flavor", flavorId, changes, ip);
         }
         return VmFlavorResponse.from(flavor);
+    }
+
+    private static ApiException nameTaken() {
+        return ApiException.validationFailed(List.of(new FieldValidationError("name",
+                "이미 존재하는 프리셋 이름입니다.")));
     }
 
     private static ApiException notFound(String detail) {

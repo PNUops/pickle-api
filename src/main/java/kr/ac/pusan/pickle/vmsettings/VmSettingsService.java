@@ -150,21 +150,36 @@ public class VmSettingsService {
      * caller runs inside the approval transaction, before the VM is usable)
      * and leaves auditing to the caller's request.approve audit entry — this
      * is an initial value, not an actor-driven change.
+     *
+     * @return the value actually stored, or {@code null} when the requested
+     *     name sanitized away to nothing and no row was written — the caller
+     *     audits what was stored, never the raw request value.
      */
     @Transactional
-    public void initializeDisplayName(long vmId, String displayName, Long requesterId) {
+    public String initializeDisplayName(long vmId, String displayName, Long requesterId) {
         // Own the invariants here instead of trusting the request DTO: the
         // patch() path caps length via the registry, and control/format chars
         // (incl. zero-width/RTL overrides) would only serve display spoofing.
-        String sanitized = displayName.replaceAll("[\\p{Cc}\\p{Cf}]", "").strip();
+        String sanitized = sanitizeDisplayName(displayName);
         if (sanitized.isEmpty()) {
-            return;
+            return null;
         }
         if (sanitized.length() > DISPLAY_NAME_MAX_LENGTH) {
             sanitized = sanitized.substring(0, DISPLAY_NAME_MAX_LENGTH);
         }
         settingRepository.save(new VmSetting(vmId, DISPLAY_NAME,
                 objectMapper.writeValueAsString(sanitized), requesterId, Instant.now()));
+        return sanitized;
+    }
+
+    /**
+     * Display-name normalizer shared by the approval seed and the console
+     * PATCH: control/format chars (incl. zero-width and RTL overrides) only
+     * ever serve display spoofing, so both entry points strip them — otherwise
+     * the seed path's invariant would be trivially bypassed by a later PATCH.
+     */
+    private static String sanitizeDisplayName(String value) {
+        return value.replaceAll("[\\p{Cc}\\p{Cf}]", "").strip();
     }
 
     /**
@@ -220,10 +235,13 @@ public class VmSettingsService {
                     "현재 상태에서는 수행할 수 없는 작업입니다",
                     "삭제 중이거나 삭제된 VM의 설정은 변경할 수 없습니다.");
         }
+        // 0) normalize before anything looks at the values, so validation, the
+        //    persisted row and the audit entry all see the same text.
+        Map<String, JsonNode> incoming = sanitizeDisplayNameEntry(settings);
 
         // 1) key existence + value type/allowed-values (collect all 422 errors).
         List<FieldValidationError> errors = new ArrayList<>();
-        for (Map.Entry<String, JsonNode> entry : settings.entrySet()) {
+        for (Map.Entry<String, JsonNode> entry : incoming.entrySet()) {
             VmSettingDef def = registry.get(entry.getKey());
             if (def == null) {
                 errors.add(new FieldValidationError("settings." + entry.getKey(),
@@ -236,7 +254,7 @@ public class VmSettingsService {
             throw ApiException.validationFailed(errors);
         }
         // 2) per-key required role (first offending key → 403).
-        for (String key : settings.keySet()) {
+        for (String key : incoming.keySet()) {
             VmSettingDef def = registry.get(key);
             if (!actorRole.atLeast(def.requiredRole())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
@@ -247,7 +265,7 @@ public class VmSettingsService {
         }
         // 3) apply + audit (atomic within the tx).
         Instant now = Instant.now();
-        for (Map.Entry<String, JsonNode> entry : settings.entrySet()) {
+        for (Map.Entry<String, JsonNode> entry : incoming.entrySet()) {
             VmSettingDef def = registry.get(entry.getKey());
             JsonNode newValue = entry.getValue();
             String newJson = objectMapper.writeValueAsString(newValue);
@@ -266,6 +284,27 @@ public class VmSettingsService {
     }
 
     // ── internals ──────────────────────────────────────────────────────────
+
+    /**
+     * Returns the patch map with {@code display_name} normalized the same way
+     * the approval seed normalizes it. Applied before validation so the
+     * registry's length cap measures the visible text, and before persist so
+     * the stored row and the audit entry carry the sanitized value. Any other
+     * map is returned untouched.
+     */
+    private Map<String, JsonNode> sanitizeDisplayNameEntry(Map<String, JsonNode> settings) {
+        JsonNode raw = settings.get(DISPLAY_NAME);
+        if (raw == null || !raw.isString()) {
+            return settings;
+        }
+        String sanitized = sanitizeDisplayName(raw.asString());
+        if (sanitized.equals(raw.asString())) {
+            return settings;
+        }
+        Map<String, JsonNode> normalized = new LinkedHashMap<>(settings);
+        normalized.put(DISPLAY_NAME, objectMapper.valueToTree(sanitized));
+        return normalized;
+    }
 
     private List<VmSettingView> buildViews(Vm vm, GroupMemberRole actorRole) {
         Map<String, VmSetting> rows = settingRepository.findByVmId(vm.getId()).stream()

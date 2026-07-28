@@ -190,12 +190,13 @@ class VmRequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
 
-        // the subdomain is standalone-optional now — no root domain is fine
+        // the root domain is standalone-optional — omitting it resolves to (and
+        // stores) the platform default, which the detail response echoes back
         postJson("/api/v1/vm-requests", requesterToken,
                 with(validBody(groupId), "desiredSubdomain", "vmr-solo-x1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value("vmr-solo-x1"))
-                .andExpect(jsonPath("$.rootDomain").value((Object) null));
+                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"));
         Map<String, Object> badRoot = httpBody(groupId, "vmr-svc-x1", "evil.example.com");
         postJson("/api/v1/vm-requests", requesterToken, badRoot)
                 .andExpect(status().isUnprocessableContent())
@@ -252,6 +253,46 @@ class VmRequestTest {
 
         // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The soft reservation holds even when nobody names a root domain: the
+     * resolved default is what gets STORED, so the duplicate pre-check has a
+     * row to collide with. While a rootDomain-less request stored NULL, two
+     * submitters could both claim the same name and only discover it at
+     * publish time.
+     */
+    @Test
+    void omittedRootDomainStillReservesTheSubdomainUnderTheDefaultRoot() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-softres-x1");
+
+        // no rootDomain in the body → stored (and echoed) as the default root
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSubdomain", "vmr-softres-sub"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSubdomain").value("vmr-softres-sub"))
+                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"));
+
+        // a second submission omitting rootDomain the same way → 422
+        postJson("/api/v1/vm-requests", requesterToken,
+                with(validBody(groupId), "desiredSubdomain", "vmr-softres-sub"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("이미 사용 중이거나 신청된 서브도메인입니다."));
+
+        // ...and naming the default root explicitly hits the very same pair
+        postJson("/api/v1/vm-requests", requesterToken,
+                httpBody(groupId, "vmr-softres-sub", "pickle.pnuops.com"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
+
+        // no subdomain at all still stores no root — nothing is being reserved
+        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.desiredSubdomain").value((Object) null))
+                .andExpect(jsonPath("$.rootDomain").value((Object) null));
     }
 
     /**

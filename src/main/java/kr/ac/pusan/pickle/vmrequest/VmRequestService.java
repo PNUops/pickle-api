@@ -121,7 +121,12 @@ public class VmRequestService {
             validateSpec(request, template, flavor, errors);
         }
         validateDates(request, errors);
-        validateDomains(request, errors);
+        // Resolved once and then BOTH validated and stored: a subdomain without
+        // an explicit root claims the default root, so the soft reservation the
+        // duplicate pre-check queries is the row the next submitter collides
+        // with (storing NULL let two rootDomain-less requests share a name).
+        String rootDomain = resolveRootDomain(request);
+        validateDomains(request, rootDomain, errors);
         String desiredSlug = Texts.blankToNull(request.desiredSlug());
         validateSlug(desiredSlug, errors);
         if (!errors.isEmpty()) {
@@ -134,7 +139,7 @@ public class VmRequestService {
                 Texts.blankToNull(request.extraNote()),
                 request.reqVcpu(), request.reqMemoryMb(), request.reqDiskGb(),
                 request.reqStartDate(), request.reqEndDate(),
-                request.desiredSubdomain(), Texts.blankToNull(request.rootDomain()),
+                request.desiredSubdomain(), rootDomain,
                 Texts.blankToNull(request.displayName()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
@@ -254,25 +259,39 @@ public class VmRequestService {
         }
     }
 
-    private void validateDomains(CreateVmRequestRequest request, List<FieldValidationError> errors) {
+    /**
+     * The root domain the request is stored with: the submitted value when
+     * given, otherwise the platform default — but only when a subdomain is
+     * actually being reserved (no subdomain ⇒ nothing to anchor, root stays
+     * null). Storing the resolved value is what makes the soft reservation
+     * real: the duplicate pre-check and the persisted row now agree.
+     */
+    private String resolveRootDomain(CreateVmRequestRequest request) {
+        String rootDomain = Texts.blankToNull(request.rootDomain());
+        if (rootDomain != null || request.desiredSubdomain() == null) {
+            return rootDomain;
+        }
+        return subdomainPolicy.defaultRootDomain();
+    }
+
+    private void validateDomains(CreateVmRequestRequest request, String resolvedRootDomain,
+            List<FieldValidationError> errors) {
         // Full subdomain policy — the same reserved/profanity/pattern gate the
         // approval path runs, so a denied label never reaches the review screen.
         subdomainPolicy.validateLabel(request.desiredSubdomain(), "desiredSubdomain", errors);
-        String rootDomain = Texts.blankToNull(request.rootDomain());
-        if (rootDomain != null
-                && !settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(rootDomain)) {
+        String submittedRoot = Texts.blankToNull(request.rootDomain());
+        if (submittedRoot != null
+                && !settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(submittedRoot)) {
             errors.add(new FieldValidationError("rootDomain",
-                    "'" + rootDomain + "'은(는) 허용된 루트 도메인이 아닙니다."));
+                    "'" + submittedRoot + "'은(는) 허용된 루트 도메인이 아닙니다."));
         }
         // Contract: duplicates are validated server-side — a pair is taken
         // while another request holds it in a non-terminal state. (Domain
-        // issuance re-checks against actually published domains.) A null root
-        // resolves to the default root here, so the soft reservation matches
-        // what publish would actually claim.
-        String effectiveRoot = rootDomain != null ? rootDomain : subdomainPolicy.defaultRootDomain();
-        if (request.desiredSubdomain() != null && effectiveRoot != null
+        // issuance re-checks against actually published domains.) The query
+        // uses the same resolved root that create() persists.
+        if (request.desiredSubdomain() != null && resolvedRootDomain != null
                 && requestRepository.existsByDesiredSubdomainAndRootDomainAndStatusIn(
-                        request.desiredSubdomain(), effectiveRoot,
+                        request.desiredSubdomain(), resolvedRootDomain,
                         List.of(VmRequestStatus.SUBMITTED, VmRequestStatus.APPROVED))) {
             errors.add(new FieldValidationError("desiredSubdomain",
                     "이미 사용 중이거나 신청된 서브도메인입니다."));

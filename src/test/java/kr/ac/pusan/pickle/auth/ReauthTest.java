@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -97,6 +98,9 @@ class ReauthTest {
         String body = reverify(ownerToken, PASSWORD, "10.98.0.1")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reauthToken").isNotEmpty())
+                // bearer-equivalent secret in the body — same no-store the VM
+                // password reveal and the SSH private-key download carry
+                .andExpect(header().string("Cache-Control", "no-store"))
                 .andReturn().getResponse().getContentAsString();
 
         String token = objectMapper.readTree(body).get("reauthToken").asString();

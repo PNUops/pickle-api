@@ -212,6 +212,26 @@ class VmSettingsTest {
         patchSettings(editorToken, vmId, Map.of("display_name", ""))
                 .andExpect(status().isOk());
         assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME)).isNull();
+        // control/format chars (zero-width filler, RTL override) are stripped
+        // here as well: the approval seed already owned this invariant, and a
+        // later PATCH must not be able to put a spoofable name back
+        String zeroWidth = new String(new int[] {0x200B, 0x200D, 0xFEFF}, 0, 3);
+        String rtlOverride = new String(new int[] {0x202E}, 0, 1);
+        patchSettings(editorToken, vmId,
+                Map.of("display_name", zeroWidth + "실습" + rtlOverride + " 서버 B" + zeroWidth))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME))
+                .isEqualTo("실습 서버 B");
+        // a name made of nothing but those chars is a clear, not a stored name
+        patchSettings(editorToken, vmId, Map.of("display_name", zeroWidth))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME)).isNull();
+        // ...and the cap now measures the visible text: 100 real chars plus
+        // zero-width filler is still within it
+        patchSettings(editorToken, vmId, Map.of("display_name", zeroWidth + "가".repeat(100)))
+                .andExpect(status().isOk());
+        assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME))
+                .isEqualTo("가".repeat(100));
         // over 100 chars → 422
         patchSettings(editorToken, vmId, Map.of("display_name", "가".repeat(101)))
                 .andExpect(status().isUnprocessableEntity())

@@ -122,12 +122,15 @@ public class AuthController {
                 clientIp(httpRequest));
     }
 
+    /** Sudo-mode issue (v0.24.0) — the raw token is bearer-equivalent; never cached. */
     @PostMapping("/reverify")
-    public ReverifyResponse reverify(
+    public ResponseEntity<ReverifyResponse> reverify(
             @org.springframework.security.core.annotation.AuthenticationPrincipal
             kr.ac.pusan.pickle.security.AuthenticatedUser principal,
             @Valid @RequestBody ReverifyRequest request, HttpServletRequest httpRequest) {
-        return reauthService.issue(principal, request.password(), clientIp(httpRequest));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(reauthService.issue(principal, request.password(), clientIp(httpRequest)));
     }
 
     @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,
