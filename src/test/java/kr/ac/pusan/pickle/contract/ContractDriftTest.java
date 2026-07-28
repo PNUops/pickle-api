@@ -198,7 +198,23 @@ class ContractDriftTest {
             "GET /vm-flavors",
             "GET /admin/vm-flavors",
             "POST /admin/vm-flavors",
-            "PATCH /admin/vm-flavors/{flavorId}");
+            "PATCH /admin/vm-flavors/{flavorId}",
+            // Relay port forwarding + 교내 IP (contract v0.27.0).
+            "GET /vms/{vmId}/port-forwardings",
+            "POST /vms/{vmId}/port-forwardings",
+            "DELETE /vms/{vmId}/port-forwardings/{portForwardingId}",
+            "GET /admin/relays",
+            "POST /admin/relays/{relayId}/token",
+            "GET /admin/port-mappings",
+            "POST /admin/port-mappings/{mappingId}/suspend",
+            "POST /admin/port-mappings/{mappingId}/unsuspend",
+            "DELETE /admin/port-mappings/{mappingId}",
+            "PATCH /admin/port-mappings/{mappingId}/guards",
+            "GET /vms/{vmId}/campus-ip-requests",
+            "POST /vms/{vmId}/campus-ip-requests",
+            "DELETE /vms/{vmId}/campus-ip-requests/{requestId}",
+            "GET /admin/campus-ip-requests",
+            "POST /admin/campus-ip-requests/{requestId}/status");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

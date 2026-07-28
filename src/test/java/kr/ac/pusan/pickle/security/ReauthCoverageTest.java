@@ -42,6 +42,7 @@ class ReauthCoverageTest {
      * download, and group membership changes.
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
+            "POST /admin/relays/{relayId}/token",
             "DELETE /vms/{vmId}",
             "GET /vms/{vmId}/password",
             "POST /vms/{vmId}/password/regenerate",

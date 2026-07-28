@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.25.0, 126 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.27.0, 141 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -196,3 +196,27 @@ operations:
   # list: SYS tier all; ORG tier own-org sessions only (allow_org_scoped, service-layer). terminate: SYS_ADMIN only.
   - { id: listAdminTerminalSessions, method: GET, path: "/admin/terminal-sessions", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: terminateTerminalSession, method: POST, path: "/admin/terminal-sessions/{sessionId}/terminate", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.23 Port forwarding (VM-scoped, group-role service-layer like publishing) ─
+  - { id: listVmPortForwardings,   method: GET,    path: "/vms/{vmId}/port-forwardings",                     roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: createVmPortForwarding,  method: POST,   path: "/vms/{vmId}/port-forwardings",                     roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: deleteVmPortForwarding,  method: DELETE, path: "/vms/{vmId}/port-forwardings/{portForwardingId}",  roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+
+  # ── 3.24 교내 IP 신청 (manager tiers and up; service layer additionally
+  #        scopes to the VM's group OWNER/EDITOR — 404 mask for non-members) ─
+  - { id: listVmCampusIpRequests,  method: GET,    path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: requestVmCampusIp,       method: POST,   path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: cancelVmCampusIpRequest, method: DELETE, path: "/vms/{vmId}/campus-ip-requests/{requestId}",  roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # ── 3.25 Admin — relays / port mappings (guards & token SYS_ADMIN-only) ───
+  - { id: listAdminRelays,             method: GET,    path: "/admin/relays",                          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: issueAdminRelayToken,        method: POST,   path: "/admin/relays/{relayId}/token",          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminPortMappings,       method: GET,    path: "/admin/port-mappings",                   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: suspendAdminPortMapping,     method: POST,   path: "/admin/port-mappings/{mappingId}/suspend",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: unsuspendAdminPortMapping,   method: POST,   path: "/admin/port-mappings/{mappingId}/unsuspend", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: deleteAdminPortMapping,      method: DELETE, path: "/admin/port-mappings/{mappingId}",       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminPortMappingGuards, method: PATCH, path: "/admin/port-mappings/{mappingId}/guards", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.26 Admin — 교내 IP 신청 처리 (status SYS_ADMIN-only) ────────────────
+  - { id: listAdminCampusIpRequests,        method: GET,  path: "/admin/campus-ip-requests",                     roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminCampusIpRequestStatus, method: POST, path: "/admin/campus-ip-requests/{requestId}/status",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
