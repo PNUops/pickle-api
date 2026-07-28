@@ -46,6 +46,9 @@ import tools.jackson.databind.ObjectMapper;
 class CampusIpRequestTest {
 
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
+    // Every suite in the shared embedded PG needs its OWN proxmox_vmid base
+    // (vms_proxmox_vmid_active_uq is global): pick an unused range by grepping
+    // VMID_SEQ across src/test before adding one.
     private static final AtomicInteger VMID_SEQ = new AtomicInteger(905_000);
 
     @Autowired
