@@ -38,7 +38,14 @@ public enum NotificationEvent {
     ACCOUNT_MFA_ENROLLED("account.mfa.enrolled", NotificationImportance.HIGH),
     ACCOUNT_MFA_DISABLED("account.mfa.disabled", NotificationImportance.HIGH),
     ACCOUNT_MFA_RESET("account.mfa.reset", NotificationImportance.HIGH),
-    GROUP_DELETED("group.deleted", NotificationImportance.NORMAL);
+    GROUP_DELETED("group.deleted", NotificationImportance.NORMAL),
+
+    // Relay port forwarding + 교내 IP (contract v0.27.0).
+    RELAY_CONTACT_LOST("relay.contact_lost", NotificationImportance.HIGH),
+    RELAY_BAND_USAGE_HIGH("relay.band_usage_high", NotificationImportance.HIGH),
+    PORT_MAPPING_SUSPENDED("port_mapping.suspended", NotificationImportance.HIGH),
+    CAMPUS_IP_REQUESTED("campus_ip.requested", NotificationImportance.NORMAL),
+    CAMPUS_IP_STATUS_CHANGED("campus_ip.status_changed", NotificationImportance.NORMAL);
 
     private final String id;
     private final NotificationImportance defaultImportance;

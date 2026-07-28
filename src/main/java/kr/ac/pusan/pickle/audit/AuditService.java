@@ -103,6 +103,24 @@ public class AuditService {
      * route contract requires.
      */
     public static final String SSHGW_SESSION = "sshgw.session";
+    // Relay port forwarding (contract v0.27.0). The sync path itself is not
+    // audited (a 30 s heartbeat would flood the log) — only violations and
+    // state changes are.
+    /** Agent reported an impossible appliedGeneration (out of range or regressing). */
+    public static final String RELAY_SYNC_VIOLATION = "relay.sync_violation";
+    /** Sync-token (re)issue — the fact only, never the token. */
+    public static final String RELAY_TOKEN_ISSUE = "relay.token_issue";
+    public static final String VM_PORT_FORWARD_CREATE = "vm.port_forward_create";
+    public static final String VM_PORT_FORWARD_DELETE = "vm.port_forward_delete";
+    /** Admin suspend, or the threshold auto-suspend (detail.auto=true, actor null). */
+    public static final String PORT_MAPPING_SUSPEND = "port_mapping.suspend";
+    public static final String PORT_MAPPING_UNSUSPEND = "port_mapping.unsuspend";
+    public static final String PORT_MAPPING_DELETE = "port_mapping.delete";
+    public static final String PORT_MAPPING_GUARDS_UPDATE = "port_mapping.guards_update";
+    // 교내 IP requests (contract v0.27.0).
+    public static final String CAMPUS_IP_REQUEST = "campus_ip.request";
+    public static final String CAMPUS_IP_CANCEL = "campus_ip.cancel";
+    public static final String CAMPUS_IP_STATUS_UPDATE = "campus_ip.status_update";
     // Admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";
