@@ -15,7 +15,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
-import kr.ac.pusan.pickle.relay.dto.AdminPortMappingView;
+import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
@@ -71,7 +71,7 @@ public class AdminPortMappingService {
     // ── list ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public PageResponse<AdminPortMappingView> list(Long relayId, Long vmId,
+    public PageResponse<AdminPortMappingResponse> list(Long relayId, Long vmId,
             PortMappingStatus status, int page, int size) {
         Specification<PortMapping> spec = (root, query, cb) -> cb.conjunction();
         if (relayId != null) {
@@ -96,10 +96,10 @@ public class AdminPortMappingService {
         relays.values().forEach(relay ->
                 failedByRelay.put(relay.getId(), portForwardingService.failedIds(relay)));
 
-        List<AdminPortMappingView> views = result.getContent().stream().map(mapping -> {
+        List<AdminPortMappingResponse> views = result.getContent().stream().map(mapping -> {
             Relay relay = relays.get(mapping.getRelayId());
             Vm vm = vms.get(mapping.getVmId());
-            return new AdminPortMappingView(mapping.getId(), mapping.getRelayId(),
+            return new AdminPortMappingResponse(mapping.getId(), mapping.getRelayId(),
                     relay != null ? relay.getName() : "", mapping.getVmId(),
                     vm != null ? vm.getName() : null, mapping.getProto(),
                     mapping.getPublicPort(), mapping.getTargetPort(), mapping.getStatus(),
@@ -118,8 +118,8 @@ public class AdminPortMappingService {
     // ── suspend / unsuspend ──────────────────────────────────────────────────
 
     @Transactional
-    public MessageResponse suspend(AuthenticatedUser actor, long mappingId, String reason,
-            String ip) {
+    public AdminPortMappingResponse suspend(AuthenticatedUser actor, long mappingId,
+            String reason, String ip) {
         PortMapping mapping = requireMapping(mappingId);
         if (mapping.getStatus() != PortMappingStatus.ACTIVE) {
             throw mappingStateConflict("이미 정지된 매핑입니다.");
@@ -143,11 +143,12 @@ public class AdminPortMappingService {
                 AuditService.PORT_MAPPING_SUSPEND, "port_mapping", mappingId,
                 Map.of("auto", false, "relayId", mapping.getRelayId(),
                         "vmId", mapping.getVmId(), "reason", reason), ip);
-        return new MessageResponse("매핑을 정지했습니다. 잠시 후 릴레이에서 제거됩니다.");
+        return toResponse(mapping);
     }
 
     @Transactional
-    public MessageResponse unsuspend(AuthenticatedUser actor, long mappingId, String ip) {
+    public AdminPortMappingResponse unsuspend(AuthenticatedUser actor, long mappingId,
+            String ip) {
         PortMapping mapping = requireMapping(mappingId);
         if (mapping.getStatus() != PortMappingStatus.SUSPENDED) {
             throw mappingStateConflict("정지 상태의 매핑이 아닙니다.");
@@ -160,7 +161,7 @@ public class AdminPortMappingService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.PORT_MAPPING_UNSUSPEND, "port_mapping", mappingId,
                 Map.of("relayId", mapping.getRelayId(), "vmId", mapping.getVmId()), ip);
-        return new MessageResponse("매핑 정지를 해제했습니다. 잠시 후 릴레이에 다시 반영됩니다.");
+        return toResponse(mapping);
     }
 
     // ── delete ───────────────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ public class AdminPortMappingService {
      * explicit limit. Every accepted write bumps the relay generation.
      */
     @Transactional
-    public AdminPortMappingView updateGuards(AuthenticatedUser actor, long mappingId,
+    public AdminPortMappingResponse updateGuards(AuthenticatedUser actor, long mappingId,
             JsonNode body, String ip) {
         PortMapping mapping = requireMapping(mappingId);
         Map<String, Object> changes = new LinkedHashMap<>();
@@ -230,9 +231,16 @@ public class AdminPortMappingService {
                 AuditService.PORT_MAPPING_GUARDS_UPDATE, "port_mapping", mappingId,
                 Map.of("relayId", mapping.getRelayId(), "vmId", mapping.getVmId(),
                         "changes", changes), ip);
+        return toResponse(mapping);
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /** Single-mapping response with relay/VM context and derived apply state. */
+    private AdminPortMappingResponse toResponse(PortMapping mapping) {
         Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
         Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);
-        return new AdminPortMappingView(mapping.getId(), mapping.getRelayId(), relay.getName(),
+        return new AdminPortMappingResponse(mapping.getId(), mapping.getRelayId(), relay.getName(),
                 mapping.getVmId(), vm != null ? vm.getName() : null, mapping.getProto(),
                 mapping.getPublicPort(), mapping.getTargetPort(), mapping.getStatus(),
                 mapping.getSuspendedReason(), mapping.getSuspendedBy(),
@@ -242,8 +250,6 @@ public class AdminPortMappingService {
                 mapping.getPerSourceRate(), mapping.getPerSourceBurst(), mapping.getCreatedBy(),
                 mapping.getCreatedAt());
     }
-
-    // ── helpers ──────────────────────────────────────────────────────────────
 
     private PortMapping requireMapping(long mappingId) {
         return portMappingRepository.findById(mappingId)

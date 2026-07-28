@@ -7,8 +7,8 @@ import kr.ac.pusan.pickle.relay.PortMappingProto;
 import kr.ac.pusan.pickle.relay.PortMappingStatus;
 import org.jspecify.annotations.Nullable;
 
-/** Contract schema {@code AdminPortMappingView} — one mapping with context. */
-public record AdminPortMappingView(
+/** Contract schema {@code AdminPortMappingResponse} — one mapping with context. */
+public record AdminPortMappingResponse(
         Long id,
         Long relayId,
         String relayName,

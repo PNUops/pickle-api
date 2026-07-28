@@ -108,6 +108,11 @@ class CampusIpRequestTest {
         request(vmId, viewerToken, "서비스 운영", List.of(80))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        // reads only need membership: a VIEWER may list
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/v1/vms/" + vmId + "/campus-ip-requests")
+                        .header("Authorization", "Bearer " + viewerToken))
+                .andExpect(status().isOk());
     }
 
     // ── creation ────────────────────────────────────────────────────────────
@@ -158,7 +163,7 @@ class CampusIpRequestTest {
         long requestId = created(vmId, "취소 테스트", List.of(80));
         mockMvc.perform(delete("/api/v1/vms/" + vmId + "/campus-ip-requests/" + requestId)
                         .header("Authorization", "Bearer " + ownerToken))
-                .andExpect(status().isOk());
+                .andExpect(status().isNoContent());
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from campus_ip_requests where id = ?", Long.class, requestId))
                 .isZero();

@@ -182,7 +182,12 @@ class PermissionMatrixTest {
             } else {
                 Set<String> expected = new TreeSet<>();
                 op.roles.forEach((role, token) -> {
-                    if (token.equals("allow") || token.equals("allow_org_scoped")) {
+                    // A gated row may combine a role gate with service-layer
+                    // scoping (campus-ip: USER deny + group-scoped managers):
+                    // every non-deny token names a role the @PreAuthorize must
+                    // carry; the group/org scoping itself stays service-layer.
+                    if (token.equals("allow") || token.equals("allow_org_scoped")
+                            || token.startsWith("allow_group_scoped")) {
                         expected.add(role);
                     }
                 });

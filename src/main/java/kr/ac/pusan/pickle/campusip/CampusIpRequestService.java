@@ -8,7 +8,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.audit.AuditService;
-import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.campusip.dto.AdminCampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CreateCampusIpRequest;
@@ -46,9 +45,11 @@ import tools.jackson.databind.ObjectMapper;
  * address) or rejects/revokes.
  *
  * <p>User-side authorization is two-layered: {@code @PreAuthorize} keeps USER
- * out entirely (manager tiers and up only), and the service scopes to the
- * VM's group OWNER/EDITOR (non-member → 404 mask, member below EDITOR →
- * 403) — same masking shape as publishing.</p>
+ * out entirely (manager tiers and up only — SYS tiers included stay
+ * group-bound on this user surface; cross-group intervention is the admin
+ * surface's job), and the service scopes to the VM's group (list: any member,
+ * create/cancel: OWNER/EDITOR; non-member → 404 mask) — same masking shape as
+ * publishing.</p>
  */
 @Service
 public class CampusIpRequestService {
@@ -83,9 +84,10 @@ public class CampusIpRequestService {
 
     // ── user ops ─────────────────────────────────────────────────────────────
 
+    /** Reads need membership only (VIEWER+); writes need OWNER/EDITOR. */
     @Transactional(readOnly = true)
     public List<CampusIpRequestView> list(AuthenticatedUser actor, long vmId) {
-        requireVmOwnerOrEditor(actor, vmId);
+        requireVmMember(actor, vmId);
         return requestRepository.findByVmIdOrderByIdDesc(vmId).stream()
                 .map(this::toView).toList();
     }
@@ -119,9 +121,12 @@ public class CampusIpRequestService {
         return toView(created);
     }
 
-    /** Cancel = remove the row; only a still-unreviewed (REQUESTED) 신청. */
+    /**
+     * Cancel = remove the row (204, pure DB state — nothing to converge);
+     * only a still-unreviewed (REQUESTED) 신청.
+     */
     @Transactional
-    public MessageResponse cancel(AuthenticatedUser actor, long vmId, long requestId, String ip) {
+    public void cancel(AuthenticatedUser actor, long vmId, long requestId, String ip) {
         requireVmOwnerOrEditor(actor, vmId);
         CampusIpRequest request = requestRepository.findByIdAndVmId(requestId, vmId)
                 .orElseThrow(CampusIpRequestService::requestNotFound);
@@ -132,7 +137,6 @@ public class CampusIpRequestService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.CAMPUS_IP_CANCEL, "campus_ip_request", requestId,
                 Map.of("vmId", vmId), ip);
-        return new MessageResponse("교내 IP 신청을 취소했습니다.");
     }
 
     // ── admin ops ────────────────────────────────────────────────────────────
@@ -278,6 +282,15 @@ public class CampusIpRequestService {
             node.forEach(item -> ports.add(item.asInt()));
         }
         return List.copyOf(ports);
+    }
+
+    /** Membership check (VIEWER+): non-members get the 404 existence mask. */
+    private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
+        Vm vm = vmRepository.findById(vmId).orElseThrow(CampusIpRequestService::vmNotFound);
+        if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
+            throw vmNotFound();
+        }
+        return vm;
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {

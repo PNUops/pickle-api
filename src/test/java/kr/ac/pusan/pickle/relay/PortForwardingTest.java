@@ -109,15 +109,15 @@ class PortForwardingTest {
     void createAuthorizesByGroupRole() throws Exception {
         long relayId = soleRelay(10000, 10099);
         long vmId = runningVm();
-        create(vmId, outsiderToken, "tcp", 8080)
+        create(vmId, outsiderToken, "TCP", 8080)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        create(vmId, viewerToken, "tcp", 8080)
+        create(vmId, viewerToken, "TCP", 8080)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        create(vmId, editorToken, "tcp", 8080)
+        create(vmId, editorToken, "TCP", 8080)
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.proto").value("tcp"))
+                .andExpect(jsonPath("$.proto").value("TCP"))
                 .andExpect(jsonPath("$.targetPort").value(8080))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.applyState").value("PENDING"));
@@ -131,7 +131,7 @@ class PortForwardingTest {
         jdbcTemplate.update(
                 "update settings set value = 'false' where key = 'port_forwarding_enabled'");
         try {
-            create(vmId, ownerToken, "tcp", 8080)
+            create(vmId, ownerToken, "TCP", 8080)
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("PORT_FORWARDING_DISABLED"));
         } finally {
@@ -145,7 +145,7 @@ class PortForwardingTest {
         soleRelay(10000, 10099);
         long vmId = runningVm();
         jdbcTemplate.update("update vms set status = 'STOPPED'::vm_status where id = ?", vmId);
-        create(vmId, ownerToken, "tcp", 8080)
+        create(vmId, ownerToken, "TCP", 8080)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
@@ -158,7 +158,7 @@ class PortForwardingTest {
         long vmId = runningVm();
         Set<Integer> ports = new HashSet<>();
         for (int i = 0; i < 5; i++) {
-            String body = create(vmId, ownerToken, "tcp", 8080 + i)
+            String body = create(vmId, ownerToken, "TCP", 8080 + i)
                     .andExpect(status().isCreated())
                     .andReturn().getResponse().getContentAsString();
             int port = objectMapper.readTree(body).get("publicPort").asInt();
@@ -173,12 +173,12 @@ class PortForwardingTest {
     void portNumbersAreCrossProtoExclusiveAndExhaustHonestly() throws Exception {
         soleRelay(12000, 12001); // band of exactly two ports
         long vmId = runningVm();
-        int tcpPort = createdPort(create(vmId, ownerToken, "tcp", 80));
-        int udpPort = createdPort(create(vmId, ownerToken, "udp", 53));
+        int tcpPort = createdPort(create(vmId, ownerToken, "TCP", 80));
+        int udpPort = createdPort(create(vmId, ownerToken, "UDP", 53));
         // udp did NOT reuse tcp's number even though the unique key is
         // per-proto — allocation treats a port as taken for either proto.
         assertThat(udpPort).isNotEqualTo(tcpPort);
-        create(vmId, ownerToken, "udp", 54)
+        create(vmId, ownerToken, "UDP", 54)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PUBLIC_PORT_EXHAUSTED"));
     }
@@ -193,7 +193,7 @@ class PortForwardingTest {
             List<Callable<Integer>> calls = new ArrayList<>();
             for (int i = 0; i < workers; i++) {
                 int targetPort = 9000 + i;
-                calls.add(() -> createdPort(create(vmId, ownerToken, "tcp", targetPort)));
+                calls.add(() -> createdPort(create(vmId, ownerToken, "TCP", targetPort)));
             }
             Set<Integer> ports = new HashSet<>();
             for (Future<Integer> future : pool.invokeAll(calls)) {
@@ -221,9 +221,9 @@ class PortForwardingTest {
             User fresh = ensureUser("pf.limited@pusan.ac.kr", "포워딩제한");
             addMember(groupId, fresh.getEmail(), "EDITOR");
             String freshToken = jwtService.createAccessToken(fresh);
-            create(vmId, freshToken, "tcp", 8081).andExpect(status().isCreated());
-            create(vmId, freshToken, "tcp", 8082).andExpect(status().isCreated());
-            create(vmId, freshToken, "tcp", 8083)
+            create(vmId, freshToken, "TCP", 8081).andExpect(status().isCreated());
+            create(vmId, freshToken, "TCP", 8082).andExpect(status().isCreated());
+            create(vmId, freshToken, "TCP", 8083)
                     .andExpect(status().isTooManyRequests())
                     .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
         } finally {
@@ -240,7 +240,7 @@ class PortForwardingTest {
     void applyStateFollowsRelayConfirmationAndErrors() throws Exception {
         long relayId = soleRelay(15000, 15099);
         long vmId = runningVm();
-        String body = create(vmId, ownerToken, "tcp", 8080)
+        String body = create(vmId, ownerToken, "TCP", 8080)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.applyState").value("PENDING"))
                 .andReturn().getResponse().getContentAsString();
@@ -263,7 +263,7 @@ class PortForwardingTest {
     void deleteRemovesTheMappingAndBumps() throws Exception {
         long relayId = soleRelay(16000, 16099);
         long vmId = runningVm();
-        String body = create(vmId, ownerToken, "udp", 5000)
+        String body = create(vmId, ownerToken, "UDP", 5000)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long mappingId = objectMapper.readTree(body).get("id").asLong();
@@ -328,7 +328,7 @@ class PortForwardingTest {
     void adminSuspendUnsuspendCycleBumpsAndNotifies() throws Exception {
         long relayId = soleRelay(18000, 18099);
         long vmId = runningVm();
-        String body = create(vmId, ownerToken, "tcp", 8080)
+        String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
         long mappingId = objectMapper.readTree(body).get("id").asLong();
 
@@ -336,7 +336,9 @@ class PortForwardingTest {
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"약관 위반 신고 확인 중\"}"))
-                .andExpect(status().isAccepted());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUSPENDED"))
+                .andExpect(jsonPath("$.suspendedReason").value("약관 위반 신고 확인 중"));
         Map<String, Object> row = jdbcTemplate.queryForMap(
                 "select status, suspended_by from port_mappings where id = ?", mappingId);
         assertThat(row.get("status")).isEqualTo("SUSPENDED");
@@ -358,7 +360,8 @@ class PortForwardingTest {
 
         mockMvc.perform(post("/api/v1/admin/port-mappings/" + mappingId + "/unsuspend")
                         .header("Authorization", "Bearer " + sysAdminToken))
-                .andExpect(status().isAccepted());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
         assertThat(jdbcTemplate.queryForObject(
                 "select status from port_mappings where id = ?", String.class, mappingId))
                 .isEqualTo("ACTIVE");
@@ -369,7 +372,7 @@ class PortForwardingTest {
     void guardPatchIsTriStatePerField() throws Exception {
         long relayId = soleRelay(19000, 19099);
         long vmId = runningVm();
-        String body = create(vmId, ownerToken, "tcp", 8080)
+        String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
         long mappingId = objectMapper.readTree(body).get("id").asLong();
 
@@ -412,7 +415,7 @@ class PortForwardingTest {
     void errorVmDeletionRemovesMappingsWithTheIpRelease() throws Exception {
         long relayId = soleRelay(20000, 20099);
         long vmId = runningVm();
-        create(vmId, ownerToken, "tcp", 8080).andExpect(status().isCreated());
+        create(vmId, ownerToken, "TCP", 8080).andExpect(status().isCreated());
         long generationBefore = mappingGeneration(relayId);
         jdbcTemplate.update("update vms set status = 'ERROR'::vm_status where id = ?", vmId);
 
@@ -434,7 +437,7 @@ class PortForwardingTest {
     void teardownServiceDemandsACallerTransaction() throws Exception {
         long relayId = soleRelay(21000, 21099);
         long vmId = runningVm();
-        create(vmId, ownerToken, "tcp", 8080).andExpect(status().isCreated());
+        create(vmId, ownerToken, "TCP", 8080).andExpect(status().isCreated());
 
         // MANDATORY propagation: mapping delete must never commit separately
         // from the caller's IP-release transaction.

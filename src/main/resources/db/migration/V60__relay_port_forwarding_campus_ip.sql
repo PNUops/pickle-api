@@ -50,7 +50,7 @@ create table port_mappings (
     id                     bigint generated always as identity primary key,
     relay_id               bigint not null references relays (id),
     vm_id                  bigint not null references vms (id),
-    proto                  text not null check (proto in ('tcp', 'udp')),
+    proto                  text not null check (proto in ('TCP', 'UDP')),
     public_port            int not null check (public_port between 1024 and 65535),
     target_port            int not null check (target_port between 1 and 65535),
     status                 text not null default 'ACTIVE'

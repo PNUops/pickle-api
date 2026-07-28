@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.relay.dto.AdminPortMappingView;
+import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.relay.dto.SuspendPortMappingRequest;
 import kr.ac.pusan.pickle.relay.dto.UpdatePortMappingGuardsRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -45,7 +45,7 @@ public class AdminPortMappingController {
     }
 
     @GetMapping
-    public PageResponse<AdminPortMappingView> listAdminPortMappings(
+    public PageResponse<AdminPortMappingResponse> listAdminPortMappings(
             @RequestParam(required = false) Long relayId,
             @RequestParam(required = false) Long vmId,
             @RequestParam(required = false) PortMappingStatus status,
@@ -54,9 +54,9 @@ public class AdminPortMappingController {
         return adminPortMappingService.list(relayId, vmId, status, page, size);
     }
 
+    /** 200 with the updated row (contract): convergence itself stays async. */
     @PostMapping("/{mappingId}/suspend")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public MessageResponse suspendAdminPortMapping(
+    public AdminPortMappingResponse suspendAdminPortMapping(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
             @Valid @RequestBody SuspendPortMappingRequest request,
             HttpServletRequest httpRequest) {
@@ -65,8 +65,7 @@ public class AdminPortMappingController {
     }
 
     @PostMapping("/{mappingId}/unsuspend")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public MessageResponse unsuspendAdminPortMapping(
+    public AdminPortMappingResponse unsuspendAdminPortMapping(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
             HttpServletRequest httpRequest) {
         return adminPortMappingService.unsuspend(principal, mappingId, clientIp(httpRequest));
@@ -89,7 +88,7 @@ public class AdminPortMappingController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             schema = @Schema(implementation = UpdatePortMappingGuardsRequest.class)))
-    public AdminPortMappingView updateAdminPortMappingGuards(
+    public AdminPortMappingResponse updateAdminPortMappingGuards(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
             @RequestBody tools.jackson.databind.JsonNode body, HttpServletRequest httpRequest) {
         return adminPortMappingService.updateGuards(principal, mappingId, body,

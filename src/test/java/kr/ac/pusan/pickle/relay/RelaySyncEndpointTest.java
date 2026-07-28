@@ -245,12 +245,13 @@ class RelaySyncEndpointTest {
         RelayFixture relay = newRelay("snapshot");
         long vmId = runningVm();
         String vmIp = vmIp(vmId);
-        insertMapping(relay.id(), vmId, "tcp", 12345, 8080, "ACTIVE", 1);
+        insertMapping(relay.id(), vmId, "TCP", 12345, 8080, "ACTIVE", 1);
         jdbcTemplate.update("update relays set mapping_generation = 1 where id = ?", relay.id());
         sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.generation").value(1))
                 .andExpect(jsonPath("$.mappings.length()").value(1))
+                // lowercase on the internal wire (frozen record), TCP in the DB
                 .andExpect(jsonPath("$.mappings[0].proto").value("tcp"))
                 .andExpect(jsonPath("$.mappings[0].publicPort").value(12345))
                 .andExpect(jsonPath("$.mappings[0].targetAddr").value(vmIp))
@@ -263,8 +264,8 @@ class RelaySyncEndpointTest {
     void suspendedMappingsAreExcludedFromTheSnapshot() throws Exception {
         RelayFixture relay = newRelay("suspended");
         long vmId = runningVm();
-        insertMapping(relay.id(), vmId, "tcp", 13001, 80, "ACTIVE", 1);
-        insertMapping(relay.id(), vmId, "tcp", 13002, 81, "SUSPENDED", 2);
+        insertMapping(relay.id(), vmId, "TCP", 13001, 80, "ACTIVE", 1);
+        insertMapping(relay.id(), vmId, "TCP", 13002, 81, "SUSPENDED", 2);
         jdbcTemplate.update("update relays set mapping_generation = 2 where id = ?", relay.id());
         sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
                 .andExpect(status().isOk())
@@ -278,7 +279,7 @@ class RelaySyncEndpointTest {
     void countersAccumulateWithResetDetection() throws Exception {
         RelayFixture relay = newRelay("counters");
         long vmId = runningVm();
-        long mappingId = insertMapping(relay.id(), vmId, "udp", 14001, 5000, "ACTIVE", 1);
+        long mappingId = insertMapping(relay.id(), vmId, "UDP", 14001, 5000, "ACTIVE", 1);
         jdbcTemplate.update("update relays set mapping_generation = 1 where id = ?", relay.id());
 
         syncCounters(relay, mappingId, 100, 1000, 500); // baseline
@@ -295,7 +296,7 @@ class RelaySyncEndpointTest {
         RelayFixture relayA = newRelay("foreign-a");
         RelayFixture relayB = newRelay("foreign-b");
         long vmId = runningVm();
-        long mappingOfB = insertMapping(relayB.id(), vmId, "tcp", 15001, 80, "ACTIVE", 1);
+        long mappingOfB = insertMapping(relayB.id(), vmId, "TCP", 15001, 80, "ACTIVE", 1);
         syncCounters(relayA, mappingOfB, 999, 999, 999); // reported via relay A
         Long rows = jdbcTemplate.queryForObject(
                 "select count(*) from port_mapping_counters where mapping_id = ?",
@@ -307,7 +308,7 @@ class RelaySyncEndpointTest {
     void thresholdBreachAutoSuspendsInTheSameResponse() throws Exception {
         RelayFixture relay = newRelay("autosuspend");
         long vmId = runningVm();
-        long mappingId = insertMapping(relay.id(), vmId, "udp", 16001, 53, "ACTIVE", 1);
+        long mappingId = insertMapping(relay.id(), vmId, "UDP", 16001, 53, "ACTIVE", 1);
         jdbcTemplate.update("update relays set mapping_generation = 1 where id = ?", relay.id());
 
         syncCounters(relay, mappingId, 0, 0, 0); // baseline (no rate yet)

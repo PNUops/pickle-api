@@ -5,7 +5,6 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CreateCampusIpRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -51,10 +50,12 @@ public class CampusIpRequestController {
         return campusIpRequestService.create(principal, vmId, request, clientIp(httpRequest));
     }
 
+    /** 204: the cancel is pure DB state — there is nothing to converge. */
     @DeleteMapping("/{requestId}")
-    public MessageResponse cancelVmCampusIpRequest(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelVmCampusIpRequest(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
             @PathVariable long requestId, HttpServletRequest httpRequest) {
-        return campusIpRequestService.cancel(principal, vmId, requestId, clientIp(httpRequest));
+        campusIpRequestService.cancel(principal, vmId, requestId, clientIp(httpRequest));
     }
 }

@@ -9,7 +9,10 @@
 #   allow_org_scoped             — allowed; service layer forces caller's own org
 #                                  (cross-org target -> 404 existence mask)
 #   allow_group_scoped:<ROLE>    — allowed to the named group role or above,
-#                                  enforced in the service layer (no @PreAuthorize)
+#                                  enforced in the service layer (no @PreAuthorize
+#                                  when the row has no deny; in a row WITH a deny
+#                                  the role additionally appears in @PreAuthorize
+#                                  and the group scoping stays service-layer)
 #   deny                         — denied (403 via method security / not offered)
 #
 # How the test reads tokens: a row with >=1 `deny` is role-gated, and its
@@ -202,11 +205,12 @@ operations:
   - { id: createVmPortForwarding,  method: POST,   path: "/vms/{vmId}/port-forwardings",                     roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: deleteVmPortForwarding,  method: DELETE, path: "/vms/{vmId}/port-forwardings/{portForwardingId}",  roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
 
-  # ── 3.24 교내 IP 신청 (manager tiers and up; service layer additionally
-  #        scopes to the VM's group OWNER/EDITOR — 404 mask for non-members) ─
-  - { id: listVmCampusIpRequests,  method: GET,    path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: requestVmCampusIp,       method: POST,   path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: cancelVmCampusIpRequest, method: DELETE, path: "/vms/{vmId}/campus-ip-requests/{requestId}",  roles: { USER: deny, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  # ── 3.24 교내 IP 신청 (USER denied at the gate; every allowed tier is ALSO
+  #        group-scoped in the service layer — SYS tiers included, non-member
+  #        404 mask; cross-group intervention lives on /admin/campus-ip-requests) ─
+  - { id: listVmCampusIpRequests,  method: GET,    path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: requestVmCampusIp,       method: POST,   path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: deny, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: cancelVmCampusIpRequest, method: DELETE, path: "/vms/{vmId}/campus-ip-requests/{requestId}",  roles: { USER: deny, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
 
   # ── 3.25 Admin — relays / port mappings (guards & token SYS_ADMIN-only) ───
   - { id: listAdminRelays,             method: GET,    path: "/admin/relays",                          roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }

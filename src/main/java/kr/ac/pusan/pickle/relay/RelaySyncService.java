@@ -54,7 +54,8 @@ public class RelaySyncService {
      * ip_allocations row — never stored on the mapping.
      */
     private static final String SNAPSHOT_SQL = """
-            select r.mapping_generation, m.id, m.proto, m.public_port, m.target_port,
+            select r.mapping_generation, m.id, lower(m.proto) as proto,
+                   m.public_port, m.target_port,
                    m.ct_max, m.new_conn_rate, m.new_conn_burst,
                    m.per_source_rate, m.per_source_burst,
                    host(a.ip) as target_addr

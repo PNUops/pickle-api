@@ -361,7 +361,7 @@ components:
       - "userEmail"
       - "userId"
       type: "object"
-    AdminPortMappingView:
+    AdminPortMappingResponse:
       properties:
         applyState:
           $ref: "#/components/schemas/PortForwardApplyState"
@@ -2238,11 +2238,11 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
-    PageResponseAdminPortMappingView:
+    PageResponseAdminPortMappingResponse:
       properties:
         content:
           items:
-            $ref: "#/components/schemas/AdminPortMappingView"
+            $ref: "#/components/schemas/AdminPortMappingResponse"
           type: "array"
         page:
           format: "int32"
@@ -2633,8 +2633,8 @@ components:
       type: "object"
     PortMappingProto:
       enum:
-      - "tcp"
-      - "udp"
+      - "TCP"
+      - "UDP"
       type: "string"
     PortMappingStatus:
       enum:
@@ -5158,7 +5158,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/PageResponseAdminPortMappingView"
+                $ref: "#/components/schemas/PageResponseAdminPortMappingResponse"
           description: "OK"
         default:
           content:
@@ -5214,7 +5214,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/AdminPortMappingView"
+                $ref: "#/components/schemas/AdminPortMappingResponse"
           description: "OK"
         default:
           content:
@@ -5241,12 +5241,12 @@ paths:
               $ref: "#/components/schemas/SuspendPortMappingRequest"
         required: true
       responses:
-        "202":
+        "200":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/MessageResponse"
-          description: "Accepted"
+                $ref: "#/components/schemas/AdminPortMappingResponse"
+          description: "OK"
         default:
           content:
             application/problem+json:
@@ -5266,12 +5266,12 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "202":
+        "200":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/MessageResponse"
-          description: "Accepted"
+                $ref: "#/components/schemas/AdminPortMappingResponse"
+          description: "OK"
         default:
           content:
             application/problem+json:
@@ -8133,12 +8133,8 @@ paths:
           format: "int64"
           type: "integer"
       responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/MessageResponse"
-          description: "OK"
+        "204":
+          description: "No Content"
         default:
           content:
             application/problem+json:
