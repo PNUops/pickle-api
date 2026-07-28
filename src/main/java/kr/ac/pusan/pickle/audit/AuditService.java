@@ -141,6 +141,8 @@ public class AuditService {
     public static final String VM_PASSWORD_REGENERATE = "vm.password_regenerate";
     /** Actor role stamped on gateway route audits (no user identity in v1). */
     public static final String ACTOR_ROLE_SSHGW = "SSHGW";
+    /** Actor role stamped on relay-originated audits (sync violations, auto-suspend). */
+    public static final String ACTOR_ROLE_RELAY = "RELAY";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

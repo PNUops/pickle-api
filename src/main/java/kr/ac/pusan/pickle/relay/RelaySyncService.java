@@ -102,7 +102,8 @@ public class RelaySyncService {
         if (violation) {
             // Direct record (not after-commit): a security signal, keep it even
             // if something later in this tx were to fail.
-            auditService.record(null, "RELAY", AuditService.RELAY_SYNC_VIOLATION, "relay", relayId,
+            auditService.record(null, AuditService.ACTOR_ROLE_RELAY,
+                    AuditService.RELAY_SYNC_VIOLATION, "relay", relayId,
                     Map.of("reported", reported, "storedApplied", state.applied(),
                             "currentGeneration", state.current(),
                             "agentVersion", agentVersion == null ? "" : agentVersion), null);
@@ -236,7 +237,7 @@ public class RelaySyncService {
         args.put("reason", reason);
         notificationService.publish(notificationService.sysAdminIds(),
                 NotificationEvent.PORT_MAPPING_SUSPENDED, args, "pm_auto_suspend:" + mappingId);
-        auditService.recordAfterCommit(null, "RELAY", AuditService.PORT_MAPPING_SUSPEND,
+        auditService.recordAfterCommit(null, AuditService.ACTOR_ROLE_RELAY, AuditService.PORT_MAPPING_SUSPEND,
                 "port_mapping", mappingId, Map.of("auto", true, "relayId", relayId,
                         "connsPerMin", connsPerMin, "mbytesPerMin", mbytesPerMin,
                         "connsLimit", connsLimit, "mbytesLimit", mbytesLimit), null);
