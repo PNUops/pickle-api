@@ -98,6 +98,20 @@ pickle:
     rate-limit-per-minute: ${PICKLE_SSHGW_RATE_LIMIT:60}
     # Whole-gateway backstop at the /internal filter, across all clients.
     global-rate-limit-per-minute: ${PICKLE_SSHGW_GLOBAL_RATE_LIMIT:600}
+  relay:
+    # Relay sync surface (/internal/relays/**, own filter chain + per-relay
+    # token). Per-relay sync budget, ~3-5x the agent poll rate; deliberately
+    # NOT the sshgw global bucket.
+    sync-rate-limit-per-minute: ${PICKLE_RELAY_SYNC_RATE_LIMIT:20}
+    # Agent poll interval as deployed on the relay; contact-lost derivation
+    # flags a relay after 3x this without a sync.
+    poll-interval-seconds: ${PICKLE_RELAY_POLL_INTERVAL_SECONDS:30}
+    # Hard cap on a sync request body: larger Content-Length answers 413 and
+    # chunked bodies are stream-capped.
+    max-sync-body-bytes: ${PICKLE_RELAY_MAX_SYNC_BODY_BYTES:1048576}
+    # Peers confined to the relay sync surface: a relay's tunnel address must
+    # reach only /internal/relays/** (403 everywhere else, actuator included).
+    restricted-source-ips: ${PICKLE_RELAY_RESTRICTED_SOURCE_IPS:10.100.100.1}
   proxy-agent:
     # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.
