@@ -410,6 +410,10 @@ class ApprovalTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.nodeId").isNumber());
+
+        // drop the extra ACTIVE node: capacity assertions elsewhere sum ACTIVE
+        // nodes, and method order differs across environments
+        jdbcTemplate.update("delete from nodes where id = ?", emptyNodeId);
     }
 
     @Test
@@ -449,6 +453,12 @@ class ApprovalTest {
 
     @Test
     void approvalContextShowsPanelsHeadroomAndGuidance() throws Exception {
+        // Capacity sums every ACTIVE node, and earlier test classes sharing
+        // this database leave ACTIVE fixture nodes behind in some execution
+        // orders — demote everything but the seeded pve1 before asserting.
+        jdbcTemplate.update(
+                "update nodes set status = 'MAINTENANCE' where name <> 'pve1'");
+
         // Dedicated org + applicant so counts/totals are isolated from the
         // other tests sharing this context's database.
         Org ctxOrg = orgRepository.findBySlug("appr-ctx").orElseGet(() ->
