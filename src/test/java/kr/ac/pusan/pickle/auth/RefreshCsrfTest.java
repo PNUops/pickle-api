@@ -31,7 +31,7 @@ import tools.jackson.databind.ObjectMapper;
  * CSRF double-submit enforcement on the cookie-authed endpoints
  * (contract v0.3.1: 403 {@code AUTH_CSRF_INVALID} on POST /auth/refresh and
  * /auth/logout when the {@code X-Pickle-Csrf} header is missing or does not
- * match the {@code pickle_csrf} cookie). Bearer/anonymous endpoints are not
+ * match the {@code __Host-pickle_csrf} cookie). Bearer/anonymous endpoints are not
  * affected.
  */
 @SpringBootTest
@@ -59,9 +59,9 @@ class RefreshCsrfTest {
     @Test
     void refreshAndLogoutRequireMatchingCsrfPair() throws Exception {
         MvcResult login = loginWithFreshAccount("csrf.tester@pusan.ac.kr");
-        Cookie refresh = login.getResponse().getCookie("pickle_refresh");
-        Cookie csrf = login.getResponse().getCookie("pickle_csrf");
-        assertThat(csrf).as("pickle_csrf cookie issued on login").isNotNull();
+        Cookie refresh = login.getResponse().getCookie("__Host-pickle_refresh");
+        Cookie csrf = login.getResponse().getCookie("__Host-pickle_csrf");
+        assertThat(csrf).as("__Host-pickle_csrf cookie issued on login").isNotNull();
 
         // header missing → 403 AUTH_CSRF_INVALID (problem+json)
         mockMvc.perform(post("/api/v1/auth/refresh").cookie(refresh, csrf))
@@ -96,8 +96,44 @@ class RefreshCsrfTest {
                         .header("X-Pickle-Csrf", csrf.getValue()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"));
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"));
+    }
+
+    /**
+     * Two cookies of the CSRF name in one request are rejected outright. A client
+     * that honours the {@code __Host-} prefix cannot produce this, but one that
+     * does not could be handed a second, attacker-set copy; picking either value
+     * silently is exactly how a shadowing cookie would get through, so the
+     * ambiguity itself is the failure.
+     */
+    @Test
+    void duplicateCsrfCookiesAreRejected() throws Exception {
+        MvcResult login = loginWithFreshAccount("csrf.dupe@pusan.ac.kr");
+        Cookie refresh = login.getResponse().getCookie("__Host-pickle_refresh");
+        Cookie csrf = login.getResponse().getCookie("__Host-pickle_csrf");
+
+        Cookie shadow = new Cookie("__Host-pickle_csrf", "attacker-planted-value");
+        // the header echoes the genuine value, so only the duplicate can fail this
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(refresh, csrf, shadow)
+                        .header("X-Pickle-Csrf", csrf.getValue()))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("AUTH_CSRF_INVALID"));
+
+        // ... and the ordering does not matter: the planted copy first is also 403
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(refresh, shadow, csrf)
+                        .header("X-Pickle-Csrf", csrf.getValue()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("AUTH_CSRF_INVALID"));
+
+        // the rejections consumed nothing: the genuine single pair still refreshes
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .cookie(refresh, csrf)
+                        .header("X-Pickle-Csrf", csrf.getValue()))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -124,8 +160,8 @@ class RefreshCsrfTest {
                 .andExpect(status().isOk());
         return postJson("/api/v1/auth/login", Map.of("email", email, "password", PASSWORD))
                 .andExpect(status().isOk())
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"))
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"))
                 .andReturn();
     }
 

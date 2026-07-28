@@ -96,10 +96,10 @@ public class MfaService {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_BEGIN, user.getEmail(), ip);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw passwordMismatch();
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
         UserMfa mfa = userMfaRepository.findById(userId).orElseGet(() -> new UserMfa(userId));
         if (mfa.isEnrolled()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_ALREADY_ENROLLED,
@@ -120,7 +120,7 @@ public class MfaService {
         // stays harmless as long as that stays true.
         rateLimitService.hit(SCOPE_ACTIVATE + ":ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit(SCOPE_ACTIVATE + ":acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkCodeLock(user.getEmail());
+        rateLimitService.checkCodeLock(user.getEmail(), ip);
         UserMfa mfa = userMfaRepository.findById(userId).orElse(null);
         if (mfa == null || !mfa.hasPendingSetup()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.MFA_SETUP_NOT_IN_PROGRESS,
@@ -128,10 +128,10 @@ public class MfaService {
         }
         String secret = credentialCipher.decrypt(mfa.getPendingSecretEnc());
         if (!totpService.verify(secret, code, Instant.now())) {
-            rateLimitService.registerCodeFailure(user.getEmail());
+            rateLimitService.registerCodeFailure(user.getEmail(), ip);
             throw codeInvalid("인증 앱의 최신 코드를 확인해 주세요.");
         }
-        rateLimitService.clearCodeFailures(user.getEmail());
+        rateLimitService.clearCodeFailures(user.getEmail(), ip);
         mfa.activate(Instant.now());
         userMfaRepository.save(mfa);
         List<String> codes = replaceRecoveryCodes(userId);
@@ -147,21 +147,21 @@ public class MfaService {
     public void disable(long userId, String password, String code, String recoveryCode, String ip) {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_DISABLE, user.getEmail(), ip);
-        rateLimitService.checkCodeLock(user.getEmail());
+        rateLimitService.checkCodeLock(user.getEmail(), ip);
         UserMfa mfa = enrolledOrThrow(userId);
         requireExactlyOneCode(code, recoveryCode);
         // The password is checked first and on its own, so a wrong code never
         // burns a recovery code and never feeds the login lockout. The response
         // stays the same either way, so which factor failed is not disclosed.
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
         if (!verifyEnrolledCode(mfa, userId, code, recoveryCode)) {
-            rateLimitService.registerCodeFailure(user.getEmail());
+            rateLimitService.registerCodeFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
-        clearFailureCounters(user.getEmail());
+        clearFailureCounters(user.getEmail(), ip);
         userMfaRepository.deleteByUserId(userId);
         recoveryCodeRepository.deleteByUserId(userId);
 
@@ -176,17 +176,17 @@ public class MfaService {
             String ip) {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_RECOVERY, user.getEmail(), ip);
-        rateLimitService.checkCodeLock(user.getEmail());
+        rateLimitService.checkCodeLock(user.getEmail(), ip);
         UserMfa mfa = enrolledOrThrow(userId);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
         if (!totpService.verify(activeSecret(mfa), code, Instant.now())) {
-            rateLimitService.registerCodeFailure(user.getEmail());
+            rateLimitService.registerCodeFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
         }
-        clearFailureCounters(user.getEmail());
+        clearFailureCounters(user.getEmail(), ip);
         return new MfaRecoveryCodesResponse(replaceRecoveryCodes(userId));
     }
 
@@ -202,13 +202,13 @@ public class MfaService {
     private void guardPasswordAttempt(String scope, String email, String ip) {
         rateLimitService.hit(scope + ":ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit(scope + ":acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkLoginLock(email);
+        rateLimitService.checkLoginLock(email, ip);
     }
 
-    /** A fully accepted re-verification resets both failure counters. */
-    private void clearFailureCounters(String email) {
-        rateLimitService.clearLoginFailures(email);
-        rateLimitService.clearCodeFailures(email);
+    /** A fully accepted re-verification resets both failure counters for this caller. */
+    private void clearFailureCounters(String email, String ip) {
+        rateLimitService.clearLoginFailures(email, ip);
+        rateLimitService.clearCodeFailures(email, ip);
     }
 
     // ── login step-up (/auth/login → /auth/mfa) ─────────────────────────────

@@ -153,18 +153,27 @@ class ReauthTest {
                 "select count(*) from auth_reverifications where user_id = ?", Long.class,
                 user.getId())).isZero();
 
-        // the shared login lockout now refuses even the correct password (login
-        // from another address, so this is the account counter, not the IP window)
-        mockMvc.perform(post("/api/v1/auth/login")
-                        .with(request -> {
-                            request.setRemoteAddr("10.98.1.2");
-                            return request;
-                        })
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                Map.of("email", user.getEmail(), "password", PASSWORD))))
+        // the shared login lockout now refuses even the correct password from the
+        // address that did the guessing — this is the lockout, not the sliding
+        // window, which reverify counts on its own scopes
+        loginFrom(user.getEmail(), "10.98.1.1")
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        // and it stops there: the lockout is keyed on the (account, address) pair,
+        // so the account's other clients are unaffected
+        loginFrom(user.getEmail(), "10.98.1.2").andExpect(status().isOk());
+    }
+
+    private ResultActions loginFrom(String email, String ip) throws Exception {
+        return mockMvc.perform(post("/api/v1/auth/login")
+                .with(request -> {
+                    request.setRemoteAddr(ip);
+                    return request;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                        Map.of("email", email, "password", PASSWORD))));
     }
 
     @Test

@@ -62,7 +62,7 @@ class MfaLoginTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mfaRequired").value(true))
                 .andExpect(jsonPath("$.mfaToken").isNotEmpty())
-                .andExpect(cookie().doesNotExist("pickle_refresh"))
+                .andExpect(cookie().doesNotExist("__Host-pickle_refresh"))
                 .andReturn();
         String mfaToken = json(challenged).get("mfaToken").asText();
 
@@ -75,8 +75,8 @@ class MfaLoginTest {
         mfa(Map.of("mfaToken", mfaToken, "code", codeFor(secret)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"));
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"));
 
         // the token is single-use: reusing it → 410
         mfa(Map.of("mfaToken", mfaToken, "code", codeFor(secret)))

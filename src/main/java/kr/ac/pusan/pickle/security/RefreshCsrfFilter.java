@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Set;
+import kr.ac.pusan.pickle.auth.SessionCookies;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.ProblemJsonWriter;
 import org.springframework.http.HttpMethod;
@@ -18,10 +19,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * CSRF double-submit-cookie check for the two endpoints that authenticate via
- * the {@code pickle_refresh} cookie instead of a Bearer token
+ * the {@code __Host-pickle_refresh} cookie instead of a Bearer token
  * (contract v0.3.1): {@code POST /api/v1/auth/refresh} and
  * {@code POST /api/v1/auth/logout}. The {@code X-Pickle-Csrf} header must
- * equal the {@code pickle_csrf} cookie; otherwise 403 {@code AUTH_CSRF_INVALID}.
+ * equal the {@code __Host-pickle_csrf} cookie; otherwise 403 {@code AUTH_CSRF_INVALID}.
  *
  * <p>The CSRF token value needs no server-side state or session binding: a
  * cross-site attacker can neither read our cookies (to copy the value into the
@@ -34,7 +35,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class RefreshCsrfFilter extends OncePerRequestFilter {
 
     public static final String CSRF_HEADER = "X-Pickle-Csrf";
-    public static final String CSRF_COOKIE = "pickle_csrf";
+    public static final String CSRF_COOKIE = "__Host-pickle_csrf";
 
     private static final Set<String> PROTECTED_PATHS =
             Set.of("/api/v1/auth/refresh", "/api/v1/auth/logout");
@@ -56,7 +57,11 @@ public class RefreshCsrfFilter extends OncePerRequestFilter {
             FilterChain filterChain) throws ServletException, IOException {
         String header = request.getHeader(CSRF_HEADER);
         String cookie = csrfCookieValue(request);
-        if (header == null || header.isEmpty() || cookie == null || cookie.isEmpty()
+        // These two endpoints are also the only ones that read the refresh
+        // cookie, and Spring hands the controller the first match without a
+        // word. Refusing an ambiguous pair here covers both cookies at once.
+        if (countCookies(request, SessionCookies.REFRESH_COOKIE) > 1
+                || header == null || header.isEmpty() || cookie == null || cookie.isEmpty()
                 || !MessageDigest.isEqual(header.getBytes(StandardCharsets.UTF_8),
                         cookie.getBytes(StandardCharsets.UTF_8))) {
             problemJsonWriter.write(request, response, HttpStatus.FORBIDDEN.value(),
@@ -67,16 +72,42 @@ public class RefreshCsrfFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    /**
+     * Returns the CSRF cookie, or {@code null} when it is absent — or when more
+     * than one cookie of that name arrived. The {@code __Host-} prefix already
+     * stops another host in the same public-suffix zone from setting a competing
+     * copy, but a client that ignores the prefix could still present two, and
+     * picking either one silently is how a shadowed cookie would slip through.
+     * Ambiguity is treated as failure instead.
+     */
     private String csrfCookieValue(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
             return null;
         }
+        String found = null;
         for (Cookie cookie : cookies) {
             if (CSRF_COOKIE.equals(cookie.getName())) {
-                return cookie.getValue();
+                if (found != null) {
+                    return null;
+                }
+                found = cookie.getValue();
             }
         }
-        return null;
+        return found;
+    }
+
+    private int countCookies(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return 0;
+        }
+        int n = 0;
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName())) {
+                n++;
+            }
+        }
+        return n;
     }
 }

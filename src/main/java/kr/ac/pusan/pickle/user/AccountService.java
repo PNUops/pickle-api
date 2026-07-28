@@ -73,10 +73,10 @@ public class AccountService {
         // before the 2FA check): same dual-key window and shared lockout as login.
         rateLimitService.hit("withdraw:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("withdraw:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkLoginLock(user.getEmail());
-        rateLimitService.checkCodeLock(user.getEmail());
+        rateLimitService.checkLoginLock(user.getEmail(), ip);
+        rateLimitService.checkCodeLock(user.getEmail(), ip);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
@@ -88,12 +88,12 @@ public class AccountService {
         // endpoints).
         if (mfaService.isEnrolled(user.getId())
                 && !mfaService.verifyEnrolledCode(user.getId(), totpCode, recoveryCode)) {
-            rateLimitService.registerCodeFailure(user.getEmail());
+            rateLimitService.registerCodeFailure(user.getEmail(), ip);
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_MFA_CODE_INVALID,
                     "본인 확인에 실패했습니다", "인증 코드를 다시 확인해 주세요.");
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
-        rateLimitService.clearCodeFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
+        rateLimitService.clearCodeFailures(user.getEmail(), ip);
 
         List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
                 .filter(member -> member.getGroup().getDeletedAt() == null)

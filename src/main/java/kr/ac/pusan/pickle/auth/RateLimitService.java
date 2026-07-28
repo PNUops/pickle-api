@@ -17,9 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
  *       request is rejected once the sum over the last 60 seconds exceeds the
  *       endpoint limit (default 10/min per IP and per account).</li>
  *   <li>Escalating lockout: after {@value #LOCKOUT_THRESHOLD} consecutive
- *       failures the account is locked, doubling from 1 minute up to 15
- *       minutes. Password failures and second-factor code failures are
- *       counted, and locked, separately.</li>
+ *       failures the (account, client address) pair is locked, doubling from 1
+ *       minute up to 15 minutes. Password failures and second-factor code
+ *       failures are counted, and locked, separately. Keying the lockout on the
+ *       pair keeps it out of reach of anyone who knows only the address; the
+ *       sliding window above is what bounds one account's total across many
+ *       addresses.</li>
  * </ul>
  *
  * Methods run in their own transaction so counters survive the business
@@ -120,43 +123,91 @@ public class RateLimitService {
         }
     }
 
-    /** Throws 429 when the account is under an escalating login lockout. */
+    /**
+     * Throws 429 when this account is under an escalating login lockout <em>from
+     * this client address</em>. The lock is keyed on the pair rather than the
+     * account alone because this check runs before the password is verified:
+     * an account-wide key would let anyone who knows an address lock its owner
+     * out remotely, so a caller can only ever lock the pair it is calling from.
+     * Total attempts against one account across many addresses stay bounded by
+     * the separate account-wide sliding window ({@code hit("login:acct", …)}).
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public void checkLoginLock(String account) {
-        checkLock(LOGIN_FAIL_SCOPE, account);
-    }
-
-    /** Throws 429 when the account is under a second-factor code lockout. */
-    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
-    public void checkCodeLock(String account) {
-        checkLock(CODE_FAIL_SCOPE, account);
+    public void checkLoginLock(String account, String ip) {
+        checkLock(LOGIN_FAIL_SCOPE, lockSubject(account, ip));
     }
 
     /**
-     * Registers a failed password check; from the {@value #LOCKOUT_THRESHOLD}th
-     * consecutive failure the lockout doubles (1 min → … → 15 min cap).
+     * Throws 429 when this account is under a second-factor code lockout from
+     * this client address. Keyed on the pair for the same reason as
+     * {@link #checkLoginLock}: one address must not be able to lock an account's
+     * code entry for everyone else. The account-wide sliding window
+     * ({@code hit("login:acct", …)} and its per-endpoint siblings) remains the
+     * cap on attempts spread across many addresses.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
+    public void checkCodeLock(String account, String ip) {
+        checkLock(CODE_FAIL_SCOPE, lockSubject(account, ip));
+    }
+
+    /**
+     * Registers a failed password check for this (account, client address) pair;
+     * from the {@value #LOCKOUT_THRESHOLD}th consecutive failure the lockout
+     * doubles (1 min → … → 15 min cap). The address is part of the key so a
+     * remote attacker's failures escalate only against their own address and
+     * never lock the legitimate owner out. Attempts distributed across many
+     * addresses are held down instead by the account-wide sliding window
+     * ({@code hit("login:acct", …)}).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void registerLoginFailure(String account) {
-        registerFailure(LOGIN_FAIL_SCOPE, account);
+    public void registerLoginFailure(String account, String ip) {
+        registerFailure(LOGIN_FAIL_SCOPE, lockSubject(account, ip));
     }
 
-    /** Same escalation as {@link #registerLoginFailure}, on the code counter. */
+    /**
+     * Same escalation as {@link #registerLoginFailure}, on the code counter and
+     * keyed on the same (account, client address) pair, so a wrong code from one
+     * address cannot block the account's owner from entering theirs. The
+     * account-wide sliding window keeps the total across addresses bounded.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void registerCodeFailure(String account) {
-        registerFailure(CODE_FAIL_SCOPE, account);
+    public void registerCodeFailure(String account, String ip) {
+        registerFailure(CODE_FAIL_SCOPE, lockSubject(account, ip));
     }
 
-    /** Successful login resets the consecutive-failure counter. */
+    /**
+     * A successful login resets the consecutive-failure counter for this
+     * (account, client address) pair — the same key the failures were recorded
+     * under, so proving the password clears only the caller's own lockout and
+     * cannot wipe another address's escalation. Account-wide volume is still
+     * accounted for by the sliding window ({@code hit("login:acct", …)}), which
+     * a success does not reset.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void clearLoginFailures(String account) {
-        clearFailures(LOGIN_FAIL_SCOPE, account);
+    public void clearLoginFailures(String account, String ip) {
+        clearFailures(LOGIN_FAIL_SCOPE, lockSubject(account, ip));
     }
 
-    /** An accepted second-factor code resets the code-failure counter. */
+    /**
+     * An accepted second-factor code resets the code-failure counter for this
+     * (account, client address) pair only, mirroring how the failures were keyed
+     * so one client's success cannot clear another's escalation. The
+     * account-wide sliding window remains the cap on attempts spread across
+     * addresses.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void clearCodeFailures(String account) {
-        clearFailures(CODE_FAIL_SCOPE, account);
+    public void clearCodeFailures(String account, String ip) {
+        clearFailures(CODE_FAIL_SCOPE, lockSubject(account, ip));
+    }
+
+    /**
+     * Composite lockout key. A missing or blank client address collapses to a
+     * single placeholder rather than to the account alone, so an unknown address
+     * can never share a key with — or widen the blast radius of — a known one.
+     */
+    private static String lockSubject(String account, String ip) {
+        String client = (ip == null || ip.isBlank()) ? "-" : ip;
+        return account + "|" + client;
     }
 
     private void checkLock(String scope, String account) {

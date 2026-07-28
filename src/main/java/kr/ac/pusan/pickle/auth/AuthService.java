@@ -221,14 +221,14 @@ public class AuthService {
         String email = normalize(request.email());
         rateLimitService.hit("login:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("login:acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkLoginLock(email);
+        rateLimitService.checkLoginLock(email, ip);
 
         Optional<User> found = userRepository.findByEmail(email);
         String passwordHash = found.map(User::getPasswordHash).orElse(TIMING_EQUALIZER_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
 
         if (found.isEmpty() || !passwordMatches) {
-            rateLimitService.registerLoginFailure(email);
+            rateLimitService.registerLoginFailure(email, ip);
             auditService.record(found.map(User::getId).orElse(null),
                     found.map(u -> u.getRole().name()).orElse(null), AuditService.AUTH_LOGIN_FAILED,
                     "user", found.map(User::getId).orElse(null),
@@ -259,7 +259,7 @@ public class AuthService {
             return new MfaChallenge(mfaService.issueLoginChallenge(user.getId()));
         }
 
-        rateLimitService.clearLoginFailures(email);
+        rateLimitService.clearLoginFailures(email, ip);
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
                 "user", user.getId(), Map.of("email", email), ip);
@@ -283,15 +283,15 @@ public class AuthService {
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(AuthService::invalidCredentials);
 
-        rateLimitService.checkLoginLock(user.getEmail());
+        rateLimitService.checkLoginLock(user.getEmail(), ip);
         if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
                     "user", user.getId(), Map.of("email", user.getEmail(), "reason", "mfa_code"), ip);
             throw MfaService.loginCodeInvalid();
         }
         mfaService.consumeChallenge(challenge);
-        rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
 
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
@@ -376,12 +376,12 @@ public class AuthService {
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             // Same counter as login and the other re-verification points, so a
             // hijacked session cannot switch endpoints to keep guessing.
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_PASSWORD_CHANGE,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
         passwordPolicy.validate(newPassword, user.getEmail());
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -448,7 +448,7 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.bumpTokenVersion();
         refreshTokenService.revokeAllForUser(user.getId());
-        rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
 
         auditService.recordAfterCommit(user.getId(), user.getRole().name(),
                 AuditService.ACCOUNT_PASSWORD_RESET, "user", user.getId(), Map.of(), ip);

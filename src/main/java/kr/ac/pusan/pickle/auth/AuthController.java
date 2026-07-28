@@ -98,7 +98,7 @@ public class AuthController {
 
     @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,
             schema = @Schema(type = "string"),
-            description = "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
+            description = "CSRF 이중 제출 토큰 — __Host-pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
     @PostMapping("/refresh")
     public ResponseEntity<AuthTokenResponse> refresh(
             @CookieValue(value = SessionCookies.REFRESH_COOKIE, required = false) String refreshToken,
@@ -135,7 +135,7 @@ public class AuthController {
 
     @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,
             schema = @Schema(type = "string"),
-            description = "CSRF 이중 제출 토큰 — pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
+            description = "CSRF 이중 제출 토큰 — __Host-pickle_csrf 쿠키 값과 일치해야 합니다 (필터 강제)")
     @PostMapping("/logout")
     // ResponseEntity carries the cookie-clearing Set-Cookie headers; the
     // annotation is what makes the 204 visible in the generated contract.

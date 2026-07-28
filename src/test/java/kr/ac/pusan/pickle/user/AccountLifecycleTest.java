@@ -105,8 +105,8 @@ class AccountLifecycleTest {
                 Map.of("currentPassword", OLD_PASSWORD, "newPassword", NEW_PASSWORD))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"))
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"))
                 .andReturn();
         String newAccess = accessToken(changed);
 
@@ -209,7 +209,7 @@ class AccountLifecycleTest {
                 .andExpect(status().isOk())
                 .andReturn();
         List<String> cookies = withdrawn.getResponse().getHeaders("Set-Cookie");
-        assertThat(cookies).anySatisfy(c -> assertThat(c).contains("pickle_refresh=").contains("Max-Age=0"));
+        assertThat(cookies).anySatisfy(c -> assertThat(c).contains("__Host-pickle_refresh=").contains("Max-Age=0"));
 
         User reloaded = userRepository.findById(user.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(UserStatus.WITHDRAWN);

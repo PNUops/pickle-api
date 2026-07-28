@@ -69,8 +69,15 @@ class PasswordReverificationRateLimitTest {
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
+    /**
+     * The lockout counter is shared across login and every password
+     * re-verification point, so a hijacked session cannot switch endpoints to
+     * keep guessing — but it is keyed on the (account, client address) pair, so
+     * the block follows the address that did the guessing and does not reach the
+     * account's other clients.
+     */
     @Test
-    void mfaEnrollmentPasswordFailuresLockTheAccountOut() throws Exception {
+    void mfaEnrollmentPasswordFailuresLockTheGuessingClient() throws Exception {
         User user = createActiveUser("reverify.begin.lockout@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
         String ip = "10.97.1.1";
@@ -80,17 +87,13 @@ class PasswordReverificationRateLimitTest {
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_MISMATCH"));
         }
-        // the shared lockout counter now blocks login with the correct password
-        mockMvc.perform(post("/api/v1/auth/login")
-                .with(request -> {
-                    request.setRemoteAddr("10.97.1.2");
-                    return request;
-                })
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(
-                        Map.of("email", user.getEmail(), "password", PASSWORD))))
+        // same address: the shared counter now blocks login with the correct password
+        login(user.getEmail(), ip)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        // another address: the account itself is not locked out
+        login(user.getEmail(), "10.97.1.2").andExpect(status().isOk());
     }
 
     @Test

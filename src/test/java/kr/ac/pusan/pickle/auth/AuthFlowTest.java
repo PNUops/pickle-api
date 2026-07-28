@@ -120,29 +120,29 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.user.email").value(EMAIL))
                 .andExpect(jsonPath("$.user.role").value("USER"))
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"))
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"))
                 .andReturn();
         List<String> setCookies = login.getResponse().getHeaders("Set-Cookie");
         assertThat(setCookies).anySatisfy(c -> assertThat(c)
-                .contains("pickle_refresh=")
-                .contains("Path=/api/v1/auth")
+                .contains("__Host-pickle_refresh=")
+                .contains("Path=/;")
                 .contains("Max-Age=1209600")
                 .contains("HttpOnly")
                 .contains("Secure")
-                .contains("SameSite=Lax"));
-        // CSRF double-submit cookie: site-wide path, readable by console script
+                .contains("SameSite=Strict"));
+        // CSRF double-submit cookie: same root path, readable by console script
         assertThat(setCookies).anySatisfy(c -> assertThat(c)
-                .contains("pickle_csrf=")
+                .contains("__Host-pickle_csrf=")
                 .contains("Path=/;")
                 .contains("Max-Age=1209600")
                 .doesNotContain("HttpOnly")
                 .contains("Secure")
-                .contains("SameSite=Lax"));
+                .contains("SameSite=Strict"));
         String accessToken = objectMapper.readTree(login.getResponse().getContentAsString())
                 .get("accessToken").asString();
-        Cookie firstRefresh = login.getResponse().getCookie("pickle_refresh");
-        Cookie firstCsrf = login.getResponse().getCookie("pickle_csrf");
+        Cookie firstRefresh = login.getResponse().getCookie("__Host-pickle_refresh");
+        Cookie firstCsrf = login.getResponse().getCookie("__Host-pickle_csrf");
 
         // /me without token → 401 AUTH_TOKEN_INVALID
         mockMvc.perform(get("/api/v1/me"))
@@ -169,11 +169,11 @@ class AuthFlowTest {
                         .header("X-Pickle-Csrf", firstCsrf.getValue()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                .andExpect(cookie().exists("pickle_refresh"))
-                .andExpect(cookie().exists("pickle_csrf"))
+                .andExpect(cookie().exists("__Host-pickle_refresh"))
+                .andExpect(cookie().exists("__Host-pickle_csrf"))
                 .andReturn();
-        Cookie rotatedRefresh = refreshed.getResponse().getCookie("pickle_refresh");
-        Cookie rotatedCsrf = refreshed.getResponse().getCookie("pickle_csrf");
+        Cookie rotatedRefresh = refreshed.getResponse().getCookie("__Host-pickle_refresh");
+        Cookie rotatedCsrf = refreshed.getResponse().getCookie("__Host-pickle_csrf");
         assertThat(rotatedRefresh.getValue()).isNotEqualTo(firstRefresh.getValue());
         assertThat(rotatedCsrf.getValue()).isNotEqualTo(firstCsrf.getValue());
 
@@ -193,8 +193,8 @@ class AuthFlowTest {
         MvcResult secondLogin = postJson("/api/v1/auth/login", Map.of("email", EMAIL, "password", PASSWORD))
                 .andExpect(status().isOk())
                 .andReturn();
-        Cookie secondRefresh = secondLogin.getResponse().getCookie("pickle_refresh");
-        Cookie secondCsrf = secondLogin.getResponse().getCookie("pickle_csrf");
+        Cookie secondRefresh = secondLogin.getResponse().getCookie("__Host-pickle_refresh");
+        Cookie secondCsrf = secondLogin.getResponse().getCookie("__Host-pickle_csrf");
 
         MvcResult logout = mockMvc.perform(post("/api/v1/auth/logout")
                         .cookie(secondRefresh, secondCsrf)
@@ -203,9 +203,9 @@ class AuthFlowTest {
                 .andReturn();
         List<String> logoutCookies = logout.getResponse().getHeaders("Set-Cookie");
         assertThat(logoutCookies).anySatisfy(c -> assertThat(c)
-                .contains("pickle_refresh=").contains("Max-Age=0"));
+                .contains("__Host-pickle_refresh=").contains("Max-Age=0"));
         assertThat(logoutCookies).anySatisfy(c -> assertThat(c)
-                .contains("pickle_csrf=").contains("Max-Age=0"));
+                .contains("__Host-pickle_csrf=").contains("Max-Age=0"));
         mockMvc.perform(post("/api/v1/auth/refresh")
                         .cookie(secondRefresh, secondCsrf)
                         .header("X-Pickle-Csrf", secondCsrf.getValue()))

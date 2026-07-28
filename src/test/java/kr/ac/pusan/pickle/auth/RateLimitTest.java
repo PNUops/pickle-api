@@ -28,7 +28,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * PG counter-table rate limiting: sliding window (10/min per IP+account) and
- * escalating lockout after 5 consecutive login failures.
+ * escalating lockout after 5 consecutive login failures from one client address.
  * Distinct client IPs per test so windows do not bleed into other tests.
  */
 @SpringBootTest
@@ -70,32 +70,47 @@ class RateLimitTest {
         assertThat(retryAfter).isBetween(1L, 90L);
     }
 
+    /**
+     * The lockout is keyed on the (account, client address) pair, not the account
+     * alone. The lock check runs before the password is verified, so an
+     * account-wide key would hand anyone who knows an email address a way to lock
+     * its owner out from anywhere; keying on the pair confines the damage to the
+     * address doing the guessing. Volume spread across many addresses is bounded
+     * separately, by the per-account sliding window.
+     */
     @Test
-    void consecutiveLoginFailuresLockTheAccount() throws Exception {
+    void loginFailuresLockOnlyTheAddressTheyCameFrom() throws Exception {
         String email = "rl.lockout@pusan.ac.kr";
         String password = "Corr3ct-horse-battery!";
+        String attackerIp = "10.99.1.1";
+        String ownerIp = "10.99.2.1";
         User user = new User(email, passwordEncoder.encode(password), "잠금테스트");
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerifiedAt(Instant.now());
         userRepository.save(user);
 
-        // 5 consecutive failures from different IPs (lockout is per account)
+        // 5 consecutive failures, all from one address
         for (int i = 1; i <= 5; i++) {
             postJson("/api/v1/auth/login", Map.of("email", email, "password", "wrong-password-" + i),
-                    "10.99.1." + i)
+                    attackerIp)
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value("AUTH_INVALID_CREDENTIALS"));
         }
 
-        // locked: even the correct password now yields 429 with Retry-After
+        // that pair is locked: even the correct password yields 429 with Retry-After
         MvcResult locked = postJson("/api/v1/auth/login", Map.of("email", email, "password", password),
-                "10.99.1.100")
+                attackerIp)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
                 .andExpect(header().exists("Retry-After"))
                 .andReturn();
         long retryAfter = Long.parseLong(locked.getResponse().getHeader("Retry-After"));
         assertThat(retryAfter).isBetween(1L, 900L);
+
+        // the regression this guards: the owner, on another address, logs in fine
+        postJson("/api/v1/auth/login", Map.of("email", email, "password", password), ownerIp)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty());
     }
 
     private ResultActions postJson(String uri, Map<String, ?> body, String clientIp) throws Exception {

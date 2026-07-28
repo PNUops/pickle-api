@@ -52,14 +52,14 @@ public class ReauthService {
                 .orElseThrow(ReauthService::passwordMismatch);
         rateLimitService.hit("reverify:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("reverify:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        rateLimitService.checkLoginLock(user.getEmail());
+        rateLimitService.checkLoginLock(user.getEmail(), ip);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            rateLimitService.registerLoginFailure(user.getEmail());
+            rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,
                     "user", user.getId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
-        rateLimitService.clearLoginFailures(user.getEmail());
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
         String rawToken = TokenHasher.newToken();
         Instant expiresAt = Instant.now().plus(TTL);
         repository.save(new AuthReverification(user.getId(), TokenHasher.sha256Hex(rawToken),

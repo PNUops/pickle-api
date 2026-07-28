@@ -142,7 +142,7 @@ class MfaCodeLockoutTest {
     }
 
     @Test
-    void disablePasswordFailuresStillLockTheAccountOut() throws Exception {
+    void disablePasswordFailuresStillLockTheGuessingClientOutOfLogin() throws Exception {
         User user = createActiveUser("mfa.codelock.password@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
         enroll(access, "10.98.2.1");
@@ -156,9 +156,15 @@ class MfaCodeLockoutTest {
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.code").value("AUTH_MFA_CODE_INVALID"));
         }
-        login(user.getEmail(), "10.98.2.3")
+        login(user.getEmail(), ip)
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+        // the lockout is keyed on (account, client address), so it reaches only the
+        // client that was guessing — the account's other clients still log in
+        login(user.getEmail(), "10.98.2.3")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaRequired").value(true));
     }
 
     /** begin + activate, so the account ends up enrolled with live recovery codes. */
