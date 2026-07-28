@@ -13,19 +13,25 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Dedicated, highest-precedence security chain for the infra-to-infra
- * {@code /internal/**} surface (internal route contract). It is
- * matched ahead of the user-JWT chain in {@link SecurityConfig} and shares
- * nothing with it: no JWT filter, no user authentication. Access is decided
- * solely by {@link InternalSshGatewayAuthFilter} (source-IP allowlist + static
- * bearer + rate limit); everything it lets through is already authorized, so
- * the chain itself permits all.
+ * Dedicated security chain for the infra-to-infra {@code /internal/**}
+ * surface (internal route contract). It is matched ahead of the user-JWT
+ * chain in {@link SecurityConfig} and shares nothing with it: no JWT filter,
+ * no user authentication. Access is decided solely by
+ * {@link InternalSshGatewayAuthFilter} (source-IP allowlist + static bearer +
+ * rate limit); everything it lets through is already authorized, so the chain
+ * itself permits all.
+ *
+ * <p>Ordered one behind the relay chain ({@link RelaySecurityConfig}), which
+ * carves {@code /internal/relays/**} out with its own per-relay auth. The
+ * broad {@code /internal/**} matcher here is kept on purpose: any internal
+ * path no more-specific chain claims still lands in this filter and fails
+ * closed instead of falling through to the public chain.</p>
  */
 @Configuration
 public class InternalSecurityConfig {
 
     @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 1)
     SecurityFilterChain internalSecurityFilterChain(HttpSecurity http,
             SshGatewayProperties sshGatewayProperties, RateLimitService rateLimitService,
             ProblemJsonWriter problemJsonWriter) throws Exception {
