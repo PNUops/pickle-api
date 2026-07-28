@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
+import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -32,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * DELETE pipeline worker: shut down if running
@@ -89,13 +91,17 @@ public class DeleteVmJob {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final PublishingTeardownService publishingTeardown;
+    private final PortMappingTeardownService portMappingTeardown;
     private final VmSettingsService vmSettingsService;
+    private final TransactionTemplate transactionTemplate;
 
     public DeleteVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
             UserRepository userRepository, NotificationService notificationService,
-            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService) {
+            PublishingTeardownService publishingTeardown,
+            PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService,
+            TransactionTemplate transactionTemplate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -106,7 +112,9 @@ public class DeleteVmJob {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.publishingTeardown = publishingTeardown;
+        this.portMappingTeardown = portMappingTeardown;
         this.vmSettingsService = vmSettingsService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
@@ -195,10 +203,18 @@ public class DeleteVmJob {
             // failed teardown throws → backoff retry → NEEDS_ADMIN park.
             publishingTeardown.teardownForVmDeletion(vmId);
             destroyOnProxmox(vm);
-            if (vm.getIpAllocationId() != null
-                    && ipamService.release(vm.getIpAllocationId(), vmId)) {
-                vmRepository.clearIpAllocation(vmId, vm.getIpAllocationId(), Instant.now());
-            }
+            // One transaction for mapping teardown + IP release + pointer
+            // clear: no orphan mapping may survive its target's IP release
+            // (a leftover relay DNAT would route public traffic to whoever
+            // gets the quarantined address next), and a crash between the
+            // steps must not leave a half-released state.
+            Long allocationId = vm.getIpAllocationId();
+            transactionTemplate.executeWithoutResult(tx -> {
+                portMappingTeardown.deleteMappingsForVm(vmId);
+                if (allocationId != null && ipamService.release(allocationId, vmId)) {
+                    vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
+                }
+            });
             Instant now = Instant.now();
             int updated = vmRepository.markDeleted(vmId, vm.getDeleteRequestedBy(), now);
             taskRepository.complete(task.getId(), now);
