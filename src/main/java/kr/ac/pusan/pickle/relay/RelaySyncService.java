@@ -45,6 +45,17 @@ public class RelaySyncService {
     /** Server-side cap on any agent-reported string persisted or audited. */
     static final int REPORTED_TEXT_MAX = 1024;
 
+    /**
+     * Counter rows processed per report; anything past this is ignored, never
+     * rejected. Counters are observability, the same request carries the
+     * heartbeat and confirms the applied generation — refusing the body over a
+     * row count would stop suspend/delete from ever reaching the relay while
+     * its existing rules keep serving. Truncating loses a few readings for one
+     * cycle instead. Set far above the live mapping count a single relay can
+     * hold (its public-port band), so real reports are never cut.
+     */
+    static final int MAX_REPORTED_COUNTERS = 4096;
+
     private static final Logger log = LoggerFactory.getLogger(RelaySyncService.class);
 
     /**
@@ -136,9 +147,20 @@ public class RelaySyncService {
      * delta. Per-minute rates against {@code last_delta_at} feed the
      * auto-suspend thresholds; a breach suspends the mapping in this same
      * transaction, so the snapshot answered below already excludes it.
+     *
+     * <p>Only the first {@link #MAX_REPORTED_COUNTERS} rows are processed; the
+     * rest are dropped silently (the agent rotates its reporting window, so a
+     * mapping cut here is covered by a later report).</p>
      */
     private void accumulateCounters(long relayId,
-            List<RelaySyncRequest.ReportedMappingCounters> reportedRows) {
+            List<RelaySyncRequest.ReportedMappingCounters> allReportedRows) {
+        List<RelaySyncRequest.ReportedMappingCounters> reportedRows =
+                allReportedRows.size() > MAX_REPORTED_COUNTERS
+                        ? allReportedRows.subList(0, MAX_REPORTED_COUNTERS) : allReportedRows;
+        if (reportedRows.size() < allReportedRows.size()) {
+            log.warn("relay {} reported {} counter rows — only the first {} were processed",
+                    relayId, allReportedRows.size(), MAX_REPORTED_COUNTERS);
+        }
         long connsPerMinLimit = settingsService.integer(
                 SettingsService.PORT_FORWARD_SUSPEND_CONNS_PER_MIN, 6000);
         long mbytesPerMinLimit = settingsService.integer(

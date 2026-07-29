@@ -15,12 +15,18 @@ import java.util.List;
  * <p>Counter readings are cumulative since agent start. A reading below the
  * previously stored one ALWAYS means the agent restarted — the server
  * re-baselines (delta = raw) and never computes a negative delta.</p>
+ *
+ * <p>{@code counters} deliberately carries NO rejecting size constraint: the
+ * agent reports one row per live mapping, so any cap here would turn a busy
+ * relay's report into a 400 and take the desired-state channel (suspend,
+ * delete, auto-suspend, last-contact) down with it. Volume is bounded by the
+ * body cap, and the server processes only a bounded prefix of the rows.</p>
  */
 public record RelaySyncRequest(
         @NotNull @Min(0) Long appliedGeneration,
         @Size(max = 128) String agentVersion,
         @Size(max = 8) List<@Valid ReportedMappingError> lastError,
-        @Size(max = 128) List<@Valid ReportedMappingCounters> counters) {
+        List<@Valid ReportedMappingCounters> counters) {
 
     /** One agent-side apply failure; {@code mappingId} is optional. */
     public record ReportedMappingError(

@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,7 +52,9 @@ class RelaySyncEndpointTest {
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("pickle.relay.sync-rate-limit-per-minute", () -> "5");
-        registry.add("pickle.relay.max-sync-body-bytes", () -> "4096");
+        // Room for a full-size counter report (the volume tests below); the
+        // cap itself is still exercised by an oversized body.
+        registry.add("pickle.relay.max-sync-body-bytes", () -> "262144");
     }
 
     @Autowired
@@ -196,7 +199,7 @@ class RelaySyncEndpointTest {
     @Test
     void oversizedBodyAnswers413() throws Exception {
         RelayFixture relay = newRelay("bodycap");
-        String padding = "x".repeat(5000);
+        String padding = "x".repeat(300_000);
         mockMvc.perform(post("/internal/relays/" + relay.id() + "/sync")
                         .with(remoteAddr(relay.sourceIp()))
                         .header("Authorization", "Bearer " + relay.token())
@@ -365,6 +368,60 @@ class RelaySyncEndpointTest {
         // a sane follow-up reading baselines normally
         syncCounters(relay, mappingId, 10, 100, 100);
         assertCounterTotals(mappingId, 10, 200);
+    }
+
+    @Test
+    void aLargeCounterReportIsAcceptedNotRejected() throws Exception {
+        // The agent reports one row per live mapping, so a busy relay easily
+        // exceeds any small row count. Rejecting the body would take the
+        // desired-state channel (suspend, delete, last contact) down with it,
+        // so volume never fails the request.
+        RelayFixture relay = newRelay("volume");
+        long vmId = runningVm();
+        long mappingId = insertMapping(relay.id(), vmId, "TCP", 17001, 80, "ACTIVE", 1);
+        List<Map<String, Object>> rows = new ArrayList<>(paddingRows(199));
+        rows.add(counterRow(mappingId, 100, 1000, 500));
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0, "counters", rows))
+                .andExpect(status().isOk());
+        assertCounterTotals(mappingId, 100, 1500);
+    }
+
+    @Test
+    void countersPastTheServerCapAreIgnoredWithoutFailingTheRequest() throws Exception {
+        RelayFixture relay = newRelay("countercap");
+        long vmId = runningVm();
+        long mappingId = insertMapping(relay.id(), vmId, "TCP", 17101, 80, "ACTIVE", 1);
+        List<Map<String, Object>> padding = paddingRows(RelaySyncService.MAX_REPORTED_COUNTERS);
+
+        // beyond the cap: the row is dropped, the request still succeeds
+        List<Map<String, Object>> tooLate = new ArrayList<>(padding);
+        tooLate.add(counterRow(mappingId, 100, 1000, 500));
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0, "counters", tooLate))
+                .andExpect(status().isOk());
+        Long rows = jdbcTemplate.queryForObject(
+                "select count(*) from port_mapping_counters where mapping_id = ?",
+                Long.class, mappingId);
+        assertThat(rows).isZero();
+
+        // the same row inside the cap is accounted for normally
+        List<Map<String, Object>> inTime = new ArrayList<>();
+        inTime.add(counterRow(mappingId, 100, 1000, 500));
+        inTime.addAll(padding);
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0, "counters", inTime))
+                .andExpect(status().isOk());
+        assertCounterTotals(mappingId, 100, 1500);
+    }
+
+    /** {@code count} counter rows for mapping ids no relay owns. */
+    private static List<Map<String, Object>> paddingRows(int count) {
+        List<Map<String, Object>> rows = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            rows.add(Map.of("mappingId", 8_000_000L + i, "newConns", 1));
+        }
+        return rows;
     }
 
     @Test
