@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
@@ -53,6 +54,13 @@ public class PortForwardingService {
 
     static final String ALLOC_RATE_LIMIT_SCOPE = "pf_alloc";
     static final int RANDOM_ALLOC_ATTEMPTS = 20;
+    /**
+     * Guest SSH port, never a legal forwarding target: a mapping to it would
+     * expose the guest's own sshd to the internet, bypassing the SSH gateway
+     * and with it every per-VM SSH policy the gateway enforces (password
+     * authentication above all).
+     */
+    static final int GUEST_SSH_PORT = 22;
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
@@ -110,6 +118,9 @@ public class PortForwardingService {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORT_FORWARDING_DISABLED,
                     "포트 포워딩이 비활성화되어 있습니다",
                     "현재 포트 포워딩 기능이 꺼져 있어 새로 만들 수 없습니다. 관리자에게 문의해 주세요.");
+        }
+        if (request.targetPort() == GUEST_SSH_PORT) {
+            throw guestSshPortRefused();
         }
         if (vm.getStatus() != VmStatus.RUNNING) {
             throw invalidVmState("RUNNING 상태의 VM만 포트를 공개할 수 있습니다. (현재 상태 "
@@ -302,6 +313,20 @@ public class PortForwardingService {
                     "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 포트 포워딩을 설정할 수 있습니다.");
         }
         return vm;
+    }
+
+    /**
+     * 422 in the same shape bean validation produces (field {@code targetPort}),
+     * because to the caller this IS a rejected request value. The network layer
+     * refuses the same traffic independently; this check exists so the refusal
+     * is visible at request time instead of as a silently dead mapping.
+     */
+    private static ApiException guestSshPortRefused() {
+        return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, ErrorCodes.VALIDATION_FAILED,
+                "입력값이 올바르지 않습니다",
+                "SSH 포트(22)는 공개 대상으로 지정할 수 없습니다. VM 접속은 SSH 게이트웨이를 이용해 주세요.",
+                List.of(new FieldValidationError("targetPort",
+                        "22번 포트는 공개할 수 없습니다")), null);
     }
 
     private static ApiException invalidVmState(String detail) {

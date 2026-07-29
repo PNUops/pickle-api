@@ -161,6 +161,28 @@ class PortForwardingTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
+    @Test
+    void guestSshPortIsRefusedAsTarget() throws Exception {
+        long relayId = soleRelay(10200, 10299);
+        long vmId = runningVm();
+        // A mapping to the guest's own sshd would answer password prompts from
+        // the internet with the SSH gateway, and every policy it enforces, out
+        // of the path — refused for both protocols before anything is written.
+        create(vmId, ownerToken, "TCP", 22)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("targetPort"));
+        create(vmId, ownerToken, "UDP", 22)
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        Long mappings = jdbcTemplate.queryForObject(
+                "select count(*) from port_mappings where vm_id = ?", Long.class, vmId);
+        assertThat(mappings).isZero();
+        assertThat(mappingGeneration(relayId)).isZero();
+        // neighbouring ports stay allocatable
+        create(vmId, ownerToken, "TCP", 23).andExpect(status().isCreated());
+    }
+
     // ── allocation ──────────────────────────────────────────────────────────
 
     @Test
