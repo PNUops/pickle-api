@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.Node;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -21,7 +21,7 @@ import org.springframework.test.context.ActiveProfiles;
 
 /**
  * Forced-node placement backstop: an admin-forced node
- * must host an ACTIVE copy of the granted template, or placement fails the
+ * must host an ACTIVE copy of the granted image, or placement fails the
  * same way the no-candidate auto path does — cleanly at the place step,
  * never proceeding to a clone that would fail mid-pipeline. All rows are
  * created on dedicated nodes/templates so the shared seed stays untouched.
@@ -35,7 +35,7 @@ class NodePlacementServiceTest {
     private NodePlacementService placementService;
 
     @Autowired
-    private VmTemplateRepository templateRepository;
+    private OsImageRepository imageRepository;
 
     @Autowired
     private VmRepository vmRepository;
@@ -47,7 +47,7 @@ class NodePlacementServiceTest {
     private long requesterId;
     private long groupId;
     private String templateName;
-    private VmTemplate template;
+    private OsImage image;
 
     @BeforeEach
     void setUp() {
@@ -63,36 +63,36 @@ class NodePlacementServiceTest {
     @Test
     void forcedNodeHostingTheTemplateIsChosen() {
         long nodeId = insertNode();
-        template = insertTemplate(nodeId, "ACTIVE");
+        image = insertImage(nodeId, "ACTIVE");
         Vm vm = vm(nodeId);
 
-        Node placed = placementService.place(vm, template, nodeId);
+        Node placed = placementService.place(vm, image, nodeId);
 
         assertThat(placed.getId()).isEqualTo(nodeId);
     }
 
     @Test
     void forcedNodeWithoutTheTemplateFailsPlacement() {
-        long templateNodeId = insertNode();
-        template = insertTemplate(templateNodeId, "ACTIVE");
-        // a different ACTIVE node that does not host the granted template
+        long imageNodeId = insertNode();
+        image = insertImage(imageNodeId, "ACTIVE");
+        // a different ACTIVE node that does not host the granted image
         long otherNodeId = insertNode();
         Vm vm = vm(otherNodeId);
 
-        assertThatThrownBy(() -> placementService.place(vm, template, otherNodeId))
+        assertThatThrownBy(() -> placementService.place(vm, image, otherNodeId))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(templateName);
     }
 
     @Test
     void forcedNodeWhoseTemplateWasDeactivatedFailsPlacement() {
-        // the approval-time check passed, then the template was DISABLED on the
+        // the approval-time check passed, then the image was DISABLED on the
         // node before provisioning — the backstop must still refuse it.
         long nodeId = insertNode();
-        template = insertTemplate(nodeId, "DISABLED");
+        image = insertImage(nodeId, "DISABLED");
         Vm vm = vm(nodeId);
 
-        assertThatThrownBy(() -> placementService.place(vm, template, nodeId))
+        assertThatThrownBy(() -> placementService.place(vm, image, nodeId))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(templateName);
     }
@@ -105,31 +105,31 @@ class NodePlacementServiceTest {
                 """, Long.class, "place-node-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
-    private VmTemplate insertTemplate(long nodeId, String status) {
+    private OsImage insertImage(long nodeId, String status) {
         long id = jdbc.queryForObject("""
-                insert into vm_templates (name, display_name, proxmox_vmid, node_id,
+                insert into os_images (name, display_name, proxmox_vmid, node_id,
                                           min_disk_gb, status)
                 values (?, '배치 테스트 템플릿', 1003, ?, 10, cast(? as template_status))
                 returning id
                 """, Long.class, templateName, nodeId, status);
-        return templateRepository.findById(id).orElseThrow();
+        return imageRepository.findById(id).orElseThrow();
     }
 
     private Vm vm(long nodeId) {
         long requestId = jdbc.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '배치 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, template.getId());
+                """, Long.class, groupId, orgId, requesterId, image.getId());
         String hostname = "place-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbc.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb)
+                                 image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                template.getId());
+                image.getId());
         return vmRepository.findById(vmId).orElseThrow();
     }
 }

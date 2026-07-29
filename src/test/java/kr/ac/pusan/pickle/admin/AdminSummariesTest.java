@@ -228,10 +228,10 @@ class AdminSummariesTest {
     }
 
     private long createRequest(long groupId, String status) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         return jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb, status)
                 values (?, ?, ?, '요약 테스트', ?, 2, 2048, 10,
                         ?::vm_request_status)
@@ -241,12 +241,12 @@ class AdminSummariesTest {
 
     private void createReview(long requestId, String decision) {
         long reviewerId = SeedFixtures.sysadminId(jdbcTemplate);
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         // APPROVE rows must carry the granted spec (chk_reviews_approve_granted)
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision, granted_vcpu,
                                                 granted_memory_mb, granted_disk_gb,
-                                                granted_template_id)
+                                                granted_image_id)
                 values (?, ?, ?::review_decision, 2, 2048, 10, ?)
                 """, requestId, reviewerId, decision, templateId);
     }
@@ -254,12 +254,12 @@ class AdminSummariesTest {
     /** 2 vCPU / 2048 MiB / 10 GiB VM with an optional endDate. */
     private long createVm(long groupId, String status, LocalDate endDate) {
         long requestId = createRequest(groupId, "APPROVED");
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String hostname = "ads-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status, end_date)
+                                 image_id, vcpu, memory_mb, disk_gb, status, end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status, ?)
                 returning id
                 """, Long.class, nodeId, groupId, org.getId(), requestId, hostname, hostname,

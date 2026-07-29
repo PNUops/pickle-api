@@ -557,18 +557,18 @@ class RelaySyncEndpointTest {
                 values (?, ?, 'OWNER'::group_member_role)
                 """, groupId, ownerId);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '릴레이 동기화 테스트', (select min(id) from vm_templates),
+                values (?, ?, ?, '릴레이 동기화 테스트', (select min(id) from os_images),
                         1, 1024, 10)
                 returning id
                 """, Long.class, groupId, orgId, ownerId);
         String hostname = "rly-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values ((select min(id) from nodes), ?, ?, ?, ?, ?,
-                        (select min(id) from vm_templates), 1, 1024, 10, ?, 'RUNNING'::vm_status)
+                        (select min(id) from os_images), 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, groupId, orgId, requestId, hostname, hostname,
                 VMID_SEQ.incrementAndGet());

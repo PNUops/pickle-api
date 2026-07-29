@@ -57,7 +57,7 @@ class IpamServiceTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         templateId = jdbcTemplate.queryForObject(
-                "select min(id) from vm_templates", Long.class);
+                "select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "ipam-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject("""
@@ -223,7 +223,7 @@ class IpamServiceTest {
     /** Minimal request→vm graph; ip_allocations.vm_id has a real FK to vms. */
     private long createVm() {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'IPAM 테스트', ?, 1, 1024, 10)
                 returning id
@@ -231,7 +231,7 @@ class IpamServiceTest {
         String hostname = "ipam-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb)
+                                 image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);

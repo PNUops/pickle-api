@@ -98,7 +98,7 @@ class VmPasswordTest {
         outsiderReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, outsider.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createTeam("vmpw-" + UUID.randomUUID().toString().substring(0, 8));
         addMember(groupId, member.getEmail(), "MEMBER");
         addMember(groupId, viewer.getEmail(), "VIEWER");
@@ -234,7 +234,7 @@ class VmPasswordTest {
 
     private long createVm(VmStatus status, String initialPassword) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '비밀번호 테스트', ?, 1, 1024, 10)
                 returning id
@@ -242,7 +242,7 @@ class VmPasswordTest {
         String hostname = "vmpw-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status, ?, ?)
                 returning id

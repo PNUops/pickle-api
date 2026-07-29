@@ -50,8 +50,8 @@ public class Vm {
     @Column(nullable = false, unique = true)
     private String hostname;
 
-    @Column(name = "template_id", nullable = false)
-    private Long templateId;
+    @Column(name = "image_id", nullable = false)
+    private Long imageId;
 
     @Column(nullable = false)
     private int vcpu;
@@ -173,14 +173,14 @@ public class Vm {
     }
 
     public Vm(Long nodeId, Long groupId, Long orgId, Long requestId, String name, String hostname,
-            Long templateId, int vcpu, int memoryMb, int diskGb, LocalDate startDate, LocalDate endDate) {
+            Long imageId, int vcpu, int memoryMb, int diskGb, LocalDate startDate, LocalDate endDate) {
         this.nodeId = nodeId;
         this.groupId = groupId;
         this.orgId = orgId;
         this.requestId = requestId;
         this.name = name;
         this.hostname = hostname;
-        this.templateId = templateId;
+        this.imageId = imageId;
         this.vcpu = vcpu;
         this.memoryMb = memoryMb;
         this.diskGb = diskGb;
@@ -220,8 +220,8 @@ public class Vm {
         return hostname;
     }
 
-    public Long getTemplateId() {
-        return templateId;
+    public Long getImageId() {
+        return imageId;
     }
 
     public int getVcpu() {

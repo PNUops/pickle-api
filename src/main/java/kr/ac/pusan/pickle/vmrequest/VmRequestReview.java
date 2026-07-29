@@ -49,8 +49,8 @@ public class VmRequestReview {
     @Column(name = "granted_disk_gb")
     private Integer grantedDiskGb;
 
-    @Column(name = "granted_template_id")
-    private Long grantedTemplateId;
+    @Column(name = "granted_image_id")
+    private Long grantedImageId;
 
     @Column(name = "granted_start_date")
     private LocalDate grantedStartDate;
@@ -85,7 +85,7 @@ public class VmRequestReview {
 
     /** Approval: decision row carrying the granted spec. */
     public static VmRequestReview approve(Long requestId, Long reviewerId, String comment,
-            int grantedVcpu, int grantedMemoryMb, int grantedDiskGb, Long grantedTemplateId,
+            int grantedVcpu, int grantedMemoryMb, int grantedDiskGb, Long grantedImageId,
             LocalDate grantedStartDate, LocalDate grantedEndDate, Long nodeId) {
         VmRequestReview review = new VmRequestReview();
         review.requestId = requestId;
@@ -95,7 +95,7 @@ public class VmRequestReview {
         review.grantedVcpu = grantedVcpu;
         review.grantedMemoryMb = grantedMemoryMb;
         review.grantedDiskGb = grantedDiskGb;
-        review.grantedTemplateId = grantedTemplateId;
+        review.grantedImageId = grantedImageId;
         review.grantedStartDate = grantedStartDate;
         review.grantedEndDate = grantedEndDate;
         review.nodeId = nodeId;
@@ -134,8 +134,8 @@ public class VmRequestReview {
         return grantedDiskGb;
     }
 
-    public Long getGrantedTemplateId() {
-        return grantedTemplateId;
+    public Long getGrantedImageId() {
+        return grantedImageId;
     }
 
     public LocalDate getGrantedStartDate() {

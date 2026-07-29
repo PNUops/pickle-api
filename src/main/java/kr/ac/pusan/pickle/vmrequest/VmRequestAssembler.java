@@ -69,7 +69,7 @@ public class VmRequestAssembler {
                     request.getGroupId(), group != null ? group.getName() : null,
                     request.getOrgId(), org != null ? org.getName() : null,
                     request.getRequesterId(), requester != null ? requester.getName() : "탈퇴 회원",
-                    request.getTemplateId(), request.getFlavorId(),
+                    request.getImageId(), request.getFlavorId(),
                     request.getPurpose(), request.getCourseOrProject(), request.getSpecReason(),
                     request.getExtraNote(),
                     request.getReqVcpu(), request.getReqMemoryMb(), request.getReqDiskGb(),

@@ -27,7 +27,7 @@ public record VmRequestReviewResponse(
                 reviewer != null ? reviewer.getName() : "탈퇴 회원",
                 review.getDecision(), review.getComment(),
                 review.getGrantedVcpu(), review.getGrantedMemoryMb(), review.getGrantedDiskGb(),
-                review.getGrantedTemplateId(), review.getGrantedStartDate(), review.getGrantedEndDate(),
+                review.getGrantedImageId(), review.getGrantedStartDate(), review.getGrantedEndDate(),
                 review.getNodeId(), review.getCreatedAt());
     }
 }

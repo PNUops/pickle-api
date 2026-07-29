@@ -136,21 +136,21 @@ class AdminNodesTest {
     /** Minimal request→vm FK chain on the given node (dedicated group per VM). */
     private void createVm(long nodeId, String status, int vcpu, int memoryMb) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "nodesum-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = jdbcTemplate.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '노드 집계 테스트', ?, ?, ?, 10)
                 returning id
                 """, Long.class, groupId, orgId, requesterId, templateId, vcpu, memoryMb);
         jdbcTemplate.update("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status)
+                                 image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?::vm_status)
                 """, nodeId, groupId, orgId, requestId, slug, slug, templateId, vcpu, memoryMb, status);
     }

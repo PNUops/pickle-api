@@ -14,8 +14,8 @@ import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -65,7 +65,7 @@ class VmRequestTest {
     private OrgRepository orgRepository;
 
     @Autowired
-    private VmTemplateRepository templateRepository;
+    private OsImageRepository imageRepository;
 
     @Autowired
     private VmFlavorRepository flavorRepository;
@@ -91,7 +91,7 @@ class VmRequestTest {
     private String viewerToken;
     private String outsiderToken;
     private Org org;
-    private VmTemplate template;
+    private OsImage image;
     private VmFlavor basicFlavor;
     private VmFlavor smallFlavor;
 
@@ -106,7 +106,7 @@ class VmRequestTest {
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        template = templateRepository.findAll().stream()
+        image = imageRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
                 .findFirst().orElseThrow();
         basicFlavor = flavorByName("basic");
@@ -135,7 +135,7 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
                 .andExpect(jsonPath("$.requesterId").value(requester.getId()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
-                .andExpect(jsonPath("$.templateId").value(template.getId()))
+                .andExpect(jsonPath("$.templateId").value(image.getId()))
                 .andExpect(jsonPath("$.flavorId").value(basicFlavor.getId()));
 
         // VIEWER / non-member cannot submit → 403 GROUP_ROLE_INSUFFICIENT
@@ -146,7 +146,7 @@ class VmRequestTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
 
-        // unknown group / org / template → 404
+        // unknown group / org / image → 404
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "groupId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -158,8 +158,8 @@ class VmRequestTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
-        // DISABLED template → 422
-        VmTemplate disabled = templateRepository.save(new VmTemplate("vmr-disabled", "비활성 템플릿", 1002,
+        // DISABLED image → 422
+        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 템플릿", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
@@ -350,11 +350,11 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양 프리셋입니다."));
 
         // both axes retired → one error per axis, and the spec check is skipped
-        VmTemplate retiredTemplate = templateRepository.save(new VmTemplate("vmr-disabled-os",
+        OsImage retiredImage = imageRepository.save(new OsImage("vmr-disabled-os",
                 "비활성 OS", 1004, nodeRepository.findAll().getFirst().getId(), 1, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, retired), "templateId", retiredTemplate.getId()))
+                with(bodyFor(groupId, retired), "templateId", retiredImage.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors.length()").value(2))
                 .andExpect(jsonPath("$.errors[0].field").value("templateId"))
@@ -427,7 +427,7 @@ class VmRequestTest {
         // an existing vms.hostname blocks the slug — even soft-deleted (never recycled)
         long vmReqId = submit(requesterToken, groupId);
         Vm vm = vmRepository.save(new Vm(nodeRepository.findAll().getFirst().getId(), groupId,
-                org.getId(), vmReqId, "vmr-slug-taken", "vmr-slug-taken", template.getId(),
+                org.getId(), vmReqId, "vmr-slug-taken", "vmr-slug-taken", image.getId(),
                 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
@@ -559,7 +559,7 @@ class VmRequestTest {
         Map<String, Object> body = new HashMap<>();
         body.put("groupId", groupId);
         body.put("orgId", org.getId());
-        body.put("templateId", template.getId());
+        body.put("templateId", image.getId());
         body.put("flavorId", flavor.getId());
         body.put("purpose", "수업 실습용 서버");
         body.put("reqVcpu", flavor.getVcpu());

@@ -17,8 +17,8 @@ import org.hibernate.type.SqlTypes;
 /** OS catalog entry (which Proxmox image to clone + its disk floor); spec
  * presets live in {@link VmFlavor} since the axis split (contract v0.23.0). */
 @Entity
-@Table(name = "vm_templates")
-public class VmTemplate {
+@Table(name = "os_images")
+public class OsImage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -57,10 +57,10 @@ public class VmTemplate {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected VmTemplate() {
+    protected OsImage() {
     }
 
-    public VmTemplate(String name, String displayName, int proxmoxVmid, Long nodeId, int version,
+    public OsImage(String name, String displayName, int proxmoxVmid, Long nodeId, int version,
             int minDiskGb, TemplateStatus status, String notes) {
         this.name = name;
         this.displayName = displayName;

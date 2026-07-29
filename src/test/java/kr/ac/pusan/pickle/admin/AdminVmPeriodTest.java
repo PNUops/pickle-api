@@ -251,11 +251,11 @@ class AdminVmPeriodTest {
     }
 
     private long createVm(long vmOrgId, long vmGroupId, String status, LocalDate endDate) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '기간 테스트', ?, 2, 2048, 10)
                 returning id
@@ -263,7 +263,7 @@ class AdminVmPeriodTest {
         String hostname = "avp-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status, end_date)
+                                 image_id, vcpu, memory_mb, disk_gb, status, end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status, ?)
                 returning id
                 """, Long.class, nodeId, vmGroupId, vmOrgId, requestId, hostname, hostname,

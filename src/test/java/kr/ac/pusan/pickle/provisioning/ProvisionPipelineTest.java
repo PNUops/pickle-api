@@ -125,7 +125,7 @@ class ProvisionPipelineTest {
         orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select id from nodes where name = ?", Long.class, NODE);
         poolId = jdbc.queryForObject("select ip_pool_id from nodes where id = ?", Long.class, nodeId);
-        templateId = jdbc.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbc.queryForObject("select min(id) from os_images", Long.class);
         adminUserId = SeedFixtures.orgadminId(jdbc);
         String slug = "pipe-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
@@ -619,7 +619,7 @@ class ProvisionPipelineTest {
     /** Minimal request→vm graph, mirroring what an approval writes. */
     private long createVm() {
         long requestId = jdbc.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '파이프라인 테스트', ?, 1, 1024, 10)
                 returning id
@@ -627,7 +627,7 @@ class ProvisionPipelineTest {
         String hostname = "pipe-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbc.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb)
+                                 image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
