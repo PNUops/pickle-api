@@ -31,6 +31,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
+import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -46,6 +47,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -119,6 +121,8 @@ public class ProvisionVmJob implements ProvisioningService {
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
     private final SshPlatformProperties sshPlatformProperties;
+    private final PortMappingTeardownService portMappingTeardown;
+    private final TransactionTemplate transactionTemplate;
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
@@ -128,7 +132,9 @@ public class ProvisionVmJob implements ProvisioningService {
             VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
             VmPasswordGenerator passwordGenerator, CredentialCipher credentialCipher,
             NotificationService notificationService, ObjectMapper objectMapper,
-            SshPlatformProperties sshPlatformProperties) {
+            SshPlatformProperties sshPlatformProperties,
+            PortMappingTeardownService portMappingTeardown,
+            TransactionTemplate transactionTemplate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -148,6 +154,8 @@ public class ProvisionVmJob implements ProvisioningService {
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
         this.sshPlatformProperties = sshPlatformProperties;
+        this.portMappingTeardown = portMappingTeardown;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Override
@@ -680,16 +688,24 @@ public class ProvisionVmJob implements ProvisioningService {
     }
 
     private void releaseIp(long vmId) {
-        Long allocationId = vmRepository.findById(vmId).map(Vm::getIpAllocationId).orElse(null);
-        if (allocationId == null) {
+        Long found = vmRepository.findById(vmId).map(Vm::getIpAllocationId).orElse(null);
+        if (found == null) {
             // crash window: the allocation may exist without the vms column set
-            allocationId = allocationRepository
+            found = allocationRepository
                     .findFirstByVmIdAndStatusOrderByIdDesc(vmId, AllocationStatus.ALLOCATED)
                     .map(IpAllocation::getId).orElse(null);
         }
-        if (allocationId != null && ipamService.release(allocationId, vmId)) {
-            vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
-        }
+        Long allocationId = found;
+        // One transaction for mapping teardown + release + pointer clear: no
+        // orphan mapping may survive its target's IP release. A compensated
+        // create normally has no mappings, but the sweep is cheap and the
+        // invariant must hold on every release path.
+        transactionTemplate.executeWithoutResult(tx -> {
+            portMappingTeardown.deleteMappingsForVm(vmId);
+            if (allocationId != null && ipamService.release(allocationId, vmId)) {
+                vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
+            }
+        });
     }
 
     private static boolean isRetryable(Exception e) {

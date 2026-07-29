@@ -56,10 +56,31 @@ public class SettingsService {
     public static final String CONTACT_EMAIL = "contact_email";
     /** Web-terminal global kill switch (V46, default false). */
     public static final String WEB_TERMINAL_ENABLED = "web_terminal_enabled";
+    // Relay port forwarding (V60, contract v0.27.0).
+    /** Port-forwarding kill switch (default false: creation refused, existing kept). */
+    public static final String PORT_FORWARDING_ENABLED = "port_forwarding_enabled";
+    public static final String PORT_FORWARD_ALLOC_LIMIT_PER_HOUR =
+            "port_forward_alloc_limit_per_hour";
+    public static final String PORT_FORWARD_BAND_ALERT_PERCENT =
+            "port_forward_band_alert_percent";
+    public static final String PORT_FORWARD_SUSPEND_CONNS_PER_MIN =
+            "port_forward_suspend_conns_per_min";
+    public static final String PORT_FORWARD_SUSPEND_MBYTES_PER_MIN =
+            "port_forward_suspend_mbytes_per_min";
 
     /** Hostname-safe entry: lowercase dot-separated labels, ≤63 chars total. */
     private static final Pattern HOSTNAME_SAFE = Pattern.compile(
             "(?=.{1,63}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*");
+    /**
+     * Floor for the IP quarantine window, in hours. A released address may
+     * still be carried in a forwarding relay's persisted snapshot, which the
+     * relay agent re-applies on boot for as long as that snapshot is
+     * considered usable (24 hours). Quarantining for less would let the
+     * address be reassigned while stale forwarding rules still point at it,
+     * delivering public traffic to a different tenant's VM, so the setting
+     * must never be editable below the agent's replay window.
+     */
+    private static final int MIN_IP_QUARANTINE_HOURS = 24;
     private static final int MAX_LIST_ENTRIES = 500;
     private static final int MAX_EXPIRY_STAGES = 5;
     /** Free-text operator message cap (banner/maintenance notice). */
@@ -239,11 +260,20 @@ public class SettingsService {
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,
                 numberInRangeExclusiveMin(0, 10)));
         map.put(IP_QUARANTINE_HOURS, new Editable(SettingValueType.INTEGER,
-                intInRange(0, 720)));
+                intInRange(MIN_IP_QUARANTINE_HOURS, 720)));
         map.put(VM_DELETE_GRACE_HOURS, new Editable(SettingValueType.INTEGER,
                 intInRange(1, 2160)));
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(WEB_TERMINAL_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
+        map.put(PORT_FORWARDING_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
+        map.put(PORT_FORWARD_ALLOC_LIMIT_PER_HOUR, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 1000)));
+        map.put(PORT_FORWARD_BAND_ALERT_PERCENT, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 100)));
+        map.put(PORT_FORWARD_SUSPEND_CONNS_PER_MIN, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 100_000_000)));
+        map.put(PORT_FORWARD_SUSPEND_MBYTES_PER_MIN, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 10_000_000)));
         map.put(VM_EXPIRY_AUTOSTOP_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(ALLOWED_ROOT_DOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));
         map.put(RESERVED_SUBDOMAINS, new Editable(SettingValueType.JSON, hostnameArray()));

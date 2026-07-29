@@ -50,6 +50,75 @@ components:
       - "email"
       - "role"
       type: "object"
+    AdminCampusIpRequestView:
+      properties:
+        adminNote:
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        grantedAddress:
+          description: "연결된 교내 IP 주소 (10.0.0.0/8)"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        orgId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        ports:
+          description: "사용할 포트 번호 목록"
+          items:
+            format: "int32"
+            type: "integer"
+          type: "array"
+        processedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        processedBy:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        purpose:
+          description: "신청 목적"
+          type: "string"
+        requestedBy:
+          format: "int64"
+          type: "integer"
+        requesterEmail:
+          description: "신청자 이메일"
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/CampusIpRequestStatus"
+          description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
+            \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "createdAt"
+      - "id"
+      - "ports"
+      - "purpose"
+      - "requestedBy"
+      - "status"
+      - "vmId"
+      type: "object"
     AdminCertificateView:
       properties:
         daysUntilExpiry:
@@ -295,6 +364,166 @@ components:
       - "title"
       - "userEmail"
       - "userId"
+      type: "object"
+    AdminPortMappingResponse:
+      properties:
+        applyState:
+          $ref: "#/components/schemas/PortForwardApplyState"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        createdBy:
+          format: "int64"
+          type: "integer"
+        ctMax:
+          description: "동시 연결 상한 오버라이드 (null = 에이전트 기본, 0 = 해제)"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        newConnBurst:
+          description: "신규 연결 버스트 오버라이드"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        newConnRate:
+          description: "초당 신규 연결 상한 오버라이드"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        perSourceBurst:
+          description: "출발지별 버스트 오버라이드"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        perSourceRate:
+          description: "출발지별 초당 신규 연결 상한 오버라이드"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        proto:
+          $ref: "#/components/schemas/PortMappingProto"
+        publicPort:
+          format: "int32"
+          type: "integer"
+        relayId:
+          format: "int64"
+          type: "integer"
+        relayName:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/PortMappingStatus"
+        suspendedBy:
+          description: "정지한 관리자 id (자동 정지면 null)"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        suspendedReason:
+          description: "정지 사유 (SUSPENDED일 때)"
+          type:
+          - "string"
+          - "null"
+        targetPort:
+          format: "int32"
+          type: "integer"
+        vmId:
+          format: "int64"
+          type: "integer"
+        vmName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "applyState"
+      - "createdAt"
+      - "createdBy"
+      - "id"
+      - "proto"
+      - "publicPort"
+      - "relayId"
+      - "relayName"
+      - "status"
+      - "targetPort"
+      - "vmId"
+      type: "object"
+    AdminRelayView:
+      properties:
+        agentVersion:
+          type:
+          - "string"
+          - "null"
+        appliedGeneration:
+          description: "에이전트가 적용을 확인한 마지막 세대"
+          format: "int64"
+          type: "integer"
+        bandEnd:
+          description: "공개 포트 대역 끝"
+          format: "int32"
+          type: "integer"
+        bandStart:
+          description: "공개 포트 대역 시작"
+          format: "int32"
+          type: "integer"
+        bandUsagePercent:
+          description: "공개 포트 대역 사용률(%)"
+          format: "int32"
+          type: "integer"
+        contactLost:
+          description: "접촉 두절 여부 (마지막 동기화가 폴링 주기 3배를 초과)"
+          type: "boolean"
+        enabled:
+          type: "boolean"
+        id:
+          format: "int64"
+          type: "integer"
+        lastContactAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        lastError:
+          description: "에이전트가 보고한 마지막 적용 오류(JSON, 정화됨). 없으면 null"
+          type:
+          - "string"
+          - "null"
+        mappingCount:
+          description: "이 릴레이의 매핑 수"
+          format: "int64"
+          type: "integer"
+        mappingGeneration:
+          description: "현재 매핑 세대 (매핑 변경마다 증가)"
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        publicHost:
+          description: "사용자 접속용 공개 호스트 (설정 전이면 null)"
+          type:
+          - "string"
+          - "null"
+        tokenIssued:
+          description: "동기화 토큰 발급 여부 (미발급이면 에이전트 인증이 항상 실패)"
+          type: "boolean"
+      required:
+      - "appliedGeneration"
+      - "bandEnd"
+      - "bandStart"
+      - "bandUsagePercent"
+      - "contactLost"
+      - "enabled"
+      - "id"
+      - "mappingCount"
+      - "mappingGeneration"
+      - "name"
+      - "tokenIssued"
       type: "object"
     AdminRouteView:
       properties:
@@ -723,6 +952,65 @@ components:
       required:
       - "password"
       type: "object"
+    CampusIpRequestStatus:
+      enum:
+      - "REQUESTED"
+      - "APPROVED"
+      - "GRANTED"
+      - "REJECTED"
+      - "REVOKED"
+      type: "string"
+    CampusIpRequestView:
+      properties:
+        adminNote:
+          description: "관리자 메모"
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        grantedAddress:
+          description: "연결된 교내 IP 주소 (GRANTED 이후)"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        ports:
+          description: "사용할 포트 번호 목록 (중복 제거·오름차순 정규화)"
+          items:
+            format: "int32"
+            type: "integer"
+          type: "array"
+        processedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        purpose:
+          description: "신청 목적"
+          type: "string"
+        requestedBy:
+          format: "int64"
+          type: "integer"
+        status:
+          $ref: "#/components/schemas/CampusIpRequestStatus"
+          description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
+            \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
+        vmId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "createdAt"
+      - "id"
+      - "ports"
+      - "purpose"
+      - "requestedBy"
+      - "status"
+      - "vmId"
+      type: "object"
     Capacity:
       properties:
         cpuThreads:
@@ -815,6 +1103,25 @@ components:
       - "docType"
       - "version"
       type: "object"
+    CreateCampusIpRequest:
+      properties:
+        ports:
+          description: "교내 IP로 사용할 포트 번호 목록 (1~65535, 최대 32개)"
+          items:
+            format: "int32"
+            type: "integer"
+          maxItems: 32
+          minItems: 0
+          type: "array"
+        purpose:
+          description: "신청 목적 (관리자 검토 자료)"
+          maxLength: 1000
+          minLength: 0
+          type: "string"
+      required:
+      - "ports"
+      - "purpose"
+      type: "object"
     CreateGroupRequest:
       properties:
         description:
@@ -861,6 +1168,21 @@ components:
       required:
       - "name"
       - "slug"
+      type: "object"
+    CreatePortForwardingRequest:
+      properties:
+        proto:
+          $ref: "#/components/schemas/PortMappingProto"
+          description: "프로토콜 (tcp | udp)"
+        targetPort:
+          description: "VM 내부에서 노출할 대상 포트 (1~65535)"
+          format: "int32"
+          maximum: 65535
+          minimum: 1
+          type: "integer"
+      required:
+      - "proto"
+      - "targetPort"
       type: "object"
     CreateVmFlavorRequest:
       properties:
@@ -1419,11 +1741,14 @@ components:
         id:
           format: "int64"
           type: "integer"
+        name:
+          type: "string"
       required:
       - "allocatedCount"
       - "cidr"
       - "freeCount"
       - "id"
+      - "name"
       type: "object"
     IpPoolUsage:
       properties:
@@ -1819,6 +2144,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseAdminCampusIpRequestView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminCampusIpRequestView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseAdminCertificateView:
       properties:
         content:
@@ -1874,6 +2224,31 @@ components:
         content:
           items:
             $ref: "#/components/schemas/AdminNotificationResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseAdminPortMappingResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminPortMappingResponse"
           type: "array"
         page:
           format: "int32"
@@ -2216,6 +2591,61 @@ components:
       required:
       - "email"
       type: "object"
+    PortForwardApplyState:
+      enum:
+      - "PENDING"
+      - "ACTIVE"
+      - "FAILED"
+      type: "string"
+    PortForwardingView:
+      properties:
+        applyState:
+          $ref: "#/components/schemas/PortForwardApplyState"
+          description: "릴레이 반영 상태 (PENDING = 대기, ACTIVE = 활성, FAILED = 실패)"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        proto:
+          $ref: "#/components/schemas/PortMappingProto"
+          description: "프로토콜 (tcp | udp)"
+        publicHost:
+          description: "접속에 사용할 공개 호스트. 아직 설정 전이면 null"
+          type:
+          - "string"
+          - "null"
+        publicPort:
+          description: "릴레이에서 열린 공개 포트"
+          format: "int32"
+          type: "integer"
+        status:
+          $ref: "#/components/schemas/PortMappingStatus"
+          description: "매핑 상태 (SUSPENDED = 관리자·자동 정지)"
+        targetPort:
+          description: "VM 내부 대상 포트"
+          format: "int32"
+          type: "integer"
+      required:
+      - "applyState"
+      - "createdAt"
+      - "id"
+      - "proto"
+      - "publicPort"
+      - "status"
+      - "targetPort"
+      type: "object"
+    PortMappingProto:
+      enum:
+      - "TCP"
+      - "UDP"
+      type: "string"
+    PortMappingStatus:
+      enum:
+      - "ACTIVE"
+      - "SUSPENDED"
+      type: "string"
     Problem:
       description: "RFC 9457 오류 응답 + Pickle 확장(code, errors). 모든 비정상 응답은 이 형태로 반환됩\
         니다."
@@ -2374,6 +2804,18 @@ components:
           type: "string"
       required:
       - "comment"
+      type: "object"
+    RelayTokenResponse:
+      properties:
+        relayId:
+          format: "int64"
+          type: "integer"
+        token:
+          description: "새 동기화 토큰(64자 hex). 이 응답에서만 확인 가능하며 저장되지 않습니다"
+          type: "string"
+      required:
+      - "relayId"
+      - "token"
       type: "object"
     RequestOptionsResponse:
       properties:
@@ -2676,6 +3118,16 @@ components:
       - "privateKeyStored"
       - "publicKey"
       type: "object"
+    SuspendPortMappingRequest:
+      properties:
+        reason:
+          description: "정지 사유 (소유 그룹에 알림으로 전달)"
+          maxLength: 500
+          minLength: 0
+          type: "string"
+      required:
+      - "reason"
+      type: "object"
     SystemDashboardSummaryResponse:
       properties:
         certExpiring30dCount:
@@ -2887,6 +3339,29 @@ components:
       required:
       - "unreadCount"
       type: "object"
+    UpdateCampusIpRequestStatusRequest:
+      properties:
+        adminNote:
+          description: "관리자 메모 (신청자 알림에 포함)"
+          maxLength: 1000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        grantedAddress:
+          description: "연결한 교내 IP 주소 (GRANTED 전환 시 필수, 10.0.0.0/8 대역)"
+          maxLength: 45
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/CampusIpRequestStatus"
+          description: "전환할 상태 (APPROVED = 승인, GRANTED = 교내 IP 연결 완료, REJECTED = 반\
+            려, REVOKED = 회수)"
+      required:
+      - "status"
+      type: "object"
     UpdateGroupMemberRequest:
       properties:
         role:
@@ -2932,6 +3407,39 @@ components:
           type: "string"
         status:
           $ref: "#/components/schemas/OrgStatus"
+      type: "object"
+    UpdatePortMappingGuardsRequest:
+      properties:
+        ctMax:
+          description: "매핑별 동시 연결 상한 (null = 기본값, 0 = 해제)"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        newConnBurst:
+          description: "신규 연결 버스트"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        newConnRate:
+          description: "초당 신규 연결 상한"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        perSourceBurst:
+          description: "출발지별 버스트"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        perSourceRate:
+          description: "출발지별 초당 신규 연결 상한"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
       type: "object"
     UpdatePublicationRequest:
       properties:
@@ -3428,6 +3936,8 @@ components:
       - "PERIOD_UPDATE"
       - "GATEWAY_BLOCK"
       - "GATEWAY_UNBLOCK"
+      - "PORT_FORWARD_CREATE"
+      - "PORT_FORWARD_DELETE"
       type: "string"
     VmFlavorResponse:
       properties:
@@ -3865,7 +4375,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.26.0"
+  version: "0.27.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -4001,6 +4511,84 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-audit-controller"
+  /admin/campus-ip-requests:
+    get:
+      operationId: "listAdminCampusIpRequests"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/CampusIpRequestStatus"
+      - in: "query"
+        name: "vmId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminCampusIpRequestView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-campus-ip-request-controller"
+  /admin/campus-ip-requests/{requestId}/status:
+    post:
+      operationId: "updateAdminCampusIpRequestStatus"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCampusIpRequestStatusRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminCampusIpRequestView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-campus-ip-request-controller"
   /admin/certificates:
     get:
       operationId: "listAdminCertificates"
@@ -4533,6 +5121,229 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
+  /admin/port-mappings:
+    get:
+      operationId: "listAdminPortMappings"
+      parameters:
+      - in: "query"
+        name: "relayId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "vmId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/PortMappingStatus"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminPortMappingResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-port-mapping-controller"
+  /admin/port-mappings/{mappingId}:
+    delete:
+      operationId: "deleteAdminPortMapping"
+      parameters:
+      - in: "path"
+        name: "mappingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "202":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "Accepted"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-port-mapping-controller"
+  /admin/port-mappings/{mappingId}/guards:
+    patch:
+      operationId: "updateAdminPortMappingGuards"
+      parameters:
+      - in: "path"
+        name: "mappingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePortMappingGuardsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminPortMappingResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-port-mapping-controller"
+  /admin/port-mappings/{mappingId}/suspend:
+    post:
+      operationId: "suspendAdminPortMapping"
+      parameters:
+      - in: "path"
+        name: "mappingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendPortMappingRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminPortMappingResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-port-mapping-controller"
+  /admin/port-mappings/{mappingId}/unsuspend:
+    post:
+      operationId: "unsuspendAdminPortMapping"
+      parameters:
+      - in: "path"
+        name: "mappingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminPortMappingResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-port-mapping-controller"
+  /admin/relays:
+    get:
+      operationId: "listAdminRelays"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminRelayView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-relay-controller"
+  /admin/relays/{relayId}/token:
+    post:
+      operationId: "issueAdminRelayToken"
+      parameters:
+      - in: "path"
+        name: "relayId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RelayTokenResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-relay-controller"
   /admin/routes:
     get:
       operationId: "listAdminRoutes"
@@ -7254,6 +8065,90 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
+  /vms/{vmId}/campus-ip-requests:
+    get:
+      operationId: "listVmCampusIpRequests"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/CampusIpRequestView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "campus-ip-request-controller"
+    post:
+      operationId: "requestVmCampusIp"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampusIpRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CampusIpRequestView"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "campus-ip-request-controller"
+  /vms/{vmId}/campus-ip-requests/{requestId}:
+    delete:
+      operationId: "cancelVmCampusIpRequest"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "campus-ip-request-controller"
   /vms/{vmId}/events:
     get:
       operationId: "listVmEvents"
@@ -7397,6 +8292,94 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
+  /vms/{vmId}/port-forwardings:
+    get:
+      operationId: "listVmPortForwardings"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/PortForwardingView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "port-forwarding-controller"
+    post:
+      operationId: "createVmPortForwarding"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortForwardingRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PortForwardingView"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "port-forwarding-controller"
+  /vms/{vmId}/port-forwardings/{portForwardingId}:
+    delete:
+      operationId: "deleteVmPortForwarding"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "portForwardingId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "202":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+          description: "Accepted"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "port-forwarding-controller"
   /vms/{vmId}/publication:
     delete:
       operationId: "unpublishVm"

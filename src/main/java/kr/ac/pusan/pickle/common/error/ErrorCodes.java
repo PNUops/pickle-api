@@ -68,6 +68,16 @@ public final class ErrorCodes {
     // console; the internal redeem/revalidate reason codes are separate (below).
     public static final String TERMINAL_DISABLED = "TERMINAL_DISABLED";
     public static final String TERMINAL_SESSION_LIMIT = "TERMINAL_SESSION_LIMIT";
+    // Relay port forwarding (contract v0.27.0).
+    /** Kill switch {@code port_forwarding_enabled} is off — creation refused. */
+    public static final String PORT_FORWARDING_DISABLED = "PORT_FORWARDING_DISABLED";
+    /** No free public port left in the relay's band. */
+    public static final String PUBLIC_PORT_EXHAUSTED = "PUBLIC_PORT_EXHAUSTED";
+    // 교내 IP requests (contract v0.27.0).
+    /** The VM already has a live (REQUESTED/APPROVED/GRANTED) campus-IP request. */
+    public static final String CAMPUS_IP_REQUEST_EXISTS = "CAMPUS_IP_REQUEST_EXISTS";
+    /** The requested status change is not a legal transition from the current state. */
+    public static final String CAMPUS_IP_INVALID_TRANSITION = "CAMPUS_IP_INVALID_TRANSITION";
     // 점검 모드 (contract v0.9.0, GET /meta/status): 비관리자 요청 503.
     public static final String MAINTENANCE_MODE = "MAINTENANCE_MODE";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

@@ -27,6 +27,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
+import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
@@ -86,6 +87,7 @@ public class VmDeletionService {
     private final NotificationService notificationService;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
+    private final PortMappingTeardownService portMappingTeardown;
     private final VmSettingsService vmSettingsService;
 
     public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
@@ -94,7 +96,8 @@ public class VmDeletionService {
             DeleteVmJob deleteVmJob, AuditService auditService,
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
-            PublishingTeardownService publishingTeardown, VmSettingsService vmSettingsService) {
+            PublishingTeardownService publishingTeardown,
+            PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.userRepository = userRepository;
@@ -107,6 +110,7 @@ public class VmDeletionService {
         this.notificationService = notificationService;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
+        this.portMappingTeardown = portMappingTeardown;
         this.vmSettingsService = vmSettingsService;
     }
 
@@ -156,6 +160,11 @@ public class VmDeletionService {
         if (!publishingTeardown.markPublicationsRemoved(vmId).isEmpty()) {
             enqueueAfterCommit(() -> publishingTeardown.teardownForVmDeletion(vmId));
         }
+        // Same tx as the release below: no orphan mapping may survive its
+        // target's IP release (the freed address can be re-assigned after
+        // quarantine, and a leftover DNAT would deliver public traffic to the
+        // next tenant's VM).
+        portMappingTeardown.deleteMappingsForVm(vmId);
         if (vm.getIpAllocationId() != null
                 && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
             vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);

@@ -243,6 +243,59 @@ public class NotificationComposer {
 
                     요청한 적이 없다면 즉시 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
+            // Relay port forwarding + 교내 IP (contract v0.27.0). The relay
+            // observability events target sysadmins; the campus-IP status
+            // event targets the requester.
+            case RELAY_CONTACT_LOST -> new Composed(event.id(),
+                    "릴레이 접촉 두절 — " + str(args, "relayName"),
+                    """
+                    릴레이 '%s'의 에이전트가 예상 주기 안에 동기화하지 않았습니다.
+                    마지막 접촉: %s
+
+                    릴레이 인스턴스와 터널 상태를 확인해 주세요. 마지막으로 적용된
+                    포워딩 규칙은 릴레이에 그대로 남아 있습니다.""".formatted(
+                            str(args, "relayName"), str(args, "lastContactAt")),
+                    "/admin/network", event.defaultImportance(),
+                    payload(args, "relayId", "relayName"));
+            case RELAY_BAND_USAGE_HIGH -> new Composed(event.id(),
+                    "릴레이 포트 대역 사용률 경고 — " + str(args, "relayName"),
+                    """
+                    릴레이 '%s'의 공개 포트 대역 사용률이 %s%%에 도달했습니다
+                    (임계값 %s%%). 대역 확장 또는 정리가 필요할 수 있습니다.""".formatted(
+                            str(args, "relayName"), str(args, "usagePercent"),
+                            str(args, "thresholdPercent")),
+                    "/admin/network", event.defaultImportance(),
+                    payload(args, "relayId", "relayName", "usagePercent"));
+            case PORT_MAPPING_SUSPENDED -> new Composed(event.id(),
+                    "포트 포워딩 정지 — " + str(args, "vmName"),
+                    """
+                    VM '%s'의 포트 포워딩(%s %s)이 정지되었습니다.
+
+                    - 사유: %s
+
+                    문의 사항은 관리자에게 연락해 주세요.""".formatted(str(args, "vmName"),
+                            str(args, "proto"), str(args, "publicPort"), str(args, "reason")),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "proto", "publicPort"));
+            case CAMPUS_IP_REQUESTED -> new Composed(event.id(),
+                    "교내 IP 신청 접수 — " + str(args, "vmName"),
+                    """
+                    VM '%s'에 대한 교내 IP 신청이 접수되었습니다. 검토해 주세요.
+
+                    - 신청 목적: %s""".formatted(str(args, "vmName"), str(args, "purpose")),
+                    "/admin/network", event.defaultImportance(),
+                    payload(args, "requestId", "vmId", "vmName"));
+            case CAMPUS_IP_STATUS_CHANGED -> new Composed(event.id(),
+                    "교내 IP 신청 상태 변경 — " + str(args, "vmName"),
+                    """
+                    VM '%s'의 교내 IP 신청 상태가 '%s'(으)로 변경되었습니다.%s%s""".formatted(
+                            str(args, "vmName"), str(args, "statusLabel"),
+                            args.get("grantedAddress") != null
+                                    ? "\n\n- 할당 주소: " + str(args, "grantedAddress") : "",
+                            args.get("adminNote") != null
+                                    ? "\n- 관리자 메모: " + str(args, "adminNote") : ""),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "requestId", "vmId", "vmName"));
             case GROUP_DELETED -> new Composed(event.id(),
                     "그룹 삭제 안내 — " + str(args, "groupName"),
                     """

@@ -29,5 +29,9 @@ public enum VmEventType {
     /** SYS_ADMIN blocked SSH-gateway/web-terminal access for this VM (contract v0.16.0). */
     GATEWAY_BLOCK,
     /** SYS_ADMIN lifted the per-VM SSH-gateway/web-terminal block. */
-    GATEWAY_UNBLOCK
+    GATEWAY_UNBLOCK,
+    /** Relay port forwarding created (contract v0.27.0). */
+    PORT_FORWARD_CREATE,
+    /** Relay port forwarding removed (user delete or admin intervention). */
+    PORT_FORWARD_DELETE
 }
