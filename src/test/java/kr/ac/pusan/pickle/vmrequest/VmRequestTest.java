@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
@@ -42,7 +43,8 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * User VM request flow per contract: creation validation matrix (group role,
- * the OS and spec-preset axes, spec-reason rule, subdomain/domain rules), list/detail
+ * the OS and spec-preset axes incl. a catalog with no ACTIVE row, spec-reason
+ * rule, subdomain/domain rules), list/detail
  * visibility incl. the 403 non-member groupId filter, and cancel permissions
  * with the 409 double-decision guard.
  */
@@ -361,6 +363,64 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.errors.length()").value(2))
                 .andExpect(jsonPath("$.errors[0].field").value("templateId"))
                 .andExpect(jsonPath("$.errors[1].field").value("flavorId"));
+    }
+
+    /**
+     * A catalog with no ACTIVE row — what a freshly installed environment looks
+     * like until an operator registers the images that actually exist on the
+     * host. The wizard's OS axis must degrade to an empty list rather than an
+     * error, and every way of naming an image must be refused with a stated
+     * reason, so no request row can be written against an unusable image.
+     */
+    @Test
+    void emptyOsCatalogListsNothingAndRefusesEverySubmission() throws Exception {
+        long groupId = createTeam(requesterToken, "vmr-empty-x1");
+        List<OsImage> active = imageRepository.findByStatusOrderByIdAsc(TemplateStatus.ACTIVE);
+        assertThat(active).isNotEmpty();
+        // Catalog rows are shared state across test classes on this context —
+        // the ACTIVE set is restored in the finally block below.
+        active.forEach(row -> row.setStatus(TemplateStatus.DISABLED));
+        imageRepository.saveAll(active);
+        try {
+            // the OS axis of the request wizard: 200 with an empty array
+            mockMvc.perform(get("/api/v1/templates")
+                            .header("Authorization", "Bearer " + requesterToken))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.length()").value(0));
+
+            // an image that exists but is no longer selectable → 422 on the field
+            postJson("/api/v1/vm-requests", requesterToken,
+                    with(validBody(groupId), "templateId", image.getId()))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.errors[0].field").value("templateId"))
+                    .andExpect(jsonPath("$.errors[0].message")
+                            .value("더 이상 선택할 수 없는 템플릿입니다."));
+
+            // an id that never existed → 404 with a stated reason, not a 500
+            postJson("/api/v1/vm-requests", requesterToken,
+                    with(validBody(groupId), "templateId", 999_999))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                    .andExpect(jsonPath("$.detail").value("해당 템플릿이 존재하지 않습니다."));
+
+            // nothing to pick ⇒ the field left out entirely → 422, never a null deref
+            Map<String, Object> withoutImage = validBody(groupId);
+            withoutImage.remove("templateId");
+            postJson("/api/v1/vm-requests", requesterToken, withoutImage)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.errors[0].field").value("templateId"));
+
+            // and none of the three attempts left a row behind
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from vm_requests where group_id = ?", Long.class, groupId))
+                    .isZero();
+        } finally {
+            active.forEach(row -> row.setStatus(TemplateStatus.ACTIVE));
+            imageRepository.saveAll(active);
+        }
     }
 
     @Test
