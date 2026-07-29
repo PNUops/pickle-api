@@ -122,8 +122,9 @@ class ReferenceDataTest {
         // a DISABLED version row must not surface in the wizard list
         if (osImageRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
             Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
-            osImageRepository.save(new OsImage("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 1001,
-                    nodeId, 1, 10, TemplateStatus.DISABLED, null));
+            osImageRepository.save(new OsImage("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)",
+                    "ubuntu", "22.04", "ubuntu", 1001, nodeId, 1, 10,
+                    TemplateStatus.DISABLED, null));
         }
 
         mockMvc.perform(get("/api/v1/templates").header("Authorization", "Bearer " + accessToken))
@@ -137,6 +138,11 @@ class ReferenceDataTest {
                 .andExpect(jsonPath("$[0].minDiskGb").value(10))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].notes").isNotEmpty())
+                // distribution identity + guest account: the catalog row carries
+                // them, and the backfill left the seeded image on ubuntu
+                .andExpect(jsonPath("$[0].osFamily").value("ubuntu"))
+                .andExpect(jsonPath("$[0].osVersion").value("24.04"))
+                .andExpect(jsonPath("$[0].sshUsername").value("ubuntu"))
                 // the spec fields moved to the flavor axis
                 .andExpect(jsonPath("$[0].defaultVcpu").doesNotExist())
                 .andExpect(jsonPath("$[0].defaultMemoryMb").doesNotExist())

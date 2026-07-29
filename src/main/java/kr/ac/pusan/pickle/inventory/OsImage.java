@@ -30,6 +30,22 @@ public class OsImage {
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
+    /** Distribution short id ({@code ubuntu}, {@code debian}, {@code rocky}) — a
+     * checked slug rather than an enum, so a new OS stays a catalog row rather
+     * than a schema change (V63). */
+    @Column(name = "os_family", nullable = false)
+    private String osFamily;
+
+    /** Release string as the distribution writes it ({@code 24.04}, {@code 13},
+     * {@code 10}) — a label, not a sort key (V63). */
+    @Column(name = "os_version", nullable = false)
+    private String osVersion;
+
+    /** Guest admin account this image ships; becomes the VM's login name and the
+     * cloud-init {@code ciuser} at provisioning (V63). */
+    @Column(name = "ssh_username", nullable = false)
+    private String sshUsername;
+
     @Column(name = "proxmox_vmid", nullable = false)
     private int proxmoxVmid;
 
@@ -60,10 +76,14 @@ public class OsImage {
     protected OsImage() {
     }
 
-    public OsImage(String name, String displayName, int proxmoxVmid, Long nodeId, int version,
-            int minDiskGb, TemplateStatus status, String notes) {
+    public OsImage(String name, String displayName, String osFamily, String osVersion,
+            String sshUsername, int proxmoxVmid, Long nodeId, int version, int minDiskGb,
+            TemplateStatus status, String notes) {
         this.name = name;
         this.displayName = displayName;
+        this.osFamily = osFamily;
+        this.osVersion = osVersion;
+        this.sshUsername = sshUsername;
         this.proxmoxVmid = proxmoxVmid;
         this.nodeId = nodeId;
         this.version = version;
@@ -82,6 +102,18 @@ public class OsImage {
 
     public String getDisplayName() {
         return displayName;
+    }
+
+    public String getOsFamily() {
+        return osFamily;
+    }
+
+    public String getOsVersion() {
+        return osVersion;
+    }
+
+    public String getSshUsername() {
+        return sshUsername;
     }
 
     public int getProxmoxVmid() {

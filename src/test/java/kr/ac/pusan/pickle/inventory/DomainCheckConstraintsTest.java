@@ -16,7 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * V11 defense-in-depth CHECK constraints: direct JDBC
+ * Defense-in-depth CHECK constraints (V11, and the OS catalog's in V63): direct JDBC
  * writes that bypass the service layer must be refused by the database. The
  * embedded-PG suite already proves the migration applies to the seeded data;
  * these cases prove the constraints actually fire.
@@ -117,6 +117,31 @@ class DomainCheckConstraintsTest {
                 values (?, ?, 'REJECT', '반려 사유')
                 """, requestId, requesterId);
         assertThat(inserted).isEqualTo(1);
+    }
+
+    @Test
+    void malformedOsImageIdentityIsRejected() {
+        assertThatThrownBy(() -> insertImage("Ubuntu", "24.04", "ubuntu"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_os_images_os_family");
+        // a release label the documented version ordering could not parse
+        assertThatThrownBy(() -> insertImage("ubuntu", "24.04 LTS", "ubuntu"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_os_images_os_version");
+        // the guest account reaches Proxmox as the cloud-init user
+        assertThatThrownBy(() -> insertImage("ubuntu", "24.04", "root user"))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("chk_os_images_ssh_username");
+        assertThat(insertImage("rocky", "10", "rocky")).isEqualTo(1);
+    }
+
+    private int insertImage(String osFamily, String osVersion, String sshUsername) {
+        return jdbc.update("""
+                insert into os_images (name, display_name, os_family, os_version, ssh_username,
+                                       proxmox_vmid, node_id, min_disk_gb, status)
+                values (?, '제약 테스트 이미지', ?, ?, ?, 1009, ?, 10, 'DISABLED'::template_status)
+                """, "chk-image-" + UUID.randomUUID().toString().substring(0, 8),
+                osFamily, osVersion, sshUsername, nodeId);
     }
 
     private long insertRequest(int vcpu, int memoryMb, int diskGb, String start, String end) {

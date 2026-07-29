@@ -682,9 +682,15 @@ components:
           type:
           - "string"
           - "null"
+        osFamily:
+          type: "string"
+        osVersion:
+          type: "string"
         proxmoxVmid:
           format: "int32"
           type: "integer"
+        sshUsername:
+          type: "string"
         status:
           $ref: "#/components/schemas/TemplateStatus"
         version:
@@ -696,7 +702,10 @@ components:
       - "minDiskGb"
       - "name"
       - "nodeId"
+      - "osFamily"
+      - "osVersion"
       - "proxmoxVmid"
+      - "sshUsername"
       - "status"
       - "version"
       type: "object"
@@ -4337,6 +4346,12 @@ components:
           type:
           - "string"
           - "null"
+        osFamily:
+          type: "string"
+        osVersion:
+          type: "string"
+        sshUsername:
+          type: "string"
         status:
           $ref: "#/components/schemas/TemplateStatus"
         version:
@@ -4347,6 +4362,9 @@ components:
       - "id"
       - "minDiskGb"
       - "name"
+      - "osFamily"
+      - "osVersion"
+      - "sshUsername"
       - "status"
       - "version"
       type: "object"
@@ -4375,7 +4393,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.27.0"
+  version: "0.28.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:

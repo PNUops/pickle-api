@@ -65,9 +65,14 @@ public class Vm {
     @Column(name = "ip_allocation_id")
     private Long ipAllocationId;
 
-    /** Guest admin account (initial credentials); {@code ubuntu} for the current template. */
+    /**
+     * Guest admin account (initial credentials), copied from the OS image row
+     * this VM was created from — the account differs per distribution
+     * ({@code ubuntu}, {@code debian}, {@code rocky}), so it is carried rather
+     * than assumed. Also the cloud-init {@code ciuser} at provisioning.
+     */
     @Column(name = "ssh_username", nullable = false)
-    private String sshUsername = "ubuntu";
+    private String sshUsername;
 
     /**
      * Per-VM SSH gateway block (kill switch): when true the route
@@ -173,7 +178,8 @@ public class Vm {
     }
 
     public Vm(Long nodeId, Long groupId, Long orgId, Long requestId, String name, String hostname,
-            Long imageId, int vcpu, int memoryMb, int diskGb, LocalDate startDate, LocalDate endDate) {
+            Long imageId, String sshUsername, int vcpu, int memoryMb, int diskGb,
+            LocalDate startDate, LocalDate endDate) {
         this.nodeId = nodeId;
         this.groupId = groupId;
         this.orgId = orgId;
@@ -181,6 +187,7 @@ public class Vm {
         this.name = name;
         this.hostname = hostname;
         this.imageId = imageId;
+        this.sshUsername = sshUsername;
         this.vcpu = vcpu;
         this.memoryMb = memoryMb;
         this.diskGb = diskGb;

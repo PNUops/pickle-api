@@ -184,8 +184,10 @@ public class ApprovalService {
         Long nodeId = form.nodeId() != null ? form.nodeId() : image.getNodeId();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
         String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());
+        // The guest admin account comes from the granted image (each
+        // distribution ships its own), never from a platform-wide constant.
         Vm vm = vmRepository.save(new Vm(nodeId, request.getGroupId(), request.getOrgId(),
-                request.getId(), hostname, hostname, image.getId(),
+                request.getId(), hostname, hostname, image.getId(), image.getSshUsername(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
                 form.grantedStartDate(), form.grantedEndDate()));
         // Requester-chosen display name (request form) — seeded as the

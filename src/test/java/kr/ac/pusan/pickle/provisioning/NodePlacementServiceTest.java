@@ -107,9 +107,11 @@ class NodePlacementServiceTest {
 
     private OsImage insertImage(long nodeId, String status) {
         long id = jdbc.queryForObject("""
-                insert into os_images (name, display_name, proxmox_vmid, node_id,
+                insert into os_images (name, display_name, os_family, os_version,
+                                          ssh_username, proxmox_vmid, node_id,
                                           min_disk_gb, status)
-                values (?, '배치 테스트 템플릿', 1003, ?, 10, cast(? as template_status))
+                values (?, '배치 테스트 템플릿', 'ubuntu', '24.04', 'ubuntu', 1003, ?, 10,
+                        cast(? as template_status))
                 returning id
                 """, Long.class, templateName, nodeId, status);
         return imageRepository.findById(id).orElseThrow();
