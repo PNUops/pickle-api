@@ -4393,7 +4393,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.28.0"
+  version: "0.28.1"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
