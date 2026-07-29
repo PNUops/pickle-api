@@ -9,8 +9,8 @@ import java.time.Instant;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
@@ -52,7 +52,7 @@ class ReferenceDataTest {
     private OrgRepository orgRepository;
 
     @Autowired
-    private VmTemplateRepository vmTemplateRepository;
+    private OsImageRepository osImageRepository;
 
     @Autowired
     private VmFlavorRepository vmFlavorRepository;
@@ -120,9 +120,9 @@ class ReferenceDataTest {
     @Test
     void listsOnlyActiveTemplatesAsAPureOsCatalog() throws Exception {
         // a DISABLED version row must not surface in the wizard list
-        if (vmTemplateRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
-            Long nodeId = vmTemplateRepository.findAll().getFirst().getNodeId();
-            vmTemplateRepository.save(new VmTemplate("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 1001,
+        if (osImageRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
+            Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
+            osImageRepository.save(new OsImage("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)", 1001,
                     nodeId, 1, 10, TemplateStatus.DISABLED, null));
         }
 

@@ -71,7 +71,7 @@ class SshGatewaySessionTest {
     void setUp() {
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         // Reuse a seeded node (do not create one) so this test does not add to the
@@ -249,7 +249,7 @@ class SshGatewaySessionTest {
 
     private long createVm(String slug, String ip) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'SSH 세션 테스트', ?, 1, 1024, 10)
                 returning id
@@ -260,7 +260,7 @@ class SshGatewaySessionTest {
                 """, Long.class, poolId, ip);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status,
+                                 image_id, vcpu, memory_mb, disk_gb, status,
                                  ip_allocation_id, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?)
                 returning id

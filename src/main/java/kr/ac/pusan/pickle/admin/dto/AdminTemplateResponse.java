@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
+import kr.ac.pusan.pickle.inventory.OsImage;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -21,10 +21,10 @@ public record AdminTemplateResponse(
         int minDiskGb,
         @Nullable String notes) {
 
-    public static AdminTemplateResponse from(VmTemplate template) {
-        return new AdminTemplateResponse(template.getId(), template.getName(),
-                template.getDisplayName(), template.getVersion(), template.getProxmoxVmid(),
-                template.getNodeId(), template.getStatus(), template.getMinDiskGb(),
-                template.getNotes());
+    public static AdminTemplateResponse from(OsImage image) {
+        return new AdminTemplateResponse(image.getId(), image.getName(),
+                image.getDisplayName(), image.getVersion(), image.getProxmoxVmid(),
+                image.getNodeId(), image.getStatus(), image.getMinDiskGb(),
+                image.getNotes());
     }
 }

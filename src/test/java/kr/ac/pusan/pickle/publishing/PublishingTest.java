@@ -144,7 +144,7 @@ class PublishingTest {
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
 
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = createTeam(groupSlug);
@@ -1162,7 +1162,7 @@ class PublishingTest {
      */
     private long publishableVm(String desiredSubdomain, String rootDomain, VmStatus status) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
                                          desired_subdomain, root_domain)
                 values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10, ?, ?)
@@ -1171,14 +1171,14 @@ class PublishingTest {
                 desiredSubdomain, rootDomain);
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision,
-                        granted_vcpu, granted_memory_mb, granted_disk_gb, granted_template_id)
+                        granted_vcpu, granted_memory_mb, granted_disk_gb, granted_image_id)
                 values (?, ?, 'APPROVE'::review_decision, 1, 1024, 10, ?)
                 """, requestId, owner.getId(), templateId);
         String hostname = "pub-" + UUID.randomUUID().toString().substring(0, 12);
         int vmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,

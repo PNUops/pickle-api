@@ -66,7 +66,7 @@ class AdminInventoryTest {
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateName = "ait-" + UUID.randomUUID().toString().substring(0, 8);
         templateId = jdbcTemplate.queryForObject("""
-                insert into vm_templates (name, display_name, proxmox_vmid, node_id, version,
+                insert into os_images (name, display_name, proxmox_vmid, node_id, version,
                                           min_disk_gb, status)
                 values (?, '상태 토글 테스트', 990001, ?, 1, 10, 'ACTIVE'::template_status)
                 returning id
@@ -77,7 +77,7 @@ class AdminInventoryTest {
 
     @Test
     void adminTemplateListShowsRetiredRevisionsThePublicListHides() throws Exception {
-        jdbcTemplate.update("update vm_templates set status = 'DISABLED'::template_status where id = ?",
+        jdbcTemplate.update("update os_images set status = 'DISABLED'::template_status where id = ?",
                 templateId);
 
         mockMvc.perform(get("/api/v1/admin/templates")
@@ -110,7 +110,7 @@ class AdminInventoryTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DISABLED"));
         assertThat(jdbcTemplate.queryForObject(
-                "select status from vm_templates where id = ?", String.class, templateId))
+                "select status from os_images where id = ?", String.class, templateId))
                 .isEqualTo("DISABLED");
         assertThat(auditCount("template.status_update", templateId)).isEqualTo(1);
 
@@ -131,7 +131,7 @@ class AdminInventoryTest {
 
     @Test
     void retiredTemplateIsRejectedAtRequestSubmit() throws Exception {
-        jdbcTemplate.update("update vm_templates set status = 'DISABLED'::template_status where id = ?",
+        jdbcTemplate.update("update os_images set status = 'DISABLED'::template_status where id = ?",
                 templateId);
         User requester = ensureUser("ait.user@pusan.ac.kr", UserRole.USER);
         String slug = "ait-" + UUID.randomUUID().toString().substring(0, 8);

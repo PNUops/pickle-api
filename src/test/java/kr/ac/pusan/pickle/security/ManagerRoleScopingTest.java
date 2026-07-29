@@ -241,13 +241,13 @@ class ManagerRoleScopingTest {
     }
 
     private long insertSubmittedRequest(long orgId, long requesterId) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long groupId = jdbcTemplate.queryForObject("""
                 insert into groups (kind, name, slug)
                 values ('TEAM'::group_kind, ?, ?) returning id
                 """, Long.class, "mgr-grp-" + slug(), "mgr-grp-" + slug());
         return jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10)
                 returning id
@@ -255,14 +255,14 @@ class ManagerRoleScopingTest {
     }
 
     private long insertActiveVmInOrg(long orgId) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         long groupId = jdbcTemplate.queryForObject("""
                 insert into groups (kind, name, slug)
                 values ('TEAM'::group_kind, ?, ?) returning id
                 """, Long.class, "mgr-vmgrp-" + slug(), "mgr-vmgrp-" + slug());
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10)
                 returning id
@@ -270,7 +270,7 @@ class ManagerRoleScopingTest {
         String hostname = "mgr-vm-" + slug();
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status)
+                                 image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status) returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
     }

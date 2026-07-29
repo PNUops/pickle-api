@@ -254,11 +254,11 @@ class AdminVmsTest {
 
     /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
     private long createVm(long orgId, long groupId, String status, String name) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '관리자 목록 테스트', ?, 2, 2048, 10)
                 returning id
@@ -266,7 +266,7 @@ class AdminVmsTest {
         String hostname = "advm-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status)
+                                 image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId,

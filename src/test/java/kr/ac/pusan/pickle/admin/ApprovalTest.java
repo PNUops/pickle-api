@@ -13,8 +13,8 @@ import java.util.Map;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -67,7 +67,7 @@ class ApprovalTest {
     private OrgRepository orgRepository;
 
     @Autowired
-    private VmTemplateRepository templateRepository;
+    private OsImageRepository imageRepository;
 
     @Autowired
     private VmFlavorRepository flavorRepository;
@@ -88,7 +88,7 @@ class ApprovalTest {
     private String sysAdminToken;
     private Org org;
     private Org otherOrg;
-    private VmTemplate template;
+    private OsImage image;
     private VmFlavor flavor;
 
     @BeforeEach
@@ -105,7 +105,7 @@ class ApprovalTest {
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
-        template = templateRepository.findAll().stream()
+        image = imageRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
                 .findFirst().orElseThrow();
         flavor = flavorRepository.findAll().stream()
@@ -181,7 +181,7 @@ class ApprovalTest {
         long groupId = createTeam(userToken, "appr-approve-x1");
         long requestId = submit(userToken, groupId);
 
-        // granted form validation: unusable template / disk below minimum / unknown node → 422
+        // granted form validation: unusable image / disk below minimum / unknown node → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
                 with(approveBody(), "grantedTemplateId", 999_999))
                 .andExpect(status().isUnprocessableContent())
@@ -277,7 +277,7 @@ class ApprovalTest {
         Vm taken = vmRepository.save(new Vm(
                 jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class),
                 groupId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
-                template.getId(), 1, 1024, 10, null, null));
+                image.getId(), 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 taken.getId());
@@ -403,7 +403,7 @@ class ApprovalTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("nodeId"));
 
-        // the request is untouched — forcing the seeded pve1 (hosts the template) approves
+        // the request is untouched — forcing the seeded pve1 (hosts the image) approves
         long pve1 = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
                 with(approveBody(), "nodeId", pve1))
@@ -551,7 +551,7 @@ class ApprovalTest {
         body.put("grantedVcpu", 2);
         body.put("grantedMemoryMb", 2048);
         body.put("grantedDiskGb", 20);
-        body.put("grantedTemplateId", template.getId());
+        body.put("grantedTemplateId", image.getId());
         body.put("comment", "요청 사양 그대로 승인합니다.");
         return body;
     }
@@ -585,7 +585,7 @@ class ApprovalTest {
         }
         body.put("groupId", groupId);
         body.put("orgId", orgId);
-        body.put("templateId", template.getId());
+        body.put("templateId", image.getId());
         body.put("flavorId", flavor.getId());
         body.put("purpose", "승인 흐름 테스트");
         body.put("reqVcpu", flavor.getVcpu());

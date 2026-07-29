@@ -7,8 +7,8 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Step-1 node placement: among ACTIVE nodes that host an
- * ACTIVE template of the same name, pick the one with the best headroom
+ * ACTIVE OS image of the same name, pick the one with the best headroom
  * score; an admin-forced node (approval form {@code nodeId}) always wins.
  *
  * <p>Scoring is deliberately simple for the single-node cluster of today —
@@ -36,13 +36,13 @@ public class NodePlacementService {
     private static final Logger log = LoggerFactory.getLogger(NodePlacementService.class);
 
     private final NodeRepository nodeRepository;
-    private final VmTemplateRepository templateRepository;
+    private final OsImageRepository imageRepository;
     private final VmRepository vmRepository;
 
     public NodePlacementService(NodeRepository nodeRepository,
-            VmTemplateRepository templateRepository, VmRepository vmRepository) {
+            OsImageRepository imageRepository, VmRepository vmRepository) {
         this.nodeRepository = nodeRepository;
-        this.templateRepository = templateRepository;
+        this.imageRepository = imageRepository;
         this.vmRepository = vmRepository;
     }
 
@@ -54,35 +54,35 @@ public class NodePlacementService {
      *                               pipeline failure — the VM errors out)
      */
     @Transactional(readOnly = true)
-    public Node place(Vm vm, VmTemplate template, Long forcedNodeId) {
+    public Node place(Vm vm, OsImage image, Long forcedNodeId) {
         if (forcedNodeId != null) {
             Node node = nodeRepository.findById(forcedNodeId)
                     .filter(n -> n.getStatus() == NodeStatus.ACTIVE)
                     .orElseThrow(() -> new IllegalStateException(
                             "관리자 지정 노드 " + forcedNodeId + "를 사용할 수 없습니다"));
-            // Backstop for approval-time validation: the template can be
+            // Backstop for approval-time validation: the image can be
             // deactivated between approval and provisioning. Fail here — the
             // same IllegalStateException the no-candidate path throws, so the
             // pipeline errors cleanly at the place step — instead of proceeding
-            // to a clone that would fail on a node without the template.
-            if (!templateRepository.existsByNameAndNodeIdAndStatus(
-                    template.getName(), node.getId(), TemplateStatus.ACTIVE)) {
+            // to a clone that would fail on a node without the image.
+            if (!imageRepository.existsByNameAndNodeIdAndStatus(
+                    image.getName(), node.getId(), TemplateStatus.ACTIVE)) {
                 throw new IllegalStateException("관리자 지정 노드 " + node.getId()
-                        + "에 템플릿 " + template.getName() + "이(가) 없습니다");
+                        + "에 템플릿 " + image.getName() + "이(가) 없습니다");
             }
             log.info("placement for vm {}: admin-forced node {} ({})", vm.getId(), node.getId(),
                     node.getName());
             return node;
         }
-        // Nodes hosting an ACTIVE template of the same name (template rows are
-        // per-node; a multi-node cluster clones the template under one name).
-        Set<Long> templateNodeIds = templateRepository
+        // Nodes hosting an ACTIVE image of the same name (image rows are
+        // per-node; a multi-node cluster clones the image under one name).
+        Set<Long> imageNodeIds = imageRepository
                 .findByStatusOrderByIdAsc(TemplateStatus.ACTIVE).stream()
-                .filter(t -> t.getName().equals(template.getName()))
-                .map(VmTemplate::getNodeId)
+                .filter(candidate -> candidate.getName().equals(image.getName()))
+                .map(OsImage::getNodeId)
                 .collect(Collectors.toSet());
         return nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE).stream()
-                .filter(node -> templateNodeIds.contains(node.getId()))
+                .filter(node -> imageNodeIds.contains(node.getId()))
                 .filter(node -> hasMemoryHeadroom(node, vm))
                 .max(Comparator.comparingDouble(this::score))
                 .map(node -> {
@@ -91,7 +91,7 @@ public class NodePlacementService {
                     return node;
                 })
                 .orElseThrow(() -> new IllegalStateException(
-                        "요청 사양을 수용할 수 있는 노드가 없습니다 (템플릿 " + template.getName() + ")"));
+                        "요청 사양을 수용할 수 있는 노드가 없습니다 (템플릿 " + image.getName() + ")"));
     }
 
     private boolean hasMemoryHeadroom(Node node, Vm vm) {

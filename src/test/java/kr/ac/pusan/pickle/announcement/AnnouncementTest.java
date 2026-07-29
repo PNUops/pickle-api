@@ -339,9 +339,9 @@ class AnnouncementTest {
     /** Derived-membership link: one vm_request of the group in the org. */
     private void linkGroupToOrg(long groupId, long orgId, long requesterId) {
         jdbcTemplate.update("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '조직 연계(테스트)', (select min(id) from vm_templates),
+                values (?, ?, ?, '조직 연계(테스트)', (select min(id) from os_images),
                         1, 1024, 20)
                 """, groupId, orgId, requesterId);
     }

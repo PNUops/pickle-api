@@ -17,8 +17,8 @@ import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
@@ -63,7 +63,7 @@ public class ApprovalService {
     private final VmRequestReviewRepository reviewRepository;
     private final VmRequestAssembler assembler;
     private final VmRepository vmRepository;
-    private final VmTemplateRepository templateRepository;
+    private final OsImageRepository imageRepository;
     private final NodeRepository nodeRepository;
     private final GroupRepository groupRepository;
     private final JobScheduler jobScheduler;
@@ -75,7 +75,7 @@ public class ApprovalService {
     private final SecureRandom random = new SecureRandom();
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
-            VmRequestAssembler assembler, VmRepository vmRepository, VmTemplateRepository templateRepository,
+            VmRequestAssembler assembler, VmRepository vmRepository, OsImageRepository imageRepository,
             NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
             NotificationService notificationService,
@@ -84,7 +84,7 @@ public class ApprovalService {
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
         this.vmRepository = vmRepository;
-        this.templateRepository = templateRepository;
+        this.imageRepository = imageRepository;
         this.nodeRepository = nodeRepository;
         this.groupRepository = groupRepository;
         this.jobScheduler = jobScheduler;
@@ -131,12 +131,12 @@ public class ApprovalService {
         requireSubmitted(request);
 
         List<FieldValidationError> errors = new ArrayList<>();
-        VmTemplate template = templateRepository.findById(form.grantedTemplateId()).orElse(null);
-        if (template == null || template.getStatus() != TemplateStatus.ACTIVE) {
+        OsImage image = imageRepository.findById(form.grantedTemplateId()).orElse(null);
+        if (image == null || image.getStatus() != TemplateStatus.ACTIVE) {
             errors.add(new FieldValidationError("grantedTemplateId", "사용할 수 없는 템플릿입니다."));
-        } else if (form.grantedDiskGb() < template.getMinDiskGb()) {
+        } else if (form.grantedDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("grantedDiskGb",
-                    "이 템플릿의 최소 디스크 크기는 " + template.getMinDiskGb() + "GiB입니다."));
+                    "이 템플릿의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
         if (form.grantedStartDate() != null && form.grantedEndDate() != null
                 && form.grantedEndDate().isBefore(form.grantedStartDate())) {
@@ -145,10 +145,10 @@ public class ApprovalService {
         if (form.nodeId() != null) {
             if (!nodeRepository.existsById(form.nodeId())) {
                 errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
-            } else if (template != null && !templateRepository.existsByNameAndNodeIdAndStatus(
-                    template.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
-                // Forced node must host the granted template — the provisioning
-                // pipeline clones the template on the placed node, so a node without it
+            } else if (image != null && !imageRepository.existsByNameAndNodeIdAndStatus(
+                    image.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
+                // Forced node must host the granted image — the provisioning
+                // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.
                 errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
             }
@@ -175,17 +175,17 @@ public class ApprovalService {
 
         reviewRepository.save(VmRequestReview.approve(request.getId(), actor.id(),
                 Texts.blankToNull(form.comment()),
-                form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(), template.getId(),
+                form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(), image.getId(),
                 form.grantedStartDate(), form.grantedEndDate(), form.nodeId()));
         request.setStatus(VmRequestStatus.APPROVED);
 
-        // Auto placement: the template's node (single-node cluster; the
+        // Auto placement: the image's node (single-node cluster; the
         // scoring placement step arrives with the provisioning pipeline).
-        Long nodeId = form.nodeId() != null ? form.nodeId() : template.getNodeId();
+        Long nodeId = form.nodeId() != null ? form.nodeId() : image.getNodeId();
         Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
         String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());
         Vm vm = vmRepository.save(new Vm(nodeId, request.getGroupId(), request.getOrgId(),
-                request.getId(), hostname, hostname, template.getId(),
+                request.getId(), hostname, hostname, image.getId(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
                 form.grantedStartDate(), form.grantedEndDate()));
         // Requester-chosen display name (request form) — seeded as the

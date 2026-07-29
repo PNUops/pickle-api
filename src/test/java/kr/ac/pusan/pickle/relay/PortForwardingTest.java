@@ -584,18 +584,18 @@ class PortForwardingTest {
     private long runningVm() {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '포트 포워딩 테스트', (select min(id) from vm_templates),
+                values (?, ?, ?, '포트 포워딩 테스트', (select min(id) from os_images),
                         1, 1024, 10)
                 returning id
                 """, Long.class, groupId, orgId, owner.getId());
         String hostname = "pf-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values ((select min(id) from nodes), ?, ?, ?, ?, ?,
-                        (select min(id) from vm_templates), 1, 1024, 10, ?, 'RUNNING'::vm_status)
+                        (select min(id) from os_images), 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, groupId, orgId, requestId, hostname, hostname,
                 VMID_SEQ.incrementAndGet());

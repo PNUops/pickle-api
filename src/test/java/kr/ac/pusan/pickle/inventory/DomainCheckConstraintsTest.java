@@ -39,7 +39,7 @@ class DomainCheckConstraintsTest {
     void setUp() {
         orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select id from nodes where name = 'pve1'", Long.class);
-        templateId = jdbc.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbc.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "chk-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
@@ -87,7 +87,7 @@ class DomainCheckConstraintsTest {
         String hostname = "chk-vm-" + UUID.randomUUID().toString().substring(0, 12);
         assertThatThrownBy(() -> jdbc.update("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb)
+                                 image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 0, 10)
                 """, nodeId, groupId, orgId, requestId, hostname, hostname, templateId))
                 .isInstanceOf(DataIntegrityViolationException.class)
@@ -97,7 +97,7 @@ class DomainCheckConstraintsTest {
     @Test
     void approveReviewMissingGrantedSpecIsRejected() {
         long requestId = insertRequest(1, 1024, 10, null, null);
-        // APPROVE with the granted spec absent (granted_template_id null) must fail.
+        // APPROVE with the granted spec absent (granted_image_id null) must fail.
         assertThatThrownBy(() -> jdbc.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision,
                                                 granted_vcpu, granted_memory_mb, granted_disk_gb)
@@ -121,7 +121,7 @@ class DomainCheckConstraintsTest {
 
     private long insertRequest(int vcpu, int memoryMb, int diskGb, String start, String end) {
         return jdbc.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb,
                                          req_start_date, req_end_date)
                 values (?, ?, ?, '제약 테스트', ?, ?, ?, ?,

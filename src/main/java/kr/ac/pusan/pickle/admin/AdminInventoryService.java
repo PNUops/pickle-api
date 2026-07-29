@@ -20,8 +20,8 @@ import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,17 +44,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminInventoryService {
 
-    private final VmTemplateRepository vmTemplateRepository;
+    private final OsImageRepository osImageRepository;
     private final VmFlavorRepository vmFlavorRepository;
     private final NodeRepository nodeRepository;
     private final AdminNodeQueryService adminNodeQueryService;
     private final AuditService auditService;
 
-    public AdminInventoryService(VmTemplateRepository vmTemplateRepository,
+    public AdminInventoryService(OsImageRepository osImageRepository,
             VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, AdminNodeQueryService adminNodeQueryService,
             AuditService auditService) {
-        this.vmTemplateRepository = vmTemplateRepository;
+        this.osImageRepository = osImageRepository;
         this.vmFlavorRepository = vmFlavorRepository;
         this.nodeRepository = nodeRepository;
         this.adminNodeQueryService = adminNodeQueryService;
@@ -64,7 +64,7 @@ public class AdminInventoryService {
     /** Contract {@code listAdminTemplates}: every template, retired revisions included. */
     @Transactional(readOnly = true)
     public List<AdminTemplateResponse> listTemplates() {
-        return vmTemplateRepository.findAll(Sort.by("id")).stream()
+        return osImageRepository.findAll(Sort.by("id")).stream()
                 .map(AdminTemplateResponse::from)
                 .toList();
     }
@@ -72,17 +72,17 @@ public class AdminInventoryService {
     @Transactional
     public AdminTemplateResponse updateTemplateStatus(AuthenticatedUser actor, long templateId,
             UpdateTemplateStatusRequest request, String ip) {
-        VmTemplate template = vmTemplateRepository.findById(templateId)
+        OsImage image = osImageRepository.findById(templateId)
                 .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
-        if (template.getStatus() != request.status()) {
-            String fromStatus = template.getStatus().name();
-            template.setStatus(request.status());
+        if (image.getStatus() != request.status()) {
+            String fromStatus = image.getStatus().name();
+            image.setStatus(request.status());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.TEMPLATE_STATUS_UPDATE, "template", templateId,
-                    Map.of("name", template.getName(), "version", template.getVersion(),
+                    Map.of("name", image.getName(), "version", image.getVersion(),
                             "fromStatus", fromStatus, "toStatus", request.status().name()), ip);
         }
-        return AdminTemplateResponse.from(template);
+        return AdminTemplateResponse.from(image);
     }
 
     @Transactional

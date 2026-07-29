@@ -18,8 +18,8 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.ipam.AllocationStatus;
 import kr.ac.pusan.pickle.ipam.IpAllocation;
 import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
@@ -106,7 +106,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final VmEventRepository vmEventRepository;
     private final ProvisioningTaskRepository taskRepository;
     private final NodeRepository nodeRepository;
-    private final VmTemplateRepository templateRepository;
+    private final OsImageRepository imageRepository;
     private final VmRequestReviewRepository reviewRepository;
     private final IpPoolRepository poolRepository;
     private final IpAllocationRepository allocationRepository;
@@ -126,7 +126,7 @@ public class ProvisionVmJob implements ProvisioningService {
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
-            VmTemplateRepository templateRepository, VmRequestReviewRepository reviewRepository,
+            OsImageRepository imageRepository, VmRequestReviewRepository reviewRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
             VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
@@ -139,7 +139,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
         this.nodeRepository = nodeRepository;
-        this.templateRepository = templateRepository;
+        this.imageRepository = imageRepository;
         this.reviewRepository = reviewRepository;
         this.poolRepository = poolRepository;
         this.allocationRepository = allocationRepository;
@@ -303,11 +303,11 @@ public class ProvisionVmJob implements ProvisioningService {
 
     /** Step 1: confirm the node (admin-forced node from the approval wins). */
     private void place(Vm vm) {
-        VmTemplate template = templateRepository.findById(vm.getTemplateId()).orElseThrow(
-                () -> new IllegalStateException("템플릿 " + vm.getTemplateId() + "이 존재하지 않습니다"));
+        OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow(
+                () -> new IllegalStateException("템플릿 " + vm.getImageId() + "이 존재하지 않습니다"));
         Long forcedNodeId = reviewRepository.findByRequestId(vm.getRequestId())
                 .map(VmRequestReview::getNodeId).orElse(null);
-        Node node = placementService.place(vm, template, forcedNodeId);
+        Node node = placementService.place(vm, image, forcedNodeId);
         vmRepository.assignNode(vm.getId(), node.getId(), Instant.now());
     }
 
@@ -338,7 +338,7 @@ public class ProvisionVmJob implements ProvisioningService {
         vmRepository.assignProxmoxVmid(vm.getId(), vmidSequence.next(), Instant.now());
     }
 
-    /** Step 4: full clone of the template — only if the VMID does not exist yet. */
+    /** Step 4: full clone of the OS image — only if the VMID does not exist yet. */
     private void clone(Vm vm) {
         Node node = node(vm);
         int vmid = requireVmid(vm);
@@ -361,8 +361,8 @@ public class ProvisionVmJob implements ProvisioningService {
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             return;
         }
-        VmTemplate template = templateRepository.findById(vm.getTemplateId()).orElseThrow();
-        String upid = proxmox.clone(node.getApiHost(), node.getName(), template.getProxmoxVmid(),
+        OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow();
+        String upid = proxmox.clone(node.getApiHost(), node.getName(), image.getProxmoxVmid(),
                 vmid, vm.getHostname());
         proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
     }
@@ -440,7 +440,7 @@ public class ProvisionVmJob implements ProvisioningService {
      * Step 6: grow scsi0 to the granted size (absolute {@code <N>G}). PVE
      * rejects a resize to at-or-below the current size with a permanent
      * "shrinking" error — that means the disk is already at least the target
-     * (template ≥ target, or a re-run after a crash), so it counts as done.
+     * (image ≥ target, or a re-run after a crash), so it counts as done.
      */
     private void resize(Vm vm) {
         Node node = node(vm);

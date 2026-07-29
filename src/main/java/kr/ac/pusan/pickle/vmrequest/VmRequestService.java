@@ -18,8 +18,8 @@ import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
-import kr.ac.pusan.pickle.inventory.VmTemplate;
-import kr.ac.pusan.pickle.inventory.VmTemplateRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -52,7 +52,7 @@ public class VmRequestService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final OrgRepository orgRepository;
-    private final VmTemplateRepository templateRepository;
+    private final OsImageRepository imageRepository;
     private final VmFlavorRepository flavorRepository;
     private final SettingsService settingsService;
     private final AuditService auditService;
@@ -63,7 +63,7 @@ public class VmRequestService {
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
-            OrgRepository orgRepository, VmTemplateRepository templateRepository,
+            OrgRepository orgRepository, OsImageRepository imageRepository,
             VmFlavorRepository flavorRepository,
             SettingsService settingsService, AuditService auditService,
             NotificationService notificationService, VmRepository vmRepository,
@@ -73,7 +73,7 @@ public class VmRequestService {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.orgRepository = orgRepository;
-        this.templateRepository = templateRepository;
+        this.imageRepository = imageRepository;
         this.flavorRepository = flavorRepository;
         this.settingsService = settingsService;
         this.auditService = auditService;
@@ -102,14 +102,14 @@ public class VmRequestService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                     "비활성화된 기관에는 신청할 수 없습니다.")));
         }
-        VmTemplate template = templateRepository.findById(request.templateId())
+        OsImage image = imageRepository.findById(request.templateId())
                 .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
         VmFlavor flavor = flavorRepository.findById(request.flavorId())
                 .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
 
         List<FieldValidationError> errors = new ArrayList<>();
         boolean axesActive = true;
-        if (template.getStatus() != TemplateStatus.ACTIVE) {
+        if (image.getStatus() != TemplateStatus.ACTIVE) {
             errors.add(new FieldValidationError("templateId", "더 이상 선택할 수 없는 템플릿입니다."));
             axesActive = false;
         }
@@ -118,7 +118,7 @@ public class VmRequestService {
             axesActive = false;
         }
         if (axesActive) {
-            validateSpec(request, template, flavor, errors);
+            validateSpec(request, image, flavor, errors);
         }
         validateDates(request, errors);
         // Resolved once and then BOTH validated and stored: a subdomain without
@@ -134,7 +134,7 @@ public class VmRequestService {
         }
 
         VmRequest saved = requestRepository.save(new VmRequest(group.getId(), org.getId(), actor.id(),
-                template.getId(), flavor.getId(), request.purpose().strip(),
+                image.getId(), flavor.getId(), request.purpose().strip(),
                 Texts.blankToNull(request.courseOrProject()), Texts.blankToNull(request.specReason()),
                 Texts.blankToNull(request.extraNote()),
                 request.reqVcpu(), request.reqMemoryMb(), request.reqDiskGb(),
@@ -143,7 +143,7 @@ public class VmRequestService {
                 Texts.blankToNull(request.displayName()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
-                Map.of("groupId", group.getId(), "orgId", org.getId(), "templateId", template.getId(),
+                Map.of("groupId", group.getId(), "orgId", org.getId(), "templateId", image.getId(),
                         "reqVcpu", saved.getReqVcpu(), "reqMemoryMb", saved.getReqMemoryMb(),
                         "reqDiskGb", saved.getReqDiskGb()), ip);
         // In-tx inserts: the notices exist iff the request row committed.
@@ -235,13 +235,13 @@ public class VmRequestService {
      * Axis-split validation (V58): the hard floor is the OS image's
      * {@code minDiskGb}; the spec-reason baseline is the chosen flavor's
      * values — requesting below a preset stays free, exceeding it needs a
-     * reason (same semantics the template defaults carried before the split).
+     * reason (same semantics the OS defaults carried before the split).
      */
-    private void validateSpec(CreateVmRequestRequest request, VmTemplate template, VmFlavor flavor,
+    private void validateSpec(CreateVmRequestRequest request, OsImage image, VmFlavor flavor,
             List<FieldValidationError> errors) {
-        if (request.reqDiskGb() < template.getMinDiskGb()) {
+        if (request.reqDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("reqDiskGb",
-                    "이 OS의 최소 디스크 크기는 " + template.getMinDiskGb() + "GiB입니다."));
+                    "이 OS의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
         boolean exceedsFlavor = request.reqVcpu() > flavor.getVcpu()
                 || request.reqMemoryMb() > flavor.getMemoryMb()

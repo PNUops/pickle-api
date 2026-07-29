@@ -56,7 +56,7 @@ public record VmDetailResponse(
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
                 displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getCreatedAt(), vm.getOrgId(),
-                vm.getTemplateId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
+                vm.getImageId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
                 VmDeletionResponse.from(vm), requestedSubdomain, requestedRootDomain, publication,
                 vm.getPasswordEnc() != null, passwordRevealAllowed, vm.getUpdatedAt());

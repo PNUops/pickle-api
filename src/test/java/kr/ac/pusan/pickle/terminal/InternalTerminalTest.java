@@ -75,7 +75,7 @@ class InternalTerminalTest {
         setWebTerminalEnabled(true);
         sessionRegistry.all().forEach(s -> sessionRegistry.remove(s.sessionId()));
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from vm_templates", Long.class);
+        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         nodeId = ensureNode();
@@ -392,7 +392,7 @@ class InternalTerminalTest {
 
     private long createVm(VmStatus status, String ip, boolean blocked, String hostKey) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, template_id,
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '리딤 테스트', ?, 1, 1024, 10)
                 returning id
@@ -404,7 +404,7 @@ class InternalTerminalTest {
         String hostname = "termr-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 template_id, vcpu, memory_mb, disk_gb, status,
+                                 image_id, vcpu, memory_mb, disk_gb, status,
                                  ip_allocation_id, ssh_gateway_blocked, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?, ?)
                 returning id
