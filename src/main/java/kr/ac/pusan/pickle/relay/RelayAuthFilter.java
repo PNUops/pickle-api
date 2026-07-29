@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.ProblemJsonWriter;
+import kr.ac.pusan.pickle.common.web.RequestBodyCapExceededException;
 import kr.ac.pusan.pickle.config.RelayProperties;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -152,16 +153,25 @@ public class RelayAuthFilter extends OncePerRequestFilter {
     /**
      * Hard byte cap on the request body. The Content-Length pre-check catches
      * declared sizes; this wrapper is what bounds a chunked (undeclared-length)
-     * body — exceeding the cap aborts the read with an IOException, which the
-     * message-conversion layer surfaces as a request error, never an OOM.
+     * body — exceeding the cap aborts the read with
+     * {@link RequestBodyCapExceededException}, which the global handler maps
+     * to the same 413 as a declared-length violation. {@code getReader()}
+     * delegates through the same capped stream.
      */
-    private static final class BodyCappingRequest extends HttpServletRequestWrapper {
+    static final class BodyCappingRequest extends HttpServletRequestWrapper {
 
         private final long cap;
 
         BodyCappingRequest(HttpServletRequest request, long cap) {
             super(request);
             this.cap = cap;
+        }
+
+        @Override
+        public java.io.BufferedReader getReader() throws IOException {
+            String encoding = getCharacterEncoding();
+            return new java.io.BufferedReader(new java.io.InputStreamReader(getInputStream(),
+                    encoding != null ? encoding : StandardCharsets.UTF_8.name()));
         }
 
         @Override
@@ -174,7 +184,7 @@ public class RelayAuthFilter extends OncePerRequestFilter {
                     if (n > 0) {
                         read += n;
                         if (read > cap) {
-                            throw new IOException("relay sync body exceeds the configured cap");
+                            throw new RequestBodyCapExceededException(cap);
                         }
                     }
                 }

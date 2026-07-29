@@ -20,7 +20,7 @@ public record RelaySyncRequest(
         @NotNull @Min(0) Long appliedGeneration,
         @Size(max = 128) String agentVersion,
         @Size(max = 8) List<@Valid ReportedMappingError> lastError,
-        @Size(max = 512) List<@Valid ReportedMappingCounters> counters) {
+        @Size(max = 128) List<@Valid ReportedMappingCounters> counters) {
 
     /** One agent-side apply failure; {@code mappingId} is optional. */
     public record ReportedMappingError(

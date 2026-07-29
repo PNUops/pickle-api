@@ -143,22 +143,31 @@ public class RelaySyncService {
                 SettingsService.PORT_FORWARD_SUSPEND_CONNS_PER_MIN, 6000);
         long mbytesPerMinLimit = settingsService.integer(
                 SettingsService.PORT_FORWARD_SUSPEND_MBYTES_PER_MIN, 1000);
+        // A report row is only credited to a mapping this relay owns — one
+        // batch read of the relay's OWN ids; foreign mappingIds never even
+        // reach a query parameter, they simply miss this set.
+        java.util.Set<Long> ownedIds = new java.util.HashSet<>(jdbcTemplate.queryForList(
+                "select id from port_mappings where relay_id = ?", Long.class, relayId));
         Instant now = Instant.now();
         for (RelaySyncRequest.ReportedMappingCounters reportedRow : reportedRows) {
-            if (reportedRow.mappingId() == null) {
+            if (reportedRow.mappingId() == null || !ownedIds.contains(reportedRow.mappingId())) {
                 continue;
             }
             long mappingId = reportedRow.mappingId();
-            // A report row is only credited to a mapping this relay owns —
-            // a relay cannot pollute another relay's accounting.
-            Boolean owned = jdbcTemplate.query(
-                    "select 1 from port_mappings where id = ? and relay_id = ?",
-                    (org.springframework.jdbc.core.ResultSetExtractor<Boolean>) rs -> rs.next(),
-                    mappingId, relayId);
-            if (!Boolean.TRUE.equals(owned)) {
+            Raw raw = Raw.of(reportedRow);
+            if (raw.beyondSanity()) {
+                // Insane magnitude (> 2^53): discard the whole reading like a
+                // reset to nothing — totals never ingest it, the stored
+                // baseline stays put, and the event is audited. Bounds the
+                // bigint totals against a lying or corrupted agent.
+                auditService.record(null, AuditService.ACTOR_ROLE_RELAY,
+                        AuditService.RELAY_SYNC_VIOLATION, "relay", relayId,
+                        Map.of("kind", "counter_sanity", "mappingId", mappingId,
+                                "maxReported", String.valueOf(raw.max())), null);
+                log.warn("relay {} reported an insane counter for mapping {} (max {})",
+                        relayId, mappingId, raw.max());
                 continue;
             }
-            Raw raw = Raw.of(reportedRow);
             CounterRow last = jdbcTemplate.query("""
                     select conn_total, bytes_total, drop_total, last_new_conns, last_in_packets,
                            last_in_bytes, last_out_packets, last_out_bytes, last_rate_dropped,
@@ -309,6 +318,9 @@ public class RelaySyncService {
     private record Raw(long newConns, long inPackets, long inBytes, long outPackets,
             long outBytes, long rateDropped, long connDropped, long perSourceDropped) {
 
+        /** Sanity ceiling on any single raw reading (2^53). */
+        static final long SANITY_MAX = 1L << 53;
+
         static Raw of(RelaySyncRequest.ReportedMappingCounters row) {
             return new Raw(nn(row.newConns()), nn(row.inPackets()), nn(row.inBytes()),
                     nn(row.outPackets()), nn(row.outBytes()), nn(row.rateDropped()),
@@ -317,6 +329,17 @@ public class RelaySyncService {
 
         private static long nn(Long value) {
             return value == null || value < 0 ? 0 : value;
+        }
+
+        long max() {
+            return Math.max(Math.max(Math.max(newConns, inPackets),
+                    Math.max(inBytes, outPackets)), Math.max(Math.max(outBytes, rateDropped),
+                    Math.max(connDropped, perSourceDropped)));
+        }
+
+        /** Any reading past the ceiling — the whole row is discarded + audited. */
+        boolean beyondSanity() {
+            return max() > SANITY_MAX;
         }
 
         long drops() {

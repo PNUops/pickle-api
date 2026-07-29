@@ -64,6 +64,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class})
     public ResponseEntity<ProblemDetail> handleUnreadable(Exception ex, HttpServletRequest request) {
+        // A chunked body that blew through a server-side byte cap aborts
+        // mid-read inside message conversion; it must answer the same 413 as
+        // a declared Content-Length violation, not a generic 422.
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof kr.ac.pusan.pickle.common.web.RequestBodyCapExceededException) {
+                ProblemDetail problem = problem(HttpStatus.PAYLOAD_TOO_LARGE,
+                        "요청 본문이 너무 큽니다", "요청 본문이 허용 크기를 초과했습니다.",
+                        ErrorCodes.VALIDATION_FAILED, request);
+                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(problem);
+            }
+        }
         return validationProblem(List.of(), request);
     }
 

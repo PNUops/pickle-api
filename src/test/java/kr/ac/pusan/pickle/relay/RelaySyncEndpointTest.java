@@ -137,6 +137,37 @@ class RelaySyncEndpointTest {
         mockMvc.perform(get("/api/v1/meta/status")).andExpect(status().isOk());
     }
 
+    @Test
+    void restrictionDecidesOnTheNormalizedPath() throws Exception {
+        // Traversal and encoding variants must never look like the sync
+        // surface: the confinement normalizes before matching (self-contained,
+        // not delegated to StrictHttpFirewall).
+        mockMvc.perform(get("/internal/relays/../actuator/health")
+                        .with(remoteAddr(RESTRICTED_SOURCE)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        mockMvc.perform(get("/internal/relays/%2e%2e/actuator/health")
+                        .with(remoteAddr(RESTRICTED_SOURCE)))
+                .andExpect(status().isForbidden());
+
+        // The normalization itself, exhaustively (fail-closed variants).
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface("/internal/relays/1/sync"))
+                .isTrue();
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface("/internal/relays/../actuator"))
+                .isFalse();
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface(
+                "/internal/relays/%2e%2e/actuator")).isFalse();
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface(
+                "/internal/relays;a=b/1/sync")).isFalse();
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface("/internal/relays/%zz"))
+                .isFalse();
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface("/../internal/relays/1/sync"))
+                .isFalse();
+        // double encoding: one decode leaves a %, which is refused outright
+        assertThat(RelaySourceRestrictionFilter.isRelaySurface(
+                "/internal/relays/%252e%252e/actuator")).isFalse();
+    }
+
     // ── rate limit (own scope, never the sshgw bucket) ──────────────────────
 
     @Test
@@ -310,6 +341,30 @@ class RelaySyncEndpointTest {
                 "select count(*) from port_mapping_counters where mapping_id = ?",
                 Long.class, mappingOfB);
         assertThat(rows).isZero(); // relay A cannot pollute B's accounting
+    }
+
+    @Test
+    void insaneCounterReadingsAreDiscardedAndAudited() throws Exception {
+        RelayFixture relay = newRelay("sanity");
+        long vmId = runningVm();
+        long mappingId = insertMapping(relay.id(), vmId, "TCP", 14500, 80, "ACTIVE", 1);
+        // beyond the 2^53 sanity ceiling: the whole reading is discarded (no
+        // totals, no baseline) and the event is audited — bigint totals can
+        // never be marched toward overflow by a lying agent.
+        syncCounters(relay, mappingId, (1L << 53) + 1, 0, 0);
+        Long rows = jdbcTemplate.queryForObject(
+                "select count(*) from port_mapping_counters where mapping_id = ?",
+                Long.class, mappingId);
+        assertThat(rows).isZero();
+        Long audits = jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs
+                 where action = 'relay.sync_violation' and target_id = ?
+                   and detail ->> 'kind' = 'counter_sanity'
+                """, Long.class, relay.id());
+        assertThat(audits).isEqualTo(1);
+        // a sane follow-up reading baselines normally
+        syncCounters(relay, mappingId, 10, 100, 100);
+        assertCounterTotals(mappingId, 10, 200);
     }
 
     @Test
