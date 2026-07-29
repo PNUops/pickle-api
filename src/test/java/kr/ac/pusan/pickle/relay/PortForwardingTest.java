@@ -422,6 +422,39 @@ class PortForwardingTest {
     }
 
     @Test
+    void guardPatchRefusesValuesBeyondTheCeiling() throws Exception {
+        long relayId = soleRelay(23000, 23099);
+        long vmId = runningVm();
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andReturn().getResponse().getContentAsString();
+        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long generationBefore = mappingGeneration(relayId);
+
+        // A value the relay's packet filter cannot render fails the whole
+        // table apply there, and a table-level failure names no mapping — so
+        // an absurd guard would freeze the relay with nothing pointing at the
+        // offending row. Refuse it at the edit instead.
+        int beyond = AdminPortMappingService.GUARD_VALUE_MAX + 1;
+        guardPatch(mappingId, "{\"ctMax\":" + beyond + "}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("ctMax"))
+                .andExpect(jsonPath("$.errors[0].message").value(
+                        org.hamcrest.Matchers.containsString("ctMax")));
+        guardPatch(mappingId, "{\"newConnRate\":2147483647}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("newConnRate"));
+        guardPatch(mappingId, "{\"perSourceRate\":10,\"perSourceBurst\":" + beyond + "}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("perSourceBurst"));
+        assertThat(mappingGeneration(relayId)).isEqualTo(generationBefore);
+
+        // the ceiling itself is still a legal value
+        guardPatch(mappingId, "{\"ctMax\":" + AdminPortMappingService.GUARD_VALUE_MAX + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ctMax").value(AdminPortMappingService.GUARD_VALUE_MAX));
+    }
+
+    @Test
     void guardPatchRefusesABurstWithoutItsRate() throws Exception {
         long relayId = soleRelay(22000, 22099);
         long vmId = runningVm();

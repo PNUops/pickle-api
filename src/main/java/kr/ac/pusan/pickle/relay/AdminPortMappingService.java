@@ -44,6 +44,21 @@ public class AdminPortMappingService {
     static final List<String> GUARD_FIELDS = List.of(
             "ctMax", "newConnRate", "newConnBurst", "perSourceRate", "perSourceBurst");
 
+    /**
+     * Upper bound accepted for any guard value. Every guard is rendered into a
+     * real packet-filter rule on the relay (a connection ceiling, a per-second
+     * rate, or the burst that goes with a rate), and a value the kernel refuses
+     * fails the WHOLE table apply: the relay then freezes at its last
+     * generation, and the agent's error item for a table-level failure carries
+     * no mapping id, so nothing in the console points at the offending row.
+     * One million concurrent connections, one million new connections per
+     * second, or a burst of a million is already orders of magnitude past what
+     * a single VM behind one forwarded port can serve, so anything larger is an
+     * operator typo and is better refused at the edit than shipped to the
+     * relay.
+     */
+    static final int GUARD_VALUE_MAX = 1_000_000;
+
     private final PortMappingRepository portMappingRepository;
     private final RelayRepository relayRepository;
     private final VmRepository vmRepository;
@@ -186,7 +201,8 @@ public class AdminPortMappingService {
     /**
      * Per-field tri-state PATCH (raw body): omitted = keep, explicit null =
      * clear to the agent default, {@code 0} = disable the guard, {@code >0} =
-     * explicit limit. Every accepted write bumps the relay generation.
+     * explicit limit up to {@link #GUARD_VALUE_MAX}. Every accepted write bumps
+     * the relay generation.
      */
     @Transactional
     public AdminPortMappingResponse updateGuards(AuthenticatedUser actor, long mappingId,
@@ -202,10 +218,12 @@ public class AdminPortMappingService {
             Integer parsed;
             if (value.isNull()) {
                 parsed = null;
-            } else if (value.isIntegralNumber() && value.canConvertToInt() && value.asInt() >= 0) {
+            } else if (value.isIntegralNumber() && value.canConvertToInt() && value.asInt() >= 0
+                    && value.asInt() <= GUARD_VALUE_MAX) {
                 parsed = value.asInt();
             } else {
-                errors.add(new FieldValidationError(field, "0 이상의 정수 또는 null이어야 합니다."));
+                errors.add(new FieldValidationError(field, field + "는 0 이상 " + GUARD_VALUE_MAX
+                        + " 이하의 정수 또는 null이어야 합니다."));
                 continue;
             }
             changes.put(field, parsed == null ? "null" : parsed);
