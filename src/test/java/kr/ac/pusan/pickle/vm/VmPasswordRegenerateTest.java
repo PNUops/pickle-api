@@ -117,7 +117,7 @@ class VmPasswordRegenerateTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
-                .andExpect(jsonPath("$.sshHost").value("ssh.pickle.pnuops.com"))
+                .andExpect(jsonPath("$.sshHost").value("ssh.pcl.kr"))
                 .andReturn().getResponse().getContentAsString();
         String newPassword = objectMapper.readTree(body).get("password").asString();
         assertThat(newPassword).hasSize(24).isNotEqualTo(OLD_PASSWORD);

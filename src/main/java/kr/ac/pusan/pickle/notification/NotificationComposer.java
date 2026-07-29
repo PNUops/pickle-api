@@ -41,8 +41,8 @@ public class NotificationComposer {
     private final String sshHost;
 
     public NotificationComposer(
-            @Value("${pickle.ssh.advertised-host:ssh.pickle.pnuops.com}") String sshHost) {
-        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pickle.pnuops.com" : sshHost;
+            @Value("${pickle.ssh.advertised-host:ssh.pcl.kr}") String sshHost) {
+        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pcl.kr" : sshHost;
     }
 
     public Composed compose(NotificationEvent event, Map<String, Object> args) {

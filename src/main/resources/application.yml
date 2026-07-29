@@ -158,7 +158,8 @@ pickle:
     # Reverse-proxy public IPv4 a custom domain's A record must point at
     # (verified campus proxy address).
     proxy-public-ip: ${PICKLE_PROXY_PUBLIC_IP:164.125.249.87}
-    origin-ca-cert-ref: origin-wildcard
+    # Platform subdomains carry no configured ref: it is derived per root domain
+    # (wildcard:<root>) so introducing a root is a data + certificate change only.
     lets-encrypt-cert-ref: letsencrypt
     le-cert-validity-days: 90
     # Recurring DNS scan gives up (domain FAILED) past this age; manual verify

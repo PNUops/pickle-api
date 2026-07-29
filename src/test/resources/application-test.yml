@@ -27,7 +27,7 @@ pickle:
   credentials:
     encryption-key: 4IUuLkNP8ook5VuNU7By7GAq0J8rbFOcEfuExymtueM=
   ssh:
-    advertised-host: ssh.pickle.pnuops.com
+    advertised-host: ssh.pcl.kr
     advertised-port: 22
     platform-public-key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlatformGatewayKeyFixtureForTests pickle-sshgw'
   sshgw:

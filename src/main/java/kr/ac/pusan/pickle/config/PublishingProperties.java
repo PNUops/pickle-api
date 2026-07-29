@@ -9,8 +9,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param proxyPublicIp     the reverse-proxy public IPv4 a custom domain's A
  *                          record must point at (verification target). Defaults
  *                          to the campus proxy address.
- * @param originCaCertRef   certRef the proxy-agent maps to the shared Origin CA
- *                          wildcard for platform subdomains
  * @param letsEncryptCertRef certRef the proxy-agent maps to a per-domain LE cert
  *                          for custom domains
  * @param leCertValidityDays modelled validity of a freshly issued LE cert
@@ -24,7 +22,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "pickle.publishing")
 public record PublishingProperties(
         String proxyPublicIp,
-        String originCaCertRef,
         String letsEncryptCertRef,
         Integer leCertValidityDays,
         Duration verificationTimeout) {
@@ -32,8 +29,6 @@ public record PublishingProperties(
     public PublishingProperties {
         proxyPublicIp = proxyPublicIp != null && !proxyPublicIp.isBlank()
                 ? proxyPublicIp : "164.125.249.87";
-        originCaCertRef = originCaCertRef != null && !originCaCertRef.isBlank()
-                ? originCaCertRef : "origin-wildcard";
         letsEncryptCertRef = letsEncryptCertRef != null && !letsEncryptCertRef.isBlank()
                 ? letsEncryptCertRef : "letsencrypt";
         leCertValidityDays = leCertValidityDays != null ? leCertValidityDays : 90;

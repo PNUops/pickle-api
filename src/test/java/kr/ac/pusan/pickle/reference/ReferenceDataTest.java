@@ -180,7 +180,7 @@ class ReferenceDataTest {
         mockMvc.perform(get("/api/v1/meta/request-options").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.allowedRootDomains").value(
-                        org.hamcrest.Matchers.contains("pickle.pnuops.com")))
+                        org.hamcrest.Matchers.contains("pusan.dev")))
                 // V55/V57 expanded the seed to ~400 entries — assert the original
                 // head, representatives of each new family, and the exact size.
                 .andExpect(jsonPath("$.reservedSubdomains").value(org.hamcrest.Matchers.hasItems(
@@ -189,6 +189,6 @@ class ReferenceDataTest {
                         "plato", "auth", "pnu")))
                 .andExpect(jsonPath("$.reservedSubdomains.length()").value(416))
                 // v0.12.0: SSH gateway host for the request form's slug preview
-                .andExpect(jsonPath("$.sshHost").value("ssh.pickle.pnuops.com"));
+                .andExpect(jsonPath("$.sshHost").value("ssh.pcl.kr"));
     }
 }

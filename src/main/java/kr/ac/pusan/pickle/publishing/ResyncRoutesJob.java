@@ -3,7 +3,6 @@ package kr.ac.pusan.pickle.publishing;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import kr.ac.pusan.pickle.publishing.agent.ApplyRequest;
@@ -34,19 +33,19 @@ public class ResyncRoutesJob {
     private final IpAddressResolver ipAddressResolver;
     private final RouteGenerations routeGenerations;
     private final ProxyAgentClient proxyAgentClient;
-    private final PublishingProperties properties;
+    private final PublicationAssembler assembler;
 
     public ResyncRoutesJob(RouteRepository routeRepository, DomainRepository domainRepository,
             VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             RouteGenerations routeGenerations, ProxyAgentClient proxyAgentClient,
-            PublishingProperties properties) {
+            PublicationAssembler assembler) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.vmRepository = vmRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.routeGenerations = routeGenerations;
         this.proxyAgentClient = proxyAgentClient;
-        this.properties = properties;
+        this.assembler = assembler;
     }
 
     @Job(name = "route-resync (sync-all)", retries = 0)
@@ -66,10 +65,8 @@ public class ResyncRoutesJob {
             if (targetIp == null) {
                 continue; // no live IP → nothing to render (SSRF guard: own IP only)
             }
-            String certRef = domain.getKind() == DomainKind.CUSTOM
-                    ? properties.letsEncryptCertRef() : properties.originCaCertRef();
             manifest.add(ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
-                    route.getTargetPort(), certRef));
+                    route.getTargetPort(), assembler.certRefFor(domain)));
             included.add(route);
         }
         long snapshotGeneration = routeGenerations.next();
