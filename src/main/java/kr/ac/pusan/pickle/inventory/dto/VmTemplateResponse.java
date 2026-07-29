@@ -9,6 +9,9 @@ public record VmTemplateResponse(
         Long id,
         String name,
         String displayName,
+        String osFamily,
+        String osVersion,
+        String sshUsername,
         int version,
         int minDiskGb,
         TemplateStatus status,
@@ -16,6 +19,7 @@ public record VmTemplateResponse(
 
     public static VmTemplateResponse from(OsImage image) {
         return new VmTemplateResponse(image.getId(), image.getName(), image.getDisplayName(),
+                image.getOsFamily(), image.getOsVersion(), image.getSshUsername(),
                 image.getVersion(), image.getMinDiskGb(), image.getStatus(),
                 image.getNotes());
     }

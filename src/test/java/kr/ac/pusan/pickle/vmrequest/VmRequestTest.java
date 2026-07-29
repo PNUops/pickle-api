@@ -159,7 +159,8 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
         // DISABLED image → 422
-        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 템플릿", 1002,
+        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 템플릿",
+                "ubuntu", "24.04", "ubuntu", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
@@ -351,7 +352,8 @@ class VmRequestTest {
 
         // both axes retired → one error per axis, and the spec check is skipped
         OsImage retiredImage = imageRepository.save(new OsImage("vmr-disabled-os",
-                "비활성 OS", 1004, nodeRepository.findAll().getFirst().getId(), 1, 10,
+                "비활성 OS", "ubuntu", "24.04", "ubuntu", 1004,
+                nodeRepository.findAll().getFirst().getId(), 1, 10,
                 TemplateStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
                 with(bodyFor(groupId, retired), "templateId", retiredImage.getId()))
@@ -428,7 +430,7 @@ class VmRequestTest {
         long vmReqId = submit(requesterToken, groupId);
         Vm vm = vmRepository.save(new Vm(nodeRepository.findAll().getFirst().getId(), groupId,
                 org.getId(), vmReqId, "vmr-slug-taken", "vmr-slug-taken", image.getId(),
-                1, 1024, 10, null, null));
+                image.getSshUsername(), 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 vm.getId());

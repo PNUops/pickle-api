@@ -257,6 +257,34 @@ class ApprovalTest {
     }
 
     @Test
+    void vmTakesItsGuestAccountFromTheGrantedImage() throws Exception {
+        // Each distribution ships its own admin account, so the VM must carry the
+        // granted image's account rather than the platform's historical 'ubuntu'.
+        OsImage debian = imageRepository.save(new OsImage("appr-debian-13", "Debian 13",
+                "debian", "13", "debian", 1005, image.getNodeId(), 1, 10,
+                TemplateStatus.ACTIVE, null));
+        try {
+            long groupId = createTeam(userToken, "appr-guest-account");
+            long requestId = submit(userToken, groupId);
+
+            postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
+                    with(approveBody(), "grantedTemplateId", debian.getId()))
+                    .andExpect(status().isOk());
+
+            Vm vm = vmRepository.findAll().stream()
+                    .filter(candidate -> candidate.getRequestId() == requestId)
+                    .findFirst().orElseThrow();
+            assertThat(vm.getImageId()).isEqualTo(debian.getId());
+            assertThat(vm.getSshUsername()).isEqualTo("debian");
+        } finally {
+            // Retire the extra catalog row: the wizard list is shared state
+            // across the classes on this context. The VM keeps its reference.
+            debian.setStatus(TemplateStatus.DISABLED);
+            imageRepository.saveAndFlush(debian);
+        }
+    }
+
+    @Test
     void grantedSlugFinalizesHostnameAndBlankFallsBackToAuto() throws Exception {
         long groupId = createTeam(userToken, "appr-slug-x1");
         long requestId = submit(userToken, groupId);
@@ -277,7 +305,7 @@ class ApprovalTest {
         Vm taken = vmRepository.save(new Vm(
                 jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class),
                 groupId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
-                image.getId(), 1, 1024, 10, null, null));
+                image.getId(), image.getSshUsername(), 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 taken.getId());

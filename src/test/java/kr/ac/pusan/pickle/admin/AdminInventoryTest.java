@@ -66,9 +66,11 @@ class AdminInventoryTest {
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         templateName = "ait-" + UUID.randomUUID().toString().substring(0, 8);
         templateId = jdbcTemplate.queryForObject("""
-                insert into os_images (name, display_name, proxmox_vmid, node_id, version,
+                insert into os_images (name, display_name, os_family, os_version, ssh_username,
+                                          proxmox_vmid, node_id, version,
                                           min_disk_gb, status)
-                values (?, '상태 토글 테스트', 990001, ?, 1, 10, 'ACTIVE'::template_status)
+                values (?, '상태 토글 테스트', 'ubuntu', '24.04', 'ubuntu', 990001, ?, 1, 10,
+                        'ACTIVE'::template_status)
                 returning id
                 """, Long.class, templateName, nodeId);
         flavorId = jdbcTemplate.queryForObject(
@@ -86,6 +88,10 @@ class AdminInventoryTest {
                 .andExpect(jsonPath(byId(templateId) + ".status").value("DISABLED"))
                 .andExpect(jsonPath(byId(templateId) + ".proxmoxVmid").value(990001))
                 .andExpect(jsonPath(byId(templateId) + ".minDiskGb").value(10))
+                // distribution identity + the guest account the image ships
+                .andExpect(jsonPath(byId(templateId) + ".osFamily").value("ubuntu"))
+                .andExpect(jsonPath(byId(templateId) + ".osVersion").value("24.04"))
+                .andExpect(jsonPath(byId(templateId) + ".sshUsername").value("ubuntu"))
                 // spec presets are their own axis now (v0.23.0)
                 .andExpect(jsonPath(byId(templateId) + ".defaultVcpu").doesNotExist());
 

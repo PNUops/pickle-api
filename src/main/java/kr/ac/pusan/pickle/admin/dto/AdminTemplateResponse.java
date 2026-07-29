@@ -14,6 +14,9 @@ public record AdminTemplateResponse(
         long id,
         String name,
         String displayName,
+        String osFamily,
+        String osVersion,
+        String sshUsername,
         int version,
         int proxmoxVmid,
         Long nodeId,
@@ -23,7 +26,8 @@ public record AdminTemplateResponse(
 
     public static AdminTemplateResponse from(OsImage image) {
         return new AdminTemplateResponse(image.getId(), image.getName(),
-                image.getDisplayName(), image.getVersion(), image.getProxmoxVmid(),
+                image.getDisplayName(), image.getOsFamily(), image.getOsVersion(),
+                image.getSshUsername(), image.getVersion(), image.getProxmoxVmid(),
                 image.getNodeId(), image.getStatus(), image.getMinDiskGb(),
                 image.getNotes());
     }
