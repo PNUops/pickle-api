@@ -14,7 +14,7 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
     /** The current cert for a custom domain (excludes revoked/archived). */
     Optional<Certificate> findFirstByDomainIdAndStatusNot(Long domainId, CertificateStatus status);
 
-    /** The shared platform wildcard for a scope, e.g. {@code *.pickle.pnuops.com}. */
+    /** The platform wildcard for a root's scope, e.g. {@code *.pusan.dev}. */
     Optional<Certificate> findFirstByKindAndScope(CertificateKind kind, String scope);
 
     List<Certificate> findByDomainId(Long domainId);

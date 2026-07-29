@@ -62,6 +62,7 @@ public class RouteApplyJob {
     private final IpAddressResolver ipAddressResolver;
     private final ProxyAgentClient proxyAgentClient;
     private final PublishingProperties properties;
+    private final PublicationAssembler assembler;
     private final TransactionTemplate transactionTemplate;
     private final NotificationService notificationService;
     private final RouteGenerations routeGenerations;
@@ -69,7 +70,8 @@ public class RouteApplyJob {
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             IpAddressResolver ipAddressResolver, ProxyAgentClient proxyAgentClient,
-            PublishingProperties properties, TransactionTemplate transactionTemplate,
+            PublishingProperties properties, PublicationAssembler assembler,
+            TransactionTemplate transactionTemplate,
             NotificationService notificationService, RouteGenerations routeGenerations) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
@@ -78,6 +80,7 @@ public class RouteApplyJob {
         this.ipAddressResolver = ipAddressResolver;
         this.proxyAgentClient = proxyAgentClient;
         this.properties = properties;
+        this.assembler = assembler;
         this.transactionTemplate = transactionTemplate;
         this.notificationService = notificationService;
         this.routeGenerations = routeGenerations;
@@ -151,10 +154,8 @@ public class RouteApplyJob {
             recordFailed(route, domain, false, "VM에 할당된 내부 IP를 찾을 수 없습니다.");
             return null;
         }
-        String certRef = domain.getKind() == DomainKind.CUSTOM
-                ? properties.letsEncryptCertRef() : properties.originCaCertRef();
         return ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
-                route.getTargetPort(), certRef);
+                route.getTargetPort(), assembler.certRefFor(domain));
     }
 
     private ApplyRequest absentRequest(Domain domain, Route route) {

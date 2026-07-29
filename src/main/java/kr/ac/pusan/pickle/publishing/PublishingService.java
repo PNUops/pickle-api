@@ -360,9 +360,31 @@ public class PublishingService {
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
+        requireWildcardCertificate(rootDomain);
         String fqdn = label + "." + rootDomain;
         requireFqdnFree(fqdn);
         return Domain.platform(vm.getId(), DomainKind.REQUESTED, fqdn, rootDomain);
+    }
+
+    /**
+     * A platform root is only publishable while a live wildcard certificate is
+     * recorded for it. Adding a root is a four-step change (allow-list, certificate
+     * on the proxy, agent configuration, certificate row); without this check a root
+     * added to the allow-list alone would accept publishes whose routes then fail at
+     * the agent, leaving the user with a domain that resolves to nothing and an error
+     * only an operator can read.
+     */
+    private void requireWildcardCertificate(String rootDomain) {
+        boolean usable = certificateRepository
+                .findFirstByKindAndScope(CertificateKind.ORIGIN_CA_WILDCARD,
+                        PublicationAssembler.wildcardScope(rootDomain))
+                .filter(cert -> cert.getStatus() == CertificateStatus.ACTIVE)
+                .isPresent();
+        if (!usable) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "공개할 수 없습니다",
+                    "'" + rootDomain + "' 루트 도메인에 사용할 수 있는 인증서가 없습니다. 관리자에게 문의해 주세요.");
+        }
     }
 
     /**

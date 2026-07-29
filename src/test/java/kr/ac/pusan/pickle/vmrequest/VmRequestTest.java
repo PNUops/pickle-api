@@ -197,37 +197,37 @@ class VmRequestTest {
                 with(validBody(groupId), "desiredSubdomain", "vmr-solo-x1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value("vmr-solo-x1"))
-                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"));
+                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"));
         Map<String, Object> badRoot = httpBody(groupId, "vmr-svc-x1", "evil.example.com");
         postJson("/api/v1/vm-requests", requesterToken, badRoot)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("rootDomain"));
 
         // reserved subdomain → 422; malformed subdomain → 422 (bean validation)
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "www", "pickle.pnuops.com"))
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "www", "pusan.dev"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "-bad-", "pickle.pnuops.com"))
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "-bad-", "pusan.dev"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
 
         // profanity substring → 422 at submit, not first at the approval screen
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "team-porn-site", "pickle.pnuops.com"))
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "team-porn-site", "pusan.dev"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
                 .andExpect(jsonPath("$.errors[0].message").value("사용할 수 없는 단어가 포함된 서브도메인입니다."));
 
         // valid http publication request → 201
         String httpResponse = postJson("/api/v1/vm-requests", requesterToken,
-                httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+                httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value("vmr-svc-x1"))
-                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"))
+                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"))
                 .andReturn().getResponse().getContentAsString();
         long httpRequestId = objectMapper.readTree(httpResponse).get("id").asLong();
 
         // duplicate (subdomain, rootDomain) held by a non-terminal request → 422
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
@@ -236,7 +236,7 @@ class VmRequestTest {
         // a terminal state (CANCELED) frees the pair for a new request
         postJson("/api/v1/vm-requests/" + httpRequestId + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk());
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pickle.pnuops.com"))
+        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
                 .andExpect(status().isCreated());
 
         // missing purpose → 422
@@ -272,7 +272,7 @@ class VmRequestTest {
                 with(validBody(groupId), "desiredSubdomain", "vmr-softres-sub"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value("vmr-softres-sub"))
-                .andExpect(jsonPath("$.rootDomain").value("pickle.pnuops.com"));
+                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"));
 
         // a second submission omitting rootDomain the same way → 422
         postJson("/api/v1/vm-requests", requesterToken,
@@ -285,7 +285,7 @@ class VmRequestTest {
 
         // ...and naming the default root explicitly hits the very same pair
         postJson("/api/v1/vm-requests", requesterToken,
-                httpBody(groupId, "vmr-softres-sub", "pickle.pnuops.com"))
+                httpBody(groupId, "vmr-softres-sub", "pusan.dev"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
 

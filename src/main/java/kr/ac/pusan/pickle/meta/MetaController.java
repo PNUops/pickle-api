@@ -31,11 +31,11 @@ public class MetaController {
 
     public MetaController(SettingsService settingsService, TermsService termsService,
             SystemStatusService systemStatusService,
-            @Value("${pickle.ssh.advertised-host:ssh.pickle.pnuops.com}") String sshHost) {
+            @Value("${pickle.ssh.advertised-host:ssh.pcl.kr}") String sshHost) {
         this.settingsService = settingsService;
         this.termsService = termsService;
         this.systemStatusService = systemStatusService;
-        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pickle.pnuops.com" : sshHost;
+        this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pcl.kr" : sshHost;
     }
 
     @GetMapping("/request-options")

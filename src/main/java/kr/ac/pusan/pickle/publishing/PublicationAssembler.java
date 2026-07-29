@@ -15,13 +15,24 @@ import org.springframework.stereotype.Component;
  * domain/route/certificate rows. Custom domains carry a verification block (the
  * A + TXT records to create and the current polling state); platform subdomains
  * do not (null). The certificate is the per-domain LE cert for custom domains and
- * the shared Origin CA wildcard for platform subdomains.
+ * the Origin CA wildcard of the subdomain's own root for platform subdomains.
  */
 @Component
 public class PublicationAssembler {
 
     /** TXT ownership record prefix ({@code _pickle-verify.<fqdn>}). */
     public static final String VERIFY_RECORD_PREFIX = "_pickle-verify.";
+
+    /**
+     * Prefix of the certRef that selects a platform wildcard; the domain's root
+     * follows it verbatim ({@code wildcard:example.dev}).
+     */
+    public static final String WILDCARD_CERT_REF_PREFIX = "wildcard:";
+
+    /** The wildcard scope a platform root's certificate row carries. */
+    public static String wildcardScope(String rootDomain) {
+        return "*." + rootDomain;
+    }
 
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
@@ -62,14 +73,29 @@ public class PublicationAssembler {
                 .isPresent();
     }
 
-    /** The certificate backing a domain: shared wildcard (platform) or LE (custom). */
+    /** The certificate backing a domain: its root's wildcard (platform) or LE (custom). */
     public Optional<Certificate> certificateFor(Domain domain) {
         if (domain.getKind() == DomainKind.CUSTOM) {
             return certificateRepository.findFirstByDomainIdAndStatusNot(domain.getId(),
                     CertificateStatus.REVOKED);
         }
         return certificateRepository.findFirstByKindAndScope(CertificateKind.ORIGIN_CA_WILDCARD,
-                "*." + domain.getRootDomain());
+                wildcardScope(domain.getRootDomain()));
+    }
+
+    /**
+     * The certRef the proxy-agent resolves to certificate material for this domain:
+     * a per-domain LE cert for custom domains, else the wildcard of the domain's own
+     * root. Deriving the platform ref from the root — rather than from a single
+     * configured constant — is what lets a second root domain be introduced with no
+     * code change: the agent gains a certificate, this gains nothing. An unknown
+     * root reaches the agent as an unresolvable ref and is refused there, so a
+     * misconfigured root cannot be rendered with some other root's certificate.
+     */
+    public String certRefFor(Domain domain) {
+        return domain.getKind() == DomainKind.CUSTOM
+                ? properties.letsEncryptCertRef()
+                : WILDCARD_CERT_REF_PREFIX + domain.getRootDomain();
     }
 
     private DomainVerificationView verification(Domain domain) {
