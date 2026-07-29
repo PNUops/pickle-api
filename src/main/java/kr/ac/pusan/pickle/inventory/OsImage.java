@@ -30,8 +30,9 @@ public class OsImage {
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
-    /** Distribution short id ({@code ubuntu}, {@code debian}, {@code rocky}) — free
-     * text so a new OS stays a catalog row rather than a schema change (V63). */
+    /** Distribution short id ({@code ubuntu}, {@code debian}, {@code rocky}) — a
+     * checked slug rather than an enum, so a new OS stays a catalog row rather
+     * than a schema change (V63). */
     @Column(name = "os_family", nullable = false)
     private String osFamily;
 

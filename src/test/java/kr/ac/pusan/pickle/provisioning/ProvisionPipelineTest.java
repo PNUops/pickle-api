@@ -346,7 +346,8 @@ class ProvisionPipelineTest {
                 StandardCharsets.UTF_8)).isEqualTo(platformKey);
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("cipassword="))
-                .withRequestBody(containing("ciuser=ubuntu"))
+                // the VM row's own account, not a platform-wide constant
+                .withRequestBody(containing("ciuser=rocky"))
                 .withRequestBody(containing("ipconfig0=" + expectedIpconfig))
                 .withRequestBody(containing("sshkeys=" + sshkeysWire))
                 .withRequestBody(containing("onboot=1"))
@@ -625,10 +626,13 @@ class ProvisionPipelineTest {
                 returning id
                 """, Long.class, groupId, orgId, adminUserId, templateId);
         String hostname = "pipe-vm-" + UUID.randomUUID().toString().substring(0, 12);
+        // The account is deliberately not 'ubuntu': approval copies it off the OS
+        // image, so the pipeline has to carry this row's value into cloud-init
+        // rather than fall back on the account the platform started with.
         return jdbc.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
-                                 image_id, vcpu, memory_mb, disk_gb)
-                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
+                                 image_id, ssh_username, vcpu, memory_mb, disk_gb)
+                values (?, ?, ?, ?, ?, ?, ?, 'rocky', 1, 1024, 10)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
     }
