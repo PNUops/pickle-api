@@ -225,6 +225,24 @@ public class AdminPortMappingService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("body",
                     "변경할 가드 항목을 최소 1개 지정해야 합니다.")));
         }
+        // Cross-field constraint on the RESULTING state: the agent refuses a
+        // burst without a positive matching rate (and a strict applier refuses
+        // the WHOLE snapshot), so an inconsistent pair must never be stored —
+        // it would freeze the relay's entire table at the last generation.
+        List<FieldValidationError> pairErrors = new java.util.ArrayList<>();
+        if (mapping.getNewConnBurst() != null
+                && (mapping.getNewConnRate() == null || mapping.getNewConnRate() <= 0)) {
+            pairErrors.add(new FieldValidationError("newConnBurst",
+                    "newConnBurst는 newConnRate가 0보다 큰 값일 때만 지정할 수 있습니다."));
+        }
+        if (mapping.getPerSourceBurst() != null
+                && (mapping.getPerSourceRate() == null || mapping.getPerSourceRate() <= 0)) {
+            pairErrors.add(new FieldValidationError("perSourceBurst",
+                    "perSourceBurst는 perSourceRate가 0보다 큰 값일 때만 지정할 수 있습니다."));
+        }
+        if (!pairErrors.isEmpty()) {
+            throw ApiException.validationFailed(pairErrors); // tx rollback discards the edits
+        }
         long generation = relayGenerations.bump(mapping.getRelayId());
         mapping.setLastChangeGeneration(generation);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

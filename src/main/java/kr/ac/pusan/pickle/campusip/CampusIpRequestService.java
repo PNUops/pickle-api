@@ -40,22 +40,23 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * 교내 IP allocation requests (contract tag {@code campus-ip}). The request is
- * pure workflow state — nothing is provisioned automatically; a SYS_ADMIN
- * walks it through REQUESTED → APPROVED → GRANTED (recording the assigned
- * address) or rejects/revokes.
+ * pure workflow state — nothing is provisioned automatically; a platform
+ * administrator walks it through REQUESTED → APPROVED → GRANTED (recording
+ * the campus address once the VM is wired to it) or rejects/revokes.
  *
- * <p>User-side authorization is two-layered: {@code @PreAuthorize} keeps USER
- * out entirely (manager tiers and up only — SYS tiers included stay
- * group-bound on this user surface; cross-group intervention is the admin
- * surface's job), and the service scopes to the VM's group (list: any member,
- * create/cancel: OWNER/EDITOR; non-member → 404 mask) — same masking shape as
- * publishing.</p>
+ * <p>User-side authorization is service-layer group scoping only, exactly
+ * like port forwarding and publishing: reads need membership, writes need
+ * OWNER/EDITOR, and a non-member gets the 404 existence mask. Cross-group
+ * intervention lives on the admin surface.</p>
  */
 @Service
 public class CampusIpRequestService {
 
     private static final Pattern IPV4 = Pattern.compile(
             "^((25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)$");
+
+    /** The campus range (10.0.0.0/8) a granted address must fall inside. */
+    private static final String CAMPUS_PREFIX = "10.";
 
     private static final Set<CampusIpRequestStatus> LIVE_STATUSES = Set.of(
             CampusIpRequestStatus.REQUESTED, CampusIpRequestStatus.APPROVED,
@@ -182,6 +183,13 @@ public class CampusIpRequestService {
             if (address == null || !IPV4.matcher(address).matches()) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError(
                         "grantedAddress", "GRANTED 전환에는 올바른 IPv4 주소가 필요합니다.")));
+            }
+            // Campus addresses live in 10.0.0.0/8; anything else is a typo or
+            // a wrong network, and recording it would advertise an address the
+            // VM is not actually reachable at.
+            if (!address.startsWith(CAMPUS_PREFIX)) {
+                throw ApiException.validationFailed(List.of(new FieldValidationError(
+                        "grantedAddress", "교내 IP는 10.0.0.0/8 대역의 주소여야 합니다.")));
             }
             request.setGrantedAddress(address);
         }

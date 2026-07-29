@@ -21,8 +21,7 @@ public record PortForwardingView(
         int targetPort,
         @Schema(description = "매핑 상태 (SUSPENDED = 관리자·자동 정지)")
         PortMappingStatus status,
-        @Schema(description = "릴레이 반영 상태 (PENDING = 반영 대기, ACTIVE = 반영 완료, "
-                + "FAILED = 적용 실패)")
+        @Schema(description = "릴레이 반영 상태 (PENDING = 대기, ACTIVE = 활성, FAILED = 실패)")
         PortForwardApplyState applyState,
         Instant createdAt) {
 }

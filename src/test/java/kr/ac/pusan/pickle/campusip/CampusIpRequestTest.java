@@ -94,12 +94,13 @@ class CampusIpRequestTest {
     // ── eligibility ─────────────────────────────────────────────────────────
 
     @Test
-    void userRoleIsDeniedAtTheGateEvenAsGroupEditor() throws Exception {
+    void plainUserMayRequestWhenTheGroupRoleAllows() throws Exception {
         long vmId = vm();
-        // plainUser IS an EDITOR of the group — the role gate still refuses.
+        // No role tier gate (2026-07-29 revision): a plain USER who is an
+        // EDITOR of the owning group may request, exactly like publishing.
         request(vmId, plainUserToken, "서비스 운영", List.of(80))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("REQUESTED"));
     }
 
     @Test
@@ -198,10 +199,14 @@ class CampusIpRequestTest {
         // GRANTED demands a valid IPv4
         transition(requestId, "GRANTED", null).andExpect(status().isUnprocessableEntity());
         transition(requestId, "GRANTED", "not-an-ip").andExpect(status().isUnprocessableEntity());
+        // campus addresses only (10.0.0.0/8): a routable address is refused
         transition(requestId, "GRANTED", "203.0.113.10")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("grantedAddress"));
+        transition(requestId, "GRANTED", "10.20.30.40")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("GRANTED"))
-                .andExpect(jsonPath("$.grantedAddress").value("203.0.113.10"));
+                .andExpect(jsonPath("$.grantedAddress").value("10.20.30.40"));
 
         // requester is notified about every processed transition (scoped to
         // THIS request — other tests' transitions also notify the owner)
@@ -230,7 +235,7 @@ class CampusIpRequestTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"));
         transition(requestId, "APPROVED", null).andExpect(status().isConflict());
-        transition(requestId, "GRANTED", "203.0.113.11").andExpect(status().isConflict());
+        transition(requestId, "GRANTED", "10.20.30.41").andExpect(status().isConflict());
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

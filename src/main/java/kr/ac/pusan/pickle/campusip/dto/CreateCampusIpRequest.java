@@ -13,6 +13,6 @@ public record CreateCampusIpRequest(
         @Schema(description = "신청 목적 (관리자 검토 자료)")
         String purpose,
         @NotEmpty @Size(max = 32)
-        @Schema(description = "공개가 필요한 포트 번호 목록 (1~65535, 최대 32개)")
+        @Schema(description = "교내 IP로 사용할 포트 번호 목록 (1~65535, 최대 32개)")
         List<@NotNull Integer> ports) {
 }

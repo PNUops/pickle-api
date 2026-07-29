@@ -60,6 +60,7 @@ components:
           format: "date-time"
           type: "string"
         grantedAddress:
+          description: "연결된 교내 IP 주소 (10.0.0.0/8)"
           type:
           - "string"
           - "null"
@@ -72,6 +73,7 @@ components:
           - "integer"
           - "null"
         ports:
+          description: "사용할 포트 번호 목록"
           items:
             format: "int32"
             type: "integer"
@@ -99,6 +101,8 @@ components:
           - "null"
         status:
           $ref: "#/components/schemas/CampusIpRequestStatus"
+          description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
+            \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
         vmId:
           format: "int64"
           type: "integer"
@@ -967,7 +971,7 @@ components:
           format: "date-time"
           type: "string"
         grantedAddress:
-          description: "할당된 교내 IP (GRANTED 이후)"
+          description: "연결된 교내 IP 주소 (GRANTED 이후)"
           type:
           - "string"
           - "null"
@@ -975,7 +979,7 @@ components:
           format: "int64"
           type: "integer"
         ports:
-          description: "공개할 포트 번호 목록 (중복 제거·오름차순 정규화)"
+          description: "사용할 포트 번호 목록 (중복 제거·오름차순 정규화)"
           items:
             format: "int32"
             type: "integer"
@@ -993,6 +997,8 @@ components:
           type: "integer"
         status:
           $ref: "#/components/schemas/CampusIpRequestStatus"
+          description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
+            \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
         vmId:
           format: "int64"
           type: "integer"
@@ -1100,7 +1106,7 @@ components:
     CreateCampusIpRequest:
       properties:
         ports:
-          description: "공개가 필요한 포트 번호 목록 (1~65535, 최대 32개)"
+          description: "교내 IP로 사용할 포트 번호 목록 (1~65535, 최대 32개)"
           items:
             format: "int32"
             type: "integer"
@@ -2595,8 +2601,7 @@ components:
       properties:
         applyState:
           $ref: "#/components/schemas/PortForwardApplyState"
-          description: "릴레이 반영 상태 (PENDING = 반영 대기, ACTIVE = 반영 완료, FAILED = 적용 실패\
-            )"
+          description: "릴레이 반영 상태 (PENDING = 대기, ACTIVE = 활성, FAILED = 실패)"
         createdAt:
           format: "date-time"
           type: "string"
@@ -3344,7 +3349,7 @@ components:
           - "string"
           - "null"
         grantedAddress:
-          description: "할당된 교내 IP (GRANTED 전환 시 필수, IPv4)"
+          description: "연결한 교내 IP 주소 (GRANTED 전환 시 필수, 10.0.0.0/8 대역)"
           maxLength: 45
           minLength: 0
           type:
@@ -3352,7 +3357,8 @@ components:
           - "null"
         status:
           $ref: "#/components/schemas/CampusIpRequestStatus"
-          description: "전환할 상태"
+          description: "전환할 상태 (APPROVED = 승인, GRANTED = 교내 IP 연결 완료, REJECTED = 반\
+            려, REVOKED = 회수)"
       required:
       - "status"
       type: "object"

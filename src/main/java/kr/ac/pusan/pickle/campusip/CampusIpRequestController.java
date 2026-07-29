@@ -9,7 +9,6 @@ import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CreateCampusIpRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,13 +20,13 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code campus-ip}: 교내 IP 신청 self-service. Role-gated to the
- * manager tiers and up (USER is denied at the gate); on top of that, the
- * service scopes every op to the VM's group OWNER/EDITOR.
+ * Contract tag {@code campus-ip}: 교내 IP 신청 self-service. Authorization is
+ * service-layer group scoping only (same shape as port forwarding and
+ * publishing): reads need membership, writes need OWNER/EDITOR — no role
+ * tier gate.
  */
 @RestController
 @RequestMapping("/api/v1/vms/{vmId}/campus-ip-requests")
-@PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
 public class CampusIpRequestController {
 
     private final CampusIpRequestService campusIpRequestService;

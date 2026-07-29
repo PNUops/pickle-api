@@ -91,6 +91,14 @@ class PortForwardingTest {
     void setUp() throws Exception {
         jdbcTemplate.update(
                 "update settings set value = 'true' where key = 'port_forwarding_enabled'");
+        // One shared fixture owner allocates across every test of this class
+        // inside one rate-limit hour window — lift the per-user budget so only
+        // the dedicated rate-limit test (which pins its own value and its own
+        // fresh user) exercises the 429 path.
+        jdbcTemplate.update("""
+                update settings set value = '500'
+                 where key = 'port_forward_alloc_limit_per_hour'
+                """);
         owner = ensureUser("pf.owner@pusan.ac.kr", "포워딩소유자");
         User editor = ensureUser("pf.editor@pusan.ac.kr", "포워딩편집자");
         User viewer = ensureUser("pf.viewer@pusan.ac.kr", "포워딩뷰어");
@@ -230,8 +238,9 @@ class PortForwardingTest {
                     .andExpect(status().isTooManyRequests())
                     .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
         } finally {
+            // back to the lifted fixture budget (setUp), not the seed default
             jdbcTemplate.update("""
-                    update settings set value = '20'
+                    update settings set value = '500'
                      where key = 'port_forward_alloc_limit_per_hour'
                     """);
         }
@@ -410,6 +419,54 @@ class PortForwardingTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void guardPatchRefusesABurstWithoutItsRate() throws Exception {
+        long relayId = soleRelay(22000, 22099);
+        long vmId = runningVm();
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andReturn().getResponse().getContentAsString();
+        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long generationBefore = mappingGeneration(relayId);
+
+        // A burst without a positive matching rate would make every agent
+        // reject the WHOLE snapshot (strict applier) — the resulting state is
+        // validated, so none of these may ever be stored.
+        guardPatch(mappingId, "{\"newConnBurst\":400}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("newConnBurst"));
+        guardPatch(mappingId, "{\"newConnRate\":0,\"newConnBurst\":400}")
+                .andExpect(status().isUnprocessableEntity());
+        guardPatch(mappingId, "{\"perSourceBurst\":50}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("perSourceBurst"));
+        // refused writes never bump the generation (no phantom change)
+        assertThat(mappingGeneration(relayId)).isEqualTo(generationBefore);
+
+        // the consistent pair lands
+        guardPatch(mappingId, "{\"newConnRate\":200,\"newConnBurst\":400}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.newConnRate").value(200))
+                .andExpect(jsonPath("$.newConnBurst").value(400));
+        // and cannot be broken afterwards: clearing or zeroing the rate while
+        // the burst stays would orphan it
+        guardPatch(mappingId, "{\"newConnRate\":null}")
+                .andExpect(status().isUnprocessableEntity());
+        guardPatch(mappingId, "{\"newConnRate\":0}")
+                .andExpect(status().isUnprocessableEntity());
+        // clearing both together is fine
+        guardPatch(mappingId, "{\"newConnRate\":null,\"newConnBurst\":null}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.newConnRate").doesNotExist())
+                .andExpect(jsonPath("$.newConnBurst").doesNotExist());
+    }
+
+    private ResultActions guardPatch(long mappingId, String body) throws Exception {
+        return mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+                .header("Authorization", "Bearer " + sysAdminToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body));
     }
 
     // ── teardown invariant ──────────────────────────────────────────────────

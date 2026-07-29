@@ -14,9 +14,14 @@ public record AdminCampusIpRequestView(
         @Nullable Long orgId,
         @Schema(description = "신청 목적")
         String purpose,
+        @Schema(description = "사용할 포트 번호 목록")
         List<Integer> ports,
+        @Schema(description = "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, "
+                + "GRANTED = 교내 IP 연결 완료, REJECTED = 반려, REVOKED = 회수)")
         CampusIpRequestStatus status,
-        @Nullable String grantedAddress,
+        @Nullable
+        @Schema(description = "연결된 교내 IP 주소 (10.0.0.0/8)")
+        String grantedAddress,
         @Nullable String adminNote,
         Long requestedBy,
         @Nullable

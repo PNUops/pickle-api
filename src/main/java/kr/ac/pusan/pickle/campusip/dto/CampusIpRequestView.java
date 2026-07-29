@@ -12,11 +12,13 @@ public record CampusIpRequestView(
         Long vmId,
         @Schema(description = "신청 목적")
         String purpose,
-        @Schema(description = "공개할 포트 번호 목록 (중복 제거·오름차순 정규화)")
+        @Schema(description = "사용할 포트 번호 목록 (중복 제거·오름차순 정규화)")
         List<Integer> ports,
+        @Schema(description = "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, "
+                + "GRANTED = 교내 IP 연결 완료, REJECTED = 반려, REVOKED = 회수)")
         CampusIpRequestStatus status,
         @Nullable
-        @Schema(description = "할당된 교내 IP (GRANTED 이후)")
+        @Schema(description = "연결된 교내 IP 주소 (GRANTED 이후)")
         String grantedAddress,
         @Nullable
         @Schema(description = "관리자 메모")
