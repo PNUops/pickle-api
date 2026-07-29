@@ -187,6 +187,17 @@ class AdminSettingsTest {
         putExpecting422("reserved_subdomains", "[\"ok\", 5]");
         // value must be present (JSON null is not a value)
         putExpecting422("ssh_gateway_enabled", "null");
+        // the IP quarantine window may never drop below the relay agent's
+        // snapshot replay window: a shorter one lets a released address be
+        // reassigned while stale forwarding rules still point at it
+        putExpecting422("ip_quarantine_hours", "0");
+        putExpecting422("ip_quarantine_hours", "23");
+        mockMvc.perform(put("/api/v1/admin/settings/ip_quarantine_hours")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"value\": 24}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.value").value(24));
 
         assertThat(readValue("vm_delete_grace_hours")).isEqualTo(graceHoursBackup);
     }

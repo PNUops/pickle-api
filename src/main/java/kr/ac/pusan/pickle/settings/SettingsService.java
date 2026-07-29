@@ -71,6 +71,16 @@ public class SettingsService {
     /** Hostname-safe entry: lowercase dot-separated labels, ≤63 chars total. */
     private static final Pattern HOSTNAME_SAFE = Pattern.compile(
             "(?=.{1,63}$)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*");
+    /**
+     * Floor for the IP quarantine window, in hours. A released address may
+     * still be carried in a forwarding relay's persisted snapshot, which the
+     * relay agent re-applies on boot for as long as that snapshot is
+     * considered usable (24 hours). Quarantining for less would let the
+     * address be reassigned while stale forwarding rules still point at it,
+     * delivering public traffic to a different tenant's VM, so the setting
+     * must never be editable below the agent's replay window.
+     */
+    private static final int MIN_IP_QUARANTINE_HOURS = 24;
     private static final int MAX_LIST_ENTRIES = 500;
     private static final int MAX_EXPIRY_STAGES = 5;
     /** Free-text operator message cap (banner/maintenance notice). */
@@ -250,7 +260,7 @@ public class SettingsService {
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,
                 numberInRangeExclusiveMin(0, 10)));
         map.put(IP_QUARANTINE_HOURS, new Editable(SettingValueType.INTEGER,
-                intInRange(0, 720)));
+                intInRange(MIN_IP_QUARANTINE_HOURS, 720)));
         map.put(VM_DELETE_GRACE_HOURS, new Editable(SettingValueType.INTEGER,
                 intInRange(1, 2160)));
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
