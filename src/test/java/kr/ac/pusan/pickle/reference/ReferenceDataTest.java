@@ -1,11 +1,13 @@
 package kr.ac.pusan.pickle.reference;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import kr.ac.pusan.pickle.inventory.TemplateStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
@@ -27,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -44,6 +47,9 @@ class ReferenceDataTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Autowired
     private UserRepository userRepository;
@@ -190,5 +196,21 @@ class ReferenceDataTest {
                 .andExpect(jsonPath("$.reservedSubdomains.length()").value(416))
                 // v0.12.0: SSH gateway host for the request form's slug preview
                 .andExpect(jsonPath("$.sshHost").value("ssh.pcl.kr"));
+    }
+
+    // The admin settings screen renders `description` verbatim, so it has to stay
+    // Korean (V16 relabelled the original English seeds for exactly that reason).
+    // A later migration touching one of these rows can quietly put English back in
+    // front of users, which is what this pins.
+    @Test
+    void settingDescriptionsStayKorean() throws Exception {
+        for (String key : List.of("allowed_root_domains", "reserved_subdomains",
+                "profanity_subdomains")) {
+            String description = jdbcTemplate.queryForObject(
+                    "select description from settings where key = ?", String.class, key);
+            assertThat(description)
+                    .as("settings.%s description is user-facing and must be Korean", key)
+                    .matches(".*[\\uAC00-\\uD7A3].*");
+        }
     }
 }

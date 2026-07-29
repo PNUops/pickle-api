@@ -12,24 +12,33 @@
 -- they are scoped to rows that were never live, and this is what keeps them
 -- scoped. If anything under the retired root is still live the whole migration
 -- must fail rather than quietly take a published site down.
+--
+-- Routes are counted as well as domains: a route can still be APPLIED under a
+-- domain already marked REMOVED, and that route is a vhost the proxy is serving
+-- right now. Checking only the domain status would delete it and orphan the vhost
+-- until someone happened to run a resync.
 do $$
 declare
     live_rows int;
 begin
     select count(*) into live_rows
-      from domains
-     where root_domain = 'pickle.pnuops.com'
-       and status <> 'REMOVED';
+      from domains d
+      left join routes r on r.domain_id = d.id and r.status <> 'REMOVED'
+     where d.root_domain = 'pickle.pnuops.com'
+       and (d.status <> 'REMOVED' or r.id is not null);
     if live_rows > 0 then
         raise exception
-            'refusing to retire pickle.pnuops.com: % live domain row(s) remain', live_rows;
+            'refusing to retire pickle.pnuops.com: % live domain/route row(s) remain', live_rows;
     end if;
 end
 $$;
 
+-- Swap the retired root for the new one without disturbing anything else in the
+-- list: this value is admin-editable at runtime, so replacing the whole array
+-- would silently drop a root an operator had added. The description is left
+-- alone — V16 relabelled these to Korean because the console renders them as-is.
 update settings
-   set value = '["pusan.dev"]'::jsonb,
-       description = 'Root domains selectable as rootDomain in VM requests (GET /meta/request-options).',
+   set value = (value - 'pickle.pnuops.com') || '["pusan.dev"]'::jsonb,
        updated_at = now()
  where key = 'allowed_root_domains';
 
