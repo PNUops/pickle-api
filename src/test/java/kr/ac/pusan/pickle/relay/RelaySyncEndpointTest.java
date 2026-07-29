@@ -268,6 +268,28 @@ class RelaySyncEndpointTest {
         assertThat(audits).isEqualTo(1);
     }
 
+    @Test
+    void aReportOfGenerationZeroIsTreatedAsARestart() throws Exception {
+        RelayFixture relay = newRelay("restart");
+        jdbcTemplate.update("""
+                update relays set mapping_generation = 4, applied_generation = 3 where id = ?
+                """, relay.id());
+        // An agent that boots without a usable snapshot honestly reports 0.
+        // That is routine, so it must not raise a security signal — but the
+        // stored progress is still kept and the full snapshot still answered.
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mappings").isArray());
+        Long storedApplied = jdbcTemplate.queryForObject(
+                "select applied_generation from relays where id = ?", Long.class, relay.id());
+        assertThat(storedApplied).isEqualTo(3);
+        Long audits = jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs
+                 where action = 'relay.sync_violation' and target_id = ?
+                """, Long.class, relay.id());
+        assertThat(audits).isZero();
+    }
+
     // ── snapshot semantics ──────────────────────────────────────────────────
 
     @Test

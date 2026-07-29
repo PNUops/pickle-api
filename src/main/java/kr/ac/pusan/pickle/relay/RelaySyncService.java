@@ -35,9 +35,10 @@ import tools.jackson.databind.ObjectMapper;
  * <p>All report fields are claims by the relay, not measurements: strings are
  * control-stripped and truncated before persisting, {@code appliedGeneration}
  * must stay within {@code 0 ≤ x ≤ mapping_generation} and never regress —
- * a violation is audited, the reported value is discarded, and the relay gets
- * the full snapshot so a confused (or lying) agent converges instead of
- * wedging.</p>
+ * the reported value is then discarded and the relay gets the full snapshot so
+ * a confused (or lying) agent converges instead of wedging. A report of 0 is
+ * the routine "booted with no usable snapshot" case and only logged; any other
+ * out-of-range value is audited as a violation.</p>
  */
 @Service
 public class RelaySyncService {
@@ -109,8 +110,20 @@ public class RelaySyncService {
         // appliedGeneration must stay in [stored, current] — anything else is
         // impossible for an honest agent (@Min(0) already rejected negatives).
         long reported = request.appliedGeneration();
-        boolean violation = reported > state.current() || reported < state.applied();
-        long validated = violation ? state.applied() : reported;
+        boolean discarded = reported > state.current() || reported < state.applied();
+        // A relay that boots without a usable snapshot honestly reports 0, and
+        // 0 can only ever look like a decrease. That is an ordinary restart,
+        // not a monotonicity violation: the reported value is still discarded
+        // and the full snapshot still answered, but auditing it as a security
+        // event on every agent restart would only teach operators to ignore
+        // the action.
+        boolean restart = discarded && reported == 0;
+        boolean violation = discarded && !restart;
+        long validated = discarded ? state.applied() : reported;
+        if (restart) {
+            log.info("relay {} reported generation 0 (agent restart; stored applied {})",
+                    relayId, state.applied());
+        }
         if (violation) {
             // Direct record (not after-commit): a security signal, keep it even
             // if something later in this tx were to fail.
@@ -135,7 +148,9 @@ public class RelaySyncService {
             accumulateCounters(relayId, request.counters());
         }
 
-        return readSnapshot(relayId, validated, violation);
+        // A discarded report (violation or restart) always gets the full
+        // snapshot so a confused agent converges instead of wedging.
+        return readSnapshot(relayId, validated, discarded);
     }
 
     // ── counters (reset-aware) ───────────────────────────────────────────────
