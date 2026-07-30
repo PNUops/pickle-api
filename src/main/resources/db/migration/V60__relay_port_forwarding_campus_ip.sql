@@ -122,12 +122,11 @@ comment on table campus_ip_requests is
 alter type vm_event_type add value if not exists 'PORT_FORWARD_CREATE';
 alter type vm_event_type add value if not exists 'PORT_FORWARD_DELETE';
 
--- The single relay of the initial deployment. public_host and the sync token
--- are operator-set at deploy time (the real public address never ships in a
--- repo); source_ip is the relay's tunnel-side address, a config default that
--- the operator can re-point per environment.
-insert into relays (name, source_ip, port_band_start, port_band_end)
-values ('lightsail-1', '10.100.100.1', 10000, 19999);
+-- No relay row is seeded. A relay's public address is what a user connects to, the
+-- entity exposes no setter for it and no endpoint writes it, so a seeded row hands
+-- out forwarded ports with no host to reach them at. With no row at all the create
+-- path refuses with a stated reason instead, which is the honest failure. The
+-- operations script registers the real relay. See the migration convention.
 
 insert into settings (key, value, description) values
     ('port_forwarding_enabled', 'false',

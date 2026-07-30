@@ -40,17 +40,9 @@ comment on column nodes.ip_pool_id is 'IP pool VMs on this node allocate from.';
 alter table vms
     add constraint vms_ip_allocation_id_fkey foreign key (ip_allocation_id) references ip_allocations (id);
 
--- ── Reference seed: the vmbr2 student pool. Reserved:
---    172.29.0.0/24 (gateway + infra headroom) and 172.29.255.0/24 (spike
---    VMs / management headroom, incl. the broadcast address). ──
-insert into ip_pools (name, cidr, gateway, dns, reserved_ranges) values
-    ('student-vmbr2', '172.29.0.0/16', '172.29.0.1', '["8.8.8.8"]'::jsonb,
-     '[{"from": "172.29.0.0", "to": "172.29.0.255"},
-       {"from": "172.29.255.0", "to": "172.29.255.255"}]'::jsonb);
-
-update nodes
-   set ip_pool_id = (select id from ip_pools where name = 'student-vmbr2')
- where name = 'pve1';
+-- No reference seed here. A pool's CIDR, gateway and DNS belong to the network the
+-- platform is deployed on, and the node it attaches to is registered by the same
+-- operations script. See the migration convention.
 
 -- ── Settings key read by IpamService. Operator-tunable at runtime. ──
 insert into settings (key, value, description) values
