@@ -356,7 +356,7 @@ public class ProvisionVmJob implements ProvisioningService {
             if (!vm.getHostname().equals(resident.name())) {
                 throw new VmidConflict("vmid " + vmid + " 충돌: 클러스터의 기존 게스트 '"
                         + resident.name() + "'이(가) 호스트명 '" + vm.getHostname()
-                        + "'과 다릅니다 — vmid_seq 재동기화 필요 (db-restore 런북)");
+                        + "'과 다릅니다 — vmid_seq 재동기화가 필요합니다.");
             }
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             return;
@@ -609,7 +609,7 @@ public class ProvisionVmJob implements ProvisioningService {
             // the pickle tag (orphan of a lost row), so no tag-trusting
             // destroy guard may ever see it. Drop OUR claim on the number
             // (DB only — the cluster is untouched) and regress to the VMID
-            // step: after the operator resyncs vmid_seq (db-restore runbook),
+            // step: once the vmid sequence has been resynced by hand,
             // an admin re-run draws a fresh number and proceeds. The cleared
             // vmid also defuses a force-delete on the parked VM — the delete
             // pipeline touches nothing on Proxmox without one.
