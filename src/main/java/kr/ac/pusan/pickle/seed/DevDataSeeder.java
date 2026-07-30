@@ -80,6 +80,121 @@ public class DevDataSeeder implements ApplicationRunner {
                 UserRole.ORG_ADMIN, org.getId());
 
         enableGatewayKillSwitches();
+        seedInventory();
+    }
+
+    /**
+     * Gives a development or test database the inventory it needs to be usable:
+     * a node, an IP pool attached to it, one OS image, a relay and the platform
+     * wildcard certificate.
+     *
+     * <p>The migrations deliberately seed none of this. Every one of these rows
+     * describes the machine and network the platform is deployed on, so a row
+     * written by a migration is wrong rather than unhelpful anywhere else: the
+     * node's memory is a hard filter in placement, the certificate row is read as
+     * proof that TLS is covered, and the relay's public address is what a user
+     * connects to. In production an operations script reads the real host and
+     * writes them. Development and test have no such step, and without these rows
+     * nothing can be provisioned at all.</p>
+     *
+     * <p>Each part acts only when its table is empty, so an operator or a test that
+     * has already arranged something is never overwritten. The values are the ones
+     * the migrations used to carry, kept identical so tests that look the seeded
+     * node or pool up by name keep finding them.</p>
+     */
+    private void seedInventory() {
+        Long nodeId = seedNode();
+        if (nodeId == null) {
+            return;
+        }
+        seedIpPool(nodeId);
+        seedOsImage(nodeId);
+        seedRelay();
+        seedPlatformCertificate();
+    }
+
+    /** Returns the node every other part attaches to, seeding it when there is none. */
+    private Long seedNode() {
+        Long existing = jdbcTemplate.query("select id from nodes order by id limit 1",
+                rs -> rs.next() ? rs.getLong(1) : null);
+        if (existing != null) {
+            return existing;
+        }
+        jdbcTemplate.update(
+                "insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)"
+                        + " values ('pve1', 'https://pve1:8006', 40, 79872, 'vmbr2', 'local-lvm')");
+        log.info("Empty inventory: seeded the development node (pve1)");
+        return jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
+    }
+
+    private void seedIpPool(long nodeId) {
+        Integer pools = jdbcTemplate.queryForObject("select count(*) from ip_pools", Integer.class);
+        if (pools == null || pools > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                "insert into ip_pools (name, cidr, gateway, dns, reserved_ranges) values"
+                        + " ('guest-private', '172.29.0.0/16', '172.29.0.1', '[\"8.8.8.8\"]'::jsonb,"
+                        + " '[{\"from\": \"172.29.0.0\", \"to\": \"172.29.0.255\"},"
+                        + " {\"from\": \"172.29.255.0\", \"to\": \"172.29.255.255\"}]'::jsonb)");
+        jdbcTemplate.update("update nodes set ip_pool_id = (select id from ip_pools"
+                + " where name = 'guest-private'), updated_at = now() where id = ?", nodeId);
+        log.info("Empty inventory: seeded the development IP pool (guest-private)");
+    }
+
+    private void seedOsImage(long nodeId) {
+        Integer images = jdbcTemplate.queryForObject("select count(*) from os_images", Integer.class);
+        if (images == null || images > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                "insert into os_images (name, display_name, os_family, os_version,"
+                        + " ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status, notes)"
+                        + " values ('ubuntu-24.04', 'Ubuntu 24.04 LTS', 'ubuntu', '24.04',"
+                        + " 'ubuntu', 1000, ?, 1, 10, 'ACTIVE'::template_status,"
+                        + " '개발용 시드 이미지')", nodeId);
+        log.info("Empty inventory: seeded the development OS image (ubuntu-24.04)");
+    }
+
+    /**
+     * Seeds the relay with a public address, unlike the migration this replaces.
+     * A relay row without one hands out forwarded ports that resolve to nothing,
+     * and no setter or endpoint exists to fill the column afterwards. The name is the
+     * one the migration used, because tests look the seeded relay up by it.
+     */
+    private void seedRelay() {
+        Integer relays = jdbcTemplate.queryForObject("select count(*) from relays", Integer.class);
+        if (relays == null || relays > 0) {
+            return;
+        }
+        jdbcTemplate.update("insert into relays (name, source_ip, public_host,"
+                + " port_band_start, port_band_end) values ('lightsail-1', '10.100.100.1',"
+                + " 'relay.invalid', 10000, 19999)");
+        log.info("Empty inventory: seeded the development relay (lightsail-1)");
+    }
+
+    /**
+     * The platform wildcard the publishing path resolves for non-custom domains.
+     * Expiry is a year out rather than a decade: on a development database a stale
+     * date should surface in the admin certificate list, not sit quiet until 2040.
+     */
+    private void seedPlatformCertificate() {
+        Integer certs = jdbcTemplate.queryForObject(
+                "select count(*) from certificates where kind = 'ORIGIN_CA_WILDCARD'", Integer.class);
+        if (certs == null || certs > 0) {
+            return;
+        }
+        String root = jdbcTemplate.query(
+                "select value->>0 from settings where key = 'allowed_root_domains'",
+                rs -> rs.next() ? rs.getString(1) : null);
+        if (root == null || root.isBlank()) {
+            log.warn("No allowed root domain, so the development wildcard certificate stays absent");
+            return;
+        }
+        jdbcTemplate.update("insert into certificates (domain_id, kind, scope, not_after, status)"
+                + " values (null, 'ORIGIN_CA_WILDCARD', ?, now() + interval '1 year', 'ACTIVE')",
+                "*." + root);
+        log.info("Empty inventory: seeded the development wildcard certificate for *.{}", root);
     }
 
     /**

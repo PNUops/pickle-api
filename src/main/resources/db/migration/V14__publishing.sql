@@ -88,12 +88,11 @@ create table certificates (
 
 create index certificates_domain_id_idx on certificates (domain_id);
 
--- Shared platform wildcard (Cloudflare Origin CA, 15-year validity,
--- operator-installed once). Tracked as a row for expiry monitoring in the admin
--- certificate list. Default dev root is pickle.pnuops.com (settings
--- allowed_root_domains); additional roots get their own row when introduced.
-insert into certificates (domain_id, kind, scope, not_after, status) values
-    (null, 'ORIGIN_CA_WILDCARD', '*.pickle.pnuops.com', '2040-01-01T00:00:00+09:00', 'ACTIVE');
+-- No certificate row is seeded. A row here asserts that an active wildcard exists
+-- for a specific root until a specific date, and the publishing path reads it as
+-- proof that TLS is covered. Nothing in a migration can know whether the operator
+-- actually installed one, so the row is registered by the operations script that
+-- sets the root up. See the migration convention.
 
 -- Admin-finalized platform subdomain (승인 시 관리자 최종
 -- 부여). Null granted_subdomain ⇒ AUTO subdomain generated at first publish.
