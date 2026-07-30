@@ -36,7 +36,7 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 ## 동작 방식
 
 - **Proxmox 클라이언트**를 이 저장소에서 직접 구현합니다. 실제 서버 응답을 캡처해 둔
-  WireMock 계약 테스트로 검증합니다.
+  WireMock 테스트로 응답 명세를 고정해 검증합니다.
 - **잡 큐가 데이터베이스에 있습니다.** JobRunr가 잡을 PostgreSQL 테이블에 저장하므로
   최소 1회 실행과 백오프 재시도, 진행 상황 대시보드가 따라옵니다. 워커는 API와 같은 JVM에서
   돌고, 부하가 늘면 같은 jar를 `--worker-only` 모드로 다른 호스트에 띄울 수 있습니다.
@@ -73,7 +73,7 @@ guard → 노드 배치 → IP 할당 → VMID 채번 → 템플릿 clone
 직접 손대지 않습니다. 관리 대상 VM은 하이퍼바이저 `protection` 플래그를 상시 켜 두고,
 의도된 삭제 직전에만 내립니다.
 
-## API 계약
+## API 명세
 
 springdoc이 생성한 `contract/openapi.yaml`이 커밋된 as-built 스펙이고, 콘솔의
 TypeScript 타입도 이 파일에서 만듭니다. 엔드포인트가 바뀌면 재생성합니다.
@@ -83,8 +83,8 @@ mvn test -Dtest=ContractDriftTest -Dcontract.update=true
 ```
 
 갱신하지 않으면 `ContractDriftTest`가 빌드를 실패시킵니다. 환경 변수
-`PICKLE_CONTRACT_MASTER`에 수기 설계 계약 YAML 경로를 주면 설계 표면과 구현 표면의 집합
-대조까지 추가로 수행합니다.
+`PICKLE_CONTRACT_MASTER`에 수기로 쓴 설계 명세 YAML 경로를 주면 설계 표면과 구현 표면의
+집합 대조까지 추가로 수행합니다.
 
 실행 중인 서버도 같은 스펙을 제공합니다: https://pickle.pusan.ac.kr/api/v1/openapi
 
@@ -182,6 +182,7 @@ prod 프로파일에서는 시더가 돌지 않고 `ProdBootstrapSeeder`가 최�
 
 ## 전체 아키텍처
 
+<!-- arch:begin — 저장소 공통 블록입니다. 손으로 고치지 마세요. -->
 ```mermaid
 flowchart LR
     subgraph ext [외부]
@@ -208,6 +209,7 @@ flowchart LR
         DB[(PostgreSQL)]
         PVE[Proxmox VE]
         VM[사용자 VM]
+        IB[pickle-image-builder]
     end
 
     B --> PN
@@ -234,6 +236,7 @@ flowchart LR
     A -->|도메인 설정| P
     P -.->|vhost 적용| VN
     PVE -.->|생성/제어| VM
+    IB -.->|템플릿 빌드| PVE
 ```
 
 | 저장소 | 역할 |
@@ -243,7 +246,9 @@ flowchart LR
 | [pickle-sshgw](https://github.com/PNUops/pickle-sshgw) | SSH 게이트웨이와 웹 터미널 브리지 (sshpiperd, Go) |
 | [pickle-proxy-agent](https://github.com/PNUops/pickle-proxy-agent) | nginx 리버스 프록시 제어 에이전트 (Go) |
 | [pickle-relay-agent](https://github.com/PNUops/pickle-relay-agent) | 오프캠퍼스 릴레이의 nftables DNAT 에이전트 (Go) |
+| [pickle-image-builder](https://github.com/PNUops/pickle-image-builder) | 사용자 VM OS 이미지 빌드 레시피 (shell, virt-customize) |
 | [pickle-infra](https://github.com/PNUops/pickle-infra) (비공개) | 인프라 프로비저닝 스크립트와 운영 런북 (shell) |
 | [pickle-infra-example](https://github.com/PNUops/pickle-infra-example) | 프로비저닝·배포 스크립트와 런북 샘플 |
 | [pickle-secrets](https://github.com/PNUops/pickle-secrets) (비공개) | 호스트 시크릿 볼트 (git-crypt) |
 | [pickle-secrets-example](https://github.com/PNUops/pickle-secrets-example) | 볼트 레이아웃과 git-crypt 운용 절차 |
+<!-- arch:end -->
