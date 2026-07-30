@@ -18,7 +18,7 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 ## 주요 기능
 
 플랫폼은 VM 신청·승인·생성, SSH와 웹 터미널 접속, 도메인 공개, 만료와
-삭제까지를 다룹니다. 이 저장소가 맡는 부분은 아래와 같습니다.
+삭제까지를 다룹니다. 이 레포지토리가 맡는 부분은 아래와 같습니다.
 
 - **프로비저닝 파이프라인**: 승인된 신청을 받아 VM을 만들고 내부 IP와 초기 계정, 접속
   정보까지 준비합니다.
@@ -35,7 +35,7 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 
 ## 동작 방식
 
-- **Proxmox 클라이언트**를 이 저장소에서 직접 구현합니다. 실제 서버 응답을 캡처해 둔
+- **Proxmox 클라이언트**를 이 레포지토리에서 직접 구현합니다. 실제 서버 응답을 캡처해 둔
   WireMock 테스트로 응답 명세를 고정해 검증합니다.
 - **잡 큐가 데이터베이스에 있습니다.** JobRunr가 잡을 PostgreSQL 테이블에 저장하므로
   최소 1회 실행과 백오프 재시도, 진행 상황 대시보드가 따라옵니다. 워커는 API와 같은 JVM에서
@@ -182,7 +182,7 @@ prod 프로파일에서는 시더가 돌지 않고 `ProdBootstrapSeeder`가 최�
 
 ## 전체 아키텍처
 
-<!-- arch:begin — 저장소 공통 블록입니다. 손으로 고치지 마세요. -->
+<!-- arch:begin — 레포지토리 공통 블록입니다. 손으로 고치지 마세요. -->
 ```mermaid
 flowchart LR
     subgraph ext [외부]
@@ -239,7 +239,7 @@ flowchart LR
     IB -.->|템플릿 빌드| PVE
 ```
 
-| 저장소 | 역할 |
+| 레포지토리 | 역할 |
 |---|---|
 | [pickle-api](https://github.com/PNUops/pickle-api) | REST API와 프로비저닝 워커 (Spring Boot 4, Java 25, PostgreSQL 18, JobRunr) |
 | [pickle-console](https://github.com/PNUops/pickle-console) | 사용자·관리자 웹 콘솔 (React 19, TypeScript) |
