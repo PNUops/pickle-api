@@ -40,11 +40,11 @@ $$;
 -- directly. Everything below still operates on rows the application writes at
 -- runtime, which is why it stays.
 
-update certificates
-   set scope = '*.pusan.dev',
-       updated_at = now()
- where kind = 'ORIGIN_CA_WILDCARD'
-   and scope = '*.pickle.pnuops.com';
+-- The wildcard row's scope is not swapped here either, and for the same reason
+-- as the allow-list above: no migration creates that row. The bootstrap script
+-- writes it, reading the expiry off the installed certificate and refusing when
+-- the material does not cover the scope — so it cannot assert a wildcard nobody
+-- obtained, which is what a seeded row here did.
 
 -- Submit-time root preference carried on requests that have not published yet.
 -- Left alone these self-heal at publish (an unallowed stored root falls back to

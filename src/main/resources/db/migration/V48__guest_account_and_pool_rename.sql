@@ -11,4 +11,6 @@ alter table vms alter column ssh_username set default 'ubuntu';
 
 update vms set ssh_username = 'ubuntu';
 
-update ip_pools set name = 'guest-private' where name = 'student-vmbr2';
+-- The pool rename is gone with the seed it renamed: no migration creates an IP
+-- pool any longer, so this matched nothing. The bootstrap script writes the
+-- pool under its current name.

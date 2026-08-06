@@ -4,4 +4,8 @@
 -- 172.30.0.1 in /etc/hosts (set up when the application container is built).
 -- Found at the cutover smoke (2026-07-09): step 3 failed hostname
 -- verification against https://172.30.0.1:8006 (V3 seed value).
-update nodes set api_host = 'https://pve1:8006' where name = 'pve1';
+-- The correction itself is gone: it existed to repair a node row a migration
+-- had seeded, and no migration seeds a node any longer. An operator bootstrap
+-- script registers the node, and it refuses an api_host that is not a SAN of
+-- the certificate the api pins — which is the rule this file discovered, now
+-- enforced where the row is actually written instead of patched afterwards.

@@ -44,21 +44,12 @@ update vm_requests r
                     else 'basic'
                 end;
 
--- Repoint every FK off the -small/-large preset rows, then fold them away.
-update vm_requests
-   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where template_id in (select id from vm_templates
-                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-update vms
-   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where template_id in (select id from vm_templates
-                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-update vm_request_reviews
-   set granted_template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where granted_template_id in (select id from vm_templates
-                                where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-
-delete from vm_templates where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large');
+-- The consolidation that stood here folded three seeded catalog rows into one
+-- and repointed every foreign key off the two it removed. All of it is gone
+-- with the seed: no migration inserts a catalog row, so there were no preset
+-- rows to fold and no keys pointing at them. What the change was really about
+-- — that size is a separate axis from the image — survives as the schema
+-- below.
 
 alter table vm_templates
     drop column default_vcpu,

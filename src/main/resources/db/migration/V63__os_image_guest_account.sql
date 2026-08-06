@@ -31,10 +31,12 @@ alter table os_images
 -- and its guest account has been 'ubuntu' since V48. The version is read off
 -- the name where it looks like a release so a manually added ubuntu-22.04 row
 -- gets its own value rather than the seed's.
-update os_images
-   set os_family    = 'ubuntu',
-       os_version   = coalesce(substring(name from '^ubuntu-([0-9]+\.[0-9]+)'), '24.04'),
-       ssh_username = 'ubuntu';
+-- The backfill that stood here filled the three new columns on rows a
+-- migration had seeded. Nothing seeds a catalog row now, so it matched
+-- nothing, and the columns below can go straight to NOT NULL on the empty
+-- table. The bootstrap script supplies all three per image when it registers
+-- one — which is the point of the change: the guest account is a property of
+-- the image, not a platform constant to be defaulted here.
 
 alter table os_images
     alter column os_family set not null,
