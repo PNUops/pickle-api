@@ -100,8 +100,8 @@ alter table vm_request_reviews
     add column granted_subdomain text,
     add column granted_root_domain text;
 
--- Profanity/impersonation denylist for subdomain labels. Small
--- admin-extendable wordlist; validated alongside reserved_subdomains at approval.
-insert into settings (key, value, description) values
-    ('profanity_subdomains', '["fuck","shit","porn","sex","admin-official","pnu-official"]'::jsonb,
-     'Profanity/impersonation denylist for platform subdomain labels. Admin-extendable.');
+-- The profanity/impersonation denylist for subdomain labels
+-- (profanity_subdomains, validated alongside reserved_subdomains at approval) is
+-- not seeded here. It is a curated wordlist an operator maintains against the
+-- names this deployment must not hand out, so an operator bootstrap script writes
+-- it and the dev/test seeder supplies a short equivalent.

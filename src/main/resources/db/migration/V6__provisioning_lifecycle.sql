@@ -59,10 +59,7 @@ comment on column vms.initial_password is
 comment on column vms.delete_scheduled_for is
     'When the deletion sweeper may hard-delete: self-delete now()+vm_delete_grace_hours, admin delete >= admin_delete_min_notice_days out.';
 
--- ── Settings keys read by the deletion flow. Operator-tunable at runtime.
---    168 h = 7 days grace (operator decision 2026-07-08). ──
-insert into settings (key, value, description) values
-    ('vm_delete_grace_hours', '168'::jsonb,
-     'Grace period between a self-delete request and the hard delete.'),
-    ('admin_delete_min_notice_days', '7'::jsonb,
-     'Minimum notice an admin-scheduled routine delete must give the owner.');
+-- No settings seed here. The deletion flow reads vm_delete_grace_hours (and once
+-- read admin_delete_min_notice_days, dropped in V54): both are operator policy
+-- rather than schema. An operator bootstrap script writes them and the dev/test
+-- seeder supplies an equivalent.

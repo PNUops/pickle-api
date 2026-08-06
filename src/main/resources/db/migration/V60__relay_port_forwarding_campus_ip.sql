@@ -128,14 +128,9 @@ alter type vm_event_type add value if not exists 'PORT_FORWARD_DELETE';
 -- path refuses with a stated reason instead, which is the honest failure. The
 -- operations script registers the real relay. See the migration convention.
 
-insert into settings (key, value, description) values
-    ('port_forwarding_enabled', 'false',
-     '포트 포워딩(릴레이 공개 포트) 기능 스위치. false면 신규 생성이 차단됩니다 (기존 매핑은 유지).'),
-    ('port_forward_alloc_limit_per_hour', '20',
-     '사용자별 포트 포워딩 생성 허용 횟수(시간당).'),
-    ('port_forward_band_alert_percent', '80',
-     '릴레이 공개 포트 대역 사용률 경고 임계값(%). 도달 시 시스템 관리자에게 알림을 보냅니다.'),
-    ('port_forward_suspend_conns_per_min', '6000',
-     '매핑별 분당 신규 연결 수 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.'),
-    ('port_forward_suspend_mbytes_per_min', '1000',
-     '매핑별 분당 전송량(MB) 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.');
+-- The five port-forwarding settings are not seeded either. The feature switch
+-- follows the relay it depends on, and the per-hour allocation limit, the band
+-- alert threshold and the two automatic-suspension thresholds are rate judgements
+-- made against a real relay's capacity. An operator bootstrap script writes them;
+-- the dev/test seeder supplies equivalents. Creation is refused while the switch
+-- is absent or false.

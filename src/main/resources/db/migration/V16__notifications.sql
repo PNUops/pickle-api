@@ -60,15 +60,15 @@ create index notifications_status_created_idx on notifications (status, created_
 create unique index notifications_user_dedup_uq on notifications (user_id, dedup_key)
     where dedup_key is not null;
 
--- ── Settings seeds (operator-tunable). ──
-insert into settings (key, value, description) values
-    ('notification_retention_days', '365'::jsonb,
-     '알림 보관 기간(일). 기간이 지난 알림은 정리 작업이 삭제합니다. (30~3650)'),
-    ('vm_expiry_notice_days', '[14,7,1]'::jsonb,
-     'VM 사용 종료 사전 알림 시점(D-일). 내림차순 단계 최대 5개, 각 1~90. D-1 알림은 HIGH 중요도로 표시됩니다.');
+-- No settings seed here. notification_retention_days and vm_expiry_notice_days
+-- are retention and notice-timing policy an operator sets, so an operator
+-- bootstrap script writes them and the dev/test seeder supplies equivalents.
 
 -- ── Console settings screen shows description as-is (contract v0.5.0:
---    SettingView.description is Korean) — relabel the earlier English seeds. ──
+--    SettingView.description is Korean). These relabels now find nothing on a
+--    database built from these files, since the rows they targeted are written
+--    with their Korean text by whoever creates them; they are kept because the
+--    already-migrated database still carries the English text they replace. ──
 update settings set description = 'VM 신청에서 선택할 수 있는 루트 도메인 목록.'
  where key = 'allowed_root_domains';
 update settings set description = '신청할 수 없는 예약 서브도메인 목록.'

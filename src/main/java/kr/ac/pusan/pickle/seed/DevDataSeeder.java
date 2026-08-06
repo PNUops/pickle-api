@@ -69,6 +69,10 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        // Runs before everything else: these rows carry the switches and lists the
+        // rest of startup reads.
+        seedSettings();
+
         seedUser(properties.sysadminEmail(), properties.sysadminPassword(), "시스템 관리자",
                 UserRole.SYS_ADMIN, null);
 
@@ -85,6 +89,96 @@ public class DevDataSeeder implements ApplicationRunner {
 
         enableGatewayKillSwitches();
         seedInventory();
+    }
+
+    /**
+     * Fills the runtime-tunable {@code settings} store for a development or test
+     * database.
+     *
+     * <p>The migrations seed none of these keys. A root domain names a zone this
+     * deployment owns, the two approval thresholds are judgements about real
+     * hardware, the rate limits are judgements about a real relay, and the
+     * contact address is a real mailbox: all of them are content a deployment
+     * supplies, not schema. An operator bootstrap script writes them in
+     * production. Development and test run no such script, and while every reader
+     * falls back cleanly on a missing row (see the typed getters), the fallbacks
+     * are conservative by design, so an unseeded database would quietly answer
+     * "no root domains" and "no reserved names" to tests that are about
+     * something else.</p>
+     *
+     * <p>Values follow the deployed ones with two deliberate departures. Both
+     * gateway kill switches start {@code false}, because a development database
+     * must not assume an SSH gateway or a terminal bridge exists (the fresh-database
+     * pass below turns them on where that is safe). And the reserved and profanity
+     * lists are the short original sets rather than the curated production lists:
+     * a test that asserted on a few hundred operator-chosen names would be
+     * asserting on an operations decision.</p>
+     *
+     * <p>Acts only when the table is empty, so an operator or a test that has
+     * already arranged a value is never overwritten.</p>
+     */
+    private void seedSettings() {
+        Integer rows = jdbcTemplate.queryForObject("select count(*) from settings", Integer.class);
+        if (rows == null || rows > 0) {
+            return;
+        }
+        setting("allowed_root_domains", "[\"pusan.dev\"]",
+                "VM 신청에서 선택할 수 있는 루트 도메인 목록.");
+        setting("reserved_subdomains",
+                "[\"www\",\"api\",\"admin\",\"ssh\",\"mail\",\"console\",\"staging\"]",
+                "신청할 수 없는 예약 서브도메인 목록.");
+        setting("profanity_subdomains",
+                "[\"fuck\",\"shit\",\"porn\",\"sex\",\"admin-official\",\"pnu-official\"]",
+                "서브도메인 금칙어(욕설·사칭) 목록. 관리자가 확장할 수 있습니다.");
+        setting("vcpu_overcommit_warn", "3.0",
+                "승인 화면 경고 임계값 — 할당 vCPU / 물리 스레드 비율.");
+        setting("memory_usage_warn", "0.8",
+                "승인 화면 경고 임계값 — 할당 메모리 / 물리 메모리 비율.");
+        setting("ip_quarantine_hours", "24",
+                "회수된 IP를 재할당하지 않고 격리하는 시간(시간). 릴레이 에이전트가 보관된 스냅샷을"
+                        + " 재적용할 수 있는 기간(24시간)보다 짧게 설정할 수 없습니다.");
+        setting("vm_delete_grace_hours", "168",
+                "본인 삭제 접수 후 파기까지의 유예 시간(시간). 유예는 관리자 복구용 안전망.");
+        setting("ssh_gateway_enabled", "false",
+                "SSH 게이트웨이 전체 활성화 (킬 스위치). false면 모든 SSH 접속이 차단됩니다.");
+        setting("web_terminal_enabled", "false",
+                "웹 터미널(브라우저 xterm.js) 전역 킬 스위치. false면 티켓 발급·재교환이 모두 거부되고,"
+                        + " 진행 중이던 세션은 다음 60초 재검증에서 종료됩니다."
+                        + " 우선순위: 킬 스위치 > per-VM 차단 > 멤버십.");
+        setting("notification_retention_days", "365",
+                "알림 보관 기간(일). 기간이 지난 알림은 정리 작업이 삭제합니다. (30~3650)");
+        setting("vm_expiry_notice_days", "[14,7,1]",
+                "VM 사용 종료 사전 알림 시점(D-일). 내림차순 단계 최대 5개, 각 1~90."
+                        + " D-1 알림은 HIGH 중요도로 표시됩니다.");
+        setting("vm_expiry_autostop_enabled", "true",
+                "사용 기간(end_date, 포함)이 지난 VM을 매시간 자동 정지할지 여부."
+                        + " 끄면 예고 알림만 발송됩니다.");
+        setting("maintenance_mode", "false",
+                "점검 모드. true면 관리자 계층이 아닌 모든 인증 요청이 503(MAINTENANCE_MODE)으로"
+                        + " 거부됩니다. 변경은 15초 이내 반영.");
+        setting("maintenance_message", "\"\"",
+                "점검 모드 안내 문구. 비우면 기본 안내 문구를 사용합니다.");
+        setting("banner_message", "\"\"",
+                "전역 공지 배너 문구(점검 모드와 독립 — 콘솔 상단 배너). 비우면 배너를 표시하지 않습니다.");
+        setting("contact_email", "\"\"",
+                "운영 문의 이메일(콘솔 푸터·점검·오류 화면에 표시). 비우면 표시하지 않습니다.");
+        setting("port_forwarding_enabled", "false",
+                "포트 포워딩(릴레이 공개 포트) 기능 스위치. false면 신규 생성이 차단됩니다"
+                        + " (기존 매핑은 유지).");
+        setting("port_forward_alloc_limit_per_hour", "20",
+                "사용자별 포트 포워딩 생성 허용 횟수(시간당).");
+        setting("port_forward_band_alert_percent", "80",
+                "릴레이 공개 포트 대역 사용률 경고 임계값(%). 도달 시 시스템 관리자에게 알림을 보냅니다.");
+        setting("port_forward_suspend_conns_per_min", "6000",
+                "매핑별 분당 신규 연결 수 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.");
+        setting("port_forward_suspend_mbytes_per_min", "1000",
+                "매핑별 분당 전송량(MB) 자동 정지 임계값. 초과 시 해당 매핑을 자동 SUSPENDED 처리합니다.");
+        log.info("Empty settings: seeded the development settings");
+    }
+
+    private void setting(String key, String valueJson, String description) {
+        jdbcTemplate.update("insert into settings (key, value, description)"
+                + " values (?, ?::jsonb, ?)", key, valueJson, description);
     }
 
     /**
@@ -228,7 +322,7 @@ public class DevDataSeeder implements ApplicationRunner {
      * Turns the SSH-gateway and web-terminal kill switches on when the database is
      * freshly created.
      *
-     * <p>The migrations seed both to {@code false} on purpose: in production a
+     * <p>Both are seeded {@code false} above on purpose: in production a
      * capability is switched on deliberately, after its infrastructure is wired and
      * verified. On a development database that default is a trap — recreating the
      * database silently leaves user SSH and the web terminal dead while the code

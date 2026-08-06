@@ -20,6 +20,7 @@ alter table vms
 comment on column vms.ssh_gateway_blocked is
     'Per-VM SSH gateway kill switch: when true POST /internal/sshgw/route denies this VM regardless of power state. Cleared by a sys-admin to restore access.';
 
-insert into settings (key, value, description) values
-    ('ssh_gateway_enabled', 'false'::jsonb,
-     'Global SSH gateway kill switch. Route lookups deny all traffic while false; operator flips it true at gateway cutover.');
+-- The global ssh_gateway_enabled kill switch is not seeded here. Whether the
+-- gateway is wired and safe to serve is a fact about a deployment, so an operator
+-- bootstrap script writes the row; the dev/test seeder supplies an equivalent.
+-- Route lookups deny all traffic while the switch is absent or false.

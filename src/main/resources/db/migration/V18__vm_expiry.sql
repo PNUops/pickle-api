@@ -12,8 +12,7 @@ comment on column vms.expiry_stopped_at is
 comment on column vms.last_expiry_notice_stage is
     'Smallest D-day stage (days before end_date) already notified for the current end_date; the CAS "stage < current" guard makes hourly re-runs send nothing.';
 
--- vm_expiry_notice_days ([14, 7, 1]) is seeded by V16 with the notification
--- core — only the autostop switch belongs to this migration.
-insert into settings (key, value, description) values
-    ('vm_expiry_autostop_enabled', 'true'::jsonb,
-     '사용 기간(end_date, 포함)이 지난 VM을 매시간 자동 정지할지 여부. 끄면 예고 알림만 발송됩니다.');
+-- The vm_expiry_autostop_enabled switch is not seeded here. Whether an expired VM
+-- is stopped automatically or only warned about is an operator policy decision,
+-- so an operator bootstrap script writes the row and the dev/test seeder supplies
+-- an equivalent.
