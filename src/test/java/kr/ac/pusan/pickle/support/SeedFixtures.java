@@ -13,6 +13,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 public final class SeedFixtures {
 
     /** Seed org slug ({@link DevDataSeeder#ORG_SLUG}); the org is seeded hidden. */
+    /** Proxmox template the seeded catalog row clones from. */
+    public static final int TEMPLATE_VMID = DevDataSeeder.SEED_TEMPLATE_VMID;
+
     public static final String ORG_SLUG = DevDataSeeder.ORG_SLUG;
 
     /** Seed org display name ({@link DevDataSeeder#ORG_NAME}). */

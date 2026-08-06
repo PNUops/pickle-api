@@ -144,7 +144,7 @@ class ProvisionPipelineTest {
         // "exists" so the compensation existence check finds and destroys it.
         for (int attempt = 0; attempt < 4; attempt++) {
             String from = attempt == 0 ? Scenario.STARTED : "failed-" + attempt;
-            wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
+            wm.server().stubFor(post(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone"))
                     .inScenario("clone-fail")
                     .whenScenarioStateIs(from)
                     .willReturn(jsonFixture(500, "11-clone-dup-error"))
@@ -179,7 +179,7 @@ class ProvisionPipelineTest {
         // attempt 4: budget exhausted → compensation
         job.provisionVm(vmId);
 
-        wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
         wm.server().verify(putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .withRequestBody(containing("protection=0")));
         wm.server().verify(1, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
@@ -228,7 +228,7 @@ class ProvisionPipelineTest {
                 String.class, vmId)).isEqualTo("ALLOCATED");
         // start was retried on every run (steps 0–6 were not re-executed)
         wm.server().verify(4, postRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/status/start")));
-        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
     }
 
     // ── ②b host-key collection keeps failing → NEEDS_ADMIN, VM intact ────────
@@ -284,7 +284,7 @@ class ProvisionPipelineTest {
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
                 .inScenario("crash").whenScenarioStateIs(Scenario.STARTED)
                 .willReturn(okFixture("03-cluster-resources")));
-        wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
+        wm.server().stubFor(post(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone"))
                 .inScenario("crash").whenScenarioStateIs(Scenario.STARTED)
                 .willReturn(okFixture("10-clone"))
                 .willSetStateTo("vm-exists"));
@@ -311,7 +311,7 @@ class ProvisionPipelineTest {
 
         job.provisionVm(vmId); // the scheduled retry run
 
-        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(1, postRequestedFor(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
         task = latestTask(vmId);
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
         assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.FINALIZE.index());
@@ -418,7 +418,7 @@ class ProvisionPipelineTest {
         assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.DONE);
         Vm vm = vmRepository.findById(vmId).orElseThrow();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.RUNNING);
-        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
         wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
         assertThat(jdbc.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
@@ -470,7 +470,7 @@ class ProvisionPipelineTest {
         // and finds a guest that is not ours (foreign name, no pickle tag)
         for (int attempt = 0; attempt < 4; attempt++) {
             String from = attempt == 0 ? Scenario.STARTED : "failed-" + attempt;
-            wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
+            wm.server().stubFor(post(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone"))
                     .inScenario("clone-fail-foreign")
                     .whenScenarioStateIs(from)
                     .willReturn(jsonFixture(500, "11-clone-dup-error"))
@@ -567,7 +567,7 @@ class ProvisionPipelineTest {
         Vm vm = vmRepository.findById(vmId).orElseThrow();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
         assertThat(vm.getProxmoxVmid()).isNull();
-        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(1000) + "/clone")));
+        wm.server().verify(0, postRequestedFor(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
         wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
         wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
 
@@ -656,7 +656,7 @@ class ProvisionPipelineTest {
     }
 
     private void stubClone() {
-        wm.server().stubFor(post(urlPathEqualTo(qemuPath(1000) + "/clone"))
+        wm.server().stubFor(post(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone"))
                 .willReturn(okFixture("10-clone")));
         stubTaskStatus(CLONE_UPID, "10-clone-status");
     }

@@ -39,6 +39,10 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DevDataSeeder.class);
 
+    /** Template the development catalog row points at. Tests stub the clone path for
+     * this id, so it lives here rather than in three places that can drift apart. */
+    public static final int SEED_TEMPLATE_VMID = 1001;
+
     public static final String ORG_NAME = "테스트 기관";
     public static final String ORG_SLUG = "test-org";
 
@@ -151,7 +155,7 @@ public class DevDataSeeder implements ApplicationRunner {
                 "insert into os_images (name, display_name, os_family, os_version,"
                         + " ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status, notes)"
                         + " values ('ubuntu-24.04', 'Ubuntu 24.04 LTS', 'ubuntu', '24.04',"
-                        + " 'ubuntu', 1000, ?, 1, 10, 'ACTIVE'::template_status,"
+                        + " 'ubuntu', " + SEED_TEMPLATE_VMID + ", ?, 1, 10, 'ACTIVE'::template_status,"
                         + " '개발용 시드 이미지')", nodeId);
         log.info("Empty inventory: seeded the development OS image (ubuntu-24.04)");
     }
