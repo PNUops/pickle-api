@@ -205,9 +205,9 @@ class ReferenceDataTest {
     }
 
     // The admin settings screen renders `description` verbatim, so it has to stay
-    // Korean (V16 relabelled the original English seeds for exactly that reason).
-    // A later migration touching one of these rows can quietly put English back in
-    // front of users, which is what this pins.
+    // Korean. Whoever creates a settings row writes its description, so a row
+    // created with English text puts English in front of users with nothing to
+    // correct it afterwards — which is what this pins.
     @Test
     void settingDescriptionsStayKorean() throws Exception {
         for (String key : List.of("allowed_root_domains", "reserved_subdomains",
