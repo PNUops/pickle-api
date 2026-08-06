@@ -22,10 +22,12 @@ create table vm_flavors (
     updated_at timestamptz not null default now()
 );
 
-insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, notes) values
-    ('small', '소형',  1, 1024, 10, '봇, 크론 작업 등 초소형 서비스에 적합합니다.'),
-    ('basic', '기본형', 2, 2048, 20, '대부분의 수업·동아리 프로젝트에 적합합니다.'),
-    ('large', '대형',  4, 8192, 40, '대형 스펙은 신청 시 사용 사유를 반드시 적어 주세요.');
+-- No presets are seeded. Which sizes a deployment offers, and what they cost in
+-- vCPU, memory and disk, is a policy the operator sets against the hardware they
+-- actually have -- three sizes sensible on one host are wrong on another. The
+-- admin console creates and edits them (list, create, edit, status), so this is
+-- one of the tables that has a real write path and therefore needs no seed. The
+-- dev/test seeder fills an empty table so a development database is usable.
 
 -- Provenance of the chosen preset (specs themselves stay denormalized on
 -- vm_requests/vm_request_reviews/vms). Nullable in the DB — @NotNull on the

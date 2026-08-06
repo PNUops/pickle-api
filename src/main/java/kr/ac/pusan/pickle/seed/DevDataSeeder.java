@@ -113,6 +113,7 @@ public class DevDataSeeder implements ApplicationRunner {
         }
         seedIpPool(nodeId);
         seedOsImage(nodeId);
+        seedVmFlavors();
         seedRelay();
         seedPlatformCertificate();
     }
@@ -166,6 +167,28 @@ public class DevDataSeeder implements ApplicationRunner {
      * and no setter or endpoint exists to fill the column afterwards. The name is the
      * one the migration used, because tests look the seeded relay up by it.
      */
+    /**
+     * Spec presets for a development or test database.
+     *
+     * <p>The migrations seed none: which sizes a deployment offers is a policy the
+     * operator sets against real hardware, and the admin console can create and edit
+     * them, so production has a write path and needs no seed. Development and test do
+     * not go through that console, and several test classes resolve a preset named
+     * {@code basic}, so an empty table there is a suite that cannot run.</p>
+     */
+    private void seedVmFlavors() {
+        Integer flavors = jdbcTemplate.queryForObject("select count(*) from vm_flavors", Integer.class);
+        if (flavors == null || flavors > 0) {
+            return;
+        }
+        jdbcTemplate.update("insert into vm_flavors (name, display_name, vcpu, memory_mb,"
+                + " disk_gb, notes) values"
+                + " ('small', '소형', 1, 1024, 10, '봇, 크론 작업 등 초소형 서비스에 적합합니다.'),"
+                + " ('basic', '기본형', 2, 2048, 20, '대부분의 수업·동아리 프로젝트에 적합합니다.'),"
+                + " ('large', '대형', 4, 8192, 40, '대형 스펙은 신청 시 사용 사유를 반드시 적어 주세요.')");
+        log.info("Empty inventory: seeded the development spec presets");
+    }
+
     private void seedRelay() {
         Integer relays = jdbcTemplate.queryForObject("select count(*) from relays", Integer.class);
         if (relays == null || relays > 0) {
