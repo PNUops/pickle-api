@@ -69,9 +69,12 @@ public class DevDataSeeder implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        // Runs before everything else: these rows carry the switches and lists the
-        // rest of startup reads.
+        // Both run before the accounts: the settings rows carry the switches the
+        // rest of startup reads, and seedUser grants consent to whatever terms
+        // documents exist at that moment, so an empty table there would leave the
+        // seed accounts permanently behind the consent gate.
         seedSettings();
+        seedTerms();
 
         seedUser(properties.sysadminEmail(), properties.sysadminPassword(), "시스템 관리자",
                 UserRole.SYS_ADMIN, null);
@@ -179,6 +182,36 @@ public class DevDataSeeder implements ApplicationRunner {
     private void setting(String key, String valueJson, String description) {
         jdbcTemplate.update("insert into settings (key, value, description)"
                 + " values (?, ?::jsonb, ?)", key, valueJson, description);
+    }
+
+    /**
+     * The terms and privacy documents a development or test database needs for
+     * the consent gate to have something to enforce.
+     *
+     * <p>The migrations publish neither. Legal text binds one operator to one set
+     * of users, is revised on its own schedule, and a revision is a row rather
+     * than a migration, so an operator bootstrap script publishes the real
+     * documents. Without a row here signup fails closed with
+     * "약관 문서가 준비되지 않았습니다" and every account-creating test fails with
+     * it, so the two documents are seeded — with a placeholder body. The real
+     * prose is not copied in: it would put a legal document under test fixtures,
+     * where an edit made for a test's convenience is an edit to the terms users
+     * agreed to. No test asserts on its wording.</p>
+     */
+    private void seedTerms() {
+        Integer documents = jdbcTemplate.queryForObject("select count(*) from terms_versions",
+                Integer.class);
+        if (documents == null || documents > 0) {
+            return;
+        }
+        jdbcTemplate.update("insert into terms_versions (doc_type, version, title, body,"
+                + " effective_at) values"
+                + " ('TERMS_OF_SERVICE', 1, ?, ?, now()), ('PRIVACY_POLICY', 1, ?, ?, now())",
+                "부산대학교 클라우드 플랫폼 서비스 이용약관",
+                "# 개발용 이용약관 자리표시자 — 실제 약관은 운영자가 게시합니다.",
+                "부산대학교 클라우드 플랫폼 개인정보처리방침",
+                "# 개발용 개인정보처리방침 자리표시자 — 실제 문서는 운영자가 게시합니다.");
+        log.info("Empty terms: seeded the development placeholder documents");
     }
 
     /**
