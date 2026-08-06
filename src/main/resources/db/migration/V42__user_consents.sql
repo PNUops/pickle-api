@@ -15,11 +15,9 @@ create index user_consents_user_id_idx on user_consents (user_id);
 comment on table user_consents is
     'User consent to a specific terms_versions row. Missing current-version row = pending consent.';
 
--- Backfill: pre-production users (seeded admins + dev accounts) predate consent
--- enforcement, so grant them consent to every existing (v1) document as of now.
--- Without this every existing account would be blocked on the consent gate.
-insert into user_consents (user_id, terms_version_id, consented_at)
-select u.id, tv.id, now()
-  from users u
- cross join terms_versions tv
-on conflict (user_id, terms_version_id) do nothing;
+-- No backfill. One lived here: it granted every existing account consent to every
+-- v1 document so that accounts predating the consent gate were not locked out. It
+-- selects from `users`, and no migration inserts a user, so on any database built
+-- from these files it writes zero rows -- it only ever did work on the one
+-- already-populated database it was written against. Accounts created since record
+-- their consent at signup.
