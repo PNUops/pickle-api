@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface GroupRepository extends JpaRepository<Group, Long> {
 
     /**
-     * Slug uniqueness is over live rows only (V34 partial unique index), so a
+     * Slug uniqueness is over live rows only (V33 partial unique index), so a
      * deleted group's slug can be reused (contract: deleteGroup).
      */
     boolean existsBySlugAndDeletedAtIsNull(String slug);

@@ -9,7 +9,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
 
-/** A user's consent to one {@link TermsVersion} (table {@code user_consents}, V42). */
+/** A user's consent to one {@link TermsVersion} (table {@code user_consents}, V41). */
 @Entity
 @Table(name = "user_consents")
 public class UserConsent {

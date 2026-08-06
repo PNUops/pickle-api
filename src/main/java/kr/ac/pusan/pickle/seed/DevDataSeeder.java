@@ -407,7 +407,8 @@ public class DevDataSeeder implements ApplicationRunner {
             personalGroupService.ensurePersonalGroup(user);
         });
         // Seed accounts bypass signup, so grant consent to the current documents
-        // idempotently (a fresh DB seeds users after the V42 backfill ran empty).
+        // idempotently: no migration grants consent, so a seeded account starts with
+        // none whatever order the seeder runs in.
         userRepository.findByEmail(email)
                 .ifPresent(user -> termsService.ensureCurrentConsents(user.getId()));
     }

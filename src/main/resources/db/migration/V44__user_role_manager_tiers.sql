@@ -4,11 +4,11 @@
 -- the users.org_id ⇔ role invariant so ORG_MANAGER, like ORG_ADMIN, carries a
 -- managed org.
 --
--- PG rule (see V21 note): a value added by ALTER TYPE ... ADD VALUE cannot be
+-- PG rule (see the V20 note): a value added by ALTER TYPE ... ADD VALUE cannot be
 -- *used* as an enum value in the same transaction that added it. Flyway runs
 -- this migration in one transaction, so the rewritten CHECK compares role::text
 -- against text literals — the new 'ORG_MANAGER' value is never materialised as
--- an enum here — keeping the whole change atomic (V21 precedent: a single
+-- an enum here — keeping the whole change atomic (V20 precedent: a single
 -- transactional migration, no non-transactional escape hatch needed).
 
 alter type user_role add value if not exists 'ORG_MANAGER';

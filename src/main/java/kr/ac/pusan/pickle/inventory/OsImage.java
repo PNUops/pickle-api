@@ -32,17 +32,17 @@ public class OsImage {
 
     /** Distribution short id ({@code ubuntu}, {@code debian}, {@code rocky}) — a
      * checked slug rather than an enum, so a new OS stays a catalog row rather
-     * than a schema change (V63). */
+     * than a schema change (V62). */
     @Column(name = "os_family", nullable = false)
     private String osFamily;
 
     /** Release string as the distribution writes it ({@code 24.04}, {@code 13},
-     * {@code 10}) — a label, not a sort key (V63). */
+     * {@code 10}) — a label, not a sort key (V62). */
     @Column(name = "os_version", nullable = false)
     private String osVersion;
 
     /** Guest admin account this image ships; becomes the VM's login name and the
-     * cloud-init {@code ciuser} at provisioning (V63). */
+     * cloud-init {@code ciuser} at provisioning (V62). */
     @Column(name = "ssh_username", nullable = false)
     private String sshUsername;
 
