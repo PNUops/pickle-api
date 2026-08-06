@@ -10,7 +10,7 @@ import java.time.Instant;
 import org.hibernate.annotations.CreationTimestamp;
 
 /**
- * One single-use 2FA recovery code (table {@code mfa_recovery_codes}, V40).
+ * One single-use 2FA recovery code (table {@code mfa_recovery_codes}, V39).
  * Stored only as a BCrypt hash; {@code used_at} marks consumption.
  */
 @Entity

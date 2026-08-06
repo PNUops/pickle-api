@@ -60,30 +60,11 @@ create index notifications_status_created_idx on notifications (status, created_
 create unique index notifications_user_dedup_uq on notifications (user_id, dedup_key)
     where dedup_key is not null;
 
--- ── Settings seeds (operator-tunable). ──
-insert into settings (key, value, description) values
-    ('notification_retention_days', '365'::jsonb,
-     '알림 보관 기간(일). 기간이 지난 알림은 정리 작업이 삭제합니다. (30~3650)'),
-    ('vm_expiry_notice_days', '[14,7,1]'::jsonb,
-     'VM 사용 종료 사전 알림 시점(D-일). 내림차순 단계 최대 5개, 각 1~90. D-1 알림은 HIGH 중요도로 표시됩니다.');
-
--- ── Console settings screen shows description as-is (contract v0.5.0:
---    SettingView.description is Korean) — relabel the earlier English seeds. ──
-update settings set description = 'VM 신청에서 선택할 수 있는 루트 도메인 목록.'
- where key = 'allowed_root_domains';
-update settings set description = '신청할 수 없는 예약 서브도메인 목록.'
- where key = 'reserved_subdomains';
-update settings set description = '서브도메인 금칙어(욕설·사칭) 목록. 관리자가 확장할 수 있습니다.'
- where key = 'profanity_subdomains';
-update settings set description = '승인 화면 경고 임계값 — 할당 vCPU / 물리 스레드 비율.'
- where key = 'vcpu_overcommit_warn';
-update settings set description = '승인 화면 경고 임계값 — 할당 메모리 / 물리 메모리 비율.'
- where key = 'memory_usage_warn';
-update settings set description = '회수된 IP를 재할당하지 않고 격리하는 시간(시간).'
- where key = 'ip_quarantine_hours';
-update settings set description = '셀프 삭제 접수 후 물리 파기까지의 유예 시간(시간).'
- where key = 'vm_delete_grace_hours';
-update settings set description = '관리자 예약 삭제가 보장해야 하는 최소 사전 통보 기간(일).'
- where key = 'admin_delete_min_notice_days';
-update settings set description = 'SSH 게이트웨이 전체 활성화 (킬 스위치). false면 모든 SSH 접속이 차단됩니다.'
- where key = 'ssh_gateway_enabled';
+-- No settings data here any more. This migration seeded notification_retention_days
+-- and vm_expiry_notice_days, and relabelled nine earlier settings descriptions to
+-- Korean because the admin settings screen renders `description` verbatim
+-- (contract v0.5.0). All of it was deployment content rather than schema: an
+-- operator bootstrap script writes the rows now, with their Korean text written
+-- once at creation, and the dev/test seeder supplies equivalents. The relabels
+-- went with them -- they targeted rows no migration creates, so they matched
+-- nothing.

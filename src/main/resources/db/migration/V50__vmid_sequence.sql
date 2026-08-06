@@ -12,7 +12,8 @@
 -- (its "nextid recycles vmids" rationale is now historical).
 create sequence vmid_seq start with 100000 maxvalue 999999999;
 
--- Point provisioning at the rebuilt template: 1000 is the first number of
--- the template band (the V3 seed pointed all three presets at the retired
--- 9000, one literal for all rows).
-update vm_templates set proxmox_vmid = 1000 where proxmox_vmid = 9000;
+-- The catalog fix-up that used to sit here is gone with the seed it fixed: no
+-- migration inserts a catalog row any longer, so it matched nothing. Which
+-- template a catalog row points at is a property of the host, and an operator
+-- bootstrap script writes it — refusing outright when the template is not
+-- there, which is the failure this literal used to produce at clone time.

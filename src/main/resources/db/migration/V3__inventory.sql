@@ -51,14 +51,9 @@ create index vm_templates_node_id_idx on vm_templates (node_id);
 -- the real ones; the dev/test seeder supplies equivalents where nobody runs that
 -- script. See the migration convention.
 
--- ── Settings keys read by the request wizard and approval/publishing
---    phases. Values are operator-tunable at runtime. ──
-insert into settings (key, value, description) values
-    ('allowed_root_domains', '["pickle.pnuops.com"]'::jsonb,
-     'Root domains selectable as rootDomain in VM requests (GET /meta/request-options).'),
-    ('reserved_subdomains', '["www","api","admin","ssh","mail","console","staging"]'::jsonb,
-     'Subdomains that can never be requested as desiredSubdomain.'),
-    ('vcpu_overcommit_warn', '3.0'::jsonb,
-     'Approval-context warning threshold: allocated vCPU / physical threads.'),
-    ('memory_usage_warn', '0.8'::jsonb,
-     'Approval-context warning threshold: allocated memory / physical memory.');
+-- No settings seed here. The request wizard and the approval/publishing phases
+-- read allowed_root_domains, reserved_subdomains, vcpu_overcommit_warn and
+-- memory_usage_warn: a root domain names a zone this deployment owns and the two
+-- thresholds are judgements about real hardware, so all four are deployment
+-- content rather than schema. An operator bootstrap script writes them; the
+-- dev/test seeder supplies equivalents. See the migration convention.

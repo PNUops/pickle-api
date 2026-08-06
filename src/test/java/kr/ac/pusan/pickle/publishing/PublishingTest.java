@@ -206,7 +206,7 @@ class PublishingTest {
     @Test
     void publishRejectsReservedSubdomain() throws Exception {
         long vmId = publishableVm(null, "pusan.dev", VmStatus.RUNNING);
-        publish(vmId, "{\"port\":80,\"subdomain\":\"portal\"}")
+        publish(vmId, "{\"port\":80,\"subdomain\":\"admin\"}")
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
@@ -214,10 +214,11 @@ class PublishingTest {
 
     @Test
     void publishRevalidatesTheStoredRequestFormSubdomain() throws Exception {
-        // A name stored on the request row before the reserved list grew must
-        // be refused when the publish falls back to it — the stored-value
-        // branch runs the same policy as the body branch.
-        long vmId = publishableVm("portal", "pusan.dev", VmStatus.RUNNING);
+        // A reserved name stored on the request row (submitted before the
+        // operator added it to the list) must be refused when the publish falls
+        // back to it — the stored-value branch runs the same policy as the body
+        // branch.
+        long vmId = publishableVm("console", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}")
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))

@@ -60,7 +60,7 @@ class ConsentFlowTest {
 
     @Test
     void newUserHasPendingConsentsThenClearsAfterAccepting() throws Exception {
-        // A user created after the V42 backfill has no consent rows yet.
+        // A newly created user has no consent rows: nothing grants them but signup.
         User user = createActiveUser("consent.flow@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
 

@@ -1,3 +1,18 @@
+-- Rename the OS catalog to match what it holds. V58 moved the spec presets out
+-- into vm_flavors, leaving vm_templates a pure OS catalog under a name that no
+-- longer describes it; the foreign keys pointing at it follow the same rename.
+--
+-- Storage-side only. The /templates and /admin/templates paths, the request and
+-- response field names (templateId, grantedTemplateId) and the template_status
+-- enum type (shared with vm_flavors) all stay as they are.
+
+alter table vm_templates rename to os_images;
+alter index vm_templates_node_id_idx rename to os_images_node_id_idx;
+
+alter table vm_requests rename column template_id to image_id;
+alter table vms rename column template_id to image_id;
+alter table vm_request_reviews rename column granted_template_id to granted_image_id;
+
 -- The catalog is about to hold more than Ubuntu (Debian, Rocky), so the guest
 -- admin account stops being a platform constant and becomes a property of the
 -- image row. Until now the vms row took its ssh_username from a hardcoded
@@ -31,10 +46,12 @@ alter table os_images
 -- and its guest account has been 'ubuntu' since V48. The version is read off
 -- the name where it looks like a release so a manually added ubuntu-22.04 row
 -- gets its own value rather than the seed's.
-update os_images
-   set os_family    = 'ubuntu',
-       os_version   = coalesce(substring(name from '^ubuntu-([0-9]+\.[0-9]+)'), '24.04'),
-       ssh_username = 'ubuntu';
+-- The backfill that stood here filled the three new columns on rows a
+-- migration had seeded. Nothing seeds a catalog row now, so it matched
+-- nothing, and the columns below can go straight to NOT NULL on the empty
+-- table. The bootstrap script supplies all three per image when it registers
+-- one — which is the point of the change: the guest account is a property of
+-- the image, not a platform constant to be defaulted here.
 
 alter table os_images
     alter column os_family set not null,

@@ -22,10 +22,12 @@ create table vm_flavors (
     updated_at timestamptz not null default now()
 );
 
-insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, notes) values
-    ('small', '소형',  1, 1024, 10, '봇, 크론 작업 등 초소형 서비스에 적합합니다.'),
-    ('basic', '기본형', 2, 2048, 20, '대부분의 수업·동아리 프로젝트에 적합합니다.'),
-    ('large', '대형',  4, 8192, 40, '대형 스펙은 신청 시 사용 사유를 반드시 적어 주세요.');
+-- No presets are seeded. Which sizes a deployment offers, and what they cost in
+-- vCPU, memory and disk, is a policy the operator sets against the hardware they
+-- actually have -- three sizes sensible on one host are wrong on another. The
+-- admin console creates and edits them (list, create, edit, status), so this is
+-- one of the tables that has a real write path and therefore needs no seed. The
+-- dev/test seeder fills an empty table so a development database is usable.
 
 -- Provenance of the chosen preset (specs themselves stay denormalized on
 -- vm_requests/vm_request_reviews/vms). Nullable in the DB — @NotNull on the
@@ -42,21 +44,12 @@ update vm_requests r
                     else 'basic'
                 end;
 
--- Repoint every FK off the -small/-large preset rows, then fold them away.
-update vm_requests
-   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where template_id in (select id from vm_templates
-                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-update vms
-   set template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where template_id in (select id from vm_templates
-                        where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-update vm_request_reviews
-   set granted_template_id = (select id from vm_templates where name = 'ubuntu-24.04' and version = 1)
- where granted_template_id in (select id from vm_templates
-                                where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large'));
-
-delete from vm_templates where name in ('ubuntu-24.04-small', 'ubuntu-24.04-large');
+-- The consolidation that stood here folded three seeded catalog rows into one
+-- and repointed every foreign key off the two it removed. All of it is gone
+-- with the seed: no migration inserts a catalog row, so there were no preset
+-- rows to fold and no keys pointing at them. What the change was really about
+-- — that size is a separate axis from the image — survives as the schema
+-- below.
 
 alter table vm_templates
     drop column default_vcpu,

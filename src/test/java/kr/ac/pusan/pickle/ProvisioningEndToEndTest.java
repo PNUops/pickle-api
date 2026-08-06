@@ -264,7 +264,7 @@ class ProvisioningEndToEndTest {
         // no VMID 100000 in the capture → the clone-exists guard lets the clone run
         wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo("/api2/json/cluster/resources"))
                 .willReturn(okFixture("03-cluster-resources")));
-        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
+        wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/" + SeedFixtures.TEMPLATE_VMID + "/clone"))
                 .willReturn(okFixture("10-clone")));
         stubTaskStatus(CLONE_UPID, "10-clone-status");
         wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/config"))

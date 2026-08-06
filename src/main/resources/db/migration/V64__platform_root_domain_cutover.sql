@@ -33,20 +33,18 @@ begin
 end
 $$;
 
--- Swap the retired root for the new one without disturbing anything else in the
--- list: this value is admin-editable at runtime, so replacing the whole array
--- would silently drop a root an operator had added. The description is left
--- alone — V16 relabelled these to Korean because the console renders them as-is.
-update settings
-   set value = (value - 'pickle.pnuops.com') || '["pusan.dev"]'::jsonb,
-       updated_at = now()
- where key = 'allowed_root_domains';
+-- The allow-list is not touched here. This migration used to swap the retired
+-- root for the new one inside allowed_root_domains; no migration creates that
+-- row any longer, because which roots a deployment offers is content it supplies
+-- rather than schema, so an operator bootstrap script writes the current list
+-- directly. Everything below still operates on rows the application writes at
+-- runtime, which is why it stays.
 
-update certificates
-   set scope = '*.pusan.dev',
-       updated_at = now()
- where kind = 'ORIGIN_CA_WILDCARD'
-   and scope = '*.pickle.pnuops.com';
+-- The wildcard row's scope is not swapped here either, and for the same reason
+-- as the allow-list above: no migration creates that row. The bootstrap script
+-- writes it, reading the expiry off the installed certificate and refusing when
+-- the material does not cover the scope — so it cannot assert a wildcard nobody
+-- obtained, which is what a seeded row here did.
 
 -- Submit-time root preference carried on requests that have not published yet.
 -- Left alone these self-heal at publish (an unallowed stored root falls back to

@@ -44,7 +44,6 @@ alter table vms
 -- platform is deployed on, and the node it attaches to is registered by the same
 -- operations script. See the migration convention.
 
--- ── Settings key read by IpamService. Operator-tunable at runtime. ──
-insert into settings (key, value, description) values
-    ('ip_quarantine_hours', '24'::jsonb,
-     'Hours a RELEASED IP stays unassignable before reuse (IPAM quarantine).');
+-- No settings seed here either. ip_quarantine_hours, read by IpamService, is an
+-- operator-tuned policy value; an operator bootstrap script writes it and the
+-- dev/test seeder supplies an equivalent.
