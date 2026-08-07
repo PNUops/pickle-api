@@ -88,18 +88,68 @@ mvn test -Dtest=ContractDriftTest -Dcontract.update=true
 
 실행 중인 서버도 같은 스펙을 제공합니다: https://pickle.pusan.ac.kr/api/v1/openapi
 
+## 초기 데이터
+
+마이그레이션은 스키마만 담습니다. 노드와 IP 풀, 릴레이, 인증서, OS 이미지, 런타임 설정
+값, 약관처럼 배포 환경을 서술하는 행은 마이그레이션에 들어가지 않으므로, 갓 만들어진
+데이터베이스는 완전히 빈 채로 시작합니다.
+
+dev와 test 프로파일에서는 시더가 그 자리를 채웁니다. 런타임 설정 전체와 이용약관·
+개인정보처리방침 자리표시자 문서, 시스템 관리자와 기관 관리자 계정, 시험용 기관 하나,
+그리고 노드와 IP 풀, OS 이미지, 사양 프리셋, 릴레이, 플랫폼 와일드카드 인증서가
+들어갑니다. 감사 로그가 비어 있는 데이터베이스에서만 SSH 게이트웨이와 웹 터미널의
+킬 스위치도 함께 켭니다. 각 부분은 대상 테이블이 비어 있을 때만 동작하므로 이미 손을
+댄 값을 덮어쓰지 않습니다. 로컬에서 별도 준비 없이 신청 화면까지 따라갈 수 있는 것은
+이 시더가 미리 채워 두기 때문입니다.
+
+**이 시더는 dev와 test 전용입니다.** prod 프로파일에는 최초 SYS_ADMIN 한 명을 만드는
+부트스트랩만 있고, 나머지 행은 운영자 부트스트랩 절차가 넣습니다. 그 절차를 거치기 전의
+운영 데이터베이스는 아래 상태입니다.
+
+- 설정 행이 없으면 SSH 게이트웨이와 웹 터미널, 포트 포워딩이 모두 꺼진 것으로 읽혀
+  요청이 거부됩니다. 설정 수정 API는 이미 있는 키의 값만 바꾸고 없는 키에는 404로
+  답하므로, 빠진 행을 콘솔에서 만들어 넣을 수 없습니다.
+- 약관 문서가 없으면 회원가입이 "약관 문서가 준비되지 않았습니다"로 실패합니다.
+- 기관이 없으면 VM 신청이 대상 기관을 찾지 못해 거부됩니다.
+- 신청 화면의 OS 목록은 활성 상태인 카탈로그 행만 보여줍니다. 상태 전환은 관리자
+  API가 담당합니다.
+
+그래서 운영 환경은 부트스트랩 절차를 마친 뒤에야 쓸 수 있습니다. `staging` 프로파일에는
+어느 쪽 시더도 붙어 있지 않아, 그대로 배포하면 계정이 하나도 없는 상태로 기동합니다.
+
+### 부트스트랩 관리자 자격
+
+`PICKLE_BOOTSTRAP_ADMIN_EMAIL`과 `PICKLE_BOOTSTRAP_ADMIN_PASSWORD`는 prod 기동에서 아래를
+모두 통과해야 하고, 하나라도 어긋나면 기동이 중단됩니다. SYS_ADMIN이 이미 있으면 이
+단계는 아무것도 하지 않습니다.
+
+- 두 값 모두 비어 있지 않아야 합니다. 이메일이 이미 다른 계정에 쓰이고 있으면 기동을
+  거부합니다.
+- 비밀번호는 12자 이상이어야 합니다.
+- `changeme`, `password`, `admin`, `secret`, `pickle`, `qwerty`, `letmein`, `12345678`
+  같은 자리표시자 목록에 걸리지 않아야 합니다. 대소문자는 구분하지 않습니다.
+- 회원가입과 같은 비밀번호 정책을 통과해야 합니다. 유출 이력 차단목록과 `pusan`,
+  `busan`, `student`, `ubuntu` 같은 플랫폼 연관 단어를 대조하고, 서로 다른 문자가 둘
+  이하인 값과 연속된 문자나 숫자로만 이어지는 값, 이메일 아이디를 포함하는 값을
+  거부합니다. UTF-8로 72바이트를 넘는 값도 거부합니다.
+- 문자 종류 조합 규칙은 없습니다. 길이와 차단목록이 판정 기준입니다.
+
 ## 시작하기
 
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
 
 ```bash
+# 기본 접속 정보가 가리키는 역할과 데이터베이스를 먼저 만듭니다.
+sudo -u postgres psql -c "create role pickle login password 'pickle'"
+sudo -u postgres createdb -O pickle pickle_dev
+
 # 자격증명에는 커밋된 기본값이 없습니다. 로컬 기동 전에 직접 export 하세요.
 export PICKLE_JWT_SECRET=...             # 32바이트 이상
 export PICKLE_CREDENTIALS_KEY=...        # base64 32바이트
 export PICKLE_SEED_SYSADMIN_PASSWORD=...
 export PICKLE_SEED_ORGADMIN_PASSWORD=...
 
-mvn spring-boot:run -Dspring-boot.run.profiles=dev   # 로컬 PostgreSQL 18 필요, :8080
+mvn spring-boot:run -Dspring-boot.run.profiles=dev   # :8080
 scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성 감사 + 공개 위생 검사
 ```
 
@@ -147,7 +197,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_TERMINAL_PUBLIC_KEY` | 웹 터미널 브리지 공개키. 게이트웨이 키와 따로 폐기 가능 | 없음(경고만) |
 | `PICKLE_SSH_HOST` / `PICKLE_SSH_PORT` | 응답에 노출하는 SSH 접속 주소 | 없음 / `0` |
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 2FA 등록 강제 | `false` (prod `true`) |
-| `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | prod 최초 SYS_ADMIN. 값이 부실하면 기동 중단 | 없음 |
+| `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 
 ### 내부 연동 (게이트웨이, 프록시, 터미널)
@@ -175,8 +225,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | SYS_ADMIN | `PICKLE_SEED_SYSADMIN_EMAIL` / `_PASSWORD` | `admin@pickle.local` / 없음(필수) |
 | ORG_ADMIN (`test-org`) | `PICKLE_SEED_ORGADMIN_EMAIL` / `_PASSWORD` | `orgadmin@pickle.local` / 없음(필수) |
 
-prod 프로파일에서는 시더가 돌지 않고 `ProdBootstrapSeeder`가 최초 SYS_ADMIN 한 명만
-만듭니다.
+두 계정은 dev와 test에서만 만들어집니다. prod에서 최초 SYS_ADMIN 한 명이 어떻게
+들어오는지는 위의 초기 데이터를 보세요.
 
 </details>
 
