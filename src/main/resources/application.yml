@@ -5,8 +5,8 @@ spring:
     url: ${PICKLE_DB_URL:jdbc:postgresql://localhost:5432/pickle_dev}
     username: ${PICKLE_DB_USER:pickle}
     # No default: a database password is a credential, and the other credentials
-    # here (JWT secret, credential-encryption key, SMTP login) all refuse to
-    # start rather than fall back to a guessable value. A literal default also
+    # here (JWT secret, credential-encryption key) refuse to start rather than
+    # fall back to a guessable value. A literal default also
     # lets a deployment that forgot the variable connect to whatever database
     # happens to accept it, which is worse than not starting.
     password: ${PICKLE_DB_PASSWORD}

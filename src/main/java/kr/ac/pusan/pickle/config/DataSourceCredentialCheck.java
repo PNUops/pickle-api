@@ -36,17 +36,22 @@ public class DataSourceCredentialCheck {
             String password;
             try {
                 password = environment.getProperty(PROPERTY);
-            } catch (IllegalArgumentException unresolvedPlaceholder) {
-                throw notSet(unresolvedPlaceholder);
+            } catch (IllegalArgumentException unresolvable) {
+                // Reached both when the variable is absent and when a password
+                // that is present contains ${...}, which the environment tries
+                // to resolve as a nested placeholder wherever it appears. The
+                // two are indistinguishable here, so the message names both
+                // rather than asserting the variable is missing.
+                throw unusable(unresolvable);
             }
-            if (password == null || password.isBlank() || password.startsWith("${")) {
-                throw notSet(null);
+            if (password == null || password.isBlank() || password.contains("${")) {
+                throw unusable(null);
             }
         }
 
-        private static IllegalStateException notSet(Throwable cause) {
-            return new IllegalStateException(
-                    PROPERTY + " is not set. Provide PICKLE_DB_PASSWORD via /etc/pickle/api.env.", cause);
+        private static IllegalStateException unusable(Throwable cause) {
+            return new IllegalStateException(PROPERTY + " is not usable. Provide PICKLE_DB_PASSWORD via "
+                    + "/etc/pickle/api.env; the value must be non-blank and must not contain '${'.", cause);
         }
     }
 }
