@@ -128,6 +128,11 @@ public class RouteApplyJob {
         // the deletion pipeline reads a hold as nothing left to do.
         if (!absent && domain.getStatus() == DomainStatus.REMOVED) {
             route.setStatus(RouteStatus.REMOVED);
+            // The generation must outrank what the agent already applied, or the
+            // removal is refused as stale and the vhost survives the correction.
+            // Reaching here means something wrote the route back under us, so its
+            // generation is exactly the one the agent has.
+            route.setGeneration(routeGenerations.next());
             absent = true;
         }
         // Local backstop for the platform invariant: a PRESENT push may only

@@ -1077,7 +1077,12 @@ class PublishingTest {
         // after the teardown had marked both it and the domain down, so the two
         // now disagree — the domain is gone while its route still reads live.
         jdbcTemplate.update("update domains set status = 'REMOVED' where id = ?", domainId);
-        jdbcTemplate.update("update routes set status = 'APPLIED' where id = ?", routeId);
+        jdbcTemplate.update("""
+                update routes set status = 'APPLIED', applied_generation = generation
+                 where id = ?
+                """, routeId);
+        long clobberedGen = jdbcTemplate.queryForObject(
+                "select generation from routes where id = ?", Long.class, routeId);
 
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
@@ -1095,6 +1100,11 @@ class PublishingTest {
                 .withRequestBody(matchingJsonPath("$.desiredState",
                         com.github.tomakehurst.wiremock.client.WireMock.equalTo("PRESENT"))));
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        // The agent refuses a generation it has already applied, so a removal
+        // pushed at the clobbered generation would be dropped and the vhost would
+        // outlive the correction.
+        assertThat(jdbcTemplate.queryForObject("select generation from routes where id = ?",
+                Long.class, routeId)).isGreaterThan(clobberedGen);
     }
 
     @Test
