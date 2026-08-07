@@ -17,7 +17,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                       it at WireMock)
  * @param token          shared bearer token (PICKLE_PROXY_AGENT_TOKEN)
  * @param connectTimeout TCP connect timeout (default 5s)
- * @param readTimeout    per-request read timeout (default 30s — render+nginx -t+reload)
+ * @param readTimeout    per-request read timeout (default 190s: it must outlast
+ *                       the agent's own 180s subprocess bound — certificate
+ *                       issuance runs inline in {@code /apply} — or the two
+ *                       sides disagree about whether the work happened)
  */
 @ConfigurationProperties(prefix = "pickle.proxy-agent")
 public record ProxyAgentProperties(
@@ -29,6 +32,6 @@ public record ProxyAgentProperties(
     public ProxyAgentProperties {
         baseUrl = baseUrl != null && !baseUrl.isBlank() ? baseUrl : "http://172.30.1.10:9443";
         connectTimeout = connectTimeout != null ? connectTimeout : Duration.ofSeconds(5);
-        readTimeout = readTimeout != null ? readTimeout : Duration.ofSeconds(30);
+        readTimeout = readTimeout != null ? readTimeout : Duration.ofSeconds(190);
     }
 }

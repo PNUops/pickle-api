@@ -146,7 +146,12 @@ pickle:
     base-url: ${PICKLE_PROXY_AGENT_URL:http://172.30.1.10:9443}
     token: ${PICKLE_PROXY_AGENT_TOKEN:}
     connect-timeout: 5s
-    read-timeout: 30s
+    # Must outlast the agent's own subprocess bound (180s — certificate
+    # issuance runs inline in /apply): if this side gave up first it would
+    # record a transport failure while the agent kept working, and the two
+    # would then disagree about whether the vhost/cert exists. 180s + margin.
+    # Affordable because the call runs outside any DB transaction.
+    read-timeout: 190s
   terminal:
     # Web terminal control link. pickle-api is
     # the client for force-terminate only; the browser WS + SSH bytes live on the
