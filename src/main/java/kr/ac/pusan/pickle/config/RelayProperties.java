@@ -15,6 +15,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param pollIntervalSeconds the agent's poll interval as configured on the
  *        relay (default 30 s); consumed by the contact-lost derivation
  *        (lost = no sync for 3× this)
+ * @param firstContactGraceSeconds how long an ENABLED relay may exist without
+ *        a single successful sync before the watchdog flags it (default
+ *        900 s). Measured from the row's last admin-side write, so issuing a
+ *        token restarts the window; generous enough for a manual agent
+ *        install, small against the half-day outages this is meant to catch
  * @param maxSyncBodyBytes hard cap on a sync request body (default 1 MiB);
  *        a larger declared Content-Length is rejected 413 and chunked bodies
  *        are stream-capped
@@ -27,6 +32,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record RelayProperties(
         Integer syncRateLimitPerMinute,
         Integer pollIntervalSeconds,
+        Integer firstContactGraceSeconds,
         Long maxSyncBodyBytes,
         List<String> restrictedSourceIps) {
 
@@ -35,6 +41,8 @@ public record RelayProperties(
                 ? syncRateLimitPerMinute : 20;
         pollIntervalSeconds = (pollIntervalSeconds != null && pollIntervalSeconds > 0)
                 ? pollIntervalSeconds : 30;
+        firstContactGraceSeconds = (firstContactGraceSeconds != null && firstContactGraceSeconds > 0)
+                ? firstContactGraceSeconds : 900;
         maxSyncBodyBytes = (maxSyncBodyBytes != null && maxSyncBodyBytes > 0)
                 ? maxSyncBodyBytes : 1_048_576L;
         restrictedSourceIps = (restrictedSourceIps != null && !restrictedSourceIps.isEmpty())

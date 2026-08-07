@@ -111,6 +111,9 @@ pickle:
     # Agent poll interval as deployed on the relay; contact-lost derivation
     # flags a relay after 3x this without a sync.
     poll-interval-seconds: ${PICKLE_RELAY_POLL_INTERVAL_SECONDS:30}
+    # How long an enabled relay may exist without a single successful sync
+    # (measured from its last admin-side write) before the watchdog flags it.
+    first-contact-grace-seconds: ${PICKLE_RELAY_FIRST_CONTACT_GRACE_SECONDS:900}
     # Hard cap on a sync request body: larger Content-Length answers 413 and
     # chunked bodies are stream-capped.
     max-sync-body-bytes: ${PICKLE_RELAY_MAX_SYNC_BODY_BYTES:1048576}

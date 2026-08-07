@@ -42,6 +42,7 @@ public enum NotificationEvent {
 
     // Relay port forwarding + 교내 IP (contract v0.27.0).
     RELAY_CONTACT_LOST("relay.contact_lost", NotificationImportance.HIGH),
+    RELAY_NEVER_CONTACTED("relay.never_contacted", NotificationImportance.HIGH),
     RELAY_BAND_USAGE_HIGH("relay.band_usage_high", NotificationImportance.HIGH),
     PORT_MAPPING_SUSPENDED("port_mapping.suspended", NotificationImportance.HIGH),
     CAMPUS_IP_REQUESTED("campus_ip.requested", NotificationImportance.NORMAL),
