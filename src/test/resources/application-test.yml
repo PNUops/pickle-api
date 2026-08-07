@@ -13,6 +13,11 @@ jobrunr:
     enabled: false
 
 spring:
+  datasource:
+    # Zonky supplies the embedded instance, but the base document's placeholder
+    # still has to resolve; the base carries no default so a deployment that
+    # forgets PICKLE_DB_PASSWORD cannot start.
+    password: pickle-test
   flyway:
     enabled: true
 
