@@ -52,7 +52,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * HTTP publishing per contract v0.4.0: publish/update/unpublish authz,
+ * HTTP publishing (multi-domain since contract v0.29.0): domain create/update/
+ * delete authz, the per-VM platform-subdomain cap, released-name reservation,
  * the SSRF guard (target forced to the VM's own IP), port-22 and custom-domain
  * platform-zone rejection, the route PENDING→APPLIED apply against a WireMock
  * proxy-agent (incl. stale-generation no-op), custom-domain DNS verification via
@@ -68,7 +69,13 @@ class PublishingTest {
 
     private static final String APPLY_PATH = "/apply";
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
+    // Every suite in the shared embedded PG needs its OWN proxmox_vmid base
+    // (vms_proxmox_vmid_active_uq is global): pick an unused range by grepping
+    // VMID_SEQ across src/test before adding one.
     private static final AtomicInteger VMID_SEQ = new AtomicInteger(950_000);
+
+    /** vmId → declared {subdomain, rootDomain} for the publish() helper. */
+    private final java.util.Map<Long, String[]> vmFormNames = new ConcurrentHashMap<>();
 
     private static WireMockServer agent;
 
@@ -129,6 +136,9 @@ class PublishingTest {
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(okApply(1)));
         dns.clear();
+        // The whole suite runs inside one rate-limit window as the same owner:
+        // reset the per-user custom-domain creation counter between tests.
+        jdbcTemplate.update("delete from auth_rate_limits where scope = 'domain_create'");
 
         owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.USER, null);
         User editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
@@ -156,24 +166,25 @@ class PublishingTest {
 
     @Test
     void publishAuthorizesByGroupRole() throws Exception {
-        long vmId = publishableVm("team-alpha", "pusan.dev", VmStatus.RUNNING);
+        long vmId = publishableVm(null, null, VmStatus.RUNNING);
+        String body = "{\"port\":8080,\"subdomain\":\"team-alpha\"}";
 
         // non-member → 404 (existence masked)
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + outsiderToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // VIEWER → 403
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + viewerToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
         // EDITOR → 202
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + editorToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-alpha.pusan.dev"))
                 .andExpect(jsonPath("$.domain.kind").value("REQUESTED"))
@@ -184,9 +195,9 @@ class PublishingTest {
     // ── validation ─────────────────────────────────────────────────────────
 
     @Test
-    void publishRejectsWhenNoSubdomainAnywhere() throws Exception {
+    void publishRejectsWhenBodyNamesNoSubdomain() throws Exception {
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -195,31 +206,26 @@ class PublishingTest {
     }
 
     @Test
-    void publishBodySubdomainOverridesRequestFormValue() throws Exception {
-        long vmId = publishableVm("team-form", "pusan.dev", VmStatus.RUNNING);
-        publish(vmId, "{\"port\":80,\"subdomain\":\"team-body\"}")
-                .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.fqdn").value("team-body.pusan.dev"))
-                .andExpect(jsonPath("$.domain.kind").value("REQUESTED"));
+    void publishIgnoresAnyRequestFormName() throws Exception {
+        // The request form stopped carrying a domain axis: a historical
+        // desired_subdomain on the origin request must NOT resurface as a
+        // fallback — a body without a name is 422, period.
+        long vmId = publishableVm(null, null, VmStatus.RUNNING);
+        jdbcTemplate.update("""
+                update vm_requests set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
+                 where id = (select request_id from vms where id = ?)
+                """, vmId);
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":80}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
     }
 
     @Test
     void publishRejectsReservedSubdomain() throws Exception {
         long vmId = publishableVm(null, "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80,\"subdomain\":\"admin\"}")
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
-    }
-
-    @Test
-    void publishRevalidatesTheStoredRequestFormSubdomain() throws Exception {
-        // A reserved name stored on the request row (submitted before the
-        // operator added it to the list) must be refused when the publish falls
-        // back to it — the stored-value branch runs the same policy as the body
-        // branch.
-        long vmId = publishableVm("console", "pusan.dev", VmStatus.RUNNING);
-        publish(vmId, "{\"port\":80}")
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
@@ -254,7 +260,7 @@ class PublishingTest {
     }
 
     @Test
-    void unpublishFreesTheNameForAnotherVm() throws Exception {
+    void releasedPlatformNameStaysReservedUntilReturned() throws Exception {
         long first = publishableVm("team-reuse", "pusan.dev", VmStatus.RUNNING);
         publish(first, "{\"port\":80}").andExpect(status().isAccepted());
         // Taken while live.
@@ -263,20 +269,59 @@ class PublishingTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOMAIN_FQDN_TAKEN"));
 
-        mockMvc.perform(delete("/api/v1/vms/" + first + "/publication")
+        // Release: the route goes down but the row stays, holding the name.
+        long domainId = domainIdForVm(first);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
+        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNotNull();
+        assertThat(routeStatus(routeIdForVm(first))).isEqualTo("REMOVED");
+        // A released domain has no port to edit — PATCH answers 404.
+        mockMvc.perform(patch("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":81}"))
+                .andExpect(status().isNotFound());
+        // Another VM still cannot take the reserved name.
+        publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DOMAIN_FQDN_TAKEN"));
 
-        // The partial unique index only covers non-REMOVED rows — the name is free.
+        // DELETE on the reserved (non-serving) row returns the name NOW.
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
         publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-reuse.pusan.dev"));
     }
 
     @Test
+    void reAddingAReleasedNameOnTheSameVmRevivesTheRow() throws Exception {
+        long vmId = publishableVm("team-revive", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+
+        // Same VM, same FQDN → the reserved row comes back into service.
+        publish(vmId, "{\"port\":8081,\"subdomain\":\"team-revive\"}")
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.fqdn").value("team-revive.pusan.dev"))
+                .andExpect(jsonPath("$.domain.id").value(domainId))
+                .andExpect(jsonPath("$.route.targetPort").value(8081));
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNull();
+        assertThat(routeStatus(routeIdForVm(vmId))).isEqualTo("PENDING");
+    }
+
+    @Test
     void publishRejectsPort22() throws Exception {
         long vmId = publishableVm("team-ssh", "pusan.dev", VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":22}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -287,7 +332,7 @@ class PublishingTest {
     @Test
     void publishRejectsCustomDomainUnderPlatformZone() throws Exception {
         long vmId = publishableVm("team-custom", "pusan.dev", VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"port\":80,\"customDomain\":\"squat.pusan.dev\"}"))
@@ -297,11 +342,89 @@ class PublishingTest {
     }
 
     @Test
-    void doublePublishConflicts() throws Exception {
-        long vmId = publishableVm("team-dup", "pusan.dev", VmStatus.RUNNING);
-        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
-        publish(vmId, "{\"port\":80}").andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("PUBLICATION_ALREADY_EXISTS"));
+    void aVmServesSeveralDomainsEachWithItsOwnPort() throws Exception {
+        long vmId = publishableVm(null, null, VmStatus.RUNNING);
+        String custom = "multi." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":8080,\"subdomain\":\"team-multi-a\"}")
+                .andExpect(status().isAccepted());
+        publish(vmId, "{\"port\":8081,\"subdomain\":\"team-multi-b\"}")
+                .andExpect(status().isAccepted());
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + custom + "\"}")
+                .andExpect(status().isAccepted());
+
+        // VmDetail lists every serving domain, id ascending, each with its port.
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publications.length()").value(3))
+                .andExpect(jsonPath("$.publications[0].fqdn").value("team-multi-a.pusan.dev"))
+                .andExpect(jsonPath("$.publications[0].route.targetPort").value(8080))
+                .andExpect(jsonPath("$.publications[1].fqdn").value("team-multi-b.pusan.dev"))
+                .andExpect(jsonPath("$.publications[1].route.targetPort").value(8081))
+                .andExpect(jsonPath("$.publications[2].fqdn").value(custom));
+
+        // A port edit targets ONE domain and leaves the siblings alone.
+        long firstDomain = jdbcTemplate.queryForObject(
+                "select id from domains where fqdn = 'team-multi-a.pusan.dev'", Long.class);
+        mockMvc.perform(patch("/api/v1/domains/" + firstDomain)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":9090}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.route.targetPort").value(9090));
+        assertThat(jdbcTemplate.queryForObject("""
+                select r.target_port from routes r join domains d on d.id = r.domain_id
+                 where d.fqdn = 'team-multi-b.pusan.dev'
+                """, Integer.class)).isEqualTo(8081);
+
+        // Deleting one domain leaves the other routes untouched.
+        mockMvc.perform(delete("/api/v1/domains/" + firstDomain)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(jdbcTemplate.queryForObject("""
+                select r.status from routes r join domains d on d.id = r.domain_id
+                 where d.fqdn = 'team-multi-b.pusan.dev'
+                """, String.class)).isEqualTo("PENDING");
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publications.length()").value(2));
+    }
+
+    @Test
+    void platformSubdomainCapCountsServingOnly() throws Exception {
+        jdbcTemplate.update("""
+                insert into settings (key, value) values ('platform_subdomains_per_vm', '2'::jsonb)
+                on conflict (key) do update set value = excluded.value
+                """);
+        try {
+            long vmId = publishableVm(null, null, VmStatus.RUNNING);
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-a\"}")
+                    .andExpect(status().isAccepted());
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-b\"}")
+                    .andExpect(status().isAccepted());
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-c\"}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value("DOMAIN_LIMIT_REACHED"))
+                    .andExpect(jsonPath("$.detail").value(
+                            org.hamcrest.Matchers.containsString("최대 2개")));
+            // Custom domains are outside the cap.
+            String custom = "cap." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+            publish(vmId, "{\"port\":3000,\"customDomain\":\"" + custom + "\"}")
+                    .andExpect(status().isAccepted());
+
+            // A RELEASED subdomain stops counting — its grace must not block
+            // the replacement.
+            long released = jdbcTemplate.queryForObject(
+                    "select id from domains where fqdn = 'team-cap-a.pusan.dev'", Long.class);
+            mockMvc.perform(delete("/api/v1/domains/" + released)
+                            .header("Authorization", "Bearer " + ownerToken))
+                    .andExpect(status().isAccepted());
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-c\"}")
+                    .andExpect(status().isAccepted());
+        } finally {
+            jdbcTemplate.update(
+                    "delete from settings where key = 'platform_subdomains_per_vm'");
+        }
     }
 
     // ── SSRF + apply ──────────────────────────────────────────────────────────
@@ -679,12 +802,12 @@ class PublishingTest {
         routeApplyJob.apply(routeId);
         assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
 
-        // Agent goes dark, then the user unpublishes: the DB flips to REMOVED
-        // (tombstone/UI say "unpublished") while nginx would keep serving.
+        // Agent goes dark, then the user releases the domain: the route flips
+        // to REMOVED (UI says "unpublished") while nginx would keep serving.
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+        mockMvc.perform(delete("/api/v1/domains/" + domainIdForVm(vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
@@ -812,76 +935,58 @@ class PublishingTest {
     }
 
     @Test
-    void unpublishRemovesRoute() throws Exception {
+    void deleteOfServingPlatformDomainRemovesRouteButKeepsTheRow() throws Exception {
         long vmId = publishableVm("team-unpub", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
-        // Platform domain row is cleaned up (REMOVED).
-        assertThat(domainStatus(domainIdForVm(vmId))).isEqualTo("REMOVED");
+        // The platform row survives, reserving the name through the grace; the
+        // detail view exposes the reservation window the server computed.
+        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
+        mockMvc.perform(get("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.releasedAt").isNotEmpty())
+                .andExpect(jsonPath("$.reservedUntil").isNotEmpty());
     }
 
     @Test
-    void customDomainUnpublishLeavesVmCleanlyRepublishable() throws Exception {
+    void customDomainDeleteRemovesImmediatelyAndFreesTheName() throws Exception {
+        // A custom name is the user's own DNS: whoever can pass the TXT
+        // challenge owns it — no reservation grace applies.
         long vmId = publishableVm("team-tomb", "pusan.dev", VmStatus.RUNNING);
         String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        String token = jdbcTemplate.queryForObject(
-                "select verification_token from domains where id = ?", String.class, domainId);
 
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
-        // The custom row survives as a tombstone (verification state preserved) …
-        assertThat(domainStatus(domainId)).isEqualTo("PENDING");
-        // … but the VM is NOT published: detail shows publication null (the
-        // contract requires PublicationView.route — no route-less publication).
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from certificates where domain_id = ? and status <> 'REVOKED'
+                """, Long.class, domainId)).isZero();
+        // The VM is no longer published for this name.
         mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.publication").value((Object) null));
-        // Re-unpublish and PATCH answer 404 (contract: unpublished VM).
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
+                .andExpect(jsonPath("$.publications.length()").value(0));
+        // A second DELETE answers 404 (already removed).
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/publication")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"port\":8080}"))
-                .andExpect(status().isNotFound());
 
-        // Re-publish of the SAME custom FQDN revives the tombstone — no 409, the
-        // row (and its verification token) is reused.
+        // Re-adding the SAME custom FQDN starts a fresh row (new verification).
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.fqdn").value(fqdn));
-        assertThat(domainIdForVm(vmId)).isEqualTo(domainId);
-        assertThat(jdbcTemplate.queryForObject(
-                "select verification_token from domains where id = ?", String.class, domainId))
-                .isEqualTo(token);
-        assertThat(routeStatus(routeIdForVm(vmId))).isEqualTo("PENDING");
-    }
-
-    @Test
-    void platformPublishAfterCustomUnpublishRetiresTombstone() throws Exception {
-        long vmId = publishableVm("team-tomb2", "pusan.dev", VmStatus.RUNNING);
-        String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
-        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
-                .andExpect(status().isAccepted());
-        long tombstoneId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/publication")
-                        .header("Authorization", "Bearer " + ownerToken))
-                .andExpect(status().isAccepted());
-
-        // Publishing a different target (platform subdomain) retires the tombstone.
-        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.fqdn").value("team-tomb2.pusan.dev"));
-        assertThat(domainStatus(tombstoneId)).isEqualTo("REMOVED");
-        assertThat(domainIdForVm(vmId)).isNotEqualTo(tombstoneId);
+                .andExpect(jsonPath("$.fqdn").value(fqdn))
+                .andExpect(jsonPath("$.domain.status").value("PENDING"));
+        assertThat(domainIdForVm(vmId)).isNotEqualTo(domainId);
     }
 
     @Test
@@ -891,7 +996,7 @@ class PublishingTest {
         long routeId = routeIdForVm(vmId);
         long genBefore = jdbcTemplate.queryForObject("select generation from routes where id = ?",
                 Long.class, routeId);
-        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/publication")
+        mockMvc.perform(patch("/api/v1/domains/" + domainIdForVm(vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":3000}"))
                 .andExpect(status().isAccepted())
@@ -909,6 +1014,10 @@ class PublishingTest {
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         long domainId = domainIdForVm(vmId);
+        // Second serving domain: VM deletion must tear down EVERY vhost.
+        publish(vmId, "{\"port\":8081,\"subdomain\":\"team-delpub2\"}")
+                .andExpect(status().isAccepted());
+        long secondDomainId = domainIdForVm(vmId);
         routeApplyJob.apply(routeId);
         assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
         long appliedGen = jdbcTemplate.queryForObject(
@@ -931,7 +1040,7 @@ class PublishingTest {
 
         deleteVmJob.deleteVm(vmId);
 
-        // The FQDN's vhost was removed (ABSENT, bumped generation) before the
+        // Every FQDN's vhost was removed (ABSENT, bumped generation) before the
         // IP was released and the VM marked DELETED.
         agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
                 .withRequestBody(matchingJsonPath("$.desiredState",
@@ -939,8 +1048,15 @@ class PublishingTest {
                 .withRequestBody(matchingJsonPath("$.fqdn",
                         com.github.tomakehurst.wiremock.client.WireMock
                                 .equalTo("team-delpub.pusan.dev"))));
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("ABSENT")))
+                .withRequestBody(matchingJsonPath("$.fqdn",
+                        com.github.tomakehurst.wiremock.client.WireMock
+                                .equalTo("team-delpub2.pusan.dev"))));
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(domainStatus(secondDomainId)).isEqualTo("REMOVED");
         assertThat(jdbcTemplate.queryForObject("select generation from routes where id = ?",
                 Long.class, routeId)).isGreaterThan(appliedGen);
         assertThat(jdbcTemplate.queryForObject("select status from vms where id = ?",
@@ -1002,14 +1118,21 @@ class PublishingTest {
         long routeId = routeIdForVm(vmId);
         long generationBefore = routeGeneration(routeId);
 
+        // First force-release = the user DELETE on a serving platform domain:
+        // route down, name held for the grace.
         mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
-
-        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
+        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
         assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
+
+        // Second force-release reclaims the now non-serving reservation.
+        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
 
         // an already-REMOVED domain answers the same 404 as an unknown id
         mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
@@ -1135,7 +1258,18 @@ class PublishingTest {
 
     private org.springframework.test.web.servlet.ResultActions publish(long vmId, String body)
             throws Exception {
-        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/publish")
+        // The request form no longer carries a domain axis (contract v0.29.0):
+        // the name a fixture declares via publishableVm() is injected into the
+        // create body here, exactly the way the console now sends it.
+        if (!body.contains("subdomain") && !body.contains("customDomain")) {
+            String[] name = vmFormNames.get(vmId);
+            if (name != null && name[0] != null) {
+                String extra = ",\"subdomain\":\"" + name[0] + "\""
+                        + (name[1] != null ? ",\"rootDomain\":\"" + name[1] + "\"" : "");
+                body = body.substring(0, body.length() - 1) + extra + "}";
+            }
+        }
+        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                 .header("Authorization", "Bearer " + ownerToken)
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
@@ -1201,19 +1335,18 @@ class PublishingTest {
     }
 
     /**
-     * Inserts an approved+running VM with an ALLOCATED IP. The request-form
-     * subdomain/root are the publish-time defaults (self-service publishing);
-     * null means the publish body must carry the name or answer 422.
+     * Inserts an approved+running VM with an ALLOCATED IP. The declared
+     * subdomain/root are what the publish() helper injects into the create
+     * body (the request form itself carries no domain axis anymore); null
+     * means the body must name the domain itself or answer 422.
      */
     private long publishableVm(String desiredSubdomain, String rootDomain, VmStatus status) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         desired_subdomain, root_domain)
-                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10, ?, ?)
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId,
-                desiredSubdomain, rootDomain);
+                """, Long.class, groupId, orgId, owner.getId(), templateId);
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision,
                         granted_vcpu, granted_memory_mb, granted_disk_gb, granted_image_id)
@@ -1235,6 +1368,7 @@ class PublishingTest {
                 returning id
                 """, Long.class, ip, vmId);
         jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocId, vmId);
+        vmFormNames.put(vmId, new String[] {desiredSubdomain, rootDomain});
         return vmId;
     }
 

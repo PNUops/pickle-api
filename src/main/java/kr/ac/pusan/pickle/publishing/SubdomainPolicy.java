@@ -20,6 +20,12 @@ public class SubdomainPolicy {
     /** RFC 1123 label, lowercase alnum + hyphen, 3–40 chars, no leading/trailing hyphen. */
     private static final Pattern LABEL = Pattern.compile("^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$");
 
+    /** Code fallback for {@code settings.platform_subdomains_per_vm}. */
+    public static final int DEFAULT_SUBDOMAINS_PER_VM = 3;
+
+    /** Code fallback for {@code settings.platform_subdomain_reserve_days}. */
+    public static final int DEFAULT_RESERVE_DAYS = 30;
+
     private final SettingsService settingsService;
 
     public SubdomainPolicy(SettingsService settingsService) {

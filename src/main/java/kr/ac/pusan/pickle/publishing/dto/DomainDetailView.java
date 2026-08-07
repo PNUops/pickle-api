@@ -18,6 +18,8 @@ public record DomainDetailView(
         @Nullable String rootDomain,
         DomainStatus status,
         @Nullable Instant verifiedAt,
+        @Nullable Instant releasedAt,
+        @Nullable Instant reservedUntil,
         Instant createdAt,
         @Nullable DomainVerificationView verification) {
 }

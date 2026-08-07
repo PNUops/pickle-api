@@ -2,18 +2,16 @@ package kr.ac.pusan.pickle.publishing;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.publishing.dto.CreateVmDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
-import kr.ac.pusan.pickle.publishing.dto.PublishRequest;
-import kr.ac.pusan.pickle.publishing.dto.UpdatePublicationRequest;
+import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,12 +25,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import tools.jackson.databind.JsonNode;
 
 /**
- * Contract tag {@code publishing} (openapi.yaml v0.4.0, server /api/v1): VM HTTP
- * service publish lifecycle and self-service domain management. All mutating ops
- * write intent and return 202 (async apply); reads return 200.
+ * Contract tag {@code publishing} (server /api/v1): self-service domain
+ * management for a VM's HTTP service. A VM may carry several domains at once
+ * (contract v0.29.0), each with its own port; the domain is the unit every
+ * mutating endpoint works on. All mutating ops write intent and return 202
+ * (async apply); reads return 200.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -44,47 +43,26 @@ public class PublishingController {
         this.publishingService = publishingService;
     }
 
-    @PostMapping("/vms/{vmId}/publish")
+    @PostMapping("/vms/{vmId}/domains")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public PublicationView publishVm(
+    public PublicationView createVmDomain(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            @RequestBody(required = false) PublishRequest request, HttpServletRequest httpRequest) {
-        PublishRequest body = request != null ? request : new PublishRequest(null, null, null, null);
-        return publishingService.publish(principal, vmId,
+            @RequestBody(required = false) CreateVmDomainRequest request,
+            HttpServletRequest httpRequest) {
+        CreateVmDomainRequest body = request != null ? request
+                : new CreateVmDomainRequest(null, null, null, null);
+        return publishingService.createDomain(principal, vmId,
                 body.port(), body.subdomain(), body.rootDomain(), body.customDomain(),
                 clientIp(httpRequest));
     }
 
-    /**
-     * PATCH binds the raw body so an omitted {@code customDomain} (leave the
-     * domain unchanged, port-only edit) is distinguishable from an explicit
-     * {@code null} (detach the custom domain, revert to the platform subdomain).
-     */
-    @PatchMapping("/vms/{vmId}/publication")
-    @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
-            schema = @Schema(implementation = UpdatePublicationRequest.class)))
+    @PatchMapping("/domains/{domainId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public PublicationView updatePublication(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            @RequestBody JsonNode body, HttpServletRequest httpRequest) {
-        Integer port = null;
-        if (body.has("port")) {
-            JsonNode portNode = body.get("port");
-            port = portNode.isNumber() ? portNode.asInt() : -1; // non-numeric → 422 range
-        }
-        boolean customProvided = body.has("customDomain");
-        String customDomain = customProvided && !body.get("customDomain").isNull()
-                ? body.get("customDomain").asString() : null;
-        return publishingService.updatePublication(principal, vmId,
-                port, customProvided, customDomain, clientIp(httpRequest));
-    }
-
-    @DeleteMapping("/vms/{vmId}/publication")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    public MessageResponse unpublishVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            HttpServletRequest httpRequest) {
-        return publishingService.unpublish(principal, vmId, clientIp(httpRequest));
+    public PublicationView updateDomain(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
+            @RequestBody UpdateDomainRequest request, HttpServletRequest httpRequest) {
+        return publishingService.updateDomain(principal, domainId, request.port(),
+                clientIp(httpRequest));
     }
 
     @GetMapping("/domains")

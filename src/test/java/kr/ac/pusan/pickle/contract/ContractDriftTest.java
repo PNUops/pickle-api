@@ -111,12 +111,11 @@ class ContractDriftTest {
             "GET /admin/templates",
             "PATCH /admin/templates/{templateId}",
             "GET /admin/vms",
-            // HTTP publishing (contract v0.4.0).
-            "POST /vms/{vmId}/publish",
-            "PATCH /vms/{vmId}/publication",
-            "DELETE /vms/{vmId}/publication",
+            // HTTP publishing (multi-domain since contract v0.29.0).
+            "POST /vms/{vmId}/domains",
             "GET /domains",
             "GET /domains/{domainId}",
+            "PATCH /domains/{domainId}",
             "DELETE /domains/{domainId}",
             "POST /domains/{domainId}/verify",
             "GET /admin/routes",

@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.27.0, 141 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.29.0, 140 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -92,15 +92,14 @@ operations:
   - { id: getVmSettings,        method: GET,    path: "/vms/{vmId}/settings",             roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: updateVmSettings,     method: PATCH,  path: "/vms/{vmId}/settings",             roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: listVmEvents,         method: GET,    path: "/vms/{vmId}/events",               roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
-  - { id: publishVm,            method: POST,   path: "/vms/{vmId}/publish",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
-  - { id: updatePublication,    method: PATCH,  path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
-  - { id: unpublishVm,          method: DELETE, path: "/vms/{vmId}/publication",          roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
+  - { id: createVmDomain,       method: POST,   path: "/vms/{vmId}/domains",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   # createTerminalSession: group MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
 
   # ── 3.7 Domains (group-role-scoped) ───────────────────────────────────────
   - { id: listDomains,          method: GET,    path: "/domains",                         roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
   - { id: getDomain,            method: GET,    path: "/domains/{domainId}",              roles: { USER: allow_group_scoped:VIEWER, ORG_MANAGER: allow_group_scoped:VIEWER, ORG_ADMIN: allow_group_scoped:VIEWER, SYS_MANAGER: allow_group_scoped:VIEWER, SYS_ADMIN: allow_group_scoped:VIEWER } }
+  - { id: updateDomain,         method: PATCH,  path: "/domains/{domainId}",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: deleteDomain,         method: DELETE, path: "/domains/{domainId}",              roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
   - { id: verifyDomain,         method: POST,   path: "/domains/{domainId}/verify",       roles: { USER: allow_group_scoped:EDITOR, ORG_MANAGER: allow_group_scoped:EDITOR, ORG_ADMIN: allow_group_scoped:EDITOR, SYS_MANAGER: allow_group_scoped:EDITOR, SYS_ADMIN: allow_group_scoped:EDITOR } }
 

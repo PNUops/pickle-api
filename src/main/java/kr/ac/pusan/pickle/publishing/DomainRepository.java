@@ -11,11 +11,19 @@ import org.springframework.data.repository.query.Param;
 
 public interface DomainRepository extends JpaRepository<Domain, Long> {
 
-    /** The single live domain for a VM (v1: one publication per VM). */
-    Optional<Domain> findFirstByVmIdAndStatusNotOrderByIdDesc(Long vmId, DomainStatus status);
+    /** The live row holding an FQDN — the revive-or-409 pre-check. */
+    Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);
 
-    /** Final FQDN-uniqueness gate (partial unique index backs this). */
-    boolean existsByFqdnAndStatusNot(String fqdn, DomainStatus status);
+    /**
+     * SERVING platform subdomains of a VM (released ones excluded) — the
+     * per-VM cap counts these only, so a name in its reservation grace never
+     * blocks its owner from attaching a replacement.
+     */
+    long countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(Long vmId, DomainKind kind,
+            DomainStatus status);
+
+    /** Released-but-kept rows — the reservation sweeper's scan set. */
+    List<Domain> findByReleasedAtIsNotNullAndStatusNot(DomainStatus status);
 
     /** Every domain row of a VM, any status — the deletion teardown sweep. */
     List<Domain> findByVmId(Long vmId);
