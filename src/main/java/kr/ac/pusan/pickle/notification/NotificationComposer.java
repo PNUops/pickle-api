@@ -164,6 +164,23 @@ public class NotificationComposer {
                             str(args, "fqdn"), str(args, "reason")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "fqdn"));
+            case DOMAIN_RESERVE_EXPIRING -> new Composed(event.id(),
+                    "도메인 이름 예약 만료 예정 — " + str(args, "fqdn"),
+                    """
+                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 %s에 만료됩니다.
+                    만료 후에는 다른 사용자가 이 이름을 사용할 수 있습니다.
+                    계속 사용하려면 만료 전에 같은 이름으로 다시 연결해 주세요.""".formatted(
+                            str(args, "fqdn"), KST.format(instant(args, "reservedUntil"))),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "fqdn", "reservedUntil"));
+            case DOMAIN_RESERVE_RELEASED -> new Composed(event.id(),
+                    "도메인 이름 예약 만료 — " + str(args, "fqdn"),
+                    """
+                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 만료되어 회수되었습니다.
+                    이제 다른 사용자가 이 이름을 사용할 수 있습니다.""".formatted(
+                            str(args, "fqdn")),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "fqdn"));
             case CERT_FAILURE -> new Composed(event.id(),
                     "인증서 발급 실패 — " + str(args, "fqdn"),
                     """
