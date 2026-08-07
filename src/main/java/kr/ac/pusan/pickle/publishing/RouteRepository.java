@@ -79,6 +79,28 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
     int reviveForReapply(@Param("id") Long id, @Param("generation") long generation,
             @Param("now") Instant now);
 
+    /**
+     * Records a sync-all confirmation for one route in one CAS: the write
+     * lands only if the route still carries the generation the manifest was
+     * rendered from AND is still live. A teardown that flipped the route
+     * REMOVED (bumping its generation) while the sync-all call was on the wire
+     * must never be overwritten back to APPLIED — that resurrects a vhost the
+     * user just took down and, for a platform name, parks its reservation
+     * as "still serving" forever. Native SQL for the same enum-literal reason
+     * as {@link #reviveForReapply}; {@code updated_at} is set by hand because
+     * native SQL bypasses the entity's update timestamp.
+     */
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update routes
+               set status = 'APPLIED', applied_generation = generation,
+                   applied_at = :now, last_error = null, updated_at = :now
+             where id = :id and generation = :generation and status <> 'REMOVED'
+            """)
+    int confirmSyncedRoute(@Param("id") Long id, @Param("generation") long generation,
+            @Param("now") Instant now);
+
     Optional<Route> findFirstByDomainId(Long domainId);
 
     @Query("""

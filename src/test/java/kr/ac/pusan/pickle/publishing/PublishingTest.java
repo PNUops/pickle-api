@@ -803,6 +803,44 @@ class PublishingTest {
     }
 
     @Test
+    void resyncDoesNotResurrectARouteReleasedMidSync() throws Exception {
+        long vmId = publishableVm("team-rsrace", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        long domainId = domainIdForVm(vmId);
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock
+                .post(urlPathEqualTo("/sync-all")).willReturn(okApply(200_000)));
+        // The user releases the domain while the sync-all call is on the wire:
+        // the route flips REMOVED with a bumped generation and the platform
+        // row starts its reservation grace.
+        MID_CALL_HOOK.set(() -> {
+            try {
+                mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                                .header("Authorization", "Bearer " + ownerToken))
+                        .andExpect(status().isAccepted());
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        });
+        resyncRoutesJob.run();
+
+        // The resync snapshot predates the release. Writing it anyway would
+        // revive the route (next resync puts the vhost back up) and mark it
+        // confirmed, so the reservation sweeper would read the name as still
+        // serving and hold it forever.
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation is null or applied_generation < generation
+                  from routes where id = ?
+                """, Boolean.class, routeId)).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNotNull();
+    }
+
+    @Test
     void adminDomainRemovedFilterAndFailedCertHideExpiry() throws Exception {
         long vmId = publishableVm("team-admrm", "pusan.dev", VmStatus.RUNNING);
         String fqdn = "adm." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
