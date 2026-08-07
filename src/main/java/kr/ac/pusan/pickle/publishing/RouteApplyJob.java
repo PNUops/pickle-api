@@ -112,13 +112,24 @@ public class RouteApplyJob {
     }
 
     private ApplyOutcome.Kind doApply(long routeId) {
-        Route route = routeRepository.findById(routeId).orElse(null);
+        // Locked read: see RouteRepository#findByIdForApply for why overlapping
+        // applies on one route must not interleave.
+        Route route = routeRepository.findByIdForApply(routeId).orElse(null);
         if (route == null) {
             log.warn("route-apply skipped: route {} not found", routeId);
             return null;
         }
         Domain domain = domainRepository.findById(route.getDomainId()).orElseThrow();
         boolean absent = route.getStatus() == RouteStatus.REMOVED;
+        // A removed domain must never serve. Finding its route still live means
+        // the two disagree, and the safe reading of that disagreement is the
+        // domain's: push the removal rather than hold, because holding leaves the
+        // vhost answering for a domain — often a VM — that is already gone, and
+        // the deletion pipeline reads a hold as nothing left to do.
+        if (!absent && domain.getStatus() == DomainStatus.REMOVED) {
+            route.setStatus(RouteStatus.REMOVED);
+            absent = true;
+        }
         // Local backstop for the platform invariant: a PRESENT push may only
         // serve a verified (ACTIVE) domain. Every enqueue site guards this
         // already; enforcing it at the single execution choke point keeps the

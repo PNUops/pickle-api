@@ -1067,6 +1067,37 @@ class PublishingTest {
     }
 
     @Test
+    void anApplyThatLandsAfterTeardownStillRemovesTheVhost() throws Exception {
+        long vmId = publishableVm("team-latepush", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        long domainId = domainIdForVm(vmId);
+
+        // The state a late apply leaves behind: it wrote the route back to APPLIED
+        // after the teardown had marked both it and the domain down, so the two
+        // now disagree — the domain is gone while its route still reads live.
+        jdbcTemplate.update("update domains set status = 'REMOVED' where id = ?", domainId);
+        jdbcTemplate.update("update routes set status = 'APPLIED' where id = ?", routeId);
+
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(999)));
+        // Now the queued apply finally runs. It must not put the vhost back for a
+        // domain that is gone, and it must not answer "nothing to do" either —
+        // the deletion pipeline reads that as a confirmed removal and releases
+        // the IP, leaving the vhost pointed at an address about to be reused.
+        routeApplyJob.apply(routeId);
+
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("ABSENT"))));
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("PRESENT"))));
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+    }
+
+    @Test
     void failedTeardownBlocksDeletionAndIpRelease() throws Exception {
         long vmId = publishableVm("team-delfail", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());

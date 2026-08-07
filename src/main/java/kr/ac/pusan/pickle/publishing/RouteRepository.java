@@ -1,9 +1,11 @@
 package kr.ac.pusan.pickle.publishing;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -12,6 +14,21 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 public interface RouteRepository extends JpaRepository<Route, Long> {
+
+    /**
+     * The route, locked for the duration of one apply. Applies to the same route
+     * must not overlap: each reads the desired state, talks to the agent, then
+     * writes the outcome back, so two of them interleaving lets the slower one
+     * commit a state the faster one already superseded. That is not theoretical —
+     * an apply enqueued when a domain was created, still in flight when the VM
+     * was deleted, wrote its route back to APPLIED after the deletion had marked
+     * it REMOVED, and the vhost went on serving a VM that no longer existed.
+     * Locking here makes the late apply re-read the torn-down state and push the
+     * removal instead. Routes of different domains never contend.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from Route r where r.id = :id")
+    Optional<Route> findByIdForApply(@Param("id") Long id);
 
     /** The live route for a domain (v1: one route per domain). */
     Optional<Route> findFirstByDomainIdAndStatusNot(Long domainId, RouteStatus status);
