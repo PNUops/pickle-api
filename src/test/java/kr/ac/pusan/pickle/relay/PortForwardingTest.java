@@ -403,6 +403,32 @@ class PortForwardingTest {
     }
 
     @Test
+    void adminDeleteRemovesBumpsAndNotifiesTheGroup() throws Exception {
+        long relayId = soleRelay(21000, 21099);
+        long vmId = runningVm();
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andReturn().getResponse().getContentAsString();
+        long mappingId = objectMapper.readTree(body).get("id").asLong();
+
+        mockMvc.perform(delete("/api/v1/admin/port-mappings/" + mappingId)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isAccepted());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from port_mappings where id = ?", Long.class, mappingId))
+                .isZero();
+        assertThat(mappingGeneration(relayId)).isEqualTo(2);
+        // The owning group is told, same channel as an admin suspend: an
+        // access path disappearing must not be discovered from a dead
+        // connection (the audit row alone reaches no user).
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from notifications
+                 where user_id = ? and event = 'port_mapping.deleted'
+                   and payload ->> 'vmId' = ?
+                """, Long.class, owner.getId(), String.valueOf(vmId))).isEqualTo(1);
+    }
+
+    @Test
     void guardPatchIsTriStatePerField() throws Exception {
         long relayId = soleRelay(19000, 19099);
         long vmId = runningVm();

@@ -292,6 +292,16 @@ public class NotificationComposer {
                             str(args, "proto"), str(args, "publicPort"), str(args, "reason")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName", "proto", "publicPort"));
+            case PORT_MAPPING_DELETED -> new Composed(event.id(),
+                    "포트 포워딩 삭제 — " + str(args, "vmName"),
+                    """
+                    VM '%s'의 포트 포워딩(%s %s)이 관리자에 의해 삭제되었습니다.
+                    외부 접속 경로가 제거되었으며, 필요하면 새 포워딩을 다시 신청할 수 있습니다.
+
+                    문의 사항은 관리자에게 연락해 주세요.""".formatted(str(args, "vmName"),
+                            str(args, "proto"), str(args, "publicPort")),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "proto", "publicPort"));
             case CAMPUS_IP_REQUESTED -> new Composed(event.id(),
                     "교내 IP 신청 접수 — " + str(args, "vmName"),
                     """

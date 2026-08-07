@@ -45,6 +45,7 @@ public enum NotificationEvent {
     RELAY_NEVER_CONTACTED("relay.never_contacted", NotificationImportance.HIGH),
     RELAY_BAND_USAGE_HIGH("relay.band_usage_high", NotificationImportance.HIGH),
     PORT_MAPPING_SUSPENDED("port_mapping.suspended", NotificationImportance.HIGH),
+    PORT_MAPPING_DELETED("port_mapping.deleted", NotificationImportance.HIGH),
     CAMPUS_IP_REQUESTED("campus_ip.requested", NotificationImportance.NORMAL),
     CAMPUS_IP_STATUS_CHANGED("campus_ip.status_changed", NotificationImportance.NORMAL);
 
