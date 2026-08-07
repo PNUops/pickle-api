@@ -25,9 +25,7 @@ import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
-import kr.ac.pusan.pickle.publishing.SubdomainPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vmrequest.dto.CreateVmRequestRequest;
 import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
@@ -54,20 +52,18 @@ public class VmRequestService {
     private final OrgRepository orgRepository;
     private final OsImageRepository imageRepository;
     private final VmFlavorRepository flavorRepository;
-    private final SettingsService settingsService;
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final VmRepository vmRepository;
     private final VmSlugPolicy slugPolicy;
-    private final SubdomainPolicy subdomainPolicy;
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
             GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
             OrgRepository orgRepository, OsImageRepository imageRepository,
             VmFlavorRepository flavorRepository,
-            SettingsService settingsService, AuditService auditService,
+            AuditService auditService,
             NotificationService notificationService, VmRepository vmRepository,
-            VmSlugPolicy slugPolicy, SubdomainPolicy subdomainPolicy) {
+            VmSlugPolicy slugPolicy) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.groupRepository = groupRepository;
@@ -75,12 +71,10 @@ public class VmRequestService {
         this.orgRepository = orgRepository;
         this.imageRepository = imageRepository;
         this.flavorRepository = flavorRepository;
-        this.settingsService = settingsService;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.vmRepository = vmRepository;
         this.slugPolicy = slugPolicy;
-        this.subdomainPolicy = subdomainPolicy;
     }
 
     @Transactional
@@ -121,12 +115,6 @@ public class VmRequestService {
             validateSpec(request, image, flavor, errors);
         }
         validateDates(request, errors);
-        // Resolved once and then BOTH validated and stored: a subdomain without
-        // an explicit root claims the default root, so the soft reservation the
-        // duplicate pre-check queries is the row the next submitter collides
-        // with (storing NULL let two rootDomain-less requests share a name).
-        String rootDomain = resolveRootDomain(request);
-        validateDomains(request, rootDomain, errors);
         String desiredSlug = Texts.blankToNull(request.desiredSlug());
         validateSlug(desiredSlug, errors);
         if (!errors.isEmpty()) {
@@ -139,7 +127,6 @@ public class VmRequestService {
                 Texts.blankToNull(request.extraNote()),
                 request.reqVcpu(), request.reqMemoryMb(), request.reqDiskGb(),
                 request.reqStartDate(), request.reqEndDate(),
-                request.desiredSubdomain(), rootDomain,
                 Texts.blankToNull(request.displayName()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
@@ -256,45 +243,6 @@ public class VmRequestService {
         if (request.reqStartDate() != null && request.reqEndDate() != null
                 && request.reqEndDate().isBefore(request.reqStartDate())) {
             errors.add(new FieldValidationError("reqEndDate", "종료일은 시작일 이후여야 합니다."));
-        }
-    }
-
-    /**
-     * The root domain the request is stored with: the submitted value when
-     * given, otherwise the platform default — but only when a subdomain is
-     * actually being reserved (no subdomain ⇒ nothing to anchor, root stays
-     * null). Storing the resolved value is what makes the soft reservation
-     * real: the duplicate pre-check and the persisted row now agree.
-     */
-    private String resolveRootDomain(CreateVmRequestRequest request) {
-        String rootDomain = Texts.blankToNull(request.rootDomain());
-        if (rootDomain != null || request.desiredSubdomain() == null) {
-            return rootDomain;
-        }
-        return subdomainPolicy.defaultRootDomain();
-    }
-
-    private void validateDomains(CreateVmRequestRequest request, String resolvedRootDomain,
-            List<FieldValidationError> errors) {
-        // Full subdomain policy — the same reserved/profanity/pattern gate the
-        // approval path runs, so a denied label never reaches the review screen.
-        subdomainPolicy.validateLabel(request.desiredSubdomain(), "desiredSubdomain", errors);
-        String submittedRoot = Texts.blankToNull(request.rootDomain());
-        if (submittedRoot != null
-                && !settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS).contains(submittedRoot)) {
-            errors.add(new FieldValidationError("rootDomain",
-                    "'" + submittedRoot + "'은(는) 허용된 루트 도메인이 아닙니다."));
-        }
-        // Contract: duplicates are validated server-side — a pair is taken
-        // while another request holds it in a non-terminal state. (Domain
-        // issuance re-checks against actually published domains.) The query
-        // uses the same resolved root that create() persists.
-        if (request.desiredSubdomain() != null && resolvedRootDomain != null
-                && requestRepository.existsByDesiredSubdomainAndRootDomainAndStatusIn(
-                        request.desiredSubdomain(), resolvedRootDomain,
-                        List.of(VmRequestStatus.SUBMITTED, VmRequestStatus.APPROVED))) {
-            errors.add(new FieldValidationError("desiredSubdomain",
-                    "이미 사용 중이거나 신청된 서브도메인입니다."));
         }
     }
 

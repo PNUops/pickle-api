@@ -33,6 +33,21 @@ import org.springframework.transaction.support.TransactionTemplate;
  * never from any request field (there is none) — so a route can only ever point
  * at the VM's own vmbr2 address.</p>
  *
+ * <p><b>Three-phase, no transaction across the network.</b> A custom-domain
+ * apply runs certificate issuance inline on the agent and can take minutes;
+ * holding a DB transaction (and the route row lock) for that long would drain
+ * the connection pool under a burst of applies and stall unrelated requests.
+ * So the flow is: a short transaction reads the desired state under the row
+ * lock ({@code prepare}), the agent call happens with no transaction and no
+ * lock, and a second short transaction re-locks the row and records the
+ * outcome <em>only if the generation is still the one that was pushed</em>
+ * ({@code record}). If the world changed during the call — a teardown, a port
+ * edit, a revive; every desired-state change bumps the generation — the
+ * outcome is discarded and the newer intent's own apply (or the recurring
+ * {@link RouteReconcileJob}) converges the agent. Callers must not wrap
+ * {@link #applyNow} in a transaction of their own, or the call would be pulled
+ * back inside one.</p>
+ *
  * <p>Idempotent/desired-state: re-running is safe, and a stale generation is a
  * 409 no-op on the agent. Failure handling splits on what the agent said:
  * a 422 (config rejected) records FAILED without throwing — retrying the same
@@ -103,22 +118,84 @@ public class RouteApplyJob {
     /**
      * Same as {@link #apply} but reports the outcome — the VM-deletion teardown
      * ({@link PublishingTeardownService}) and the recurring {@link RouteReconcileJob}
-     * push synchronously and act on the result. Runs in its own (joined-if-present)
-     * transaction via {@link TransactionTemplate} so {@link #apply} can commit the
-     * outcome before throwing for a retry.
+     * push synchronously and act on the result. The two DB phases each run in
+     * their own short transaction ({@link TransactionTemplate}); the agent call
+     * between them holds neither a transaction nor a row lock.
      */
     public ApplyOutcome.Kind applyNow(long routeId) {
-        return transactionTemplate.execute(tx -> doApply(routeId));
+        Prep prep = transactionTemplate.execute(tx -> prepare(routeId));
+        if (prep instanceof Skip skip) {
+            return skip.kind();
+        }
+        Push push = (Push) prep;
+        ApplyOutcome outcome = proxyAgentClient.apply(push.request());
+        // The cert confirmation is a second agent round trip (GET /status, with
+        // a bounded retry sleep) — it must happen out here for the same reason
+        // the apply call does.
+        CertVerdict certVerdict = outcome.kind() == ApplyOutcome.Kind.APPLIED
+                && !push.absent() && push.custom() ? probeCert(push.fqdn()) : null;
+        return transactionTemplate.execute(tx -> record(push, outcome, certVerdict));
     }
 
-    private ApplyOutcome.Kind doApply(long routeId) {
-        Route route = routeRepository.findById(routeId).orElse(null);
+    /** Result of the prepare phase: either push this request, or stop here. */
+    private sealed interface Prep permits Push, Skip {
+    }
+
+    /** Desired state snapshot to push — {@code generation} is the CAS token. */
+    private record Push(long routeId, long domainId, long generation, boolean absent,
+            boolean custom, String fqdn, ApplyRequest request) implements Prep {
+    }
+
+    /** Nothing to push; {@code kind} is what {@link #applyNow} reports. */
+    private record Skip(ApplyOutcome.Kind kind) implements Prep {
+    }
+
+    /**
+     * Phase 1 (own short transaction): read the desired state under the row
+     * lock and build the agent request. Corrective writes (stray-route removal,
+     * hold errors, no-IP FAILED) also land here, under the lock.
+     */
+    private Prep prepare(long routeId) {
+        Route route = routeRepository.findByIdForApply(routeId).orElse(null);
         if (route == null) {
             log.warn("route-apply skipped: route {} not found", routeId);
-            return null;
+            return new Skip(null);
         }
         Domain domain = domainRepository.findById(route.getDomainId()).orElseThrow();
         boolean absent = route.getStatus() == RouteStatus.REMOVED;
+        // A removed domain must never serve. Finding its route still live means
+        // the two disagree, and the safe reading of that disagreement is the
+        // domain's: push the removal rather than hold, because holding leaves the
+        // vhost answering for a domain — often a VM — that is already gone, and
+        // the deletion pipeline reads a hold as nothing left to do.
+        if (!absent && domain.getStatus() == DomainStatus.REMOVED) {
+            route.setStatus(RouteStatus.REMOVED);
+            absent = true;
+            if (liveClaimant(domain).isEmpty()) {
+                // The generation must outrank what the agent already applied, or
+                // the removal is refused as stale and the vhost survives the
+                // correction. Reaching here means something wrote the route back
+                // under us, so its generation is exactly the one the agent has.
+                // With a claimant the bump is exactly wrong — see below.
+                route.setGeneration(routeGenerations.next());
+            }
+        }
+        if (absent) {
+            // A freed name may already have a new owner (custom domains release
+            // their FQDN the moment they are deleted). Once another live domain
+            // row holds this FQDN, the name — and its vhost — belong to that
+            // route's convergence, and pushing this removal with an OUTRANKING
+            // generation would take the new owner's vhost down. With the older
+            // token the push stays safe (the agent refuses it once the new
+            // owner has applied), so only the outranking case retires here; the
+            // refused case retires on its 409 (see recordSuperseded).
+            Optional<Route> claimant = liveClaimant(domain);
+            if (claimant.isPresent()
+                    && claimant.get().getGeneration() < route.getGeneration()) {
+                settleSuperseded(route, domain);
+                return new Skip(null);
+            }
+        }
         // Local backstop for the platform invariant: a PRESENT push may only
         // serve a verified (ACTIVE) domain. Every enqueue site guards this
         // already; enforcing it at the single execution choke point keeps the
@@ -130,20 +207,67 @@ public class RouteApplyJob {
             log.warn("route-apply skipped: route {} is live but domain {} is {} — "
                     + "refusing to push an unverified/released domain", routeId,
                     domain.getFqdn(), domain.getStatus());
-            return null;
+            return new Skip(null);
         }
-        ApplyRequest request = absent ? absentRequest(domain, route) : presentRequest(domain, route);
+        ApplyRequest request = absent
+                ? ApplyRequest.absent(domain.getFqdn(), route.getGeneration())
+                : presentRequest(domain, route);
         if (request == null) {
-            return ApplyOutcome.Kind.FAILED; // present() already recorded it (no live IP)
+            return new Skip(ApplyOutcome.Kind.FAILED); // recorded already (no live IP)
         }
-        ApplyOutcome outcome = proxyAgentClient.apply(request);
+        return new Push(route.getId(), domain.getId(), route.getGeneration(), absent,
+                domain.getKind() == DomainKind.CUSTOM, domain.getFqdn(), request);
+    }
+
+    /**
+     * Phase 3 (own short transaction): re-lock the route and record the agent's
+     * verdict, but only when the generation is still the one that was pushed —
+     * anything else means a newer desired state was written during the call,
+     * and this (now historical) outcome must not overwrite it. The discarded
+     * state is re-converged by the newer intent's own apply or the reconciler.
+     */
+    private ApplyOutcome.Kind record(Push push, ApplyOutcome outcome, CertVerdict certVerdict) {
+        Route route = routeRepository.findByIdForApply(push.routeId()).orElse(null);
+        if (route == null) {
+            log.warn("route-apply outcome dropped: route {} disappeared during the call",
+                    push.routeId());
+            return outcome.kind();
+        }
+        if (route.getGeneration() != push.generation()) {
+            log.info("route-apply outcome discarded for {}: generation moved {} -> {} during "
+                    + "the call", push.fqdn(), push.generation(), route.getGeneration());
+            return outcome.kind();
+        }
+        Domain domain = domainRepository.findById(push.domainId()).orElseThrow();
         switch (outcome.kind()) {
-            case APPLIED -> recordApplied(route, domain, absent, outcome);
-            case STALE -> recordSuperseded(route, domain, absent, outcome);
-            case FAILED -> recordFailed(route, domain, absent, outcome.error());
+            case APPLIED -> recordApplied(route, domain, push.absent(), outcome, certVerdict);
+            case STALE -> recordSuperseded(route, domain, push.absent(), outcome);
+            case FAILED -> recordFailed(route, domain, push.absent(), outcome.error());
             case TRANSPORT -> recordTransport(route, domain, outcome.error());
         }
         return outcome.kind();
+    }
+
+    /**
+     * The live route currently holding this domain's FQDN under ANOTHER live
+     * domain row — i.e. the name's new owner after an immediate release. At
+     * most one exists (the partial unique index on live domains).
+     */
+    private Optional<Route> liveClaimant(Domain domain) {
+        return routeRepository.findLiveClaimant(domain.getFqdn(), domain.getId());
+    }
+
+    /**
+     * Finalizes a removal that the FQDN's new owner has made moot: marking the
+     * confirmed generation current takes the route out of the reconciler's
+     * unconfirmed set, so nothing keeps re-pushing a removal that would fight
+     * the new owner. A stray vhost (if one survives) is replaced by the new
+     * owner's own apply, which always carries the newer generation.
+     */
+    private void settleSuperseded(Route route, Domain domain) {
+        route.setAppliedGeneration(route.getGeneration());
+        log.info("route-apply removal for {} retired: the fqdn is live under a newer route — "
+                + "its owner's apply converges the vhost", domain.getFqdn());
     }
 
     private ApplyRequest presentRequest(Domain domain, Route route) {
@@ -158,22 +282,16 @@ public class RouteApplyJob {
                 route.getTargetPort(), assembler.certRefFor(domain));
     }
 
-    private ApplyRequest absentRequest(Domain domain, Route route) {
-        return ApplyRequest.absent(domain.getFqdn(), route.getGeneration());
-    }
-
-    private void recordApplied(Route route, Domain domain, boolean absent, ApplyOutcome outcome) {
+    private void recordApplied(Route route, Domain domain, boolean absent, ApplyOutcome outcome,
+            CertVerdict certVerdict) {
         Long appliedGen = outcome.generation() != null ? outcome.generation() : route.getGeneration();
         route.setAppliedGeneration(appliedGen);
         route.setAppliedAt(Instant.now());
         route.setLastError(null);
         if (!absent) {
             route.setStatus(RouteStatus.APPLIED);
-            if (domain.getKind() == DomainKind.CUSTOM) {
-                // The agent drove certbot after the vhost went live,
-                // but /apply answers 200 even when issuance failed — confirm via
-                // GET /status before calling the cert ACTIVE.
-                settleCertFromAgent(domain);
+            if (certVerdict != null) {
+                markCert(domain, certVerdict.status(), certVerdict.error());
             }
             // Deduped per domain: reconcile re-applies and generation bumps do
             // not re-announce an already-connected domain.
@@ -193,6 +311,13 @@ public class RouteApplyJob {
     private void recordSuperseded(Route route, Domain domain, boolean absent,
             ApplyOutcome outcome) {
         if (absent) {
+            if (liveClaimant(domain).isPresent()) {
+                // The refusing generation is the fqdn's new owner going live
+                // during our call. Re-bumping would hand the NEXT removal push
+                // a token that outranks the owner's vhost — retire instead.
+                settleSuperseded(route, domain);
+                return;
+            }
             // A removal must never be "confirmed" by someone else's PRESENT
             // apply winning the generation race — that would leave an orphan
             // live vhost. Outrank the applied generation instead, so the
@@ -249,26 +374,29 @@ public class RouteApplyJob {
                 event, args, dedupKey);
     }
 
+    /** What the agent's {@code GET /status} said about a just-applied cert. */
+    private record CertVerdict(CertificateStatus status, String error) {
+    }
+
     /**
-     * Settles the custom domain's cert from the agent's {@code GET /status}:
+     * Probes the agent's {@code GET /status} for the custom domain's cert:
      * ACTIVE only on a confirmed OK (never a fabricated {@code notAfter} for an
      * unconfirmed cert), FAILED with the agent's error, and RENEWING when the
      * agent is unreachable or still PENDING — the verify retry
-     * ({@code POST /domains/{id}/verify}) re-triggers issuance.
+     * ({@code POST /domains/{id}/verify}) re-triggers issuance. Runs outside
+     * any transaction; the verdict is written by the record phase.
      */
-    private void settleCertFromAgent(Domain domain) {
+    private CertVerdict probeCert(String fqdn) {
         for (int attempt = 1; attempt <= CERT_STATUS_ATTEMPTS; attempt++) {
             Optional<AgentStatus.CertState> cert = proxyAgentClient.status()
-                    .flatMap(status -> status.cert(domain.getFqdn()));
+                    .flatMap(status -> status.cert(fqdn));
             if (cert.isPresent()) {
                 switch (cert.get().state()) {
                     case OK -> {
-                        markCert(domain, CertificateStatus.ACTIVE, null);
-                        return;
+                        return new CertVerdict(CertificateStatus.ACTIVE, null);
                     }
                     case FAILED -> {
-                        markCert(domain, CertificateStatus.FAILED, cert.get().error());
-                        return;
+                        return new CertVerdict(CertificateStatus.FAILED, cert.get().error());
                     }
                     case PENDING -> {
                         // still issuing — retry below, else leave RENEWING
@@ -284,8 +412,8 @@ public class RouteApplyJob {
                 }
             }
         }
-        markCert(domain, CertificateStatus.RENEWING, null);
-        log.info("cert for {} not confirmed on agent /status — left RENEWING", domain.getFqdn());
+        log.info("cert for {} not confirmed on agent /status — left RENEWING", fqdn);
+        return new CertVerdict(CertificateStatus.RENEWING, null);
     }
 
     private void markCert(Domain domain, CertificateStatus status, String error) {

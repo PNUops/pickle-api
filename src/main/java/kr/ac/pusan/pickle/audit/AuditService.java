@@ -57,8 +57,7 @@ public class AuditService {
     public static final String VM_PASSWORD_REVEAL = "vm.password_reveal";
     // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";
-    public static final String VM_PUBLICATION_UPDATE = "vm.publication_update";
-    public static final String VM_UNPUBLISH = "vm.unpublish";
+    public static final String DOMAIN_UPDATE = "domain.update";
     public static final String DOMAIN_DELETE = "domain.delete";
     public static final String DOMAIN_VERIFY = "domain.verify";
     public static final String ROUTE_RESYNC = "route.resync";

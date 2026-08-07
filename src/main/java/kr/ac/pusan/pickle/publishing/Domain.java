@@ -59,6 +59,15 @@ public class Domain {
     @Column(name = "verified_at")
     private Instant verifiedAt;
 
+    /**
+     * When the domain stopped serving. A platform subdomain keeps its row — and
+     * so its claim on the FQDN — for a grace period after this, so the name is
+     * not handed to someone else the moment it is released; the sweeper removes
+     * it once the period passes. Null while the domain is serving.
+     */
+    @Column(name = "released_at")
+    private Instant releasedAt;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "domain_status")
@@ -157,6 +166,14 @@ public class Domain {
 
     public void setVerifiedAt(Instant verifiedAt) {
         this.verifiedAt = verifiedAt;
+    }
+
+    public Instant getReleasedAt() {
+        return releasedAt;
+    }
+
+    public void setReleasedAt(Instant releasedAt) {
+        this.releasedAt = releasedAt;
     }
 
     public DomainStatus getStatus() {

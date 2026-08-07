@@ -1,13 +1,17 @@
 package kr.ac.pusan.pickle.publishing;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.publishing.dto.CertificateView;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
+import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.DomainVerificationView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.publishing.dto.RouteView;
+import kr.ac.pusan.pickle.settings.SettingsService;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,12 +41,22 @@ public class PublicationAssembler {
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
     private final PublishingProperties properties;
+    private final SettingsService settingsService;
 
     public PublicationAssembler(RouteRepository routeRepository,
-            CertificateRepository certificateRepository, PublishingProperties properties) {
+            CertificateRepository certificateRepository, PublishingProperties properties,
+            SettingsService settingsService) {
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
         this.properties = properties;
+        this.settingsService = settingsService;
+    }
+
+    public DomainSummaryView toDomainSummary(Domain domain) {
+        return new DomainSummaryView(domain.getId(), domain.getVmId(), domain.getKind(),
+                domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
+                domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
+                domain.getCreatedAt());
     }
 
     public DomainDetailView toDomainDetail(Domain domain) {
@@ -50,7 +64,27 @@ public class PublicationAssembler {
                 ? verification(domain) : null;
         return new DomainDetailView(domain.getId(), domain.getVmId(), domain.getKind(),
                 domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
-                domain.getVerifiedAt(), domain.getCreatedAt(), verification);
+                domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
+                domain.getCreatedAt(), verification);
+    }
+
+    /**
+     * When the released name stops being reserved — computed server-side
+     * (releasedAt + the grace setting) so the console never re-derives it from
+     * a setting it cannot read. A released custom row carries no grace under
+     * the reservation policy: its {@code reservedUntil} equals its release
+     * time (due immediately).
+     */
+    private Instant reservedUntil(Domain domain) {
+        if (domain.getReleasedAt() == null) {
+            return null;
+        }
+        if (domain.getKind() == DomainKind.CUSTOM) {
+            return domain.getReleasedAt();
+        }
+        int graceDays = settingsService.integer(SettingsService.PLATFORM_SUBDOMAIN_RESERVE_DAYS,
+                SubdomainPolicy.DEFAULT_RESERVE_DAYS);
+        return domain.getReleasedAt().plus(graceDays, ChronoUnit.DAYS);
     }
 
     /** The full publish view for a domain — its live route and certificate. */

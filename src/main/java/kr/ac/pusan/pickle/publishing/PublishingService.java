@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -22,14 +23,13 @@ import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.vmrequest.VmRequest;
-import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,18 +44,24 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * User HTTP publishing (contract tag {@code publishing}): publish/update/
- * unpublish a VM's HTTP service and manage its domains. Endpoints only validate
- * and write intent (domain/route rows + generation); every proxy-agent call and
- * DNS check happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}.
+ * User HTTP publishing (contract tag {@code publishing}): attach domains to a
+ * VM's HTTP service and manage them. Endpoints only validate and write intent
+ * (domain/route rows + generation); every proxy-agent call and DNS check
+ * happens in the enqueued {@link RouteApplyJob} / {@link DomainVerificationJob}.
+ *
+ * <p>A VM may serve several domains at once (contract v0.29.0): each domain
+ * carries its own route — and so its own target port. Platform subdomains are
+ * capped per VM ({@code settings.platform_subdomains_per_vm}, serving ones
+ * only); custom domains are uncapped but rate-limited per user on creation
+ * because Let's Encrypt issuance draws on a shared account quota.</p>
  *
  * <p>Authorization: mutating ops require the owning group's OWNER/EDITOR (a
  * VIEWER is 403, a non-member 404 — same masking as the power path); reads
- * require VIEWER+. The platform subdomain NAME is chosen by the user — in the
- * publish body or pre-picked on the request form (v0.22.0 self-service; no
- * auto-generated fallback) — and validated here against the full subdomain
- * policy. The routing target IP is never accepted from the client — it is
- * forced server-side to the VM's own allocation in the apply job (SSRF guard).</p>
+ * require VIEWER+. The platform subdomain NAME is always chosen by the user in
+ * the create body (no request-form fallback, no auto-generated name) and
+ * validated here against the full subdomain policy. The routing target IP is
+ * never accepted from the client — it is forced server-side to the VM's own
+ * allocation in the apply job (SSRF guard).</p>
  */
 @Service
 public class PublishingService {
@@ -65,13 +71,13 @@ public class PublishingService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
-    private final VmRequestRepository requestRepository;
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
     private final RouteGenerations routeGenerations;
     private final PublicationAssembler assembler;
     private final SubdomainPolicy subdomainPolicy;
+    private final SettingsService settingsService;
     private final VmEventRepository vmEventRepository;
     private final AuditService auditService;
     private final JobScheduler jobScheduler;
@@ -81,22 +87,22 @@ public class PublishingService {
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
-            VmRequestRepository requestRepository,
             DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             PublicationAssembler assembler, SubdomainPolicy subdomainPolicy,
+            SettingsService settingsService,
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
             RateLimitService rateLimitService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
-        this.requestRepository = requestRepository;
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
         this.routeGenerations = routeGenerations;
         this.assembler = assembler;
         this.subdomainPolicy = subdomainPolicy;
+        this.settingsService = settingsService;
         this.vmEventRepository = vmEventRepository;
         this.auditService = auditService;
         this.jobScheduler = jobScheduler;
@@ -105,10 +111,10 @@ public class PublishingService {
         this.rateLimitService = rateLimitService;
     }
 
-    // ── publish / update / unpublish ─────────────────────────────────────────
+    // ── create / update / delete a domain ────────────────────────────────────
 
     @Transactional
-    public PublicationView publish(AuthenticatedUser actor, long vmId, Integer port,
+    public PublicationView createDomain(AuthenticatedUser actor, long vmId, Integer port,
             String subdomain, String rootDomain, String customDomain, String ip) {
         Vm vm = requireVmOwnerOrEditor(actor, vmId);
         requirePublishableState(vm);
@@ -116,35 +122,11 @@ public class PublishingService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
                     "플랫폼 서브도메인과 커스텀 도메인은 동시에 지정할 수 없습니다.")));
         }
-        Domain existing = domainRepository
-                .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
-                .orElse(null);
-        if (existing != null && routeRepository
-                .findFirstByDomainIdAndStatusNot(existing.getId(), RouteStatus.REMOVED)
-                .isPresent()) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PUBLICATION_ALREADY_EXISTS,
-                    "이미 공개된 VM입니다",
-                    "이 VM은 이미 HTTP 서비스가 공개되어 있습니다. 포트·도메인을 바꾸려면 공개 설정을 수정해 주세요.");
-        }
         int resolvedPort = validatePort(port);
         String requestedCustom = Texts.blankToNull(customDomain);
-        Domain domain;
-        if (existing != null) {
-            // A domain row without a live route is an unpublish tombstone (a custom
-            // row kept for its verification state) — the VM is NOT published
-            // (contract: PublicationView.route is required, VmDetail.publication is
-            // null when unpublished). Re-publishing the same custom FQDN revives the
-            // row (verification preserved); any other target retires it first.
-            if (existing.getKind() == DomainKind.CUSTOM && requestedCustom != null
-                    && existing.getFqdn().equals(requestedCustom.toLowerCase(Locale.ROOT))) {
-                domain = revive(existing, resolvedPort);
-            } else {
-                retire(existing);
-                domain = createPublication(vm, resolvedPort, requestedCustom, subdomain, rootDomain);
-            }
-        } else {
-            domain = createPublication(vm, resolvedPort, requestedCustom, subdomain, rootDomain);
-        }
+        Domain domain = requestedCustom != null
+                ? createCustom(actor, vm, resolvedPort, requestedCustom)
+                : createPlatform(vm, resolvedPort, subdomain, rootDomain);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(), domain.getFqdn()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_PUBLISH,
                 "vm", vmId, Map.of("fqdn", domain.getFqdn(), "port", resolvedPort,
@@ -153,77 +135,67 @@ public class PublishingService {
     }
 
     @Transactional
-    public PublicationView updatePublication(AuthenticatedUser actor, long vmId, Integer port,
-            boolean customDomainProvided, String customDomain, String ip) {
-        Vm vm = requireVmOwnerOrEditor(actor, vmId);
-        if (port == null && !customDomainProvided) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("port",
-                    "변경할 포트 또는 커스텀 도메인 중 최소 1개를 지정해야 합니다.")));
+    public PublicationView updateDomain(AuthenticatedUser actor, long domainId, Integer port,
+            String ip) {
+        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
+        Vm vm = requireVmOwnerOrEditor(actor, domain.getVmId());
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            throw domainNotFound();
         }
-        Domain current = domainRepository
-                .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
-                .orElseThrow(PublishingService::publicationNotFound);
-        // An unpublish tombstone (no live route) is not a publication — 404, same
-        // as a VM that was never published.
-        Route liveRoute = routeRepository
-                .findFirstByDomainIdAndStatusNot(current.getId(), RouteStatus.REMOVED)
-                .orElseThrow(PublishingService::publicationNotFound);
         requirePublishableState(vm);
-
-        Domain result;
-        if (customDomainProvided) {
-            // Replace the publication: tear the current one down (custom vhost +
-            // cert archived) and create the new target (custom FQDN, or revert to
-            // the platform subdomain when customDomain is null).
-            String newCustom = Texts.blankToNull(customDomain);
-            int resolvedPort = port != null ? validatePort(port) : liveRoute.getTargetPort();
-            teardown(current, /* archiveCustomCert */ true);
-            // Reverting to the platform subdomain (newCustom == null) reuses the
-            // request-form name; PATCH carries no subdomain field — without a
-            // stored name the revert answers 422 (unpublish → publish with a name).
-            result = createPublication(vm, resolvedPort, newCustom, null, null);
-        } else {
-            int resolvedPort = validatePort(port);
-            result = current;
-            Route route = liveRoute;
-            route.setTargetPort(resolvedPort);
-            route.setGeneration(routeGenerations.next());
-            route.setStatus(RouteStatus.PENDING);
-            route.setLastError(null);
-            Route saved = routeRepository.save(route);
-            if (current.getStatus() == DomainStatus.ACTIVE) {
-                long routeId = saved.getId();
-                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
-            }
+        if (port == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("port",
+                    "변경할 포트를 입력해 주세요.")));
         }
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_PUBLICATION_UPDATE, "vm", vmId,
-                Map.of("fqdn", result.getFqdn(), "kind", result.getKind().name()), ip);
-        return assembler.toPublication(result);
+        int resolvedPort = validatePort(port);
+        // A released (reserved) domain has no live route — there is no port to
+        // change until the name is re-attached.
+        Route route = routeRepository
+                .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                .orElseThrow(PublishingService::domainNotServing);
+        route.setTargetPort(resolvedPort);
+        route.setGeneration(routeGenerations.next());
+        route.setStatus(RouteStatus.PENDING);
+        route.setLastError(null);
+        Route saved = routeRepository.save(route);
+        if (domain.getStatus() == DomainStatus.ACTIVE) {
+            long routeId = saved.getId();
+            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+        }
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_UPDATE,
+                "domain", domainId, Map.of("fqdn", domain.getFqdn(), "port", resolvedPort), ip);
+        return assembler.toPublication(domain);
     }
 
+    /**
+     * One endpoint, two outcomes. A domain that is serving (live route) is
+     * <em>released</em>: the route goes down, and a platform subdomain keeps
+     * its row — with {@code releasedAt} stamped — so the name stays reserved
+     * for the grace period (the sweeper reclaims it later). A domain that is
+     * NOT serving (a reservation the user wants back now, or a leftover custom
+     * row) is removed outright, freeing the name immediately.
+     */
     @Transactional
-    public MessageResponse unpublish(AuthenticatedUser actor, long vmId, String ip) {
-        requireVmOwnerOrEditor(actor, vmId);
-        Domain domain = domainRepository
-                .findFirstByVmIdAndStatusNotOrderByIdDesc(vmId, DomainStatus.REMOVED)
-                .orElseThrow(PublishingService::publicationNotFound);
-        if (routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
-                .isEmpty()) {
-            // Tombstone (custom row kept after a previous unpublish): the VM is
-            // already unpublished — contract: 404.
-            throw publicationNotFound();
+    public MessageResponse deleteDomain(AuthenticatedUser actor, long domainId, String ip) {
+        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
+        requireVmOwnerOrEditor(actor, domain.getVmId());
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            throw domainNotFound();
         }
-        // Unpublish keeps a custom domain's row (verification state preserved),
-        // removing only its route; AUTO/REQUESTED rows are cleaned up.
-        teardown(domain, /* archiveCustomCert */ false);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.UNPUBLISH, actor.id(), domain.getFqdn()));
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_UNPUBLISH,
-                "vm", vmId, Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("HTTP 서비스 공개 해제를 접수했습니다. 잠시 후 외부 접근이 차단됩니다.");
+        boolean served = assembler.hasLiveRoute(domain);
+        teardown(domain);
+        if (served) {
+            vmEventRepository.save(new VmEvent(domain.getVmId(), VmEventType.UNPUBLISH, actor.id(),
+                    domain.getFqdn()));
+        }
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_DELETE,
+                "domain", domainId, Map.of("fqdn", domain.getFqdn()), ip);
+        return domain.getReleasedAt() != null && domain.getStatus() != DomainStatus.REMOVED
+                ? new MessageResponse("도메인 해제를 접수했습니다. 이름은 유예 기간 동안 이 VM에 예약됩니다.")
+                : new MessageResponse("도메인 삭제를 접수했습니다.");
     }
 
-    // ── domains ──────────────────────────────────────────────────────────────
+    // ── domain reads ─────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public PageResponse<DomainSummaryView> listDomains(AuthenticatedUser actor, Long vmId,
@@ -231,7 +203,8 @@ public class PublishingService {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         Page<Domain> result = domainRepository.findForMember(myGroupIds(actor), vmId,
                 status != null ? status.name() : null, pageable);
-        return PageResponse.of(result.getContent().stream().map(DomainSummaryView::from).toList(), result);
+        return PageResponse.of(result.getContent().stream().map(assembler::toDomainSummary).toList(),
+                result);
     }
 
     @Transactional(readOnly = true)
@@ -242,22 +215,13 @@ public class PublishingService {
     }
 
     @Transactional
-    public MessageResponse deleteDomain(AuthenticatedUser actor, long domainId, String ip) {
-        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmOwnerOrEditor(actor, domain.getVmId());
-        if (domain.getStatus() == DomainStatus.REMOVED) {
-            throw domainNotFound();
-        }
-        teardown(domain, /* archiveCustomCert */ true);
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_DELETE,
-                "domain", domainId, Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("도메인 삭제를 접수했습니다.");
-    }
-
-    @Transactional
     public DomainDetailView verifyDomain(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
         requireVmOwnerOrEditor(actor, domain.getVmId());
+        // Same 404 mask as update/delete: a REMOVED row is gone to its owner.
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            throw domainNotFound();
+        }
         if (domain.getKind() != DomainKind.CUSTOM) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
@@ -272,43 +236,78 @@ public class PublishingService {
         return assembler.toDomainDetail(domain);
     }
 
-    // ── shared publication core ──────────────────────────────────────────────
+    // ── shared creation core ─────────────────────────────────────────────────
 
-    /** Creates the domain + route rows and enqueues apply (platform) or verification (custom). */
-    private Domain createPublication(Vm vm, int port, String customDomain,
-            String subdomain, String rootDomain) {
-        Domain domain;
-        boolean applyNow;
-        if (customDomain != null) {
-            String fqdn = customDomain.toLowerCase(Locale.ROOT);
-            validateCustomDomain(fqdn);
-            requireFqdnFree(fqdn);
-            domain = saveDomainOrFqdnTaken(Domain.custom(vm.getId(), fqdn, generateToken()));
-            certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
-            applyNow = false;
-        } else {
-            domain = saveDomainOrFqdnTaken(platformDomain(vm, subdomain, rootDomain));
-            applyNow = true;
+    /** Custom-domain creation: validate, revive a same-VM leftover, or insert fresh. */
+    private Domain createCustom(AuthenticatedUser actor, Vm vm, int port, String customDomain) {
+        String fqdn = customDomain.toLowerCase(Locale.ROOT);
+        validateCustomDomain(fqdn);
+        // Every accepted custom domain ends in a Let's Encrypt issuance attempt
+        // on the platform's SHARED ACME account — a per-user creation limit
+        // keeps one user from exhausting that quota for everyone.
+        rateLimitService.hit("domain_create", "user:" + actor.id(),
+                RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        Domain existing = domainRepository.findFirstByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)
+                .orElse(null);
+        if (existing != null) {
+            requireRevivable(existing, vm);
+            return revive(existing, port);
         }
-        long generation = routeGenerations.next();
-        Route route = routeRepository.save(new Route(domain.getId(), port, generation));
-        long routeId = route.getId();
-        long domainId = domain.getId();
-        if (applyNow) {
-            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
-        } else {
-            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        Domain domain = saveDomainOrFqdnTaken(Domain.custom(vm.getId(), fqdn, generateToken()));
+        certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
+        attachRoute(domain, port);
+        return domain;
+    }
+
+    /** Platform-subdomain creation: resolve the name, enforce the cap, revive or insert. */
+    private Domain createPlatform(Vm vm, int port, String subdomain, String rootDomain) {
+        PlatformName name = resolvePlatformName(subdomain, rootDomain);
+        Domain existing = domainRepository.findFirstByFqdnAndStatusNot(name.fqdn(), DomainStatus.REMOVED)
+                .orElse(null);
+        if (existing != null) {
+            requireRevivable(existing, vm);
+            requirePlatformSlotFree(vm.getId());
+            return revive(existing, port);
         }
+        requirePlatformSlotFree(vm.getId());
+        Domain domain = saveDomainOrFqdnTaken(
+                Domain.platform(vm.getId(), DomainKind.REQUESTED, name.fqdn(), name.rootDomain()));
+        attachRoute(domain, port);
         return domain;
     }
 
     /**
+     * An existing live row for the requested FQDN is only revivable by the VM
+     * that already owns it, and only while it is not serving — anything else is
+     * the same 409 the unique index would give.
+     */
+    private void requireRevivable(Domain existing, Vm vm) {
+        if (!existing.getVmId().equals(vm.getId()) || assembler.hasLiveRoute(existing)) {
+            throw fqdnTaken();
+        }
+    }
+
+    /** Creates the domain's route and enqueues apply (ACTIVE) or verification. */
+    private void attachRoute(Domain domain, int port) {
+        long generation = routeGenerations.next();
+        Route route = routeRepository.save(new Route(domain.getId(), port, generation));
+        long routeId = route.getId();
+        long domainId = domain.getId();
+        if (domain.getStatus() == DomainStatus.ACTIVE) {
+            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+        } else {
+            runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        }
+    }
+
+    /**
      * saveAndFlush + catch, scoped to the one statement that can lose the race:
-     * {@code requireFqdnFree} is a pre-check only — under a concurrent claim of
-     * the same name the partial unique index ({@code domains_fqdn_live_idx}) is
-     * the arbiter, and the loser must get the same 409 instead of a 500 at
-     * commit time. Nothing else runs inside the catch, so a validation failure
-     * or a certificate-insert violation still surfaces as itself.
+     * {@code findFirstByFqdnAndStatusNot} is a pre-check only — under a
+     * concurrent claim of the same name the partial unique index
+     * ({@code domains_fqdn_live_idx}) is the arbiter, and the loser must get
+     * the same 409 instead of a 500 at commit time. Nothing else runs inside
+     * the catch, so a validation failure or a certificate-insert violation
+     * still surfaces as itself.
      */
     private Domain saveDomainOrFqdnTaken(Domain domain) {
         try {
@@ -319,36 +318,26 @@ public class PublishingService {
     }
 
     /**
-     * Resolves the platform subdomain (v0.22.0 self-service): the publish body's
-     * {@code subdomain} wins, else the request-form value; neither ⇒ 422 (no
-     * auto-generated fallback). The label runs the full {@link SubdomainPolicy}
-     * (pattern/reserved/profanity) — the publish path is the final gate now that
-     * approval no longer confirms names.
+     * Resolves the platform FQDN from the request body alone: {@code subdomain}
+     * is mandatory (no request-form fallback, no auto-generated name — the
+     * request form stopped carrying a domain axis in v0.29.0) and
+     * {@code rootDomain} defaults to the platform default root. The label runs
+     * the full {@link SubdomainPolicy} (pattern/reserved/profanity) — this is
+     * the only gate.
      */
-    private Domain platformDomain(Vm vm, String requestedSubdomain, String requestedRootDomain) {
-        VmRequest request = requestRepository.findById(vm.getRequestId()).orElse(null);
-        String label = Texts.blankToNull(requestedSubdomain) != null
-                ? requestedSubdomain
-                : (request != null ? request.getDesiredSubdomain() : null);
+    private PlatformName resolvePlatformName(String requestedSubdomain, String requestedRootDomain) {
+        String label = Texts.blankToNull(requestedSubdomain);
         if (label == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
                     "공개할 서브도메인을 입력해 주세요. (자동 생성은 지원하지 않습니다)")));
         }
-        // Normalize once for BOTH sources: validateLabel lowercases only its
-        // local copy, and the FQDN below must match what was validated (DNS is
+        // Normalize before validating: validateLabel lowercases only its local
+        // copy, and the FQDN below must match what was validated (DNS is
         // case-insensitive; the unique index is not).
         label = label.strip().toLowerCase(Locale.ROOT);
         String rootDomain = Texts.blankToNull(requestedRootDomain);
         if (rootDomain == null) {
-            rootDomain = request != null ? request.getRootDomain() : null;
-            // The stored root may be a submit-time snapshot (possibly just the
-            // resolved default of that day) — if the operator has since retired
-            // it from the allowed list, fall back to the CURRENT default instead
-            // of stranding the request behind a 422 for a field the user never
-            // typed. A root supplied in the publish body still hard-fails below.
-            if (rootDomain == null || !subdomainPolicy.isAllowedRootDomain(rootDomain)) {
-                rootDomain = subdomainPolicy.defaultRootDomain();
-            }
+            rootDomain = subdomainPolicy.defaultRootDomain();
         }
         if (rootDomain == null) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
@@ -361,9 +350,35 @@ public class PublishingService {
             throw ApiException.validationFailed(errors);
         }
         requireWildcardCertificate(rootDomain);
-        String fqdn = label + "." + rootDomain;
-        requireFqdnFree(fqdn);
-        return Domain.platform(vm.getId(), DomainKind.REQUESTED, fqdn, rootDomain);
+        return new PlatformName(label + "." + rootDomain, rootDomain);
+    }
+
+    private record PlatformName(String fqdn, String rootDomain) {
+    }
+
+    /**
+     * The per-VM cap counts SERVING platform subdomains only ({@code
+     * releasedAt} null): a released name in its grace period must not occupy a
+     * slot, or releasing a domain would lock its owner out of creating the
+     * replacement for the whole grace period.
+     *
+     * <p>Counted under the VM row lock: count-then-insert alone lets two
+     * concurrent creates both count below the cap and overshoot it by one.
+     * The lock serializes platform creates per VM for the rest of this (short,
+     * network-free) transaction; unrelated VMs never contend.</p>
+     */
+    private void requirePlatformSlotFree(long vmId) {
+        vmRepository.findByIdForUpdate(vmId).orElseThrow(PublishingService::vmNotFound);
+        int limit = settingsService.integer(SettingsService.PLATFORM_SUBDOMAINS_PER_VM,
+                SubdomainPolicy.DEFAULT_SUBDOMAINS_PER_VM);
+        long serving = domainRepository.countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(
+                vmId, DomainKind.CUSTOM, DomainStatus.REMOVED);
+        if (serving >= limit) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_LIMIT_REACHED,
+                    "플랫폼 서브도메인 개수 제한에 도달했습니다",
+                    "이 VM에는 플랫폼 서브도메인을 최대 " + limit + "개까지 연결할 수 있습니다. "
+                            + "기존 서브도메인을 해제하거나 커스텀 도메인을 사용해 주세요.");
+        }
     }
 
     /**
@@ -388,12 +403,16 @@ public class PublishingService {
     }
 
     /**
-     * Re-publishes onto an unpublish tombstone of the SAME custom FQDN: a fresh
-     * route (bumped generation), a live cert row if the old one was revoked, and
-     * the apply/verify hand-off per the domain's preserved verification state.
+     * Re-attaches the SAME FQDN to the VM that still holds its row: a released
+     * platform subdomain comes back into service ({@code releasedAt} cleared —
+     * the reservation did its job), a leftover custom row keeps its preserved
+     * verification state. Fresh route (bumped generation), a live cert row if
+     * the old one was revoked, and the apply/verify hand-off per the domain's
+     * verification state.
      */
     private Domain revive(Domain domain, int port) {
-        if (certificateRepository
+        domain.setReleasedAt(null);
+        if (domain.getKind() == DomainKind.CUSTOM && certificateRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED)
                 .isEmpty()) {
             certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
@@ -414,36 +433,62 @@ public class PublishingService {
         return domain;
     }
 
-    /** Retires a tombstone whose FQDN is not being re-published (cert archived). */
+    /**
+     * Takes a domain down. The live route (if any) flips to REMOVED and its
+     * ABSENT state is pushed to the proxy. What happens to the row then depends
+     * on whose name space it lives in:
+     *
+     * <ul>
+     * <li><b>Platform subdomain that was serving</b> — the name space is ours,
+     * the names are short and contested, and a handover risks routing traffic
+     * meant for the previous holder to someone else's service. The row survives
+     * with {@code releasedAt} stamped, so the fqdn unique index keeps the name
+     * reserved for this VM until the sweeper reclaims it after the grace
+     * period.</li>
+     * <li><b>Custom domain, or a row not serving at all</b> — removed outright
+     * (REMOVED + certs revoked). A custom domain is the user's own DNS: if
+     * another account can pass the TXT challenge, control of the name really
+     * moved, and holding the row here would only block the new owner. A
+     * non-serving row is a reservation being handed back early.</li>
+     * </ul>
+     *
+     * <p>Package-private: the admin force-release reuses the exact
+     * user-deletion semantics instead of duplicating them.</p>
+     */
+    void teardown(Domain domain) {
+        Route live = routeRepository
+                .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                .orElse(null);
+        if (live != null) {
+            live.setStatus(RouteStatus.REMOVED);
+            live.setGeneration(routeGenerations.next());
+            long routeId = live.getId();
+            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+        }
+        if (live != null && domain.getKind() != DomainKind.CUSTOM) {
+            domain.setReleasedAt(Instant.now());
+        } else {
+            retire(domain);
+        }
+    }
+
+    /**
+     * Takes a domain down and frees its name in one step, skipping the grace a
+     * user's own release gets. An admin reaches for this to stop a name that is
+     * causing harm; leaving it reserved would keep the row alive, and a reserved
+     * row is exactly what the owner may revive — the takedown would undo itself
+     * the moment they re-added the same name.
+     */
+    void forceTeardown(Domain domain) {
+        teardown(domain);
+        retire(domain);
+    }
+
+    /** Removes the row outright: REMOVED (name freed) + certs revoked. */
     private void retire(Domain domain) {
         domain.setStatus(DomainStatus.REMOVED);
         certificateRepository.findByDomainId(domain.getId())
                 .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
-    }
-
-    /**
-     * Removes the live route (ABSENT apply) and cleans up the domain/cert per
-     * kind. Package-private: the admin force-release (contract v0.18.0) reuses
-     * the exact user-deletion semantics instead of duplicating them.
-     */
-    void teardown(Domain domain, boolean archiveCustomCert) {
-        routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
-                .ifPresent(route -> {
-                    route.setStatus(RouteStatus.REMOVED);
-                    route.setGeneration(routeGenerations.next());
-                    long routeId = route.getId();
-                    enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
-                });
-        if (domain.getKind() == DomainKind.CUSTOM) {
-            if (archiveCustomCert) {
-                domain.setStatus(DomainStatus.REMOVED);
-                certificateRepository.findByDomainId(domain.getId())
-                        .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
-            }
-            // else: unpublish keeps the custom domain row for its verification state.
-        } else {
-            domain.setStatus(DomainStatus.REMOVED);
-        }
     }
 
     private String generateToken() {
@@ -482,12 +527,6 @@ public class PublishingService {
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
-        }
-    }
-
-    private void requireFqdnFree(String fqdn) {
-        if (domainRepository.existsByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)) {
-            throw fqdnTaken();
         }
     }
 
@@ -553,9 +592,9 @@ public class PublishingService {
                 "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
-    private static ApiException publicationNotFound() {
+    private static ApiException domainNotServing() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "공개 설정을 찾을 수 없습니다", "이 VM은 공개되어 있지 않습니다. 먼저 HTTP 서비스를 공개해 주세요.");
+                "공개 설정을 찾을 수 없습니다", "이 도메인은 현재 서비스 중이 아닙니다. 도메인을 다시 연결해 주세요.");
     }
 
     private static ApiException domainNotFound() {

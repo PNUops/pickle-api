@@ -24,6 +24,10 @@ public enum NotificationEvent {
     VM_DELETE_COMPLETED("vm.delete.completed", NotificationImportance.NORMAL),
     DOMAIN_CONNECT_DONE("domain.connect.done", NotificationImportance.NORMAL),
     DOMAIN_CONNECT_FAILED("domain.connect.failed", NotificationImportance.HIGH),
+    // Released-name reservation lifecycle (contract v0.29.0): advance notice
+    // before the grace runs out, then the reclaim itself.
+    DOMAIN_RESERVE_EXPIRING("domain.reserve.expiring", NotificationImportance.NORMAL),
+    DOMAIN_RESERVE_RELEASED("domain.reserve.released", NotificationImportance.NORMAL),
     CERT_FAILURE("cert.failure", NotificationImportance.HIGH),
     VM_EXPIRY_NOTICE("vm.expiry.notice", NotificationImportance.NORMAL),
     VM_EXPIRY_STOPPED("vm.expiry.stopped", NotificationImportance.HIGH),

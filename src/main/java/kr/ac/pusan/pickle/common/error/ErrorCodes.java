@@ -50,7 +50,7 @@ public final class ErrorCodes {
     public static final String VM_STOP_PROTECTED = "VM_STOP_PROTECTED";
     public static final String VM_PASSWORD_ALREADY_VIEWED = "VM_PASSWORD_ALREADY_VIEWED";
     // HTTP publishing (contract tag publishing).
-    public static final String PUBLICATION_ALREADY_EXISTS = "PUBLICATION_ALREADY_EXISTS";
+    public static final String DOMAIN_LIMIT_REACHED = "DOMAIN_LIMIT_REACHED";
     public static final String DOMAIN_FQDN_TAKEN = "DOMAIN_FQDN_TAKEN";
     public static final String DOMAIN_NOT_CUSTOM = "DOMAIN_NOT_CUSTOM";
     public static final String DOMAIN_NOT_ACTIVE = "DOMAIN_NOT_ACTIVE";

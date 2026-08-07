@@ -67,10 +67,16 @@ public class VmRequest {
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;
 
-    /** Requester-desired platform subdomain; the publish-time default. */
+    /**
+     * Historical only: the request form stopped carrying a domain axis in
+     * contract v0.29.0 (domains are attached to the VM afterwards), so new
+     * rows store null. The columns stay because past requests recorded a
+     * wish here and the detail view still shows it when present.
+     */
     @Column(name = "desired_subdomain")
     private String desiredSubdomain;
 
+    /** Historical only — see {@link #desiredSubdomain}. */
     @Column(name = "root_domain")
     private String rootDomain;
 
@@ -101,7 +107,7 @@ public class VmRequest {
     public VmRequest(Long groupId, Long orgId, Long requesterId, Long imageId, Long flavorId,
             String purpose, String courseOrProject, String specReason, String extraNote,
             int reqVcpu, int reqMemoryMb, int reqDiskGb, LocalDate reqStartDate, LocalDate reqEndDate,
-            String desiredSubdomain, String rootDomain, String displayName, String desiredSlug) {
+            String displayName, String desiredSlug) {
         this.groupId = groupId;
         this.orgId = orgId;
         this.requesterId = requesterId;
@@ -116,8 +122,6 @@ public class VmRequest {
         this.reqDiskGb = reqDiskGb;
         this.reqStartDate = reqStartDate;
         this.reqEndDate = reqEndDate;
-        this.desiredSubdomain = desiredSubdomain;
-        this.rootDomain = rootDomain;
         this.displayName = displayName;
         this.desiredSlug = desiredSlug;
     }

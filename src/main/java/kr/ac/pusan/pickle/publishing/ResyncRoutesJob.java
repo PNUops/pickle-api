@@ -13,7 +13,6 @@ import org.jobrunr.jobs.annotations.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Full-manifest reconciliation (the proxy-agent control contract, {@code POST
@@ -21,6 +20,18 @@ import org.springframework.transaction.annotation.Transactional;
  * route from the DB (the authoritative manifest) and pushes it to proxy-agent,
  * which prunes agent-managed vhosts not in the manifest. Used after a proxy
  * rebuild, agent state loss, or drift suspicion.
+ *
+ * <p>Deliberately NOT one transaction: the manifest is read first, the
+ * sync-all call runs with no transaction open, and each confirmation is then
+ * written as its own generation-checked CAS
+ * ({@link RouteRepository#confirmSyncedRoute}). A route whose desired state
+ * changed while the call was on the wire — say a user released the domain, so
+ * the route flipped REMOVED with a bumped generation — keeps that newer state:
+ * flushing the pre-call snapshot over it would resurrect the vhost on the next
+ * resync and freeze a released platform name in its reservation forever. The
+ * skipped route's own apply/reconcile converges the agent. Per-route CAS also
+ * means no row locks are held while the agent works, so a large manifest
+ * cannot pin DB connections (same discipline as {@link RouteApplyJob}).</p>
  */
 @Component
 public class ResyncRoutesJob {
@@ -48,11 +59,14 @@ public class ResyncRoutesJob {
         this.assembler = assembler;
     }
 
+    /** The manifest slice of one route + the generation the CAS must match. */
+    private record Included(long routeId, long generation) {
+    }
+
     @Job(name = "route-resync (sync-all)", retries = 0)
-    @Transactional
     public void run() {
         List<Route> live = routeRepository.findByStatusNot(RouteStatus.REMOVED);
-        List<Route> included = new ArrayList<>();
+        List<Included> included = new ArrayList<>();
         List<ApplyRequest> manifest = new ArrayList<>();
         for (Route route : live) {
             Domain domain = domainRepository.findById(route.getDomainId()).orElse(null);
@@ -67,18 +81,28 @@ public class ResyncRoutesJob {
             }
             manifest.add(ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
                     route.getTargetPort(), assembler.certRefFor(domain)));
-            included.add(route);
+            included.add(new Included(route.getId(), route.getGeneration()));
         }
         long snapshotGeneration = routeGenerations.next();
         ApplyOutcome outcome = proxyAgentClient.syncAll(snapshotGeneration, manifest);
         Instant now = Instant.now();
         switch (outcome.kind()) {
-            case APPLIED -> included.forEach(route -> {
-                route.setStatus(RouteStatus.APPLIED);
-                route.setAppliedGeneration(route.getGeneration());
-                route.setAppliedAt(now);
-                route.setLastError(null);
-            });
+            case APPLIED -> {
+                int skipped = 0;
+                for (Included entry : included) {
+                    if (routeRepository.confirmSyncedRoute(entry.routeId(), entry.generation(),
+                            now) == 0) {
+                        skipped++;
+                    }
+                }
+                if (skipped > 0) {
+                    // Not silent: these routes changed while the sync was on the
+                    // wire and keep their newer state; their own apply/reconcile
+                    // converges the agent.
+                    log.info("route-resync left {} route(s) unconfirmed (changed mid-sync)",
+                            skipped);
+                }
+            }
             case STALE -> log.info("route-resync superseded (snapshot {} stale)", snapshotGeneration);
             // 422 = all-or-nothing validation failure: the agent changed NOTHING,
             // so the routes keep their (still accurate) prior status — flipping

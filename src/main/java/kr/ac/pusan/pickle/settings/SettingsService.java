@@ -38,6 +38,8 @@ import tools.jackson.databind.ObjectMapper;
 public class SettingsService {
 
     public static final String ALLOWED_ROOT_DOMAINS = "allowed_root_domains";
+    public static final String PLATFORM_SUBDOMAINS_PER_VM = "platform_subdomains_per_vm";
+    public static final String PLATFORM_SUBDOMAIN_RESERVE_DAYS = "platform_subdomain_reserve_days";
     public static final String RESERVED_SUBDOMAINS = "reserved_subdomains";
     public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
@@ -261,6 +263,10 @@ public class SettingsService {
                 numberInRangeExclusiveMin(0, 10)));
         map.put(IP_QUARANTINE_HOURS, new Editable(SettingValueType.INTEGER,
                 intInRange(MIN_IP_QUARANTINE_HOURS, 720)));
+        map.put(PLATFORM_SUBDOMAINS_PER_VM, new Editable(SettingValueType.INTEGER,
+                intInRange(0, 100)));
+        map.put(PLATFORM_SUBDOMAIN_RESERVE_DAYS, new Editable(SettingValueType.INTEGER,
+                intInRange(0, 365)));
         map.put(VM_DELETE_GRACE_HOURS, new Editable(SettingValueType.INTEGER,
                 intInRange(1, 2160)));
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));

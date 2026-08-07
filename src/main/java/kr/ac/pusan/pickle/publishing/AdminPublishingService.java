@@ -162,18 +162,21 @@ public class AdminPublishingService {
     // ── post-hoc intervention (contract v0.18.0, all admin roles org-scoped) ──
 
     /**
-     * Immediate admin release of a problem domain — identical semantics to the
-     * user-side domain deletion ({@code teardown(domain, true)}): route removal
-     * pushed to the proxy, domain REMOVED, custom certs revoked.
+     * Admin takedown of a problem domain — identical semantics to the
+     * user-side domain deletion ({@code teardown(domain)}): the route removal
+     * is pushed to the proxy; a serving platform subdomain then holds its name
+     * through the reservation grace (a second force-release reclaims it
+     * immediately), while a custom domain or a non-serving row is removed
+     * outright.
      */
     @Transactional
     public MessageResponse forceRelease(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
-        publishingService.teardown(domain, /* archiveCustomCert */ true);
+        publishingService.forceTeardown(domain);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.DOMAIN_FORCE_RELEASE, "domain", domainId,
                 Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용됩니다.");
+        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
     }
 
     /**

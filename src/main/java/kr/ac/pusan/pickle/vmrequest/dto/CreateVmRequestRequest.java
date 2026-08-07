@@ -54,15 +54,6 @@ public record CreateVmRequestRequest(
 
         @Nullable LocalDate reqEndDate,
 
-        // 선택 입력 — 지정 시 공개(publish)의 기본 이름이 된다. 공개 옵션 제거
-        // (v0.22.0) 이후에도 신청 단계에서 미리 정해 둘 수 있다.
-        @Pattern(regexp = "^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$",
-                message = "서브도메인은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가).")
-        @Nullable String desiredSubdomain,
-
-        @Size(max = 253, message = "루트 도메인이 올바르지 않습니다.")
-        @Nullable String rootDomain,
-
         // 선택 입력 — VM 표시명(vm_settings display_name)을 신청 단계에서 지정.
         @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
         @Nullable String displayName,

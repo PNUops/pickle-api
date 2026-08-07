@@ -10,6 +10,20 @@ spring:
     # lets a deployment that forgot the variable connect to whatever database
     # happens to accept it, which is worse than not starting.
     password: ${PICKLE_DB_PASSWORD}
+    hikari:
+      # Explicit, not the Hikari default (10): worst-case transaction demand is
+      # every job worker (16, below) in a short DB transaction at once plus web
+      # requests; 20 covers that with headroom while staying far under the
+      # Postgres default max_connections (100) on the shared host. Long agent
+      # calls hold NO connection (they run outside transactions), so the pool
+      # only ever serves short work.
+      maximum-pool-size: 20
+      # Backstop for the remaining short row locks (route apply prepare/record,
+      # the reservation sweeper, the per-VM cap check): a lock wait past this
+      # is a bug surfacing, and failing loudly beats pinning a pooled
+      # connection indefinitely. Applies per session; Flyway shares the pool,
+      # but boot-time migrations on a single instance see no lock contention.
+      connection-init-sql: SET lock_timeout = '10s'
   jpa:
     hibernate:
       ddl-auto: validate
@@ -21,6 +35,12 @@ spring:
 jobrunr:
   background-job-server:
     enabled: true
+    # Explicit, not the default (cores x 16 = 64 on the 4-core host): a route
+    # apply can legitimately block minutes on inline certificate issuance, and
+    # 64 concurrent ones would queue-storm the agent. 16 bounds that while
+    # staying below the DB pool (20), so even every worker in a transaction at
+    # once cannot starve web requests of connections.
+    worker-count: 16
   dashboard:
     # Off by default; ops enable it per environment via env (planned: dev only).
     # Property keys verified against jobrunr-spring-boot-4-starter 8.7.1
@@ -126,7 +146,12 @@ pickle:
     base-url: ${PICKLE_PROXY_AGENT_URL:http://172.30.1.10:9443}
     token: ${PICKLE_PROXY_AGENT_TOKEN:}
     connect-timeout: 5s
-    read-timeout: 30s
+    # Must outlast the agent's own subprocess bound (180s — certificate
+    # issuance runs inline in /apply): if this side gave up first it would
+    # record a transport failure while the agent kept working, and the two
+    # would then disagree about whether the vhost/cert exists. 180s + margin.
+    # Affordable because the call runs outside any DB transaction.
+    read-timeout: 190s
   terminal:
     # Web terminal control link. pickle-api is
     # the client for force-terminate only; the browser WS + SSH bytes live on the
