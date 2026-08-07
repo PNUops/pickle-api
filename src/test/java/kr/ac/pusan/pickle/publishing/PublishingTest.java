@@ -659,6 +659,29 @@ class PublishingTest {
     }
 
     @Test
+    void verifyTriggerMasksARemovedDomainLikeUpdateAndDelete() throws Exception {
+        long vmId = publishableVm("team-vrm", "pusan.dev", VmStatus.RUNNING);
+        String fqdn = "vrm." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        long enqueued = verifyJobCount();
+
+        // A removed row answers the same 404 the other mutating ops give — it
+        // must not accept a verify (202), enqueue a DNS job, or burn the
+        // caller's rate-limit budget.
+        mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        assertThat(verifyJobCount()).isEqualTo(enqueued);
+    }
+
+    @Test
     void unverifiedDomainParksFailedPastDeadline() throws Exception {
         long vmId = publishableVm("team-vto", "pusan.dev", VmStatus.RUNNING);
         String fqdn = "to." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";

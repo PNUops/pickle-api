@@ -218,6 +218,10 @@ public class PublishingService {
     public DomainDetailView verifyDomain(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
         requireVmOwnerOrEditor(actor, domain.getVmId());
+        // Same 404 mask as update/delete: a REMOVED row is gone to its owner.
+        if (domain.getStatus() == DomainStatus.REMOVED) {
+            throw domainNotFound();
+        }
         if (domain.getKind() != DomainKind.CUSTOM) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
