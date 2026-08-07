@@ -69,6 +69,39 @@ class PublishingTest {
 
     private static final String APPLY_PATH = "/apply";
     private static final AtomicInteger IP_SEQ = new AtomicInteger(1);
+
+    /**
+     * One-shot hook run on WireMock's serving thread AFTER an /apply or
+     * /sync-all request arrived but BEFORE its response is sent — i.e. exactly
+     * while the api-side call is in flight. This is how the race tests write a
+     * newer desired state "during" an agent call deterministically, with no
+     * sleeps: the test thread is blocked awaiting the response while the hook
+     * commits its write.
+     */
+    private static final java.util.concurrent.atomic.AtomicReference<Runnable> MID_CALL_HOOK =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    /** WireMock extension driving {@link #MID_CALL_HOOK}. */
+    public static class MidCallHookListener
+            implements com.github.tomakehurst.wiremock.extension.ServeEventListener {
+        @Override
+        public String getName() {
+            return "mid-call-hook";
+        }
+
+        @Override
+        public void beforeResponseSent(com.github.tomakehurst.wiremock.stubbing.ServeEvent event,
+                com.github.tomakehurst.wiremock.extension.Parameters parameters) {
+            String url = event.getRequest().getUrl();
+            if (!url.startsWith(APPLY_PATH) && !url.startsWith("/sync-all")) {
+                return;
+            }
+            Runnable hook = MID_CALL_HOOK.getAndSet(null);
+            if (hook != null) {
+                hook.run();
+            }
+        }
+    }
     // Every suite in the shared embedded PG needs its OWN proxmox_vmid base
     // (vms_proxmox_vmid_active_uq is global): pick an unused range by grepping
     // VMID_SEQ across src/test before adding one.
@@ -81,7 +114,8 @@ class PublishingTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
-        agent = new WireMockServer(WireMockConfiguration.options().dynamicPort());
+        agent = new WireMockServer(WireMockConfiguration.options().dynamicPort()
+                .extensions(new MidCallHookListener()));
         agent.start();
         registry.add("pickle.proxy-agent.base-url", () -> "http://localhost:" + agent.port());
         registry.add("pickle.proxy-agent.token", () -> "test-agent-token");
@@ -132,6 +166,7 @@ class PublishingTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        MID_CALL_HOOK.set(null);
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(okApply(1)));
@@ -510,6 +545,35 @@ class PublishingTest {
 
         // 409 = superseded → the job leaves the route PENDING (no false APPLIED/FAILED).
         assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+    }
+
+    @Test
+    void anOutcomeForASupersededGenerationIsDiscarded() throws Exception {
+        long vmId = publishableVm("team-midrace", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        // While the agent call is in flight (request received, 200 not yet
+        // sent), a newer desired state lands. Possible at all only because the
+        // apply holds no transaction or row lock across the call — under the
+        // old locked-transaction flow this hook would deadlock the test.
+        long[] bumped = new long[1];
+        MID_CALL_HOOK.set(() -> {
+            bumped[0] = jdbcTemplate.queryForObject(
+                    "select nextval('route_generation_seq')", Long.class);
+            jdbcTemplate.update("update routes set generation = ? where id = ?",
+                    bumped[0], routeId);
+        });
+
+        routeApplyJob.apply(routeId);
+
+        // The 200 answered the OLD generation; recording it would overwrite
+        // the newer intent (a late resurrection) — it must be discarded, and
+        // the newer intent's own apply/reconcile converges the agent.
+        assertThat(routeStatus(routeId)).isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject(
+                "select applied_generation from routes where id = ?", Long.class, routeId))
+                .isNull();
+        assertThat(routeGeneration(routeId)).isEqualTo(bumped[0]);
     }
 
     @Test

@@ -16,15 +16,17 @@ import org.springframework.transaction.annotation.Transactional;
 public interface RouteRepository extends JpaRepository<Route, Long> {
 
     /**
-     * The route, locked for the duration of one apply. Applies to the same route
-     * must not overlap: each reads the desired state, talks to the agent, then
-     * writes the outcome back, so two of them interleaving lets the slower one
-     * commit a state the faster one already superseded. That is not theoretical —
-     * an apply enqueued when a domain was created, still in flight when the VM
-     * was deleted, wrote its route back to APPLIED after the deletion had marked
-     * it REMOVED, and the vhost went on serving a VM that no longer existed.
-     * Locking here makes the late apply re-read the torn-down state and push the
-     * removal instead. Routes of different domains never contend.
+     * The route, locked for one SHORT apply phase — the prepare that reads the
+     * desired state and the record that writes the outcome each take this lock
+     * for their own transaction; it is never held across the agent call.
+     * Cross-call safety comes from the generation instead: the record phase
+     * writes only if the generation is still the one the prepare read, so a
+     * slower apply can never commit a state a faster writer already superseded.
+     * That is not theoretical — an apply enqueued when a domain was created,
+     * still in flight when the VM was deleted, once wrote its route back to
+     * APPLIED after the deletion had marked it REMOVED, and the vhost went on
+     * serving a VM that no longer existed. Routes of different domains never
+     * contend.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from Route r where r.id = :id")
