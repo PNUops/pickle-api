@@ -1131,6 +1131,57 @@ class PublishingTest {
         agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
     }
 
+    @Test
+    void anEqualGenerationRefusalOfARemovalRebumpsAndReconverges() throws Exception {
+        settleAllRoutes();
+        long vmId = publishableVm("team-eqgen", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+
+        // Release the domain, then push the removal into a 409 carrying the
+        // SAME generation — the agent's refusal when its applied generation
+        // already equals ours (a duplicate whose earlier response was lost).
+        mockMvc.perform(delete("/api/v1/domains/" + domainIdForVm(vmId))
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        long removedGen = routeGeneration(routeId);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withStatus(409)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"applied\":false,\"generation\":" + removedGen + "}")));
+        routeApplyJob.apply(routeId);
+
+        // No new owner holds the name (platform names stay reserved), so the
+        // refusal re-arms the removal with a winning token instead of trusting
+        // a 409 that might equally mean someone's PRESENT apply won the race.
+        long rebumped = routeGeneration(routeId);
+        assertThat(rebumped).isGreaterThan(removedGen);
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation is null or applied_generation < generation
+                  from routes where id = ?
+                """, Boolean.class, routeId)).isTrue();
+
+        // The reconciler pushes the re-armed removal through to confirmation.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(rebumped)));
+        jdbcTemplate.update(
+                "update routes set updated_at = now() - interval '5 minutes' where id = ?", routeId);
+        routeReconcileJob.run();
+        agent.verify(postRequestedFor(urlPathEqualTo(APPLY_PATH))
+                .withRequestBody(matchingJsonPath("$.desiredState",
+                        com.github.tomakehurst.wiremock.client.WireMock.equalTo("ABSENT")))
+                .withRequestBody(matchingJsonPath("$.generation",
+                        com.github.tomakehurst.wiremock.client.WireMock
+                                .equalTo(String.valueOf(rebumped)))));
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation >= generation from routes where id = ?
+                """, Boolean.class, routeId)).isTrue();
+    }
+
     /**
      * Publishes a custom FQDN on the VM, verifies it via the stub DNS, applies
      * the route (agent stub answers 200 with {@code appliedGeneration}), and
