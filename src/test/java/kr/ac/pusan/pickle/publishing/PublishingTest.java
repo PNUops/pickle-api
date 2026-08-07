@@ -1111,28 +1111,29 @@ class PublishingTest {
     // ── admin post-hoc intervention (contract v0.18.0) ───────────────────────
 
     @Test
-    void adminForceReleaseTearsDownLikeUserDeletion() throws Exception {
+    void adminForceReleaseFreesTheNameAtOnceAndCannotBeRevived() throws Exception {
         long vmId = publishableVm("team-force", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
         long routeId = routeIdForVm(vmId);
         long generationBefore = routeGeneration(routeId);
 
-        // First force-release = the user DELETE on a serving platform domain:
-        // route down, name held for the grace.
+        // An admin takes a name down to stop harm, so it does not get the grace a
+        // user's own release gets: the row goes at once. Were it merely reserved,
+        // the owner could re-add the same name and revive the very row the admin
+        // just took down.
         mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
-        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
         assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
 
-        // Second force-release reclaims the now non-serving reservation.
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
-                        .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isOk());
-        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        // Re-adding the same name builds a new row rather than reviving the old
+        // one — the takedown stands in the audit trail.
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        assertThat(domainIdForVm(vmId)).isNotEqualTo(domainId);
 
         // an already-REMOVED domain answers the same 404 as an unknown id
         mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")

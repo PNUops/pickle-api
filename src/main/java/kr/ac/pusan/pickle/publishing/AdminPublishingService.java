@@ -172,11 +172,11 @@ public class AdminPublishingService {
     @Transactional
     public MessageResponse forceRelease(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
-        publishingService.teardown(domain);
+        publishingService.forceTeardown(domain);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.DOMAIN_FORCE_RELEASE, "domain", domainId,
                 Map.of("fqdn", domain.getFqdn()), ip);
-        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용됩니다.");
+        return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
     }
 
     /**

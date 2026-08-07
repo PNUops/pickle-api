@@ -462,6 +462,18 @@ public class PublishingService {
         }
     }
 
+    /**
+     * Takes a domain down and frees its name in one step, skipping the grace a
+     * user's own release gets. An admin reaches for this to stop a name that is
+     * causing harm; leaving it reserved would keep the row alive, and a reserved
+     * row is exactly what the owner may revive — the takedown would undo itself
+     * the moment they re-added the same name.
+     */
+    void forceTeardown(Domain domain) {
+        teardown(domain);
+        retire(domain);
+    }
+
     /** Removes the row outright: REMOVED (name freed) + certs revoked. */
     private void retire(Domain domain) {
         domain.setStatus(DomainStatus.REMOVED);
