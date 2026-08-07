@@ -354,6 +354,45 @@ class PublishingTest {
     }
 
     @Test
+    void reviveRunsTheSameRootChecksAsCreation() throws Exception {
+        // A reservation is not a bypass: if the root was taken off the
+        // allow-list — or lost its wildcard certificate — while the name sat
+        // reserved, re-adding the name must fail exactly like a fresh create.
+        allowRootDomain("revive-root.example");
+        long certId = jdbcTemplate.queryForObject("""
+                insert into certificates (domain_id, kind, scope, not_after, status)
+                values (null, 'ORIGIN_CA_WILDCARD', '*.revive-root.example',
+                        '2040-01-01T00:00:00+09:00', 'ACTIVE')
+                returning id
+                """, Long.class);
+        long vmId = publishableVm("team-revcheck", "revive-root.example", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED"); // reserved
+
+        // Root's wildcard certificate withdrawn → revive is refused.
+        jdbcTemplate.update("update certificates set status = 'REVOKED' where id = ?", certId);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-revcheck\","
+                + "\"rootDomain\":\"revive-root.example\"}")
+                .andExpect(status().isConflict());
+
+        // Root withdrawn from the allow-list entirely → same refusal.
+        jdbcTemplate.update("update certificates set status = 'ACTIVE' where id = ?", certId);
+        jdbcTemplate.update("""
+                update settings set value = value - 'revive-root.example', updated_at = now()
+                 where key = 'allowed_root_domains'
+                """);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-revcheck\","
+                + "\"rootDomain\":\"revive-root.example\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("rootDomain"));
+        assertThat(routeStatus(routeIdForVm(vmId))).isEqualTo("REMOVED");
+    }
+
+    @Test
     void publishRejectsPort22() throws Exception {
         long vmId = publishableVm("team-ssh", "pusan.dev", VmStatus.RUNNING);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
