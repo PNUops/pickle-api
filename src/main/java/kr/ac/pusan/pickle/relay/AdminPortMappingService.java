@@ -188,6 +188,18 @@ public class AdminPortMappingService {
         portMappingRepository.delete(mapping);
         vmEventRepository.save(new VmEvent(mapping.getVmId(), VmEventType.PORT_FORWARD_DELETE,
                 actor.id(), "관리자 삭제 — " + mapping.getProto() + " " + mapping.getPublicPort()));
+        // Same channel as an admin suspend: the owning group loses an external
+        // access path and must not learn it from a dead connection.
+        Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);
+        if (vm != null) {
+            notificationService.publish(
+                    notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                    NotificationEvent.PORT_MAPPING_DELETED,
+                    Map.of("vmId", vm.getId(), "vmName", vm.getName(),
+                            "proto", mapping.getProto().name(),
+                            "publicPort", mapping.getPublicPort()),
+                    null);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.PORT_MAPPING_DELETE, "port_mapping", mappingId,
                 Map.of("relayId", mapping.getRelayId(), "vmId", mapping.getVmId(),

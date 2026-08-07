@@ -274,6 +274,21 @@ public class NotificationComposer {
                             str(args, "relayName"), str(args, "lastContactAt")),
                     "/admin/network", event.defaultImportance(),
                     payload(args, "relayId", "relayName"));
+            case RELAY_NEVER_CONTACTED -> new Composed(event.id(),
+                    "릴레이 미접속 — " + str(args, "relayName"),
+                    Boolean.TRUE.equals(args.get("tokenIssued"))
+                            ? """
+                            릴레이 '%s'의 에이전트가 지금까지 한 번도 동기화하지 않았습니다.
+                            에이전트 설치 상태와 설정된 토큰, 터널 상태를 확인해 주세요.
+                            동기화가 없는 동안 포워딩 규칙은 릴레이에 적용되지 않습니다.""".formatted(
+                                    str(args, "relayName"))
+                            : """
+                            릴레이 '%s'에 sync 토큰이 발급되지 않은 상태가 계속되고 있습니다.
+                            토큰이 없으면 에이전트는 인증에 실패해 포워딩 규칙을 받지 못합니다.
+                            콘솔에서 토큰을 발급하고 에이전트에 설정해 주세요.""".formatted(
+                                    str(args, "relayName")),
+                    "/admin/network", event.defaultImportance(),
+                    payload(args, "relayId", "relayName"));
             case RELAY_BAND_USAGE_HIGH -> new Composed(event.id(),
                     "릴레이 포트 대역 사용률 경고 — " + str(args, "relayName"),
                     """
@@ -292,6 +307,16 @@ public class NotificationComposer {
 
                     문의 사항은 관리자에게 연락해 주세요.""".formatted(str(args, "vmName"),
                             str(args, "proto"), str(args, "publicPort"), str(args, "reason")),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "proto", "publicPort"));
+            case PORT_MAPPING_DELETED -> new Composed(event.id(),
+                    "포트 포워딩 삭제 — " + str(args, "vmName"),
+                    """
+                    VM '%s'의 포트 포워딩(%s %s)이 관리자에 의해 삭제되었습니다.
+                    외부 접속 경로가 제거되었으며, 필요하면 새 포워딩을 다시 신청할 수 있습니다.
+
+                    문의 사항은 관리자에게 연락해 주세요.""".formatted(str(args, "vmName"),
+                            str(args, "proto"), str(args, "publicPort")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName", "proto", "publicPort"));
             case CAMPUS_IP_REQUESTED -> new Composed(event.id(),
