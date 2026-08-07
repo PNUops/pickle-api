@@ -45,6 +45,8 @@ class DomainReservationSweeperTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private UserRepository userRepository;
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private long orgId;
     private long templateId;
@@ -174,6 +176,51 @@ class DomainReservationSweeperTest {
             jdbcTemplate.update(
                     "delete from settings where key = 'platform_subdomain_reserve_days'");
         }
+    }
+
+    @Test
+    void aReviveCommittingAtTheExpiryBoundaryBeatsTheSweep() throws Exception {
+        long vmId = createVm();
+        long domainId = platformDomain(vmId, uniqueFqdn("race"), daysAgo(31));
+
+        // A revive transaction holds the domain row while the sweep runs: the
+        // sweep's scan snapshots the row as expired, then its reclaim must
+        // block on the lock and RE-READ the row after the revive commits.
+        // Flushing the scan snapshot instead would erase a domain whose revive
+        // already returned success to the user.
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<?> sweepRun = transactionTemplate.execute(tx -> {
+                jdbcTemplate.queryForObject(
+                        "select id from domains where id = ? for update", Long.class, domainId);
+                java.util.concurrent.Future<?> run = pool.submit(sweeper::sweep);
+                try {
+                    // Let the sweep pass its (unlocked) scan and pile up on the
+                    // row lock; the scan itself takes only milliseconds.
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                // The revive: name back in service, fresh live route.
+                jdbcTemplate.update(
+                        "update domains set released_at = null where id = ?", domainId);
+                jdbcTemplate.update("""
+                        update routes set status = 'PENDING'::route_status
+                         where domain_id = ?
+                        """, domainId);
+                return run;
+            });
+            sweepRun.get(30, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(domainStatus(domainId)).isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject(
+                "select released_at from domains where id = ?", Timestamp.class, domainId))
+                .isNull();
+        assertThat(noticeCount("domain.reserve.released", domainId)).isZero();
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────
