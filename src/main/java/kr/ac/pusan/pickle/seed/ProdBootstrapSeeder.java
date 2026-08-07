@@ -20,20 +20,24 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Production first-run bootstrap: creates the single initial SYS_ADMIN so a
- * fresh prod deploy has a way in, without ever shipping a password in git (unlike
- * {@link DevDataSeeder}, which is dev/test only). The admin's credentials come
+ * First-run bootstrap for the operational profiles: creates the single initial
+ * SYS_ADMIN so a fresh deploy has a way in, without ever shipping a password in
+ * git (unlike {@link DevDataSeeder}, which is dev/test only). It runs on
+ * {@code staging} as well as {@code prod} — the two share an SMTP sender, an
+ * admin-2FA default and a separate database each, and a staging instance with no
+ * seeder comes up with zero users and no way to create the first one. The
+ * admin's credentials come
  * from {@code PICKLE_BOOTSTRAP_ADMIN_EMAIL} / {@code PICKLE_BOOTSTRAP_ADMIN_PASSWORD}
  * (/etc/pickle/api.env).
  *
  * <p><b>Fail-fast</b>: if either env var is missing/blank, or the password is an
  * obvious placeholder (or too short), startup is aborted with a clear Korean log
- * — a prod instance never comes up with a guessable admin. <b>Idempotent</b>: if
+ * — an instance on these profiles never comes up with a guessable admin. <b>Idempotent</b>: if
  * any SYS_ADMIN already exists the run is a no-op, so it seeds exactly once and
  * re-deploys do nothing. It never creates orgs, org admins, or any demo data.</p>
  */
 @Component
-@Profile("prod")
+@Profile({"staging", "prod"})
 public class ProdBootstrapSeeder implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ProdBootstrapSeeder.class);

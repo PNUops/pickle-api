@@ -102,7 +102,7 @@ dev와 test 프로파일에서는 시더가 그 자리를 채웁니다. 런타�
 댄 값을 덮어쓰지 않습니다. 로컬에서 별도 준비 없이 신청 화면까지 따라갈 수 있는 것은
 이 시더가 미리 채워 두기 때문입니다.
 
-**이 시더는 dev와 test 전용입니다.** prod 프로파일에는 최초 SYS_ADMIN 한 명을 만드는
+**이 시더는 dev와 test 전용입니다.** `staging`과 `prod`에는 최초 SYS_ADMIN 한 명을 만드는
 부트스트랩만 있고, 나머지 행은 운영자 부트스트랩 절차가 넣습니다. 그 절차를 거치기 전의
 운영 데이터베이스는 아래 상태입니다.
 
@@ -114,13 +114,13 @@ dev와 test 프로파일에서는 시더가 그 자리를 채웁니다. 런타�
 - 신청 화면의 OS 목록은 활성 상태인 카탈로그 행만 보여줍니다. 상태 전환은 관리자
   API가 담당합니다.
 
-그래서 운영 환경은 부트스트랩 절차를 마친 뒤에야 쓸 수 있습니다. `staging` 프로파일에는
-어느 쪽 시더도 붙어 있지 않아, 그대로 배포하면 계정이 하나도 없는 상태로 기동합니다.
+그래서 운영 환경은 부트스트랩 절차를 마친 뒤에야 쓸 수 있습니다. `staging`과 `prod`는 이
+절차를 그대로 공유합니다.
 
 ### 부트스트랩 관리자 자격
 
-`PICKLE_BOOTSTRAP_ADMIN_EMAIL`과 `PICKLE_BOOTSTRAP_ADMIN_PASSWORD`는 prod 기동에서 아래를
-모두 통과해야 하고, 하나라도 어긋나면 기동이 중단됩니다. SYS_ADMIN이 이미 있으면 이
+`PICKLE_BOOTSTRAP_ADMIN_EMAIL`과 `PICKLE_BOOTSTRAP_ADMIN_PASSWORD`는 `staging`과 `prod`
+기동에서 아래를 모두 통과해야 하고, 하나라도 어긋나면 기동이 중단됩니다. SYS_ADMIN이 이미 있으면 이
 단계는 아무것도 하지 않습니다.
 
 - 두 값 모두 비어 있지 않아야 합니다. 이메일이 이미 다른 계정에 쓰이고 있으면 기동을
@@ -197,7 +197,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_TERMINAL_PUBLIC_KEY` | 웹 터미널 브리지 공개키. 게이트웨이 키와 따로 폐기 가능 | 없음(경고만) |
 | `PICKLE_SSH_HOST` / `PICKLE_SSH_PORT` | 응답에 노출하는 SSH 접속 주소 | 없음 / `0` |
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 2FA 등록 강제 | `false` (prod `true`) |
-| `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
+| `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 
 ### 내부 연동 (게이트웨이, 프록시, 터미널)
@@ -225,8 +225,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | SYS_ADMIN | `PICKLE_SEED_SYSADMIN_EMAIL` / `_PASSWORD` | `admin@pickle.local` / 없음(필수) |
 | ORG_ADMIN (`test-org`) | `PICKLE_SEED_ORGADMIN_EMAIL` / `_PASSWORD` | `orgadmin@pickle.local` / 없음(필수) |
 
-두 계정은 dev와 test에서만 만들어집니다. prod에서 최초 SYS_ADMIN 한 명이 어떻게
-들어오는지는 위의 초기 데이터를 보세요.
+두 계정은 dev와 test에서만 만들어집니다. `staging`과 `prod`에서 최초 SYS_ADMIN 한 명이
+어떻게 들어오는지는 위의 초기 데이터를 보세요.
 
 </details>
 
