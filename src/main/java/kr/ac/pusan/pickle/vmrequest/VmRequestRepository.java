@@ -50,14 +50,6 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
     long countByRequesterIdAndStatus(Long requesterId, VmRequestStatus status);
 
     /**
-     * Duplicate-subdomain guard (contract: 예약어·중복은 서버에서 검증):
-     * a (subdomain, rootDomain) pair is taken while another request holds it
-     * in a non-terminal state (SUBMITTED/APPROVED).
-     */
-    boolean existsByDesiredSubdomainAndRootDomainAndStatusIn(String desiredSubdomain, String rootDomain,
-            Collection<VmRequestStatus> statuses);
-
-    /**
      * Duplicate-slug guard at submission (v0.12.0): another SUBMITTED request
      * already asks for the same hostname/slug. APPROVED requests need no check
      * here — approval turned the slug into a vms.hostname row, which the

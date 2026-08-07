@@ -193,53 +193,14 @@ class VmRequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
 
-        // the root domain is standalone-optional — omitting it resolves to (and
-        // stores) the platform default, which the detail response echoes back
+        // the form carries no domain axis (contract v0.29.0): a submitted
+        // desiredSubdomain is an unknown field, ignored — nothing is reserved
+        // and the response echoes null (the field survives for OLD requests)
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSubdomain", "vmr-solo-x1"))
+                with(validBody(groupId), "desiredSubdomain", "vmr-ignored-x1"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSubdomain").value("vmr-solo-x1"))
-                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"));
-        Map<String, Object> badRoot = httpBody(groupId, "vmr-svc-x1", "evil.example.com");
-        postJson("/api/v1/vm-requests", requesterToken, badRoot)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("rootDomain"));
-
-        // reserved subdomain → 422; malformed subdomain → 422 (bean validation)
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "www", "pusan.dev"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "-bad-", "pusan.dev"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
-
-        // profanity substring → 422 at submit, not first at the approval screen
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "team-porn-site", "pusan.dev"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
-                .andExpect(jsonPath("$.errors[0].message").value("사용할 수 없는 단어가 포함된 서브도메인입니다."));
-
-        // valid http publication request → 201
-        String httpResponse = postJson("/api/v1/vm-requests", requesterToken,
-                httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSubdomain").value("vmr-svc-x1"))
-                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"))
-                .andReturn().getResponse().getContentAsString();
-        long httpRequestId = objectMapper.readTree(httpResponse).get("id").asLong();
-
-        // duplicate (subdomain, rootDomain) held by a non-terminal request → 422
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
-                .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중이거나 신청된 서브도메인입니다."));
-
-        // a terminal state (CANCELED) frees the pair for a new request
-        postJson("/api/v1/vm-requests/" + httpRequestId + "/cancel", requesterToken, Map.of())
-                .andExpect(status().isOk());
-        postJson("/api/v1/vm-requests", requesterToken, httpBody(groupId, "vmr-svc-x1", "pusan.dev"))
-                .andExpect(status().isCreated());
+                .andExpect(jsonPath("$.desiredSubdomain").value((Object) null))
+                .andExpect(jsonPath("$.rootDomain").value((Object) null));
 
         // missing purpose → 422
         Map<String, Object> noPurpose = validBody(groupId);
@@ -256,46 +217,6 @@ class VmRequestTest {
 
         // unauthenticated → 401
         mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
-    }
-
-    /**
-     * The soft reservation holds even when nobody names a root domain: the
-     * resolved default is what gets STORED, so the duplicate pre-check has a
-     * row to collide with. While a rootDomain-less request stored NULL, two
-     * submitters could both claim the same name and only discover it at
-     * publish time.
-     */
-    @Test
-    void omittedRootDomainStillReservesTheSubdomainUnderTheDefaultRoot() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-softres-x1");
-
-        // no rootDomain in the body → stored (and echoed) as the default root
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSubdomain", "vmr-softres-sub"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSubdomain").value("vmr-softres-sub"))
-                .andExpect(jsonPath("$.rootDomain").value("pusan.dev"));
-
-        // a second submission omitting rootDomain the same way → 422
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSubdomain", "vmr-softres-sub"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"))
-                .andExpect(jsonPath("$.errors[0].message")
-                        .value("이미 사용 중이거나 신청된 서브도메인입니다."));
-
-        // ...and naming the default root explicitly hits the very same pair
-        postJson("/api/v1/vm-requests", requesterToken,
-                httpBody(groupId, "vmr-softres-sub", "pusan.dev"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSubdomain"));
-
-        // no subdomain at all still stores no root — nothing is being reserved
-        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSubdomain").value((Object) null))
-                .andExpect(jsonPath("$.rootDomain").value((Object) null));
     }
 
     /**
@@ -627,13 +548,6 @@ class VmRequestTest {
         body.put("reqVcpu", flavor.getVcpu());
         body.put("reqMemoryMb", flavor.getMemoryMb());
         body.put("reqDiskGb", flavor.getDiskGb());
-        return body;
-    }
-
-    private Map<String, Object> httpBody(long groupId, String subdomain, String rootDomain) {
-        Map<String, Object> body = validBody(groupId);
-        body.put("desiredSubdomain", subdomain);
-        body.put("rootDomain", rootDomain);
         return body;
     }
 
