@@ -170,12 +170,31 @@ public class RouteApplyJob {
         // the deletion pipeline reads a hold as nothing left to do.
         if (!absent && domain.getStatus() == DomainStatus.REMOVED) {
             route.setStatus(RouteStatus.REMOVED);
-            // The generation must outrank what the agent already applied, or the
-            // removal is refused as stale and the vhost survives the correction.
-            // Reaching here means something wrote the route back under us, so its
-            // generation is exactly the one the agent has.
-            route.setGeneration(routeGenerations.next());
             absent = true;
+            if (liveClaimant(domain).isEmpty()) {
+                // The generation must outrank what the agent already applied, or
+                // the removal is refused as stale and the vhost survives the
+                // correction. Reaching here means something wrote the route back
+                // under us, so its generation is exactly the one the agent has.
+                // With a claimant the bump is exactly wrong — see below.
+                route.setGeneration(routeGenerations.next());
+            }
+        }
+        if (absent) {
+            // A freed name may already have a new owner (custom domains release
+            // their FQDN the moment they are deleted). Once another live domain
+            // row holds this FQDN, the name — and its vhost — belong to that
+            // route's convergence, and pushing this removal with an OUTRANKING
+            // generation would take the new owner's vhost down. With the older
+            // token the push stays safe (the agent refuses it once the new
+            // owner has applied), so only the outranking case retires here; the
+            // refused case retires on its 409 (see recordSuperseded).
+            Optional<Route> claimant = liveClaimant(domain);
+            if (claimant.isPresent()
+                    && claimant.get().getGeneration() < route.getGeneration()) {
+                settleSuperseded(route, domain);
+                return new Skip(null);
+            }
         }
         // Local backstop for the platform invariant: a PRESENT push may only
         // serve a verified (ACTIVE) domain. Every enqueue site guards this
@@ -229,6 +248,28 @@ public class RouteApplyJob {
         return outcome.kind();
     }
 
+    /**
+     * The live route currently holding this domain's FQDN under ANOTHER live
+     * domain row — i.e. the name's new owner after an immediate release. At
+     * most one exists (the partial unique index on live domains).
+     */
+    private Optional<Route> liveClaimant(Domain domain) {
+        return routeRepository.findLiveClaimant(domain.getFqdn(), domain.getId());
+    }
+
+    /**
+     * Finalizes a removal that the FQDN's new owner has made moot: marking the
+     * confirmed generation current takes the route out of the reconciler's
+     * unconfirmed set, so nothing keeps re-pushing a removal that would fight
+     * the new owner. A stray vhost (if one survives) is replaced by the new
+     * owner's own apply, which always carries the newer generation.
+     */
+    private void settleSuperseded(Route route, Domain domain) {
+        route.setAppliedGeneration(route.getGeneration());
+        log.info("route-apply removal for {} retired: the fqdn is live under a newer route — "
+                + "its owner's apply converges the vhost", domain.getFqdn());
+    }
+
     private ApplyRequest presentRequest(Domain domain, Route route) {
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
         String targetIp = vm == null ? null
@@ -270,6 +311,13 @@ public class RouteApplyJob {
     private void recordSuperseded(Route route, Domain domain, boolean absent,
             ApplyOutcome outcome) {
         if (absent) {
+            if (liveClaimant(domain).isPresent()) {
+                // The refusing generation is the fqdn's new owner going live
+                // during our call. Re-bumping would hand the NEXT removal push
+                // a token that outranks the owner's vhost — retire instead.
+                settleSuperseded(route, domain);
+                return;
+            }
             // A removal must never be "confirmed" by someone else's PRESENT
             // apply winning the generation race — that would leave an orphan
             // live vhost. Outrank the applied generation instead, so the

@@ -60,6 +60,23 @@ public interface RouteRepository extends JpaRepository<Route, Long> {
     List<Route> findByStatusNot(RouteStatus status);
 
     /**
+     * The live route holding {@code fqdn} under a DIFFERENT live domain row —
+     * the name's new owner after an immediate release (custom domains free
+     * their FQDN the moment they are deleted). At most one exists: the partial
+     * unique index allows a single live domain per FQDN. Consulted before a
+     * dead route's removal is pushed, so the removal of a name that changed
+     * hands cannot take the new owner's vhost down.
+     */
+    @Query("""
+            select r from Route r
+              join Domain d on d.id = r.domainId
+            where d.fqdn = :fqdn and d.id <> :domainId
+              and cast(d.status as string) <> 'REMOVED'
+              and cast(r.status as string) <> 'REMOVED'
+            """)
+    Optional<Route> findLiveClaimant(@Param("fqdn") String fqdn, @Param("domainId") Long domainId);
+
+    /**
      * Revives a route for a verify-triggered re-apply in one CAS — an
      * unpublish/teardown that flipped the route REMOVED meanwhile must never
      * be overwritten back to PENDING (that would re-push a vhost the user

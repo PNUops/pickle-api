@@ -1011,6 +1011,119 @@ class PublishingTest {
         agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
     }
 
+    /**
+     * Publishes a custom FQDN on the VM, verifies it via the stub DNS, applies
+     * the route (agent stub answers 200 with {@code appliedGeneration}), and
+     * returns the route id.
+     */
+    private long serveCustomDomain(long vmId, String fqdn, long appliedGeneration)
+            throws Exception {
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        verifyDns(domainId, fqdn);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(appliedGeneration)));
+        stubStatus(fqdn, "OK", null);
+        long routeId = domainVerifier.verifyOne(domainId).orElseThrow();
+        routeApplyJob.apply(routeId);
+        assertThat(routeStatus(routeId)).isEqualTo("APPLIED");
+        return routeId;
+    }
+
+    /** Deletes the domain while the agent is unreachable: the custom name frees
+     * immediately, but the route stays REMOVED-unconfirmed. */
+    private void deleteWithAgentDown(long domainId, long routeId) throws Exception {
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThatThrownBy(() -> routeApplyJob.apply(routeId))
+                .isInstanceOf(ProxyAgentUnreachableException.class);
+        assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
+    }
+
+    @Test
+    void aDeadRoutesRemovalNeverOutranksTheNamesNewOwner() throws Exception {
+        settleAllRoutes();
+        String fqdn = "handover." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        // F serves from VM A; the agent goes dark; the owner deletes F. Custom
+        // names free immediately, so the REMOVED route outlives the row's claim.
+        long vmA = publishableVm("team-hand-a", "pusan.dev", VmStatus.RUNNING);
+        long routeA = serveCustomDomain(vmA, fqdn, 1);
+        deleteWithAgentDown(domainIdForVm(vmA), routeA);
+        long removedGen = routeGeneration(routeA);
+
+        // Another user claims F, verifies it, and goes live after the agent
+        // recovers — the name has a new owner now.
+        long vmB = publishableVm("team-hand-b", "pusan.dev", VmStatus.RUNNING);
+        long routeB = serveCustomDomain(vmB, fqdn, 1_000_000);
+        long newOwnerGen = routeGeneration(routeB);
+        assertThat(newOwnerGen).isGreaterThan(removedGen);
+
+        // The reconciler re-pushes the dead route's removal; the agent refuses
+        // it as stale (the new owner's generation won). Bumping the dead route
+        // past the owner here would make the NEXT cycle's removal outrank the
+        // owner's live vhost and silently take it down.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(aResponse().withStatus(409)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"applied\":false,\"generation\":" + newOwnerGen + "}")));
+        jdbcTemplate.update(
+                "update routes set updated_at = now() - interval '5 minutes' where id = ?", routeA);
+        routeReconcileJob.run();
+
+        assertThat(routeGeneration(routeA)).isEqualTo(removedGen);
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation >= generation from routes where id = ?
+                """, Boolean.class, routeA)).isTrue();
+
+        // Retired for good: no cycle pushes the dead removal again.
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(2_000_000)));
+        jdbcTemplate.update("update routes set updated_at = now() - interval '5 minutes'"
+                + " where id in (?, ?)", routeA, routeB);
+        routeReconcileJob.run();
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
+    }
+
+    @Test
+    void anAlreadyOutrankingRemovalIsRetiredNotPushed() throws Exception {
+        settleAllRoutes();
+        String fqdn = "poison." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        long vmA = publishableVm("team-poison-a", "pusan.dev", VmStatus.RUNNING);
+        long routeA = serveCustomDomain(vmA, fqdn, 1);
+        deleteWithAgentDown(domainIdForVm(vmA), routeA);
+        long vmB = publishableVm("team-poison-b", "pusan.dev", VmStatus.RUNNING);
+        long routeB = serveCustomDomain(vmB, fqdn, 1_000_000);
+
+        // The dead route already carries a token that outranks the new owner
+        // (the state earlier stale-handling could leave behind). Pushing THAT
+        // removal would succeed on the agent and kill the owner's live vhost —
+        // it must be retired unpushed instead.
+        long outranking = jdbcTemplate.queryForObject(
+                "select nextval('route_generation_seq')", Long.class);
+        jdbcTemplate.update("update routes set generation = ?, applied_generation = null"
+                + " where id = ?", outranking, routeA);
+        agent.resetAll();
+        agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
+                .willReturn(okApply(3_000_000)));
+        jdbcTemplate.update("update routes set updated_at = now() - interval '5 minutes'"
+                + " where id in (?, ?)", routeA, routeB);
+        routeReconcileJob.run();
+
+        agent.verify(0, postRequestedFor(urlPathEqualTo(APPLY_PATH)));
+        assertThat(jdbcTemplate.queryForObject("""
+                select applied_generation >= generation from routes where id = ?
+                """, Boolean.class, routeA)).isTrue();
+        assertThat(routeStatus(routeB)).isEqualTo("APPLIED");
+    }
+
     @Test
     void unreachableAgentOnTeardownBlocksDeletionAndIpRelease() throws Exception {
         long vmId = publishableVm("team-delnet", "pusan.dev", VmStatus.RUNNING);
