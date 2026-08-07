@@ -140,10 +140,11 @@ JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
 
 ```bash
 # 기본 접속 정보가 가리키는 역할과 데이터베이스를 먼저 만듭니다.
-sudo -u postgres psql -c "create role pickle login password 'pickle'"
+sudo -u postgres psql -c "create role pickle login password '<직접 정한 값>'"
 sudo -u postgres createdb -O pickle pickle_dev
 
 # 자격증명에는 커밋된 기본값이 없습니다. 로컬 기동 전에 직접 export 하세요.
+export PICKLE_DB_PASSWORD=...            # 위에서 역할에 준 값
 export PICKLE_JWT_SECRET=...             # 32바이트 이상
 export PICKLE_CREDENTIALS_KEY=...        # base64 32바이트
 export PICKLE_SEED_SYSADMIN_PASSWORD=...
