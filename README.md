@@ -48,8 +48,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   실제 엔드포인트 인가 설정을 `PermissionMatrixTest`가 1:1로 대조합니다.
 - **책임 경계** — 이 서버는 SSH 연결을 열지 않습니다. 웹 터미널은 별도 브리지가
   담당하고, 필요한 OpenSSH 공개키 파싱과 키쌍 생성은 와이어 포맷을 직접 다룹니다.
-- **자격증명 문제는 기동에서 걸러냅니다.** JWT 서명 키, 자격증명 암호화 키, 내부 토큰 중
-  하나라도 비어 있으면 서버가 실행되지 않습니다.
+- **자격증명 문제는 기동에서 걸러냅니다.** 데이터베이스 비밀번호, JWT 서명 키, 자격증명
+  암호화 키, 내부 토큰 중 하나라도 비어 있으면 서버가 실행되지 않습니다.
 - **테스트가 외부 런타임을 요구하지 않습니다.** Zonky embedded-postgres와 WireMock으로
   돌기 때문에 `mvn verify` 하나로 전체 테스트가 끝납니다.
 
@@ -171,7 +171,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 
 | 변수 | 용도 |
 |---|---|
-| `PICKLE_DB_URL` / `_USER` / `_PASSWORD` | PostgreSQL 접속 (기본 `jdbc:postgresql://localhost:5432/pickle_dev`) |
+| `PICKLE_DB_URL` / `_USER` | PostgreSQL 접속 (기본 `jdbc:postgresql://localhost:5432/pickle_dev`, 사용자 `pickle`) |
+| `PICKLE_DB_PASSWORD` | 데이터베이스 비밀번호. 기본값이 없어 비면 기동 실패 |
 | `PICKLE_JWT_SECRET` | HS256 서명 키. 없으면 기동 실패 |
 | `PICKLE_CREDENTIALS_KEY` | VM 초기 비밀번호 저장용 AES-256-GCM 키. 없으면 기동 실패 |
 | `PICKLE_PROXMOX_TOKEN_ID` / `_SECRET` | PVE API 토큰. Proxmox 없는 로컬 개발은 비워 둬도 됩니다 |
