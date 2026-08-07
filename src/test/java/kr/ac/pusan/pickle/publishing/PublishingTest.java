@@ -150,6 +150,8 @@ class PublishingTest {
     private DomainVerifier domainVerifier;
     @Autowired
     private StubDnsResolver dns;
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private User owner;
     private String ownerToken;
@@ -495,6 +497,62 @@ class PublishingTest {
                     .andExpect(status().isAccepted());
             publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-c\"}")
                     .andExpect(status().isAccepted());
+        } finally {
+            jdbcTemplate.update(
+                    "delete from settings where key = 'platform_subdomains_per_vm'");
+        }
+    }
+
+    @Test
+    void concurrentPlatformCreatesCannotOvershootTheCap() throws Exception {
+        jdbcTemplate.update("""
+                insert into settings (key, value) values ('platform_subdomains_per_vm', '2'::jsonb)
+                on conflict (key) do update set value = excluded.value
+                """);
+        try {
+            long vmId = publishableVm(null, null, VmStatus.RUNNING);
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-ccap-a\"}")
+                    .andExpect(status().isAccepted());
+
+            // One slot left, two writers racing for it. Deterministic schedule:
+            // hold the VM row (the cap's serialization point), fire the loser's
+            // request — it must block on that lock BEFORE counting — then commit
+            // the winner's row and release. Without the lock the loser counts
+            // the pre-winner state and the cap overshoots by one.
+            java.util.concurrent.ExecutorService pool =
+                    java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                String winnerFqdn = "team-ccap-b-"
+                        + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev";
+                java.util.concurrent.Future<org.springframework.test.web.servlet.MvcResult>
+                        loser = transactionTemplate.execute(tx -> {
+                            jdbcTemplate.queryForObject(
+                                    "select id from vms where id = ? for update",
+                                    Long.class, vmId);
+                            var f = pool.submit(() -> publish(vmId,
+                                    "{\"port\":80,\"subdomain\":\"team-ccap-c\"}").andReturn());
+                            try {
+                                Thread.sleep(750);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                            jdbcTemplate.update("""
+                                    insert into domains (vm_id, kind, fqdn, root_domain, status)
+                                    values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev',
+                                            'ACTIVE'::domain_status)
+                                    """, vmId, winnerFqdn);
+                            return f;
+                        });
+                var result = loser.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                assertThat(result.getResponse().getStatus()).isEqualTo(409);
+            } finally {
+                pool.shutdownNow();
+            }
+            assertThat(jdbcTemplate.queryForObject("""
+                    select count(*) from domains
+                     where vm_id = ? and kind <> 'CUSTOM' and status <> 'REMOVED'
+                       and released_at is null
+                    """, Long.class, vmId)).isEqualTo(2);
         } finally {
             jdbcTemplate.update(
                     "delete from settings where key = 'platform_subdomains_per_vm'");

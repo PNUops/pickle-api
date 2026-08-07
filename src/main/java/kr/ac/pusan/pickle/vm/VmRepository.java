@@ -16,6 +16,17 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     boolean existsByHostname(String hostname);
 
+    /**
+     * The VM row, locked as the serialization point for per-VM counted limits
+     * (the platform-subdomain cap): a count-then-insert cap check is only
+     * correct when concurrent inserts for the same VM cannot interleave
+     * between the count and the commit. Taken by short, network-free
+     * transactions only.
+     */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from Vm v where v.id = :id")
+    java.util.Optional<Vm> findByIdForUpdate(@Param("id") Long id);
+
     /** SSH gateway route resolution: the VM a client slug (hostname) maps to. */
     java.util.Optional<Vm> findByHostname(String hostname);
 

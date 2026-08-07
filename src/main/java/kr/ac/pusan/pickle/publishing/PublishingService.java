@@ -361,8 +361,14 @@ public class PublishingService {
      * releasedAt} null): a released name in its grace period must not occupy a
      * slot, or releasing a domain would lock its owner out of creating the
      * replacement for the whole grace period.
+     *
+     * <p>Counted under the VM row lock: count-then-insert alone lets two
+     * concurrent creates both count below the cap and overshoot it by one.
+     * The lock serializes platform creates per VM for the rest of this (short,
+     * network-free) transaction; unrelated VMs never contend.</p>
      */
     private void requirePlatformSlotFree(long vmId) {
+        vmRepository.findByIdForUpdate(vmId).orElseThrow(PublishingService::vmNotFound);
         int limit = settingsService.integer(SettingsService.PLATFORM_SUBDOMAINS_PER_VM,
                 SubdomainPolicy.DEFAULT_SUBDOMAINS_PER_VM);
         long serving = domainRepository.countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(
