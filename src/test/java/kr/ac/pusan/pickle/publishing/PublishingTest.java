@@ -1156,6 +1156,32 @@ class PublishingTest {
         assertThat(cert.get("daysUntilExpiry").isNull()).isTrue();
     }
 
+    @Test
+    void adminDomainListingSeparatesAReservedNameFromAServingOne() throws Exception {
+        long vmId = publishableVm("team-admres", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-admres-kept\"}")
+                .andExpect(status().isAccepted());
+        long servingId = domainIdForVm(vmId);
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-admres-gone\"}")
+                .andExpect(status().isAccepted());
+        long reservedId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + reservedId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted()); // released → reserved
+
+        // Both rows are listed and both read ACTIVE — the reservation stamp is
+        // the only thing telling an admin why the second name is still taken.
+        Map<Long, tools.jackson.databind.JsonNode> byId = listAdminDomains();
+        assertThat(byId.get(servingId).get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(byId.get(servingId).get("releasedAt").isNull()).isTrue();
+        assertThat(byId.get(servingId).get("reservedUntil").isNull()).isTrue();
+        assertThat(byId.get(reservedId).get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(byId.get(reservedId).get("releasedAt").isNull()).isFalse();
+        // The reservation end is the server's own arithmetic (grace setting),
+        // not something the console could derive from releasedAt.
+        assertThat(byId.get(reservedId).get("reservedUntil").isNull()).isFalse();
+    }
+
     // ── transport-failure retry + recurring reconcile (hardening) ───────────
 
     /**
@@ -1954,6 +1980,18 @@ class PublishingTest {
     private long domainIdForVm(long vmId) {
         return jdbcTemplate.queryForObject(
                 "select id from domains where vm_id = ? order by id desc limit 1", Long.class, vmId);
+    }
+
+    /** GET /admin/domains as SYS_ADMIN; rows of the page keyed by domain id. */
+    private Map<Long, tools.jackson.databind.JsonNode> listAdminDomains() throws Exception {
+        String body = mockMvc.perform(get("/api/v1/admin/domains?size=100")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        Map<Long, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
+        objectMapper.readTree(body).get("content")
+                .forEach(node -> byId.put(node.get("id").asLong(), node));
+        return byId;
     }
 
     /** GET /domains as the given caller; rows of the page keyed by domain id. */
