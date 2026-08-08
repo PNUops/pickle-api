@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/os-images")
-@Tag(name = "vm-template-controller")
+@Tag(name = "os-image-controller")
 public class OsImageController {
 
     private final OsImageRepository osImageRepository;

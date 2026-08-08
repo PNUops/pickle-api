@@ -78,7 +78,7 @@ public class AdminInventoryService {
             String fromStatus = image.getStatus().name();
             image.setStatus(request.status());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.OS_IMAGE_STATUS_UPDATE, "template", imageId,
+                    AuditService.OS_IMAGE_STATUS_UPDATE, "os_image", imageId,
                     Map.of("name", image.getName(), "version", image.getVersion(),
                             "fromStatus", fromStatus, "toStatus", request.status().name()), ip);
         }

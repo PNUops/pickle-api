@@ -7866,7 +7866,7 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-template-controller"
+      - "os-image-controller"
   /vm-flavors:
     get:
       operationId: "listVmFlavors"
