@@ -420,6 +420,64 @@ class PublishingTest {
     }
 
     @Test
+    void aReviveRacingTheSweepersReclaimNeverRevivesARemovedRow() throws Exception {
+        long vmId = publishableVm("team-rrace", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted()); // reserved now
+
+        // Emulate the sweeper's reclaim committing between the revive's scan
+        // and its write: hold the domain row lock, fire the revive — its
+        // locked pre-check must pile up on the lock — then flip the row
+        // REMOVED (exactly what the reclaim writes) and release. The revive
+        // must re-read the row as committed and treat the name as free; a
+        // revive working from the unlocked snapshot would re-attach a route
+        // to the dead row and return success for a domain that stays REMOVED.
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<org.springframework.test.web.servlet.MvcResult>
+                    revive = transactionTemplate.execute(tx -> {
+                        jdbcTemplate.queryForObject(
+                                "select id from domains where id = ? for update",
+                                Long.class, domainId);
+                        var f = pool.submit(() -> publish(vmId,
+                                "{\"port\":8081,\"subdomain\":\"team-rrace\"}").andReturn());
+                        try {
+                            Thread.sleep(750);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        jdbcTemplate.update("""
+                                update domains
+                                   set status = 'REMOVED'::domain_status, released_at = null
+                                 where id = ?
+                                """, domainId);
+                        return f;
+                    });
+            assertThat(revive.get(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .getResponse().getStatus()).isEqualTo(202);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // The reclaimed row stays dead and routeless; the accepted revive
+        // landed as a fresh row that actually serves.
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from routes where domain_id = ? and status <> 'REMOVED'
+                """, Long.class, domainId)).isZero();
+        long newDomainId = domainIdForVm(vmId);
+        assertThat(newDomainId).isNotEqualTo(domainId);
+        assertThat(domainStatus(newDomainId)).isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from routes where domain_id = ? and status <> 'REMOVED'
+                """, Long.class, newDomainId)).isEqualTo(1);
+    }
+
+    @Test
     void reviveRunsTheSameRootChecksAsCreation() throws Exception {
         // A reservation is not a bypass: if the root was taken off the
         // allow-list — or lost its wildcard certificate — while the name sat

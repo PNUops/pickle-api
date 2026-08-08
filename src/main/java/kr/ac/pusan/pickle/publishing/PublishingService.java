@@ -247,7 +247,10 @@ public class PublishingService {
         // keeps one user from exhausting that quota for everyone.
         rateLimitService.hit("domain_create", "user:" + actor.id(),
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
-        Domain existing = domainRepository.findFirstByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)
+        // Locked read: the sweeper may reclaim a leftover row concurrently, and
+        // a revive must never proceed on a snapshot it already flipped REMOVED.
+        Domain existing = domainRepository
+                .findFirstByFqdnAndStatusNotForUpdate(fqdn, DomainStatus.REMOVED)
                 .orElse(null);
         if (existing != null) {
             requireRevivable(existing, vm);
@@ -262,7 +265,14 @@ public class PublishingService {
     /** Platform-subdomain creation: resolve the name, enforce the cap, revive or insert. */
     private Domain createPlatform(Vm vm, int port, String subdomain, String rootDomain) {
         PlatformName name = resolvePlatformName(subdomain, rootDomain);
-        Domain existing = domainRepository.findFirstByFqdnAndStatusNot(name.fqdn(), DomainStatus.REMOVED)
+        // Locked read: a revive races the reservation sweeper's reclaim of the
+        // same row at the grace boundary ("first commit wins" on its side, the
+        // domain row lock on both). An unlocked snapshot here could revive a
+        // row the sweep already flipped REMOVED — the user would get a success
+        // response for a domain that stays dead. Under the lock a reclaimed row
+        // drops out of the predicate and the create proceeds as a fresh insert.
+        Domain existing = domainRepository
+                .findFirstByFqdnAndStatusNotForUpdate(name.fqdn(), DomainStatus.REMOVED)
                 .orElse(null);
         if (existing != null) {
             requireRevivable(existing, vm);
@@ -302,9 +312,10 @@ public class PublishingService {
 
     /**
      * saveAndFlush + catch, scoped to the one statement that can lose the race:
-     * {@code findFirstByFqdnAndStatusNot} is a pre-check only — under a
-     * concurrent claim of the same name the partial unique index
-     * ({@code domains_fqdn_live_idx}) is the arbiter, and the loser must get
+     * the locked FQDN read guards only rows that exist — when no row holds the
+     * name there is nothing to lock, so two concurrent claims of a fresh name
+     * still race to insert and the partial unique index
+     * ({@code domains_fqdn_live_idx}) is the arbiter; the loser must get
      * the same 409 instead of a 500 at commit time. Nothing else runs inside
      * the catch, so a validation failure or a certificate-insert violation
      * still surfaces as itself.
