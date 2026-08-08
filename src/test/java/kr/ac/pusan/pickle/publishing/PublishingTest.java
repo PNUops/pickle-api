@@ -174,8 +174,11 @@ class PublishingTest {
                 .willReturn(okApply(1)));
         dns.clear();
         // The whole suite runs inside one rate-limit window as the same owner:
-        // reset the per-user custom-domain creation counter between tests.
-        jdbcTemplate.update("delete from auth_rate_limits where scope = 'domain_create'");
+        // reset the per-user custom-domain creation counters between tests. The
+        // hourly one especially — its window outlives the suite, so a leak would
+        // fail whichever test happened to run twenty-first.
+        jdbcTemplate.update("delete from auth_rate_limits where scope in "
+                + "('domain_create', 'domain_create_hourly')");
 
         owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.USER, null);
         User editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
@@ -1490,6 +1493,41 @@ class PublishingTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.releasedAt").isNotEmpty())
                 .andExpect(jsonPath("$.reservedUntil").isNotEmpty());
+    }
+
+    @Test
+    void customDomainCreationIsCappedPerHourAgainstTheSharedCertificateQuota() throws Exception {
+        // Platform subdomains issue nothing (one wildcard covers the root), but
+        // every custom domain draws on the certificate authority's account-wide
+        // new-order quota, which the whole platform shares. Without an hourly
+        // bound one user pacing themselves under the per-minute limit still
+        // exhausts it and blocks issuance for everyone else.
+        long vmId = publishableVm("team-quota", "pusan.dev", VmStatus.RUNNING);
+        jdbcTemplate.update("""
+                insert into settings (key, value, description)
+                values ('custom_domain_limit_per_hour', '3'::jsonb, '테스트')
+                on conflict (key) do update set value = excluded.value
+                """);
+        try {
+            for (int i = 0; i < 3; i++) {
+                String fqdn = "cap" + i + "." + UUID.randomUUID().toString().substring(0, 8)
+                        + ".example.com";
+                publish(vmId, "{\"port\":80,\"customDomain\":\"" + fqdn + "\"}")
+                        .andExpect(status().isAccepted());
+            }
+            String overflow = "capx." + UUID.randomUUID().toString().substring(0, 8)
+                    + ".example.com";
+            publish(vmId, "{\"port\":80,\"customDomain\":\"" + overflow + "\"}")
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+
+            // The cap is on custom names only — a platform subdomain still lands.
+            publish(vmId, "{\"port\":80,\"subdomain\":\"team-quota-extra\"}")
+                    .andExpect(status().isAccepted());
+        } finally {
+            jdbcTemplate.update(
+                    "delete from settings where key = 'custom_domain_limit_per_hour'");
+        }
     }
 
     @Test
