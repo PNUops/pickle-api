@@ -224,7 +224,7 @@ class PublishingTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-alpha.pusan.dev"))
-                .andExpect(jsonPath("$.domain.kind").value("REQUESTED"))
+                .andExpect(jsonPath("$.domain.kind").value("PLATFORM"))
                 .andExpect(jsonPath("$.route.status").value("PENDING"))
                 .andExpect(jsonPath("$.route.targetPort").value(8080));
     }
@@ -538,7 +538,7 @@ class PublishingTest {
                             }
                             jdbcTemplate.update("""
                                     insert into domains (vm_id, kind, fqdn, root_domain, status)
-                                    values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev',
+                                    values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
                                             'ACTIVE'::domain_status)
                                     """, vmId, winnerFqdn);
                             return f;

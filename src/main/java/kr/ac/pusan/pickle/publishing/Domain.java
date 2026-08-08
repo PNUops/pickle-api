@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A domain (FQDN) attached to a VM. Platform
- * subdomains (AUTO/REQUESTED) are ACTIVE on creation; custom domains carry a
+ * subdomains (AUTO/PLATFORM) are ACTIVE on creation; custom domains carry a
  * verification token and flow PENDING→VERIFYING→ACTIVE via DNS polling.
  */
 @Entity
@@ -94,7 +94,7 @@ public class Domain {
         this.status = status;
     }
 
-    /** Platform subdomain (AUTO/REQUESTED): ACTIVE immediately, no ownership check. */
+    /** Platform subdomain (AUTO/PLATFORM): ACTIVE immediately, no ownership check. */
     public static Domain platform(Long vmId, DomainKind kind, String fqdn, String rootDomain) {
         return new Domain(vmId, kind, fqdn, rootDomain, null, DomainStatus.ACTIVE);
     }

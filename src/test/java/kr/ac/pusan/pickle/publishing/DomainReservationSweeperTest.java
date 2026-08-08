@@ -263,7 +263,7 @@ class DomainReservationSweeperTest {
     private long platformDomain(long vmId, String fqdn, Instant releasedAt) {
         long domainId = jdbcTemplate.queryForObject("""
                 insert into domains (vm_id, kind, fqdn, root_domain, status, released_at)
-                values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
+                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
                 returning id
                 """, Long.class, vmId, fqdn, Timestamp.from(releasedAt));
         jdbcTemplate.update("""

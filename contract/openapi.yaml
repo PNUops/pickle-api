@@ -1403,7 +1403,7 @@ components:
     DomainKind:
       enum:
       - "AUTO"
-      - "REQUESTED"
+      - "PLATFORM"
       - "CUSTOM"
       type: "string"
     DomainStatus:
