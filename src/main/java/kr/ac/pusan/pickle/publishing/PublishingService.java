@@ -484,9 +484,16 @@ public class PublishingService {
         retire(domain);
     }
 
-    /** Removes the row outright: REMOVED (name freed) + certs revoked. */
+    /**
+     * Removes the row outright: REMOVED (name freed) + certs revoked. The
+     * release stamp goes with the claim — {@code releasedAt} is what marks a
+     * row as holding its name in reserve, and a REMOVED row reserves nothing.
+     * Left in place it would keep reading as "reserved" (that is the console's
+     * discriminator) long after the name was freed.
+     */
     private void retire(Domain domain) {
         domain.setStatus(DomainStatus.REMOVED);
+        domain.setReleasedAt(null);
         certificateRepository.findByDomainId(domain.getId())
                 .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
     }

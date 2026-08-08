@@ -325,11 +325,15 @@ class PublishingTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOMAIN_FQDN_TAKEN"));
 
-        // DELETE on the reserved (non-serving) row returns the name NOW.
+        // DELETE on the reserved (non-serving) row returns the name NOW — and
+        // the release stamp goes with the claim: a REMOVED row reserves
+        // nothing, so it must stop reading as "reserved".
         mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNull();
         publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-reuse.pusan.dev"));
@@ -1585,6 +1589,10 @@ class PublishingTest {
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        // No lingering release stamp: the name is free NOW, so nothing may
+        // keep telling the owner it is reserved until some future date.
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNull();
         assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
 
         // Re-adding the same name builds a new row rather than reviving the old

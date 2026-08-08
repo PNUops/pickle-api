@@ -80,8 +80,11 @@ class DomainReservationSweeperTest {
 
         // 10 of 30 grace days passed → the name is still held.
         assertThat(domainStatus(fresh)).isEqualTo("ACTIVE");
-        // 31 days → reclaimed, and the owners are told the name is gone.
+        // 31 days → reclaimed, and the owners are told the name is gone. The
+        // release stamp goes with the claim: a REMOVED row reserves nothing,
+        // and a surviving stamp would keep it reading as "reserved".
         assertThat(domainStatus(due)).isEqualTo("REMOVED");
+        assertThat(releasedAt(due)).isNull();
         assertThat(noticeCount("domain.reserve.released", due)).isEqualTo(2);
 
         // Re-run: reclaim already done, dedup keeps the notice single.
@@ -110,6 +113,7 @@ class DomainReservationSweeperTest {
         sweeper.sweep();
 
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(releasedAt(domainId)).isNull();
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from certificates where domain_id = ? and status <> 'REVOKED'
                 """, Long.class, domainId)).isZero();
@@ -284,6 +288,11 @@ class DomainReservationSweeperTest {
     private String domainStatus(long domainId) {
         return jdbcTemplate.queryForObject("select status from domains where id = ?",
                 String.class, domainId);
+    }
+
+    private Timestamp releasedAt(long domainId) {
+        return jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Timestamp.class, domainId);
     }
 
     private long noticeCount(String event, long domainId) {

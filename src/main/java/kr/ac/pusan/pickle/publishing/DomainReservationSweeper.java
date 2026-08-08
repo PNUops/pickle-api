@@ -111,17 +111,20 @@ public class DomainReservationSweeper {
             return false; // still serving — a stale releasedAt must never take a route down
         }
         boolean custom = domain.getKind() == DomainKind.CUSTOM;
-        Instant expiry = custom ? domain.getReleasedAt()
-                : domain.getReleasedAt().plus(graceDays, ChronoUnit.DAYS);
+        Instant releasedAt = domain.getReleasedAt();
+        Instant expiry = custom ? releasedAt : releasedAt.plus(graceDays, ChronoUnit.DAYS);
         if (!now.isBefore(expiry)) {
             domain.setStatus(DomainStatus.REMOVED);
+            // The stamp goes with the claim: a REMOVED row reserves nothing,
+            // and a surviving releasedAt would keep it reading as "reserved".
+            domain.setReleasedAt(null);
             certificateRepository.findByDomainId(domain.getId()).stream()
                     .filter(cert -> cert.getStatus() != CertificateStatus.REVOKED)
                     .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
             if (!custom) {
                 notify(domain, NotificationEvent.DOMAIN_RESERVE_RELEASED, expiry,
                         "domain_reserve_released:" + domain.getId()
-                                + ":" + domain.getReleasedAt().toEpochMilli());
+                                + ":" + releasedAt.toEpochMilli());
             }
             return true;
         }
