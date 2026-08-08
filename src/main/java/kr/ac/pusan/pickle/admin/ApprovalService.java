@@ -133,10 +133,10 @@ public class ApprovalService {
         List<FieldValidationError> errors = new ArrayList<>();
         OsImage image = imageRepository.findById(form.grantedImageId()).orElse(null);
         if (image == null || image.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("grantedImageId", "사용할 수 없는 템플릿입니다."));
+            errors.add(new FieldValidationError("grantedImageId", "사용할 수 없는 OS 이미지입니다."));
         } else if (form.grantedDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("grantedDiskGb",
-                    "이 템플릿의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
+                    "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
         if (form.grantedStartDate() != null && form.grantedEndDate() != null
                 && form.grantedEndDate().isBefore(form.grantedStartDate())) {
@@ -150,7 +150,7 @@ public class ApprovalService {
                 // Forced node must host the granted image — the provisioning
                 // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.
-                errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 템플릿이 없습니다."));
+                errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 OS 이미지가 없습니다."));
             }
         }
         // Publishing is self-service (v0.22.0): approval no longer touches

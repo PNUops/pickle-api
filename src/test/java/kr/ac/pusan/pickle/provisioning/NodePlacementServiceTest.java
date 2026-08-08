@@ -110,7 +110,7 @@ class NodePlacementServiceTest {
                 insert into os_images (name, display_name, os_family, os_version,
                                           ssh_username, proxmox_vmid, node_id,
                                           min_disk_gb, status)
-                values (?, '배치 테스트 템플릿', 'ubuntu', '24.04', 'ubuntu', 1003, ?, 10,
+                values (?, '배치 테스트 OS 이미지', 'ubuntu', '24.04', 'ubuntu', 1003, ?, 10,
                         cast(? as catalog_status))
                 returning id
                 """, Long.class, imageName, nodeId, status);

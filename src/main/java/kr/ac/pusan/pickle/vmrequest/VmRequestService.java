@@ -97,14 +97,14 @@ public class VmRequestService {
                     "비활성화된 기관에는 신청할 수 없습니다.")));
         }
         OsImage image = imageRepository.findById(request.imageId())
-                .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
         VmFlavor flavor = flavorRepository.findById(request.flavorId())
                 .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
 
         List<FieldValidationError> errors = new ArrayList<>();
         boolean axesActive = true;
         if (image.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("imageId", "더 이상 선택할 수 없는 템플릿입니다."));
+            errors.add(new FieldValidationError("imageId", "더 이상 선택할 수 없는 OS 이미지입니다."));
             axesActive = false;
         }
         if (flavor.getStatus() != CatalogStatus.ACTIVE) {

@@ -19,7 +19,7 @@ public record CreateVmRequestRequest(
         @NotNull(message = "기관(orgId)을 지정해 주세요.")
         Long orgId,
 
-        @NotNull(message = "템플릿(imageId)을 지정해 주세요.")
+        @NotNull(message = "OS 이미지(imageId)를 지정해 주세요.")
         Long imageId,
 
         @NotNull(message = "사양 프리셋(flavorId)을 지정해 주세요.")

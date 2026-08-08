@@ -12,7 +12,7 @@ public enum ProvisioningStep {
     PLACE(1, "노드 배치 중"),
     ALLOC_IP(2, "IP 할당 중"),
     VMID(3, "VMID 발급 중"),
-    CLONE(4, "템플릿 복제 중"),
+    CLONE(4, "OS 이미지 복제 중"),
     CONFIG(5, "VM 설정 중"),
     RESIZE(6, "디스크 크기 조정 중"),
     START(7, "VM 시작 중"),

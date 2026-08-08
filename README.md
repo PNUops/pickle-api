@@ -59,7 +59,7 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 지나갑니다.
 
 ```
-guard → 노드 배치 → IP 할당 → VMID 채번 → 템플릿 clone
+guard → 노드 배치 → IP 할당 → VMID 채번 → OS 이미지 clone
   → 설정(사양·cloud-init·고정 IP·protection=1) → 디스크 리사이즈
   → 기동 → qemu-agent 검증 → 호스트키 수집 → 완료(RUNNING, 알림)
 ```

@@ -155,7 +155,7 @@ class AdminInventoryTest {
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(requester))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"groupId": %d, "orgId": %d, "purpose": "은퇴 템플릿 거부 확인",
+                                {"groupId": %d, "orgId": %d, "purpose": "은퇴 OS 이미지 거부 확인",
                                  "imageId": %d, "flavorId": %d, "reqVcpu": 2,
                                  "reqMemoryMb": 2048, "reqDiskGb": 20}
                                 """.formatted(groupId, orgId, imageId, flavorId)))

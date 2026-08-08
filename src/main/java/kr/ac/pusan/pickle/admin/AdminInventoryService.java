@@ -73,7 +73,7 @@ public class AdminInventoryService {
     public AdminOsImageResponse updateCatalogStatus(AuthenticatedUser actor, long imageId,
             UpdateOsImageStatusRequest request, String ip) {
         OsImage image = osImageRepository.findById(imageId)
-                .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
+                .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
         if (image.getStatus() != request.status()) {
             String fromStatus = image.getStatus().name();
             image.setStatus(request.status());

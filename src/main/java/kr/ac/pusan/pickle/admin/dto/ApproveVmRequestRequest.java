@@ -25,7 +25,7 @@ public record ApproveVmRequestRequest(
         @Min(value = 1, message = "디스크는 1GiB 이상이어야 합니다.")
         Integer grantedDiskGb,
 
-        @NotNull(message = "부여 템플릿(grantedImageId)을 지정해 주세요.")
+        @NotNull(message = "부여 OS 이미지(grantedImageId)를 지정해 주세요.")
         Long grantedImageId,
 
         @Nullable LocalDate grantedStartDate,

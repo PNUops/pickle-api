@@ -161,7 +161,7 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
         // DISABLED image → 422
-        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 템플릿",
+        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 OS 이미지",
                 "ubuntu", "24.04", "ubuntu", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
@@ -317,14 +317,14 @@ class VmRequestTest {
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.errors[0].field").value("imageId"))
                     .andExpect(jsonPath("$.errors[0].message")
-                            .value("더 이상 선택할 수 없는 템플릿입니다."));
+                            .value("더 이상 선택할 수 없는 OS 이미지입니다."));
 
             // an id that never existed → 404 with a stated reason, not a 500
             postJson("/api/v1/vm-requests", requesterToken,
                     with(validBody(groupId), "imageId", 999_999))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
-                    .andExpect(jsonPath("$.detail").value("해당 템플릿이 존재하지 않습니다."));
+                    .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
 
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
             Map<String, Object> withoutImage = validBody(groupId);

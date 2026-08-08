@@ -137,7 +137,7 @@ class VmUserSurfaceTest {
         long allocationId = allocateIp(vmId);
         String ip = jdbcTemplate.queryForObject(
                 "select host(ip) from ip_allocations where id = ?", String.class, allocationId);
-        // in-flight PROVISION task at step 4 (템플릿 복제), one prior attempt error
+        // in-flight PROVISION task at step 4 (OS 이미지 복제), one prior attempt error
         jdbcTemplate.update("""
                 insert into provisioning_tasks (vm_id, kind, current_step, status, attempts, last_error)
                 values (?, 'PROVISION', 4, 'RUNNING', 2, '일시 오류')
@@ -161,7 +161,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.provisioning.status").value("RUNNING"))
                 .andExpect(jsonPath("$.provisioning.currentStep").value(4))
                 .andExpect(jsonPath("$.provisioning.totalSteps").value(11))
-                .andExpect(jsonPath("$.provisioning.stepLabel").value("템플릿 복제 중"))
+                .andExpect(jsonPath("$.provisioning.stepLabel").value("OS 이미지 복제 중"))
                 .andExpect(jsonPath("$.provisioning.attempts").value(2))
                 .andExpect(jsonPath("$.provisioning.lastError").value("일시 오류"))
                 .andExpect(jsonPath("$.deletion.kind").value("SELF"))

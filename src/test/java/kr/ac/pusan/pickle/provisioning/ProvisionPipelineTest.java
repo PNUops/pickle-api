@@ -174,7 +174,7 @@ class ProvisionPipelineTest {
             assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.RETRYING);
             assertThat(task.getAttempts()).isEqualTo(attempt);
             assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.CLONE.index());
-            assertThat(task.getLastError()).contains("템플릿 복제");
+            assertThat(task.getLastError()).contains("OS 이미지 복제");
         }
         // attempt 4: budget exhausted → compensation
         job.provisionVm(vmId);

@@ -68,7 +68,7 @@ public class NodePlacementService {
             if (!imageRepository.existsByNameAndNodeIdAndStatus(
                     image.getName(), node.getId(), CatalogStatus.ACTIVE)) {
                 throw new IllegalStateException("관리자 지정 노드 " + node.getId()
-                        + "에 템플릿 " + image.getName() + "이(가) 없습니다");
+                        + "에 OS 이미지 " + image.getName() + "이(가) 없습니다");
             }
             log.info("placement for vm {}: admin-forced node {} ({})", vm.getId(), node.getId(),
                     node.getName());
@@ -91,7 +91,7 @@ public class NodePlacementService {
                     return node;
                 })
                 .orElseThrow(() -> new IllegalStateException(
-                        "요청 사양을 수용할 수 있는 노드가 없습니다 (템플릿 " + image.getName() + ")"));
+                        "요청 사양을 수용할 수 있는 노드가 없습니다 (OS 이미지 " + image.getName() + ")"));
     }
 
     private boolean hasMemoryHeadroom(Node node, Vm vm) {
