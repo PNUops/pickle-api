@@ -113,7 +113,7 @@ public class PublicationAssembler {
             return certificateRepository.findFirstByDomainIdAndStatusNot(domain.getId(),
                     CertificateStatus.REVOKED);
         }
-        return certificateRepository.findFirstByKindAndScope(CertificateKind.ORIGIN_CA_WILDCARD,
+        return certificateRepository.findLiveWildcard(CertificateKind.ORIGIN_CA_WILDCARD,
                 wildcardScope(domain.getRootDomain()));
     }
 

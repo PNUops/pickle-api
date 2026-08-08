@@ -618,6 +618,36 @@ class PublishingTest {
                 "team-nocert.no-cert.example")).isZero();
     }
 
+    @Test
+    void aRevokedWildcardDoesNotHideTheLiveOneForTheSameRoot() throws Exception {
+        // Revoking and reissuing a root's wildcard leaves both rows in place, and
+        // the revoked one is older. Reading it instead of the live one refuses
+        // every publish under the root and shows its dead expiry on the VM view.
+        allowRootDomain("rotated-root.example");
+        jdbcTemplate.update("""
+                insert into certificates (domain_id, kind, scope, not_after, status)
+                values (null, 'ORIGIN_CA_WILDCARD', '*.rotated-root.example',
+                        '2020-01-01T00:00:00Z', 'REVOKED')
+                """);
+        jdbcTemplate.update("""
+                insert into certificates (domain_id, kind, scope, not_after, status)
+                values (null, 'ORIGIN_CA_WILDCARD', '*.rotated-root.example',
+                        '2040-01-01T00:00:00Z', 'ACTIVE')
+                """);
+        long vmId = publishableVm("team-rotated", "rotated-root.example", VmStatus.RUNNING);
+
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+
+        mockMvc.perform(get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.publications[0].fqdn")
+                        .value("team-rotated.rotated-root.example"))
+                .andExpect(jsonPath("$.publications[0].certificate.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.publications[0].certificate.notAfter")
+                        .value("2040-01-01T00:00:00Z"));
+    }
+
     /** Appends a root to the runtime allow-list (settings-driven, no restart). */
     private void allowRootDomain(String rootDomain) {
         jdbcTemplate.update("""
