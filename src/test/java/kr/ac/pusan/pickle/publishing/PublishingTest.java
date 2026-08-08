@@ -1725,6 +1725,54 @@ class PublishingTest {
     }
 
     @Test
+    void adminForceReleaseNotifiesTheOwningGroupAndLogsTheVmEvent() throws Exception {
+        long vmId = publishableVm("team-fnote", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long servingId = domainIdForVm(vmId);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + servingId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        // The owning group is told, same channel as an admin mapping delete:
+        // the audit row alone reaches no user, and a public address
+        // disappearing must not be discovered from a dead link.
+        assertThat(adminReleaseNoticeCount("team-fnote.pusan.dev")).isEqualTo(1);
+        // A serving domain also gets the UNPUBLISH entry in the VM history,
+        // marked as the admin's act (parity with the user-side release).
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_events
+                 where vm_id = ? and type = 'UNPUBLISH'
+                   and detail = '관리자 해제 — team-fnote.pusan.dev'
+                """, Long.class, vmId)).isEqualTo(1);
+
+        // A reserved (non-serving) row: still a notification — the group
+        // loses its name claim — but no UNPUBLISH event, since no traffic
+        // path went down (same as a user's immediate return).
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-fnote2\"}")
+                .andExpect(status().isAccepted());
+        long reservedId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + reservedId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted()); // released → reserved
+        mockMvc.perform(post("/api/v1/admin/domains/" + reservedId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        assertThat(adminReleaseNoticeCount("team-fnote2.pusan.dev")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_events
+                 where vm_id = ? and type = 'UNPUBLISH' and detail like '관리자%'
+                """, Long.class, vmId)).isEqualTo(1);
+    }
+
+    private long adminReleaseNoticeCount(String fqdn) {
+        return jdbcTemplate.queryForObject("""
+                select count(*) from notifications
+                 where user_id = ? and event = 'domain.admin_released'
+                   and payload ->> 'fqdn' = ?
+                """, Long.class, owner.getId(), fqdn);
+    }
+
+    @Test
     void adminDomainInterventionIsOrgScopedWithThe404Mask() throws Exception {
         long vmId = publishableVm("team-scope", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
