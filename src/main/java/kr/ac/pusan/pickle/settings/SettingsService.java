@@ -61,6 +61,7 @@ public class SettingsService {
     // Relay port forwarding (V60, contract v0.27.0).
     /** Port-forwarding kill switch (default false: creation refused, existing kept). */
     public static final String PORT_FORWARDING_ENABLED = "port_forwarding_enabled";
+    public static final String CUSTOM_DOMAIN_LIMIT_PER_HOUR = "custom_domain_limit_per_hour";
     public static final String PORT_FORWARD_ALLOC_LIMIT_PER_HOUR =
             "port_forward_alloc_limit_per_hour";
     public static final String PORT_FORWARD_BAND_ALERT_PERCENT =
@@ -272,6 +273,8 @@ public class SettingsService {
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(WEB_TERMINAL_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(PORT_FORWARDING_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));
+        map.put(CUSTOM_DOMAIN_LIMIT_PER_HOUR, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 1000)));
         map.put(PORT_FORWARD_ALLOC_LIMIT_PER_HOUR, new Editable(SettingValueType.INTEGER,
                 intInRange(1, 1000)));
         map.put(PORT_FORWARD_BAND_ALERT_PERCENT, new Editable(SettingValueType.INTEGER,

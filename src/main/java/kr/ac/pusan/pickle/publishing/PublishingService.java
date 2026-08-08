@@ -244,9 +244,20 @@ public class PublishingService {
         validateCustomDomain(fqdn);
         // Every accepted custom domain ends in a Let's Encrypt issuance attempt
         // on the platform's SHARED ACME account — a per-user creation limit
-        // keeps one user from exhausting that quota for everyone.
+        // keeps one user from exhausting that quota for everyone. Platform
+        // subdomains need none of this: one wildcard covers every name under a
+        // root, so they issue nothing no matter how many are added.
+        //
+        // Two windows, because the per-minute one alone does not bound the hour:
+        // it caps a burst, but a user pacing themselves within it still reaches
+        // the CA's account-wide new-order limit in a few hours and blocks
+        // issuance for everybody else. The hourly cap is the one measured
+        // against that quota and is an operator setting for the same reason —
+        // the CA's limits are not ours to predict.
         rateLimitService.hit("domain_create", "user:" + actor.id(),
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hitHourly("domain_create_hourly", "user:" + actor.id(),
+                settingsService.integer(SettingsService.CUSTOM_DOMAIN_LIMIT_PER_HOUR, 20));
         // Locked read: the sweeper may reclaim a leftover row concurrently, and
         // a revive must never proceed on a snapshot it already flipped REMOVED.
         Domain existing = domainRepository
