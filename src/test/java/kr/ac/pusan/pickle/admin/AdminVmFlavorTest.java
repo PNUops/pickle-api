@@ -98,13 +98,16 @@ class AdminVmFlavorTest {
     }
 
     @Test
-    void publicFlavorListIsActiveOnlyAndOrderedById() throws Exception {
-        // every authenticated role reads the wizard list; the V58 seed leads it
+    void publicFlavorListIsActiveOnlyAndOrderedBySize() throws Exception {
+        // every authenticated role reads the wizard list, smallest preset first.
+        // The row this class creates carries basic's exact spec, so it lands on
+        // the id tie-break right behind basic rather than at the end of the list.
         mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("small"))
                 .andExpect(jsonPath("$[1].name").value("basic"))
-                .andExpect(jsonPath("$[2].name").value("large"))
+                .andExpect(jsonPath("$[2].name").value(flavorName))
+                .andExpect(jsonPath("$[3].name").value("large"))
                 .andExpect(jsonPath(byId(flavorId) + ".status").value("ACTIVE"));
 
         jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::catalog_status where id = ?",

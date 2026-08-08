@@ -296,7 +296,7 @@ class VmRequestTest {
     @Test
     void emptyOsCatalogListsNothingAndRefusesEverySubmission() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-empty-x1");
-        List<OsImage> active = imageRepository.findByStatusOrderByIdAsc(CatalogStatus.ACTIVE);
+        List<OsImage> active = imageRepository.findByStatus(CatalogStatus.ACTIVE);
         assertThat(active).isNotEmpty();
         // Catalog rows are shared state across test classes on this context —
         // the ACTIVE set is restored in the finally block below.

@@ -25,7 +25,6 @@ import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,7 +63,7 @@ public class AdminInventoryService {
     /** Contract {@code listAdminOsImages}: every OS image, retired revisions included. */
     @Transactional(readOnly = true)
     public List<AdminOsImageResponse> listOsImages() {
-        return osImageRepository.findAll(Sort.by("id")).stream()
+        return osImageRepository.findAllInDisplayOrder().stream()
                 .map(AdminOsImageResponse::from)
                 .toList();
     }
@@ -104,7 +103,7 @@ public class AdminInventoryService {
     /** Contract {@code listAdminVmFlavors}: every preset, retired ones included. */
     @Transactional(readOnly = true)
     public List<VmFlavorResponse> listFlavors() {
-        return vmFlavorRepository.findAll(Sort.by("id")).stream()
+        return vmFlavorRepository.findAllInDisplayOrder().stream()
                 .map(VmFlavorResponse::from)
                 .toList();
     }

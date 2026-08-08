@@ -21,7 +21,7 @@ public class VmFlavorController {
     @GetMapping
     @Transactional(readOnly = true)
     public List<VmFlavorResponse> listVmFlavors() {
-        return vmFlavorRepository.findByStatusOrderByIdAsc(CatalogStatus.ACTIVE).stream()
+        return vmFlavorRepository.findByStatusInDisplayOrder(CatalogStatus.ACTIVE).stream()
                 .map(VmFlavorResponse::from)
                 .toList();
     }
