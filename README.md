@@ -84,7 +84,8 @@ mvn test -Dtest=ContractDriftTest -Dcontract.update=true
 
 갱신하지 않으면 `ContractDriftTest`가 빌드를 실패시킵니다. 환경 변수
 `PICKLE_CONTRACT_MASTER`에 수기로 쓴 설계 명세 YAML 경로를 주면 설계 표면과 구현 표면의
-집합 대조까지 추가로 수행합니다.
+집합 대조에 더해, 두 문서가 함께 가진 오퍼레이션의 `operationId`와 설계 명세가 붙인
+스키마명이 생성본과 같은지까지 대조합니다.
 
 실행 중인 서버도 같은 스펙을 제공합니다: https://pickle.pusan.ac.kr/api/v1/openapi
 

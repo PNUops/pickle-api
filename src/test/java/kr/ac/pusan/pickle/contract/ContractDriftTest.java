@@ -10,10 +10,13 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import org.junit.jupiter.api.Assumptions;
@@ -43,6 +46,14 @@ import org.springframework.test.web.servlet.MockMvc;
  * {@link #PLANNED} holds contract operations not yet implemented, enabling
  * parallel development against a frozen design contract; it must be empty
  * once the matching endpoints ship.</p>
+ *
+ * <p><b>4. Design-contract names (optional)</b> — the design contract states
+ * that it reuses the generated names verbatim, so for every operation the two
+ * documents share, their {@code operationId} must be equal, and every schema
+ * the design contract names must exist under the generated name. Check 3 alone
+ * passes on a name mismatch because it compares path+method only; 20 operation
+ * ids had drifted that way unnoticed before the 2026-08-08 alignment, which is
+ * why this axis is a gate rather than a manual comparison step.</p>
  *
  * <p><b>Limitation:</b> checks 2 and 3 compare METHOD+path sets only.
  * Parameters, schema shapes and error codes are covered by check 1 (the
@@ -257,13 +268,7 @@ class ContractDriftTest {
 
     @Test
     void designContractSurfaceMatchesImplementedPlusPlanned() throws Exception {
-        String master = System.getenv("PICKLE_CONTRACT_MASTER");
-        Assumptions.assumeTrue(master != null && !master.isBlank(),
-                "PICKLE_CONTRACT_MASTER not set — design-contract comparison skipped");
-
-        Path masterPath = Path.of(master);
-        assertThat(masterPath).as("design contract at $PICKLE_CONTRACT_MASTER").exists();
-        JsonNode contract = new YAMLMapper().readTree(Files.readString(masterPath));
+        JsonNode contract = designContractOrSkip();
 
         // doesNotContainAnyElementsOf rejects an empty iterable with an
         // IllegalArgumentException, so guard the all-shipped state (PLANNED empty).
@@ -279,6 +284,48 @@ class ContractDriftTest {
         assertThat(endpointsOf(contract, ""))
                 .as("design contract path+method set vs IMPLEMENTED ∪ PLANNED")
                 .isEqualTo(contractSurface);
+    }
+
+    @Test
+    void designContractNamesMatchGeneratedNames() throws Exception {
+        JsonNode contract = designContractOrSkip();
+        JsonNode runtime = fetchRuntimeSpec();
+
+        Map<String, String> generatedIds = operationIdsOf(runtime, SERVER_PREFIX);
+        List<String> drifted = new ArrayList<>();
+        for (Map.Entry<String, String> operation : operationIdsOf(contract, "").entrySet()) {
+            String generated = generatedIds.get(operation.getKey());
+            if (generated != null && !generated.equals(operation.getValue())) {
+                drifted.add(operation.getKey() + " — design contract " + operation.getValue()
+                        + ", generated " + generated);
+            }
+        }
+        assertThat(drifted)
+                .as("operationId drift, listed per operation the two specs share")
+                .isEmpty();
+
+        // Containment runs one way: the generated spec names every DTO the
+        // runtime exposes, while the design contract names only the subset it
+        // documents. An unimplemented design operation may carry schemas the
+        // runtime cannot know yet, so the axis holds only while PLANNED is empty.
+        if (PLANNED.isEmpty()) {
+            Set<String> unknownSchemas = schemaNamesOf(contract);
+            unknownSchemas.removeAll(schemaNamesOf(runtime));
+            assertThat(unknownSchemas)
+                    .as("design contract schema names absent from the generated spec")
+                    .isEmpty();
+        }
+    }
+
+    /** Reads the design contract, or skips the test when it was not pointed at. */
+    private static JsonNode designContractOrSkip() throws Exception {
+        String master = System.getenv("PICKLE_CONTRACT_MASTER");
+        Assumptions.assumeTrue(master != null && !master.isBlank(),
+                "PICKLE_CONTRACT_MASTER not set — design-contract comparison skipped");
+
+        Path masterPath = Path.of(master);
+        assertThat(masterPath).as("design contract at $PICKLE_CONTRACT_MASTER").exists();
+        return new YAMLMapper().readTree(Files.readString(masterPath));
     }
 
     /**
@@ -324,6 +371,44 @@ class ContractDriftTest {
         yaml.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
         Object tree = new ObjectMapper().convertValue(spec, Object.class);
         return yaml.writeValueAsString(tree);
+    }
+
+    /**
+     * Maps each "METHOD path" to its declared {@code operationId}, normalizing
+     * away {@code stripPrefix}. An operation without one maps to a placeholder
+     * so a missing id reads as drift instead of silently matching.
+     */
+    private static Map<String, String> operationIdsOf(JsonNode spec, String stripPrefix) {
+        Map<String, String> operationIds = new TreeMap<>();
+        JsonNode paths = spec.path("paths");
+        for (Iterator<Map.Entry<String, JsonNode>> it = paths.properties().iterator(); it.hasNext(); ) {
+            Map.Entry<String, JsonNode> entry = it.next();
+            String path = entry.getKey();
+            if (!stripPrefix.isEmpty() && path.startsWith(stripPrefix)) {
+                path = path.substring(stripPrefix.length());
+            }
+            for (Iterator<Map.Entry<String, JsonNode>> ops = entry.getValue().properties().iterator();
+                    ops.hasNext(); ) {
+                Map.Entry<String, JsonNode> operation = ops.next();
+                String method = operation.getKey();
+                if (!HTTP_METHODS.contains(method.toLowerCase(Locale.ROOT))) {
+                    continue;
+                }
+                JsonNode operationId = operation.getValue().path("operationId");
+                operationIds.put(method.toUpperCase(Locale.ROOT) + " " + path,
+                        operationId.isTextual() ? operationId.asText() : "(no operationId)");
+            }
+        }
+        return operationIds;
+    }
+
+    /** Names declared under {@code components.schemas}. */
+    private static Set<String> schemaNamesOf(JsonNode spec) {
+        Set<String> names = new TreeSet<>();
+        for (Iterator<String> it = spec.path("components").path("schemas").fieldNames(); it.hasNext(); ) {
+            names.add(it.next());
+        }
+        return names;
     }
 
     /** Extracts "METHOD path" pairs, normalizing away {@code stripPrefix}. */
