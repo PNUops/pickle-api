@@ -391,7 +391,7 @@ public class PublishingService {
      */
     private void requireWildcardCertificate(String rootDomain) {
         boolean usable = certificateRepository
-                .findFirstByKindAndScope(CertificateKind.ORIGIN_CA_WILDCARD,
+                .findLiveWildcard(CertificateKind.ORIGIN_CA_WILDCARD,
                         PublicationAssembler.wildcardScope(rootDomain))
                 .filter(cert -> cert.getStatus() == CertificateStatus.ACTIVE)
                 .isPresent();
