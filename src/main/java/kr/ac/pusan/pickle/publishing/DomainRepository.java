@@ -47,13 +47,17 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
 
     /**
      * User listing — scoped to the caller's own groups' VMs. {@code vmId} and
-     * {@code status} are optional filters; newest first.
+     * {@code status} are optional filters; newest first. REMOVED rows are
+     * hidden by default but visible via status=REMOVED — same convention as
+     * the admin listing: a removed domain is gone from its owner's view, not
+     * a row that lingers as if it still held its name.
      */
     @Query("""
             select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
             where v.groupId in :groupIds
               and (:vmId is null or d.vmId = :vmId)
-              and (:status is null or cast(d.status as string) = :status)
+              and ((:status is null and cast(d.status as string) <> 'REMOVED')
+                   or cast(d.status as string) = :status)
             order by d.id desc
             """)
     Page<Domain> findForMember(@Param("groupIds") Collection<Long> groupIds, @Param("vmId") Long vmId,

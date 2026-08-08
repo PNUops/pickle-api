@@ -360,6 +360,66 @@ class PublishingTest {
     }
 
     @Test
+    void domainListingScopesToOwnGroupsAndHidesRemovedByDefault() throws Exception {
+        long vmId = publishableVm("team-ulist", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long liveId = domainIdForVm(vmId);
+
+        // A second name on the same VM, released then returned → REMOVED row.
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-ulist-gone\"}")
+                .andExpect(status().isAccepted());
+        long goneId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(goneId)).isEqualTo("REMOVED");
+
+        // A domain owned by a group the caller is no member of.
+        long foreignId = foreignGroupDomain();
+
+        // Default listing: own groups only, REMOVED hidden — a removed domain
+        // is gone from its owner's view, not a row lingering as "reserved".
+        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(liveId);
+        assertThat(defaults).doesNotContainKey(goneId);
+        assertThat(defaults).doesNotContainKey(foreignId);
+
+        // Explicit status=REMOVED opts in (same convention as the admin
+        // listing) — still scoped, and the row carries no release stamp.
+        Map<Long, tools.jackson.databind.JsonNode> removed =
+                listDomains(ownerToken, "&status=REMOVED");
+        assertThat(removed).containsKey(goneId);
+        assertThat(removed).doesNotContainKey(liveId);
+        assertThat(removed).doesNotContainKey(foreignId);
+        assertThat(removed.get(goneId).get("releasedAt").isNull()).isTrue();
+
+        // The foreign group's member sees their own row, never this group's.
+        Map<Long, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
+        assertThat(outsider).containsKey(foreignId);
+        assertThat(outsider).doesNotContainKey(liveId);
+    }
+
+    @Test
+    void domainListingKeepsAReservedRowVisibleWithItsStamp() throws Exception {
+        long vmId = publishableVm("team-ulist-res", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+
+        // Released, not removed: the row stays listed by default and carries
+        // the stamp + computed reservation end the console renders.
+        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(domainId);
+        assertThat(defaults.get(domainId).get("releasedAt").isNull()).isFalse();
+        assertThat(defaults.get(domainId).get("reservedUntil").isNull()).isFalse();
+    }
+
+    @Test
     void reviveRunsTheSameRootChecksAsCreation() throws Exception {
         // A reservation is not a bypass: if the root was taken off the
         // allow-list — or lost its wildcard certificate — while the name sat
@@ -1750,6 +1810,56 @@ class PublishingTest {
     private long domainIdForVm(long vmId) {
         return jdbcTemplate.queryForObject(
                 "select id from domains where vm_id = ? order by id desc limit 1", Long.class, vmId);
+    }
+
+    /** GET /domains as the given caller; rows of the page keyed by domain id. */
+    private Map<Long, tools.jackson.databind.JsonNode> listDomains(String token, String extraQuery)
+            throws Exception {
+        String body = mockMvc.perform(get("/api/v1/domains?size=100" + extraQuery)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        Map<Long, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
+        objectMapper.readTree(body).get("content")
+                .forEach(node -> byId.put(node.get("id").asLong(), node));
+        return byId;
+    }
+
+    /**
+     * A serving platform domain in a group the suite's owner is NO member of
+     * (the outsider's own team) — the listing-scope counterexample.
+     */
+    private long foreignGroupDomain() {
+        String slug = "pubf-" + UUID.randomUUID().toString().substring(0, 8);
+        long foreignGroupId = jdbcTemplate.queryForObject(
+                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+                Long.class, slug, slug);
+        long outsiderId = userRepository.findByEmail("pub.outsider@pusan.ac.kr")
+                .orElseThrow().getId();
+        jdbcTemplate.update("""
+                insert into group_members (group_id, user_id, role)
+                values (?, ?, 'OWNER'::group_member_role)
+                """, foreignGroupId, outsiderId);
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '목록 범위 테스트', ?, 1, 1024, 10)
+                returning id
+                """, Long.class, foreignGroupId, orgId, outsiderId, templateId);
+        String hostname = "pubf-vm-" + UUID.randomUUID().toString().substring(0, 12);
+        long foreignVmId = jdbcTemplate.queryForObject("""
+                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
+                returning id
+                """, Long.class, nodeId, foreignGroupId, orgId, requestId, hostname, hostname,
+                templateId, VMID_SEQ.incrementAndGet());
+        return jdbcTemplate.queryForObject("""
+                insert into domains (vm_id, kind, fqdn, root_domain, status)
+                values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                returning id
+                """, Long.class, foreignVmId,
+                slug + ".pusan.dev");
     }
 
     private String routeStatus(long routeId) {
