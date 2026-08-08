@@ -6,7 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -99,6 +101,31 @@ class AdminInventoryTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(imageId)).doesNotExist());
+    }
+
+    /**
+     * The admin catalog is the same catalog the wizard shows, so it is read in
+     * the same order — the admin decides what students see and should not have
+     * to translate between two orderings. The retired revision sorts by its own
+     * family and release like any other row; status is a column, not a section.
+     */
+    @Test
+    void adminOsImageListFollowsTheWizardDisplayOrder() throws Exception {
+        long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        // registered newest-release-first and retired, so id order and text
+        // order on the release string would both put Rocky 10 ahead of Rocky 9
+        String rocky10 = insertImage(nodeId, "rocky", "10", "DISABLED");
+        String rocky9 = insertImage(nodeId, "rocky", "9", "ACTIVE");
+        String debian13 = insertImage(nodeId, "debian", "13", "ACTIVE");
+
+        String body = mockMvc.perform(get("/api/v1/admin/os-images")
+                        .header("Authorization", "Bearer " + sysManagerToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        List<String> names = JsonPath.read(body, "$[*].name");
+
+        // imageName is the setUp row, an ubuntu 24.04 — last of the four families
+        assertThat(names).containsSubsequence(debian13, rocky9, rocky10, imageName);
     }
 
     @Test
@@ -197,6 +224,16 @@ class AdminInventoryTest {
 
     private static String byId(long id) {
         return "$[?(@.id == %d)]".formatted(id);
+    }
+
+    private String insertImage(long nodeId, String family, String version, String status) {
+        String name = family + "-" + version + "-" + UUID.randomUUID().toString().substring(0, 8);
+        jdbcTemplate.update("""
+                insert into os_images (name, display_name, os_family, os_version, ssh_username,
+                                          proxmox_vmid, node_id, version, min_disk_gb, status)
+                values (?, '정렬 확인용', ?, ?, ?, 990002, ?, 1, 10, cast(? as catalog_status))
+                """, name, family, version, family, nodeId, status);
+        return name;
     }
 
     private long auditCount(String action, long targetId) {

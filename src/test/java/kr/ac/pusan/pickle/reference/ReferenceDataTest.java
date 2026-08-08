@@ -126,7 +126,7 @@ class ReferenceDataTest {
     @Test
     void listsOnlyActiveOsImagesAsAPureOsCatalog() throws Exception {
         // a DISABLED version row must not surface in the wizard list
-        if (osImageRepository.findByStatusOrderByIdAsc(CatalogStatus.DISABLED).isEmpty()) {
+        if (osImageRepository.findByStatus(CatalogStatus.DISABLED).isEmpty()) {
             Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
             osImageRepository.save(new OsImage("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)",
                     "ubuntu", "22.04", "ubuntu", 1001, nodeId, 1, 10,
@@ -155,10 +155,66 @@ class ReferenceDataTest {
                 .andExpect(jsonPath("$[0].defaultDiskGb").doesNotExist());
     }
 
+    /**
+     * The wizard's OS axis reads as a rule, not as the order an operator
+     * happened to register rows in: distribution alphabetically, release
+     * ascending as a number. The rows below are inserted in an order that
+     * defeats both of the ways this can be got wrong — Rocky 10 lands before
+     * Rocky 9 (so id order would show 10 first) and the release strings sort
+     * the same way as text ('10' &lt; '9'), so only numeric release order puts 9
+     * ahead of 10. The older Ubuntu is registered last for the same reason.
+     */
+    @Test
+    void osCatalogIsOrderedByFamilyThenReleaseAsNumbers() throws Exception {
+        Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
+        List<OsImage> added = osImageRepository.saveAll(List.of(
+                new OsImage("rocky-10", "Rocky Linux 10", "rocky", "10", "rocky",
+                        1901, nodeId, 1, 10, CatalogStatus.ACTIVE, "정렬 확인용"),
+                new OsImage("rocky-9", "Rocky Linux 9", "rocky", "9", "rocky",
+                        1902, nodeId, 1, 10, CatalogStatus.ACTIVE, "정렬 확인용"),
+                new OsImage("debian-13", "Debian 13", "debian", "13", "debian",
+                        1903, nodeId, 1, 10, CatalogStatus.ACTIVE, "정렬 확인용"),
+                new OsImage("ubuntu-20.04", "Ubuntu 20.04 LTS", "ubuntu", "20.04", "ubuntu",
+                        1904, nodeId, 1, 10, CatalogStatus.ACTIVE, "정렬 확인용")));
+        try {
+            mockMvc.perform(get("/api/v1/os-images")
+                            .header("Authorization", "Bearer " + accessToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].name").value(org.hamcrest.Matchers.contains(
+                            "debian-13", "rocky-9", "rocky-10",
+                            "ubuntu-20.04", "ubuntu-24.04")));
+        } finally {
+            osImageRepository.deleteAll(added);
+        }
+    }
+
+    /**
+     * The spec axis has no family to group by, so it reads as a scale: the
+     * three preset numbers ascending. The two rows below are registered after
+     * the presets and must still bracket them.
+     */
+    @Test
+    void flavorsAreOrderedBySizeNotByRegistration() throws Exception {
+        List<VmFlavor> added = vmFlavorRepository.saveAll(List.of(
+                new VmFlavor("ref-order-huge", "정렬 확인용 특대형", 8, 16384, 80,
+                        CatalogStatus.ACTIVE, "정렬 확인용"),
+                new VmFlavor("ref-order-tiny", "정렬 확인용 초소형", 1, 512, 5,
+                        CatalogStatus.ACTIVE, "정렬 확인용")));
+        try {
+            mockMvc.perform(get("/api/v1/vm-flavors")
+                            .header("Authorization", "Bearer " + accessToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].name").value(org.hamcrest.Matchers.contains(
+                            "ref-order-tiny", "small", "basic", "large", "ref-order-huge")));
+        } finally {
+            vmFlavorRepository.deleteAll(added);
+        }
+    }
+
     @Test
     void listsOnlyActiveFlavorsWithTheirSpecs() throws Exception {
         // a retired preset must not surface in the wizard list
-        if (vmFlavorRepository.findByStatusOrderByIdAsc(CatalogStatus.DISABLED).isEmpty()) {
+        if (vmFlavorRepository.findByStatus(CatalogStatus.DISABLED).isEmpty()) {
             vmFlavorRepository.save(new VmFlavor("ref-retired", "은퇴 프리셋", 8, 16384, 80,
                     CatalogStatus.DISABLED, null));
         }

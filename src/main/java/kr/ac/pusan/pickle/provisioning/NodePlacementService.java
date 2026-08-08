@@ -77,7 +77,7 @@ public class NodePlacementService {
         // Nodes hosting an ACTIVE image of the same name (image rows are
         // per-node; a multi-node cluster clones the image under one name).
         Set<Long> imageNodeIds = imageRepository
-                .findByStatusOrderByIdAsc(CatalogStatus.ACTIVE).stream()
+                .findByStatus(CatalogStatus.ACTIVE).stream()
                 .filter(candidate -> candidate.getName().equals(image.getName()))
                 .map(OsImage::getNodeId)
                 .collect(Collectors.toSet());

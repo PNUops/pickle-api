@@ -28,7 +28,7 @@ public class OsImageController {
     @GetMapping
     @Transactional(readOnly = true)
     public List<OsImageResponse> listOsImages() {
-        return osImageRepository.findByStatusOrderByIdAsc(CatalogStatus.ACTIVE).stream()
+        return osImageRepository.findByStatusInDisplayOrder(CatalogStatus.ACTIVE).stream()
                 .map(OsImageResponse::from)
                 .toList();
     }
