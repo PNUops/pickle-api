@@ -2,11 +2,11 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 
-/** Contract op {@code updateAdminTemplate} body — the status toggle only. */
-public record UpdateTemplateStatusRequest(
+/** Contract op {@code updateAdminOsImage} body — the status toggle only. */
+public record UpdateOsImageStatusRequest(
         @NotNull
         @Schema(description = "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 VM 무영향)")
-        TemplateStatus status) {
+        CatalogStatus status) {
 }

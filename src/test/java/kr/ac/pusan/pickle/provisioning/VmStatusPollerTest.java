@@ -57,7 +57,7 @@ class VmStatusPollerTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
     private final List<Long> createdNodeIds = new ArrayList<>();
@@ -79,7 +79,7 @@ class VmStatusPollerTest {
         // poll cycles in this context never attempt a real connection.
         jdbcTemplate.update("update nodes set status = 'OFFLINE' where name = 'pve1'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "poll-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
@@ -203,7 +203,7 @@ class VmStatusPollerTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '폴러 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "poll-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -211,7 +211,7 @@ class VmStatusPollerTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, proxmoxVmid, status);
+                imageId, proxmoxVmid, status);
     }
 
     // --- WireMock stubbing (shared with DriftReconcilerTest) --------------------

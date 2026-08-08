@@ -136,7 +136,7 @@ class AdminNodesTest {
     /** Minimal request→vm FK chain on the given node (dedicated group per VM). */
     private void createVm(long nodeId, String status, int vcpu, int memoryMb) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "nodesum-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = jdbcTemplate.queryForObject(
@@ -147,11 +147,11 @@ class AdminNodesTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '노드 집계 테스트', ?, ?, ?, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId, vcpu, memoryMb);
+                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
         jdbcTemplate.update("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?::vm_status)
-                """, nodeId, groupId, orgId, requestId, slug, slug, templateId, vcpu, memoryMb, status);
+                """, nodeId, groupId, orgId, requestId, slug, slug, imageId, vcpu, memoryMb, status);
     }
 }

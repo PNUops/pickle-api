@@ -31,7 +31,7 @@ class DomainCheckConstraintsTest {
 
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
 
@@ -39,7 +39,7 @@ class DomainCheckConstraintsTest {
     void setUp() {
         orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select id from nodes where name = 'pve1'", Long.class);
-        templateId = jdbc.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbc.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "chk-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
@@ -89,7 +89,7 @@ class DomainCheckConstraintsTest {
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 0, 10)
-                """, nodeId, groupId, orgId, requestId, hostname, hostname, templateId))
+                """, nodeId, groupId, orgId, requestId, hostname, hostname, imageId))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("chk_vms_positive_specs");
     }
@@ -139,7 +139,7 @@ class DomainCheckConstraintsTest {
         return jdbc.update("""
                 insert into os_images (name, display_name, os_family, os_version, ssh_username,
                                        proxmox_vmid, node_id, min_disk_gb, status)
-                values (?, '제약 테스트 이미지', ?, ?, ?, 1009, ?, 10, 'DISABLED'::template_status)
+                values (?, '제약 테스트 이미지', ?, ?, ?, 1009, ?, 10, 'DISABLED'::catalog_status)
                 """, "chk-image-" + UUID.randomUUID().toString().substring(0, 8),
                 osFamily, osVersion, sshUsername, nodeId);
     }
@@ -152,7 +152,7 @@ class DomainCheckConstraintsTest {
                 values (?, ?, ?, '제약 테스트', ?, ?, ?, ?,
                         cast(? as date), cast(? as date))
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId,
+                """, Long.class, groupId, orgId, requesterId, imageId,
                 vcpu, memoryMb, diskGb, start, end);
     }
 }

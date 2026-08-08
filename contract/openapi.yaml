@@ -365,6 +365,52 @@ components:
       - "userEmail"
       - "userId"
       type: "object"
+    AdminOsImageResponse:
+      properties:
+        displayName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        minDiskGb:
+          format: "int32"
+          type: "integer"
+        name:
+          type: "string"
+        nodeId:
+          format: "int64"
+          type: "integer"
+        notes:
+          type:
+          - "string"
+          - "null"
+        osFamily:
+          type: "string"
+        osVersion:
+          type: "string"
+        proxmoxVmid:
+          format: "int32"
+          type: "integer"
+        sshUsername:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/CatalogStatus"
+        version:
+          format: "int32"
+          type: "integer"
+      required:
+      - "displayName"
+      - "id"
+      - "minDiskGb"
+      - "name"
+      - "nodeId"
+      - "osFamily"
+      - "osVersion"
+      - "proxmoxVmid"
+      - "sshUsername"
+      - "status"
+      - "version"
+      type: "object"
     AdminPortMappingResponse:
       properties:
         applyState:
@@ -663,52 +709,6 @@ components:
       - "updatedAt"
       - "vmId"
       type: "object"
-    AdminTemplateResponse:
-      properties:
-        displayName:
-          type: "string"
-        id:
-          format: "int64"
-          type: "integer"
-        minDiskGb:
-          format: "int32"
-          type: "integer"
-        name:
-          type: "string"
-        nodeId:
-          format: "int64"
-          type: "integer"
-        notes:
-          type:
-          - "string"
-          - "null"
-        osFamily:
-          type: "string"
-        osVersion:
-          type: "string"
-        proxmoxVmid:
-          format: "int32"
-          type: "integer"
-        sshUsername:
-          type: "string"
-        status:
-          $ref: "#/components/schemas/TemplateStatus"
-        version:
-          format: "int32"
-          type: "integer"
-      required:
-      - "displayName"
-      - "id"
-      - "minDiskGb"
-      - "name"
-      - "nodeId"
-      - "osFamily"
-      - "osVersion"
-      - "proxmoxVmid"
-      - "sshUsername"
-      - "status"
-      - "version"
-      type: "object"
     AllocationStatus:
       enum:
       - "ALLOCATED"
@@ -846,6 +846,9 @@ components:
           type:
           - "string"
           - "null"
+        grantedImageId:
+          format: "int64"
+          type: "integer"
         grantedMemoryMb:
           format: "int32"
           minimum: 256
@@ -860,9 +863,6 @@ components:
           type:
           - "string"
           - "null"
-        grantedTemplateId:
-          format: "int64"
-          type: "integer"
         grantedVcpu:
           format: "int32"
           minimum: 1
@@ -874,8 +874,8 @@ components:
           - "null"
       required:
       - "grantedDiskGb"
+      - "grantedImageId"
       - "grantedMemoryMb"
-      - "grantedTemplateId"
       - "grantedVcpu"
       type: "object"
     Attention:
@@ -1032,6 +1032,11 @@ components:
       - "cpuThreads"
       - "memoryMb"
       type: "object"
+    CatalogStatus:
+      enum:
+      - "ACTIVE"
+      - "DISABLED"
+      type: "string"
     CertificateKind:
       enum:
       - "ORIGIN_CA_WILDCARD"
@@ -1277,6 +1282,9 @@ components:
         groupId:
           format: "int64"
           type: "integer"
+        imageId:
+          format: "int64"
+          type: "integer"
         orgId:
           format: "int64"
           type: "integer"
@@ -1312,18 +1320,15 @@ components:
           type:
           - "string"
           - "null"
-        templateId:
-          format: "int64"
-          type: "integer"
       required:
       - "flavorId"
       - "groupId"
+      - "imageId"
       - "orgId"
       - "purpose"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"
-      - "templateId"
       type: "object"
     DisableMfaRequest:
       properties:
@@ -2154,6 +2159,44 @@ components:
       - "name"
       - "slug"
       - "status"
+      type: "object"
+    OsImageResponse:
+      properties:
+        displayName:
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        minDiskGb:
+          format: "int32"
+          type: "integer"
+        name:
+          type: "string"
+        notes:
+          type:
+          - "string"
+          - "null"
+        osFamily:
+          type: "string"
+        osVersion:
+          type: "string"
+        sshUsername:
+          type: "string"
+        status:
+          $ref: "#/components/schemas/CatalogStatus"
+        version:
+          format: "int32"
+          type: "integer"
+      required:
+      - "displayName"
+      - "id"
+      - "minDiskGb"
+      - "name"
+      - "osFamily"
+      - "osVersion"
+      - "sshUsername"
+      - "status"
+      - "version"
       type: "object"
     PageResponseActivityEntryResponse:
       properties:
@@ -3224,11 +3267,6 @@ components:
       - "retryingCount"
       - "runningCount"
       type: "object"
-    TemplateStatus:
-      enum:
-      - "ACTIVE"
-      - "DISABLED"
-      type: "string"
     TerminalSessionView:
       properties:
         clientIp:
@@ -3432,6 +3470,14 @@ components:
         status:
           $ref: "#/components/schemas/OrgStatus"
       type: "object"
+    UpdateOsImageStatusRequest:
+      properties:
+        status:
+          $ref: "#/components/schemas/CatalogStatus"
+          description: "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 VM 무영향)"
+      required:
+      - "status"
+      type: "object"
     UpdatePortMappingGuardsRequest:
       properties:
         ctMax:
@@ -3464,14 +3510,6 @@ components:
           type:
           - "integer"
           - "null"
-      type: "object"
-    UpdateTemplateStatusRequest:
-      properties:
-        status:
-          $ref: "#/components/schemas/TemplateStatus"
-          description: "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 VM 무영향)"
-      required:
-      - "status"
       type: "object"
     UpdateUserAdminRequest:
       properties:
@@ -3511,7 +3549,7 @@ components:
           - "null"
         status:
           anyOf:
-          - $ref: "#/components/schemas/TemplateStatus"
+          - $ref: "#/components/schemas/CatalogStatus"
           - type: "null"
           description: "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 신청·VM 무영향)"
         vcpu:
@@ -3817,6 +3855,9 @@ components:
         id:
           format: "int64"
           type: "integer"
+        imageId:
+          format: "int64"
+          type: "integer"
         ipAddress:
           type:
           - "string"
@@ -3869,9 +3910,6 @@ components:
           type:
           - "string"
           - "null"
-        templateId:
-          format: "int64"
-          type: "integer"
         updatedAt:
           format: "date-time"
           type: "string"
@@ -3885,6 +3923,7 @@ components:
       - "groupName"
       - "hostname"
       - "id"
+      - "imageId"
       - "memoryMb"
       - "name"
       - "orgId"
@@ -3896,7 +3935,6 @@ components:
       - "sshHost"
       - "sshUsername"
       - "status"
-      - "templateId"
       - "updatedAt"
       - "vcpu"
       type: "object"
@@ -3966,7 +4004,7 @@ components:
           - "string"
           - "null"
         status:
-          $ref: "#/components/schemas/TemplateStatus"
+          $ref: "#/components/schemas/CatalogStatus"
         vcpu:
           format: "int32"
           type: "integer"
@@ -4060,6 +4098,9 @@ components:
         id:
           format: "int64"
           type: "integer"
+        imageId:
+          format: "int64"
+          type: "integer"
         orgId:
           format: "int64"
           type: "integer"
@@ -4105,9 +4146,6 @@ components:
           - "null"
         status:
           $ref: "#/components/schemas/VmRequestStatus"
-        templateId:
-          format: "int64"
-          type: "integer"
         updatedAt:
           format: "date-time"
           type: "string"
@@ -4116,6 +4154,7 @@ components:
       - "groupId"
       - "groupName"
       - "id"
+      - "imageId"
       - "orgId"
       - "orgName"
       - "purpose"
@@ -4125,7 +4164,6 @@ components:
       - "requesterId"
       - "requesterName"
       - "status"
-      - "templateId"
       - "updatedAt"
       type: "object"
     VmRequestReviewResponse:
@@ -4149,6 +4187,11 @@ components:
           type:
           - "string"
           - "null"
+        grantedImageId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
         grantedMemoryMb:
           format: "int32"
           type:
@@ -4158,11 +4201,6 @@ components:
           format: "date"
           type:
           - "string"
-          - "null"
-        grantedTemplateId:
-          format: "int64"
-          type:
-          - "integer"
           - "null"
         grantedVcpu:
           format: "int32"
@@ -4328,44 +4366,6 @@ components:
       - "status"
       - "vcpu"
       type: "object"
-    VmTemplateResponse:
-      properties:
-        displayName:
-          type: "string"
-        id:
-          format: "int64"
-          type: "integer"
-        minDiskGb:
-          format: "int32"
-          type: "integer"
-        name:
-          type: "string"
-        notes:
-          type:
-          - "string"
-          - "null"
-        osFamily:
-          type: "string"
-        osVersion:
-          type: "string"
-        sshUsername:
-          type: "string"
-        status:
-          $ref: "#/components/schemas/TemplateStatus"
-        version:
-          format: "int32"
-          type: "integer"
-      required:
-      - "displayName"
-      - "id"
-      - "minDiskGb"
-      - "name"
-      - "osFamily"
-      - "osVersion"
-      - "sshUsername"
-      - "status"
-      - "version"
-      type: "object"
     WithdrawRequest:
       properties:
         password:
@@ -4391,7 +4391,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.29.0"
+  version: "0.30.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -5137,6 +5137,57 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-controller"
+  /admin/os-images:
+    get:
+      operationId: "listAdminOsImages"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminOsImageResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-os-image-controller"
+  /admin/os-images/{imageId}:
+    patch:
+      operationId: "updateAdminOsImage"
+      parameters:
+      - in: "path"
+        name: "imageId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOsImageStatusRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminOsImageResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-os-image-controller"
   /admin/port-mappings:
     get:
       operationId: "listAdminPortMappings"
@@ -5622,57 +5673,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-task-controller"
-  /admin/templates:
-    get:
-      operationId: "listAdminTemplates"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/AdminTemplateResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-template-controller"
-  /admin/templates/{templateId}:
-    patch:
-      operationId: "updateAdminTemplate"
-      parameters:
-      - in: "path"
-        name: "templateId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateTemplateStatusRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AdminTemplateResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-template-controller"
   /admin/terminal-sessions:
     get:
       operationId: "listAdminTerminalSessions"
@@ -7847,16 +7847,16 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "org-controller"
-  /templates:
+  /os-images:
     get:
-      operationId: "listTemplates"
+      operationId: "listOsImages"
       responses:
         "200":
           content:
             '*/*':
               schema:
                 items:
-                  $ref: "#/components/schemas/VmTemplateResponse"
+                  $ref: "#/components/schemas/OsImageResponse"
                 type: "array"
           description: "OK"
         default:

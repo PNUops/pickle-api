@@ -16,7 +16,7 @@ import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
@@ -131,9 +131,9 @@ public class ApprovalService {
         requireSubmitted(request);
 
         List<FieldValidationError> errors = new ArrayList<>();
-        OsImage image = imageRepository.findById(form.grantedTemplateId()).orElse(null);
-        if (image == null || image.getStatus() != TemplateStatus.ACTIVE) {
-            errors.add(new FieldValidationError("grantedTemplateId", "사용할 수 없는 템플릿입니다."));
+        OsImage image = imageRepository.findById(form.grantedImageId()).orElse(null);
+        if (image == null || image.getStatus() != CatalogStatus.ACTIVE) {
+            errors.add(new FieldValidationError("grantedImageId", "사용할 수 없는 템플릿입니다."));
         } else if (form.grantedDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("grantedDiskGb",
                     "이 템플릿의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
@@ -146,7 +146,7 @@ public class ApprovalService {
             if (!nodeRepository.existsById(form.nodeId())) {
                 errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
             } else if (image != null && !imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), form.nodeId(), TemplateStatus.ACTIVE)) {
+                    image.getName(), form.nodeId(), CatalogStatus.ACTIVE)) {
                 // Forced node must host the granted image — the provisioning
                 // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.

@@ -34,7 +34,7 @@ class StaleTaskRecoveryJobTest {
 
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
 
@@ -42,7 +42,7 @@ class StaleTaskRecoveryJobTest {
     void setUp() {
         orgId = SeedFixtures.seedOrgId(jdbc);
         nodeId = jdbc.queryForObject("select min(id) from nodes", Long.class);
-        templateId = jdbc.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbc.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "stale-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbc.queryForObject(
@@ -157,7 +157,7 @@ class StaleTaskRecoveryJobTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '스테일 회수 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "stale-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbc.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -165,7 +165,7 @@ class StaleTaskRecoveryJobTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, status);
+                imageId, status);
     }
 
     private long insertTask(long vmId, String kind, String status, int attempts, String age) {

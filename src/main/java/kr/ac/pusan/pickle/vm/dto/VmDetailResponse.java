@@ -10,7 +10,7 @@ import kr.ac.pusan.pickle.vm.VmStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Contract schema {@code VmDetail} (= VmSummary + org/template/access fields
+ * Contract schema {@code VmDetail} (= VmSummary + org/image/access fields
  * plus the lifecycle surface, the publish surface, and the SSH
  * surface: the requester's group role, whether the stored password is available
  * and revealable by the requester, and the SSH gateway host for connect hints).
@@ -34,7 +34,7 @@ public record VmDetailResponse(
         boolean sshGatewayBlocked,
         Instant createdAt,
         Long orgId,
-        Long templateId,
+        Long imageId,
         @Nullable String ipAddress,
         String sshUsername,
         String sshHost,

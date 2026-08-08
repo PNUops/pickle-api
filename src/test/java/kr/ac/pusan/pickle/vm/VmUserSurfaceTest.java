@@ -67,7 +67,7 @@ class VmUserSurfaceTest {
     private String outsiderToken;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
     private String groupName;
 
@@ -81,7 +81,7 @@ class VmUserSurfaceTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         String slug = "vmsurf-" + UUID.randomUUID().toString().substring(0, 8);
         groupName = "표면 테스트 " + slug;
         groupId = createTeam(slug, groupName);
@@ -256,7 +256,7 @@ class VmUserSurfaceTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '표면 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmsurf-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -264,7 +264,7 @@ class VmUserSurfaceTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING')
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, VMID_SEQ.incrementAndGet());
+                imageId, VMID_SEQ.incrementAndGet());
     }
 
     private long createTeam(String slug, String name) throws Exception {

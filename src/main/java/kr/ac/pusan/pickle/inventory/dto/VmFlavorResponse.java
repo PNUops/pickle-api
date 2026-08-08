@@ -1,6 +1,6 @@
 package kr.ac.pusan.pickle.inventory.dto;
 
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import org.jspecify.annotations.Nullable;
 
@@ -12,7 +12,7 @@ public record VmFlavorResponse(
         int vcpu,
         int memoryMb,
         int diskGb,
-        TemplateStatus status,
+        CatalogStatus status,
         @Nullable String notes) {
 
     public static VmFlavorResponse from(VmFlavor flavor) {

@@ -283,7 +283,7 @@ public class DevDataSeeder implements ApplicationRunner {
                 "insert into os_images (name, display_name, os_family, os_version,"
                         + " ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status, notes)"
                         + " values ('ubuntu-24.04', 'Ubuntu 24.04 LTS', 'ubuntu', '24.04',"
-                        + " 'ubuntu', " + SEED_TEMPLATE_VMID + ", ?, 1, 10, 'ACTIVE'::template_status,"
+                        + " 'ubuntu', " + SEED_TEMPLATE_VMID + ", ?, 1, 10, 'ACTIVE'::catalog_status,"
                         + " '개발용 시드 이미지')", nodeId);
         log.info("Empty inventory: seeded the development OS image (ubuntu-24.04)");
     }

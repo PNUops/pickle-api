@@ -74,7 +74,7 @@ class InternalSshGatewayRouteTest {
     private UserRepository userRepository;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long nodeId;
     private long groupId;
     private long poolId;
@@ -87,7 +87,7 @@ class InternalSshGatewayRouteTest {
         setGatewayEnabled(true);
 
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         nodeId = ensureNode();
@@ -448,7 +448,7 @@ class InternalSshGatewayRouteTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'SSH 라우트 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, memberId, templateId);
+                """, Long.class, groupId, orgId, memberId, imageId);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
@@ -459,7 +459,7 @@ class InternalSshGatewayRouteTest {
                                  ip_allocation_id, ssh_gateway_blocked, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, templateId,
+                """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, imageId,
                 status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
         return vmId;

@@ -123,7 +123,7 @@ class VmPowerControlTest {
     private String outsiderToken;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
     private int proxmoxVmid;
 
@@ -139,7 +139,7 @@ class VmPowerControlTest {
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = ensureWireMockNode();
         groupId = createTeam("vmpow-" + UUID.randomUUID().toString().substring(0, 8));
         addMember(groupId, member.getEmail(), "MEMBER");
@@ -404,7 +404,7 @@ class VmPowerControlTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '전원 제어 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmpow-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
         return jdbcTemplate.queryForObject("""
@@ -413,7 +413,7 @@ class VmPowerControlTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, proxmoxVmid, status.name());
+                imageId, proxmoxVmid, status.name());
     }
 
     private long createTeam(String slug) throws Exception {

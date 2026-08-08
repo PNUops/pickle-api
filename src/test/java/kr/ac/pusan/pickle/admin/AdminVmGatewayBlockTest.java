@@ -187,7 +187,7 @@ class AdminVmGatewayBlockTest {
     }
 
     private long createVm(String status) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
@@ -195,7 +195,7 @@ class AdminVmGatewayBlockTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '차단 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "agb-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -203,6 +203,6 @@ class AdminVmGatewayBlockTest {
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, status);
+                imageId, status);
     }
 }

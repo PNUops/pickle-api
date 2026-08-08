@@ -5,7 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OsImageRepository extends JpaRepository<OsImage, Long> {
 
-    List<OsImage> findByStatusOrderByIdAsc(TemplateStatus status);
+    List<OsImage> findByStatusOrderByIdAsc(CatalogStatus status);
 
     /**
      * Whether a node hosts a usable copy of an OS image. Image rows are
@@ -13,5 +13,5 @@ public interface OsImageRepository extends JpaRepository<OsImage, Long> {
      * same {@code name} in the given status — the same name-based match node
      * placement uses.
      */
-    boolean existsByNameAndNodeIdAndStatus(String name, Long nodeId, TemplateStatus status);
+    boolean existsByNameAndNodeIdAndStatus(String name, Long nodeId, CatalogStatus status);
 }

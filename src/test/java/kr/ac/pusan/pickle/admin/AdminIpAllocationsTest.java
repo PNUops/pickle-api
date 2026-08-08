@@ -146,7 +146,7 @@ class AdminIpAllocationsTest {
 
     private long createVm() {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String slug = "adip-" + UUID.randomUUID().toString().substring(0, 8);
@@ -158,13 +158,13 @@ class AdminIpAllocationsTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'IP 할당 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "adip-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'STOPPED'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
+                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
     }
 }

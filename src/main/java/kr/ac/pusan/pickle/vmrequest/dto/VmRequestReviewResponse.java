@@ -16,7 +16,7 @@ public record VmRequestReviewResponse(
         @Nullable Integer grantedVcpu,
         @Nullable Integer grantedMemoryMb,
         @Nullable Integer grantedDiskGb,
-        @Nullable Long grantedTemplateId,
+        @Nullable Long grantedImageId,
         @Nullable LocalDate grantedStartDate,
         @Nullable LocalDate grantedEndDate,
         @Nullable Long nodeId,

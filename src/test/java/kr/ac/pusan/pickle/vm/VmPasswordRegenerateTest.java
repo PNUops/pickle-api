@@ -76,7 +76,7 @@ class VmPasswordRegenerateTest {
     private String ownerReauth;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
 
     @BeforeAll
@@ -98,7 +98,7 @@ class VmPasswordRegenerateTest {
         ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = ?", Long.class, NODE);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createTeam("vmpwregen-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
@@ -171,7 +171,7 @@ class VmPasswordRegenerateTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '재생성 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmpwregen-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -180,7 +180,7 @@ class VmPasswordRegenerateTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status, ?, ?)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, vmid, credentialCipher.encrypt(OLD_PASSWORD), "bcrypt-hash");
+                imageId, vmid, credentialCipher.encrypt(OLD_PASSWORD), "bcrypt-hash");
     }
 
     private long createTeam(String slug) throws Exception {

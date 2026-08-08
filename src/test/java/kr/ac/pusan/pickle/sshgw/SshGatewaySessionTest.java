@@ -60,7 +60,7 @@ class SshGatewaySessionTest {
     private UserRepository userRepository;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long nodeId;
     private long poolId;
     private long groupId;
@@ -71,7 +71,7 @@ class SshGatewaySessionTest {
     void setUp() {
         jdbcTemplate.update("delete from auth_rate_limits where scope like 'sshgw_route%'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         // Reuse a seeded node (do not create one) so this test does not add to the
@@ -253,7 +253,7 @@ class SshGatewaySessionTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'SSH 세션 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, memberId, templateId);
+                """, Long.class, groupId, orgId, memberId, imageId);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
@@ -264,7 +264,7 @@ class SshGatewaySessionTest {
                                  ip_allocation_id, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, templateId,
+                """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, imageId,
                 VmStatus.RUNNING.name(), allocationId, HOST_KEY);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
         return vmId;

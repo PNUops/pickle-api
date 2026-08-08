@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.List;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
@@ -36,7 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * Reference data per contract: GET /orgs (ACTIVE only; hidden orgs filtered
  * for USER tokens, visible to manager tiers), the two request axes
- * GET /templates (OS catalog) and GET /vm-flavors (spec presets), both
+ * GET /os-images (OS catalog) and GET /vm-flavors (spec presets), both
  * ACTIVE only, and GET /meta/request-options (settings-backed).
  */
 @SpringBootTest
@@ -81,7 +81,7 @@ class ReferenceDataTest {
 
     @Test
     void referenceEndpointsRequireAuthentication() throws Exception {
-        for (String path : new String[] {"/api/v1/orgs", "/api/v1/templates", "/api/v1/vm-flavors",
+        for (String path : new String[] {"/api/v1/orgs", "/api/v1/os-images", "/api/v1/vm-flavors",
                 "/api/v1/meta/request-options"}) {
             mockMvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
@@ -124,16 +124,16 @@ class ReferenceDataTest {
     }
 
     @Test
-    void listsOnlyActiveTemplatesAsAPureOsCatalog() throws Exception {
+    void listsOnlyActiveOsImagesAsAPureOsCatalog() throws Exception {
         // a DISABLED version row must not surface in the wizard list
-        if (osImageRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
+        if (osImageRepository.findByStatusOrderByIdAsc(CatalogStatus.DISABLED).isEmpty()) {
             Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
             osImageRepository.save(new OsImage("ubuntu-22.04", "Ubuntu 22.04 LTS (구버전)",
                     "ubuntu", "22.04", "ubuntu", 1001, nodeId, 1, 10,
-                    TemplateStatus.DISABLED, null));
+                    CatalogStatus.DISABLED, null));
         }
 
-        mockMvc.perform(get("/api/v1/templates").header("Authorization", "Bearer " + accessToken))
+        mockMvc.perform(get("/api/v1/os-images").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 // the axis split folded the -small/-large preset rows away: one OS, one row
                 .andExpect(jsonPath("$.length()").value(1))
@@ -158,9 +158,9 @@ class ReferenceDataTest {
     @Test
     void listsOnlyActiveFlavorsWithTheirSpecs() throws Exception {
         // a retired preset must not surface in the wizard list
-        if (vmFlavorRepository.findByStatusOrderByIdAsc(TemplateStatus.DISABLED).isEmpty()) {
+        if (vmFlavorRepository.findByStatusOrderByIdAsc(CatalogStatus.DISABLED).isEmpty()) {
             vmFlavorRepository.save(new VmFlavor("ref-retired", "은퇴 프리셋", 8, 16384, 80,
-                    TemplateStatus.DISABLED, null));
+                    CatalogStatus.DISABLED, null));
         }
 
         mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + accessToken))

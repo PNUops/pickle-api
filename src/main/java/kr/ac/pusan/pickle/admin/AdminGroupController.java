@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Contract {@code listAdminGroups} — group reference list shared by the
  * announcement picker and the admin group screen (plain array,
- * orgs/templates convention) — plus the v0.19.0 inspection detail
+ * orgs/os-images convention) — plus the v0.19.0 inspection detail
  * {@code getAdminGroup} (members incl. non-ACTIVE accounts, VM count).
  */
 @RestController

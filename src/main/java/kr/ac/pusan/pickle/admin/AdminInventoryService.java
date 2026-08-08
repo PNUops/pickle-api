@@ -4,11 +4,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import kr.ac.pusan.pickle.admin.dto.AdminTemplateResponse;
+import kr.ac.pusan.pickle.admin.dto.AdminOsImageResponse;
 import kr.ac.pusan.pickle.admin.dto.CreateVmFlavorRequest;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateNodeStatusRequest;
-import kr.ac.pusan.pickle.admin.dto.UpdateTemplateStatusRequest;
+import kr.ac.pusan.pickle.admin.dto.UpdateOsImageStatusRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateVmFlavorRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -17,7 +17,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
@@ -32,10 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Operational-state write paths for the inventory (contract v0.21.0):
- * template ACTIVE/DISABLED toggle (old-revision retirement) and node
+ * OS image ACTIVE/DISABLED toggle (old-revision retirement) and node
  * ACTIVE/MAINTENANCE/OFFLINE transitions (placement only picks ACTIVE, so a
  * transition alone realises drain-from-placement). Deliberately no
- * last-ACTIVE guard: retiring the final template or closing the last node is
+ * last-ACTIVE guard: retiring the final OS image or closing the last node is
  * a legitimate "close provisioning" act, and the downstream failure modes are
  * graceful (request submit → validation reject, placement → parked task); the
  * console computes the warning instead. Idempotent re-application returns the
@@ -61,28 +61,28 @@ public class AdminInventoryService {
         this.auditService = auditService;
     }
 
-    /** Contract {@code listAdminTemplates}: every template, retired revisions included. */
+    /** Contract {@code listAdminOsImages}: every OS image, retired revisions included. */
     @Transactional(readOnly = true)
-    public List<AdminTemplateResponse> listTemplates() {
+    public List<AdminOsImageResponse> listOsImages() {
         return osImageRepository.findAll(Sort.by("id")).stream()
-                .map(AdminTemplateResponse::from)
+                .map(AdminOsImageResponse::from)
                 .toList();
     }
 
     @Transactional
-    public AdminTemplateResponse updateTemplateStatus(AuthenticatedUser actor, long templateId,
-            UpdateTemplateStatusRequest request, String ip) {
-        OsImage image = osImageRepository.findById(templateId)
+    public AdminOsImageResponse updateCatalogStatus(AuthenticatedUser actor, long imageId,
+            UpdateOsImageStatusRequest request, String ip) {
+        OsImage image = osImageRepository.findById(imageId)
                 .orElseThrow(() -> notFound("해당 템플릿이 존재하지 않습니다."));
         if (image.getStatus() != request.status()) {
             String fromStatus = image.getStatus().name();
             image.setStatus(request.status());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.TEMPLATE_STATUS_UPDATE, "template", templateId,
+                    AuditService.OS_IMAGE_STATUS_UPDATE, "template", imageId,
                     Map.of("name", image.getName(), "version", image.getVersion(),
                             "fromStatus", fromStatus, "toStatus", request.status().name()), ip);
         }
-        return AdminTemplateResponse.from(image);
+        return AdminOsImageResponse.from(image);
     }
 
     @Transactional
@@ -123,7 +123,7 @@ public class AdminInventoryService {
         try {
             flavor = vmFlavorRepository.saveAndFlush(new VmFlavor(request.name(),
                     request.displayName(), request.vcpu(), request.memoryMb(), request.diskGb(),
-                    TemplateStatus.ACTIVE, Texts.blankToNull(request.notes())));
+                    CatalogStatus.ACTIVE, Texts.blankToNull(request.notes())));
         } catch (DataIntegrityViolationException raced) {
             throw nameTaken();
         }

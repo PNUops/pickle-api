@@ -67,14 +67,14 @@ class AdminVmFlavorTest {
         flavorName = "avf-" + UUID.randomUUID().toString().substring(0, 8);
         flavorId = jdbcTemplate.queryForObject("""
                 insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, status)
-                values (?, '프리셋 편집 테스트', 2, 2048, 20, 'ACTIVE'::template_status)
+                values (?, '프리셋 편집 테스트', 2, 2048, 20, 'ACTIVE'::catalog_status)
                 returning id
                 """, Long.class, flavorName);
     }
 
     @Test
     void adminFlavorListShowsRetiredPresetsThePublicListHides() throws Exception {
-        jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::template_status where id = ?",
+        jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::catalog_status where id = ?",
                 flavorId);
 
         mockMvc.perform(get("/api/v1/admin/vm-flavors")
@@ -107,7 +107,7 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath("$[2].name").value("large"))
                 .andExpect(jsonPath(byId(flavorId) + ".status").value("ACTIVE"));
 
-        jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::template_status where id = ?",
+        jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::catalog_status where id = ?",
                 flavorId);
         mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())

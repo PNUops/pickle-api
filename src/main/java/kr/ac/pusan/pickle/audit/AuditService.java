@@ -66,7 +66,7 @@ public class AuditService {
     public static final String DOMAIN_ADMIN_VERIFY = "domain.admin_verify";
     public static final String ROUTE_APPLY = "route.apply";
     // Operational-state write paths for inventory (contract v0.21.0).
-    public static final String TEMPLATE_STATUS_UPDATE = "template.status_update";
+    public static final String OS_IMAGE_STATUS_UPDATE = "os_image.status_update";
     public static final String FLAVOR_CREATE = "flavor.create";
     public static final String FLAVOR_UPDATE = "flavor.update";
     public static final String NODE_STATUS_UPDATE = "node.status_update";

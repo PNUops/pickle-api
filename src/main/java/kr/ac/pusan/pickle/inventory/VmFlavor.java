@@ -47,8 +47,8 @@ public class VmFlavor {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(nullable = false, columnDefinition = "template_status")
-    private TemplateStatus status = TemplateStatus.ACTIVE;
+    @Column(nullable = false, columnDefinition = "catalog_status")
+    private CatalogStatus status = CatalogStatus.ACTIVE;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -62,7 +62,7 @@ public class VmFlavor {
     }
 
     public VmFlavor(String name, String displayName, int vcpu, int memoryMb, int diskGb,
-            TemplateStatus status, String notes) {
+            CatalogStatus status, String notes) {
         this.name = name;
         this.displayName = displayName;
         this.vcpu = vcpu;
@@ -100,7 +100,7 @@ public class VmFlavor {
         return notes;
     }
 
-    public TemplateStatus getStatus() {
+    public CatalogStatus getStatus() {
         return status;
     }
 
@@ -126,7 +126,7 @@ public class VmFlavor {
         this.notes = notes;
     }
 
-    public void setStatus(TemplateStatus status) {
+    public void setStatus(CatalogStatus status) {
         this.status = status;
     }
 }
