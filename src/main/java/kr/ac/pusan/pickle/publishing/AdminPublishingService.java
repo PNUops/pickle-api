@@ -113,6 +113,13 @@ public class AdminPublishingService {
         return PageResponse.of(content, routes);
     }
 
+    /**
+     * The admin domain listing. Names held through their release grace are in
+     * it — the query hides REMOVED only, and a release leaves the row ACTIVE —
+     * so {@code releasedAt}/{@code reservedUntil} are what separate them from
+     * a domain that simply has no route yet. Without that pair the two read
+     * identically, and "why is this subdomain taken" has no answer here.
+     */
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, Long orgId,
             DomainKind kind, DomainStatus status, int page, int size) {
@@ -128,7 +135,8 @@ public class AdminPublishingService {
             var certStatus = assembler.certificateFor(domain).map(Certificate::getStatus).orElse(null);
             return new AdminDomainView(domain.getId(), domain.getVmId(), domain.getKind(),
                     domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
-                    domain.getVerifiedAt(), domain.getCreatedAt(), name(vm),
+                    domain.getVerifiedAt(), domain.getReleasedAt(),
+                    assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
                     vm != null ? vm.getGroupId() : null, ctx.groupName(vm),
                     vm != null ? vm.getOrgId() : null, ctx.orgName(vm),
                     routeStatus, certStatus, domain.getUpdatedAt());

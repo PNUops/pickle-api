@@ -74,8 +74,13 @@ public class PublicationAssembler {
      * a setting it cannot read. A released custom row carries no grace under
      * the reservation policy: its {@code reservedUntil} equals its release
      * time (due immediately).
+     *
+     * <p>Package-private because the admin domain listing carries the same
+     * axis: two copies of this arithmetic would let the two views disagree
+     * about when a name comes free, and only one of them would be the one the
+     * sweeper actually follows.</p>
      */
-    private Instant reservedUntil(Domain domain) {
+    Instant reservedUntil(Domain domain) {
         if (domain.getReleasedAt() == null) {
             return null;
         }
