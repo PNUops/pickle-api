@@ -28,6 +28,9 @@ public enum NotificationEvent {
     // before the grace runs out, then the reclaim itself.
     DOMAIN_RESERVE_EXPIRING("domain.reserve.expiring", NotificationImportance.NORMAL),
     DOMAIN_RESERVE_RELEASED("domain.reserve.released", NotificationImportance.NORMAL),
+    // Admin takedown of a domain: the owning group loses its public address
+    // with no reservation, and must not learn it from a dead link.
+    DOMAIN_ADMIN_RELEASED("domain.admin_released", NotificationImportance.HIGH),
     CERT_FAILURE("cert.failure", NotificationImportance.HIGH),
     VM_EXPIRY_NOTICE("vm.expiry.notice", NotificationImportance.NORMAL),
     VM_EXPIRY_STOPPED("vm.expiry.stopped", NotificationImportance.HIGH),

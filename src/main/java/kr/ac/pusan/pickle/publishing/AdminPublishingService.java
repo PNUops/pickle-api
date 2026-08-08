@@ -14,6 +14,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
@@ -21,6 +23,9 @@ import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmEvent;
+import kr.ac.pusan.pickle.vm.VmEventRepository;
+import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.data.domain.Page;
@@ -55,6 +60,8 @@ public class AdminPublishingService {
     private final DomainVerificationJob domainVerificationJob;
     private final RouteGenerations routeGenerations;
     private final RouteApplyJob routeApplyJob;
+    private final VmEventRepository vmEventRepository;
+    private final NotificationService notificationService;
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -62,7 +69,8 @@ public class AdminPublishingService {
             PublicationAssembler assembler, AuditService auditService, JobScheduler jobScheduler,
             ResyncRoutesJob resyncRoutesJob, PublishingService publishingService,
             DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
-            RouteApplyJob routeApplyJob) {
+            RouteApplyJob routeApplyJob, VmEventRepository vmEventRepository,
+            NotificationService notificationService) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -77,6 +85,8 @@ public class AdminPublishingService {
         this.domainVerificationJob = domainVerificationJob;
         this.routeGenerations = routeGenerations;
         this.routeApplyJob = routeApplyJob;
+        this.vmEventRepository = vmEventRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -162,17 +172,33 @@ public class AdminPublishingService {
     // ── post-hoc intervention (contract v0.18.0, all admin roles org-scoped) ──
 
     /**
-     * Admin takedown of a problem domain — identical semantics to the
-     * user-side domain deletion ({@code teardown(domain)}): the route removal
-     * is pushed to the proxy; a serving platform subdomain then holds its name
-     * through the reservation grace (a second force-release reclaims it
-     * immediately), while a custom domain or a non-serving row is removed
-     * outright.
+     * Admin takedown of a problem domain: route down (pushed to the proxy) and
+     * the name freed at once, skipping the reservation grace a user's own
+     * release gets. The owning group is told on the same channel as an admin
+     * mapping delete — the audit row alone reaches no user, and a public
+     * address disappearing must not be discovered from a dead link. A serving
+     * domain also gets the UNPUBLISH entry in the VM's event history (parity
+     * with the user-side release; a reserved row took no traffic down, so it
+     * gets none — same as a user's immediate return).
      */
     @Transactional
     public MessageResponse forceRelease(AuthenticatedUser actor, long domainId, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
+        boolean served = assembler.hasLiveRoute(domain);
         publishingService.forceTeardown(domain);
+        Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
+        if (vm != null) {
+            if (served) {
+                vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.UNPUBLISH, actor.id(),
+                        "관리자 해제 — " + domain.getFqdn()));
+            }
+            notificationService.publish(
+                    notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                    NotificationEvent.DOMAIN_ADMIN_RELEASED,
+                    Map.of("vmId", vm.getId(), "vmName", vm.getName(),
+                            "fqdn", domain.getFqdn()),
+                    null);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.DOMAIN_FORCE_RELEASE, "domain", domainId,
                 Map.of("fqdn", domain.getFqdn()), ip);

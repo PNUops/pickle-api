@@ -17,6 +17,21 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);
 
     /**
+     * The live row holding an FQDN, taken under its row lock — what the revive
+     * path reads instead of the unlocked pre-check. The reservation sweeper
+     * reclaims under the domain row lock and "first commit wins": a revive
+     * working from an unlocked snapshot could re-attach a route to a row the
+     * sweep flipped REMOVED in between, returning success for a dead domain.
+     * Locked, the predicate is re-evaluated against the row's current committed
+     * state, so a row reclaimed since the snapshot simply drops out (empty →
+     * the name is free; the partial unique index arbitrates the fresh insert).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from Domain d where d.fqdn = :fqdn and d.status <> :status")
+    Optional<Domain> findFirstByFqdnAndStatusNotForUpdate(@Param("fqdn") String fqdn,
+            @Param("status") DomainStatus status);
+
+    /**
      * The domain row, locked for one short decide-and-write transaction. The
      * reservation sweeper takes this before reclaiming: its scan list is a
      * snapshot, and a revive committing between the scan and the reclaim
@@ -47,13 +62,17 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
 
     /**
      * User listing — scoped to the caller's own groups' VMs. {@code vmId} and
-     * {@code status} are optional filters; newest first.
+     * {@code status} are optional filters; newest first. REMOVED rows are
+     * hidden by default but visible via status=REMOVED — same convention as
+     * the admin listing: a removed domain is gone from its owner's view, not
+     * a row that lingers as if it still held its name.
      */
     @Query("""
             select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
             where v.groupId in :groupIds
               and (:vmId is null or d.vmId = :vmId)
-              and (:status is null or cast(d.status as string) = :status)
+              and ((:status is null and cast(d.status as string) <> 'REMOVED')
+                   or cast(d.status as string) = :status)
             order by d.id desc
             """)
     Page<Domain> findForMember(@Param("groupIds") Collection<Long> groupIds, @Param("vmId") Long vmId,

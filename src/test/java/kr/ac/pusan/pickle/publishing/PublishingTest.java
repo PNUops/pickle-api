@@ -325,11 +325,15 @@ class PublishingTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOMAIN_FQDN_TAKEN"));
 
-        // DELETE on the reserved (non-serving) row returns the name NOW.
+        // DELETE on the reserved (non-serving) row returns the name NOW — and
+        // the release stamp goes with the claim: a REMOVED row reserves
+        // nothing, so it must stop reading as "reserved".
         mockMvc.perform(delete("/api/v1/domains/" + domainId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNull();
         publish(second, "{\"port\":80,\"subdomain\":\"team-reuse\"}")
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-reuse.pusan.dev"));
@@ -353,6 +357,124 @@ class PublishingTest {
         assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
                 Instant.class, domainId)).isNull();
         assertThat(routeStatus(routeIdForVm(vmId))).isEqualTo("PENDING");
+    }
+
+    @Test
+    void domainListingScopesToOwnGroupsAndHidesRemovedByDefault() throws Exception {
+        long vmId = publishableVm("team-ulist", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long liveId = domainIdForVm(vmId);
+
+        // A second name on the same VM, released then returned → REMOVED row.
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-ulist-gone\"}")
+                .andExpect(status().isAccepted());
+        long goneId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(domainStatus(goneId)).isEqualTo("REMOVED");
+
+        // A domain owned by a group the caller is no member of.
+        long foreignId = foreignGroupDomain();
+
+        // Default listing: own groups only, REMOVED hidden — a removed domain
+        // is gone from its owner's view, not a row lingering as "reserved".
+        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(liveId);
+        assertThat(defaults).doesNotContainKey(goneId);
+        assertThat(defaults).doesNotContainKey(foreignId);
+
+        // Explicit status=REMOVED opts in (same convention as the admin
+        // listing) — still scoped, and the row carries no release stamp.
+        Map<Long, tools.jackson.databind.JsonNode> removed =
+                listDomains(ownerToken, "&status=REMOVED");
+        assertThat(removed).containsKey(goneId);
+        assertThat(removed).doesNotContainKey(liveId);
+        assertThat(removed).doesNotContainKey(foreignId);
+        assertThat(removed.get(goneId).get("releasedAt").isNull()).isTrue();
+
+        // The foreign group's member sees their own row, never this group's.
+        Map<Long, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
+        assertThat(outsider).containsKey(foreignId);
+        assertThat(outsider).doesNotContainKey(liveId);
+    }
+
+    @Test
+    void domainListingKeepsAReservedRowVisibleWithItsStamp() throws Exception {
+        long vmId = publishableVm("team-ulist-res", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+
+        // Released, not removed: the row stays listed by default and carries
+        // the stamp + computed reservation end the console renders.
+        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(domainId);
+        assertThat(defaults.get(domainId).get("releasedAt").isNull()).isFalse();
+        assertThat(defaults.get(domainId).get("reservedUntil").isNull()).isFalse();
+    }
+
+    @Test
+    void aReviveRacingTheSweepersReclaimNeverRevivesARemovedRow() throws Exception {
+        long vmId = publishableVm("team-rrace", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted()); // reserved now
+
+        // Emulate the sweeper's reclaim committing between the revive's scan
+        // and its write: hold the domain row lock, fire the revive — its
+        // locked pre-check must pile up on the lock — then flip the row
+        // REMOVED (exactly what the reclaim writes) and release. The revive
+        // must re-read the row as committed and treat the name as free; a
+        // revive working from the unlocked snapshot would re-attach a route
+        // to the dead row and return success for a domain that stays REMOVED.
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<org.springframework.test.web.servlet.MvcResult>
+                    revive = transactionTemplate.execute(tx -> {
+                        jdbcTemplate.queryForObject(
+                                "select id from domains where id = ? for update",
+                                Long.class, domainId);
+                        var f = pool.submit(() -> publish(vmId,
+                                "{\"port\":8081,\"subdomain\":\"team-rrace\"}").andReturn());
+                        try {
+                            Thread.sleep(750);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        jdbcTemplate.update("""
+                                update domains
+                                   set status = 'REMOVED'::domain_status, released_at = null
+                                 where id = ?
+                                """, domainId);
+                        return f;
+                    });
+            assertThat(revive.get(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .getResponse().getStatus()).isEqualTo(202);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // The reclaimed row stays dead and routeless; the accepted revive
+        // landed as a fresh row that actually serves.
+        assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from routes where domain_id = ? and status <> 'REMOVED'
+                """, Long.class, domainId)).isZero();
+        long newDomainId = domainIdForVm(vmId);
+        assertThat(newDomainId).isNotEqualTo(domainId);
+        assertThat(domainStatus(newDomainId)).isEqualTo("ACTIVE");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from routes where domain_id = ? and status <> 'REMOVED'
+                """, Long.class, newDomainId)).isEqualTo(1);
     }
 
     @Test
@@ -1585,6 +1707,10 @@ class PublishingTest {
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
+        // No lingering release stamp: the name is free NOW, so nothing may
+        // keep telling the owner it is reserved until some future date.
+        assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
+                Instant.class, domainId)).isNull();
         assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
 
         // Re-adding the same name builds a new row rather than reviving the old
@@ -1596,6 +1722,54 @@ class PublishingTest {
         mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void adminForceReleaseNotifiesTheOwningGroupAndLogsTheVmEvent() throws Exception {
+        long vmId = publishableVm("team-fnote", "pusan.dev", VmStatus.RUNNING);
+        publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
+        long servingId = domainIdForVm(vmId);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + servingId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        // The owning group is told, same channel as an admin mapping delete:
+        // the audit row alone reaches no user, and a public address
+        // disappearing must not be discovered from a dead link.
+        assertThat(adminReleaseNoticeCount("team-fnote.pusan.dev")).isEqualTo(1);
+        // A serving domain also gets the UNPUBLISH entry in the VM history,
+        // marked as the admin's act (parity with the user-side release).
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_events
+                 where vm_id = ? and type = 'UNPUBLISH'
+                   and detail = '관리자 해제 — team-fnote.pusan.dev'
+                """, Long.class, vmId)).isEqualTo(1);
+
+        // A reserved (non-serving) row: still a notification — the group
+        // loses its name claim — but no UNPUBLISH event, since no traffic
+        // path went down (same as a user's immediate return).
+        publish(vmId, "{\"port\":80,\"subdomain\":\"team-fnote2\"}")
+                .andExpect(status().isAccepted());
+        long reservedId = domainIdForVm(vmId);
+        mockMvc.perform(delete("/api/v1/domains/" + reservedId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted()); // released → reserved
+        mockMvc.perform(post("/api/v1/admin/domains/" + reservedId + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        assertThat(adminReleaseNoticeCount("team-fnote2.pusan.dev")).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_events
+                 where vm_id = ? and type = 'UNPUBLISH' and detail like '관리자%'
+                """, Long.class, vmId)).isEqualTo(1);
+    }
+
+    private long adminReleaseNoticeCount(String fqdn) {
+        return jdbcTemplate.queryForObject("""
+                select count(*) from notifications
+                 where user_id = ? and event = 'domain.admin_released'
+                   and payload ->> 'fqdn' = ?
+                """, Long.class, owner.getId(), fqdn);
     }
 
     @Test
@@ -1742,6 +1916,56 @@ class PublishingTest {
     private long domainIdForVm(long vmId) {
         return jdbcTemplate.queryForObject(
                 "select id from domains where vm_id = ? order by id desc limit 1", Long.class, vmId);
+    }
+
+    /** GET /domains as the given caller; rows of the page keyed by domain id. */
+    private Map<Long, tools.jackson.databind.JsonNode> listDomains(String token, String extraQuery)
+            throws Exception {
+        String body = mockMvc.perform(get("/api/v1/domains?size=100" + extraQuery)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        Map<Long, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
+        objectMapper.readTree(body).get("content")
+                .forEach(node -> byId.put(node.get("id").asLong(), node));
+        return byId;
+    }
+
+    /**
+     * A serving platform domain in a group the suite's owner is NO member of
+     * (the outsider's own team) — the listing-scope counterexample.
+     */
+    private long foreignGroupDomain() {
+        String slug = "pubf-" + UUID.randomUUID().toString().substring(0, 8);
+        long foreignGroupId = jdbcTemplate.queryForObject(
+                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+                Long.class, slug, slug);
+        long outsiderId = userRepository.findByEmail("pub.outsider@pusan.ac.kr")
+                .orElseThrow().getId();
+        jdbcTemplate.update("""
+                insert into group_members (group_id, user_id, role)
+                values (?, ?, 'OWNER'::group_member_role)
+                """, foreignGroupId, outsiderId);
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                                         req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, '목록 범위 테스트', ?, 1, 1024, 10)
+                returning id
+                """, Long.class, foreignGroupId, orgId, outsiderId, imageId);
+        String hostname = "pubf-vm-" + UUID.randomUUID().toString().substring(0, 12);
+        long foreignVmId = jdbcTemplate.queryForObject("""
+                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                                 image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
+                returning id
+                """, Long.class, nodeId, foreignGroupId, orgId, requestId, hostname, hostname,
+                imageId, VMID_SEQ.incrementAndGet());
+        return jdbcTemplate.queryForObject("""
+                insert into domains (vm_id, kind, fqdn, root_domain, status)
+                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                returning id
+                """, Long.class, foreignVmId,
+                slug + ".pusan.dev");
     }
 
     private String routeStatus(long routeId) {

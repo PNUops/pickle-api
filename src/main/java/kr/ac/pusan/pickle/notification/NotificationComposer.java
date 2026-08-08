@@ -173,6 +173,18 @@ public class NotificationComposer {
                             str(args, "fqdn"), KST.format(instant(args, "reservedUntil"))),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "fqdn", "reservedUntil"));
+            // Same wording axis as VM_DELETE_FORCE: announced as 관리자 해제
+            // without exposing the force/immediacy distinction.
+            case DOMAIN_ADMIN_RELEASED -> new Composed(event.id(),
+                    "도메인 관리자 해제 — " + str(args, "fqdn"),
+                    """
+                    VM '%s'에 연결된 도메인 '%s'이(가) 관리자에 의해 해제되었습니다.
+                    이름은 예약 없이 즉시 회수되었으며, 이 주소로는 더 이상 접속할 수 없습니다.
+
+                    문의 사항은 관리자에게 연락해 주세요.""".formatted(
+                            str(args, "vmName"), str(args, "fqdn")),
+                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "fqdn"));
             case DOMAIN_RESERVE_RELEASED -> new Composed(event.id(),
                     "도메인 이름 예약 만료 — " + str(args, "fqdn"),
                     """
