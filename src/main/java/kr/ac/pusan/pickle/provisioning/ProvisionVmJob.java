@@ -304,7 +304,7 @@ public class ProvisionVmJob implements ProvisioningService {
     /** Step 1: confirm the node (admin-forced node from the approval wins). */
     private void place(Vm vm) {
         OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow(
-                () -> new IllegalStateException("템플릿 " + vm.getImageId() + "이 존재하지 않습니다"));
+                () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + "이 존재하지 않습니다"));
         Long forcedNodeId = reviewRepository.findByRequestId(vm.getRequestId())
                 .map(VmRequestReview::getNodeId).orElse(null);
         Node node = placementService.place(vm, image, forcedNodeId);

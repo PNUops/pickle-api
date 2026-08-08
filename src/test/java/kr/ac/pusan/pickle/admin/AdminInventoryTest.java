@@ -28,9 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Inventory operational-state write paths (contract v0.21.0): the sys-tier
- * admin template list (all statuses, unlike the ACTIVE-only public list), the
+ * admin OS image list (all statuses, unlike the ACTIVE-only public list), the
  * SYS_ADMIN-only status toggles with change-only auditing, and the
- * request-submit rejection of a retired template. Node MAINTENANCE placement
+ * request-submit rejection of a retired OS image. Node MAINTENANCE placement
  * exclusion itself is covered by the placement service's ACTIVE filter.
  */
 @SpringBootTest(properties = "jobrunr.background-job-server.enabled=false")
@@ -53,9 +53,9 @@ class AdminInventoryTest {
 
     private String sysAdminToken;
     private String sysManagerToken;
-    private long templateId;
+    private long imageId;
     private long flavorId;
-    private String templateName;
+    private String imageName;
 
     @BeforeEach
     void setUp() {
@@ -64,71 +64,71 @@ class AdminInventoryTest {
         sysManagerToken = jwtService.createAccessToken(
                 ensureUser("ait.sysmanager@pusan.ac.kr", UserRole.SYS_MANAGER));
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        templateName = "ait-" + UUID.randomUUID().toString().substring(0, 8);
-        templateId = jdbcTemplate.queryForObject("""
+        imageName = "ait-" + UUID.randomUUID().toString().substring(0, 8);
+        imageId = jdbcTemplate.queryForObject("""
                 insert into os_images (name, display_name, os_family, os_version, ssh_username,
                                           proxmox_vmid, node_id, version,
                                           min_disk_gb, status)
                 values (?, '상태 토글 테스트', 'ubuntu', '24.04', 'ubuntu', 990001, ?, 1, 10,
-                        'ACTIVE'::template_status)
+                        'ACTIVE'::catalog_status)
                 returning id
-                """, Long.class, templateName, nodeId);
+                """, Long.class, imageName, nodeId);
         flavorId = jdbcTemplate.queryForObject(
                 "select id from vm_flavors where name = 'basic'", Long.class);
     }
 
     @Test
-    void adminTemplateListShowsRetiredRevisionsThePublicListHides() throws Exception {
-        jdbcTemplate.update("update os_images set status = 'DISABLED'::template_status where id = ?",
-                templateId);
+    void adminOsImageListShowsRetiredRevisionsThePublicListHides() throws Exception {
+        jdbcTemplate.update("update os_images set status = 'DISABLED'::catalog_status where id = ?",
+                imageId);
 
-        mockMvc.perform(get("/api/v1/admin/templates")
+        mockMvc.perform(get("/api/v1/admin/os-images")
                         .header("Authorization", "Bearer " + sysManagerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(templateId) + ".status").value("DISABLED"))
-                .andExpect(jsonPath(byId(templateId) + ".proxmoxVmid").value(990001))
-                .andExpect(jsonPath(byId(templateId) + ".minDiskGb").value(10))
+                .andExpect(jsonPath(byId(imageId) + ".status").value("DISABLED"))
+                .andExpect(jsonPath(byId(imageId) + ".proxmoxVmid").value(990001))
+                .andExpect(jsonPath(byId(imageId) + ".minDiskGb").value(10))
                 // distribution identity + the guest account the image ships
-                .andExpect(jsonPath(byId(templateId) + ".osFamily").value("ubuntu"))
-                .andExpect(jsonPath(byId(templateId) + ".osVersion").value("24.04"))
-                .andExpect(jsonPath(byId(templateId) + ".sshUsername").value("ubuntu"))
+                .andExpect(jsonPath(byId(imageId) + ".osFamily").value("ubuntu"))
+                .andExpect(jsonPath(byId(imageId) + ".osVersion").value("24.04"))
+                .andExpect(jsonPath(byId(imageId) + ".sshUsername").value("ubuntu"))
                 // spec presets are their own axis now (v0.23.0)
-                .andExpect(jsonPath(byId(templateId) + ".defaultVcpu").doesNotExist());
+                .andExpect(jsonPath(byId(imageId) + ".defaultVcpu").doesNotExist());
 
-        mockMvc.perform(get("/api/v1/templates")
+        mockMvc.perform(get("/api/v1/os-images")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(templateId)).doesNotExist());
+                .andExpect(jsonPath(byId(imageId)).doesNotExist());
     }
 
     @Test
-    void templateToggleIsSysAdminOnlyAndAuditsRealTransitionsOnly() throws Exception {
-        mockMvc.perform(patch("/api/v1/admin/templates/{id}", templateId)
+    void osImageToggleIsSysAdminOnlyAndAuditsRealTransitionsOnly() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
                         .header("Authorization", "Bearer " + sysManagerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch("/api/v1/admin/templates/{id}", templateId)
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DISABLED"));
         assertThat(jdbcTemplate.queryForObject(
-                "select status from os_images where id = ?", String.class, templateId))
+                "select status from os_images where id = ?", String.class, imageId))
                 .isEqualTo("DISABLED");
-        assertThat(auditCount("template.status_update", templateId)).isEqualTo(1);
+        assertThat(auditCount("os_image.status_update", imageId)).isEqualTo(1);
 
         // idempotent re-application: 200, no extra audit row
-        mockMvc.perform(patch("/api/v1/admin/templates/{id}", templateId)
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
                 .andExpect(status().isOk());
-        assertThat(auditCount("template.status_update", templateId)).isEqualTo(1);
+        assertThat(auditCount("os_image.status_update", imageId)).isEqualTo(1);
 
-        mockMvc.perform(patch("/api/v1/admin/templates/999999")
+        mockMvc.perform(patch("/api/v1/admin/os-images/999999")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"ACTIVE\"}"))
@@ -136,9 +136,9 @@ class AdminInventoryTest {
     }
 
     @Test
-    void retiredTemplateIsRejectedAtRequestSubmit() throws Exception {
-        jdbcTemplate.update("update os_images set status = 'DISABLED'::template_status where id = ?",
-                templateId);
+    void retiredOsImageIsRejectedAtRequestSubmit() throws Exception {
+        jdbcTemplate.update("update os_images set status = 'DISABLED'::catalog_status where id = ?",
+                imageId);
         User requester = ensureUser("ait.user@pusan.ac.kr", UserRole.USER);
         String slug = "ait-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = jdbcTemplate.queryForObject(
@@ -155,12 +155,12 @@ class AdminInventoryTest {
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(requester))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"groupId": %d, "orgId": %d, "purpose": "은퇴 템플릿 거부 확인",
-                                 "templateId": %d, "flavorId": %d, "reqVcpu": 2,
+                                {"groupId": %d, "orgId": %d, "purpose": "은퇴 OS 이미지 거부 확인",
+                                 "imageId": %d, "flavorId": %d, "reqVcpu": 2,
                                  "reqMemoryMb": 2048, "reqDiskGb": 20}
-                                """.formatted(groupId, orgId, templateId, flavorId)))
+                                """.formatted(groupId, orgId, imageId, flavorId)))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("templateId"));
+                .andExpect(jsonPath("$.errors[0].field").value("imageId"));
     }
 
     @Test

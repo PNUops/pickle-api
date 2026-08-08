@@ -281,20 +281,20 @@ class AccountLifecycleTest {
 
     /** Minimal request→vm FK chain (RUNNING, so it counts as active). */
     private void createActiveVm(long groupId, long orgId, long requesterId) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '탈퇴 차단 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "acct-vm-" + UUID.randomUUID().toString().substring(0, 12);
         jdbcTemplate.update("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status)
-                """, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
+                """, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
     }
 
     private static String uniqueSlug(String base) {

@@ -60,8 +60,8 @@ public class OsImage {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(nullable = false, columnDefinition = "template_status")
-    private TemplateStatus status = TemplateStatus.ACTIVE;
+    @Column(nullable = false, columnDefinition = "catalog_status")
+    private CatalogStatus status = CatalogStatus.ACTIVE;
 
     private String notes;
 
@@ -78,7 +78,7 @@ public class OsImage {
 
     public OsImage(String name, String displayName, String osFamily, String osVersion,
             String sshUsername, int proxmoxVmid, Long nodeId, int version, int minDiskGb,
-            TemplateStatus status, String notes) {
+            CatalogStatus status, String notes) {
         this.name = name;
         this.displayName = displayName;
         this.osFamily = osFamily;
@@ -132,12 +132,12 @@ public class OsImage {
         return minDiskGb;
     }
 
-    public TemplateStatus getStatus() {
+    public CatalogStatus getStatus() {
         return status;
     }
 
     /** Admin status toggle (contract v0.21.0) — retiring old revisions needs a write path. */
-    public void setStatus(TemplateStatus status) {
+    public void setStatus(CatalogStatus status) {
         this.status = status;
     }
 

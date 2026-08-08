@@ -241,7 +241,7 @@ class ManagerRoleScopingTest {
     }
 
     private long insertSubmittedRequest(long orgId, long requesterId) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long groupId = jdbcTemplate.queryForObject("""
                 insert into groups (kind, name, slug)
                 values ('TEAM'::group_kind, ?, ?) returning id
@@ -251,11 +251,11 @@ class ManagerRoleScopingTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
     }
 
     private long insertActiveVmInOrg(long orgId) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         long groupId = jdbcTemplate.queryForObject("""
                 insert into groups (kind, name, slug)
@@ -266,13 +266,13 @@ class ManagerRoleScopingTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, foreignAdminB.getId(), templateId);
+                """, Long.class, groupId, orgId, foreignAdminB.getId(), imageId);
         String hostname = "mgr-vm-" + slug();
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status) returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId);
+                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
     }
 
     private static String slug() {

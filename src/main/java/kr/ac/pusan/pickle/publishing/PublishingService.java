@@ -271,7 +271,7 @@ public class PublishingService {
         }
         requirePlatformSlotFree(vm.getId());
         Domain domain = saveDomainOrFqdnTaken(
-                Domain.platform(vm.getId(), DomainKind.REQUESTED, name.fqdn(), name.rootDomain()));
+                Domain.platform(vm.getId(), DomainKind.PLATFORM, name.fqdn(), name.rootDomain()));
         attachRoute(domain, port);
         return domain;
     }

@@ -72,7 +72,7 @@ class AdminDriftFindingsTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
     private String sysAdminToken;
@@ -96,7 +96,7 @@ class AdminDriftFindingsTest {
         // classes must not fail listings and block ② auto-resolve here.
         jdbcTemplate.update("update nodes set status = 'OFFLINE'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "adf-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
@@ -358,7 +358,7 @@ class AdminDriftFindingsTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '드리프트 리포트 테스트', ?, ?, ?, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId, vcpu, memoryMb);
+                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
         String hostname = "adf-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -366,6 +366,6 @@ class AdminDriftFindingsTest {
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, vcpu, memoryMb, proxmoxVmid, status);
+                imageId, vcpu, memoryMb, proxmoxVmid, status);
     }
 }

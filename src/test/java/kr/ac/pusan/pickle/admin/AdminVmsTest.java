@@ -254,7 +254,7 @@ class AdminVmsTest {
 
     /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
     private long createVm(long orgId, long groupId, String status, String name) {
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
@@ -262,7 +262,7 @@ class AdminVmsTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '관리자 목록 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "advm-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -270,7 +270,7 @@ class AdminVmsTest {
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId,
-                name != null ? name : hostname, hostname, templateId, status);
+                name != null ? name : hostname, hostname, imageId, status);
     }
 
     private User ensureUser(String email, String name, UserRole role, Long orgId) {

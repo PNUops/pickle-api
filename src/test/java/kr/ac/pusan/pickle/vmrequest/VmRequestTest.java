@@ -12,7 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
@@ -109,7 +109,7 @@ class VmRequestTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         image = imageRepository.findAll().stream()
-                .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
+                .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
         basicFlavor = flavorByName("basic");
         smallFlavor = flavorByName("small");
@@ -122,7 +122,7 @@ class VmRequestTest {
     }
 
     @Test
-    void createValidatesRoleTemplateSpecAndDomains() throws Exception {
+    void createValidatesRoleImageSpecAndDomains() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-create-x1");
         addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
 
@@ -137,7 +137,7 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
                 .andExpect(jsonPath("$.requesterId").value(requester.getId()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
-                .andExpect(jsonPath("$.templateId").value(image.getId()))
+                .andExpect(jsonPath("$.imageId").value(image.getId()))
                 .andExpect(jsonPath("$.flavorId").value(basicFlavor.getId()));
 
         // VIEWER / non-member cannot submit → 403 GROUP_ROLE_INSUFFICIENT
@@ -154,21 +154,21 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "orgId", 999_999))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "templateId", 999_999))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "imageId", 999_999))
                 .andExpect(status().isNotFound());
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "flavorId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
         // DISABLED image → 422
-        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 템플릿",
+        OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 OS 이미지",
                 "ubuntu", "24.04", "ubuntu", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
-                TemplateStatus.DISABLED, null));
+                CatalogStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "templateId", disabled.getId()))
+                with(validBody(groupId), "imageId", disabled.getId()))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("templateId"));
+                .andExpect(jsonPath("$.errors[0].field").value("imageId"));
 
         // below the OS image's minimum disk → 422, whatever the preset offers
         postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "reqDiskGb", 5))
@@ -265,7 +265,7 @@ class VmRequestTest {
     void retiredFlavorIsRejectedAndBothAxesReportIndependently() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-flavor-x2");
         VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 프리셋", 2, 2048, 20,
-                TemplateStatus.DISABLED, null));
+                CatalogStatus.DISABLED, null));
 
         postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, retired))
                 .andExpect(status().isUnprocessableContent())
@@ -277,12 +277,12 @@ class VmRequestTest {
         OsImage retiredImage = imageRepository.save(new OsImage("vmr-disabled-os",
                 "비활성 OS", "ubuntu", "24.04", "ubuntu", 1004,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
-                TemplateStatus.DISABLED, null));
+                CatalogStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, retired), "templateId", retiredImage.getId()))
+                with(bodyFor(groupId, retired), "imageId", retiredImage.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors.length()").value(2))
-                .andExpect(jsonPath("$.errors[0].field").value("templateId"))
+                .andExpect(jsonPath("$.errors[0].field").value("imageId"))
                 .andExpect(jsonPath("$.errors[1].field").value("flavorId"));
     }
 
@@ -296,15 +296,15 @@ class VmRequestTest {
     @Test
     void emptyOsCatalogListsNothingAndRefusesEverySubmission() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-empty-x1");
-        List<OsImage> active = imageRepository.findByStatusOrderByIdAsc(TemplateStatus.ACTIVE);
+        List<OsImage> active = imageRepository.findByStatusOrderByIdAsc(CatalogStatus.ACTIVE);
         assertThat(active).isNotEmpty();
         // Catalog rows are shared state across test classes on this context —
         // the ACTIVE set is restored in the finally block below.
-        active.forEach(row -> row.setStatus(TemplateStatus.DISABLED));
+        active.forEach(row -> row.setStatus(CatalogStatus.DISABLED));
         imageRepository.saveAll(active);
         try {
             // the OS axis of the request wizard: 200 with an empty array
-            mockMvc.perform(get("/api/v1/templates")
+            mockMvc.perform(get("/api/v1/os-images")
                             .header("Authorization", "Bearer " + requesterToken))
                     .andExpect(status().isOk())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -312,34 +312,34 @@ class VmRequestTest {
 
             // an image that exists but is no longer selectable → 422 on the field
             postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(groupId), "templateId", image.getId()))
+                    with(validBody(groupId), "imageId", image.getId()))
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                    .andExpect(jsonPath("$.errors[0].field").value("templateId"))
+                    .andExpect(jsonPath("$.errors[0].field").value("imageId"))
                     .andExpect(jsonPath("$.errors[0].message")
-                            .value("더 이상 선택할 수 없는 템플릿입니다."));
+                            .value("더 이상 선택할 수 없는 OS 이미지입니다."));
 
             // an id that never existed → 404 with a stated reason, not a 500
             postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(groupId), "templateId", 999_999))
+                    with(validBody(groupId), "imageId", 999_999))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
-                    .andExpect(jsonPath("$.detail").value("해당 템플릿이 존재하지 않습니다."));
+                    .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
 
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
             Map<String, Object> withoutImage = validBody(groupId);
-            withoutImage.remove("templateId");
+            withoutImage.remove("imageId");
             postJson("/api/v1/vm-requests", requesterToken, withoutImage)
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                    .andExpect(jsonPath("$.errors[0].field").value("templateId"));
+                    .andExpect(jsonPath("$.errors[0].field").value("imageId"));
 
             // and none of the three attempts left a row behind
             assertThat(jdbcTemplate.queryForObject(
                     "select count(*) from vm_requests where group_id = ?", Long.class, groupId))
                     .isZero();
         } finally {
-            active.forEach(row -> row.setStatus(TemplateStatus.ACTIVE));
+            active.forEach(row -> row.setStatus(CatalogStatus.ACTIVE));
             imageRepository.saveAll(active);
         }
     }
@@ -542,7 +542,7 @@ class VmRequestTest {
         Map<String, Object> body = new HashMap<>();
         body.put("groupId", groupId);
         body.put("orgId", org.getId());
-        body.put("templateId", image.getId());
+        body.put("imageId", image.getId());
         body.put("flavorId", flavor.getId());
         body.put("purpose", "수업 실습용 서버");
         body.put("reqVcpu", flavor.getVcpu());

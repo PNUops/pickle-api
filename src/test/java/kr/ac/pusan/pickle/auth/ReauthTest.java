@@ -77,7 +77,7 @@ class ReauthTest {
     private String outsiderToken;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
 
     @BeforeEach
@@ -88,7 +88,7 @@ class ReauthTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createTeam("reauth-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
@@ -332,7 +332,7 @@ class ReauthTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '재인증 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "reauth-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -341,7 +341,7 @@ class ReauthTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status, ?, 'bcrypt-hash')
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, VMID_SEQ.incrementAndGet(), credentialCipher.encrypt(VM_PASSWORD));
+                imageId, VMID_SEQ.incrementAndGet(), credentialCipher.encrypt(VM_PASSWORD));
     }
 
     private long createTeam(String slug) throws Exception {

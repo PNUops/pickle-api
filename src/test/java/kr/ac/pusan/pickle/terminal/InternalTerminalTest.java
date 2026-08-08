@@ -64,7 +64,7 @@ class InternalTerminalTest {
     private TerminalSessionRegistry sessionRegistry;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long nodeId;
     private long poolId;
     private long groupId;
@@ -75,7 +75,7 @@ class InternalTerminalTest {
         setWebTerminalEnabled(true);
         sessionRegistry.all().forEach(s -> sessionRegistry.remove(s.sessionId()));
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         poolId = jdbcTemplate.queryForObject("select id from ip_pools where name = 'guest-private'",
                 Long.class);
         nodeId = ensureNode();
@@ -396,7 +396,7 @@ class InternalTerminalTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '리딤 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, member.getId(), templateId);
+                """, Long.class, groupId, orgId, member.getId(), imageId);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
@@ -408,7 +408,7 @@ class InternalTerminalTest {
                                  ip_allocation_id, ssh_gateway_blocked, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, templateId,
+                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId,
                 status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
         return vmId;

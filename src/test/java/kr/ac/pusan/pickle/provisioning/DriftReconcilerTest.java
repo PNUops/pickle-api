@@ -60,7 +60,7 @@ class DriftReconcilerTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
     private final List<Long> createdNodeIds = new ArrayList<>();
@@ -81,7 +81,7 @@ class DriftReconcilerTest {
         wm.reset();
         jdbcTemplate.update("update nodes set status = 'OFFLINE' where name = 'pve1'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "drift-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
@@ -254,7 +254,7 @@ class DriftReconcilerTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '드리프트 테스트', ?, ?, ?, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId, vcpu, memoryMb);
+                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
         String hostname = "drift-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -262,6 +262,6 @@ class DriftReconcilerTest {
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, vcpu, memoryMb, proxmoxVmid, status);
+                imageId, vcpu, memoryMb, proxmoxVmid, status);
     }
 }

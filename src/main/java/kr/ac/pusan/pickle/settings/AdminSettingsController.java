@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Contract tag {@code admin}, operational settings ({@code listSettings} /
  * {@code updateSetting}) — SYS_ADMIN only. Small reference list, returned as a
- * plain array (orgs/templates convention).
+ * plain array (orgs/os-images convention).
  */
 @RestController
 @RequestMapping("/api/v1/admin/settings")

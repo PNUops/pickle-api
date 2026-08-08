@@ -56,7 +56,7 @@ operations:
 
   # ── 3.3 Catalog / lookup (any authenticated) ──────────────────────────────
   - { id: listOrgs,             method: GET,    path: "/orgs",                        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: listTemplates,        method: GET,    path: "/templates",                   roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listOsImages,        method: GET,    path: "/os-images",                   roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listVmFlavors,        method: GET,    path: "/vm-flavors",                  roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getRequestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
@@ -168,8 +168,8 @@ operations:
   # ── 3.17 Admin — infra read (SYS tier) ────────────────────────────────────
   - { id: listAdminNodes,       method: GET,   path: "/admin/nodes",                    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminNode,      method: PATCH, path: "/admin/nodes/{nodeId}",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
-  - { id: listAdminTemplates,   method: GET,   path: "/admin/templates",                roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: updateAdminTemplate,  method: PATCH, path: "/admin/templates/{templateId}",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminOsImages,   method: GET,   path: "/admin/os-images",                roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminOsImage,  method: PATCH, path: "/admin/os-images/{imageId}",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listAdminVmFlavors,   method: GET,   path: "/admin/vm-flavors",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createAdminVmFlavor,  method: POST,  path: "/admin/vm-flavors",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateAdminVmFlavor,  method: PATCH, path: "/admin/vm-flavors/{flavorId}",    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

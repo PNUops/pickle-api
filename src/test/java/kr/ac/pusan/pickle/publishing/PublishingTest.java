@@ -162,7 +162,7 @@ class PublishingTest {
     private String sysAdminToken;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
     private String groupSlug;
 
@@ -191,7 +191,7 @@ class PublishingTest {
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
 
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = createTeam(groupSlug);
@@ -224,7 +224,7 @@ class PublishingTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-alpha.pusan.dev"))
-                .andExpect(jsonPath("$.domain.kind").value("REQUESTED"))
+                .andExpect(jsonPath("$.domain.kind").value("PLATFORM"))
                 .andExpect(jsonPath("$.route.status").value("PENDING"))
                 .andExpect(jsonPath("$.route.targetPort").value(8080));
     }
@@ -538,7 +538,7 @@ class PublishingTest {
                             }
                             jdbcTemplate.update("""
                                     insert into domains (vm_id, kind, fqdn, root_domain, status)
-                                    values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev',
+                                    values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
                                             'ACTIVE'::domain_status)
                                     """, vmId, winnerFqdn);
                             return f;
@@ -1774,12 +1774,12 @@ class PublishingTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         jdbcTemplate.update("""
                 insert into vm_request_reviews (request_id, reviewer_id, decision,
                         granted_vcpu, granted_memory_mb, granted_disk_gb, granted_image_id)
                 values (?, ?, 'APPROVE'::review_decision, 1, 1024, 10, ?)
-                """, requestId, owner.getId(), templateId);
+                """, requestId, owner.getId(), imageId);
         String hostname = "pub-" + UUID.randomUUID().toString().substring(0, 12);
         int vmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""
@@ -1788,7 +1788,7 @@ class PublishingTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, vmid, status.name());
+                imageId, vmid, status.name());
         String ip = "172.29.200." + IP_SEQ.getAndIncrement();
         long allocId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, vm_id, status)

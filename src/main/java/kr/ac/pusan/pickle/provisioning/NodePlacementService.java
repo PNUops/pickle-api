@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -66,9 +66,9 @@ public class NodePlacementService {
             // pipeline errors cleanly at the place step — instead of proceeding
             // to a clone that would fail on a node without the image.
             if (!imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), node.getId(), TemplateStatus.ACTIVE)) {
+                    image.getName(), node.getId(), CatalogStatus.ACTIVE)) {
                 throw new IllegalStateException("관리자 지정 노드 " + node.getId()
-                        + "에 템플릿 " + image.getName() + "이(가) 없습니다");
+                        + "에 OS 이미지 " + image.getName() + "이(가) 없습니다");
             }
             log.info("placement for vm {}: admin-forced node {} ({})", vm.getId(), node.getId(),
                     node.getName());
@@ -77,7 +77,7 @@ public class NodePlacementService {
         // Nodes hosting an ACTIVE image of the same name (image rows are
         // per-node; a multi-node cluster clones the image under one name).
         Set<Long> imageNodeIds = imageRepository
-                .findByStatusOrderByIdAsc(TemplateStatus.ACTIVE).stream()
+                .findByStatusOrderByIdAsc(CatalogStatus.ACTIVE).stream()
                 .filter(candidate -> candidate.getName().equals(image.getName()))
                 .map(OsImage::getNodeId)
                 .collect(Collectors.toSet());
@@ -91,7 +91,7 @@ public class NodePlacementService {
                     return node;
                 })
                 .orElseThrow(() -> new IllegalStateException(
-                        "요청 사양을 수용할 수 있는 노드가 없습니다 (템플릿 " + image.getName() + ")"));
+                        "요청 사양을 수용할 수 있는 노드가 없습니다 (OS 이미지 " + image.getName() + ")"));
     }
 
     private boolean hasMemoryHeadroom(Node node, Vm vm) {

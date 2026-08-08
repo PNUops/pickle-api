@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code CreateVmRequest}. Cross-field rules (spec-reason,
- * subdomain/domain, template minimums) are validated in the service.
+ * subdomain/domain, OS image minimums) are validated in the service.
  */
 public record CreateVmRequestRequest(
         @NotNull(message = "신청 그룹(groupId)을 지정해 주세요.")
@@ -19,8 +19,8 @@ public record CreateVmRequestRequest(
         @NotNull(message = "기관(orgId)을 지정해 주세요.")
         Long orgId,
 
-        @NotNull(message = "템플릿(templateId)을 지정해 주세요.")
-        Long templateId,
+        @NotNull(message = "OS 이미지(imageId)를 지정해 주세요.")
+        Long imageId,
 
         @NotNull(message = "사양 프리셋(flavorId)을 지정해 주세요.")
         Long flavorId,

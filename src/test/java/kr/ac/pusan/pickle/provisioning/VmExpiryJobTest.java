@@ -119,7 +119,7 @@ class VmExpiryJobTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long requesterId;
     private long groupId;
     private long nodeId;
@@ -143,7 +143,7 @@ class VmExpiryJobTest {
         ((MutableClock) clock).set(FIXED_NOW);
         wm.reset();
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "vexp-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
@@ -369,7 +369,7 @@ class VmExpiryJobTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '만료 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, templateId);
+                """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "vexp-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -378,7 +378,7 @@ class VmExpiryJobTest {
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?, ?::vm_status, ?)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, proxmoxVmid, status, endDate);
+                imageId, proxmoxVmid, status, endDate);
     }
 
     private void stubGuestRunning(int vmid) {

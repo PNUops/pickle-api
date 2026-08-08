@@ -155,9 +155,9 @@ class ProvisioningEndToEndTest {
         // 4. reference data: the two request axes from the API; the seed org via
         // JDBC because it is hidden and USER tokens do not see it in /orgs
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        JsonNode templates = getJson("/api/v1/templates", userToken);
-        JsonNode template = findBy(templates, "name", "ubuntu-24.04");
-        long templateId = template.get("id").asLong();
+        JsonNode images = getJson("/api/v1/os-images", userToken);
+        JsonNode image = findBy(images, "name", "ubuntu-24.04");
+        long imageId = image.get("id").asLong();
         JsonNode flavors = getJson("/api/v1/vm-flavors", userToken);
         JsonNode flavor = findBy(flavors, "name", "basic");
         long flavorId = flavor.get("id").asLong();
@@ -166,7 +166,7 @@ class ProvisioningEndToEndTest {
         MvcResult requestResult = postJson("/api/v1/vm-requests", userToken, Map.of(
                 "groupId", groupId,
                 "orgId", orgId,
-                "templateId", templateId,
+                "imageId", imageId,
                 "flavorId", flavorId,
                 "purpose", "종단 검증용 서버",
                 "reqVcpu", flavor.get("vcpu").asInt(),
@@ -199,7 +199,7 @@ class ProvisioningEndToEndTest {
                 "grantedVcpu", flavor.get("vcpu").asInt(),
                 "grantedMemoryMb", flavor.get("memoryMb").asInt(),
                 "grantedDiskGb", flavor.get("diskGb").asInt(),
-                "grantedTemplateId", templateId,
+                "grantedImageId", imageId,
                 "comment", "요청 사양 그대로 승인합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))

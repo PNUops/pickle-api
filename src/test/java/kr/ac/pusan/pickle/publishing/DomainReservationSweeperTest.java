@@ -49,7 +49,7 @@ class DomainReservationSweeperTest {
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private long orgId;
-    private long templateId;
+    private long imageId;
     private long nodeId;
     private long groupId;
     private long ownerId;
@@ -58,7 +58,7 @@ class DomainReservationSweeperTest {
     @BeforeEach
     void setUp() {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         String slug = "dres-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = jdbcTemplate.queryForObject(
@@ -248,7 +248,7 @@ class DomainReservationSweeperTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '예약 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, ownerId, templateId);
+                """, Long.class, groupId, orgId, ownerId, imageId);
         String hostname = "dres-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -256,14 +256,14 @@ class DomainReservationSweeperTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, VMID_SEQ.incrementAndGet());
+                imageId, VMID_SEQ.incrementAndGet());
     }
 
     /** A released platform subdomain with its (already removed) route. */
     private long platformDomain(long vmId, String fqdn, Instant releasedAt) {
         long domainId = jdbcTemplate.queryForObject("""
                 insert into domains (vm_id, kind, fqdn, root_domain, status, released_at)
-                values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
+                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
                 returning id
                 """, Long.class, vmId, fqdn, Timestamp.from(releasedAt));
         jdbcTemplate.update("""

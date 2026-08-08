@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import kr.ac.pusan.pickle.inventory.TemplateStatus;
+import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
@@ -106,7 +106,7 @@ class ApprovalTest {
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         image = imageRepository.findAll().stream()
-                .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == TemplateStatus.ACTIVE)
+                .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
         flavor = flavorRepository.findAll().stream()
                 .filter(f -> f.getName().equals("basic"))
@@ -183,9 +183,9 @@ class ApprovalTest {
 
         // granted form validation: unusable image / disk below minimum / unknown node → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
-                with(approveBody(), "grantedTemplateId", 999_999))
+                with(approveBody(), "grantedImageId", 999_999))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("grantedTemplateId"));
+                .andExpect(jsonPath("$.errors[0].field").value("grantedImageId"));
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
                 with(approveBody(), "grantedDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
@@ -262,13 +262,13 @@ class ApprovalTest {
         // granted image's account rather than the platform's historical 'ubuntu'.
         OsImage debian = imageRepository.save(new OsImage("appr-debian-13", "Debian 13",
                 "debian", "13", "debian", 1005, image.getNodeId(), 1, 10,
-                TemplateStatus.ACTIVE, null));
+                CatalogStatus.ACTIVE, null));
         try {
             long groupId = createTeam(userToken, "appr-guest-account");
             long requestId = submit(userToken, groupId);
 
             postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
-                    with(approveBody(), "grantedTemplateId", debian.getId()))
+                    with(approveBody(), "grantedImageId", debian.getId()))
                     .andExpect(status().isOk());
 
             Vm vm = vmRepository.findAll().stream()
@@ -279,7 +279,7 @@ class ApprovalTest {
         } finally {
             // Retire the extra catalog row: the wizard list is shared state
             // across the classes on this context. The VM keeps its reference.
-            debian.setStatus(TemplateStatus.DISABLED);
+            debian.setStatus(CatalogStatus.DISABLED);
             imageRepository.saveAndFlush(debian);
         }
     }
@@ -414,11 +414,11 @@ class ApprovalTest {
     }
 
     @Test
-    void approveRejectsForcedNodeWithoutTheGrantedTemplate() throws Exception {
+    void approveRejectsForcedNodeWithoutTheGrantedImage() throws Exception {
         long groupId = createTeam(userToken, "appr-node-x1");
         long requestId = submit(userToken, groupId);
 
-        // a second ACTIVE node that hosts none of the seeded templates
+        // a second ACTIVE node that hosts none of the seeded OS images
         long emptyNodeId = jdbcTemplate.queryForObject("""
                 insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)
                 values (?, 'https://172.30.0.9:8006', 8, 16384, 'vmbr2', 'local-lvm')
@@ -579,7 +579,7 @@ class ApprovalTest {
         body.put("grantedVcpu", 2);
         body.put("grantedMemoryMb", 2048);
         body.put("grantedDiskGb", 20);
-        body.put("grantedTemplateId", image.getId());
+        body.put("grantedImageId", image.getId());
         body.put("comment", "요청 사양 그대로 승인합니다.");
         return body;
     }
@@ -613,7 +613,7 @@ class ApprovalTest {
         }
         body.put("groupId", groupId);
         body.put("orgId", orgId);
-        body.put("templateId", image.getId());
+        body.put("imageId", image.getId());
         body.put("flavorId", flavor.getId());
         body.put("purpose", "승인 흐름 테스트");
         body.put("reqVcpu", flavor.getVcpu());

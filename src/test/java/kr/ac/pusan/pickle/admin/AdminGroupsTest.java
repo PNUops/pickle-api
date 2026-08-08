@@ -74,12 +74,12 @@ class AdminGroupsTest {
                 values (?, ?, 'OWNER'::group_member_role), (?, ?, 'MEMBER'::group_member_role)
                 """, groupId, ownerId, groupId, disabledMemberId);
         // link the group to the seed org (derived membership: ≥1 request in the org)
-        long templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         jdbcTemplate.update("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '그룹 조회 테스트', ?, 1, 1024, 10)
-                """, groupId, orgId, ownerId, templateId);
+                """, groupId, orgId, ownerId, imageId);
     }
 
     @Test

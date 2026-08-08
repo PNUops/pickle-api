@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Contract tag {@code admin}, flavor catalog (v0.23.0 axis split) — the sys
  * tier reads every preset (the public {@code GET /vm-flavors} shows ACTIVE
  * only); create/edit are operational-state writes, SYS_ADMIN-only. Same
- * gates and list convention as the template inventory.
+ * gates and list convention as the OS image inventory.
  */
 @RestController
 @RequestMapping("/api/v1/admin/vm-flavors")

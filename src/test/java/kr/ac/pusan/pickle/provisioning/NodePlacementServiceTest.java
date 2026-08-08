@@ -24,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
  * must host an ACTIVE copy of the granted image, or placement fails the
  * same way the no-candidate auto path does — cleanly at the place step,
  * never proceeding to a clone that would fail mid-pipeline. All rows are
- * created on dedicated nodes/templates so the shared seed stays untouched.
+ * created on dedicated nodes/images so the shared seed stays untouched.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -46,7 +46,7 @@ class NodePlacementServiceTest {
     private long orgId;
     private long requesterId;
     private long groupId;
-    private String templateName;
+    private String imageName;
     private OsImage image;
 
     @BeforeEach
@@ -57,11 +57,11 @@ class NodePlacementServiceTest {
         groupId = jdbc.queryForObject(
                 "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
-        templateName = "place-tmpl-" + UUID.randomUUID().toString().substring(0, 8);
+        imageName = "place-tmpl-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     @Test
-    void forcedNodeHostingTheTemplateIsChosen() {
+    void forcedNodeHostingTheImageIsChosen() {
         long nodeId = insertNode();
         image = insertImage(nodeId, "ACTIVE");
         Vm vm = vm(nodeId);
@@ -72,7 +72,7 @@ class NodePlacementServiceTest {
     }
 
     @Test
-    void forcedNodeWithoutTheTemplateFailsPlacement() {
+    void forcedNodeWithoutTheImageFailsPlacement() {
         long imageNodeId = insertNode();
         image = insertImage(imageNodeId, "ACTIVE");
         // a different ACTIVE node that does not host the granted image
@@ -81,11 +81,11 @@ class NodePlacementServiceTest {
 
         assertThatThrownBy(() -> placementService.place(vm, image, otherNodeId))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(templateName);
+                .hasMessageContaining(imageName);
     }
 
     @Test
-    void forcedNodeWhoseTemplateWasDeactivatedFailsPlacement() {
+    void forcedNodeWhoseImageWasDeactivatedFailsPlacement() {
         // the approval-time check passed, then the image was DISABLED on the
         // node before provisioning — the backstop must still refuse it.
         long nodeId = insertNode();
@@ -94,7 +94,7 @@ class NodePlacementServiceTest {
 
         assertThatThrownBy(() -> placementService.place(vm, image, nodeId))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(templateName);
+                .hasMessageContaining(imageName);
     }
 
     private long insertNode() {
@@ -110,10 +110,10 @@ class NodePlacementServiceTest {
                 insert into os_images (name, display_name, os_family, os_version,
                                           ssh_username, proxmox_vmid, node_id,
                                           min_disk_gb, status)
-                values (?, '배치 테스트 템플릿', 'ubuntu', '24.04', 'ubuntu', 1003, ?, 10,
-                        cast(? as template_status))
+                values (?, '배치 테스트 OS 이미지', 'ubuntu', '24.04', 'ubuntu', 1003, ?, 10,
+                        cast(? as catalog_status))
                 returning id
-                """, Long.class, templateName, nodeId, status);
+                """, Long.class, imageName, nodeId, status);
         return imageRepository.findById(id).orElseThrow();
     }
 

@@ -67,7 +67,7 @@ class VmUserSurfaceTest {
     private String outsiderToken;
     private long orgId;
     private long nodeId;
-    private long templateId;
+    private long imageId;
     private long groupId;
     private String groupName;
 
@@ -81,7 +81,7 @@ class VmUserSurfaceTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        templateId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         String slug = "vmsurf-" + UUID.randomUUID().toString().substring(0, 8);
         groupName = "표면 테스트 " + slug;
         groupId = createTeam(slug, groupName);
@@ -137,7 +137,7 @@ class VmUserSurfaceTest {
         long allocationId = allocateIp(vmId);
         String ip = jdbcTemplate.queryForObject(
                 "select host(ip) from ip_allocations where id = ?", String.class, allocationId);
-        // in-flight PROVISION task at step 4 (템플릿 복제), one prior attempt error
+        // in-flight PROVISION task at step 4 (OS 이미지 복제), one prior attempt error
         jdbcTemplate.update("""
                 insert into provisioning_tasks (vm_id, kind, current_step, status, attempts, last_error)
                 values (?, 'PROVISION', 4, 'RUNNING', 2, '일시 오류')
@@ -161,7 +161,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.provisioning.status").value("RUNNING"))
                 .andExpect(jsonPath("$.provisioning.currentStep").value(4))
                 .andExpect(jsonPath("$.provisioning.totalSteps").value(11))
-                .andExpect(jsonPath("$.provisioning.stepLabel").value("템플릿 복제 중"))
+                .andExpect(jsonPath("$.provisioning.stepLabel").value("OS 이미지 복제 중"))
                 .andExpect(jsonPath("$.provisioning.attempts").value(2))
                 .andExpect(jsonPath("$.provisioning.lastError").value("일시 오류"))
                 .andExpect(jsonPath("$.deletion.kind").value("SELF"))
@@ -256,7 +256,7 @@ class VmUserSurfaceTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '표면 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), templateId);
+                """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmsurf-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -264,7 +264,7 @@ class VmUserSurfaceTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING')
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
-                templateId, VMID_SEQ.incrementAndGet());
+                imageId, VMID_SEQ.incrementAndGet());
     }
 
     private long createTeam(String slug, String name) throws Exception {
