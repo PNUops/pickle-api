@@ -1951,7 +1951,7 @@ class PublishingTest {
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '목록 범위 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, foreignGroupId, orgId, outsiderId, templateId);
+                """, Long.class, foreignGroupId, orgId, outsiderId, imageId);
         String hostname = "pubf-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long foreignVmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
@@ -1959,10 +1959,10 @@ class PublishingTest {
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, nodeId, foreignGroupId, orgId, requestId, hostname, hostname,
-                templateId, VMID_SEQ.incrementAndGet());
+                imageId, VMID_SEQ.incrementAndGet());
         return jdbcTemplate.queryForObject("""
                 insert into domains (vm_id, kind, fqdn, root_domain, status)
-                values (?, 'REQUESTED'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
                 returning id
                 """, Long.class, foreignVmId,
                 slug + ".pusan.dev");
