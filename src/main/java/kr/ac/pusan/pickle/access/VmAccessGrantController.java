@@ -6,10 +6,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.List;
 import kr.ac.pusan.pickle.access.dto.AddVmAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.UpdateVmAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.VmAccessGrantView;
+import kr.ac.pusan.pickle.access.dto.VmAccessListResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
@@ -38,8 +38,8 @@ public class VmAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 VM의 접근 권한 전체입니다. VM 소유자와 그룹 소유자만 볼 수 있습니다.")
-    public List<VmAccessGrantView> listVmAccessGrants(
+            description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 그룹 소유자만 볼 수 있습니다.")
+    public VmAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
         return service.list(principal, vmId);
