@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -12,7 +13,6 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.ClockConfig;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
@@ -228,7 +228,7 @@ public class VmLifecycleService {
     }
 
     /** A power-controllable VM plus the requester's role in its group. */
-    private record Controllable(Vm vm, GroupMemberRole role) {
+    private record Controllable(Vm vm, ResourceRole role) {
     }
 
     /**
@@ -238,7 +238,7 @@ public class VmLifecycleService {
      */
     private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
-        Vm vm = access.requireAtLeast(GroupMemberRole.MEMBER,
+        Vm vm = access.requireAtLeast(ResourceRole.MEMBER,
                 "VM을 제어할 권한이 없습니다", "그룹의 MEMBER 이상만 VM 전원을 제어할 수 있습니다.");
         return new Controllable(vm, access.role());
     }
@@ -250,8 +250,8 @@ public class VmLifecycleService {
      * member-facing power ops call this — the admin intervention path
      * (contract v0.17.0) deliberately bypasses it, per the class javadoc.
      */
-    private void requireStopAllowed(long vmId, GroupMemberRole role) {
-        if (role.atLeast(GroupMemberRole.EDITOR)) {
+    private void requireStopAllowed(long vmId, ResourceRole role) {
+        if (role.atLeast(ResourceRole.EDITOR)) {
             return;
         }
         if (vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)) {

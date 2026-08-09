@@ -3,13 +3,13 @@ package kr.ac.pusan.pickle.vm;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -136,12 +136,12 @@ public class VmQueryService {
      * Assembles the full contract {@code VmDetail} for an <b>already
      * authorized</b> VM — shared by the member-scoped {@link #get} and admin
      * flows (period update) whose authorization is org-scoped instead.
-     * {@code myGroupRole} is the requester's role in the owning group (null for
+     * {@code myResourceRole} is the requester's role in the owning group (null for
      * a non-member admin); it drives {@code passwordRevealAllowed} and the
      * console's settings-section visibility.
      */
     @Transactional(readOnly = true)
-    public VmDetailResponse detailOf(Vm vm, GroupMemberRole myGroupRole) {
+    public VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole) {
         long vmId = vm.getId();
         // History-preserving joins: a DELETED vm's group/org may have been
         // deleted afterwards, so this deliberately reads all groups/orgs.
@@ -166,10 +166,10 @@ public class VmQueryService {
                 .sorted(java.util.Comparator.comparing(Domain::getId))
                 .map(publicationAssembler::toPublication)
                 .toList();
-        boolean passwordRevealAllowed = myGroupRole != null && myGroupRole.atLeast(
+        boolean passwordRevealAllowed = myResourceRole != null && myResourceRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
         return VmDetailResponse.from(vm, groupName, orgName, displayName, ipAddress, sshHost,
-                myGroupRole, passwordRevealAllowed, provisioning, publications);
+                myResourceRole, passwordRevealAllowed, provisioning, publications);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

@@ -3,7 +3,7 @@ package kr.ac.pusan.pickle.vm.dto;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -38,7 +38,7 @@ public record VmDetailResponse(
         @Nullable String ipAddress,
         String sshUsername,
         String sshHost,
-        @Nullable GroupMemberRole myGroupRole,
+        @Nullable ResourceRole myResourceRole,
         @Nullable LocalDate startDate,
         @Nullable LocalDate endDate,
         @Nullable Instant expiryStoppedAt,
@@ -50,14 +50,14 @@ public record VmDetailResponse(
         Instant updatedAt) {
 
     public static VmDetailResponse from(Vm vm, String groupName, String orgName, String displayName,
-            String ipAddress, String sshHost, GroupMemberRole myGroupRole,
+            String ipAddress, String sshHost, ResourceRole myResourceRole,
             boolean passwordRevealAllowed, ProvisioningTaskResponse provisioning,
             List<PublicationView> publications) {
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
                 displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getCreatedAt(), vm.getOrgId(),
-                vm.getImageId(), ipAddress, vm.getSshUsername(), sshHost, myGroupRole,
+                vm.getImageId(), ipAddress, vm.getSshUsername(), sshHost, myResourceRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
                 VmDeletionResponse.from(vm), publications,
                 vm.getPasswordEnc() != null, passwordRevealAllowed, vm.getUpdatedAt());

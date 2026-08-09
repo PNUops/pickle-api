@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
@@ -18,7 +19,6 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
@@ -575,7 +575,7 @@ public class PublishingService {
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        return vmAccessService.of(actor, vmId).requireAtLeast(GroupMemberRole.EDITOR,
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "HTTP 서비스를 공개할 권한이 없습니다",
                 "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 도메인·포트를 설정할 수 있습니다.");
     }

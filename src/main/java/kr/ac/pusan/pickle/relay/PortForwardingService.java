@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
@@ -12,7 +13,6 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -297,7 +297,7 @@ public class PortForwardingService {
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        return vmAccessService.of(actor, vmId).requireAtLeast(GroupMemberRole.EDITOR,
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "포트 포워딩을 관리할 권한이 없습니다",
                 "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 포트 포워딩을 설정할 수 있습니다.");
     }

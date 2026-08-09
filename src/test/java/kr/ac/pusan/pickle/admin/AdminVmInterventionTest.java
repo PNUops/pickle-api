@@ -93,7 +93,7 @@ class AdminVmInterventionTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(vmId))
-                .andExpect(jsonPath("$.myGroupRole").isEmpty())
+                .andExpect(jsonPath("$.myResourceRole").isEmpty())
                 .andExpect(jsonPath("$.passwordRevealAllowed").value(false));
         mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
                         .header("Authorization", "Bearer " + orgManagerToken))

@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.campusip.dto.AdminCampusIpRequestView;
@@ -18,7 +19,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -297,7 +297,7 @@ public class CampusIpRequestService {
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        return vmAccessService.of(actor, vmId).requireAtLeast(GroupMemberRole.EDITOR,
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "교내 IP를 신청할 권한이 없습니다",
                 "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 교내 IP를 신청할 수 있습니다.");
     }

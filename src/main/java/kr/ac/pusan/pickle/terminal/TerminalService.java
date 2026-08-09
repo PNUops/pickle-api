@@ -7,13 +7,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.TerminalProperties;
 import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -115,7 +115,7 @@ public class TerminalService {
         //    so it gets an honest 403 (same as the power-control paths) rather than
         //    a misleading 404.
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
-        vmAccessService.of(vm, actor.id()).requireAtLeast(GroupMemberRole.MEMBER,
+        vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.MEMBER,
                 "웹 터미널을 열 권한이 없습니다", "그룹의 MEMBER 이상만 웹 터미널을 사용할 수 있습니다.");
         // 3) RUNNING.
         if (vm.getStatus() != VmStatus.RUNNING) {
@@ -370,7 +370,7 @@ public class TerminalService {
         if (vm.isSshGatewayBlocked()) {
             return Authz.deny(TerminalReasons.ACCESS_REVOKED);
         }
-        if (!vmAccessService.of(vm, userId).atLeast(GroupMemberRole.MEMBER)) {
+        if (!vmAccessService.of(vm, userId).atLeast(ResourceRole.MEMBER)) {
             return Authz.deny(TerminalReasons.ACCESS_REVOKED);
         }
         return Authz.allow(vm);

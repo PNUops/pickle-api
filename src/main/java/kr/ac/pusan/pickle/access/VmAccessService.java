@@ -4,7 +4,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -67,9 +66,10 @@ public class VmAccessService {
     }
 
     /** The role lookup itself — the one read that per-resource grants will replace. */
-    private GroupMemberRole standing(Vm vm, long userId) {
+    private ResourceRole standing(Vm vm, long userId) {
         return groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), userId)
                 .map(GroupMember::getRole)
+                .map(role -> ResourceRole.valueOf(role.name()))
                 .orElse(null);
     }
 

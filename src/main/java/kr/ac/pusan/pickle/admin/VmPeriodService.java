@@ -81,7 +81,7 @@ public class VmPeriodService {
                                 "endDate", String.valueOf(request.endDate()))),
                 ip);
         // Admin period edit is org-scoped, not group-membership-scoped, so the
-        // requester has no group role in this VM's group → myGroupRole null.
+        // requester holds no grant on this VM → myResourceRole null.
         return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
     }
 

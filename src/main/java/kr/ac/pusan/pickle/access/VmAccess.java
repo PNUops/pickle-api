@@ -2,7 +2,6 @@ package kr.ac.pusan.pickle.access;
 
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.vm.Vm;
 import org.springframework.http.HttpStatus;
 
@@ -16,7 +15,7 @@ import org.springframework.http.HttpStatus;
  * answered an honest 403. Callers supply the 403 wording because it names the
  * operation they were attempting; they do not decide which of the two applies.
  */
-public record VmAccess(Vm vm, GroupMemberRole role) {
+public record VmAccess(Vm vm, ResourceRole role) {
 
     /** Unknown VM and no standing are indistinguishable to the caller (404). */
     public Vm requireVisible() {
@@ -26,12 +25,12 @@ public record VmAccess(Vm vm, GroupMemberRole role) {
         return vm;
     }
 
-    public boolean atLeast(GroupMemberRole min) {
+    public boolean atLeast(ResourceRole min) {
         return role != null && role.atLeast(min);
     }
 
     /** 404 without standing, 403 in the caller's words below {@code min}. */
-    public Vm requireAtLeast(GroupMemberRole min, String title, String detail) {
+    public Vm requireAtLeast(ResourceRole min, String title, String detail) {
         requireVisible();
         if (!atLeast(min)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,

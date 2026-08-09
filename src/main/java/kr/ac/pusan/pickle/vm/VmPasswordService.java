@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.vm;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -10,7 +11,6 @@ import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
@@ -81,7 +81,7 @@ public class VmPasswordService {
     public VmPasswordResponse reveal(AuthenticatedUser actor, long vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
-        GroupMemberRole minRole =
+        ResourceRole minRole =
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
         if (!memberVm.role().atLeast(minRole)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
@@ -117,7 +117,7 @@ public class VmPasswordService {
     public VmPasswordResponse regenerate(AuthenticatedUser actor, long vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
-        if (!memberVm.role().atLeast(GroupMemberRole.EDITOR)) {
+        if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "비밀번호를 재생성할 권한이 없습니다",
                     "그룹의 EDITOR 이상만 비밀번호를 재생성할 수 있습니다.");
@@ -142,7 +142,7 @@ public class VmPasswordService {
         return new VmPasswordResponse(password, vm.getSshUsername(), sshHost, sshPort);
     }
 
-    private record MemberVm(Vm vm, GroupMemberRole role) {
+    private record MemberVm(Vm vm, ResourceRole role) {
     }
 
     /** Non-member answers 404 (masking); returns the VM and the actor's role. */

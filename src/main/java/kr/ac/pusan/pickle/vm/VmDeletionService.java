@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
@@ -18,7 +19,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -370,7 +370,7 @@ public class VmDeletionService {
             }
             return vm;
         }
-        return vmAccessService.of(vm, actor.id()).requireAtLeast(GroupMemberRole.OWNER,
+        return vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.OWNER,
                 "VM을 삭제할 권한이 없습니다", "그룹 소유자(OWNER) 또는 관리자만 VM을 삭제할 수 있습니다.");
     }
 

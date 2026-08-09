@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
@@ -150,7 +150,7 @@ class VmSettingsTest {
         patchSettings(ownerToken, vmId, Map.of("password_reveal_min_role", "EDITOR"))
                 .andExpect(status().isOk());
         assertThat(vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE))
-                .isEqualTo(GroupMemberRole.EDITOR);
+                .isEqualTo(ResourceRole.EDITOR);
     }
 
     @Test

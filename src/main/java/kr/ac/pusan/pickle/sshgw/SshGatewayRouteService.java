@@ -4,13 +4,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.SshGatewayProperties;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.sshgw.dto.RouteRequest;
@@ -170,7 +170,7 @@ public class SshGatewayRouteService {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
             // VIEWER and non-members are denied identically (one code, no oracle).
-            if (!vmAccessService.of(vm, key.get().getUserId()).atLeast(GroupMemberRole.MEMBER)) {
+            if (!vmAccessService.of(vm, key.get().getUserId()).atLeast(ResourceRole.MEMBER)) {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_NOT_MEMBER));
             }
         } else if (RouteRequest.AUTH_PASSWORD.equals(ctx.authMethod())) {
