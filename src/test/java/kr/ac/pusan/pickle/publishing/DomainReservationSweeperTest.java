@@ -52,7 +52,7 @@ class DomainReservationSweeperTest {
     private long orgId;
     private long imageId;
     private long nodeId;
-    private long groupId;
+    private long workspaceId;
     private long ownerId;
     private long editorId;
 
@@ -62,13 +62,13 @@ class DomainReservationSweeperTest {
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         String slug = "dres-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
         editorId = createUser("manager." + slug + "@pusan.ac.kr");
         addMember(ownerId, "OWNER");
-        // The second account is an editor OF THE VM, not of the group: the
+        // The second account is an editor OF THE VM, not of the workspace: the
         // rung that makes someone hear about the VM's names now lives on the
         // access list, which createVm() writes.
         addMember(editorId, "MEMBER");
@@ -245,25 +245,25 @@ class DomainReservationSweeperTest {
 
     private void addMember(long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                """, workspaceId, userId, role);
     }
 
     private long createVm() {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '예약 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, ownerId, imageId);
+                """, Long.class, workspaceId, orgId, ownerId, imageId);
         String hostname = "dres-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
         // Reservation notices go to whoever the access list makes responsible
         // for the VM, so the two expected recipients have to be named there —

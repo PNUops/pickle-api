@@ -13,8 +13,8 @@ public interface AnnouncementRepository extends JpaRepository<Announcement, Long
     /**
      * Sender-org visibility for ORG_ADMIN (contract {@code listAnnouncements}):
      * announcements authored by their own org's admins, plus every ALL-scope
-     * broadcast. A SYS_ADMIN's GROUP send stays invisible here even when the
-     * group has members of the caller's org — the recipients see it in their
+     * broadcast. A SYS_ADMIN's WORKSPACE send stays invisible here even when the
+     * workspace has members of the caller's org — the recipients see it in their
      * own inboxes instead.
      */
     @Query("""

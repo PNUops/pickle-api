@@ -9,11 +9,11 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
@@ -46,8 +46,8 @@ public class VmRequestService {
 
     private final VmRequestRepository requestRepository;
     private final VmRequestAssembler assembler;
-    private final GroupRepository groupRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final OrgRepository orgRepository;
     private final OsImageRepository imageRepository;
     private final VmFlavorRepository flavorRepository;
@@ -57,7 +57,7 @@ public class VmRequestService {
     private final VmSlugPolicy slugPolicy;
 
     public VmRequestService(VmRequestRepository requestRepository, VmRequestAssembler assembler,
-            GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
+            WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             OrgRepository orgRepository, OsImageRepository imageRepository,
             VmFlavorRepository flavorRepository,
             AuditService auditService,
@@ -65,8 +65,8 @@ public class VmRequestService {
             VmSlugPolicy slugPolicy) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
-        this.groupRepository = groupRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.orgRepository = orgRepository;
         this.imageRepository = imageRepository;
         this.flavorRepository = flavorRepository;
@@ -78,13 +78,13 @@ public class VmRequestService {
 
     @Transactional
     public VmRequestDetailResponse create(AuthenticatedUser actor, CreateVmRequestRequest request, String ip) {
-        // A soft-deleted group cannot receive new VM requests.
-        Group group = groupRepository.findByIdAndDeletedAtIsNull(request.groupId())
-                .orElseThrow(() -> notFound("해당 그룹이 존재하지 않습니다."));
+        // A soft-deleted workspace cannot receive new VM requests.
+        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(request.workspaceId())
+                .orElseThrow(() -> notFound("해당 워크스페이스가 존재하지 않습니다."));
         // Any member may ask. The rung that used to gate this was really about
         // reaching VMs, which is now the access list's business, and asking is
         // not the step that costs anything — approval is.
-        groupMemberRepository.findByGroupIdAndUserId(group.getId(), actor.id())
+        workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .orElseThrow(VmRequestService::requestRoleInsufficient);
 
         Org org = orgRepository.findById(request.orgId())
@@ -118,7 +118,7 @@ public class VmRequestService {
             throw ApiException.validationFailed(errors);
         }
 
-        VmRequest saved = requestRepository.save(new VmRequest(group.getId(), org.getId(), actor.id(),
+        VmRequest saved = requestRepository.save(new VmRequest(workspace.getId(), org.getId(), actor.id(),
                 image.getId(), flavor.getId(), request.purpose().strip(),
                 Texts.blankToNull(request.courseOrProject()), Texts.blankToNull(request.specReason()),
                 Texts.blankToNull(request.extraNote()),
@@ -127,40 +127,40 @@ public class VmRequestService {
                 Texts.blankToNull(request.displayName()), desiredSlug));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "vm_request", saved.getId(),
-                Map.of("groupId", group.getId(), "orgId", org.getId(), "imageId", image.getId(),
+                Map.of("workspaceId", workspace.getId(), "orgId", org.getId(), "imageId", image.getId(),
                         "reqVcpu", saved.getReqVcpu(), "reqMemoryMb", saved.getReqMemoryMb(),
                         "reqDiskGb", saved.getReqDiskGb()), ip);
         // In-tx inserts: the notices exist iff the request row committed.
         notificationService.publish(actor.id(), NotificationEvent.REQUEST_SUBMITTED,
-                Map.of("requestId", saved.getId(), "groupName", group.getName(),
+                Map.of("requestId", saved.getId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose()), null);
         notificationService.publish(
                 notificationService.orgAdminIds(org.getId()).stream()
                         .filter(adminId -> !adminId.equals(actor.id())).toList(),
                 NotificationEvent.REQUEST_SUBMITTED,
-                Map.of("requestId", saved.getId(), "groupName", group.getName(),
+                Map.of("requestId", saved.getId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "admin", true), null);
         return assembler.toDetail(saved);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<VmRequestDetailResponse> list(AuthenticatedUser actor, VmRequestStatus status,
-            Long groupId, int page, int size) {
+            Long workspaceId, int page, int size) {
         Pageable pageable = newestFirst(page, size);
         Page<VmRequest> result;
-        if (groupId != null) {
-            if (groupMemberRepository.findByGroupIdAndUserId(groupId, actor.id()).isEmpty()) {
+        if (workspaceId != null) {
+            if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id()).isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                        "접근 권한이 없습니다", "해당 그룹의 신청을 조회할 권한이 없습니다.");
+                        "접근 권한이 없습니다", "해당 워크스페이스의 신청을 조회할 권한이 없습니다.");
             }
             result = status != null
-                    ? requestRepository.findByGroupIdAndStatus(groupId, status, pageable)
-                    : requestRepository.findByGroupId(groupId, pageable);
+                    ? requestRepository.findByWorkspaceIdAndStatus(workspaceId, status, pageable)
+                    : requestRepository.findByWorkspaceId(workspaceId, pageable);
         } else {
-            List<Long> groupIds = myGroupIds(actor);
+            List<Long> workspaceIds = myWorkspaceIds(actor);
             result = status != null
-                    ? requestRepository.findVisibleByStatus(actor.id(), groupIds, status, pageable)
-                    : requestRepository.findVisible(actor.id(), groupIds, pageable);
+                    ? requestRepository.findVisibleByStatus(actor.id(), workspaceIds, status, pageable)
+                    : requestRepository.findVisible(actor.id(), workspaceIds, pageable);
         }
         return PageResponse.of(assembler.toDetails(result.getContent()), result);
     }
@@ -170,10 +170,10 @@ public class VmRequestService {
         VmRequest request = requestRepository.findById(requestId)
                 .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
         boolean participant = request.getRequesterId().equals(actor.id())
-                || groupMemberRepository.findByGroupIdAndUserId(request.getGroupId(), actor.id()).isPresent();
+                || workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(), actor.id()).isPresent();
         if (!participant) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 또는 그룹 구성원만 조회할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 또는 워크스페이스 구성원만 조회할 수 있습니다.");
         }
         return assembler.toDetail(request);
     }
@@ -183,14 +183,14 @@ public class VmRequestService {
         VmRequest request = requestRepository.findWithLockById(requestId)
                 .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
         boolean requester = request.getRequesterId().equals(actor.id());
-        boolean groupOwner = groupMemberRepository
-                .findByGroupIdAndUserId(request.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .filter(role -> role == GroupMemberRole.OWNER)
+        boolean workspaceOwner = workspaceMemberRepository
+                .findByWorkspaceIdAndUserId(request.getWorkspaceId(), actor.id())
+                .map(WorkspaceMember::getRole)
+                .filter(role -> role == WorkspaceMemberRole.OWNER)
                 .isPresent();
-        if (!requester && !groupOwner) {
+        if (!requester && !workspaceOwner) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)만 취소할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 본인 또는 워크스페이스 소유자(OWNER)만 취소할 수 있습니다.");
         }
         if (request.getStatus() != VmRequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
@@ -198,17 +198,17 @@ public class VmRequestService {
         }
         request.setStatus(VmRequestStatus.CANCELED);
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CANCEL,
-                "vm_request", request.getId(), Map.of("groupId", request.getGroupId()), ip);
+                "vm_request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         return assembler.toDetail(request);
     }
 
-    private List<Long> myGroupIds(AuthenticatedUser actor) {
-        List<Long> groupIds = groupMemberRepository.findWithGroupByUserId(actor.id()).stream()
-                .map(m -> m.getGroup().getId())
+    private List<Long> myWorkspaceIds(AuthenticatedUser actor) {
+        List<Long> workspaceIds = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id()).stream()
+                .map(m -> m.getWorkspace().getId())
                 .toList();
         // JPQL "in ()" is invalid — a user without any membership sees only
         // their own requests, so pass an id that can never match.
-        return groupIds.isEmpty() ? List.of(-1L) : groupIds;
+        return workspaceIds.isEmpty() ? List.of(-1L) : workspaceIds;
     }
 
     private static Pageable newestFirst(int page, int size) {
@@ -271,7 +271,7 @@ public class VmRequestService {
     }
 
     private static ApiException requestRoleInsufficient() {
-        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                "VM을 신청할 권한이 없습니다", "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 VM을 신청할 수 있습니다.");
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
+                "VM을 신청할 권한이 없습니다", "워크스페이스 소유자(OWNER) 또는 편집자(EDITOR)만 VM을 신청할 수 있습니다.");
     }
 }

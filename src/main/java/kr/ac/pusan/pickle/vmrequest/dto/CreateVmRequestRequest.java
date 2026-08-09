@@ -13,8 +13,8 @@ import org.jspecify.annotations.Nullable;
  * subdomain/domain, OS image minimums) are validated in the service.
  */
 public record CreateVmRequestRequest(
-        @NotNull(message = "신청 그룹(groupId)을 지정해 주세요.")
-        Long groupId,
+        @NotNull(message = "신청 워크스페이스(workspaceId)을 지정해 주세요.")
+        Long workspaceId,
 
         @NotNull(message = "기관(orgId)을 지정해 주세요.")
         Long orgId,

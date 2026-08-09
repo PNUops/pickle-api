@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /**
  * {@code GET /admin/vms} per contract: ORG_ADMIN hard-scoped to their own org
  * (another org in the orgId filter answers 404 so cross-org existence stays
- * private), SYS_ADMIN across orgs, the orgId/groupId/status filters, paging,
+ * private), SYS_ADMIN across orgs, the orgId/workspaceId/status filters, paging,
  * and the VmSummary shape. Assertions are per-id (the database is shared
  * with the other admin tests).
  */
@@ -59,9 +59,9 @@ class AdminVmsTest {
     private String orgAdminToken;
     private String otherOrgAdminToken;
     private String sysAdminToken;
-    private long groupA1;
-    private long groupA2;
-    private long groupB;
+    private long workspaceA1;
+    private long workspaceA2;
+    private long workspaceB;
     private long vmRunningA1;
     private long vmStoppedA2;
     private long vmRunningB;
@@ -80,12 +80,12 @@ class AdminVmsTest {
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
-        groupA1 = createGroup();
-        groupA2 = createGroup();
-        groupB = createGroup();
-        vmRunningA1 = createVm(org.getId(), groupA1, "RUNNING");
-        vmStoppedA2 = createVm(org.getId(), groupA2, "STOPPED");
-        vmRunningB = createVm(otherOrg.getId(), groupB, "RUNNING");
+        workspaceA1 = createWorkspace();
+        workspaceA2 = createWorkspace();
+        workspaceB = createWorkspace();
+        vmRunningA1 = createVm(org.getId(), workspaceA1, "RUNNING");
+        vmStoppedA2 = createVm(org.getId(), workspaceA2, "STOPPED");
+        vmRunningB = createVm(otherOrg.getId(), workspaceB, "RUNNING");
     }
 
     @Test
@@ -131,7 +131,7 @@ class AdminVmsTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningB)).exists())
                 .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist());
-        mockMvc.perform(get("/api/v1/admin/vms?groupId=" + groupA2)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceA2)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
@@ -146,7 +146,7 @@ class AdminVmsTest {
 
     @Test
     void returnsTheVmSummaryShapeAndPages() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/vms?groupId=" + groupA1)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceA1)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(vmRunningA1))
@@ -156,7 +156,7 @@ class AdminVmsTest {
                 .andExpect(jsonPath("$.content[0].vcpu").value(2))
                 .andExpect(jsonPath("$.content[0].memoryMb").value(2048))
                 .andExpect(jsonPath("$.content[0].diskGb").value(10))
-                .andExpect(jsonPath("$.content[0].groupId").value(groupA1))
+                .andExpect(jsonPath("$.content[0].workspaceId").value(workspaceA1))
                 .andExpect(jsonPath("$.content[0].requestId").isNumber())
                 .andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.page").value(0))
@@ -164,7 +164,7 @@ class AdminVmsTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.totalPages").value(1));
 
-        // paging: size=1 over the two org-A groups → 2 pages, newest first
+        // paging: size=1 over the two org-A workspaces → 2 pages, newest first
         mockMvc.perform(get("/api/v1/admin/vms?orgId=%d&size=1".formatted(org.getId()))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
@@ -180,9 +180,9 @@ class AdminVmsTest {
     @Test
     void searchesByNamePartialMatchWithLikeEscaping() throws Exception {
         // 이 메서드 전용 접두사 — DB가 다른 테스트 메서드와 공유되므로 이름을 격리한다.
-        long alpha = createVm(org.getId(), groupA1, "RUNNING", "adv-qsearch-alpha");
-        long underscore = createVm(org.getId(), groupA1, "RUNNING", "adv-q-under_score");
-        long noUnderscore = createVm(org.getId(), groupA1, "RUNNING", "adv-q-underXscore");
+        long alpha = createVm(org.getId(), workspaceA1, "RUNNING", "adv-qsearch-alpha");
+        long underscore = createVm(org.getId(), workspaceA1, "RUNNING", "adv-q-under_score");
+        long noUnderscore = createVm(org.getId(), workspaceA1, "RUNNING", "adv-q-underXscore");
 
         // case-insensitive partial match on name
         mockMvc.perform(get("/api/v1/admin/vms?q=QSEARCH-AL")
@@ -193,7 +193,7 @@ class AdminVmsTest {
 
         // hostname is searched too — alpha's custom name doesn't contain the
         // seeded hostname prefix, so this hit proves the hostname column
-        mockMvc.perform(get("/api/v1/admin/vms?q=advm-vm-&groupId=" + groupA1)
+        mockMvc.perform(get("/api/v1/admin/vms?q=advm-vm-&workspaceId=" + workspaceA1)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(alpha)).exists());
@@ -208,8 +208,8 @@ class AdminVmsTest {
 
     @Test
     void sortsByWhitelistAndRejectsUnknownKeys() throws Exception {
-        long alpha = createVm(org.getId(), groupA1, "RUNNING", "adv-sortsearch-alpha");
-        long bravo = createVm(org.getId(), groupA1, "RUNNING", "adv-sortsearch-bravo");
+        long alpha = createVm(org.getId(), workspaceA1, "RUNNING", "adv-sortsearch-alpha");
+        long bravo = createVm(org.getId(), workspaceA1, "RUNNING", "adv-sortsearch-bravo");
 
         mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch&sort=name")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -241,35 +241,35 @@ class AdminVmsTest {
         return "$.content[?(@.id == %d)]".formatted(vmId);
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         String slug = "advm-" + UUID.randomUUID().toString().substring(0, 8);
         return jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
     }
 
-    private long createVm(long orgId, long groupId, String status) {
-        return createVm(orgId, groupId, status, null);
+    private long createVm(long orgId, long workspaceId, String status) {
+        return createVm(orgId, workspaceId, status, null);
     }
 
     /** Minimal request→vm FK chain (2 vCPU / 2048 MiB / 10 GiB). */
-    private long createVm(long orgId, long groupId, String status, String name) {
+    private long createVm(long orgId, long workspaceId, String status, String name) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '관리자 목록 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+                """, Long.class, workspaceId, orgId, requesterId, imageId);
         String hostname = "advm-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId,
+                """, Long.class, nodeId, workspaceId, orgId, requestId,
                 name != null ? name : hostname, hostname, imageId, status);
     }
 

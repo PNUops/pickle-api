@@ -24,8 +24,8 @@ public class VmRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "group_id", nullable = false)
-    private Long groupId;
+    @Column(name = "workspace_id", nullable = false)
+    private Long workspaceId;
 
     @Column(name = "org_id", nullable = false)
     private Long orgId;
@@ -104,11 +104,11 @@ public class VmRequest {
     protected VmRequest() {
     }
 
-    public VmRequest(Long groupId, Long orgId, Long requesterId, Long imageId, Long flavorId,
+    public VmRequest(Long workspaceId, Long orgId, Long requesterId, Long imageId, Long flavorId,
             String purpose, String courseOrProject, String specReason, String extraNote,
             int reqVcpu, int reqMemoryMb, int reqDiskGb, LocalDate reqStartDate, LocalDate reqEndDate,
             String displayName, String desiredSlug) {
-        this.groupId = groupId;
+        this.workspaceId = workspaceId;
         this.orgId = orgId;
         this.requesterId = requesterId;
         this.imageId = imageId;
@@ -130,8 +130,8 @@ public class VmRequest {
         return id;
     }
 
-    public Long getGroupId() {
-        return groupId;
+    public Long getWorkspaceId() {
+        return workspaceId;
     }
 
     public Long getOrgId() {

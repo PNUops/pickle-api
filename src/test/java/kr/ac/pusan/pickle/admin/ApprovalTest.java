@@ -115,9 +115,9 @@ class ApprovalTest {
 
     @Test
     void queueIsOrgScopedAndStatusFilterable() throws Exception {
-        long groupId = createTeam(userToken, "appr-queue-x1");
-        long submitted = submit(userToken, groupId);
-        long canceled = submit(userToken, groupId);
+        long workspaceId = createTeam(userToken, "appr-queue-x1");
+        long submitted = submit(userToken, workspaceId);
+        long canceled = submit(userToken, workspaceId);
         postJson("/api/v1/vm-requests/" + canceled + "/cancel", userToken, Map.of())
                 .andExpect(status().isOk());
 
@@ -178,8 +178,8 @@ class ApprovalTest {
 
     @Test
     void approveWritesReviewCreatesVmAndEnqueuesJob() throws Exception {
-        long groupId = createTeam(userToken, "appr-approve-x1");
-        long requestId = submit(userToken, groupId);
+        long workspaceId = createTeam(userToken, "appr-approve-x1");
+        long requestId = submit(userToken, workspaceId);
 
         // granted form validation: unusable image / disk below minimum / unknown node → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
@@ -264,8 +264,8 @@ class ApprovalTest {
                 "debian", "13", "debian", 1005, image.getNodeId(), 1, 10,
                 CatalogStatus.ACTIVE, null));
         try {
-            long groupId = createTeam(userToken, "appr-guest-account");
-            long requestId = submit(userToken, groupId);
+            long workspaceId = createTeam(userToken, "appr-guest-account");
+            long requestId = submit(userToken, workspaceId);
 
             postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
                     with(approveBody(), "grantedImageId", debian.getId()))
@@ -286,8 +286,8 @@ class ApprovalTest {
 
     @Test
     void grantedSlugFinalizesHostnameAndBlankFallsBackToAuto() throws Exception {
-        long groupId = createTeam(userToken, "appr-slug-x1");
-        long requestId = submit(userToken, groupId);
+        long workspaceId = createTeam(userToken, "appr-slug-x1");
+        long requestId = submit(userToken, workspaceId);
 
         // malformed (bean validation) / reserved word (shared list) → 422 grantedSlug
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken,
@@ -301,10 +301,10 @@ class ApprovalTest {
 
         // taken hostname — even of a soft-deleted VM (slugs are never recycled) → 422,
         // and the request stays SUBMITTED (decidable again)
-        long otherRequestId = submit(userToken, groupId);
+        long otherRequestId = submit(userToken, workspaceId);
         Vm taken = vmRepository.save(new Vm(
                 jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class),
-                groupId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
+                workspaceId, org.getId(), otherRequestId, "appr-slug-taken", "appr-slug-taken",
                 image.getId(), image.getSshUsername(), 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
@@ -330,7 +330,7 @@ class ApprovalTest {
                 .findFirst().orElseThrow();
         assertThat(named.getHostname()).isEqualTo("appr-slug-final");
 
-        // blank grantedSlug → today's auto generation (group slug + 4-char suffix)
+        // blank grantedSlug → today's auto generation (workspace slug + 4-char suffix)
         postJson("/api/v1/admin/vm-requests/" + otherRequestId + "/approve", orgAdminToken,
                 with(approveBody(), "grantedSlug", "  "))
                 .andExpect(status().isOk())
@@ -343,8 +343,8 @@ class ApprovalTest {
 
     @Test
     void approveSeedsRequestedDisplayNameIntoVmSettings() throws Exception {
-        long groupId = createTeam(userToken, "appr-dname-x1");
-        long requestId = submit(userToken, groupId, org.getId(), "학과 세미나 서버");
+        long workspaceId = createTeam(userToken, "appr-dname-x1");
+        long requestId = submit(userToken, workspaceId, org.getId(), "학과 세미나 서버");
 
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk())
@@ -386,10 +386,10 @@ class ApprovalTest {
      */
     @Test
     void approveAuditsOnlyTheDisplayNameItActuallyStored() throws Exception {
-        long groupId = createTeam(userToken, "appr-dname-x2");
+        long workspaceId = createTeam(userToken, "appr-dname-x2");
         // zero-width space + ZWJ + BOM: not blank to Java, empty after sanitizing
         String zeroWidthOnly = new String(new int[] {0x200B, 0x200D, 0xFEFF}, 0, 3);
-        long requestId = submit(userToken, groupId, org.getId(), zeroWidthOnly);
+        long requestId = submit(userToken, workspaceId, org.getId(), zeroWidthOnly);
 
         postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk())
@@ -415,8 +415,8 @@ class ApprovalTest {
 
     @Test
     void approveRejectsForcedNodeWithoutTheGrantedImage() throws Exception {
-        long groupId = createTeam(userToken, "appr-node-x1");
-        long requestId = submit(userToken, groupId);
+        long workspaceId = createTeam(userToken, "appr-node-x1");
+        long requestId = submit(userToken, workspaceId);
 
         // a second ACTIVE node that hosts none of the seeded OS images
         long emptyNodeId = jdbcTemplate.queryForObject("""
@@ -446,8 +446,8 @@ class ApprovalTest {
 
     @Test
     void rejectRequiresCommentAndDecidesOnce() throws Exception {
-        long groupId = createTeam(userToken, "appr-reject-x1");
-        long requestId = submit(userToken, groupId);
+        long workspaceId = createTeam(userToken, "appr-reject-x1");
+        long requestId = submit(userToken, workspaceId);
 
         // comment is mandatory → 422
         postJson("/api/v1/admin/vm-requests/" + requestId + "/reject", orgAdminToken, Map.of())
@@ -498,19 +498,19 @@ class ApprovalTest {
         String ctxAdminToken = jwtService.createAccessToken(ctxAdmin);
         String ctxUserToken = jwtService.createAccessToken(ctxUser);
 
-        long groupId = createTeam(ctxUserToken, "appr-ctx-x1");
-        addMember(ctxUserToken, groupId, "appr.other.admin@pusan.ac.kr", "MEMBER");
+        long workspaceId = createTeam(ctxUserToken, "appr-ctx-x1");
+        addMember(ctxUserToken, workspaceId, "appr.other.admin@pusan.ac.kr", "MEMBER");
 
         // history material: one rejected, one approved (creates an active VM)
-        long rejected = submit(ctxUserToken, groupId, ctxOrg.getId());
+        long rejected = submit(ctxUserToken, workspaceId, ctxOrg.getId());
         postJson("/api/v1/admin/vm-requests/" + rejected + "/reject", ctxAdminToken,
                 Map.of("comment", "테스트 반려 사유"))
                 .andExpect(status().isOk());
-        long approved = submit(ctxUserToken, groupId, ctxOrg.getId());
+        long approved = submit(ctxUserToken, workspaceId, ctxOrg.getId());
         postJson("/api/v1/admin/vm-requests/" + approved + "/approve", ctxAdminToken, approveBody())
                 .andExpect(status().isOk());
 
-        long current = submit(ctxUserToken, groupId, ctxOrg.getId());
+        long current = submit(ctxUserToken, workspaceId, ctxOrg.getId());
 
         // capacity comes from the seeded ACTIVE node (pve1: 40 threads, 79872 MiB);
         // allocated in this org is exactly the one approved VM (2 vCPU / 2048 MiB / 20 GiB)
@@ -528,12 +528,12 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.applicantResources.activeVms[?(@.vcpu == 2)]").exists())
                 .andExpect(jsonPath("$.applicantResources.totals.vcpu").value(2))
                 .andExpect(jsonPath("$.applicantResources.totals.memoryMb").value(2048))
-                .andExpect(jsonPath("$.group.id").value(groupId))
-                .andExpect(jsonPath("$.group.kind").value("TEAM"))
-                .andExpect(jsonPath("$.group.members[?(@.role == 'OWNER')].name")
+                .andExpect(jsonPath("$.workspace.id").value(workspaceId))
+                .andExpect(jsonPath("$.workspace.kind").value("TEAM"))
+                .andExpect(jsonPath("$.workspace.members[?(@.role == 'OWNER')].name")
                         .value(Matchers.hasItem("컨텍스트학생")))
-                .andExpect(jsonPath("$.group.members.length()").value(2))
-                .andExpect(jsonPath("$.group.totals.diskGb").value(20))
+                .andExpect(jsonPath("$.workspace.members.length()").value(2))
+                .andExpect(jsonPath("$.workspace.totals.diskGb").value(20))
                 .andExpect(jsonPath("$.history[?(@.requestId == %d)].decision".formatted(rejected))
                         .value(Matchers.hasItem("REJECT")))
                 .andExpect(jsonPath("$.history[?(@.requestId == %d)].comment".formatted(rejected))
@@ -598,20 +598,20 @@ class ApprovalTest {
         return count != null ? count : 0;
     }
 
-    private long submit(String token, long groupId) throws Exception {
-        return submit(token, groupId, org.getId());
+    private long submit(String token, long workspaceId) throws Exception {
+        return submit(token, workspaceId, org.getId());
     }
 
-    private long submit(String token, long groupId, long orgId) throws Exception {
-        return submit(token, groupId, orgId, null);
+    private long submit(String token, long workspaceId, long orgId) throws Exception {
+        return submit(token, workspaceId, orgId, null);
     }
 
-    private long submit(String token, long groupId, long orgId, String displayName) throws Exception {
+    private long submit(String token, long workspaceId, long orgId, String displayName) throws Exception {
         Map<String, Object> body = new HashMap<>();
         if (displayName != null) {
             body.put("displayName", displayName);
         }
-        body.put("groupId", groupId);
+        body.put("workspaceId", workspaceId);
         body.put("orgId", orgId);
         body.put("imageId", image.getId());
         body.put("flavorId", flavor.getId());
@@ -626,8 +626,8 @@ class ApprovalTest {
     }
 
     private long createTeam(String token, String slug) throws Exception {
-        String body = postJson("/api/v1/groups", token,
-                Map.of("kind", "TEAM", "name", "테스트 그룹 " + slug, "slug", slug))
+        String body = postJson("/api/v1/workspaces", token,
+                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug, "slug", slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
@@ -638,8 +638,8 @@ class ApprovalTest {
         return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
-    private void addMember(String token, long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(String token, long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + token)
                         .header(ReauthTestSupport.HEADER, reauth(token))
                         .contentType(MediaType.APPLICATION_JSON)

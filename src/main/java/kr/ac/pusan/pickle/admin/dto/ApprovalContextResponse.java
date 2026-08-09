@@ -2,8 +2,8 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
 import java.util.List;
-import kr.ac.pusan.pickle.group.GroupKind;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.vmrequest.ReviewDecision;
 import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
 import org.jspecify.annotations.Nullable;
@@ -11,13 +11,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * Contract schema {@code ApprovalContext} — the decision-support panels shown
  * beside a request: applicant summary, current resources of
- * applicant and group, request history, org headroom and a Korean guidance
+ * applicant and workspace, request history, org headroom and a Korean guidance
  * line derived from the warning thresholds.
  */
 public record ApprovalContextResponse(
         Applicant applicant,
         Resources applicantResources,
-        GroupPanel group,
+        WorkspacePanel workspace,
         List<HistoryEntry> history,
         OrgHeadroom orgHeadroom,
         String guidance) {
@@ -34,16 +34,16 @@ public record ApprovalContextResponse(
     public record Resources(List<VmBriefResponse> activeVms, ResourceTotalsResponse totals) {
     }
 
-    public record GroupPanel(
+    public record WorkspacePanel(
             Long id,
             String name,
-            GroupKind kind,
+            WorkspaceKind kind,
             List<MemberBrief> members,
             List<VmBriefResponse> activeVms,
             ResourceTotalsResponse totals) {
     }
 
-    public record MemberBrief(Long userId, String name, GroupMemberRole role) {
+    public record MemberBrief(Long userId, String name, WorkspaceMemberRole role) {
     }
 
     public record HistoryEntry(

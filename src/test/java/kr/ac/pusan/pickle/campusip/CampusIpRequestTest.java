@@ -71,7 +71,7 @@ class CampusIpRequestTest {
     private String outsiderToken;
     private String plainUserToken;
     private String sysAdminToken;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -89,11 +89,11 @@ class CampusIpRequestTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         plainUserToken = jwtService.createAccessToken(plainUser);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
-        groupId = createTeam("cip-" + UUID.randomUUID().toString().substring(0, 8));
+        workspaceId = createTeam("cip-" + UUID.randomUUID().toString().substring(0, 8));
         // Both join as plain members; the rung each acts at on a VM is written
         // onto that VM's access list by vm().
-        addMember(groupId, viewer.getEmail(), "MEMBER");
-        addMember(groupId, plainUser.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
+        addMember(workspaceId, plainUser.getEmail(), "MEMBER");
     }
 
     // ── eligibility ─────────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ class CampusIpRequestTest {
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         request(vmId, viewerToken, "서비스 운영", List.of(80))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // reads need only a place on the list: a VIEWER grantee may list
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .get("/api/v1/vms/" + vmId + "/campus-ip-requests")
@@ -275,20 +275,20 @@ class CampusIpRequestTest {
     private long vm() {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '교내 IP 테스트', (select min(id) from os_images),
                         1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId());
+                """, Long.class, workspaceId, orgId, owner.getId());
         String hostname = "cip-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values ((select min(id) from nodes), ?, ?, ?, ?, ?,
                         (select min(id) from os_images), 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, workspaceId, orgId, requestId, hostname, hostname,
                 VMID_SEQ.incrementAndGet());
         String ip = "172.29.230." + IP_SEQ.getAndIncrement();
         jdbcTemplate.update("""
@@ -306,7 +306,7 @@ class CampusIpRequestTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -317,8 +317,8 @@ class CampusIpRequestTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER,
                                 ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService,

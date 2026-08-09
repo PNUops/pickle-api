@@ -12,11 +12,11 @@ import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -45,8 +45,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Read-only VM views (contract tag {@code vms}). Visibility: members
- * (VIEWER+) of the owning group. The contract defines no 403 for the list,
- * so a groupId filter outside my groups yields an empty page; detail and
+ * (VIEWER+) of the owning workspace. The contract defines no 403 for the list,
+ * so a workspaceId filter outside my workspaces yields an empty page; detail and
  * events mask a VM's existence from non-members as 404 (contract v0.3.2,
  * same policy as the power/delete paths).
  *
@@ -61,11 +61,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class VmQueryService {
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
@@ -75,11 +75,11 @@ public class VmQueryService {
     private final VmSettingsService vmSettingsService;
     private final String sshHost;
 
-    public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public VmQueryService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
             ResourceAccessGrantRepository grantRepository,
             UserRepository userRepository,
-            GroupRepository groupRepository, OrgRepository orgRepository,
+            WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
             VmEventRepository vmEventRepository,
@@ -87,11 +87,11 @@ public class VmQueryService {
             VmSettingsService vmSettingsService,
             @Value("${pickle.ssh.advertised-host:}") String sshHost) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
@@ -103,46 +103,46 @@ public class VmQueryService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long groupId, int page, int size) {
+    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long workspaceId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        List<GroupMember> memberships = groupMemberRepository.findWithGroupByUserId(actor.id());
-        Map<Long, String> groupNames = memberships.stream()
-                .collect(Collectors.toMap(m -> m.getGroup().getId(), m -> m.getGroup().getName()));
-        List<Long> groupIds = List.copyOf(groupNames.keySet());
+        List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
+        Map<Long, String> workspaceNames = memberships.stream()
+                .collect(Collectors.toMap(m -> m.getWorkspace().getId(), m -> m.getWorkspace().getName()));
+        List<Long> workspaceIds = List.copyOf(workspaceNames.keySet());
         Page<Vm> result;
-        if (groupId != null) {
-            result = groupIds.contains(groupId)
-                    ? vmRepository.findByGroupId(groupId, pageable)
+        if (workspaceId != null) {
+            result = workspaceIds.contains(workspaceId)
+                    ? vmRepository.findByWorkspaceId(workspaceId, pageable)
                     : Page.empty(pageable);
         } else {
-            result = groupIds.isEmpty()
+            result = workspaceIds.isEmpty()
                     ? Page.empty(pageable)
-                    : vmRepository.findByGroupIdIn(groupIds, pageable);
+                    : vmRepository.findByWorkspaceIdIn(workspaceIds, pageable);
         }
         List<Vm> vms = result.getContent();
         Map<Long, String> orgNames = orgNames(vms);
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
-        Set<Long> ownedGroupIds = memberships.stream()
-                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
-                .map(m -> m.getGroup().getId())
+        Set<Long> ownedWorkspaceIds = memberships.stream()
+                .filter(m -> m.getRole() == WorkspaceMemberRole.OWNER)
+                .map(m -> m.getWorkspace().getId())
                 .collect(Collectors.toSet());
         VmListAccess access = listAccess(actor.id(), vms);
         return PageResponse.of(vms.stream()
                 .map(vm -> {
-                    String groupName = groupNames.getOrDefault(vm.getGroupId(), "");
+                    String workspaceName = workspaceNames.getOrDefault(vm.getWorkspaceId(), "");
                     String displayName = displayNames.get(vm.getId());
-                    // Only a grant opens the row. A group owner without one gets
+                    // Only a grant opens the row. A workspace owner without one gets
                     // the same restricted row as anyone else, plus the flag that
                     // lets the console offer them the access list — the way back
                     // in for a VM whose own owner is gone.
                     if (access.reachable().contains(vm.getId())) {
-                        return VmSummaryResponse.from(vm, groupName, orgNames.get(vm.getOrgId()),
+                        return VmSummaryResponse.from(vm, workspaceName, orgNames.get(vm.getOrgId()),
                                 displayName);
                     }
-                    return VmSummaryResponse.restricted(vm, groupName, displayName,
+                    return VmSummaryResponse.restricted(vm, workspaceName, displayName,
                             access.ownerNames().getOrDefault(vm.getId(), List.of()),
-                            ownedGroupIds.contains(vm.getGroupId()));
+                            ownedWorkspaceIds.contains(vm.getWorkspaceId()));
                 })
                 .toList(), result);
     }
@@ -160,7 +160,7 @@ public class VmQueryService {
         Set<Long> reachable = new java.util.HashSet<>();
         Map<Long, List<Long>> ownerIds = new java.util.LinkedHashMap<>();
         for (ResourceAccessGrant grant : grants) {
-            if (grant.getGranteeType() == AccessGranteeType.GROUP
+            if (grant.getGranteeType() == AccessGranteeType.WORKSPACE
                     || Long.valueOf(userId).equals(grant.getUserId())) {
                 reachable.add(grant.getResourceId());
             }
@@ -199,7 +199,7 @@ public class VmQueryService {
      * Assembles the full contract {@code VmDetail} for an <b>already
      * authorized</b> VM — shared by the member-scoped {@link #get} and admin
      * flows (period update) whose authorization is org-scoped instead.
-     * {@code myResourceRole} is the requester's role in the owning group (null for
+     * {@code myResourceRole} is the requester's role in the owning workspace (null for
      * a non-member admin); it drives {@code passwordRevealAllowed} and the
      * console's settings-section visibility.
      */
@@ -213,10 +213,10 @@ public class VmQueryService {
     public VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole,
             boolean accessManageAllowed) {
         long vmId = vm.getId();
-        // History-preserving joins: a DELETED vm's group/org may have been
-        // deleted afterwards, so this deliberately reads all groups/orgs.
-        String groupName = groupRepository.findById(vm.getGroupId())
-                .map(Group::getName).orElse("");
+        // History-preserving joins: a DELETED vm's workspace/org may have been
+        // deleted afterwards, so this deliberately reads all workspaces/orgs.
+        String workspaceName = workspaceRepository.findById(vm.getWorkspaceId())
+                .map(Workspace::getName).orElse("");
         String orgName = vm.getOrgId() == null ? null
                 : orgRepository.findById(vm.getOrgId()).map(Org::getName).orElse(null);
         String displayName = vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME);
@@ -238,7 +238,7 @@ public class VmQueryService {
                 .toList();
         boolean passwordRevealAllowed = myResourceRole != null && myResourceRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
-        return VmDetailResponse.from(vm, groupName, orgName, displayName, ipAddress, sshHost,
+        return VmDetailResponse.from(vm, workspaceName, orgName, displayName, ipAddress, sshHost,
                 myResourceRole, passwordRevealAllowed, accessManageAllowed, provisioning,
                 publications);
     }

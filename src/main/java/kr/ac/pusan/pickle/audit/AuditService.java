@@ -26,11 +26,11 @@ public class AuditService {
     public static final String AUTH_LOGIN_FAILED = "auth.login_failed";
     public static final String AUTH_REFRESH_REUSE_DETECTED = "auth.refresh_reuse_detected";
     public static final String AUTH_LOGOUT = "auth.logout";
-    public static final String GROUP_CREATE = "group.create";
-    public static final String GROUP_DELETE = "group.delete";
-    public static final String GROUP_MEMBER_ADD = "group.member_add";
-    public static final String GROUP_MEMBER_UPDATE = "group.member_update";
-    public static final String GROUP_MEMBER_REMOVE = "group.member_remove";
+    public static final String WORKSPACE_CREATE = "workspace.create";
+    public static final String WORKSPACE_DELETE = "workspace.delete";
+    public static final String WORKSPACE_MEMBER_ADD = "workspace.member_add";
+    public static final String WORKSPACE_MEMBER_UPDATE = "workspace.member_update";
+    public static final String WORKSPACE_MEMBER_REMOVE = "workspace.member_remove";
     public static final String REQUEST_CREATE = "request.create";
     public static final String REQUEST_CANCEL = "request.cancel";
     public static final String REQUEST_APPROVE = "request.approve";
@@ -58,7 +58,7 @@ public class AuditService {
     public static final String VM_ACCESS_GRANT_ADD = "vm.access_grant_add";
     public static final String VM_ACCESS_GRANT_UPDATE = "vm.access_grant_update";
     public static final String VM_ACCESS_GRANT_REMOVE = "vm.access_grant_remove";
-    /** A group owner giving themselves a way inside — recorded apart from the ordinary grant. */
+    /** A workspace owner giving themselves a way inside — recorded apart from the ordinary grant. */
     public static final String VM_ACCESS_BREAK_GLASS = "vm.access_break_glass";
     // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";

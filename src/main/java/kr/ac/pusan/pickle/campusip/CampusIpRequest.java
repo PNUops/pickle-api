@@ -16,7 +16,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * A 교내 IP allocation request (campus_ip_requests). Created self-service by
- * a manager-tier member of the VM's group, processed by SYS_ADMIN:
+ * a manager-tier member of the VM's workspace, processed by SYS_ADMIN:
  * REQUESTED → APPROVED|REJECTED, APPROVED → GRANTED|REJECTED (granting
  * records the assigned address), GRANTED → REVOKED. One live request per VM.
  */

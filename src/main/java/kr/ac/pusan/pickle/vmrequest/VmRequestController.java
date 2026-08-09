@@ -45,10 +45,10 @@ public class VmRequestController {
     public PageResponse<VmRequestDetailResponse> listVmRequests(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) VmRequestStatus status,
-            @RequestParam(required = false) Long groupId,
+            @RequestParam(required = false) Long workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return vmRequestService.list(principal, status, groupId, page, size);
+        return vmRequestService.list(principal, status, workspaceId, page, size);
     }
 
     @GetMapping("/{requestId}")

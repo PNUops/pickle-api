@@ -13,8 +13,8 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.mfa.UserMfaRepository;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -54,18 +54,18 @@ public class AdminUserQueryService {
 
     private final JdbcTemplate jdbcTemplate;
     private final UserRepository userRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmRepository vmRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final UserMfaRepository userMfaRepository;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
-            GroupMemberRepository groupMemberRepository, VmRepository vmRepository,
+            WorkspaceMemberRepository workspaceMemberRepository, VmRepository vmRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             UserMfaRepository userMfaRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmRepository = vmRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.userMfaRepository = userMfaRepository;
@@ -79,9 +79,9 @@ public class AdminUserQueryService {
         List<Object> params = new ArrayList<>();
         if (scopedOrgId != null) {
             // Derived-org scoping in SQL: the org's ORG_ADMINs plus ACTIVE
-            // members of a group linked to the org (derived org membership rule).
+            // members of a workspace linked to the org (derived org membership rule).
             where.append(" and (u.org_id = ? or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedGroup("u.id"))
+                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id"))
                     .append("))");
             params.add(scopedOrgId);
             params.add(scopedOrgId);
@@ -133,15 +133,15 @@ public class AdminUserQueryService {
         User user = userRepository.findById(userId).filter(u -> inScope(u.getId(), scopedOrgId))
                 .orElseThrow(AdminUserQueryService::userNotFound);
 
-        List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
-                .filter(member -> member.getGroup().getDeletedAt() == null)
+        List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
+                .filter(member -> member.getWorkspace().getDeletedAt() == null)
                 .toList();
         List<UserProfileResponse.Membership> memberships = liveMemberships.stream()
                 .map(UserProfileResponse.Membership::from)
                 .toList();
-        List<Long> groupIds = liveMemberships.stream().map(m -> m.getGroup().getId()).toList();
-        int activeVmCount = groupIds.isEmpty() ? 0
-                : (int) vmRepository.countActiveByGroupIdIn(groupIds, VmStatus.DELETED);
+        List<Long> workspaceIds = liveMemberships.stream().map(m -> m.getWorkspace().getId()).toList();
+        int activeVmCount = workspaceIds.isEmpty() ? 0
+                : (int) vmRepository.countActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
 
         List<UserStatusChangeResponse> statusChanges =
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
@@ -172,7 +172,7 @@ public class AdminUserQueryService {
         }
         Boolean visible = jdbcTemplate.queryForObject(
                 "select exists (select 1 from users u where u.id = ? and (u.org_id = ?"
-                        + " or (u.status = 'ACTIVE' and " + OrgMembershipSql.memberOfOrgLinkedGroup("u.id")
+                        + " or (u.status = 'ACTIVE' and " + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id")
                         + ")))",
                 Boolean.class, userId, scopedOrgId, scopedOrgId, scopedOrgId);
         return Boolean.TRUE.equals(visible);

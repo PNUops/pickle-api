@@ -21,25 +21,25 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
     @Query("select r from VmRequest r where r.id = :id")
     Optional<VmRequest> findWithLockById(@Param("id") Long id);
 
-    /** User list visibility: own requests + requests of groups I belong to. */
-    @Query("select r from VmRequest r where r.requesterId = :userId or r.groupId in :groupIds")
+    /** User list visibility: own requests + requests of workspaces I belong to. */
+    @Query("select r from VmRequest r where r.requesterId = :userId or r.workspaceId in :workspaceIds")
     Page<VmRequest> findVisible(@Param("userId") Long userId,
-            @Param("groupIds") Collection<Long> groupIds, Pageable pageable);
+            @Param("workspaceIds") Collection<Long> workspaceIds, Pageable pageable);
 
     @Query("""
             select r from VmRequest r
-             where (r.requesterId = :userId or r.groupId in :groupIds) and r.status = :status
+             where (r.requesterId = :userId or r.workspaceId in :workspaceIds) and r.status = :status
             """)
     Page<VmRequest> findVisibleByStatus(@Param("userId") Long userId,
-            @Param("groupIds") Collection<Long> groupIds,
+            @Param("workspaceIds") Collection<Long> workspaceIds,
             @Param("status") VmRequestStatus status, Pageable pageable);
 
-    Page<VmRequest> findByGroupId(Long groupId, Pageable pageable);
+    Page<VmRequest> findByWorkspaceId(Long workspaceId, Pageable pageable);
 
-    Page<VmRequest> findByGroupIdAndStatus(Long groupId, VmRequestStatus status, Pageable pageable);
+    Page<VmRequest> findByWorkspaceIdAndStatus(Long workspaceId, VmRequestStatus status, Pageable pageable);
 
-    /** All requests of a group in a given status (group-delete cancels its SUBMITTED ones). */
-    List<VmRequest> findByGroupIdAndStatus(Long groupId, VmRequestStatus status);
+    /** All requests of a workspace in a given status (workspace-delete cancels its SUBMITTED ones). */
+    List<VmRequest> findByWorkspaceIdAndStatus(Long workspaceId, VmRequestStatus status);
 
     Page<VmRequest> findByStatus(VmRequestStatus status, Pageable pageable);
 
@@ -57,11 +57,11 @@ public interface VmRequestRepository extends JpaRepository<VmRequest, Long> {
      */
     boolean existsByDesiredSlugAndStatus(String desiredSlug, VmRequestStatus status);
 
-    /** Approval-context history: prior requests by the same user or group. */
+    /** Approval-context history: prior requests by the same user or workspace. */
     @Query("""
             select r from VmRequest r
-             where (r.requesterId = :userId or r.groupId = :groupId) and r.id <> :excludeId
+             where (r.requesterId = :userId or r.workspaceId = :workspaceId) and r.id <> :excludeId
             """)
-    List<VmRequest> findHistory(@Param("userId") Long userId, @Param("groupId") Long groupId,
+    List<VmRequest> findHistory(@Param("userId") Long userId, @Param("workspaceId") Long workspaceId,
             @Param("excludeId") Long excludeId, Pageable pageable);
 }

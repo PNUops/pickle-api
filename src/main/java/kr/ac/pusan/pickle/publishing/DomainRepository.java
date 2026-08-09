@@ -61,7 +61,7 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
 
     /**
-     * User listing — scoped to the caller's own groups' VMs. {@code vmId} and
+     * User listing — scoped to the caller's own workspaces' VMs. {@code vmId} and
      * {@code status} are optional filters; newest first. REMOVED rows are
      * hidden by default but visible via status=REMOVED — same convention as
      * the admin listing: a removed domain is gone from its owner's view, not
@@ -69,13 +69,13 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
      */
     @Query("""
             select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where v.groupId in :groupIds
+            where v.workspaceId in :workspaceIds
               and (:vmId is null or d.vmId = :vmId)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
             order by d.id desc
             """)
-    Page<Domain> findForMember(@Param("groupIds") Collection<Long> groupIds, @Param("vmId") Long vmId,
+    Page<Domain> findForMember(@Param("workspaceIds") Collection<Long> workspaceIds, @Param("vmId") Long vmId,
             @Param("status") String status, Pageable pageable);
 
     // Same listing narrowed to the VMs the requester may actually reach: a

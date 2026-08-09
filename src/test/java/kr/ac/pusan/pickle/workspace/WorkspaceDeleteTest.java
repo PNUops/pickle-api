@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.group;
+package kr.ac.pusan.pickle.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -29,7 +29,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Group deletion (contract {@code deleteGroup}): OWNER-only with non-member
+ * Workspace deletion (contract {@code deleteWorkspace}): OWNER-only with non-member
  * 404 masking, PERSONAL and active-VM blockers, soft-delete semantics
  * (list/get exclusion + slug reuse), member notification and audit.
  */
@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class GroupDeleteTest {
+class WorkspaceDeleteTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -48,7 +48,7 @@ class GroupDeleteTest {
     @Autowired
     private UserRepository userRepository;
     @Autowired
-    private PersonalGroupService personalGroupService;
+    private PersonalWorkspaceService personalWorkspaceService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -80,76 +80,78 @@ class GroupDeleteTest {
     @Test
     void authorizationMatrixAndBlockers() throws Exception {
         String slug = "gdel-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = createTeam(slug);
-        addMember(groupId, plainMember.getEmail(), "MEMBER");
+        long workspaceId = createTeam(slug);
+        addMember(workspaceId, plainMember.getEmail(), "MEMBER");
 
         // non-member → 404 (existence masked)
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // member below OWNER → 403
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + plainMemberToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // an active VM blocks deletion → 409
-        long vmId = insertVm(groupId, "RUNNING");
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        long vmId = insertVm(workspaceId, "RUNNING");
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("GROUP_HAS_ACTIVE_VMS"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
         // even a DELETING VM still blocks
         jdbcTemplate.update("update vms set status = 'DELETING' where id = ?", vmId);
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("GROUP_HAS_ACTIVE_VMS"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
         // once destroyed (DELETED), deletion is allowed
         jdbcTemplate.update("update vms set status = 'DELETED' where id = ?", vmId);
 
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
 
         // gone from list and detail (404), audit + member notification recorded
-        mockMvc.perform(get("/api/v1/groups/" + groupId)
+        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from audit_logs where action='group.delete' and target_id=?",
-                Long.class, groupId)).isEqualTo(1L);
+                "select count(*) from audit_logs where action='workspace.delete' and target_id=?",
+                Long.class, workspaceId)).isEqualTo(1L);
+        // Pinned to this workspace's notification: the owner is shared with the
+        // other cases in this class, which delete workspaces of their own.
         assertThat(jdbcTemplate.queryForObject(
-                "select count(*) from notifications where event='group.deleted' and user_id=?",
-                Long.class, owner.getId())).isEqualTo(1L);
+                "select count(*) from notifications where event='workspace.deleted' and user_id=? and dedup_key=?",
+                Long.class, owner.getId(), "workspace_deleted:" + workspaceId)).isEqualTo(1L);
 
         // slug is reusable after soft-delete
         long reused = createTeam(slug);
-        assertThat(reused).isNotEqualTo(groupId);
+        assertThat(reused).isNotEqualTo(workspaceId);
     }
 
     @Test
-    void personalGroupIsUndeletable() throws Exception {
-        personalGroupService.ensurePersonalGroup(owner);
+    void personalWorkspaceIsUndeletable() throws Exception {
+        personalWorkspaceService.ensurePersonalWorkspace(owner);
         long personalId = jdbcTemplate.queryForObject("""
-                select g.id from groups g join group_members gm on gm.group_id = g.id
+                select g.id from workspaces g join workspace_members gm on gm.workspace_id = g.id
                  where gm.user_id = ? and g.kind = 'PERSONAL'
                 """, Long.class, owner.getId());
-        mockMvc.perform(delete("/api/v1/groups/" + personalId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + personalId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("GROUP_PERSONAL_UNDELETABLE"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_PERSONAL_UNDELETABLE"));
     }
 
     @Test
-    void deletingGroupCancelsSubmittedRequestsAndApprovalThenConflicts() throws Exception {
-        long groupId = createTeam("gdel-req-" + UUID.randomUUID().toString().substring(0, 8));
-        long requestId = insertSubmittedRequest(groupId);
+    void deletingWorkspaceCancelsSubmittedRequestsAndApprovalThenConflicts() throws Exception {
+        long workspaceId = createTeam("gdel-req-" + UUID.randomUUID().toString().substring(0, 8));
+        long requestId = insertSubmittedRequest(workspaceId);
         String sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
 
-        mockMvc.perform(delete("/api/v1/groups/" + groupId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
 
@@ -171,34 +173,34 @@ class GroupDeleteTest {
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
     }
 
-    private long insertSubmittedRequest(long groupId) {
+    private long insertSubmittedRequest(long workspaceId) {
         return jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '그룹 삭제 취소 테스트', ?, 1, 1024, 10)
+                values (?, ?, ?, '워크스페이스 삭제 취소 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
     }
 
-    private long insertVm(long groupId, String status) {
+    private long insertVm(long workspaceId, String status) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '그룹 삭제 테스트', ?, 1, 1024, 10)
+                values (?, ?, ?, '워크스페이스 삭제 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
         String hostname = "gdel-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, status);
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -208,8 +210,8 @@ class GroupDeleteTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)

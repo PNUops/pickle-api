@@ -38,7 +38,7 @@ import tools.jackson.databind.ObjectMapper;
  * Self-service VM port forwarding (contract tag {@code port-forwarding}):
  * expose an arbitrary VM TCP/UDP port through a relay's public port band.
  * Same authorization shape as publishing: mutating ops need the owning
- * group's OWNER/EDITOR (non-member → 404 mask), reads need membership.
+ * workspace's OWNER/EDITOR (non-member → 404 mask), reads need membership.
  *
  * <p>Allocation policy: the public port is <b>random within the relay's
  * band</b> (sequential numbers leak creation order and invite enumeration),

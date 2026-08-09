@@ -182,7 +182,7 @@ class ManagerRoleScopingTest {
 
     @Test
     void managerTiersGetNoDeleteVmAdminOverride() throws Exception {
-        // deleteVm (DELETE /vms/{id}) is group OWNER-scoped for both manager tiers
+        // deleteVm (DELETE /vms/{id}) is workspace OWNER-scoped for both manager tiers
         // — unlike ORG_ADMIN (own org) / SYS_ADMIN, they get NO admin override, so
         // deleting a VM they do not own is masked as 404 (existence privacy). This
         // closes an audit blind spot: the annotation matrix allows the call, and
@@ -242,37 +242,37 @@ class ManagerRoleScopingTest {
 
     private long insertSubmittedRequest(long orgId, long requesterId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        long groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, ?, ?) returning id
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug)
+                values ('TEAM'::workspace_kind, ?, ?) returning id
                 """, Long.class, "mgr-grp-" + slug(), "mgr-grp-" + slug());
         return jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+                """, Long.class, workspaceId, orgId, requesterId, imageId);
     }
 
     private long insertActiveVmInOrg(long orgId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        long groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, ?, ?) returning id
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug)
+                values ('TEAM'::workspace_kind, ?, ?) returning id
                 """, Long.class, "mgr-vmgrp-" + slug(), "mgr-vmgrp-" + slug());
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, foreignAdminB.getId(), imageId);
+                """, Long.class, workspaceId, orgId, foreignAdminB.getId(), imageId);
         String hostname = "mgr-vm-" + slug();
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status) returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
     }
 
     private static String slug() {

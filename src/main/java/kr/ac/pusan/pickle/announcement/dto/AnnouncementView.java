@@ -11,13 +11,13 @@ public record AnnouncementView(
         String title,
         AnnouncementScope scope,
         @Nullable Long orgId,
-        @Nullable Long groupId,
+        @Nullable Long workspaceId,
         int recipientCount,
         Instant createdAt) {
 
     public static AnnouncementView from(Announcement announcement) {
         return new AnnouncementView(announcement.getId(), announcement.getTitle(),
-                announcement.getScope(), announcement.getOrgId(), announcement.getGroupId(),
+                announcement.getScope(), announcement.getOrgId(), announcement.getWorkspaceId(),
                 announcement.getRecipientCount(), announcement.getCreatedAt());
     }
 }

@@ -10,7 +10,7 @@ import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -24,11 +24,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Announcement send (contract {@code createAnnouncement}). Scope rules:
  * ALL is SYS_ADMIN-only (403); an ORG_ADMIN's ORG scope is pinned to their own
- * org (mismatch 422); GROUP scope is gated — for an ORG_ADMIN — on the group
+ * org (mismatch 422); WORKSPACE scope is gated — for an ORG_ADMIN — on the workspace
  * having resources (vm_requests / non-DELETED VMs) in their org (else 404,
- * existence masked); a gated group's recipients are all its ACTIVE members.
+ * existence masked); a gated workspace's recipients are all its ACTIVE members.
  * ORG-scope recipients follow the canonical <b>derived org membership</b>
- * ({@link OrgMembershipSql}) — ACTIVE members of org-linked groups plus the
+ * ({@link OrgMembershipSql}) — ACTIVE members of org-linked workspaces plus the
  * org's ORG_ADMINs.
  *
  * <p>Fan-out is a synchronous INSERT…SELECT into {@code notifications} inside
@@ -43,18 +43,18 @@ public class AnnouncementService {
     static final String RATE_SCOPE = "announce";
 
     private final AnnouncementRepository announcementRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final JdbcTemplate jdbcTemplate;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
 
     public AnnouncementService(AnnouncementRepository announcementRepository,
-            GroupRepository groupRepository, OrgRepository orgRepository,
+            WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             JdbcTemplate jdbcTemplate, RateLimitService rateLimitService,
             AuditService auditService) {
         this.announcementRepository = announcementRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.rateLimitService = rateLimitService;
@@ -67,7 +67,7 @@ public class AnnouncementService {
         AnnouncementScope scope = request.scope();
         List<FieldValidationError> errors = new ArrayList<>();
         Long orgId = null;
-        Long groupId = null;
+        Long workspaceId = null;
         switch (scope) {
             case ALL -> {
                 if (actor.role() != UserRole.SYS_ADMIN) {
@@ -77,13 +77,13 @@ public class AnnouncementService {
                 if (request.orgId() != null) {
                     errors.add(new FieldValidationError("orgId", "전체 공지에는 기관을 지정할 수 없습니다."));
                 }
-                if (request.groupId() != null) {
-                    errors.add(new FieldValidationError("groupId", "전체 공지에는 그룹을 지정할 수 없습니다."));
+                if (request.workspaceId() != null) {
+                    errors.add(new FieldValidationError("workspaceId", "전체 공지에는 워크스페이스를 지정할 수 없습니다."));
                 }
             }
             case ORG -> {
-                if (request.groupId() != null) {
-                    errors.add(new FieldValidationError("groupId", "기관 공지에는 그룹을 지정할 수 없습니다."));
+                if (request.workspaceId() != null) {
+                    errors.add(new FieldValidationError("workspaceId", "기관 공지에는 워크스페이스를 지정할 수 없습니다."));
                 }
                 if (actor.role() == UserRole.ORG_ADMIN) {
                     if (actor.orgId() == null) {
@@ -102,14 +102,14 @@ public class AnnouncementService {
                     orgId = request.orgId();
                 }
             }
-            case GROUP -> {
+            case WORKSPACE -> {
                 if (request.orgId() != null) {
-                    errors.add(new FieldValidationError("orgId", "그룹 공지에는 기관을 지정할 수 없습니다."));
+                    errors.add(new FieldValidationError("orgId", "워크스페이스 공지에는 기관을 지정할 수 없습니다."));
                 }
-                if (request.groupId() == null) {
-                    errors.add(new FieldValidationError("groupId", "그룹 공지에는 대상 그룹이 필요합니다."));
+                if (request.workspaceId() == null) {
+                    errors.add(new FieldValidationError("workspaceId", "워크스페이스 공지에는 대상 워크스페이스가 필요합니다."));
                 }
-                groupId = request.groupId();
+                workspaceId = request.workspaceId();
             }
         }
         if (!errors.isEmpty()) {
@@ -119,13 +119,13 @@ public class AnnouncementService {
         if (scope == AnnouncementScope.ORG && !orgRepository.existsById(orgId)) {
             throw notFound("해당 기관이 존재하지 않습니다.");
         }
-        if (scope == AnnouncementScope.GROUP) {
-            // Unknown group and (for ORG_ADMIN) a group without resources in
-            // their org answer the same 404 — group existence stays private.
-            if (!groupRepository.existsByIdAndDeletedAtIsNull(groupId)
+        if (scope == AnnouncementScope.WORKSPACE) {
+            // Unknown workspace and (for ORG_ADMIN) a workspace without resources in
+            // their org answer the same 404 — workspace existence stays private.
+            if (!workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
                     || (actor.role() == UserRole.ORG_ADMIN
-                            && !groupLinkedToOrg(groupId, actor.orgId()))) {
-                throw notFound("해당 그룹이 존재하지 않습니다.");
+                            && !workspaceLinkedToOrg(workspaceId, actor.orgId()))) {
+                throw notFound("해당 워크스페이스가 존재하지 않습니다.");
             }
         }
 
@@ -137,7 +137,7 @@ public class AnnouncementService {
         rateLimitService.hitHourly(RATE_SCOPE, String.valueOf(actor.id()), MAX_PER_HOUR);
 
         Announcement announcement = announcementRepository.saveAndFlush(new Announcement(
-                actor.id(), scope, orgId, groupId, request.title().strip(), request.body().strip()));
+                actor.id(), scope, orgId, workspaceId, request.title().strip(), request.body().strip()));
         int recipients = fanOut(announcement);
         announcement.setRecipientCount(recipients);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
@@ -149,8 +149,8 @@ public class AnnouncementService {
     /**
      * Synchronous fan-out: one PENDING notifications row per ACTIVE user in
      * scope, in this transaction. Returns the actual insert count. ORG scope
-     * resolves the canonical derived membership; GROUP scope reaches every
-     * ACTIVE member of the (already gated) group.
+     * resolves the canonical derived membership; WORKSPACE scope reaches every
+     * ACTIVE member of the (already gated) workspace.
      */
     private int fanOut(Announcement announcement) {
         // Event id and importance are bound from the NotificationEvent catalog
@@ -169,24 +169,24 @@ public class AnnouncementService {
                     announcement.getId());
             case ORG -> jdbcTemplate.update(
                     base + " where u.status = 'ACTIVE' and (u.org_id = ? or "
-                            + OrgMembershipSql.memberOfOrgLinkedGroup("u.id") + ")",
+                            + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id") + ")",
                     event, announcement.getTitle(), announcement.getBody(), importance,
                     announcement.getId(),
                     announcement.getOrgId(), announcement.getOrgId(), announcement.getOrgId());
-            case GROUP -> jdbcTemplate.update(base + """
-                          join group_members gm on gm.user_id = u.id
-                         where gm.group_id = ? and u.status = 'ACTIVE'
+            case WORKSPACE -> jdbcTemplate.update(base + """
+                          join workspace_members gm on gm.user_id = u.id
+                         where gm.workspace_id = ? and u.status = 'ACTIVE'
                         """,
                     event, announcement.getTitle(), announcement.getBody(), importance,
-                    announcement.getId(), announcement.getGroupId());
+                    announcement.getId(), announcement.getWorkspaceId());
         };
     }
 
-    /** The GROUP-scope gate: the group has resources in the caller's org. */
-    private boolean groupLinkedToOrg(long groupId, Long orgId) {
+    /** The WORKSPACE-scope gate: the workspace has resources in the caller's org. */
+    private boolean workspaceLinkedToOrg(long workspaceId, Long orgId) {
         Boolean linked = jdbcTemplate.queryForObject(
-                "select " + OrgMembershipSql.groupLinkedToOrg("?"),
-                Boolean.class, groupId, orgId, groupId, orgId);
+                "select " + OrgMembershipSql.workspaceLinkedToOrg("?"),
+                Boolean.class, workspaceId, orgId, workspaceId, orgId);
         return Boolean.TRUE.equals(linked);
     }
 

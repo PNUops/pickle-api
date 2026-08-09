@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.29.0, 140 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.34.0, 144 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -8,12 +8,12 @@
 #   allow                        — allowed, authentication only (no org scoping)
 #   allow_org_scoped             — allowed; service layer forces caller's own org
 #                                  (cross-org target -> 404 existence mask)
-#   allow_group_scoped:<ROLE>    — allowed to the named GROUP rung or above
+#   allow_workspace_scoped:<ROLE> — allowed to the named WORKSPACE rung or above
 #                                  (OWNER/MEMBER), enforced in the service layer
 #                                  (no @PreAuthorize)
 #   allow_resource_scoped:<ROLE> — allowed to the named RESOURCE rung or above on
 #                                  the resource in the path, read from its access
-#                                  list (OWNER/EDITOR/MEMBER/VIEWER); a group
+#                                  list (OWNER/EDITOR/MEMBER/VIEWER); a workspace
 #                                  owner additionally holds a standing VIEWER
 #                                  read plus deletion and access management.
 #                                  Service layer, no @PreAuthorize
@@ -21,7 +21,7 @@
 #
 # How the test reads tokens: a row with >=1 `deny` is role-gated, and its
 # @PreAuthorize must name exactly the roles marked allow / allow_org_scoped. A
-# row with no `deny` (self / catalog / group-scoped / notifications / deleteVm)
+# row with no `deny` (self / catalog / workspace-scoped / notifications / deleteVm)
 # is authentication-only and must carry NO @PreAuthorize (service layer decides).
 # `public` rows carry no gate and must not require authentication.
 #
@@ -67,27 +67,27 @@ operations:
   - { id: listVmFlavors,        method: GET,    path: "/vm-flavors",                  roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getRequestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
-  # ── 3.4 Groups (group-role-scoped, service level) ─────────────────────────
-  - { id: listGroups,           method: GET,    path: "/groups",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: createGroup,          method: POST,   path: "/groups",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getGroup,             method: GET,    path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
-  - { id: updateGroup,          method: PATCH,  path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
-  - { id: deleteGroup,          method: DELETE, path: "/groups/{groupId}",                roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
-  - { id: addGroupMember,       method: POST,   path: "/groups/{groupId}/members",        roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
-  - { id: updateGroupMember,    method: PATCH,  path: "/groups/{groupId}/members/{userId}", roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
-  - { id: removeGroupMember,    method: DELETE, path: "/groups/{groupId}/members/{userId}", roles: { USER: allow_group_scoped:OWNER, ORG_MANAGER: allow_group_scoped:OWNER, ORG_ADMIN: allow_group_scoped:OWNER, SYS_MANAGER: allow_group_scoped:OWNER, SYS_ADMIN: allow_group_scoped:OWNER } }
+  # ── 3.4 Workspaces (workspace-role-scoped, service level) ─────────────────────────
+  - { id: listWorkspaces,           method: GET,    path: "/workspaces",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createWorkspace,          method: POST,   path: "/workspaces",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getWorkspace,             method: GET,    path: "/workspaces/{workspaceId}",                roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: updateWorkspace,          method: PATCH,  path: "/workspaces/{workspaceId}",                roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: deleteWorkspace,          method: DELETE, path: "/workspaces/{workspaceId}",                roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: addWorkspaceMember,       method: POST,   path: "/workspaces/{workspaceId}/members",        roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: updateWorkspaceMember,    method: PATCH,  path: "/workspaces/{workspaceId}/members/{userId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
+  - { id: removeWorkspaceMember,    method: DELETE, path: "/workspaces/{workspaceId}/members/{userId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
 
-  # ── 3.5 VM requests (group-role-scoped) ───────────────────────────────────
-  - { id: createVmRequest,      method: POST,   path: "/vm-requests",                     roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
-  - { id: listVmRequests,       method: GET,    path: "/vm-requests",                     roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
-  - { id: getVmRequest,         method: GET,    path: "/vm-requests/{requestId}",         roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
-  - { id: cancelVmRequest,      method: POST,   path: "/vm-requests/{requestId}/cancel",  roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  # ── 3.5 VM requests (workspace-role-scoped) ───────────────────────────────────
+  - { id: createVmRequest,      method: POST,   path: "/vm-requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: listVmRequests,       method: GET,    path: "/vm-requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: getVmRequest,         method: GET,    path: "/vm-requests/{requestId}",         roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: cancelVmRequest,      method: POST,   path: "/vm-requests/{requestId}/cancel",  roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
 
   # ── 3.6 VMs (access-list scoped; deleteVm has service-layer admin override) ─
-  - { id: listVms,              method: GET,    path: "/vms",                             roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: listVms,              method: GET,    path: "/vms",                             roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: getVm,                method: GET,    path: "/vms/{vmId}",                      roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
-  # deleteVm: group OWNER for everyone, plus ORG_ADMIN (own org) / SYS_ADMIN admin
-  # override in VmDeletionService. ORG_MANAGER/SYS_MANAGER keep ONLY the group-OWNER
+  # deleteVm: workspace OWNER for everyone, plus ORG_ADMIN (own org) / SYS_ADMIN admin
+  # override in VmDeletionService. ORG_MANAGER/SYS_MANAGER keep ONLY the workspace-OWNER
   # path. No role is denied -> no @PreAuthorize.
   - { id: deleteVm,             method: DELETE, path: "/vms/{vmId}",                      roles: { USER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow } }
   - { id: startVm,              method: POST,   path: "/vms/{vmId}/start",                roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
@@ -100,19 +100,19 @@ operations:
   - { id: updateVmSettings,     method: PATCH,  path: "/vms/{vmId}/settings",             roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   - { id: listVmEvents,         method: GET,    path: "/vms/{vmId}/events",               roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: createVmDomain,       method: POST,   path: "/vms/{vmId}/domains",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
-  # createTerminalSession: group MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
+  # createTerminalSession: workspace MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
 
-  # ── 3.6a VM access list (resource OWNER; a group owner manages it too) ─────
+  # ── 3.6a VM access list (resource OWNER; a workspace owner manages it too) ─────
   # The three writes are re-authentication (sudo-mode) operations, same as the
-  # group-membership writes: both decide who reaches something.
+  # workspace-membership writes: both decide who reaches something.
   - { id: listVmAccessGrants, method: GET, path: "/vms/{vmId}/access", roles: { USER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: addVmAccessGrant, method: POST, path: "/vms/{vmId}/access", roles: { USER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: updateVmAccessGrant, method: PATCH, path: "/vms/{vmId}/access/{grantId}", roles: { USER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: removeVmAccessGrant, method: DELETE, path: "/vms/{vmId}/access/{grantId}", roles: { USER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
 
   # ── 3.7 Domains (access-list scoped via the owning VM) ────────────────────
-  - { id: listDomains,          method: GET,    path: "/domains",                         roles: { USER: allow_group_scoped:MEMBER, ORG_MANAGER: allow_group_scoped:MEMBER, ORG_ADMIN: allow_group_scoped:MEMBER, SYS_MANAGER: allow_group_scoped:MEMBER, SYS_ADMIN: allow_group_scoped:MEMBER } }
+  - { id: listDomains,          method: GET,    path: "/domains",                         roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: getDomain,            method: GET,    path: "/domains/{domainId}",              roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: updateDomain,         method: PATCH,  path: "/domains/{domainId}",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   - { id: deleteDomain,         method: DELETE, path: "/domains/{domainId}",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
@@ -169,9 +169,9 @@ operations:
   - { id: createAnnouncement,   method: POST, path: "/admin/announcements",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listAnnouncements,    method: GET,  path: "/admin/announcements",   roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
-  # ── 3.14 Admin — groups ───────────────────────────────────────────────────
-  - { id: listAdminGroups,      method: GET,  path: "/admin/groups",          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getAdminGroup,        method: GET,  path: "/admin/groups/{groupId}", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  # ── 3.14 Admin — workspaces ───────────────────────────────────────────────────
+  - { id: listAdminWorkspaces,      method: GET,  path: "/admin/workspaces",          roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminWorkspace,        method: GET,  path: "/admin/workspaces/{workspaceId}", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.15 Admin — audit ────────────────────────────────────────────────────
   - { id: listAuditLogs,        method: GET,  path: "/admin/audit",           roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
@@ -211,13 +211,13 @@ operations:
   - { id: listAdminTerminalSessions, method: GET, path: "/admin/terminal-sessions", roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: terminateTerminalSession, method: POST, path: "/admin/terminal-sessions/{sessionId}/terminate", roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
-  # ── 3.23 Port forwarding (VM-scoped, group-role service-layer like publishing) ─
+  # ── 3.23 Port forwarding (VM-scoped, workspace-role service-layer like publishing) ─
   - { id: listVmPortForwardings,   method: GET,    path: "/vms/{vmId}/port-forwardings",                     roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: createVmPortForwarding,  method: POST,   path: "/vms/{vmId}/port-forwardings",                     roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   - { id: deleteVmPortForwarding,  method: DELETE, path: "/vms/{vmId}/port-forwardings/{portForwardingId}",  roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
 
-  # ── 3.24 교내 IP 신청 (group-scoped in the service layer, exactly like port
-  #        forwarding — no role tier gate; non-member 404 mask, cross-group
+  # ── 3.24 교내 IP 신청 (workspace-scoped in the service layer, exactly like port
+  #        forwarding — no role tier gate; non-member 404 mask, cross-workspace
   #        intervention lives on /admin/campus-ip-requests) ─
   - { id: listVmCampusIpRequests,  method: GET,    path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: requestVmCampusIp,       method: POST,   path: "/vms/{vmId}/campus-ip-requests",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }

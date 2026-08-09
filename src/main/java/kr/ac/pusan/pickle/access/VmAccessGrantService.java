@@ -10,9 +10,9 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -27,14 +27,14 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Reading and editing one VM's access list (contract tag {@code vm-access}).
  *
- * <p>Who may edit it: the VM's own owners, and the owners of the group that owns
+ * <p>Who may edit it: the VM's own owners, and the owners of the workspace that owns
  * it. The second is the recovery path — a VM can end up with no owner of its
- * own, for instance when the person who requested it leaves the group.
+ * own, for instance when the person who requested it leaves the workspace.
  *
- * <p>A group owner holds no way inside a VM until they appear on its list. They
+ * <p>A workspace owner holds no way inside a VM until they appear on its list. They
  * may put themselves there, and that is the intended escape hatch, but any edit
  * of theirs that creates content access for themselves is additionally recorded
- * as a break-glass event. Adding a group-wide grant is included: without that,
+ * as a break-glass event. Adding a workspace-wide grant is included: without that,
  * the same result could be had without the marker.
  */
 @Service
@@ -42,21 +42,21 @@ public class VmAccessGrantService {
 
     private final VmAccessService vmAccessService;
     private final ResourceAccessGrantRepository grantRepository;
-    private final GroupMemberRepository groupMemberRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final VmSettingsService vmSettingsService;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public VmAccessGrantService(VmAccessService vmAccessService,
             ResourceAccessGrantRepository grantRepository,
-            GroupMemberRepository groupMemberRepository, GroupRepository groupRepository,
+            WorkspaceMemberRepository workspaceMemberRepository, WorkspaceRepository workspaceRepository,
             VmSettingsService vmSettingsService, UserRepository userRepository,
             AuditService auditService) {
         this.vmAccessService = vmAccessService;
         this.grantRepository = grantRepository;
-        this.groupMemberRepository = groupMemberRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.workspaceRepository = workspaceRepository;
         this.vmSettingsService = vmSettingsService;
         this.userRepository = userRepository;
         this.auditService = auditService;
@@ -65,9 +65,9 @@ public class VmAccessGrantService {
     @Transactional(readOnly = true)
     public VmAccessListResponse list(AuthenticatedUser actor, long vmId) {
         Vm vm = requireManager(actor, vmId).vm();
-        String groupName = groupRepository.findById(vm.getGroupId())
-                .map(Group::getName).orElse("");
-        return VmAccessListResponse.of(vm, groupName,
+        String workspaceName = workspaceRepository.findById(vm.getWorkspaceId())
+                .map(Workspace::getName).orElse("");
+        return VmAccessListResponse.of(vm, workspaceName,
                 vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME), views(vmId));
     }
 
@@ -76,9 +76,9 @@ public class VmAccessGrantService {
             AddVmAccessGrantRequest request, String ip) {
         VmAccess before = requireManager(actor, vmId);
         Vm vm = before.vm();
-        ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.GROUP
-                ? ResourceAccessGrant.forOwningGroup(ResourceType.VM, vmId,
-                        requireGroupWideRole(request.role()))
+        ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.WORKSPACE
+                ? ResourceAccessGrant.forOwningWorkspace(ResourceType.VM, vmId,
+                        requireWorkspaceWideRole(request.role()))
                 : ResourceAccessGrant.forUser(ResourceType.VM, vmId,
                         requireEligibleMember(vm, request.userId()), request.role());
         ResourceAccessGrant saved;
@@ -99,8 +99,8 @@ public class VmAccessGrantService {
         VmAccess before = requireManager(actor, vmId);
         ResourceAccessGrant grant = requireGrant(vmId, grantId);
         ResourceRole previous = grant.getRole();
-        grant.setRole(grant.getGranteeType() == AccessGranteeType.GROUP
-                ? requireGroupWideRole(request.role())
+        grant.setRole(grant.getGranteeType() == AccessGranteeType.WORKSPACE
+                ? requireWorkspaceWideRole(request.role())
                 : request.role());
         audit(actor, before, AuditService.VM_ACCESS_GRANT_UPDATE, grant, previous, ip);
         return view(grant);
@@ -114,20 +114,20 @@ public class VmAccessGrantService {
         audit(actor, before, AuditService.VM_ACCESS_GRANT_REMOVE, grant, null, ip);
     }
 
-    /** Managing the list is a resource owner's right, or a group owner's standing one. */
+    /** Managing the list is a resource owner's right, or a workspace owner's standing one. */
     private VmAccess requireManager(AuthenticatedUser actor, long vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         if (!access.manages()) {
             access.requireVisible();
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "접근 권한을 관리할 권한이 없습니다",
-                    "이 VM의 소유자 또는 그룹 소유자만 접근 권한을 관리할 수 있습니다.");
+                    "이 VM의 소유자 또는 워크스페이스 소유자만 접근 권한을 관리할 수 있습니다.");
         }
         return access;
     }
 
     /**
-     * A named grant may only be given to a member of the owning group — the rule
+     * A named grant may only be given to a member of the owning workspace — the rule
      * that keeps the list from disagreeing with the 404 that hides this VM from
      * everyone else.
      */
@@ -136,22 +136,22 @@ public class VmAccessGrantService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("userId",
                     "대상 사용자를 지정해 주세요.")));
         }
-        boolean member = groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), userId)
+        boolean member = workspaceMemberRepository.findByWorkspaceIdAndUserId(vm.getWorkspaceId(), userId)
                 .isPresent();
         boolean active = userRepository.findById(userId)
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE).isPresent();
         if (!member || !active) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("userId",
-                    "이 VM을 소유한 그룹의 구성원만 접근 권한을 받을 수 있습니다. 먼저 그룹에 추가해 주세요.")));
+                    "이 VM을 소유한 워크스페이스의 구성원만 접근 권한을 받을 수 있습니다. 먼저 워크스페이스에 추가해 주세요.")));
         }
         return userId;
     }
 
-    /** The whole group is never handed the rungs that manage access or destroy. */
-    private ResourceRole requireGroupWideRole(ResourceRole role) {
+    /** The whole workspace is never handed the rungs that manage access or destroy. */
+    private ResourceRole requireWorkspaceWideRole(ResourceRole role) {
         if (role == ResourceRole.OWNER || role == ResourceRole.EDITOR) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "그룹 전체에는 참여자 또는 열람자까지만 부여할 수 있습니다. 그보다 높은 등급은 "
+                    "워크스페이스 전체에는 참여자 또는 열람자까지만 부여할 수 있습니다. 그보다 높은 등급은 "
                             + "구성원을 지정해 부여해 주세요.")));
         }
         return role;
@@ -202,7 +202,7 @@ public class VmAccessGrantService {
         if (AuditService.VM_ACCESS_GRANT_REMOVE.equals(action)) {
             return false;
         }
-        boolean namesTheActor = grant.getGranteeType() == AccessGranteeType.GROUP
+        boolean namesTheActor = grant.getGranteeType() == AccessGranteeType.WORKSPACE
                 || Long.valueOf(actor.id()).equals(grant.getUserId());
         if (!namesTheActor || before.atLeast(ResourceRole.MEMBER)) {
             return false;

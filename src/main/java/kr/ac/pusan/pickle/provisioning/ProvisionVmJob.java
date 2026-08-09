@@ -718,12 +718,12 @@ public class ProvisionVmJob implements ProvisioningService {
 
     // --- notifications ---------------------------------------------------------
 
-    /** Creation notice to the owning group's OWNERs; failure never fails the VM. */
+    /** Creation notice to the owning workspace's OWNERs; failure never fails the VM. */
     private void publishCreated(Vm vm, String ip) {
         try {
             List<Long> recipients = notificationService.vmOwnerIds(vm);
             if (recipients.isEmpty()) {
-                log.warn("provision vm {}: no group OWNER to notify", vm.getId());
+                log.warn("provision vm {}: no workspace OWNER to notify", vm.getId());
                 return;
             }
             Map<String, Object> args = new LinkedHashMap<>();
@@ -741,7 +741,7 @@ public class ProvisionVmJob implements ProvisioningService {
     }
 
     /**
-     * Permanent creation failure (ERROR or NEEDS_ADMIN park): group OWNERs and
+     * Permanent creation failure (ERROR or NEEDS_ADMIN park): workspace OWNERs and
      * every SYS_ADMIN get a HIGH notice. Deduped per VM so the multiple failure
      * paths (retry-exhaustion, compensation, admin re-run failing again) cannot
      * stack duplicates; never fails the pipeline itself.

@@ -42,10 +42,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * User VM request flow per contract: creation validation matrix (group role,
+ * User VM request flow per contract: creation validation matrix (workspace role,
  * the OS and spec-preset axes incl. a catalog with no ACTIVE row, spec-reason
  * rule, subdomain/domain rules), list/detail
- * visibility incl. the 403 non-member groupId filter, and cancel permissions
+ * visibility incl. the 403 non-member workspaceId filter, and cancel permissions
  * with the 409 double-decision guard.
  */
 @SpringBootTest
@@ -123,17 +123,17 @@ class VmRequestTest {
 
     @Test
     void createValidatesRoleImageSpecAndDomains() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-create-x1");
-        addMember(requesterToken, groupId, member.getEmail(), "MEMBER");
+        long workspaceId = createTeam(requesterToken, "vmr-create-x1");
+        addMember(requesterToken, workspaceId, member.getEmail(), "MEMBER");
 
         // OWNER submits with the chosen preset's specs → 201 SUBMITTED, review null
-        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.review").value((Object) null))
-                .andExpect(jsonPath("$.groupId").value(groupId))
-                .andExpect(jsonPath("$.groupName").isNotEmpty())
+                .andExpect(jsonPath("$.workspaceId").value(workspaceId))
+                .andExpect(jsonPath("$.workspaceName").isNotEmpty())
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
                 .andExpect(jsonPath("$.requesterId").value(requester.getId()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
@@ -142,24 +142,24 @@ class VmRequestTest {
 
         // any member may ask — what a request costs is decided at approval,
         // and reaching the resulting VM is the access list's business
-        postJson("/api/v1/vm-requests", memberToken, validBody(groupId))
+        postJson("/api/v1/vm-requests", memberToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.requesterId").value(member.getId()));
 
-        // a non-member still cannot submit → 403 GROUP_ROLE_INSUFFICIENT
-        postJson("/api/v1/vm-requests", outsiderToken, validBody(groupId))
+        // a non-member still cannot submit → 403 WORKSPACE_ROLE_INSUFFICIENT
+        postJson("/api/v1/vm-requests", outsiderToken, validBody(workspaceId))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
-        // unknown group / org / image → 404
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "groupId", 999_999))
+        // unknown workspace / org / image → 404
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "workspaceId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "orgId", 999_999))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "orgId", 999_999))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "imageId", 999_999))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "imageId", 999_999))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "flavorId", 999_999))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "flavorId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
@@ -169,27 +169,27 @@ class VmRequestTest {
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "imageId", disabled.getId()))
+                with(validBody(workspaceId), "imageId", disabled.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("imageId"));
 
         // below the OS image's minimum disk → 422, whatever the preset offers
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "reqDiskGb", 5))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"))
                 .andExpect(jsonPath("$.errors[0].message").value("이 OS의 최소 디스크 크기는 10GiB입니다."));
 
         // spec above the chosen preset requires specReason (contract prose rule)
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "reqMemoryMb", 4096))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "reqMemoryMb", 4096))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("specReason"));
-        Map<String, Object> bigWithReason = with(validBody(groupId), "reqMemoryMb", 4096);
+        Map<String, Object> bigWithReason = with(validBody(workspaceId), "reqMemoryMb", 4096);
         bigWithReason.put("specReason", "동시 접속 부하 테스트를 위해 메모리 증설이 필요합니다.");
         postJson("/api/v1/vm-requests", requesterToken, bigWithReason)
                 .andExpect(status().isCreated());
 
         // end date before start date → 422
-        Map<String, Object> badDates = validBody(groupId);
+        Map<String, Object> badDates = validBody(workspaceId);
         badDates.put("reqStartDate", "2026-08-01");
         badDates.put("reqEndDate", "2026-07-01");
         postJson("/api/v1/vm-requests", requesterToken, badDates)
@@ -200,13 +200,13 @@ class VmRequestTest {
         // desiredSubdomain is an unknown field, ignored — nothing is reserved
         // and the response echoes null (the field survives for OLD requests)
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSubdomain", "vmr-ignored-x1"))
+                with(validBody(workspaceId), "desiredSubdomain", "vmr-ignored-x1"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSubdomain").value((Object) null))
                 .andExpect(jsonPath("$.rootDomain").value((Object) null));
 
         // missing purpose → 422
-        Map<String, Object> noPurpose = validBody(groupId);
+        Map<String, Object> noPurpose = validBody(workspaceId);
         noPurpose.remove("purpose");
         postJson("/api/v1/vm-requests", requesterToken, noPurpose)
                 .andExpect(status().isUnprocessableContent())
@@ -229,48 +229,48 @@ class VmRequestTest {
      */
     @Test
     void specReasonBaselineFollowsTheChosenFlavor() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-flavor-x1");
+        long workspaceId = createTeam(requesterToken, "vmr-flavor-x1");
 
         // 'small' as-is (1 vCPU / 1024MiB / 10GiB) → 201, no reason needed
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, smallFlavor))
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, smallFlavor))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.flavorId").value(smallFlavor.getId()))
                 .andExpect(jsonPath("$.reqVcpu").value(1));
 
         // each axis independently: 2 vCPU exceeds 'small' → specReason required
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, smallFlavor), "reqVcpu", 2))
+                with(bodyFor(workspaceId, smallFlavor), "reqVcpu", 2))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
                         .value("선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, smallFlavor), "reqMemoryMb", 2048))
+                with(bodyFor(workspaceId, smallFlavor), "reqMemoryMb", 2048))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("specReason"));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, smallFlavor), "reqDiskGb", 20))
+                with(bodyFor(workspaceId, smallFlavor), "reqDiskGb", 20))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("specReason"));
 
         // the very same spec against 'basic' (2 / 2048 / 20) is free
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, basicFlavor))
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, basicFlavor))
                 .andExpect(status().isCreated());
 
         // the disk floor is the OS image's min, not the preset's
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, smallFlavor), "reqDiskGb", 5))
+                with(bodyFor(workspaceId, smallFlavor), "reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"));
     }
 
     @Test
     void retiredFlavorIsRejectedAndBothAxesReportIndependently() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-flavor-x2");
+        long workspaceId = createTeam(requesterToken, "vmr-flavor-x2");
         VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 프리셋", 2, 2048, 20,
                 CatalogStatus.DISABLED, null));
 
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(groupId, retired))
+        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, retired))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("flavorId"))
@@ -282,7 +282,7 @@ class VmRequestTest {
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
         postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(groupId, retired), "imageId", retiredImage.getId()))
+                with(bodyFor(workspaceId, retired), "imageId", retiredImage.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors.length()").value(2))
                 .andExpect(jsonPath("$.errors[0].field").value("imageId"))
@@ -298,7 +298,7 @@ class VmRequestTest {
      */
     @Test
     void emptyOsCatalogListsNothingAndRefusesEverySubmission() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-empty-x1");
+        long workspaceId = createTeam(requesterToken, "vmr-empty-x1");
         List<OsImage> active = imageRepository.findByStatus(CatalogStatus.ACTIVE);
         assertThat(active).isNotEmpty();
         // Catalog rows are shared state across test classes on this context —
@@ -315,7 +315,7 @@ class VmRequestTest {
 
             // an image that exists but is no longer selectable → 422 on the field
             postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(groupId), "imageId", image.getId()))
+                    with(validBody(workspaceId), "imageId", image.getId()))
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.errors[0].field").value("imageId"))
@@ -324,13 +324,13 @@ class VmRequestTest {
 
             // an id that never existed → 404 with a stated reason, not a 500
             postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(groupId), "imageId", 999_999))
+                    with(validBody(workspaceId), "imageId", 999_999))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                     .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
 
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
-            Map<String, Object> withoutImage = validBody(groupId);
+            Map<String, Object> withoutImage = validBody(workspaceId);
             withoutImage.remove("imageId");
             postJson("/api/v1/vm-requests", requesterToken, withoutImage)
                     .andExpect(status().isUnprocessableContent())
@@ -339,7 +339,7 @@ class VmRequestTest {
 
             // and none of the three attempts left a row behind
             assertThat(jdbcTemplate.queryForObject(
-                    "select count(*) from vm_requests where group_id = ?", Long.class, groupId))
+                    "select count(*) from vm_requests where workspace_id = ?", Long.class, workspaceId))
                     .isZero();
         } finally {
             active.forEach(row -> row.setStatus(CatalogStatus.ACTIVE));
@@ -349,18 +349,18 @@ class VmRequestTest {
 
     @Test
     void displayNameIsLengthCappedAndEchoed() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-dname-x1");
+        long workspaceId = createTeam(requesterToken, "vmr-dname-x1");
 
         // over 100 chars → 422 (bean validation)
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "displayName", "가".repeat(101)))
+                with(validBody(workspaceId), "displayName", "가".repeat(101)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("displayName"));
 
         // echoed in the detail; omitted → null
         String response = postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "displayName", "데이터분석 실습 서버"))
+                with(validBody(workspaceId), "displayName", "데이터분석 실습 서버"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"))
                 .andReturn().getResponse().getContentAsString();
@@ -370,56 +370,56 @@ class VmRequestTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"));
 
-        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayName").value((Object) null));
     }
 
     @Test
     void desiredSlugIsValidatedEchoedAndNeverRecycled() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-slug-x1");
+        long workspaceId = createTeam(requesterToken, "vmr-slug-x1");
 
         // desiredSlug echoed in the detail; omitted → null
         String mine = postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"))
                 .andReturn().getResponse().getContentAsString();
         long mineId = objectMapper.readTree(mine).get("id").asLong();
-        postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
+        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSlug").value((Object) null));
 
         // malformed slug → 422 (bean validation pattern)
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "-bad-"))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "-bad-"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "ab"))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "ab"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
 
         // reserved word (shared with reservedSubdomains) → 422
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(groupId), "desiredSlug", "www"))
+        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "www"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
 
         // another SUBMITTED request already asks for the slug → 422
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value("이미 신청 중인 호스트명입니다."));
 
         // an existing vms.hostname blocks the slug — even soft-deleted (never recycled)
-        long vmReqId = submit(requesterToken, groupId);
-        Vm vm = vmRepository.save(new Vm(nodeRepository.findAll().getFirst().getId(), groupId,
+        long vmReqId = submit(requesterToken, workspaceId);
+        Vm vm = vmRepository.save(new Vm(nodeRepository.findAll().getFirst().getId(), workspaceId,
                 org.getId(), vmReqId, "vmr-slug-taken", "vmr-slug-taken", image.getId(),
                 image.getSshUsername(), 1, 1024, 10, null, null));
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 vm.getId());
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSlug", "vmr-slug-taken"))
+                with(validBody(workspaceId), "desiredSlug", "vmr-slug-taken"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 호스트명입니다."));
@@ -431,19 +431,19 @@ class VmRequestTest {
                 Map.of("comment", "슬러그 재사용 테스트를 위해 반려합니다."))
                 .andExpect(status().isOk());
         postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(groupId), "desiredSlug", "vmr-slug-mine"))
+                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"));
     }
 
     @Test
     void listAndDetailVisibilityFollowsMembership() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-visib-x1");
-        addMember(requesterToken, groupId, member.getEmail(), "MEMBER");
-        long first = submit(requesterToken, groupId);
-        long second = submit(requesterToken, groupId);
+        long workspaceId = createTeam(requesterToken, "vmr-visib-x1");
+        addMember(requesterToken, workspaceId, member.getEmail(), "MEMBER");
+        long first = submit(requesterToken, workspaceId);
+        long second = submit(requesterToken, workspaceId);
 
-        // a plain member sees the group's requests, newest first
+        // a plain member sees the workspace's requests, newest first
         mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(0))
@@ -463,21 +463,21 @@ class VmRequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
-        // outsider sees nothing and cannot filter by this group
+        // outsider sees nothing and cannot filter by this workspace
         mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
-        mockMvc.perform(get("/api/v1/vm-requests?groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        // member groupId + status filters
-        mockMvc.perform(get("/api/v1/vm-requests?groupId=" + groupId + "&status=SUBMITTED")
+        // member workspaceId + status filters
+        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId + "&status=SUBMITTED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2));
-        mockMvc.perform(get("/api/v1/vm-requests?groupId=" + groupId + "&status=CANCELED")
+        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId + "&status=CANCELED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
@@ -496,13 +496,13 @@ class VmRequestTest {
     }
 
     @Test
-    void cancelIsForRequesterOrGroupManagersAndOnlyOnce() throws Exception {
-        long groupId = createTeam(requesterToken, "vmr-cancel-x1");
-        addMember(requesterToken, groupId, otherMember.getEmail(), "MEMBER");
-        long first = submit(requesterToken, groupId);
-        // the group's owner is the requester of `first`, so the second request
+    void cancelIsForRequesterOrWorkspaceManagersAndOnlyOnce() throws Exception {
+        long workspaceId = createTeam(requesterToken, "vmr-cancel-x1");
+        addMember(requesterToken, workspaceId, otherMember.getEmail(), "MEMBER");
+        long first = submit(requesterToken, workspaceId);
+        // the workspace's owner is the requester of `first`, so the second request
         // has to come from somebody else for the owner's reach to mean anything
-        long second = submit(otherMemberToken, groupId);
+        long second = submit(otherMemberToken, workspaceId);
 
         // a fellow member who did not ask, and an outsider, cannot cancel → 403
         postJson("/api/v1/vm-requests/" + first + "/cancel", otherMemberToken, Map.of())
@@ -521,7 +521,7 @@ class VmRequestTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
-        // the group's OWNER may cancel another member's request
+        // the workspace's OWNER may cancel another member's request
         postJson("/api/v1/vm-requests/" + second + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
@@ -538,13 +538,13 @@ class VmRequestTest {
     }
 
     /** A body prefilled from the chosen flavor — exactly what the wizard posts. */
-    private Map<String, Object> validBody(long groupId) {
-        return bodyFor(groupId, basicFlavor);
+    private Map<String, Object> validBody(long workspaceId) {
+        return bodyFor(workspaceId, basicFlavor);
     }
 
-    private Map<String, Object> bodyFor(long groupId, VmFlavor flavor) {
+    private Map<String, Object> bodyFor(long workspaceId, VmFlavor flavor) {
         Map<String, Object> body = new HashMap<>();
-        body.put("groupId", groupId);
+        body.put("workspaceId", workspaceId);
         body.put("orgId", org.getId());
         body.put("imageId", image.getId());
         body.put("flavorId", flavor.getId());
@@ -560,16 +560,16 @@ class VmRequestTest {
         return body;
     }
 
-    private long submit(String token, long groupId) throws Exception {
-        String response = postJson("/api/v1/vm-requests", token, validBody(groupId))
+    private long submit(String token, long workspaceId) throws Exception {
+        String response = postJson("/api/v1/vm-requests", token, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).get("id").asLong();
     }
 
     private long createTeam(String token, String slug) throws Exception {
-        String body = postJson("/api/v1/groups", token,
-                Map.of("kind", "TEAM", "name", "테스트 그룹 " + slug, "slug", slug))
+        String body = postJson("/api/v1/workspaces", token,
+                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug, "slug", slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
@@ -580,8 +580,8 @@ class VmRequestTest {
         return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
-    private void addMember(String token, long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(String token, long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + token)
                         .header(ReauthTestSupport.HEADER, reauth(token))
                         .contentType(MediaType.APPLICATION_JSON)

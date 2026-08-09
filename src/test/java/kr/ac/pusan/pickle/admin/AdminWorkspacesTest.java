@@ -24,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Admin group read surface (contract v0.19.0): the option list's additive
+ * Admin workspace read surface (contract v0.19.0): the option list's additive
  * {@code kind}/{@code createdAt} fields and the new inspection detail —
  * members listed regardless of account status, non-DELETED VM count, and the
  * admin 404 mask (unknown / soft-deleted / cross-org all identical).
@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class AdminGroupsTest {
+class AdminWorkspacesTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -48,7 +48,7 @@ class AdminGroupsTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long groupId;
+    private long workspaceId;
     private String slug;
     private String sysAdminToken;
     private String orgAdminToken;
@@ -63,28 +63,28 @@ class AdminGroupsTest {
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         slug = "agr-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug, description)
-                values ('TEAM', ?, ?, '그룹 조회 테스트') returning id
+        workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug, description)
+                values ('TEAM', ?, ?, '워크스페이스 조회 테스트') returning id
                 """, Long.class, slug, slug);
         ownerId = ensureUser("agr.owner." + slug + "@pusan.ac.kr", UserStatus.ACTIVE).getId();
         disabledMemberId = ensureUser("agr.off." + slug + "@pusan.ac.kr", UserStatus.DISABLED).getId();
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, 'OWNER'::group_member_role), (?, ?, 'MEMBER'::group_member_role)
-                """, groupId, ownerId, groupId, disabledMemberId);
-        // link the group to the seed org (derived membership: ≥1 request in the org)
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'OWNER'::workspace_member_role), (?, ?, 'MEMBER'::workspace_member_role)
+                """, workspaceId, ownerId, workspaceId, disabledMemberId);
+        // link the workspace to the seed org (derived membership: ≥1 request in the org)
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         jdbcTemplate.update("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '그룹 조회 테스트', ?, 1, 1024, 10)
-                """, groupId, orgId, ownerId, imageId);
+                values (?, ?, ?, '워크스페이스 조회 테스트', ?, 1, 1024, 10)
+                """, workspaceId, orgId, ownerId, imageId);
     }
 
     @Test
     void optionListCarriesKindAndCreatedAt() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/groups")
+        mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(bySlug() + ".kind").value("TEAM"))
@@ -95,7 +95,7 @@ class AdminGroupsTest {
 
     @Test
     void detailListsEveryMemberWithAccountStatusAndVmCount() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/groups/{id}", groupId)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", workspaceId)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.slug").value(slug))
@@ -103,46 +103,46 @@ class AdminGroupsTest {
                 .andExpect(jsonPath("$.memberCount").value(1))
                 .andExpect(jsonPath("$.vmCount").value(0))
                 .andExpect(jsonPath("$.members.length()").value(2))
-                .andExpect(jsonPath("$.members[0].groupRole").value("OWNER"))
-                .andExpect(jsonPath("$.members[?(@.userId == %d)].groupRole".formatted(ownerId))
+                .andExpect(jsonPath("$.members[0].workspaceRole").value("OWNER"))
+                .andExpect(jsonPath("$.members[?(@.userId == %d)].workspaceRole".formatted(ownerId))
                         .value("OWNER"))
                 .andExpect(jsonPath("$.members[?(@.userId == %d)].userStatus"
                         .formatted(disabledMemberId)).value("DISABLED"));
     }
 
     @Test
-    void unknownDeletedAndCrossOrgGroupsAnswerTheSame404() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/groups/999999")
+    void unknownDeletedAndCrossOrgWorkspacesAnswerTheSame404() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/workspaces/999999")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
         // soft-deleted → 404 for everyone
         String deletedSlug = "agr-del-" + UUID.randomUUID().toString().substring(0, 8);
         long deleted = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug, deleted_at, deleted_by)
+                insert into workspaces (kind, name, slug, deleted_at, deleted_by)
                 values ('TEAM', ?, ?, now(), ?) returning id
                 """, Long.class, deletedSlug, deletedSlug, ownerId);
-        mockMvc.perform(get("/api/v1/admin/groups/{id}", deleted)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", deleted)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
-        // a group with no request/VM in the admin's org → 404 for the org tier
+        // a workspace with no request/VM in the admin's org → 404 for the org tier
         String foreignSlug = "agr-for-" + UUID.randomUUID().toString().substring(0, 8);
         long unlinked = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, foreignSlug, foreignSlug);
-        mockMvc.perform(get("/api/v1/admin/groups/{id}", unlinked)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", unlinked)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
         // ...but the sys tier still sees it
-        mockMvc.perform(get("/api/v1/admin/groups/{id}", unlinked)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", unlinked)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
 
         // a plain user is refused by the role gate
         String userToken = jwtService.createAccessToken(
                 ensureUser("agr.user." + slug + "@pusan.ac.kr", UserStatus.ACTIVE));
-        mockMvc.perform(get("/api/v1/admin/groups/{id}", groupId)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", workspaceId)
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -155,7 +155,7 @@ class AdminGroupsTest {
 
     private User ensureUser(String email, UserStatus status) {
         return userRepository.findByEmail(email).orElseGet(() -> {
-            User user = new User(email, "{test-no-login}", "그룹조회테스트");
+            User user = new User(email, "{test-no-login}", "워크스페이스조회테스트");
             user.setRole(UserRole.USER);
             user.setStatus(status);
             user.setEmailVerifiedAt(Instant.now());

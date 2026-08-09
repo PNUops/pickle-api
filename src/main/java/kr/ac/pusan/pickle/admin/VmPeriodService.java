@@ -80,7 +80,7 @@ public class VmPeriodService {
                         "new", Map.of("startDate", String.valueOf(newStart),
                                 "endDate", String.valueOf(request.endDate()))),
                 ip);
-        // Admin period edit is org-scoped, not group-membership-scoped, so the
+        // Admin period edit is org-scoped, not workspace-membership-scoped, so the
         // requester holds no grant on this VM → myResourceRole null.
         return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
     }

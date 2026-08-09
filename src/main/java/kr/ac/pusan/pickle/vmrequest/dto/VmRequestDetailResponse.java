@@ -11,8 +11,8 @@ import org.jspecify.annotations.Nullable;
  */
 public record VmRequestDetailResponse(
         Long id,
-        Long groupId,
-        String groupName,
+        Long workspaceId,
+        String workspaceName,
         Long orgId,
         String orgName,
         Long requesterId,

@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.group;
+package kr.ac.pusan.pickle.workspace;
 
 import java.util.Locale;
 import kr.ac.pusan.pickle.user.User;
@@ -6,34 +6,34 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Creates the implicit PERSONAL group (one OWNER row) when an account becomes
+ * Creates the implicit PERSONAL workspace (one OWNER row) when an account becomes
  * ACTIVE. Idempotent per user.
  */
 @Service
-public class PersonalGroupService {
+public class PersonalWorkspaceService {
 
-    private final GroupRepository groupRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
 
-    public PersonalGroupService(GroupRepository groupRepository, GroupMemberRepository groupMemberRepository) {
-        this.groupRepository = groupRepository;
-        this.groupMemberRepository = groupMemberRepository;
+    public PersonalWorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository) {
+        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
     }
 
     @Transactional
-    public void ensurePersonalGroup(User user) {
-        if (groupMemberRepository.existsByUserIdAndGroupKind(user.getId(), GroupKind.PERSONAL)) {
+    public void ensurePersonalWorkspace(User user) {
+        if (workspaceMemberRepository.existsByUserIdAndWorkspaceKind(user.getId(), WorkspaceKind.PERSONAL)) {
             return;
         }
         String slug = uniqueSlug(slugify(user.getEmail().split("@", 2)[0], user.getId()));
-        Group group = groupRepository.save(new Group(GroupKind.PERSONAL, user.getName(), slug, null));
-        groupMemberRepository.save(new GroupMember(group, user.getId(), GroupMemberRole.OWNER));
+        Workspace workspace = workspaceRepository.save(new Workspace(WorkspaceKind.PERSONAL, user.getName(), slug, null));
+        workspaceMemberRepository.save(new WorkspaceMember(workspace, user.getId(), WorkspaceMemberRole.OWNER));
     }
 
     private String uniqueSlug(String base) {
         String candidate = base;
         int suffix = 2;
-        while (groupRepository.existsBySlugAndDeletedAtIsNull(candidate)) {
+        while (workspaceRepository.existsBySlugAndDeletedAtIsNull(candidate)) {
             candidate = base + "-" + suffix++;
         }
         return candidate;

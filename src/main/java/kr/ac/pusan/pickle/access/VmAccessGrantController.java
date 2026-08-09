@@ -38,7 +38,7 @@ public class VmAccessGrantController {
 
     @GetMapping
     @Operation(summary = "접근 권한 목록",
-            description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 그룹 소유자만 볼 수 있습니다.")
+            description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
     public VmAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
@@ -49,8 +49,8 @@ public class VmAccessGrantController {
     @ResponseStatus(HttpStatus.CREATED)
     @RequireReauth
     @Operation(summary = "접근 권한 부여",
-            description = "지정한 사용자 또는 소유 그룹 전체에 이 VM의 접근 권한을 부여합니다. "
-                    + "사용자는 이 VM을 소유한 그룹의 구성원이어야 하고, 그룹 전체에는 "
+            description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 VM의 접근 권한을 부여합니다. "
+                    + "사용자는 이 VM을 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
                     + "참여자·열람자까지만 부여할 수 있습니다.")
     public VmAccessGrantView addVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,

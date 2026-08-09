@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.ResultActions;
  * admin block (403) → dual-key rate limit (429) → concurrent cap (409), then a
  * 201 with a no-store one-time ticket.
  *
- * <p>Opening a terminal is one of the things standing in the owning group never
+ * <p>Opening a terminal is one of the things standing in the owning workspace never
  * buys, so both fixture users hold a real grant on each VM: one at MEMBER, one
  * at VIEWER.
  */
@@ -81,7 +81,7 @@ class TerminalMintTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() {
@@ -98,11 +98,11 @@ class TerminalMintTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = createGroup();
-        // Both belong to the owning group; what separates them is the rung each
+        workspaceId = createWorkspace();
+        // Both belong to the owning workspace; what separates them is the rung each
         // one is given on the VM itself (see createVm).
-        addMember(groupId, member.getId(), "MEMBER");
-        addMember(groupId, viewer.getId(), "MEMBER");
+        addMember(workspaceId, member.getId(), "MEMBER");
+        addMember(workspaceId, viewer.getId(), "MEMBER");
     }
 
     @Test
@@ -136,7 +136,7 @@ class TerminalMintTest {
         // role 403.
         mint(viewerToken, vmId)
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
     }
 
     @Test
@@ -193,19 +193,19 @@ class TerminalMintTest {
                 String.valueOf(enabled));
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, '터미널팀', ?) returning id
+                insert into workspaces (kind, name, slug)
+                values ('TEAM'::workspace_kind, '터미널팀', ?) returning id
                 """, Long.class, "term-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
-    private void addMember(long groupId, long userId, String role) {
+    private void addMember(long workspaceId, long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                on conflict (group_id, user_id) do update set role = excluded.role
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                on conflict (workspace_id, user_id) do update set role = excluded.role
+                """, workspaceId, userId, role);
     }
 
     /**
@@ -214,19 +214,19 @@ class TerminalMintTest {
      */
     private long createVm(VmStatus status, boolean blocked) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '터미널 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, member.getId(), imageId);
+                """, Long.class, workspaceId, orgId, member.getId(), imageId);
         String hostname = "term-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  ssh_gateway_blocked)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet(), status.name(), blocked);
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
         grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");

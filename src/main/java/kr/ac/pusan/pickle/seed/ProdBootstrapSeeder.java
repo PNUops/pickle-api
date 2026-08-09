@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.Set;
 import kr.ac.pusan.pickle.auth.PasswordPolicy;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -54,16 +54,16 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final PersonalGroupService personalGroupService;
+    private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordPolicy passwordPolicy;
     private final Environment environment;
 
     public ProdBootstrapSeeder(UserRepository userRepository, PasswordEncoder passwordEncoder,
-            PersonalGroupService personalGroupService, PasswordPolicy passwordPolicy,
+            PersonalWorkspaceService personalWorkspaceService, PasswordPolicy passwordPolicy,
             Environment environment) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.personalGroupService = personalGroupService;
+        this.personalWorkspaceService = personalWorkspaceService;
         this.passwordPolicy = passwordPolicy;
         this.environment = environment;
     }
@@ -92,7 +92,7 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
         admin.setStatus(UserStatus.ACTIVE);
         admin.setEmailVerifiedAt(Instant.now());
         admin = userRepository.save(admin);
-        personalGroupService.ensurePersonalGroup(admin);
+        personalWorkspaceService.ensurePersonalWorkspace(admin);
     }
 
     private void validate(String email, String password) {

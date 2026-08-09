@@ -12,9 +12,9 @@ import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.notification.dto.NotificationView;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -54,19 +54,19 @@ public class NotificationService {
     private final ObjectMapper objectMapper;
     private final NotificationComposer composer;
     private final NotificationRepository notificationRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
 
     public NotificationService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
             NotificationComposer composer, NotificationRepository notificationRepository,
-            GroupMemberRepository groupMemberRepository,
+            WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.composer = composer;
         this.notificationRepository = notificationRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
     }
@@ -102,11 +102,11 @@ public class NotificationService {
 
     // ── recipient resolution helpers (ACTIVE users only) ───────────────────
 
-    /** ACTIVE owners of the group. */
-    public List<Long> groupOwnerIds(long groupId) {
-        List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(groupId).stream()
-                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
-                .map(GroupMember::getUserId)
+    /** ACTIVE owners of the workspace. */
+    public List<Long> workspaceOwnerIds(long workspaceId) {
+        List<Long> memberIds = workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspaceId).stream()
+                .filter(m -> m.getRole() == WorkspaceMemberRole.OWNER)
+                .map(WorkspaceMember::getUserId)
                 .toList();
         return activeAmong(memberIds);
     }
@@ -114,9 +114,9 @@ public class NotificationService {
     /**
      * Who hears about one VM's operational life — expiry, provisioning
      * outcomes, a domain or route that failed: the people its access list makes
-     * responsible for it, plus the owners of the group that owns it.
+     * responsible for it, plus the owners of the workspace that owns it.
      *
-     * <p>This used to be the group's owners and editors. That rung no longer
+     * <p>This used to be the workspace's owners and editors. That rung no longer
      * says anything about a particular VM, so the question moved to the VM's
      * own list; right after the changeover both answers name the same people.
      */
@@ -130,7 +130,7 @@ public class NotificationService {
     }
 
     /**
-     * Everyone the VM concerns — every grantee at any rung plus the group's
+     * Everyone the VM concerns — every grantee at any rung plus the workspace's
      * owners. For news that matters to whoever was using it, above all its
      * deletion.
      */
@@ -145,9 +145,9 @@ public class NotificationService {
                 .stream()
                 .map(ResourceAccessGrant::getUserId)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        ids.addAll(groupMemberRepository.findByGroupIdOrderByIdAsc(vm.getGroupId()).stream()
-                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
-                .map(GroupMember::getUserId)
+        ids.addAll(workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(vm.getWorkspaceId()).stream()
+                .filter(m -> m.getRole() == WorkspaceMemberRole.OWNER)
+                .map(WorkspaceMember::getUserId)
                 .toList());
         return activeAmong(List.copyOf(ids));
     }
@@ -159,10 +159,10 @@ public class NotificationService {
                 .toList();
     }
 
-    /** Every ACTIVE member of the group. */
-    public List<Long> groupMemberIds(long groupId) {
-        List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(groupId).stream()
-                .map(GroupMember::getUserId)
+    /** Every ACTIVE member of the workspace. */
+    public List<Long> workspaceMemberIds(long workspaceId) {
+        List<Long> memberIds = workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspaceId).stream()
+                .map(WorkspaceMember::getUserId)
                 .toList();
         return userRepository.findAllById(memberIds).stream()
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)

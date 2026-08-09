@@ -17,9 +17,9 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
@@ -72,8 +72,8 @@ public class ApprovalService {
     private final VmRepository vmRepository;
     private final OsImageRepository imageRepository;
     private final NodeRepository nodeRepository;
-    private final GroupRepository groupRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
     private final JobScheduler jobScheduler;
@@ -86,8 +86,8 @@ public class ApprovalService {
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
             VmRequestAssembler assembler, VmRepository vmRepository, OsImageRepository imageRepository,
-            NodeRepository nodeRepository, GroupRepository groupRepository,
-            GroupMemberRepository groupMemberRepository,
+            NodeRepository nodeRepository, WorkspaceRepository workspaceRepository,
+            WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
@@ -99,8 +99,8 @@ public class ApprovalService {
         this.vmRepository = vmRepository;
         this.imageRepository = imageRepository;
         this.nodeRepository = nodeRepository;
-        this.groupRepository = groupRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
         this.jobScheduler = jobScheduler;
@@ -187,15 +187,15 @@ public class ApprovalService {
         }
         // The VM is created with its requester as its owner, so approval needs
         // that person to still be someone who can hold a grant here. If they
-        // left the group or the platform meanwhile, the request is no longer
+        // left the workspace or the platform meanwhile, the request is no longer
         // approvable and the reviewer rejects it instead — inventing a
         // different owner would be the platform guessing whose VM this is.
-        if (groupMemberRepository.findByGroupIdAndUserId(request.getGroupId(),
+        if (workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(),
                 request.getRequesterId()).isEmpty()
                 || userRepository.findById(request.getRequesterId())
                         .filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_REQUESTER_INELIGIBLE,
-                    "신청자가 더 이상 이 그룹의 활성 구성원이 아닙니다",
+                    "신청자가 더 이상 이 워크스페이스의 활성 구성원이 아닙니다",
                     "승인하면 이 VM의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
         }
         if (!errors.isEmpty()) {
@@ -211,11 +211,11 @@ public class ApprovalService {
         // Auto placement: the image's node (single-node cluster; the
         // scoring placement step arrives with the provisioning pipeline).
         Long nodeId = form.nodeId() != null ? form.nodeId() : image.getNodeId();
-        Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
-        String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());
+        Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
+        String hostname = grantedSlug != null ? grantedSlug : generateHostname(workspace.getSlug());
         // The guest admin account comes from the granted image (each
         // distribution ships its own), never from a platform-wide constant.
-        Vm vm = vmRepository.save(new Vm(nodeId, request.getGroupId(), request.getOrgId(),
+        Vm vm = vmRepository.save(new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
                 request.getId(), hostname, hostname, image.getId(), image.getSshUsername(),
                 form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
                 form.grantedStartDate(), form.grantedEndDate()));
@@ -287,7 +287,7 @@ public class ApprovalService {
         reviewRepository.save(VmRequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(VmRequestStatus.REJECTED);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
-                "vm_request", request.getId(), Map.of("groupId", request.getGroupId()), ip);
+                "vm_request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
                 Map.of("requestId", request.getId(), "comment", form.comment().strip()), null);
         return assembler.toDetail(request);
@@ -318,18 +318,18 @@ public class ApprovalService {
         }
     }
 
-    /** Unique hostname: group slug + short random suffix (DB unique as backstop). */
-    private String generateHostname(String groupSlug) {
+    /** Unique hostname: workspace slug + short random suffix (DB unique as backstop). */
+    private String generateHostname(String workspaceSlug) {
         for (int attempt = 0; attempt < HOSTNAME_MAX_ATTEMPTS; attempt++) {
             StringBuilder suffix = new StringBuilder(HOSTNAME_SUFFIX_LENGTH);
             for (int i = 0; i < HOSTNAME_SUFFIX_LENGTH; i++) {
                 suffix.append(HOSTNAME_SUFFIX_ALPHABET[random.nextInt(HOSTNAME_SUFFIX_ALPHABET.length)]);
             }
-            String hostname = groupSlug + "-" + suffix;
+            String hostname = workspaceSlug + "-" + suffix;
             if (!vmRepository.existsByHostname(hostname)) {
                 return hostname;
             }
         }
-        throw new IllegalStateException("Could not generate a unique hostname for slug " + groupSlug);
+        throw new IllegalStateException("Could not generate a unique hostname for slug " + workspaceSlug);
     }
 }

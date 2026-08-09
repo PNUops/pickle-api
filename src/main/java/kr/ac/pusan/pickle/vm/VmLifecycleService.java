@@ -29,9 +29,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * forceStopVm). Endpoints only validate and write intent; every Proxmox call
  * happens in {@link VmPowerJobs} enqueued after commit.
  *
- * <p>Authorization per contract: group <b>MEMBER+</b>. A non-member answers
- * 404 (existence of other groups' VMs stays private, same masking convention
- * as the admin org scope), a VIEWER answers 403 {@code GROUP_ROLE_INSUFFICIENT}.</p>
+ * <p>Authorization per contract: workspace <b>MEMBER+</b>. A non-member answers
+ * 404 (existence of other workspaces' VMs stays private, same masking convention
+ * as the admin org scope), a VIEWER answers 403 {@code WORKSPACE_ROLE_INSUFFICIENT}.</p>
  *
  * <p>State machine per contract: start only from {@code STOPPED}, shutdown/
  * reboot only from {@code RUNNING}, force-stop from {@code RUNNING}/
@@ -50,9 +50,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * still interrupt a hung reboot and the poller can converge a crashed one.</p>
  *
  * <p>Admin intervention (contract v0.17.0, {@code POST /admin/vms/{vmId}/…}):
- * the same intents under org-scoped authorization instead of group membership.
- * The admin path deliberately skips the group-role gates — including stop
- * protection, which is a group-internal guard (MEMBER vs EDITOR); the admin is
+ * the same intents under org-scoped authorization instead of workspace membership.
+ * The admin path deliberately skips the workspace-role gates — including stop
+ * protection, which is a workspace-internal guard (MEMBER vs EDITOR); the admin is
  * the emergency operator and every accepted intervention is audited. The
  * expiry guard on start stays: the sanctioned path is a period extension
  * first. State machine and claim protocol are identical to the user path.</p>
@@ -227,7 +227,7 @@ public class VmLifecycleService {
         }
     }
 
-    /** A power-controllable VM plus the requester's role in its group. */
+    /** A power-controllable VM plus the requester's role in its workspace. */
     private record Controllable(Vm vm, ResourceRole role) {
     }
 
@@ -245,7 +245,7 @@ public class VmLifecycleService {
 
     /**
      * Stop protection: when {@code stop_protection} is on, shutdown/reboot/
-     * force-stop require group EDITOR+; a MEMBER is refused 409
+     * force-stop require workspace EDITOR+; a MEMBER is refused 409
      * {@code VM_STOP_PROTECTED}. Start is deliberately unaffected. Only the
      * member-facing power ops call this — the admin intervention path
      * (contract v0.17.0) deliberately bypasses it, per the class javadoc.

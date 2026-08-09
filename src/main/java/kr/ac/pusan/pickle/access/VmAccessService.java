@@ -3,9 +3,9 @@ package kr.ac.pusan.pickle.access;
 import java.util.List;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -17,8 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
  * The single place that decides what standing a requester has on a VM.
  *
  * <p>Access comes from the VM's access list and from nothing else: a rung in
- * the owning group no longer implies reaching the group's VMs. The one thing
- * group standing still carries is an owner's permanent read, deletion and grant
+ * the owning workspace no longer implies reaching the workspace's VMs. The one thing
+ * workspace standing still carries is an owner's permanent read, deletion and grant
  * management — held here as a flag rather than folded into a rung, so that no
  * check for something inside the VM can be satisfied by it.
  *
@@ -34,13 +34,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class VmAccessService {
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
 
-    public VmAccessService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public VmAccessService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
     }
 
@@ -60,12 +60,12 @@ public class VmAccessService {
     /** Standing on an already-loaded VM, for callers that resolved it first. */
     @Transactional(readOnly = true)
     public VmAccess of(Vm vm, long userId) {
-        GroupMemberRole membership = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), userId)
-                .map(GroupMember::getRole)
+        WorkspaceMemberRole membership = workspaceMemberRepository
+                .findByWorkspaceIdAndUserId(vm.getWorkspaceId(), userId)
+                .map(WorkspaceMember::getRole)
                 .orElse(null);
         return new VmAccess(vm, grantedRole(vm.getId(), userId, membership != null),
-                membership != null, membership == GroupMemberRole.OWNER);
+                membership != null, membership == WorkspaceMemberRole.OWNER);
     }
 
     /**
@@ -80,22 +80,22 @@ public class VmAccessService {
 
     /**
      * The strongest rung the access list gives this person: their own grant and
-     * the group-wide one, whichever is higher.
+     * the workspace-wide one, whichever is higher.
      *
-     * <p>A grant counts only while its holder is still in the owning group.
+     * <p>A grant counts only while its holder is still in the owning workspace.
      * Losing membership already deletes their grants, so this changes nothing
      * in practice — it is here so that a missed cleanup cannot leave someone
-     * reaching a VM of a group they left.
+     * reaching a VM of a workspace they left.
      */
-    private ResourceRole grantedRole(long vmId, long userId, boolean owningGroupMember) {
-        if (!owningGroupMember) {
+    private ResourceRole grantedRole(long vmId, long userId, boolean owningWorkspaceMember) {
+        if (!owningWorkspaceMember) {
             return null;
         }
         ResourceRole best = null;
         List<ResourceAccessGrant> grants = grantRepository
                 .findByResourceTypeAndResourceIdOrderByIdAsc(ResourceType.VM, vmId);
         for (ResourceAccessGrant grant : grants) {
-            boolean applies = grant.getGranteeType() == AccessGranteeType.GROUP
+            boolean applies = grant.getGranteeType() == AccessGranteeType.WORKSPACE
                     || Long.valueOf(userId).equals(grant.getUserId());
             if (applies && (best == null || grant.getRole().atLeast(best))) {
                 best = grant.getRole();

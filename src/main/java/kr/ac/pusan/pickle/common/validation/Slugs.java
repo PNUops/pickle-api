@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.common.validation;
 
 /**
- * Shared slug rule for orgs and groups (contract: lowercase/digit/hyphen,
+ * Shared slug rule for orgs and workspaces (contract: lowercase/digit/hyphen,
  * no leading/trailing hyphen, max 40 chars — slugs feed default subdomains).
  */
 public final class Slugs {

@@ -28,7 +28,7 @@ public enum NotificationEvent {
     // before the grace runs out, then the reclaim itself.
     DOMAIN_RESERVE_EXPIRING("domain.reserve.expiring", NotificationImportance.NORMAL),
     DOMAIN_RESERVE_RELEASED("domain.reserve.released", NotificationImportance.NORMAL),
-    // Admin takedown of a domain: the owning group loses its public address
+    // Admin takedown of a domain: the owning workspace loses its public address
     // with no reservation, and must not learn it from a dead link.
     DOMAIN_ADMIN_RELEASED("domain.admin_released", NotificationImportance.HIGH),
     CERT_FAILURE("cert.failure", NotificationImportance.HIGH),
@@ -45,7 +45,7 @@ public enum NotificationEvent {
     ACCOUNT_MFA_ENROLLED("account.mfa.enrolled", NotificationImportance.HIGH),
     ACCOUNT_MFA_DISABLED("account.mfa.disabled", NotificationImportance.HIGH),
     ACCOUNT_MFA_RESET("account.mfa.reset", NotificationImportance.HIGH),
-    GROUP_DELETED("group.deleted", NotificationImportance.NORMAL),
+    WORKSPACE_DELETED("workspace.deleted", NotificationImportance.NORMAL),
 
     // Relay port forwarding + 교내 IP (contract v0.27.0).
     RELAY_CONTACT_LOST("relay.contact_lost", NotificationImportance.HIGH),

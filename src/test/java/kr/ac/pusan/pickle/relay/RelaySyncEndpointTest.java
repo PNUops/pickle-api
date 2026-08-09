@@ -548,29 +548,29 @@ class RelaySyncEndpointTest {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "rly-" + UUID.randomUUID().toString().substring(0, 10);
-        long groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug) values ('TEAM'::group_kind, ?, ?)
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug) values ('TEAM'::workspace_kind, ?, ?)
                 returning id
                 """, Long.class, "릴레이 테스트 " + slug, slug);
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, 'OWNER'::group_member_role)
-                """, groupId, ownerId);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'OWNER'::workspace_member_role)
+                """, workspaceId, ownerId);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '릴레이 동기화 테스트', (select min(id) from os_images),
                         1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, ownerId);
+                """, Long.class, workspaceId, orgId, ownerId);
         String hostname = "rly-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values ((select min(id) from nodes), ?, ?, ?, ?, ?,
                         (select min(id) from os_images), 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, workspaceId, orgId, requestId, hostname, hostname,
                 VMID_SEQ.incrementAndGet());
         String ip = "172.29.210." + IP_SEQ.getAndIncrement();
         long allocId = jdbcTemplate.queryForObject("""

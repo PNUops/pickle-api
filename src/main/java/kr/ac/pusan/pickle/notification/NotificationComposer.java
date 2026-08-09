@@ -350,14 +350,14 @@ public class NotificationComposer {
                                     ? "\n- 관리자 메모: " + str(args, "adminNote") : ""),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "requestId", "vmId", "vmName"));
-            case GROUP_DELETED -> new Composed(event.id(),
-                    "그룹 삭제 안내 — " + str(args, "groupName"),
+            case WORKSPACE_DELETED -> new Composed(event.id(),
+                    "워크스페이스 삭제 안내 — " + str(args, "workspaceName"),
                     """
-                    소유자가 그룹 '%s'을(를) 삭제하여 그룹과 구성원 정보가
-                    정리되었습니다. 그룹에 연결된 VM이 없는 상태에서만 삭제할 수
+                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가
+                    정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수
                     있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이
-                    있었다면 함께 취소되었습니다.""".formatted(str(args, "groupName")),
-                    null, event.defaultImportance(), payload(args, "groupId", "groupName"));
+                    있었다면 함께 취소되었습니다.""".formatted(str(args, "workspaceName")),
+                    null, event.defaultImportance(), payload(args, "workspaceId", "workspaceName"));
         };
     }
 
@@ -366,16 +366,16 @@ public class NotificationComposer {
         String title = admin ? "새 VM 신청 접수" : "VM 신청 접수";
         String body = admin
                 ? """
-                  그룹 '%s'에서 새 VM 신청이 접수되었습니다. 검토해 주세요.
+                  워크스페이스 '%s'에서 새 VM 신청이 접수되었습니다. 검토해 주세요.
 
-                  - 신청 목적: %s""".formatted(str(args, "groupName"), str(args, "purpose"))
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), str(args, "purpose"))
                 : """
-                  그룹 '%s'의 VM 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
+                  워크스페이스 '%s'의 VM 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
 
-                  - 신청 목적: %s""".formatted(str(args, "groupName"), str(args, "purpose"));
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), str(args, "purpose"));
         String link = (admin ? "/admin/requests/" : "/console/requests/") + args.get("requestId");
         return new Composed(event.id(), title, body, link, event.defaultImportance(),
-                payload(args, "requestId", "groupName"));
+                payload(args, "requestId", "workspaceName"));
     }
 
     /** Per-stage id (vm.expiry.d7 …); the last day (D-1) escalates to HIGH. */

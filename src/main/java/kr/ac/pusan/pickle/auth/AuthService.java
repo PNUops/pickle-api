@@ -16,7 +16,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.AuthProperties;
 import kr.ac.pusan.pickle.consent.TermsService;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.mfa.MfaLoginToken;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
@@ -68,7 +68,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final EmailVerificationRepository emailVerificationRepository;
     private final RefreshTokenService refreshTokenService;
-    private final PersonalGroupService personalGroupService;
+    private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
     private final RateLimitService rateLimitService;
@@ -85,7 +85,7 @@ public class AuthService {
     public AuthService(UserRepository userRepository,
             EmailVerificationRepository emailVerificationRepository,
             RefreshTokenService refreshTokenService,
-            PersonalGroupService personalGroupService,
+            PersonalWorkspaceService personalWorkspaceService,
             PasswordEncoder passwordEncoder,
             PasswordPolicy passwordPolicy,
             RateLimitService rateLimitService,
@@ -101,7 +101,7 @@ public class AuthService {
         this.userRepository = userRepository;
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
-        this.personalGroupService = personalGroupService;
+        this.personalWorkspaceService = personalWorkspaceService;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
         this.rateLimitService = rateLimitService;
@@ -197,7 +197,7 @@ public class AuthService {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(now);
         }
-        personalGroupService.ensurePersonalGroup(user);
+        personalWorkspaceService.ensurePersonalWorkspace(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_VERIFY,
                 "user", user.getId(), Map.of("email", user.getEmail()), ip);
         return new MessageResponse("이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.");

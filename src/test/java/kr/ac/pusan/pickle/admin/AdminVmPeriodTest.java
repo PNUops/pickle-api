@@ -64,7 +64,7 @@ class AdminVmPeriodTest {
 
     private LocalDate today;
     private long orgId;
-    private long groupId;
+    private long workspaceId;
     private String sysAdminToken;
     private String memberToken;
     private long memberId;
@@ -76,27 +76,27 @@ class AdminVmPeriodTest {
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         String slug = "avp-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         User member = ensureUser("avp.member." + slug + "@pusan.ac.kr", UserRole.USER, null);
         memberId = member.getId();
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, 'MEMBER'::group_member_role)
-                """, groupId, memberId);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'MEMBER'::workspace_member_role)
+                """, workspaceId, memberId);
         memberToken = jwtService.createAccessToken(member);
     }
 
     @Test
     void adminVmListFiltersByExpiryAndExposesTheNewFields() throws Exception {
-        long expiring = createVm(orgId, groupId, "RUNNING", today.plusDays(5));
-        long expiringLater = createVm(orgId, groupId, "RUNNING", today.plusDays(20));
-        long expired = createVm(orgId, groupId, "STOPPED", today.minusDays(1));
-        long deletedExpired = createVm(orgId, groupId, "DELETED", today.minusDays(3));
-        long undated = createVm(orgId, groupId, "RUNNING", null);
+        long expiring = createVm(orgId, workspaceId, "RUNNING", today.plusDays(5));
+        long expiringLater = createVm(orgId, workspaceId, "RUNNING", today.plusDays(20));
+        long expired = createVm(orgId, workspaceId, "STOPPED", today.minusDays(1));
+        long deletedExpired = createVm(orgId, workspaceId, "DELETED", today.minusDays(3));
+        long undated = createVm(orgId, workspaceId, "RUNNING", null);
 
-        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(expiring)).exists())
@@ -106,7 +106,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath(byId(expiring) + ".endDate")
                         .value(today.plusDays(5).toString()));
 
-        mockMvc.perform(get("/api/v1/admin/vms?expired=true&groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/admin/vms?expired=true&workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(expired)).exists())
@@ -115,7 +115,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath(byId(undated)).doesNotExist());
 
         // both filters AND to an empty page by design
-        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&expired=true&groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&expired=true&workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isEmpty());
@@ -127,7 +127,7 @@ class AdminVmPeriodTest {
 
     @Test
     void expiredVmRefusesStartUntilThePeriodIsExtended() throws Exception {
-        long vmId = createVm(orgId, groupId, "STOPPED", today.minusDays(2));
+        long vmId = createVm(orgId, workspaceId, "STOPPED", today.minusDays(2));
         // The VM is inserted straight into the database, so its access list is
         // empty and nobody could power it at all. Naming the member on it is
         // what puts the expiry guard — not the access check — under test.
@@ -172,7 +172,7 @@ class AdminVmPeriodTest {
 
     @Test
     void periodPatchValidatesDatesAndDeletionState() throws Exception {
-        long vmId = createVm(orgId, groupId, "RUNNING", today.plusDays(10));
+        long vmId = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
         jdbcTemplate.update("update vms set start_date = ? where id = ?", today.minusDays(30), vmId);
 
         // endDate in the past → 422 with the field error
@@ -193,7 +193,7 @@ class AdminVmPeriodTest {
                 .andExpect(status().isUnprocessableContent());
 
         // deletion-bound VM → 409 VM_INVALID_STATE
-        long scheduled = createVm(orgId, groupId, "RUNNING", today.plusDays(10));
+        long scheduled = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
         jdbcTemplate.update("update vms set delete_scheduled_for = now() where id = ?", scheduled);
         mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", scheduled)
                         .header("Authorization", "Bearer " + sysAdminToken)
@@ -202,7 +202,7 @@ class AdminVmPeriodTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
 
-        long deleting = createVm(orgId, groupId, "DELETING", today.plusDays(10));
+        long deleting = createVm(orgId, workspaceId, "DELETING", today.plusDays(10));
         mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", deleting)
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -218,7 +218,7 @@ class AdminVmPeriodTest {
         User otherOrgAdmin = ensureUser("avp.other.admin@pusan.ac.kr", UserRole.ORG_ADMIN,
                 otherOrg.getId());
         String otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
-        long vmId = createVm(orgId, groupId, "RUNNING", today.plusDays(10));
+        long vmId = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
         String body = "{\"endDate\": \"%s\"}".formatted(today.plusDays(30));
 
         mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
@@ -255,23 +255,23 @@ class AdminVmPeriodTest {
         });
     }
 
-    private long createVm(long vmOrgId, long vmGroupId, String status, LocalDate endDate) {
+    private long createVm(long vmOrgId, long vmWorkspaceId, String status, LocalDate endDate) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '기간 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, vmGroupId, vmOrgId, requesterId, imageId);
+                """, Long.class, vmWorkspaceId, vmOrgId, requesterId, imageId);
         String hostname = "avp-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status, end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status, ?)
                 returning id
-                """, Long.class, nodeId, vmGroupId, vmOrgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, vmWorkspaceId, vmOrgId, requestId, hostname, hostname,
                 imageId, status, endDate);
     }
 }

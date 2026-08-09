@@ -105,7 +105,7 @@ class ProvisionPipelineTest {
     private long poolId;
     private long imageId;
     private long adminUserId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeAll
     static void startServer() {
@@ -129,8 +129,8 @@ class ProvisionPipelineTest {
         imageId = jdbc.queryForObject("select min(id) from os_images", Long.class);
         adminUserId = SeedFixtures.orgadminId(jdbc);
         String slug = "pipe-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbc.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbc.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
     }
 
@@ -409,8 +409,8 @@ class ProvisionPipelineTest {
                 insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
                 values (?, 'PROVISION', 8, 'PENDING', 0)
                 """, vmId);
-        jdbc.update("insert into group_members (group_id, user_id, role) values (?, ?, 'OWNER')",
-                groupId, adminUserId);
+        jdbc.update("insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",
+                workspaceId, adminUserId);
         stubAgent(vmid, ip);
 
         job.provisionVm(vmId);
@@ -427,7 +427,7 @@ class ProvisionPipelineTest {
 
         // the completion notification is emailed by the dispatcher with the
         // no-backup notice; the audience is the VM's owner on its access list
-        // plus the owners of the owning group, which here are the same account
+        // plus the owners of the owning workspace, which here are the same account
         notificationDispatchJob.dispatch();
         MailMessage mail = mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mail).isNotNull();
@@ -622,21 +622,21 @@ class ProvisionPipelineTest {
     /** Minimal request→vm graph, mirroring what an approval writes. */
     private long createVm() {
         long requestId = jdbc.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '파이프라인 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, adminUserId, imageId);
+                """, Long.class, workspaceId, orgId, adminUserId, imageId);
         String hostname = "pipe-vm-" + UUID.randomUUID().toString().substring(0, 12);
         // The account is deliberately not 'ubuntu': approval copies it off the OS
         // image, so the pipeline has to carry this row's value into cloud-init
         // rather than fall back on the account the platform started with.
         long vmId = jdbc.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, ssh_username, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 'rocky', 1, 1024, 10)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
         // Approval also opens the VM's access list with its requester on it, and
         // that list is where the pipeline's notices look for an audience — a
         // fixture VM without it is one nobody is responsible for.

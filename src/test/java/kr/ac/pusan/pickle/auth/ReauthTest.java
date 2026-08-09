@@ -79,7 +79,7 @@ class ReauthTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -90,7 +90,7 @@ class ReauthTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = createTeam("reauth-" + UUID.randomUUID().toString().substring(0, 8));
+        workspaceId = createTeam("reauth-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
     @Test
@@ -329,19 +329,19 @@ class ReauthTest {
 
     private long createVm() {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '재인증 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
         String hostname = "reauth-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status, ?, 'bcrypt-hash')
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet(), credentialCipher.encrypt(VM_PASSWORD));
         // Approval is what would name the requester owner of the VM; this one is
         // inserted directly, so the row is written here instead. Without it the
@@ -351,7 +351,7 @@ class ReauthTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(

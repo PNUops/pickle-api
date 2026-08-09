@@ -8,10 +8,10 @@ import org.jspecify.annotations.Nullable;
 
 /** Adds one entry to a VM's access list. */
 public record AddVmAccessGrantRequest(
-        @Schema(description = "USER는 지정된 사용자 한 명, GROUP은 소유 그룹 전체")
+        @Schema(description = "USER는 지정된 사용자 한 명, WORKSPACE은 소유 워크스페이스 전체")
         @NotNull AccessGranteeType granteeType,
-        @Schema(description = "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 그룹의 구성원이어야 합니다.")
+        @Schema(description = "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 워크스페이스의 구성원이어야 합니다.")
         @Nullable Long userId,
-        @Schema(description = "부여할 등급. 그룹 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다.")
+        @Schema(description = "부여할 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다.")
         @NotNull ResourceRole role) {
 }

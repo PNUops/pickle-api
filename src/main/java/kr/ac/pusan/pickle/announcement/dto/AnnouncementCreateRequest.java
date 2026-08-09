@@ -17,5 +17,5 @@ public record AnnouncementCreateRequest(
         @NotNull(message = "공지 범위를 선택해 주세요.")
         AnnouncementScope scope,
         @Nullable Long orgId,
-        @Nullable Long groupId) {
+        @Nullable Long workspaceId) {
 }

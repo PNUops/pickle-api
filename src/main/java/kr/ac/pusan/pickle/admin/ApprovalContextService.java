@@ -7,17 +7,17 @@ import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Applicant;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Capacity;
-import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.GroupPanel;
+import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.WorkspacePanel;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.HistoryEntry;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.MemberBrief;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.OrgHeadroom;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Resources;
 import kr.ac.pusan.pickle.admin.dto.ResourceTotalsResponse;
 import kr.ac.pusan.pickle.admin.dto.VmBriefResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Builds the {@code ApprovalContext} decision-support payload:
- * applicant history and current resources, group panel, prior decisions, and
+ * applicant history and current resources, workspace panel, prior decisions, and
  * org headroom with threshold warnings from {@code settings} plus the derived
  * Korean guidance line. "Active" VMs are all non-deleted rows — they hold
  * allocation regardless of power state.
@@ -57,21 +57,21 @@ public class ApprovalContextService {
     private final VmRequestRepository requestRepository;
     private final VmRequestReviewRepository reviewRepository;
     private final VmRepository vmRepository;
-    private final GroupRepository groupRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final OrgHeadroomService orgHeadroomService;
 
     public ApprovalContextService(ApprovalService approvalService, VmRequestRepository requestRepository,
             VmRequestReviewRepository reviewRepository, VmRepository vmRepository,
-            GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
+            WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository, OrgHeadroomService orgHeadroomService) {
         this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.vmRepository = vmRepository;
-        this.groupRepository = groupRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
         this.orgHeadroomService = orgHeadroomService;
     }
@@ -83,13 +83,13 @@ public class ApprovalContextService {
         // (WITHDRAWN + later anonymization keep the row), so
         // applicant.signupAt/email are always non-null per contract.
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
-        Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
+        Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
         OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(request.getOrgId());
         return new ApprovalContextResponse(
                 applicantPanel(request, applicant),
                 applicantResources(request.getRequesterId()),
-                groupPanel(group),
+                workspacePanel(workspace),
                 history(request),
                 new OrgHeadroom(headroom.allocated(),
                         new Capacity(headroom.capacityVcpu(), headroom.capacityMemoryMb()),
@@ -108,32 +108,32 @@ public class ApprovalContextService {
     }
 
     private Resources applicantResources(Long userId) {
-        List<Long> groupIds = groupMemberRepository.findWithGroupByUserId(userId).stream()
-                .map(m -> m.getGroup().getId())
+        List<Long> workspaceIds = workspaceMemberRepository.findWithWorkspaceByUserId(userId).stream()
+                .map(m -> m.getWorkspace().getId())
                 .toList();
-        List<Vm> activeVms = groupIds.isEmpty()
+        List<Vm> activeVms = workspaceIds.isEmpty()
                 ? List.of()
-                : vmRepository.findActiveByGroupIdIn(groupIds, VmStatus.DELETED);
+                : vmRepository.findActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
         return new Resources(briefs(activeVms), ResourceTotalsResponse.of(activeVms));
     }
 
-    private GroupPanel groupPanel(Group group) {
-        List<GroupMember> members = groupMemberRepository.findByGroupIdOrderByIdAsc(group.getId());
+    private WorkspacePanel workspacePanel(Workspace workspace) {
+        List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspace.getId());
         Map<Long, User> users = userRepository
-                .findAllById(members.stream().map(GroupMember::getUserId).toList())
+                .findAllById(members.stream().map(WorkspaceMember::getUserId).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
         List<MemberBrief> memberBriefs = members.stream()
                 .map(m -> new MemberBrief(m.getUserId(),
                         users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getName() : "탈퇴 회원",
                         m.getRole()))
                 .toList();
-        List<Vm> activeVms = vmRepository.findActiveByGroupIdIn(List.of(group.getId()), VmStatus.DELETED);
-        return new GroupPanel(group.getId(), group.getName(), group.getKind(), memberBriefs,
+        List<Vm> activeVms = vmRepository.findActiveByWorkspaceIdIn(List.of(workspace.getId()), VmStatus.DELETED);
+        return new WorkspacePanel(workspace.getId(), workspace.getName(), workspace.getKind(), memberBriefs,
                 briefs(activeVms), ResourceTotalsResponse.of(activeVms));
     }
 
     private List<HistoryEntry> history(VmRequest request) {
-        List<VmRequest> prior = requestRepository.findHistory(request.getRequesterId(), request.getGroupId(),
+        List<VmRequest> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
                 request.getId(), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id")));
         if (prior.isEmpty()) {
             return List.of();

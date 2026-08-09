@@ -63,9 +63,9 @@ class AdminTasksTest {
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         orgName = jdbcTemplate.queryForObject("select name from orgs where id = ?", String.class, orgId);
-        long groupId = createGroup();
-        vmA = createVm(groupId);
-        vmB = createVm(groupId);
+        long workspaceId = createWorkspace();
+        vmA = createVm(workspaceId);
+        vmB = createVm(workspaceId);
     }
 
     @Test
@@ -93,7 +93,7 @@ class AdminTasksTest {
                 .andExpect(jsonPath("$.content[0].hostname").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].orgId").value(orgId))
                 .andExpect(jsonPath("$.content[0].orgName").value(orgName))
-                .andExpect(jsonPath("$.content[0].groupName").isNotEmpty())
+                .andExpect(jsonPath("$.content[0].workspaceName").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].kind").value("PROVISION"))
                 .andExpect(jsonPath("$.content[0].status").value("NEEDS_ADMIN"))
                 .andExpect(jsonPath("$.content[0].currentStep").value(3))
@@ -175,30 +175,30 @@ class AdminTasksTest {
         return "$.content[?(@.taskId == %d)]".formatted(taskId);
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         String slug = "adt-" + UUID.randomUUID().toString().substring(0, 8);
         return jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
     }
 
-    private long createVm(long groupId) {
+    private long createVm(long workspaceId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '작업 큐 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+                """, Long.class, workspaceId, orgId, requesterId, imageId);
         String hostname = "adt-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'STOPPED'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
     }
 
     /** JobRunr rows of the provision pipeline job (enqueue evidence). */

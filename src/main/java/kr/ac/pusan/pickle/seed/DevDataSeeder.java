@@ -2,7 +2,7 @@ package kr.ac.pusan.pickle.seed;
 
 import java.time.Instant;
 import kr.ac.pusan.pickle.consent.TermsService;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,18 +48,18 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final OrgRepository orgRepository;
-    private final PersonalGroupService personalGroupService;
+    private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordEncoder passwordEncoder;
     private final SeedProperties properties;
     private final TermsService termsService;
     private final JdbcTemplate jdbcTemplate;
 
     public DevDataSeeder(UserRepository userRepository, OrgRepository orgRepository,
-            PersonalGroupService personalGroupService, PasswordEncoder passwordEncoder,
+            PersonalWorkspaceService personalWorkspaceService, PasswordEncoder passwordEncoder,
             SeedProperties properties, TermsService termsService, JdbcTemplate jdbcTemplate) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
-        this.personalGroupService = personalGroupService;
+        this.personalWorkspaceService = personalWorkspaceService;
         this.passwordEncoder = passwordEncoder;
         this.properties = properties;
         this.termsService = termsService;
@@ -404,7 +404,7 @@ public class DevDataSeeder implements ApplicationRunner {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
             user = userRepository.save(user);
-            personalGroupService.ensurePersonalGroup(user);
+            personalWorkspaceService.ensurePersonalWorkspace(user);
         });
         // Seed accounts bypass signup, so grant consent to the current documents
         // idempotently: no migration grants consent, so a seeded account starts with

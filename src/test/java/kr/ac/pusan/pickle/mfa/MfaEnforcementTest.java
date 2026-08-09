@@ -47,7 +47,7 @@ class MfaEnforcementTest {
         String token = jwtService.createAccessToken(admin);
 
         // a normal endpoint is blocked 403 MFA_ENROLLMENT_REQUIRED
-        mockMvc.perform(get("/api/v1/groups").header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/v1/workspaces").header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
 
@@ -58,14 +58,14 @@ class MfaEnforcementTest {
 
         // once enrolled, the same endpoint works
         enroll(admin.getId());
-        mockMvc.perform(get("/api/v1/groups").header("Authorization", "Bearer " + token))
+        mockMvc.perform(get("/api/v1/workspaces").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
     }
 
     @Test
     void plainUserIsNeverRestricted() throws Exception {
         User user = createUser("mfa.enforce.user@pusan.ac.kr", UserRole.USER);
-        mockMvc.perform(get("/api/v1/groups")
+        mockMvc.perform(get("/api/v1/workspaces")
                 .header("Authorization", "Bearer " + jwtService.createAccessToken(user)))
                 .andExpect(status().isOk());
     }

@@ -43,9 +43,9 @@ import tools.jackson.databind.ObjectMapper;
  * administrator walks it through REQUESTED → APPROVED → GRANTED (recording
  * the campus address once the VM is wired to it) or rejects/revokes.
  *
- * <p>User-side authorization is service-layer group scoping only, exactly
+ * <p>User-side authorization is service-layer workspace scoping only, exactly
  * like port forwarding and publishing: reads need membership, writes need
- * OWNER/EDITOR, and a non-member gets the 404 existence mask. Cross-group
+ * OWNER/EDITOR, and a non-member gets the 404 existence mask. Cross-workspace
  * intervention lives on the admin surface.</p>
  */
 @Service

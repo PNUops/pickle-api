@@ -16,11 +16,11 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * One entry in a resource's access list: this person (or this whole owning
- * group) may act on this resource at this rung.
+ * workspace) may act on this resource at this rung.
  *
  * <p>There is no foreign key to the resource, because the row's target depends
  * on {@link #resourceType}. What keeps the list honest is the lifecycle
- * cleanup: losing group membership drops that person's grants. Destroying a VM
+ * cleanup: losing workspace membership drops that person's grants. Destroying a VM
  * does not — the row is kept so its history stays readable, and this list is
  * what decides who may still read it. A resource type whose rows really do go
  * away has to clear its grants when they do.
@@ -46,7 +46,7 @@ public class ResourceAccessGrant {
     @Column(name = "grantee_type", nullable = false, columnDefinition = "access_grantee_type")
     private AccessGranteeType granteeType;
 
-    /** The person a USER grant names; null on a group-wide grant. */
+    /** The person a USER grant names; null on a workspace-wide grant. */
     @Column(name = "user_id")
     private Long userId;
 
@@ -80,10 +80,10 @@ public class ResourceAccessGrant {
         return new ResourceAccessGrant(type, resourceId, AccessGranteeType.USER, userId, role);
     }
 
-    /** Everyone in the owning group, at a rung the schema caps below EDITOR. */
-    public static ResourceAccessGrant forOwningGroup(ResourceType type, long resourceId,
+    /** Everyone in the owning workspace, at a rung the schema caps below EDITOR. */
+    public static ResourceAccessGrant forOwningWorkspace(ResourceType type, long resourceId,
             ResourceRole role) {
-        return new ResourceAccessGrant(type, resourceId, AccessGranteeType.GROUP, null, role);
+        return new ResourceAccessGrant(type, resourceId, AccessGranteeType.WORKSPACE, null, role);
     }
 
     public Long getId() {

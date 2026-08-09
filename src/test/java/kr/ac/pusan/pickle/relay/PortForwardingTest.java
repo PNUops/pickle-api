@@ -88,7 +88,7 @@ class PortForwardingTest {
     private String viewerToken;
     private String outsiderToken;
     private String sysAdminToken;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -112,11 +112,11 @@ class PortForwardingTest {
         viewerToken = jwtService.createAccessToken(viewer);
         outsiderToken = jwtService.createAccessToken(outsider);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
-        groupId = createTeam("pf-" + UUID.randomUUID().toString().substring(0, 8));
-        // Membership only puts them in the group; what each may do to a VM is
+        workspaceId = createTeam("pf-" + UUID.randomUUID().toString().substring(0, 8));
+        // Membership only puts them in the workspace; what each may do to a VM is
         // written onto that VM's access list by runningVm().
-        addMember(groupId, editor.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "MEMBER");
+        addMember(workspaceId, editor.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
     }
 
     // ── authorization ───────────────────────────────────────────────────────
@@ -125,14 +125,14 @@ class PortForwardingTest {
     void createAuthorizesByTheVmAccessList() throws Exception {
         long relayId = soleRelay(10000, 10099);
         long vmId = runningVm();
-        // outside the owning group the VM does not exist; granted VIEWER it
+        // outside the owning workspace the VM does not exist; granted VIEWER it
         // does, but a forwarding is a configuration change
         create(vmId, outsiderToken, "TCP", 8080)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         create(vmId, viewerToken, "TCP", 8080)
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         create(vmId, editorToken, "TCP", 8080)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.proto").value("TCP"))
@@ -259,7 +259,7 @@ class PortForwardingTest {
                 """);
         try {
             User fresh = ensureUser("pf.limited@pusan.ac.kr", "포워딩제한");
-            addMember(groupId, fresh.getEmail(), "MEMBER");
+            addMember(workspaceId, fresh.getEmail(), "MEMBER");
             // The VM predates this account, so its access list has to be told
             // about them before they can allocate anything.
             AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, fresh.getId(), "EDITOR");
@@ -413,7 +413,7 @@ class PortForwardingTest {
     }
 
     @Test
-    void adminDeleteRemovesBumpsAndNotifiesTheGroup() throws Exception {
+    void adminDeleteRemovesBumpsAndNotifiesTheWorkspace() throws Exception {
         long relayId = soleRelay(21000, 21099);
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
@@ -428,7 +428,7 @@ class PortForwardingTest {
                 "select count(*) from port_mappings where id = ?", Long.class, mappingId))
                 .isZero();
         assertThat(mappingGeneration(relayId)).isEqualTo(2);
-        // The owning group is told, same channel as an admin suspend: an
+        // The owning workspace is told, same channel as an admin suspend: an
         // access path disappearing must not be discovered from a dead
         // connection (the audit row alone reaches no user).
         assertThat(jdbcTemplate.queryForObject("""
@@ -642,20 +642,20 @@ class PortForwardingTest {
     private long runningVm() {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '포트 포워딩 테스트', (select min(id) from os_images),
                         1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId());
+                """, Long.class, workspaceId, orgId, owner.getId());
         String hostname = "pf-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values ((select min(id) from nodes), ?, ?, ?, ?, ?,
                         (select min(id) from os_images), 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, workspaceId, orgId, requestId, hostname, hostname,
                 VMID_SEQ.incrementAndGet());
         String ip = "172.29.220." + IP_SEQ.getAndIncrement();
         long allocId = jdbcTemplate.queryForObject("""
@@ -675,7 +675,7 @@ class PortForwardingTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -686,8 +686,8 @@ class PortForwardingTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)

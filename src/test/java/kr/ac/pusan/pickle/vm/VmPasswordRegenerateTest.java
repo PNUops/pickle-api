@@ -78,7 +78,7 @@ class VmPasswordRegenerateTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeAll
     static void startServer() {
@@ -100,7 +100,7 @@ class VmPasswordRegenerateTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select id from nodes where name = ?", Long.class, NODE);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = createTeam("vmpwregen-" + UUID.randomUUID().toString().substring(0, 8));
+        workspaceId = createTeam("vmpwregen-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
     @Test
@@ -168,29 +168,29 @@ class VmPasswordRegenerateTest {
 
     private long createRunningVm(int vmid) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '재생성 테스트', ?, 1, 1024, 10)
                 returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
         String hostname = "vmpwregen-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vmid, credentialCipher.encrypt(OLD_PASSWORD), "bcrypt-hash");
         // Regeneration is an EDITOR+ operation on the VM's access list, and
-        // owning the group grants nothing inside the VM — so the requester,
+        // owning the workspace grants nothing inside the VM — so the requester,
         // whom approval would have made resource OWNER, is named here instead.
         grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
         return vmId;
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(

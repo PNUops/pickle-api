@@ -105,7 +105,7 @@ public class VmSettingsService {
         return value.isBoolean() ? value.asBoolean() : def.defaultValue().asBoolean();
     }
 
-    /** Group-role setting, e.g. {@code password_reveal_min_role} for reveal. */
+    /** Workspace-role setting, e.g. {@code password_reveal_min_role} for reveal. */
     @Transactional(readOnly = true)
     public ResourceRole role(long vmId, String key) {
         VmSettingDef def = requireDef(key);
@@ -210,7 +210,7 @@ public class VmSettingsService {
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         ResourceRole actorRole = memberRole(vm, actor);
         if (!actorRole.atLeast(ResourceRole.EDITOR)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "VM 설정에 접근할 권한이 없습니다", "이 VM의 편집자 이상만 VM 설정을 볼 수 있습니다.");
         }
         return buildViews(vm, actorRole);
@@ -257,7 +257,7 @@ public class VmSettingsService {
         for (String key : incoming.keySet()) {
             VmSettingDef def = registry.get(key);
             if (!actorRole.atLeast(def.requiredRole())) {
-                throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+                throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                         "설정을 변경할 권한이 없습니다",
                         "`" + key + "` 설정은 이 VM의 " + def.requiredRole()
                                 + " 이상만 변경할 수 있습니다.");

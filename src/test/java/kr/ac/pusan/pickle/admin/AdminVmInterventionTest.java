@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * Admin VM intervention surface (contract v0.17.0): org-scoped detail/events
  * reads and power intents. Ratified decisions under test: all four admin roles
  * may intervene (org tier on own-org VMs only, 404 mask), admin power ops
- * bypass the group-internal stop protection, the expiry guard on start stays,
+ * bypass the workspace-internal stop protection, the expiry guard on start stays,
  * and every accepted power intent leaves an audit row. The JobRunr server is
  * off so accepted intents stay observable as pending claims.
  */
@@ -61,7 +61,7 @@ class AdminVmInterventionTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long groupId;
+    private long workspaceId;
     private String sysAdminToken;
     private String orgAdminToken;
     private String orgManagerToken;
@@ -76,8 +76,8 @@ class AdminVmInterventionTest {
         orgManagerToken = jwtService.createAccessToken(
                 ensureUser("avi.orgmanager@pusan.ac.kr", UserRole.ORG_MANAGER, orgId));
         String slug = "avi-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
     }
 
@@ -88,7 +88,7 @@ class AdminVmInterventionTest {
                 insert into vm_events (vm_id, type, detail) values (?, 'CREATE', '생성')
                 """, vmId);
 
-        // all admin tiers read the detail; the viewer has no group role
+        // all admin tiers read the detail; the viewer has no workspace role
         mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
@@ -229,18 +229,18 @@ class AdminVmInterventionTest {
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '개입 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+                """, Long.class, workspaceId, orgId, requesterId, imageId);
         String hostname = "avi-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status, end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, status, endDate);
     }
 }

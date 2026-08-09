@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
@@ -48,12 +48,12 @@ class MfaWithdrawTest {
     @Autowired
     private TotpService totpService;
     @Autowired
-    private PersonalGroupService personalGroupService;
+    private PersonalWorkspaceService personalWorkspaceService;
 
     @Test
     void enrolledWithdrawRequiresValidCode() throws Exception {
         User user = createActiveUser("mfa.withdraw@pusan.ac.kr");
-        personalGroupService.ensurePersonalGroup(user);
+        personalWorkspaceService.ensurePersonalWorkspace(user);
         String secret = enroll(user.getId());
         String access = jwtService.createAccessToken(user);
 

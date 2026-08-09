@@ -12,8 +12,8 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
@@ -52,20 +52,20 @@ public class AdminTaskService {
     private final ProvisioningTaskRepository taskRepository;
     private final VmRepository vmRepository;
     private final OrgRepository orgRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final ProvisioningService provisioningService;
     private final DeleteVmJob deleteVmJob;
     private final JobScheduler jobScheduler;
     private final AuditService auditService;
 
     public AdminTaskService(ProvisioningTaskRepository taskRepository, VmRepository vmRepository,
-            OrgRepository orgRepository, GroupRepository groupRepository,
+            OrgRepository orgRepository, WorkspaceRepository workspaceRepository,
             ProvisioningService provisioningService,
             DeleteVmJob deleteVmJob, JobScheduler jobScheduler, AuditService auditService) {
         this.taskRepository = taskRepository;
         this.vmRepository = vmRepository;
         this.orgRepository = orgRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.provisioningService = provisioningService;
         this.deleteVmJob = deleteVmJob;
         this.jobScheduler = jobScheduler;
@@ -98,20 +98,20 @@ public class AdminTaskService {
         Map<Long, String> orgNames = orgRepository.findAllById(vms.values().stream()
                         .map(Vm::getOrgId).filter(Objects::nonNull).distinct().toList()).stream()
                 .collect(Collectors.toMap(Org::getId, Org::getName));
-        // History-preserving group-name join (v0.9.0): reads all groups since a
-        // task's VM may reference a since-deleted group.
-        Map<Long, String> groupNames = groupRepository.findAllById(vms.values().stream()
-                        .map(Vm::getGroupId).filter(Objects::nonNull).distinct().toList()).stream()
-                .collect(Collectors.toMap(Group::getId, Group::getName));
+        // History-preserving workspace-name join (v0.9.0): reads all workspaces since a
+        // task's VM may reference a since-deleted workspace.
+        Map<Long, String> workspaceNames = workspaceRepository.findAllById(vms.values().stream()
+                        .map(Vm::getWorkspaceId).filter(Objects::nonNull).distinct().toList()).stream()
+                .collect(Collectors.toMap(Workspace::getId, Workspace::getName));
 
         List<AdminTaskResponse> content = result.getContent().stream()
                 .map(task -> {
                     Vm vm = vms.get(task.getVmId());
                     String orgName = vm == null || vm.getOrgId() == null ? null
                             : orgNames.get(vm.getOrgId());
-                    String groupName = vm == null || vm.getGroupId() == null ? null
-                            : groupNames.get(vm.getGroupId());
-                    return AdminTaskResponse.from(task, vm, orgName, groupName);
+                    String workspaceName = vm == null || vm.getWorkspaceId() == null ? null
+                            : workspaceNames.get(vm.getWorkspaceId());
+                    return AdminTaskResponse.from(task, vm, orgName, workspaceName);
                 })
                 .toList();
         return PageResponse.of(content, result);

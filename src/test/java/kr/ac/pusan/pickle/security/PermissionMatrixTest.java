@@ -40,13 +40,13 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  *   <li>for every role-gated op the effective {@code @PreAuthorize} role set
  *       (method annotation overriding the class one, per Spring method security)
  *       equals exactly the roles whose cell is {@code allow}/{@code allow_org_scoped};</li>
- *   <li>self / catalog / group-scoped / {@code public} rows carry no
+ *   <li>self / catalog / workspace-scoped / {@code public} rows carry no
  *       {@code @PreAuthorize} — authorization is service-layer or none;</li>
  *   <li>every non-public op rejects an unauthenticated caller with 401, and
  *       every public op does not (the permitAll boundary).</li>
  * </ul>
  *
- * Scoped cells ({@code allow_org_scoped}, {@code allow_group_scoped} and
+ * Scoped cells ({@code allow_org_scoped}, {@code allow_workspace_scoped} and
  * {@code allow_resource_scoped}) are service-layer and cannot be seen from
  * annotations; they are exercised by MockMvc tests — {@code VmAccessScopingTest}
  * walks every resource-scoped op against all four rungs plus the no-grant and
@@ -176,7 +176,7 @@ class PermissionMatrixTest {
             boolean gated = op.roles.containsValue("deny");
             boolean allPublic = op.roles.values().stream().allMatch("public"::equals);
             if (allPublic || !gated) {
-                // self / catalog / group-scoped / public: authorization is
+                // self / catalog / workspace-scoped / public: authorization is
                 // service-layer or none — there must be no method-security gate.
                 assertThat(actual)
                         .as("%s (%s) must carry no @PreAuthorize", op.key(), op.id())

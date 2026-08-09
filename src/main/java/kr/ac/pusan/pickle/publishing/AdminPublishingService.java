@@ -12,8 +12,8 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -50,7 +50,7 @@ public class AdminPublishingService {
     private final DomainRepository domainRepository;
     private final CertificateRepository certificateRepository;
     private final VmRepository vmRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final PublicationAssembler assembler;
     private final AuditService auditService;
@@ -65,7 +65,7 @@ public class AdminPublishingService {
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
-            GroupRepository groupRepository, OrgRepository orgRepository,
+            WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             PublicationAssembler assembler, AuditService auditService, JobScheduler jobScheduler,
             ResyncRoutesJob resyncRoutesJob, PublishingService publishingService,
             DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
@@ -75,7 +75,7 @@ public class AdminPublishingService {
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
         this.vmRepository = vmRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.assembler = assembler;
         this.auditService = auditService;
@@ -104,7 +104,7 @@ public class AdminPublishingService {
                     domain != null ? domain.getFqdn() : null,
                     domain != null ? domain.getKind() : null,
                     vm != null ? vm.getId() : null, name(vm),
-                    vm != null ? vm.getGroupId() : null, ctx.groupName(vm),
+                    vm != null ? vm.getWorkspaceId() : null, ctx.workspaceName(vm),
                     vm != null ? vm.getOrgId() : null, ctx.orgName(vm),
                     route.getTargetPort(), route.getProtocol(), route.getStatus(),
                     route.getAppliedGeneration(), route.getAppliedAt(), route.getLastError(),
@@ -137,7 +137,7 @@ public class AdminPublishingService {
                     domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                     domain.getVerifiedAt(), domain.getReleasedAt(),
                     assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
-                    vm != null ? vm.getGroupId() : null, ctx.groupName(vm),
+                    vm != null ? vm.getWorkspaceId() : null, ctx.workspaceName(vm),
                     vm != null ? vm.getOrgId() : null, ctx.orgName(vm),
                     routeStatus, certStatus, domain.getUpdatedAt());
         }).toList();
@@ -182,7 +182,7 @@ public class AdminPublishingService {
     /**
      * Admin takedown of a problem domain: route down (pushed to the proxy) and
      * the name freed at once, skipping the reservation grace a user's own
-     * release gets. The owning group is told on the same channel as an admin
+     * release gets. The owning workspace is told on the same channel as an admin
      * mapping delete — the audit row alone reaches no user, and a public
      * address disappearing must not be discovered from a dead link. A serving
      * domain also gets the UNPUBLISH entry in the VM's event history (parity
@@ -346,15 +346,15 @@ public class AdminPublishingService {
         return vm != null ? vm.getName() : null;
     }
 
-    /** Batch-resolves the VM/group/org context for a set of domains. */
+    /** Batch-resolves the VM/workspace/org context for a set of domains. */
     private Context context(List<Domain> domains) {
         Set<Long> vmIds = domains.stream().map(Domain::getVmId).collect(Collectors.toSet());
         Map<Long, Vm> vms = byId(vmRepository.findAllById(vmIds), Vm::getId);
-        Set<Long> groupIds = vms.values().stream().map(Vm::getGroupId).collect(Collectors.toSet());
+        Set<Long> workspaceIds = vms.values().stream().map(Vm::getWorkspaceId).collect(Collectors.toSet());
         Set<Long> orgIds = vms.values().stream().map(Vm::getOrgId).collect(Collectors.toSet());
-        Map<Long, Group> groups = byId(groupRepository.findAllById(groupIds), Group::getId);
+        Map<Long, Workspace> workspaces = byId(workspaceRepository.findAllById(workspaceIds), Workspace::getId);
         Map<Long, Org> orgs = byId(orgRepository.findAllById(orgIds), Org::getId);
-        return new Context(byId(domains, Domain::getId), vms, groups, orgs);
+        return new Context(byId(domains, Domain::getId), vms, workspaces, orgs);
     }
 
     private static <T> Map<Long, T> byId(Iterable<T> entities, Function<T, Long> idOf) {
@@ -363,15 +363,15 @@ public class AdminPublishingService {
         return map;
     }
 
-    private record Context(Map<Long, Domain> domains, Map<Long, Vm> vms, Map<Long, Group> groups,
+    private record Context(Map<Long, Domain> domains, Map<Long, Vm> vms, Map<Long, Workspace> workspaces,
             Map<Long, Org> orgs) {
 
-        String groupName(Vm vm) {
+        String workspaceName(Vm vm) {
             if (vm == null) {
                 return null;
             }
-            Group group = groups.get(vm.getGroupId());
-            return group != null ? group.getName() : null;
+            Workspace workspace = workspaces.get(vm.getWorkspaceId());
+            return workspace != null ? workspace.getName() : null;
         }
 
         String orgName(Vm vm) {

@@ -29,7 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * self-scoped (login rows included, filters cannot widen it), and
  * {@code /admin/audit} pins ORG_ADMIN to actors of their own org via the
  * canonical <b>derived membership</b> rule enforced in SQL — regular users belong
- * to an org through groups holding vm_requests / non-DELETED VMs in it.
+ * to an org through workspaces holding vm_requests / non-DELETED VMs in it.
  * System rows (null actor) and cross-org actors stay invisible; a cross-org
  * {@code orgId} masks as 404; SYS_ADMIN sees everything with filters.
  */
@@ -73,12 +73,12 @@ class AuditReadApiTest {
         self = ensureRegularUser("aud.self@pusan.ac.kr", "감사본인");
         peer = ensureRegularUser("aud.peer@pusan.ac.kr", "감사동료");
         otherOrgUser = ensureRegularUser("aud.other@pusan.ac.kr", "감사타인");
-        // derived org membership: self+peer share a group with a seed-org
-        // vm_request; the third user's group is linked to the other org only
-        long ownGroup = createGroup("audown", self.getId(), peer.getId());
-        linkGroupToOrg(ownGroup, org.getId(), self.getId());
-        long otherGroup = createGroup("audoth", otherOrgUser.getId());
-        linkGroupToOrg(otherGroup, otherOrg.getId(), otherOrgUser.getId());
+        // derived org membership: self+peer share a workspace with a seed-org
+        // vm_request; the third user's workspace is linked to the other org only
+        long ownWorkspace = createWorkspace("audown", self.getId(), peer.getId());
+        linkWorkspaceToOrg(ownWorkspace, org.getId(), self.getId());
+        long otherWorkspace = createWorkspace("audoth", otherOrgUser.getId());
+        linkWorkspaceToOrg(otherWorkspace, otherOrg.getId(), otherOrgUser.getId());
         selfToken = jwtService.createAccessToken(self);
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
@@ -132,7 +132,7 @@ class AuditReadApiTest {
     @Test
     void adminAuditScopesOrgAdminByDerivedMembershipInSql() throws Exception {
         String actionFilter = "?action=test." + runTag + ".vmdel&size=100";
-        // ORG_ADMIN: derived own-org actors only (users via their group's
+        // ORG_ADMIN: derived own-org actors only (users via their workspace's
         // seed-org request) — the other org's actor is invisible
         mockMvc.perform(get("/api/v1/admin/audit" + actionFilter)
                         .header("Authorization", "Bearer " + orgAdminToken))
@@ -192,27 +192,27 @@ class AuditReadApiTest {
                 """, actorId, actorRole, action, targetType, targetId, ip);
     }
 
-    private long createGroup(String prefix, long... memberIds) {
+    private long createWorkspace(String prefix, long... memberIds) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id
                 """, Long.class, slug, slug);
         for (long memberId : memberIds) {
             jdbcTemplate.update("""
-                    insert into group_members (group_id, user_id, role) values (?, ?, 'MEMBER')
-                    """, groupId, memberId);
+                    insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')
+                    """, workspaceId, memberId);
         }
-        return groupId;
+        return workspaceId;
     }
 
-    /** Derived-membership link: one vm_request of the group in the org. */
-    private void linkGroupToOrg(long groupId, long orgId, long requesterId) {
+    /** Derived-membership link: one vm_request of the workspace in the org. */
+    private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
         jdbcTemplate.update("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '조직 연계(테스트)', (select min(id) from os_images),
                         1, 1024, 20)
-                """, groupId, orgId, requesterId);
+                """, workspaceId, orgId, requesterId);
     }
 
     private User ensureRegularUser(String email, String name) {

@@ -1,17 +1,17 @@
-package kr.ac.pusan.pickle.group.dto;
+package kr.ac.pusan.pickle.workspace.dto;
 
 import jakarta.validation.constraints.Size;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Contract: PATCH /groups/{groupId} body ({@code minProperties: 1}).
+ * Contract: PATCH /workspaces/{workspaceId} body ({@code minProperties: 1}).
  * Field presence is tracked via the setters so an explicit
  * {@code "description": null} clears the description, while an absent field
  * leaves it untouched.
  */
-public class UpdateGroupRequest {
+public class UpdateWorkspaceRequest {
 
-    @Size(max = 100, message = "그룹 이름은 100자 이하여야 합니다.")
+    @Size(max = 100, message = "워크스페이스 이름은 100자 이하여야 합니다.")
     private String name;
     private boolean nameSet;
 

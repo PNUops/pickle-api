@@ -10,11 +10,11 @@ import kr.ac.pusan.pickle.auth.RefreshTokenRepository;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupKind;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -30,14 +30,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Self-service account withdrawal ({@code POST /me/withdraw}). WITHDRAWN is
  * permanent — the row is retained (privacy policy, 2026-07-08) so the same
  * email can never re-register. Withdrawal tears the account down in a single
- * transaction: sessions, memberships, the PERSONAL group, and SSH keys.
+ * transaction: sessions, memberships, the PERSONAL workspace, and SSH keys.
  */
 @Service
 public class AccountService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final VmRepository vmRepository;
     private final UserSshKeyRepository userSshKeyRepository;
@@ -49,7 +49,7 @@ public class AccountService {
     private final MfaService mfaService;
 
     public AccountService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-            GroupMemberRepository groupMemberRepository,
+            WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, VmRepository vmRepository,
             UserSshKeyRepository userSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
             UserStatusChangeRepository userStatusChangeRepository,
@@ -57,7 +57,7 @@ public class AccountService {
             NotificationService notificationService, MfaService mfaService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.vmRepository = vmRepository;
         this.userSshKeyRepository = userSshKeyRepository;
@@ -99,8 +99,8 @@ public class AccountService {
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
         rateLimitService.clearCodeFailures(user.getEmail(), ip);
 
-        List<GroupMember> liveMemberships = groupMemberRepository.findWithGroupByUserId(user.getId()).stream()
-                .filter(member -> member.getGroup().getDeletedAt() == null)
+        List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
+                .filter(member -> member.getWorkspace().getDeletedAt() == null)
                 .toList();
         checkWithdrawBlockers(liveMemberships);
 
@@ -112,9 +112,9 @@ public class AccountService {
 
         refreshTokenRepository.deleteByUserId(user.getId());
         userSshKeyRepository.deleteByUserId(user.getId());
-        personalGroup(liveMemberships).ifPresent(group -> group.softDelete(user.getId(), now));
-        groupMemberRepository.deleteByUserId(user.getId());
-        // Grants only ever name a member of the owning group, so they go
+        personalWorkspace(liveMemberships).ifPresent(workspace -> workspace.softDelete(user.getId(), now));
+        workspaceMemberRepository.deleteByUserId(user.getId());
+        // Grants only ever name a member of the owning workspace, so they go
         // with the memberships rather than outliving the account.
         grantRepository.deleteByUserId(user.getId());
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), fromStatus,
@@ -128,29 +128,29 @@ public class AccountService {
         return new MessageResponse("탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.");
     }
 
-    private void checkWithdrawBlockers(List<GroupMember> liveMemberships) {
-        for (GroupMember member : liveMemberships) {
-            Group group = member.getGroup();
-            if (member.getRole() == GroupMemberRole.OWNER && group.getKind() != GroupKind.PERSONAL
-                    && groupMemberRepository.countByGroupIdAndRole(group.getId(), GroupMemberRole.OWNER) == 1
-                    && vmRepository.countActiveByGroupId(group.getId(), VmStatus.DELETED) > 0) {
-                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP,
+    private void checkWithdrawBlockers(List<WorkspaceMember> liveMemberships) {
+        for (WorkspaceMember member : liveMemberships) {
+            Workspace workspace = member.getWorkspace();
+            if (member.getRole() == WorkspaceMemberRole.OWNER && workspace.getKind() != WorkspaceKind.PERSONAL
+                    && workspaceMemberRepository.countByWorkspaceIdAndRole(workspace.getId(), WorkspaceMemberRole.OWNER) == 1
+                    && vmRepository.countActiveByWorkspaceId(workspace.getId(), VmStatus.DELETED) > 0) {
+                throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE,
                         "탈퇴할 수 없습니다",
-                        "삭제되지 않은 VM을 보유한 그룹의 유일한 소유자입니다. 소유권을 이전하거나 VM을 먼저 삭제해 주세요.");
+                        "삭제되지 않은 VM을 보유한 워크스페이스의 유일한 소유자입니다. 소유권을 이전하거나 VM을 먼저 삭제해 주세요.");
             }
         }
-        personalGroup(liveMemberships).ifPresent(group -> {
-            if (vmRepository.countActiveByGroupId(group.getId(), VmStatus.DELETED) > 0) {
+        personalWorkspace(liveMemberships).ifPresent(workspace -> {
+            if (vmRepository.countActiveByWorkspaceId(workspace.getId(), VmStatus.DELETED) > 0) {
                 throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_HAS_ACTIVE_VMS,
                         "탈퇴할 수 없습니다", "사용 중인 VM이 남아 있습니다. VM을 먼저 삭제한 뒤 다시 시도해 주세요.");
             }
         });
     }
 
-    private static java.util.Optional<Group> personalGroup(List<GroupMember> liveMemberships) {
+    private static java.util.Optional<Workspace> personalWorkspace(List<WorkspaceMember> liveMemberships) {
         return liveMemberships.stream()
-                .map(GroupMember::getGroup)
-                .filter(group -> group.getKind() == GroupKind.PERSONAL)
+                .map(WorkspaceMember::getWorkspace)
+                .filter(workspace -> workspace.getKind() == WorkspaceKind.PERSONAL)
                 .findFirst();
     }
 

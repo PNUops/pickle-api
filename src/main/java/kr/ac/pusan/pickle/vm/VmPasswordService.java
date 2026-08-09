@@ -84,7 +84,7 @@ public class VmPasswordService {
         ResourceRole minRole =
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
         if (!memberVm.role().atLeast(minRole)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "비밀번호를 열람할 권한이 없습니다",
                     "이 VM은 접근 권한 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
         }
@@ -118,7 +118,7 @@ public class VmPasswordService {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
         if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "비밀번호를 재생성할 권한이 없습니다",
                     "이 VM의 편집자 이상만 비밀번호를 재생성할 수 있습니다.");
         }

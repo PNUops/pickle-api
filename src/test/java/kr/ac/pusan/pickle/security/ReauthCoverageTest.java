@@ -39,7 +39,7 @@ class ReauthCoverageTest {
     /**
      * The operator-approved sudo-mode surface: destructive VM operations, VM
      * credential reveal/rotation, every SSH-key write plus the private-key
-     * download, and group membership changes.
+     * download, and workspace membership changes.
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
             "POST /admin/relays/{relayId}/token",
@@ -51,11 +51,11 @@ class ReauthCoverageTest {
             "POST /me/ssh-keys/generate",
             "DELETE /me/ssh-keys/{keyId}",
             "GET /me/ssh-keys/{keyId}/private-key",
-            "POST /groups/{groupId}/members",
-            "PATCH /groups/{groupId}/members/{userId}",
-            "DELETE /groups/{groupId}/members/{userId}",
+            "POST /workspaces/{workspaceId}/members",
+            "PATCH /workspaces/{workspaceId}/members/{userId}",
+            "DELETE /workspaces/{workspaceId}/members/{userId}",
             // Editing a VM's access list is what decides who reaches the VM at
-            // all, so it steps up exactly as changing group membership does.
+            // all, so it steps up exactly as changing workspace membership does.
             // Reading the list does not.
             "POST /vms/{vmId}/access",
             "PATCH /vms/{vmId}/access/{grantId}",

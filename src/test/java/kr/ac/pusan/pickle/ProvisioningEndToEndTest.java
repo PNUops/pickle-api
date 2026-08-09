@@ -38,7 +38,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * End-to-end proof of the real provisioning path in one flow: signup → verify
- * (token from the mock mail) → login → TEAM group → vm-request → seeded
+ * (token from the mock mail) → login → TEAM workspace → vm-request → seeded
  * ORG_ADMIN queue → approval context → approve → the JobRunr background server
  * runs the REAL provision pipeline against a WireMock Proxmox (pve1 captures,
  * happy path) → /vms shows RUNNING with the allocated IP, one-shot password
@@ -67,7 +67,7 @@ class ProvisioningEndToEndTest {
 
     private static final String USER_EMAIL = "e2e.user@pusan.ac.kr";
     private static final String USER_PASSWORD = "E2e-Corr3ct-horse!";
-    private static final String GROUP_SLUG = "e2e-team";
+    private static final String WORKSPACE_SLUG = "e2e-team";
 
     /**
      * First value of {@code vmid_seq} (V50) — deterministic because this test
@@ -144,12 +144,12 @@ class ProvisioningEndToEndTest {
         // 2. login as the user
         String userToken = login(USER_EMAIL, USER_PASSWORD);
 
-        // 3. create a TEAM group
-        MvcResult groupResult = postJson("/api/v1/groups", userToken,
-                Map.of("kind", "TEAM", "name", "종단 테스트 팀", "slug", GROUP_SLUG))
+        // 3. create a TEAM workspace
+        MvcResult workspaceResult = postJson("/api/v1/workspaces", userToken,
+                Map.of("kind", "TEAM", "name", "종단 테스트 팀", "slug", WORKSPACE_SLUG))
                 .andExpect(status().isCreated())
                 .andReturn();
-        long groupId = objectMapper.readTree(groupResult.getResponse().getContentAsString())
+        long workspaceId = objectMapper.readTree(workspaceResult.getResponse().getContentAsString())
                 .get("id").asLong();
 
         // 4. reference data: the two request axes from the API; the seed org via
@@ -164,7 +164,7 @@ class ProvisioningEndToEndTest {
 
         // 5. submit the vm-request pre-filled with the chosen preset's specs
         MvcResult requestResult = postJson("/api/v1/vm-requests", userToken, Map.of(
-                "groupId", groupId,
+                "workspaceId", workspaceId,
                 "orgId", orgId,
                 "imageId", imageId,
                 "flavorId", flavorId,
@@ -190,7 +190,7 @@ class ProvisioningEndToEndTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicant.email").value(USER_EMAIL))
-                .andExpect(jsonPath("$.group.id").value(groupId))
+                .andExpect(jsonPath("$.workspace.id").value(workspaceId))
                 .andExpect(jsonPath("$.orgHeadroom.capacity.cpuThreads").value(40))
                 .andExpect(jsonPath("$.guidance").isNotEmpty());
 
@@ -208,7 +208,7 @@ class ProvisioningEndToEndTest {
         // 9. the background job server runs the real pipeline to completion:
         //    /vms must show RUNNING — the test fails if the VM stays CREATING
         await().atMost(Duration.ofSeconds(120)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() ->
-                mockMvc.perform(get("/api/v1/vms?groupId=" + groupId)
+                mockMvc.perform(get("/api/v1/vms?workspaceId=" + workspaceId)
                                 .header("Authorization", "Bearer " + userToken))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.totalElements").value(1))
@@ -218,7 +218,7 @@ class ProvisioningEndToEndTest {
         JsonNode vms = getJson("/api/v1/vms", userToken);
         JsonNode vm = vms.get("content").get(0);
         long vmId = vm.get("id").asLong();
-        assertThat(vm.get("hostname").asString()).startsWith(GROUP_SLUG + "-");
+        assertThat(vm.get("hostname").asString()).startsWith(WORKSPACE_SLUG + "-");
         assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
         mockMvc.perform(get("/api/v1/vms/" + vmId)
@@ -251,7 +251,7 @@ class ProvisioningEndToEndTest {
 
         // 12. the audit trail covers the whole flow
         for (String action : new String[] {"auth.signup", "auth.verify", "auth.login",
-                "group.create", "request.create", "request.approve"}) {
+                "workspace.create", "request.create", "request.approve"}) {
             Long count = jdbcTemplate.queryForObject(
                     "select count(*) from audit_logs where action = ?", Long.class, action);
             assertThat(count).as("audit rows for %s", action).isPositive();

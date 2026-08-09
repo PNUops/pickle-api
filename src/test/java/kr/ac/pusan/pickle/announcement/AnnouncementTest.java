@@ -32,18 +32,18 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Announcements + the group picker per contract v0.5.0: scope rules (ALL is
- * SYS_ADMIN-only 403; ORG pinned for ORG_ADMIN with mismatch 422; the GROUP
+ * Announcements + the workspace picker per contract v0.5.0: scope rules (ALL is
+ * SYS_ADMIN-only 403; ORG pinned for ORG_ADMIN with mismatch 422; the WORKSPACE
  * gate and zero-link 404), synchronous fan-out counts over ACTIVE users,
  * sender-org list visibility, the per-author 10/hour rate budget
- * (429 + Retry-After), and {@code GET /admin/groups} scoping.
+ * (429 + Retry-After), and {@code GET /admin/workspaces} scoping.
  *
  * <p><b>Org-membership semantics</b> (operator decision): regular users carry
  * no {@code users.org_id} (V11 {@code chk_users_org_role}); a user belongs to
- * an org iff they are an ACTIVE member of a group with ≥1 vm_request or
- * non-DELETED VM in that org, or an ORG_ADMIN of it. The GROUP scope is gated
- * on the group having resources in the caller's org and then reaches
- * <b>all</b> the group's ACTIVE members.</p>
+ * an org iff they are an ACTIVE member of a workspace with ≥1 vm_request or
+ * non-DELETED VM in that org, or an ORG_ADMIN of it. The WORKSPACE scope is gated
+ * on the workspace having resources in the caller's org and then reaches
+ * <b>all</b> the workspace's ACTIVE members.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -79,8 +79,8 @@ class AnnouncementTest {
     private String orgAdminToken;
     private String otherOrgAdminToken;
     private String userToken;
-    private long mixedGroupId;
-    private long foreignGroupId;
+    private long mixedWorkspaceId;
+    private long foreignWorkspaceId;
 
     @BeforeEach
     void setUp() {
@@ -106,18 +106,18 @@ class AnnouncementTest {
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         userToken = jwtService.createAccessToken(ownMember);
-        // group linked to the caller's org (vm_request), ACTIVE + DISABLED members
-        mixedGroupId = createGroup("annmix", ownMember.getId(), inactiveMember.getId(),
+        // workspace linked to the caller's org (vm_request), ACTIVE + DISABLED members
+        mixedWorkspaceId = createWorkspace("annmix", ownMember.getId(), inactiveMember.getId(),
                 crossMember.getId());
-        linkGroupToOrg(mixedGroupId, org.getId(), ownMember.getId());
-        // group linked only to the other org — never targetable by our ORG_ADMIN
-        foreignGroupId = createGroup("annfor", farMember.getId());
-        linkGroupToOrg(foreignGroupId, otherOrg.getId(), farMember.getId());
+        linkWorkspaceToOrg(mixedWorkspaceId, org.getId(), ownMember.getId());
+        // workspace linked only to the other org — never targetable by our ORG_ADMIN
+        foreignWorkspaceId = createWorkspace("annfor", farMember.getId());
+        linkWorkspaceToOrg(foreignWorkspaceId, otherOrg.getId(), farMember.getId());
         jdbcTemplate.update("delete from auth_rate_limits where scope = 'announce'");
     }
 
     @Test
-    void scopeRulesGateAllOrgAndGroupSends() throws Exception {
+    void scopeRulesGateAllOrgAndWorkspaceSends() throws Exception {
         // users never reach the endpoint
         create(userToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
                 .andExpect(status().isForbidden());
@@ -127,23 +127,23 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         // scope/target cross-field mismatches → 422
         create(sysAdminToken, Map.of("title", "t", "body", "b", "scope", "ALL",
-                "groupId", mixedGroupId)).andExpect(status().isUnprocessableContent());
+                "workspaceId", mixedWorkspaceId)).andExpect(status().isUnprocessableContent());
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
-                "groupId", mixedGroupId)).andExpect(status().isUnprocessableContent());
-        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "GROUP"))
+                "workspaceId", mixedWorkspaceId)).andExpect(status().isUnprocessableContent());
+        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE"))
                 .andExpect(status().isUnprocessableContent());
-        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "GROUP",
-                "groupId", mixedGroupId, "orgId", org.getId()))
+        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
+                "workspaceId", mixedWorkspaceId, "orgId", org.getId()))
                 .andExpect(status().isUnprocessableContent());
         // ORG pinned: another org's id → 422
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
                 "orgId", otherOrg.getId())).andExpect(status().isUnprocessableContent());
-        // GROUP without resources in the caller's org → 404 (existence
-        // masked), exactly like a group that does not exist at all
-        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "GROUP",
-                "groupId", foreignGroupId)).andExpect(status().isNotFound());
-        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "GROUP",
-                "groupId", 999999)).andExpect(status().isNotFound());
+        // WORKSPACE without resources in the caller's org → 404 (existence
+        // masked), exactly like a workspace that does not exist at all
+        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
+                "workspaceId", foreignWorkspaceId)).andExpect(status().isNotFound());
+        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
+                "workspaceId", 999999)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -163,8 +163,8 @@ class AnnouncementTest {
                  where announcement_id = ? and event = 'announcement' and status = 'PENDING'
                 """, Long.class, allId)).isEqualTo(activeUsers);
 
-        // ORG (pinned): derived members — group members via the org-linked
-        // group and the org's ORG_ADMINs; DISABLED and other-org-only excluded
+        // ORG (pinned): derived members — workspace members via the org-linked
+        // workspace and the org's ORG_ADMINs; DISABLED and other-org-only excluded
         ResultActions orgSend = create(orgAdminToken, Map.of(
                 "title", "기관 공지", "body", "본문", "scope", "ORG"))
                 .andExpect(status().isCreated())
@@ -182,20 +182,20 @@ class AnnouncementTest {
                 select recipient_count from announcements where id = ?
                 """, Long.class, orgAnnId));
 
-        // GROUP by ORG_ADMIN: the gated group's ACTIVE members — all of them,
+        // WORKSPACE by ORG_ADMIN: the gated workspace's ACTIVE members — all of them,
         // regardless of their own (non-)org
-        long groupAnnId = createdId(create(orgAdminToken, Map.of(
-                "title", "그룹 공지", "body", "본문", "scope", "GROUP", "groupId", mixedGroupId))
+        long workspaceAnnId = createdId(create(orgAdminToken, Map.of(
+                "title", "워크스페이스 공지", "body", "본문", "scope", "WORKSPACE", "workspaceId", mixedWorkspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.recipientCount").value(2)));
-        assertThat(recipientOf(groupAnnId, ownMember.getId())).isEqualTo(1);
-        assertThat(recipientOf(groupAnnId, crossMember.getId())).isEqualTo(1);
-        assertThat(recipientOf(groupAnnId, inactiveMember.getId())).isZero();
+        assertThat(recipientOf(workspaceAnnId, ownMember.getId())).isEqualTo(1);
+        assertThat(recipientOf(workspaceAnnId, crossMember.getId())).isEqualTo(1);
+        assertThat(recipientOf(workspaceAnnId, inactiveMember.getId())).isZero();
 
-        // GROUP by SYS_ADMIN: same member set (no gate)
+        // WORKSPACE by SYS_ADMIN: same member set (no gate)
         createdId(create(sysAdminToken, Map.of(
-                "title", "그룹 공지(시스템)", "body", "본문", "scope", "GROUP",
-                "groupId", foreignGroupId))
+                "title", "워크스페이스 공지(시스템)", "body", "본문", "scope", "WORKSPACE",
+                "workspaceId", foreignWorkspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.recipientCount").value(1)));
 
@@ -250,10 +250,10 @@ class AnnouncementTest {
         // the limit covers SENDS, not tries
         create(bursterToken, Map.of("title", "t", "body", "b", "scope", "ALL"))
                 .andExpect(status().isForbidden());
-        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "GROUP"))
+        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE"))
                 .andExpect(status().isUnprocessableContent());
-        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "GROUP",
-                "groupId", foreignGroupId)).andExpect(status().isNotFound());
+        create(bursterToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
+                "workspaceId", foreignWorkspaceId)).andExpect(status().isNotFound());
         for (int i = 1; i <= 10; i++) {
             create(bursterToken, Map.of("title", "공지 " + i, "body", "b", "scope", "ORG"))
                     .andExpect(status().isCreated());
@@ -265,34 +265,34 @@ class AnnouncementTest {
     }
 
     @Test
-    void adminGroupPickerFollowsTheGroupGate() throws Exception {
-        // ORG_ADMIN: org-linked groups only. memberCount counts ACTIVE members
+    void adminWorkspacePickerFollowsTheWorkspaceGate() throws Exception {
+        // ORG_ADMIN: org-linked workspaces only. memberCount counts ACTIVE members
         // (the fan-out basis) — the DISABLED member is not part of it
-        mockMvc.perform(get("/api/v1/admin/groups")
+        mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==2)]")
+                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + " && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==" + foreignGroupId + ")]").doesNotExist());
+                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + ")]").doesNotExist());
         // cross-org filter → 404 (existence stays private)
-        mockMvc.perform(get("/api/v1/admin/groups?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
-        // SYS_ADMIN: all groups without a filter; the org filter applies the gate
-        mockMvc.perform(get("/api/v1/admin/groups")
+        // SYS_ADMIN: all workspaces without a filter; the org filter applies the gate
+        mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + " && @.memberCount==2)]")
+                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + " && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==" + foreignGroupId + " && @.memberCount==1)]")
+                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + " && @.memberCount==1)]")
                         .exists());
-        mockMvc.perform(get("/api/v1/admin/groups?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + foreignGroupId + ")]").exists())
-                .andExpect(jsonPath("$[?(@.id==" + mixedGroupId + ")]").doesNotExist());
+                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + ")]").exists())
+                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + ")]").doesNotExist());
         // users → 403
-        mockMvc.perform(get("/api/v1/admin/groups")
+        mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -323,27 +323,27 @@ class AnnouncementTest {
                 """, Long.class, announcementId, userId);
     }
 
-    private long createGroup(String prefix, long... memberIds) {
+    private long createWorkspace(String prefix, long... memberIds) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id
                 """, Long.class, slug, slug);
         for (long memberId : memberIds) {
             jdbcTemplate.update("""
-                    insert into group_members (group_id, user_id, role) values (?, ?, 'MEMBER')
-                    """, groupId, memberId);
+                    insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')
+                    """, workspaceId, memberId);
         }
-        return groupId;
+        return workspaceId;
     }
 
-    /** Derived-membership link: one vm_request of the group in the org. */
-    private void linkGroupToOrg(long groupId, long orgId, long requesterId) {
+    /** Derived-membership link: one vm_request of the workspace in the org. */
+    private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
         jdbcTemplate.update("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '조직 연계(테스트)', (select min(id) from os_images),
                         1, 1024, 20)
-                """, groupId, orgId, requesterId);
+                """, workspaceId, orgId, requesterId);
     }
 
     private User ensureRegularUser(String email, String name, UserStatus status) {

@@ -24,8 +24,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
@@ -62,7 +62,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * only); custom domains are uncapped but rate-limited per user on creation
  * because Let's Encrypt issuance draws on a shared account quota.</p>
  *
- * <p>Authorization: mutating ops require the owning group's OWNER/EDITOR (a
+ * <p>Authorization: mutating ops require the owning workspace's OWNER/EDITOR (a
  * VIEWER is 403, a non-member 404 — same masking as the power path); reads
  * require VIEWER+. The platform subdomain NAME is always chosen by the user in
  * the create body (no request-form fallback, no auto-generated name) and
@@ -77,7 +77,7 @@ public class PublishingService {
     private static final Pattern LABEL = Pattern.compile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$");
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
     private final ResourceAccessGrantRepository grantRepository;
     private final DomainRepository domainRepository;
@@ -95,7 +95,7 @@ public class PublishingService {
     private final RateLimitService rateLimitService;
     private final SecureRandom random = new SecureRandom();
 
-    public PublishingService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
             ResourceAccessGrantRepository grantRepository,
             DomainRepository domainRepository, RouteRepository routeRepository,
@@ -106,7 +106,7 @@ public class PublishingService {
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
             RateLimitService rateLimitService) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
         this.grantRepository = grantRepository;
         this.domainRepository = domainRepository;
@@ -600,21 +600,21 @@ public class PublishingService {
 
     /**
      * The VMs whose domains this requester may see: the ones the access lists
-     * name them on. Owning the group is not enough — a domain names its VM, and
+     * name them on. Owning the workspace is not enough — a domain names its VM, and
      * that is inside. Empty means empty, so a sentinel keeps the {@code in}
      * clause valid.
      */
     private List<Long> reachableVmIds(AuthenticatedUser actor) {
-        List<GroupMember> memberships = groupMemberRepository.findWithGroupByUserId(actor.id());
+        List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
         Set<Long> vmIds = new LinkedHashSet<>();
-        Set<Long> memberGroupIds = memberships.stream()
-                .map(m -> m.getGroup().getId())
+        Set<Long> memberWorkspaceIds = memberships.stream()
+                .map(m -> m.getWorkspace().getId())
                 .collect(java.util.stream.Collectors.toSet());
-        // Only grants on VMs of a group this person still belongs to, the same
+        // Only grants on VMs of a workspace this person still belongs to, the same
         // re-check the access resolver makes: a grant that outlived its
         // membership must not keep answering here either.
-        List<Long> memberVmIds = memberGroupIds.isEmpty() ? List.of()
-                : vmRepository.findIdsByGroupIdIn(List.copyOf(memberGroupIds));
+        List<Long> memberVmIds = memberWorkspaceIds.isEmpty() ? List.of()
+                : vmRepository.findIdsByWorkspaceIdIn(List.copyOf(memberWorkspaceIds));
         Set<Long> reachableByMembership = Set.copyOf(memberVmIds);
         for (ResourceAccessGrant grant : grantRepository.findByResourceTypeAndUserId(
                 ResourceType.VM, actor.id())) {
@@ -622,15 +622,15 @@ public class PublishingService {
                 vmIds.add(grant.getResourceId());
             }
         }
-        // Group-wide grants name nobody, so they are matched through the VMs of
-        // the groups this person belongs to.
+        // Workspace-wide grants name nobody, so they are matched through the VMs of
+        // the workspaces this person belongs to.
         if (!memberVmIds.isEmpty()) {
-            Set<Long> groupWide = grantRepository
+            Set<Long> workspaceWide = grantRepository
                     .findByResourceTypeAndResourceIdIn(ResourceType.VM, memberVmIds).stream()
-                    .filter(grant -> grant.getGranteeType() == AccessGranteeType.GROUP)
+                    .filter(grant -> grant.getGranteeType() == AccessGranteeType.WORKSPACE)
                     .map(ResourceAccessGrant::getResourceId)
                     .collect(java.util.stream.Collectors.toSet());
-            vmIds.addAll(groupWide);
+            vmIds.addAll(workspaceWide);
         }
         return vmIds.isEmpty() ? List.of(-1L) : List.copyOf(vmIds);
     }

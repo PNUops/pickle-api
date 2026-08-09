@@ -29,14 +29,14 @@ public final class AccessGrantFixtures {
                 """, vmId, userId, role);
     }
 
-    /** Grants the whole owning group one VM at {@code role} (MEMBER or VIEWER). */
-    public static void grantVmToOwningGroup(JdbcTemplate jdbcTemplate, long vmId, String role) {
+    /** Grants the whole owning workspace one VM at {@code role} (MEMBER or VIEWER). */
+    public static void grantVmToOwningWorkspace(JdbcTemplate jdbcTemplate, long vmId, String role) {
         jdbcTemplate.update("""
                 insert into resource_access_grants
                        (resource_type, resource_id, grantee_type, user_id, role)
-                values ('VM', ?, 'GROUP', null, ?::resource_role)
+                values ('VM', ?, 'WORKSPACE', null, ?::resource_role)
                 on conflict (resource_type, resource_id)
-                    where grantee_type = 'GROUP'
+                    where grantee_type = 'WORKSPACE'
                     do update set role = excluded.role
                 """, vmId, role);
     }

@@ -122,7 +122,7 @@ class VmExpiryJobTest {
     private long orgId;
     private long imageId;
     private long requesterId;
-    private long groupId;
+    private long workspaceId;
     private long nodeId;
     private String nodeName;
     private long ownerId;
@@ -147,14 +147,14 @@ class VmExpiryJobTest {
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "vexp-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
         editorId = createUser("manager." + slug + "@pusan.ac.kr");
         memberId = createUser("member." + slug + "@pusan.ac.kr");
-        // The three audiences an expiry notice has to tell apart: the group's
-        // owner, who hears about every VM of the group; the VM's own EDITOR
+        // The three audiences an expiry notice has to tell apart: the workspace's
+        // owner, who hears about every VM of the workspace; the VM's own EDITOR
         // grantee (written per VM in createVm); and a plain member the VM was
         // never opened to, who hears nothing.
         addMember(ownerId, "OWNER");
@@ -191,7 +191,7 @@ class VmExpiryJobTest {
         assertThat(stageOf(vm14)).isEqualTo(14);
         assertThat(stageOf(vmLate)).isEqualTo(7);
 
-        // recipients: the VM's EDITOR grantee + the group's owner, never a member
+        // recipients: the VM's EDITOR grantee + the workspace's owner, never a member
         // the VM was not opened to; D-1 is HIGH
         assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, editorId);
         assertThat(jdbcTemplate.queryForObject("""
@@ -263,7 +263,7 @@ class VmExpiryJobTest {
                  where vm_id = ? and type = 'EXPIRE_STOP' and actor_id is null
                 """, Long.class, vmExpired)).isEqualTo(1);
         // HIGH notification to those the VM makes responsible (its EDITOR grantee
-        // and the group's owner) + the org's ORG_ADMINs
+        // and the workspace's owner) + the org's ORG_ADMINs
         assertThat(jdbcTemplate.queryForList("""
                 select user_id from notifications
                  where event = 'vm.expiry.stopped' and payload ->> 'vmId' = ?
@@ -361,9 +361,9 @@ class VmExpiryJobTest {
 
     private void addMember(long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                """, workspaceId, userId, role);
     }
 
     private long createVm(String status, LocalDate endDate) {
@@ -372,19 +372,19 @@ class VmExpiryJobTest {
 
     private long createVm(String status, LocalDate endDate, int proxmoxVmid) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '만료 테스트', ?, 2, 2048, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+                """, Long.class, workspaceId, orgId, requesterId, imageId);
         String hostname = "vexp-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?, ?::vm_status, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status, endDate);
         grantVmToUser(jdbcTemplate, vmId, editorId, "EDITOR");
         return vmId;

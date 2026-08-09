@@ -29,7 +29,7 @@ import tools.jackson.databind.ObjectMapper;
  * {@code actor_id = principal}, and {@code /admin/audit} pins ORG_ADMIN to
  * rows whose actor belongs to their org by the canonical <b>derived
  * membership</b> rule ({@link OrgMembershipSql}: the actor is one of the
- * org's ORG_ADMINs, or an ACTIVE member of a group with vm_requests /
+ * org's ORG_ADMINs, or an ACTIVE member of a workspace with vm_requests /
  * non-DELETED VMs in the org). System rows — null actor — are therefore
  * SYS_ADMIN-only. Date bounds are KST calendar days.</p>
  */
@@ -41,7 +41,7 @@ public class AuditQueryService {
     /**
      * Representative derived-org name for the audit row's actor (v0.9.0 display
      * field): the actor's managed org (ORG_ADMIN {@code users.org_id}) if any,
-     * else the smallest org id derived from the actor's group resources
+     * else the smallest org id derived from the actor's workspace resources
      * (vm_requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
      * Null for system rows and actors with no derived org. Correlated on
      * {@code u}/{@code a} from the outer query; binds no positional parameters.
@@ -50,11 +50,11 @@ public class AuditQueryService {
             (select o.name from orgs o where o.id = coalesce(u.org_id, (
                  select min(dro.org_id) from (
                      select lr.org_id from vm_requests lr
-                       join group_members gm on gm.group_id = lr.group_id
+                       join workspace_members gm on gm.workspace_id = lr.workspace_id
                       where gm.user_id = a.actor_id
                      union
                      select lv.org_id from vms lv
-                       join group_members gm2 on gm2.group_id = lv.group_id
+                       join workspace_members gm2 on gm2.workspace_id = lv.workspace_id
                       where gm2.user_id = a.actor_id and lv.status <> 'DELETED'
                  ) dro)))""";
 
@@ -102,7 +102,7 @@ public class AuditQueryService {
             // ORG_ADMINs plus derived members; system rows (null actor) and
             // out-of-org actors drop out
             where.append(" and (u.org_id = ? or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedGroup("a.actor_id"))
+                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("a.actor_id"))
                     .append("))");
             params.add(scopedOrgId);
             params.add(scopedOrgId);

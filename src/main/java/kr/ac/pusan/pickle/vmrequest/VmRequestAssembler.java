@@ -7,8 +7,8 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.user.User;
@@ -18,7 +18,7 @@ import kr.ac.pusan.pickle.vmrequest.dto.VmRequestReviewResponse;
 import org.springframework.stereotype.Component;
 
 /**
- * Builds contract {@code VmRequestDetail} payloads: resolves group/org/user
+ * Builds contract {@code VmRequestDetail} payloads: resolves workspace/org/user
  * display names and the review (when decided) with batched lookups, so list
  * pages stay free of per-row queries.
  */
@@ -26,14 +26,14 @@ import org.springframework.stereotype.Component;
 public class VmRequestAssembler {
 
     private final VmRequestReviewRepository reviewRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final UserRepository userRepository;
 
-    public VmRequestAssembler(VmRequestReviewRepository reviewRepository, GroupRepository groupRepository,
+    public VmRequestAssembler(VmRequestReviewRepository reviewRepository, WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, UserRepository userRepository) {
         this.reviewRepository = reviewRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
     }
@@ -50,8 +50,8 @@ public class VmRequestAssembler {
                 .findByRequestIdIn(requests.stream().map(VmRequest::getId).toList())
                 .stream()
                 .collect(Collectors.toMap(VmRequestReview::getRequestId, Function.identity()));
-        Map<Long, Group> groups = byId(groupRepository
-                .findAllById(ids(requests.stream().map(VmRequest::getGroupId))), Group::getId);
+        Map<Long, Workspace> workspaces = byId(workspaceRepository
+                .findAllById(ids(requests.stream().map(VmRequest::getWorkspaceId))), Workspace::getId);
         Map<Long, Org> orgs = byId(orgRepository
                 .findAllById(ids(requests.stream().map(VmRequest::getOrgId))), Org::getId);
         Map<Long, User> users = byId(userRepository.findAllById(ids(Stream.concat(
@@ -61,12 +61,12 @@ public class VmRequestAssembler {
         List<VmRequestDetailResponse> details = new ArrayList<>(requests.size());
         for (VmRequest request : requests) {
             VmRequestReview review = reviews.get(request.getId());
-            Group group = groups.get(request.getGroupId());
+            Workspace workspace = workspaces.get(request.getWorkspaceId());
             Org org = orgs.get(request.getOrgId());
             User requester = users.get(request.getRequesterId());
             details.add(new VmRequestDetailResponse(
                     request.getId(),
-                    request.getGroupId(), group != null ? group.getName() : null,
+                    request.getWorkspaceId(), workspace != null ? workspace.getName() : null,
                     request.getOrgId(), org != null ? org.getName() : null,
                     request.getRequesterId(), requester != null ? requester.getName() : "탈퇴 회원",
                     request.getImageId(), request.getFlavorId(),

@@ -7,6 +7,6 @@ import jakarta.validation.constraints.Size;
 /** Contract op {@code suspendAdminPortMapping} body. */
 public record SuspendPortMappingRequest(
         @NotBlank @Size(max = 500)
-        @Schema(description = "정지 사유 (소유 그룹에 알림으로 전달)")
+        @Schema(description = "정지 사유 (소유 워크스페이스에 알림으로 전달)")
         String reason) {
 }

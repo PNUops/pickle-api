@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.group;
+package kr.ac.pusan.pickle.workspace;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,8 +15,8 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "groups")
-public class Group {
+@Table(name = "workspaces")
+public class Workspace {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -24,8 +24,8 @@ public class Group {
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
-    @Column(nullable = false, columnDefinition = "group_kind")
-    private GroupKind kind;
+    @Column(nullable = false, columnDefinition = "workspace_kind")
+    private WorkspaceKind kind;
 
     @Column(nullable = false)
     private String name;
@@ -35,11 +35,11 @@ public class Group {
 
     private String description;
 
-    /** Soft-delete stamp. A non-null value hides the group everywhere. */
+    /** Soft-delete stamp. A non-null value hides the workspace everywhere. */
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
-    /** Who deleted the group: the OWNER (deleteGroup) or the withdrawing user. */
+    /** Who deleted the workspace: the OWNER (deleteWorkspace) or the withdrawing user. */
     @Column(name = "deleted_by")
     private Long deletedBy;
 
@@ -51,10 +51,10 @@ public class Group {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected Group() {
+    protected Workspace() {
     }
 
-    public Group(GroupKind kind, String name, String slug, String description) {
+    public Workspace(WorkspaceKind kind, String name, String slug, String description) {
         this.kind = kind;
         this.name = name;
         this.slug = slug;
@@ -65,7 +65,7 @@ public class Group {
         return id;
     }
 
-    public GroupKind getKind() {
+    public WorkspaceKind getKind() {
         return kind;
     }
 
@@ -106,7 +106,7 @@ public class Group {
     }
 
     /**
-     * Soft-delete stamp: group delete and PERSONAL-group cleanup on
+     * Soft-delete stamp: workspace delete and PERSONAL-workspace cleanup on
      * withdrawal — the row is kept for VM/audit history.
      */
     public void softDelete(Long actorId, Instant when) {

@@ -62,7 +62,7 @@ class DriftReconcilerTest {
     private long orgId;
     private long imageId;
     private long requesterId;
-    private long groupId;
+    private long workspaceId;
     private final List<Long> createdNodeIds = new ArrayList<>();
     private ListAppender<ILoggingEvent> logAppender;
 
@@ -84,8 +84,8 @@ class DriftReconcilerTest {
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "drift-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
         logAppender = new ListAppender<>();
         logAppender.start();
@@ -250,18 +250,18 @@ class DriftReconcilerTest {
 
     private long createVm(long nodeId, int proxmoxVmid, String status, int vcpu, int memoryMb) {
         long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
+                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
                                          req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, '드리프트 테스트', ?, ?, ?, 10)
                 returning id
-                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
+                """, Long.class, workspaceId, orgId, requesterId, imageId, vcpu, memoryMb);
         String hostname = "drift-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vcpu, memoryMb, proxmoxVmid, status);
     }
 }
