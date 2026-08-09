@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,6 +38,10 @@ import tools.jackson.databind.ObjectMapper;
  * at rest, audited per reveal), the per-status 409 guard, the MEMBER+/masking
  * authorization, the no-store header, and the 410 for rows without a stored
  * password.
+ *
+ * <p>The rung each fixture user acts at comes from the VM's access list, which
+ * {@link #createVm} writes: everyone here is a plain member of the owning
+ * group, and a member with no grant reaches nothing.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -101,7 +106,7 @@ class VmPasswordTest {
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createTeam("vmpw-" + UUID.randomUUID().toString().substring(0, 8));
         addMember(groupId, member.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -240,7 +245,7 @@ class VmPasswordTest {
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmpw-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
@@ -250,6 +255,12 @@ class VmPasswordTest {
                 imageId, VMID_SEQ.incrementAndGet(), status.name(),
                 initialPassword == null ? null : credentialCipher.encrypt(initialPassword),
                 initialPassword == null ? null : "bcrypt-hash");
+        // Approval is what normally seeds the list; a VM inserted here carries
+        // no grant at all, so name the three rungs the reveal gate compares.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {

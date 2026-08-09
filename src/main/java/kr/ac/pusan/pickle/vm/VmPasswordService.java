@@ -86,7 +86,7 @@ public class VmPasswordService {
         if (!memberVm.role().atLeast(minRole)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "비밀번호를 열람할 권한이 없습니다",
-                    "이 VM은 그룹의 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
+                    "이 VM은 접근 권한 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
         }
         if (FORBIDDEN_REVEAL_STATUSES.contains(vm.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
@@ -120,7 +120,7 @@ public class VmPasswordService {
         if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "비밀번호를 재생성할 권한이 없습니다",
-                    "그룹의 EDITOR 이상만 비밀번호를 재생성할 수 있습니다.");
+                    "이 VM의 편집자 이상만 비밀번호를 재생성할 수 있습니다.");
         }
         if (vm.getStatus() != VmStatus.RUNNING || vm.getProxmoxVmid() == null) {
             throw agentUnavailable();

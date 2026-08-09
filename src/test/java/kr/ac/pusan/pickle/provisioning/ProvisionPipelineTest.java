@@ -23,6 +23,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -424,8 +425,9 @@ class ProvisionPipelineTest {
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
 
-        // the completion notification is emailed by the dispatcher to the
-        // group OWNER with the no-backup notice
+        // the completion notification is emailed by the dispatcher with the
+        // no-backup notice; the audience is the VM's owner on its access list
+        // plus the owners of the owning group, which here are the same account
         notificationDispatchJob.dispatch();
         MailMessage mail = mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mail).isNotNull();
@@ -629,12 +631,17 @@ class ProvisionPipelineTest {
         // The account is deliberately not 'ubuntu': approval copies it off the OS
         // image, so the pipeline has to carry this row's value into cloud-init
         // rather than fall back on the account the platform started with.
-        return jdbc.queryForObject("""
+        long vmId = jdbc.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, ssh_username, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 'rocky', 1, 1024, 10)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+        // Approval also opens the VM's access list with its requester on it, and
+        // that list is where the pipeline's notices look for an audience — a
+        // fixture VM without it is one nobody is responsible for.
+        AccessGrantFixtures.grantVmToUser(jdbc, vmId, adminUserId, "OWNER");
+        return vmId;
     }
 
     /** Allocates the VM's IP up front so stubs can carry the exact address. */

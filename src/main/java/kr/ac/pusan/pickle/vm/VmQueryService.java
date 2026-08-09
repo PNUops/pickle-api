@@ -2,14 +2,20 @@ package kr.ac.pusan.pickle.vm;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.AccessGranteeType;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -22,6 +28,8 @@ import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.PublicationAssembler;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
@@ -55,6 +63,8 @@ public class VmQueryService {
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final VmAccessService vmAccessService;
+    private final ResourceAccessGrantRepository grantRepository;
+    private final UserRepository userRepository;
     private final GroupRepository groupRepository;
     private final OrgRepository orgRepository;
     private final IpAddressResolver ipAddressResolver;
@@ -67,6 +77,8 @@ public class VmQueryService {
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
             VmAccessService vmAccessService,
+            ResourceAccessGrantRepository grantRepository,
+            UserRepository userRepository,
             GroupRepository groupRepository, OrgRepository orgRepository,
             IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
@@ -77,6 +89,8 @@ public class VmQueryService {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
         this.vmAccessService = vmAccessService;
+        this.grantRepository = grantRepository;
+        this.userRepository = userRepository;
         this.groupRepository = groupRepository;
         this.orgRepository = orgRepository;
         this.ipAddressResolver = ipAddressResolver;
@@ -109,10 +123,59 @@ public class VmQueryService {
         Map<Long, String> orgNames = orgNames(vms);
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
+        Set<Long> ownedGroupIds = memberships.stream()
+                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
+                .map(m -> m.getGroup().getId())
+                .collect(Collectors.toSet());
+        VmListAccess access = listAccess(actor.id(), vms);
         return PageResponse.of(vms.stream()
-                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), ""),
-                        orgNames.get(vm.getOrgId()), displayNames.get(vm.getId())))
+                .map(vm -> {
+                    String groupName = groupNames.getOrDefault(vm.getGroupId(), "");
+                    String displayName = displayNames.get(vm.getId());
+                    // Only a grant opens the row. A group owner without one gets
+                    // the same restricted row as anyone else, plus the flag that
+                    // lets the console offer them the access list — the way back
+                    // in for a VM whose own owner is gone.
+                    if (access.reachable().contains(vm.getId())) {
+                        return VmSummaryResponse.from(vm, groupName, orgNames.get(vm.getOrgId()),
+                                displayName);
+                    }
+                    return VmSummaryResponse.restricted(vm, groupName, displayName,
+                            access.ownerNames().getOrDefault(vm.getId(), List.of()),
+                            ownedGroupIds.contains(vm.getGroupId()));
+                })
                 .toList(), result);
+    }
+
+    /** Which of these VMs the requester may see in full, and who to ask about the rest. */
+    private record VmListAccess(Set<Long> reachable, Map<Long, List<String>> ownerNames) {
+    }
+
+    private VmListAccess listAccess(long userId, List<Vm> vms) {
+        if (vms.isEmpty()) {
+            return new VmListAccess(Set.of(), Map.of());
+        }
+        List<ResourceAccessGrant> grants = grantRepository.findByResourceTypeAndResourceIdIn(
+                ResourceType.VM, vms.stream().map(Vm::getId).toList());
+        Set<Long> reachable = new java.util.HashSet<>();
+        Map<Long, List<Long>> ownerIds = new java.util.LinkedHashMap<>();
+        for (ResourceAccessGrant grant : grants) {
+            if (grant.getGranteeType() == AccessGranteeType.GROUP
+                    || Long.valueOf(userId).equals(grant.getUserId())) {
+                reachable.add(grant.getResourceId());
+            }
+            if (grant.getRole() == ResourceRole.OWNER && grant.getUserId() != null) {
+                ownerIds.computeIfAbsent(grant.getResourceId(), key -> new java.util.ArrayList<>())
+                        .add(grant.getUserId());
+            }
+        }
+        Map<Long, String> names = userRepository.findAllById(ownerIds.values().stream()
+                        .flatMap(List::stream).distinct().toList()).stream()
+                .collect(Collectors.toMap(User::getId, User::getName));
+        Map<Long, List<String>> ownerNames = new java.util.LinkedHashMap<>();
+        ownerIds.forEach((vmId, ids) -> ownerNames.put(vmId, ids.stream()
+                .map(names::get).filter(java.util.Objects::nonNull).toList()));
+        return new VmListAccess(reachable, ownerNames);
     }
 
     /** Batch org-name join for the summary views (avoids N+1). */
@@ -129,7 +192,7 @@ public class VmQueryService {
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
-        return detailOf(access.requireVisible(), access.role());
+        return detailOf(access.requireVisible(), access.role(), access.manages());
     }
 
     /**
@@ -142,6 +205,13 @@ public class VmQueryService {
      */
     @Transactional(readOnly = true)
     public VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole) {
+        return detailOf(vm, myResourceRole, false);
+    }
+
+    /** Same view, told whether the requester may manage the access list and delete. */
+    @Transactional(readOnly = true)
+    public VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole,
+            boolean accessManageAllowed) {
         long vmId = vm.getId();
         // History-preserving joins: a DELETED vm's group/org may have been
         // deleted afterwards, so this deliberately reads all groups/orgs.
@@ -169,7 +239,8 @@ public class VmQueryService {
         boolean passwordRevealAllowed = myResourceRole != null && myResourceRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
         return VmDetailResponse.from(vm, groupName, orgName, displayName, ipAddress, sshHost,
-                myResourceRole, passwordRevealAllowed, provisioning, publications);
+                myResourceRole, passwordRevealAllowed, accessManageAllowed, provisioning,
+                publications);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

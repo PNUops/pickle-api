@@ -167,7 +167,7 @@ public class DomainVerifier {
         if (vm == null) {
             return;
         }
-        notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+        notificationService.publish(notificationService.vmResponsibleIds(vm),
                 NotificationEvent.DOMAIN_CONNECT_FAILED,
                 Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", error),
                 "domain_verify_failed:" + domain.getId());

@@ -3,7 +3,6 @@ package kr.ac.pusan.pickle.vmrequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -82,13 +81,11 @@ public class VmRequestService {
         // A soft-deleted group cannot receive new VM requests.
         Group group = groupRepository.findByIdAndDeletedAtIsNull(request.groupId())
                 .orElseThrow(() -> notFound("해당 그룹이 존재하지 않습니다."));
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(group.getId(), actor.id())
-                .map(GroupMember::getRole)
+        // Any member may ask. The rung that used to gate this was really about
+        // reaching VMs, which is now the access list's business, and asking is
+        // not the step that costs anything — approval is.
+        groupMemberRepository.findByGroupIdAndUserId(group.getId(), actor.id())
                 .orElseThrow(VmRequestService::requestRoleInsufficient);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
-            throw requestRoleInsufficient();
-        }
 
         Org org = orgRepository.findById(request.orgId())
                 .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
@@ -186,14 +183,14 @@ public class VmRequestService {
         VmRequest request = requestRepository.findWithLockById(requestId)
                 .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
         boolean requester = request.getRequesterId().equals(actor.id());
-        Optional<GroupMemberRole> role = groupMemberRepository
+        boolean groupOwner = groupMemberRepository
                 .findByGroupIdAndUserId(request.getGroupId(), actor.id())
-                .map(GroupMember::getRole);
-        boolean editorOrOwner = role.filter(r -> r == GroupMemberRole.OWNER || r == GroupMemberRole.EDITOR)
+                .map(GroupMember::getRole)
+                .filter(role -> role == GroupMemberRole.OWNER)
                 .isPresent();
-        if (!requester && !editorOrOwner) {
+        if (!requester && !groupOwner) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)/편집자(EDITOR)만 취소할 수 있습니다.");
+                    "접근 권한이 없습니다", "신청자 본인 또는 그룹 소유자(OWNER)만 취소할 수 있습니다.");
         }
         if (request.getStatus() != VmRequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,

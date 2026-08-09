@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.auth;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -334,7 +335,7 @@ class ReauthTest {
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "reauth-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
@@ -342,6 +343,11 @@ class ReauthTest {
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet(), credentialCipher.encrypt(VM_PASSWORD));
+        // Approval is what would name the requester owner of the VM; this one is
+        // inserted directly, so the row is written here instead. Without it the
+        // sudo-mode tests would be measuring authorization, not the reauth gate.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.publishing.agent.ProxyAgentUnreachableException;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
@@ -154,9 +155,13 @@ class PublishingTest {
     private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private User owner;
+    private User editor;
+    private User viewer;
     private String ownerToken;
     private String editorToken;
     private String viewerToken;
+    /** A member of the owning group whom no VM's access list ever names. */
+    private String bystanderToken;
     private String outsiderToken;
     private String orgAdminToken;
     private String sysAdminToken;
@@ -181,14 +186,16 @@ class PublishingTest {
                 + "('domain_create', 'domain_create_hourly')");
 
         owner = ensureUser("pub.owner@pusan.ac.kr", "공개소유자", UserRole.USER, null);
-        User editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
-        User viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.USER, null);
+        editor = ensureUser("pub.manager@pusan.ac.kr", "공개매니저", UserRole.USER, null);
+        viewer = ensureUser("pub.viewer@pusan.ac.kr", "공개뷰어", UserRole.USER, null);
+        User bystander = ensureUser("pub.bystander@pusan.ac.kr", "공개무권한", UserRole.USER, null);
         User outsider = ensureUser("pub.outsider@pusan.ac.kr", "공개외부인", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);
         editorToken = jwtService.createAccessToken(editor);
         viewerToken = jwtService.createAccessToken(viewer);
+        bystanderToken = jwtService.createAccessToken(bystander);
         outsiderToken = jwtService.createAccessToken(outsider);
         orgAdminToken = jwtService.createAccessToken(orgAdmin);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
@@ -198,30 +205,34 @@ class PublishingTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
         groupId = createTeam(groupSlug);
-        addMember(groupId, editor.getEmail(), "EDITOR");
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        // The group ladder no longer says anything about a VM: everyone joins
+        // as a plain member and the rung they act at is written onto each VM's
+        // access list by publishableVm().
+        addMember(groupId, editor.getEmail(), "MEMBER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
+        addMember(groupId, bystander.getEmail(), "MEMBER");
     }
 
     // ── authorization ────────────────────────────────────────────────────────
 
     @Test
-    void publishAuthorizesByGroupRole() throws Exception {
+    void publishAuthorizesByTheVmAccessList() throws Exception {
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
         String body = "{\"port\":8080,\"subdomain\":\"team-alpha\"}";
 
-        // non-member → 404 (existence masked)
+        // outside the owning group → 404 (existence masked)
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        // VIEWER → 403
+        // granted VIEWER on the VM → sees it, may not configure it
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + viewerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        // EDITOR → 202
+        // granted EDITOR on the VM → 202
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + editorToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -403,6 +414,14 @@ class PublishingTest {
         Map<Long, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
         assertThat(outsider).containsKey(foreignId);
         assertThat(outsider).doesNotContainKey(liveId);
+
+        // Belonging to the owning group is no longer enough to see what its
+        // VMs publish: the listing is scoped to the VMs the caller can actually
+        // reach, and reaching one means being named on its access list. The
+        // contrast pins the rule down — same group, same VM, and the only
+        // difference is a grant, of which the lowest rung already suffices.
+        assertThat(listDomains(bystanderToken, "")).doesNotContainKey(liveId);
+        assertThat(listDomains(viewerToken, "")).containsKey(liveId);
     }
 
     @Test
@@ -2036,6 +2055,11 @@ class PublishingTest {
                 returning id
                 """, Long.class, nodeId, foreignGroupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
+        // Owning the foreign group is not by itself a way into its VMs, so the
+        // requester is named on this one exactly as approval would have named
+        // them. Without it the listing below would be empty for the wrong
+        // reason and would stop testing that scoping is per group.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, foreignVmId, outsiderId, "OWNER");
         return jdbcTemplate.queryForObject("""
                 insert into domains (vm_id, kind, fqdn, root_domain, status)
                 values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
@@ -2093,7 +2117,8 @@ class PublishingTest {
     }
 
     /**
-     * Inserts an approved+running VM with an ALLOCATED IP. The declared
+     * Inserts an approved+running VM with an ALLOCATED IP, then writes the
+     * access list the approval endpoint would have written. The declared
      * subdomain/root are what the publish() helper injects into the create
      * body (the request form itself carries no domain axis anymore); null
      * means the body must name the domain itself or answer 422.
@@ -2126,6 +2151,14 @@ class PublishingTest {
                 returning id
                 """, Long.class, ip, vmId);
         jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocId, vmId);
+        // A VM inserted straight into the database carries no access list, so
+        // nobody would reach it. Name the three fixture people at the rungs
+        // they act at throughout the suite: the requester as the owner the
+        // approval step would have made them, and the other two at the rungs
+        // that decide whether a domain may be configured or only looked at.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, editor.getId(), "EDITOR");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
         vmFormNames.put(vmId, new String[] {desiredSubdomain, rootDomain});
         return vmId;
     }

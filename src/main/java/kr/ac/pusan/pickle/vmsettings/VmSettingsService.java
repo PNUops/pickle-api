@@ -211,7 +211,7 @@ public class VmSettingsService {
         ResourceRole actorRole = memberRole(vm, actor);
         if (!actorRole.atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM 설정에 접근할 권한이 없습니다", "그룹의 EDITOR 이상만 VM 설정을 볼 수 있습니다.");
+                    "VM 설정에 접근할 권한이 없습니다", "이 VM의 편집자 이상만 VM 설정을 볼 수 있습니다.");
         }
         return buildViews(vm, actorRole);
     }
@@ -259,7 +259,7 @@ public class VmSettingsService {
             if (!actorRole.atLeast(def.requiredRole())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                         "설정을 변경할 권한이 없습니다",
-                        "`" + key + "` 설정은 그룹의 " + def.requiredRole()
+                        "`" + key + "` 설정은 이 VM의 " + def.requiredRole()
                                 + " 이상만 변경할 수 있습니다.");
             }
         }
@@ -398,7 +398,7 @@ public class VmSettingsService {
         map.put(PASSWORD_REVEAL_MIN_ROLE, new VmSettingDef(PASSWORD_REVEAL_MIN_ROLE,
                 VmSettingValueType.ENUM, List.of("MEMBER", "EDITOR", "OWNER"),
                 mapper.valueToTree("MEMBER"), ResourceRole.OWNER, "비밀번호 열람 최소 역할",
-                "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 그룹 역할입니다.",
+                "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 등급입니다(이 VM의 접근 권한 기준).",
                 AuditService.VM_SETTING_UPDATE));
         map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),

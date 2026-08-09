@@ -370,7 +370,7 @@ public class RouteApplyJob {
         Map<String, Object> args = reason == null
                 ? Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId())
                 : Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", reason);
-        notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+        notificationService.publish(notificationService.vmResponsibleIds(vm),
                 event, args, dedupKey);
     }
 

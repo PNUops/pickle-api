@@ -116,7 +116,7 @@ public class TerminalService {
         //    a misleading 404.
         Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.MEMBER,
-                "웹 터미널을 열 권한이 없습니다", "그룹의 MEMBER 이상만 웹 터미널을 사용할 수 있습니다.");
+                "웹 터미널을 열 권한이 없습니다", "이 VM의 참여자 이상만 웹 터미널을 사용할 수 있습니다.");
         // 3) RUNNING.
         if (vm.getStatus() != VmStatus.RUNNING) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,

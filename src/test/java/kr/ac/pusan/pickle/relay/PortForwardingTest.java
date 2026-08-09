@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -45,7 +46,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Self-service port forwarding + admin intervention: group-role authz,
+ * Self-service port forwarding + admin intervention: access-list authz,
  * kill switch, random in-band allocation (cross-proto exclusive, retries,
  * honest exhaustion, race-free under concurrency), generation bumps on every
  * write, derived apply states, sudo-gated token issue, suspend/unsuspend,
@@ -80,6 +81,8 @@ class PortForwardingTest {
     private TransactionTemplate transactionTemplate;
 
     private User owner;
+    private User editor;
+    private User viewer;
     private String ownerToken;
     private String editorToken;
     private String viewerToken;
@@ -100,8 +103,8 @@ class PortForwardingTest {
                  where key = 'port_forward_alloc_limit_per_hour'
                 """);
         owner = ensureUser("pf.owner@pusan.ac.kr", "포워딩소유자");
-        User editor = ensureUser("pf.editor@pusan.ac.kr", "포워딩편집자");
-        User viewer = ensureUser("pf.viewer@pusan.ac.kr", "포워딩뷰어");
+        editor = ensureUser("pf.editor@pusan.ac.kr", "포워딩편집자");
+        viewer = ensureUser("pf.viewer@pusan.ac.kr", "포워딩뷰어");
         User outsider = ensureUser("pf.outsider@pusan.ac.kr", "포워딩외부인");
         User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);
@@ -110,16 +113,20 @@ class PortForwardingTest {
         outsiderToken = jwtService.createAccessToken(outsider);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         groupId = createTeam("pf-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, editor.getEmail(), "EDITOR");
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        // Membership only puts them in the group; what each may do to a VM is
+        // written onto that VM's access list by runningVm().
+        addMember(groupId, editor.getEmail(), "MEMBER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
     }
 
     // ── authorization ───────────────────────────────────────────────────────
 
     @Test
-    void createAuthorizesByGroupRole() throws Exception {
+    void createAuthorizesByTheVmAccessList() throws Exception {
         long relayId = soleRelay(10000, 10099);
         long vmId = runningVm();
+        // outside the owning group the VM does not exist; granted VIEWER it
+        // does, but a forwarding is a configuration change
         create(vmId, outsiderToken, "TCP", 8080)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -252,7 +259,10 @@ class PortForwardingTest {
                 """);
         try {
             User fresh = ensureUser("pf.limited@pusan.ac.kr", "포워딩제한");
-            addMember(groupId, fresh.getEmail(), "EDITOR");
+            addMember(groupId, fresh.getEmail(), "MEMBER");
+            // The VM predates this account, so its access list has to be told
+            // about them before they can allocate anything.
+            AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, fresh.getId(), "EDITOR");
             String freshToken = jwtService.createAccessToken(fresh);
             create(vmId, freshToken, "TCP", 8081).andExpect(status().isCreated());
             create(vmId, freshToken, "TCP", 8082).andExpect(status().isCreated());
@@ -655,6 +665,12 @@ class PortForwardingTest {
                 returning id
                 """, Long.class, ip, vmId);
         jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocId, vmId);
+        // Inserted VMs carry no access list, so state it here: the requester as
+        // the owner approval would have made them, and the two other fixture
+        // accounts at the rungs the forwarding checks distinguish.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, editor.getId(), "EDITOR");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
         return vmId;
     }
 

@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
@@ -67,7 +68,10 @@ class DomainReservationSweeperTest {
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
         editorId = createUser("manager." + slug + "@pusan.ac.kr");
         addMember(ownerId, "OWNER");
-        addMember(editorId, "EDITOR");
+        // The second account is an editor OF THE VM, not of the group: the
+        // rung that makes someone hear about the VM's names now lives on the
+        // access list, which createVm() writes.
+        addMember(editorId, "MEMBER");
     }
 
     @Test
@@ -254,13 +258,20 @@ class DomainReservationSweeperTest {
                 returning id
                 """, Long.class, groupId, orgId, ownerId, imageId);
         String hostname = "dres-vm-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
+        // Reservation notices go to whoever the access list makes responsible
+        // for the VM, so the two expected recipients have to be named there —
+        // the requester as the owner approval would have made them, and the
+        // second account as its editor.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, ownerId, "OWNER");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, editorId, "EDITOR");
+        return vmId;
     }
 
     /** A released platform subdomain with its (already removed) route. */

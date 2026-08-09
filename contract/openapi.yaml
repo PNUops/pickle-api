@@ -1,6 +1,11 @@
 ---
 components:
   schemas:
+    AccessGranteeType:
+      enum:
+      - "USER"
+      - "GROUP"
+      type: "string"
     ActivateMfaRequest:
       properties:
         code:
@@ -48,6 +53,24 @@ components:
           $ref: "#/components/schemas/GroupMemberRole"
       required:
       - "email"
+      - "role"
+      type: "object"
+    AddVmAccessGrantRequest:
+      properties:
+        granteeType:
+          $ref: "#/components/schemas/AccessGranteeType"
+          description: "USER는 지정된 사용자 한 명, GROUP은 소유 그룹 전체"
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "부여할 등급. 그룹 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
+        userId:
+          description: "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 그룹의 구성원이어야 합니다."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "granteeType"
       - "role"
       type: "object"
     AdminCampusIpRequestView:
@@ -1591,6 +1614,21 @@ components:
       required:
       - "confirmName"
       type: "object"
+    Grantee:
+      description: "접근 권한을 가진 사용자"
+      properties:
+        email:
+          type: "string"
+        name:
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "email"
+      - "name"
+      - "userId"
+      type: "object"
     GroupDetailResponse:
       properties:
         createdAt:
@@ -1650,9 +1688,7 @@ components:
     GroupMemberRole:
       enum:
       - "OWNER"
-      - "EDITOR"
       - "MEMBER"
-      - "VIEWER"
       type: "string"
     GroupPanel:
       properties:
@@ -3538,6 +3574,14 @@ components:
         role:
           $ref: "#/components/schemas/UserRole"
       type: "object"
+    UpdateVmAccessGrantRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "새 등급. 그룹 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
+      required:
+      - "role"
+      type: "object"
     UpdateVmFlavorRequest:
       properties:
         diskGb:
@@ -3773,6 +3817,32 @@ components:
       required:
       - "token"
       type: "object"
+    VmAccessGrantView:
+      description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 그룹 전체입니다."
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        granteeType:
+          $ref: "#/components/schemas/AccessGranteeType"
+          description: "대상 종류 — USER는 지정된 사용자, GROUP은 소유 그룹 전체"
+        id:
+          format: "int64"
+          type: "integer"
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "이 대상이 이 VM에서 갖는 등급"
+        user:
+          anyOf:
+          - $ref: "#/components/schemas/Grantee"
+          - type: "null"
+          description: "대상 사용자. 그룹 전체 항목이면 null입니다."
+      required:
+      - "createdAt"
+      - "granteeType"
+      - "id"
+      - "role"
+      type: "object"
     VmBriefResponse:
       properties:
         diskGb:
@@ -3838,9 +3908,18 @@ components:
       type: "object"
     VmDetailResponse:
       properties:
+        accessAllowed:
+          description: "SSH·웹 터미널로 이 VM에 접속할 수 있는지"
+          type: "boolean"
+        accessManageAllowed:
+          description: "접근 권한 목록을 관리할 수 있는지"
+          type: "boolean"
         createdAt:
           format: "date-time"
           type: "string"
+        deleteAllowed:
+          description: "삭제를 접수할 수 있는지"
+          type: "boolean"
         deletion:
           anyOf:
           - $ref: "#/components/schemas/VmDeletionResponse"
@@ -3899,6 +3978,9 @@ components:
           type: "boolean"
         passwordRevealAllowed:
           type: "boolean"
+        powerControlAllowed:
+          description: "전원을 제어할 수 있는지"
+          type: "boolean"
         provisioning:
           anyOf:
           - $ref: "#/components/schemas/ProvisioningTaskResponse"
@@ -3910,6 +3992,9 @@ components:
         requestId:
           format: "int64"
           type: "integer"
+        settingsEditAllowed:
+          description: "VM 설정을 볼·바꿀 수 있는지"
+          type: "boolean"
         sshGatewayBlocked:
           type: "boolean"
         sshHost:
@@ -3934,7 +4019,10 @@ components:
           format: "int32"
           type: "integer"
       required:
+      - "accessAllowed"
+      - "accessManageAllowed"
       - "createdAt"
+      - "deleteAllowed"
       - "diskGb"
       - "groupId"
       - "groupName"
@@ -3946,8 +4034,10 @@ components:
       - "orgId"
       - "passwordAvailable"
       - "passwordRevealAllowed"
+      - "powerControlAllowed"
       - "publications"
       - "requestId"
+      - "settingsEditAllowed"
       - "sshGatewayBlocked"
       - "sshHost"
       - "sshUsername"
@@ -4316,12 +4406,21 @@ components:
       type: "string"
     VmSummaryResponse:
       properties:
+        accessLimited:
+          description: "true면 이 VM의 접근 권한이 없어 이름·상태·소유자만 표시됩니다."
+          type: "boolean"
+        accessManageAllowed:
+          description: "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 그룹 소유자가 참입니다."
+          type: "boolean"
         createdAt:
           format: "date-time"
           type: "string"
         diskGb:
+          description: "디스크(GiB). 접근 권한이 없으면 생략됩니다."
           format: "int32"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         displayName:
           type:
           - "string"
@@ -4342,24 +4441,39 @@ components:
         groupName:
           type: "string"
         hostname:
-          type: "string"
+          description: "SSH 슬러그. 접근 권한이 없으면 생략됩니다."
+          type:
+          - "string"
+          - "null"
         id:
           format: "int64"
           type: "integer"
         memoryMb:
+          description: "메모리(MiB). 접근 권한이 없으면 생략됩니다."
           format: "int32"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         name:
           type: "string"
         orgName:
           type:
           - "string"
           - "null"
+        ownerNames:
+          description: "이 VM의 소유자 이름. 접근을 요청할 상대입니다."
+          items:
+            type: "string"
+          type: "array"
         requestId:
           format: "int64"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
         sshGatewayBlocked:
-          type: "boolean"
+          type:
+          - "boolean"
+          - "null"
         status:
           $ref: "#/components/schemas/VmStatus"
         statusDetail:
@@ -4367,21 +4481,21 @@ components:
           - "string"
           - "null"
         vcpu:
+          description: "vCPU. 접근 권한이 없으면 생략됩니다."
           format: "int32"
-          type: "integer"
+          type:
+          - "integer"
+          - "null"
       required:
+      - "accessLimited"
+      - "accessManageAllowed"
       - "createdAt"
-      - "diskGb"
       - "groupId"
       - "groupName"
-      - "hostname"
       - "id"
-      - "memoryMb"
       - "name"
-      - "requestId"
-      - "sshGatewayBlocked"
+      - "ownerNames"
       - "status"
-      - "vcpu"
       type: "object"
     WithdrawRequest:
       properties:
@@ -8128,6 +8242,174 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "vm-controller"
+  /vms/{vmId}/access:
+    get:
+      description: "이 VM의 접근 권한 전체입니다. VM 소유자와 그룹 소유자만 볼 수 있습니다."
+      operationId: "listVmAccessGrants"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmAccessGrantView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 목록"
+      tags:
+      - "vm-access"
+    post:
+      description: "지정한 사용자 또는 소유 그룹 전체에 이 VM의 접근 권한을 부여합니다. 사용자는 이 VM을 소유한 그룹의 구성\
+        원이어야 하고, 그룹 전체에는 참여자·열람자까지만 부여할 수 있습니다."
+      operationId: "addVmAccessGrant"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddVmAccessGrantRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmAccessGrantView"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 부여"
+      tags:
+      - "vm-access"
+  /vms/{vmId}/access/{grantId}:
+    delete:
+      description: "회수해도 이미 열람한 초기 비밀번호와 이미 열려 있는 SSH 세션은 회수되지 않습니다. 필요하면 비밀번호를 재생\
+        성해 주세요."
+      operationId: "removeVmAccessGrant"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 회수"
+      tags:
+      - "vm-access"
+    patch:
+      operationId: "updateVmAccessGrant"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVmAccessGrantRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmAccessGrantView"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 등급 변경"
+      tags:
+      - "vm-access"
   /vms/{vmId}/campus-ip-requests:
     get:
       operationId: "listVmCampusIpRequests"
@@ -8649,3 +8931,6 @@ security:
 - bearerAuth: []
 servers:
 - url: "/api/v1"
+tags:
+- description: "VM 접근 권한 — 이 VM에 누가 접근할 수 있는지를 정합니다."
+  name: "vm-access"

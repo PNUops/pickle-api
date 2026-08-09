@@ -46,10 +46,12 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  *       every public op does not (the permitAll boundary).</li>
  * </ul>
  *
- * Org-scoping and group-role cells ({@code allow_org_scoped} / {@code
- * allow_group_scoped}) are service-layer and cannot be seen from annotations;
- * they are exercised by MockMvc tests ({@code ManagerRoleScopingTest} for the
- * new manager tiers, plus the per-surface admin tests).
+ * Scoped cells ({@code allow_org_scoped}, {@code allow_group_scoped} and
+ * {@code allow_resource_scoped}) are service-layer and cannot be seen from
+ * annotations; they are exercised by MockMvc tests — {@code VmAccessScopingTest}
+ * walks every resource-scoped op against all four rungs plus the no-grant and
+ * non-member cases, {@code ManagerRoleScopingTest} covers the manager tiers, and
+ * the per-surface admin tests cover org scoping.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -147,7 +149,7 @@ class PermissionMatrixTest {
         Map<String, Op> matrix = loadMatrix();
         Set<String> runtime = runtimeOps().keySet();
 
-        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.29.0)").hasSize(140);
+        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.32.0)").hasSize(144);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());

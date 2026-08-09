@@ -85,12 +85,12 @@ class VmRequestTest {
     private JdbcTemplate jdbcTemplate;
 
     private User requester;
-    private User editor;
-    private User viewer;
+    private User otherMember;
+    private User member;
     private User outsider;
     private String requesterToken;
-    private String editorToken;
-    private String viewerToken;
+    private String otherMemberToken;
+    private String memberToken;
     private String outsiderToken;
     private Org org;
     private OsImage image;
@@ -100,12 +100,12 @@ class VmRequestTest {
     @BeforeEach
     void setUp() {
         requester = ensureUser("vmr.requester@pusan.ac.kr", "신청자");
-        editor = ensureUser("vmr.manager@pusan.ac.kr", "매니저");
-        viewer = ensureUser("vmr.viewer@pusan.ac.kr", "뷰어");
+        otherMember = ensureUser("vmr.other@pusan.ac.kr", "다른 구성원");
+        member = ensureUser("vmr.member@pusan.ac.kr", "구성원");
         outsider = ensureUser("vmr.outsider@pusan.ac.kr", "외부인");
         requesterToken = jwtService.createAccessToken(requester);
-        editorToken = jwtService.createAccessToken(editor);
-        viewerToken = jwtService.createAccessToken(viewer);
+        otherMemberToken = jwtService.createAccessToken(otherMember);
+        memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
         org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
         image = imageRepository.findAll().stream()
@@ -124,7 +124,7 @@ class VmRequestTest {
     @Test
     void createValidatesRoleImageSpecAndDomains() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-create-x1");
-        addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
+        addMember(requesterToken, groupId, member.getEmail(), "MEMBER");
 
         // OWNER submits with the chosen preset's specs → 201 SUBMITTED, review null
         postJson("/api/v1/vm-requests", requesterToken, validBody(groupId))
@@ -140,10 +140,13 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.imageId").value(image.getId()))
                 .andExpect(jsonPath("$.flavorId").value(basicFlavor.getId()));
 
-        // VIEWER / non-member cannot submit → 403 GROUP_ROLE_INSUFFICIENT
-        postJson("/api/v1/vm-requests", viewerToken, validBody(groupId))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        // any member may ask — what a request costs is decided at approval,
+        // and reaching the resulting VM is the access list's business
+        postJson("/api/v1/vm-requests", memberToken, validBody(groupId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.requesterId").value(member.getId()));
+
+        // a non-member still cannot submit → 403 GROUP_ROLE_INSUFFICIENT
         postJson("/api/v1/vm-requests", outsiderToken, validBody(groupId))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
@@ -436,12 +439,12 @@ class VmRequestTest {
     @Test
     void listAndDetailVisibilityFollowsMembership() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-visib-x1");
-        addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
+        addMember(requesterToken, groupId, member.getEmail(), "MEMBER");
         long first = submit(requesterToken, groupId);
         long second = submit(requesterToken, groupId);
 
-        // group VIEWER sees the group's requests, newest first
-        mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + viewerToken))
+        // a plain member sees the group's requests, newest first
+        mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
@@ -450,13 +453,13 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.content[1].id").value(first));
 
         // paging envelope: size=1 → two pages
-        mockMvc.perform(get("/api/v1/vm-requests?size=1").header("Authorization", "Bearer " + viewerToken))
+        mockMvc.perform(get("/api/v1/vm-requests?size=1").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.totalPages").value(2));
 
         // invalid paging → 422
-        mockMvc.perform(get("/api/v1/vm-requests?size=101").header("Authorization", "Bearer " + viewerToken))
+        mockMvc.perform(get("/api/v1/vm-requests?size=101").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
@@ -471,16 +474,16 @@ class VmRequestTest {
 
         // member groupId + status filters
         mockMvc.perform(get("/api/v1/vm-requests?groupId=" + groupId + "&status=SUBMITTED")
-                        .header("Authorization", "Bearer " + viewerToken))
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2));
         mockMvc.perform(get("/api/v1/vm-requests?groupId=" + groupId + "&status=CANCELED")
-                        .header("Authorization", "Bearer " + viewerToken))
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
 
         // detail: participant ok, outsider 403, unknown id 404
-        mockMvc.perform(get("/api/v1/vm-requests/" + first).header("Authorization", "Bearer " + viewerToken))
+        mockMvc.perform(get("/api/v1/vm-requests/" + first).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(first))
                 .andExpect(jsonPath("$.review").value((Object) null));
@@ -495,13 +498,14 @@ class VmRequestTest {
     @Test
     void cancelIsForRequesterOrGroupManagersAndOnlyOnce() throws Exception {
         long groupId = createTeam(requesterToken, "vmr-cancel-x1");
-        addMember(requesterToken, groupId, editor.getEmail(), "EDITOR");
-        addMember(requesterToken, groupId, viewer.getEmail(), "VIEWER");
+        addMember(requesterToken, groupId, otherMember.getEmail(), "MEMBER");
         long first = submit(requesterToken, groupId);
-        long second = submit(requesterToken, groupId);
+        // the group's owner is the requester of `first`, so the second request
+        // has to come from somebody else for the owner's reach to mean anything
+        long second = submit(otherMemberToken, groupId);
 
-        // VIEWER and outsider cannot cancel → 403
-        postJson("/api/v1/vm-requests/" + first + "/cancel", viewerToken, Map.of())
+        // a fellow member who did not ask, and an outsider, cannot cancel → 403
+        postJson("/api/v1/vm-requests/" + first + "/cancel", otherMemberToken, Map.of())
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         postJson("/api/v1/vm-requests/" + first + "/cancel", outsiderToken, Map.of())
@@ -517,8 +521,8 @@ class VmRequestTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
-        // group EDITOR may cancel another member's request
-        postJson("/api/v1/vm-requests/" + second + "/cancel", editorToken, Map.of())
+        // the group's OWNER may cancel another member's request
+        postJson("/api/v1/vm-requests/" + second + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 

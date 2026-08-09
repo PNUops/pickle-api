@@ -53,10 +53,10 @@ class GroupDeleteTest {
     private JdbcTemplate jdbcTemplate;
 
     private User owner;
-    private User editor;
+    private User plainMember;
     private User outsider;
     private String ownerToken;
-    private String editorToken;
+    private String plainMemberToken;
     private String outsiderToken;
     private String ownerReauth;
     private long orgId;
@@ -66,10 +66,10 @@ class GroupDeleteTest {
     @BeforeEach
     void setUp() {
         owner = ensureUser("gdel.owner@pusan.ac.kr", "삭제소유자");
-        editor = ensureUser("gdel.editor@pusan.ac.kr", "삭제편집자");
+        plainMember = ensureUser("gdel.member@pusan.ac.kr", "삭제구성원");
         outsider = ensureUser("gdel.outsider@pusan.ac.kr", "외부인");
         ownerToken = jwtService.createAccessToken(owner);
-        editorToken = jwtService.createAccessToken(editor);
+        plainMemberToken = jwtService.createAccessToken(plainMember);
         outsiderToken = jwtService.createAccessToken(outsider);
         ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
@@ -81,7 +81,7 @@ class GroupDeleteTest {
     void authorizationMatrixAndBlockers() throws Exception {
         String slug = "gdel-" + UUID.randomUUID().toString().substring(0, 8);
         long groupId = createTeam(slug);
-        addMember(groupId, editor.getEmail(), "EDITOR");
+        addMember(groupId, plainMember.getEmail(), "MEMBER");
 
         // non-member → 404 (existence masked)
         mockMvc.perform(delete("/api/v1/groups/" + groupId)
@@ -90,7 +90,7 @@ class GroupDeleteTest {
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // member below OWNER → 403
         mockMvc.perform(delete("/api/v1/groups/" + groupId)
-                        .header("Authorization", "Bearer " + editorToken))
+                        .header("Authorization", "Bearer " + plainMemberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
 

@@ -143,7 +143,7 @@ public class DomainReservationSweeper {
         if (vm == null) {
             return;
         }
-        notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+        notificationService.publish(notificationService.vmResponsibleIds(vm),
                 event, Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(),
                         "reservedUntil", reservedUntil), dedupKey);
     }

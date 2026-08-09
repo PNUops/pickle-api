@@ -123,7 +123,7 @@ public class VmExpiryJob {
             if (vmRepository.markExpiryNoticeStage(vm.getId(), stage, Instant.now()) == 0) {
                 return; // this or an inner stage already went out
             }
-            List<Long> recipients = notificationService.groupRoleHolderIds(vm.getGroupId(), true);
+            List<Long> recipients = notificationService.vmResponsibleIds(vm);
             notificationService.publish(recipients, NotificationEvent.VM_EXPIRY_NOTICE,
                     Map.of("vmId", vm.getId(), "vmName", vm.getName(),
                             "endDate", String.valueOf(vm.getEndDate()), "days", stage),

@@ -153,7 +153,7 @@ public class ExpiryStopJob {
             vmEventRepository.save(new VmEvent(vmId, VmEventType.EXPIRE_STOP, null,
                     DETAIL_EXPIRY_STOPPED));
             Set<Long> recipients = new LinkedHashSet<>();
-            recipients.addAll(notificationService.groupRoleHolderIds(vm.getGroupId(), true));
+            recipients.addAll(notificationService.vmResponsibleIds(vm));
             recipients.addAll(notificationService.orgAdminIds(vm.getOrgId()));
             notificationService.publish(recipients, NotificationEvent.VM_EXPIRY_STOPPED,
                     Map.of("vmId", vmId, "vmName", vm.getName(), "endDate",

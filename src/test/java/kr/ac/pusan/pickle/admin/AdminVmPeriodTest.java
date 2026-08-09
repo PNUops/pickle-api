@@ -14,6 +14,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -127,6 +128,10 @@ class AdminVmPeriodTest {
     @Test
     void expiredVmRefusesStartUntilThePeriodIsExtended() throws Exception {
         long vmId = createVm(orgId, groupId, "STOPPED", today.minusDays(2));
+        // The VM is inserted straight into the database, so its access list is
+        // empty and nobody could power it at all. Naming the member on it is
+        // what puts the expiry guard — not the access check — under test.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, memberId, "MEMBER");
         jdbcTemplate.update("update vms set expiry_stopped_at = now(),"
                 + " last_expiry_notice_stage = 1 where id = ?", vmId);
 

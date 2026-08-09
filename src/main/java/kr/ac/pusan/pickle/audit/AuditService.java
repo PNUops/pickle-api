@@ -55,6 +55,11 @@ public class AuditService {
     public static final String VM_FORCE_DELETE = "vm.force_delete";
     /** Initial-password reveal (every reveal since v0.7.0) — the fact only, never the value. */
     public static final String VM_PASSWORD_REVEAL = "vm.password_reveal";
+    public static final String VM_ACCESS_GRANT_ADD = "vm.access_grant_add";
+    public static final String VM_ACCESS_GRANT_UPDATE = "vm.access_grant_update";
+    public static final String VM_ACCESS_GRANT_REMOVE = "vm.access_grant_remove";
+    /** A group owner giving themselves a way inside — recorded apart from the ordinary grant. */
+    public static final String VM_ACCESS_BREAK_GLASS = "vm.access_break_glass";
     // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";
     public static final String DOMAIN_UPDATE = "domain.update";

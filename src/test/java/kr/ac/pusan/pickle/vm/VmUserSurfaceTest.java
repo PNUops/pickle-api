@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -85,7 +86,7 @@ class VmUserSurfaceTest {
         String slug = "vmsurf-" + UUID.randomUUID().toString().substring(0, 8);
         groupName = "표면 테스트 " + slug;
         groupId = createTeam(slug, groupName);
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -96,7 +97,7 @@ class VmUserSurfaceTest {
                 values (?, 'CREATE', null, '승인에 따라 자동 생성'), (?, 'START', ?, null)
                 """, vmId, vmId, owner.getId());
 
-        // members (VIEWER+) read, newest first
+        // anyone the access list names (VIEWER+) reads, newest first
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/events")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
@@ -217,10 +218,13 @@ class VmUserSurfaceTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("OWNER"));
+        // myRole is the group ladder, which now has only the two rungs that
+        // describe standing in a group — this member's read on the VM comes
+        // from the access list and does not show up here.
         mockMvc.perform(get("/api/v1/groups/" + groupId)
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.myRole").value("VIEWER"));
+                .andExpect(jsonPath("$.myRole").value("MEMBER"));
 
         // USER tokens only see non-hidden ACTIVE orgs, so provide one
         jdbcTemplate.update(
@@ -258,13 +262,19 @@ class VmUserSurfaceTest {
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmsurf-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING')
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
+        // These VMs bypass approval, so their access list has to be written
+        // here: the requester as resource OWNER, and the second member with the
+        // read-only rung the visibility assertions below are about.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        return vmId;
     }
 
     private long createTeam(String slug, String name) throws Exception {

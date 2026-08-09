@@ -299,7 +299,7 @@ public class PortForwardingService {
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "포트 포워딩을 관리할 권한이 없습니다",
-                "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 포트 포워딩을 설정할 수 있습니다.");
+                "이 VM의 소유자 또는 편집자만 포트포워딩을 설정할 수 있습니다.");
     }
 
     /**

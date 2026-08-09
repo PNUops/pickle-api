@@ -4,6 +4,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -173,7 +174,7 @@ class VmPasswordRegenerateTest {
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmpwregen-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
@@ -181,6 +182,11 @@ class VmPasswordRegenerateTest {
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, vmid, credentialCipher.encrypt(OLD_PASSWORD), "bcrypt-hash");
+        // Regeneration is an EDITOR+ operation on the VM's access list, and
+        // owning the group grants nothing inside the VM — so the requester,
+        // whom approval would have made resource OWNER, is named here instead.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {

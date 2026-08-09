@@ -78,6 +78,20 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     Page<Domain> findForMember(@Param("groupIds") Collection<Long> groupIds, @Param("vmId") Long vmId,
             @Param("status") String status, Pageable pageable);
 
+    // Same listing narrowed to the VMs the requester may actually reach: a
+    // domain names its VM, so listing one they hold no grant on would hand back
+    // exactly what the access list is there to withhold.
+    @Query("""
+            select d from Domain d
+            where d.vmId in :vmIds
+              and (:vmId is null or d.vmId = :vmId)
+              and ((:status is null and cast(d.status as string) <> 'REMOVED')
+                   or cast(d.status as string) = :status)
+            order by d.id desc
+            """)
+    Page<Domain> findForReachableVms(@Param("vmIds") Collection<Long> vmIds,
+            @Param("vmId") Long vmId, @Param("status") String status, Pageable pageable);
+
     // Admin listing — joined to Vm for org scoping (ad-hoc join on the FK column).
     // Enum filters are cast to string so a null bind has a determinable type.
     // REMOVED rows are hidden by default but visible via status=REMOVED.

@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -44,6 +45,7 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
     private final VmRepository vmRepository;
     private final VmRequestRepository vmRequestRepository;
@@ -51,11 +53,12 @@ public class GroupService {
     private final NotificationService notificationService;
 
     public GroupService(GroupRepository groupRepository, GroupMemberRepository groupMemberRepository,
-            UserRepository userRepository, VmRepository vmRepository,
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository, VmRepository vmRepository,
             VmRequestRepository vmRequestRepository, AuditService auditService,
             NotificationService notificationService) {
         this.groupRepository = groupRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.grantRepository = grantRepository;
         this.userRepository = userRepository;
         this.vmRepository = vmRepository;
         this.vmRequestRepository = vmRequestRepository;
@@ -143,7 +146,8 @@ public class GroupService {
                 "PERSONAL 그룹에는 구성원을 추가할 수 없습니다.");
         if (request.role() == GroupMemberRole.OWNER) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "OWNER 역할은 구성원 추가로 부여할 수 없습니다. 역할 변경(소유권 이전)을 사용해 주세요.")));
+                    "OWNER 역할은 구성원 추가로 부여할 수 없습니다. 구성원으로 추가한 뒤 역할 변경으로 "
+                            + "소유자를 지정해 주세요.")));
         }
 
         User target = userRepository.findByEmail(Texts.normalizeEmail(request.email()))
@@ -173,27 +177,25 @@ public class GroupService {
     public GroupMemberResponse updateMemberRole(AuthenticatedUser actor, long groupId, long targetUserId,
             UpdateGroupMemberRequest request, String ip) {
         Group group = findGroup(groupId);
-        GroupMember actorMembership = requireOwnerForMemberManagement(group, actor,
+        requireOwnerForMemberManagement(group, actor,
                 "그룹 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 그룹의 구성원은 변경할 수 없습니다.");
-        GroupMember target = groupMemberRepository.findByGroupIdAndUserId(groupId, targetUserId)
+        // Locked before the count below. With one owner per group the count could
+        // not be wrong; with several, two owners demoting each other concurrently
+        // would both read two and commit, leaving a group nobody can administer.
+        GroupMember target = groupMemberRepository.findWithLockByGroupIdAndUserId(groupId, targetUserId)
                 .orElseThrow(GroupService::memberNotFound);
 
+        // Ownership is appointed and released rather than handed over: a group
+        // may have several owners, so promoting somebody no longer demotes the
+        // person doing it. What is protected is the last one — a group with no
+        // owner has nobody who can add members or appoint a replacement.
         GroupMemberRole previousRole = target.getRole();
-        boolean ownershipTransfer = false;
-        if (request.role() == GroupMemberRole.OWNER) {
-            if (targetUserId != actor.id()) {
-                // Ownership transfer: the previous OWNER steps down to EDITOR.
-                target.setRole(GroupMemberRole.OWNER);
-                actorMembership.setRole(GroupMemberRole.EDITOR);
-                ownershipTransfer = true;
-            }
-        } else {
-            if (targetUserId == actor.id()) {
-                // The (sole) OWNER cannot demote themselves; transfer first.
-                throw soleOwnerRemoval("유일한 소유자의 역할은 변경할 수 없습니다");
-            }
-            target.setRole(request.role());
+        if (previousRole == GroupMemberRole.OWNER && request.role() != GroupMemberRole.OWNER
+                && groupMemberRepository.countByGroupIdAndRole(groupId,
+                        GroupMemberRole.OWNER) <= 1) {
+            throw soleOwnerRemoval("유일한 소유자의 역할은 변경할 수 없습니다");
         }
+        target.setRole(request.role());
 
         // The audit is deferred to after commit (recordAfterCommit), so a
         // failure anywhere in this method leaves no audit row for a change that
@@ -202,7 +204,7 @@ public class GroupService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_UPDATE,
                 "group", groupId,
                 Map.of("userId", targetUserId, "previousRole", previousRole.name(),
-                        "role", target.getRole().name(), "ownershipTransfer", ownershipTransfer), ip);
+                        "role", target.getRole().name()), ip);
         return GroupMemberResponse.from(target, targetUser);
     }
 
@@ -220,7 +222,7 @@ public class GroupService {
             throw memberManageForbidden("구성원을 제거할 권한이 없습니다", "그룹 소유자(OWNER)만 다른 구성원을 제거할 수 있습니다.");
         }
 
-        GroupMember target = groupMemberRepository.findByGroupIdAndUserId(groupId, targetUserId)
+        GroupMember target = groupMemberRepository.findWithLockByGroupIdAndUserId(groupId, targetUserId)
                 .orElseThrow(GroupService::memberNotFound);
         if (target.getRole() == GroupMemberRole.OWNER
                 && groupMemberRepository.countByGroupIdAndRole(groupId, GroupMemberRole.OWNER) <= 1) {
@@ -228,10 +230,14 @@ public class GroupService {
         }
 
         groupMemberRepository.delete(target);
+        // Leaving the group takes the access it carried: a grant may only name
+        // a member of the owning group, so the rows go with the membership
+        // rather than lying dormant until a rejoin silently restores them.
+        int revokedGrants = grantRepository.deleteUserGrantsInGroup(groupId, targetUserId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.GROUP_MEMBER_REMOVE,
                 "group", groupId,
                 Map.of("userId", targetUserId, "previousRole", target.getRole().name(),
-                        "selfLeave", selfLeave), ip);
+                        "selfLeave", selfLeave, "revokedGrants", revokedGrants), ip);
     }
 
     /**
@@ -348,7 +354,7 @@ public class GroupService {
 
     private static ApiException soleOwnerRemoval(String title) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.GROUP_SOLE_OWNER_REMOVAL, title,
-                "소유권을 다른 구성원에게 이전한 뒤 다시 시도해 주세요.");
+                "다른 구성원을 소유자로 지정한 뒤 다시 시도해 주세요.");
     }
 
     private static ApiException slugDuplicate(String slug) {

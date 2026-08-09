@@ -239,7 +239,7 @@ public class VmLifecycleService {
     private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         Vm vm = access.requireAtLeast(ResourceRole.MEMBER,
-                "VM을 제어할 권한이 없습니다", "그룹의 MEMBER 이상만 VM 전원을 제어할 수 있습니다.");
+                "VM을 제어할 권한이 없습니다", "이 VM의 참여자 이상만 VM 전원을 제어할 수 있습니다.");
         return new Controllable(vm, access.role());
     }
 
@@ -257,7 +257,7 @@ public class VmLifecycleService {
         if (vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_STOP_PROTECTED,
                     "중지 보호가 설정된 VM입니다",
-                    "중지 보호가 켜져 있어 그룹의 EDITOR 이상만 종료·재부팅·강제 종료할 수 있습니다.");
+                    "중지 보호가 켜져 있어 이 VM의 편집자 이상만 종료·재부팅·강제 종료할 수 있습니다.");
         }
     }
 
