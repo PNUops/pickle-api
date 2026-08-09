@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Contract {@code listAdminWorkspaces}: the announcement workspace picker. ORG_ADMIN
  * sees exactly the workspaces they may target with a WORKSPACE announcement — workspaces
  * linked to their org by the canonical derived-membership rule
- * ({@link OrgMembershipSql}: ≥1 vm_request or non-DELETED VM in the org).
+ * ({@link OrgMembershipSql}: ≥1 request or non-DELETED VM in the org).
  * {@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly the
  * fan-out basis of a WORKSPACE announcement (contract clarification, docs
  * eb8bbf6). A cross-org {@code orgId} answers 404 (existence stays private);

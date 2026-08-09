@@ -29,7 +29,7 @@ import tools.jackson.databind.ObjectMapper;
  * {@code actor_id = principal}, and {@code /admin/audit} pins ORG_ADMIN to
  * rows whose actor belongs to their org by the canonical <b>derived
  * membership</b> rule ({@link OrgMembershipSql}: the actor is one of the
- * org's ORG_ADMINs, or an ACTIVE member of a workspace with vm_requests /
+ * org's ORG_ADMINs, or an ACTIVE member of a workspace with requests /
  * non-DELETED VMs in the org). System rows — null actor — are therefore
  * SYS_ADMIN-only. Date bounds are KST calendar days.</p>
  */
@@ -42,14 +42,14 @@ public class AuditQueryService {
      * Representative derived-org name for the audit row's actor (v0.9.0 display
      * field): the actor's managed org (ORG_ADMIN {@code users.org_id}) if any,
      * else the smallest org id derived from the actor's workspace resources
-     * (vm_requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
+     * (requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
      * Null for system rows and actors with no derived org. Correlated on
      * {@code u}/{@code a} from the outer query; binds no positional parameters.
      */
     private static final String ACTOR_ORG_NAME = """
             (select o.name from orgs o where o.id = coalesce(u.org_id, (
                  select min(dro.org_id) from (
-                     select lr.org_id from vm_requests lr
+                     select lr.org_id from requests lr
                        join workspace_members gm on gm.workspace_id = lr.workspace_id
                       where gm.user_id = a.actor_id
                      union

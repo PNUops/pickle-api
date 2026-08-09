@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.vmrequest;
+package kr.ac.pusan.pickle.request.vm;
 
 import java.util.List;
 import java.util.Locale;

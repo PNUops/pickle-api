@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
@@ -621,12 +622,7 @@ class ProvisionPipelineTest {
 
     /** Minimal request→vm graph, mirroring what an approval writes. */
     private long createVm() {
-        long requestId = jdbc.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '파이프라인 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, adminUserId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, adminUserId, "파이프라인 테스트", imageId, 1, 1024, 10);
         String hostname = "pipe-vm-" + UUID.randomUUID().toString().substring(0, 12);
         // The account is deliberately not 'ubuntu': approval copies it off the OS
         // image, so the pipeline has to carry this row's value into cloud-init

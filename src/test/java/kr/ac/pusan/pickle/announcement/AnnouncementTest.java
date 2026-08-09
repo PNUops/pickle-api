@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.announcement;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -40,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p><b>Org-membership semantics</b> (operator decision): regular users carry
  * no {@code users.org_id} (V11 {@code chk_users_org_role}); a user belongs to
- * an org iff they are an ACTIVE member of a workspace with ≥1 vm_request or
+ * an org iff they are an ACTIVE member of a workspace with ≥1 request or
  * non-DELETED VM in that org, or an ORG_ADMIN of it. The WORKSPACE scope is gated
  * on the workspace having resources in the caller's org and then reaches
  * <b>all</b> the workspace's ACTIVE members.</p>
@@ -106,7 +107,7 @@ class AnnouncementTest {
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         userToken = jwtService.createAccessToken(ownMember);
-        // workspace linked to the caller's org (vm_request), ACTIVE + DISABLED members
+        // workspace linked to the caller's org (request), ACTIVE + DISABLED members
         mixedWorkspaceId = createWorkspace("annmix", ownMember.getId(), inactiveMember.getId(),
                 crossMember.getId());
         linkWorkspaceToOrg(mixedWorkspaceId, org.getId(), ownMember.getId());
@@ -336,14 +337,9 @@ class AnnouncementTest {
         return workspaceId;
     }
 
-    /** Derived-membership link: one vm_request of the workspace in the org. */
+    /** Derived-membership link: one request of the workspace in the org. */
     private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
-        jdbcTemplate.update("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '조직 연계(테스트)', (select min(id) from os_images),
-                        1, 1024, 20)
-                """, workspaceId, orgId, requesterId);
+        RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "조직 연계(테스트)", null, 1, 1024, 20);
     }
 
     private User ensureRegularUser(String email, String name, UserStatus status) {

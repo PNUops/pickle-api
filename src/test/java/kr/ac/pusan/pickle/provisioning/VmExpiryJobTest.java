@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -371,12 +372,7 @@ class VmExpiryJobTest {
     }
 
     private long createVm(String status, LocalDate endDate, int proxmoxVmid) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '만료 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "만료 테스트", imageId);
         String hostname = "vexp-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.user;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -283,12 +284,7 @@ class AccountLifecycleTest {
     private void createActiveVm(long workspaceId, long orgId, long requesterId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '탈퇴 차단 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "탈퇴 차단 테스트", imageId);
         String hostname = "acct-vm-" + UUID.randomUUID().toString().substring(0, 12);
         jdbcTemplate.update("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

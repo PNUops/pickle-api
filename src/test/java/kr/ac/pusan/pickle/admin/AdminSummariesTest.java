@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -230,25 +231,22 @@ class AdminSummariesTest {
     private long createRequest(long workspaceId, String status) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
-        return jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb, status)
-                values (?, ?, ?, '요약 테스트', ?, 2, 2048, 10,
-                        ?::vm_request_status)
-                returning id
-                """, Long.class, workspaceId, org.getId(), requesterId, imageId, status);
+        return RequestFixtures.insertVmRequestWithStatus(jdbcTemplate, workspaceId, org.getId(),
+                requesterId, "요약 테스트", imageId, status);
     }
 
     private void createReview(long requestId, String decision) {
         long reviewerId = SeedFixtures.sysadminId(jdbcTemplate);
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        // APPROVE rows must carry the granted spec (chk_reviews_approve_granted)
-        jdbcTemplate.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision, granted_vcpu,
-                                                granted_memory_mb, granted_disk_gb,
-                                                granted_image_id)
-                values (?, ?, ?::review_decision, 2, 2048, 10, ?)
-                """, requestId, reviewerId, decision, imageId);
+        // APPROVE rows carry the granted spec, which now lives on the detail row
+        if ("APPROVE".equals(decision)) {
+            RequestFixtures.approveVmRequest(jdbcTemplate, requestId, reviewerId, imageId, 2, 2048, 10);
+        } else {
+            jdbcTemplate.update("""
+                    insert into request_reviews (request_id, reviewer_id, decision, comment)
+                    values (?, ?, ?::review_decision, '반려')
+                    """, requestId, reviewerId, decision);
+        }
     }
 
     /** 2 vCPU / 2048 MiB / 10 GiB VM with an optional endDate. */

@@ -24,4 +24,5 @@ public class VmResourceAdapter implements ResourceTypeAdapter {
     public List<Long> idsOwnedByWorkspace(long workspaceId) {
         return vmRepository.findIdsByWorkspaceIdIn(List.of(workspaceId));
     }
+
 }

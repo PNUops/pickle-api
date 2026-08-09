@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.terminal;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -213,12 +214,7 @@ class TerminalMintTest {
      * access list; the two fixture rungs are written on it here.
      */
     private long createVm(VmStatus status, boolean blocked) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '터미널 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, member.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, member.getId(), "터미널 테스트", imageId, 1, 1024, 10);
         String hostname = "term-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

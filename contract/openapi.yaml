@@ -863,7 +863,7 @@ components:
       - "orgHeadroom"
       - "workspace"
       type: "object"
-    ApproveVmRequestRequest:
+    ApproveRequestRequest:
       properties:
         comment:
           maxLength: 2000
@@ -871,15 +871,27 @@ components:
           type:
           - "string"
           - "null"
-        grantedDiskGb:
-          format: "int32"
-          minimum: 1
-          type: "integer"
         grantedEndDate:
           format: "date"
           type:
           - "string"
           - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/ApproveVmRequestSpec"
+          - type: "null"
+      type: "object"
+    ApproveVmRequestSpec:
+      properties:
+        grantedDiskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
         grantedImageId:
           format: "int64"
           type: "integer"
@@ -889,11 +901,6 @@ components:
           type: "integer"
         grantedSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type:
-          - "string"
-          - "null"
-        grantedStartDate:
-          format: "date"
           type:
           - "string"
           - "null"
@@ -1205,6 +1212,58 @@ components:
       - "proto"
       - "targetPort"
       type: "object"
+    CreateRequestRequest:
+      properties:
+        courseOrProject:
+          maxLength: 200
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        displayName:
+          maxLength: 100
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        extraNote:
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "int64"
+          type: "integer"
+        purpose:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        reqEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reqStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/CreateVmRequestSpec"
+          - type: "null"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "orgId"
+      - "purpose"
+      - "type"
+      - "workspaceId"
+      type: "object"
     CreateVmDomainRequest:
       properties:
         customDomain:
@@ -1258,28 +1317,10 @@ components:
       - "name"
       - "vcpu"
       type: "object"
-    CreateVmRequestRequest:
+    CreateVmRequestSpec:
       properties:
-        courseOrProject:
-          maxLength: 200
-          minLength: 0
-          type:
-          - "string"
-          - "null"
         desiredSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type:
-          - "string"
-          - "null"
-        displayName:
-          maxLength: 100
-          minLength: 0
-          type:
-          - "string"
-          - "null"
-        extraNote:
-          maxLength: 2000
-          minLength: 0
           type:
           - "string"
           - "null"
@@ -1289,31 +1330,14 @@ components:
         imageId:
           format: "int64"
           type: "integer"
-        orgId:
-          format: "int64"
-          type: "integer"
-        purpose:
-          maxLength: 2000
-          minLength: 0
-          type: "string"
         reqDiskGb:
           format: "int32"
           minimum: 1
           type: "integer"
-        reqEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqMemoryMb:
           format: "int32"
           minimum: 256
           type: "integer"
-        reqStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqVcpu:
           format: "int32"
           minimum: 1
@@ -1324,18 +1348,12 @@ components:
           type:
           - "string"
           - "null"
-        workspaceId:
-          format: "int64"
-          type: "integer"
       required:
       - "flavorId"
       - "imageId"
-      - "orgId"
-      - "purpose"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"
-      - "workspaceId"
       type: "object"
     CreateWorkspaceRequest:
       properties:
@@ -1648,7 +1666,7 @@ components:
           - "string"
           - "null"
         status:
-          $ref: "#/components/schemas/VmRequestStatus"
+          $ref: "#/components/schemas/RequestStatus"
         submittedAt:
           format: "date-time"
           type: "string"
@@ -2479,6 +2497,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseRequestDetailResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/RequestDetailResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseUserAdminViewResponse:
       properties:
         content:
@@ -2509,31 +2552,6 @@ components:
         content:
           items:
             $ref: "#/components/schemas/VmEventResponse"
-          type: "array"
-        page:
-          format: "int32"
-          type: "integer"
-        size:
-          format: "int32"
-          type: "integer"
-        totalElements:
-          format: "int64"
-          type: "integer"
-        totalPages:
-          format: "int32"
-          type: "integer"
-      required:
-      - "content"
-      - "page"
-      - "size"
-      - "totalElements"
-      - "totalPages"
-      type: "object"
-    PageResponseVmRequestDetailResponse:
-      properties:
-        content:
-          items:
-            $ref: "#/components/schemas/VmRequestDetailResponse"
           type: "array"
         page:
           format: "int32"
@@ -2788,7 +2806,7 @@ components:
       - "code"
       - "password"
       type: "object"
-    RejectVmRequestRequest:
+    RejectRequestRequest:
       properties:
         comment:
           maxLength: 2000
@@ -2809,6 +2827,82 @@ components:
       - "relayId"
       - "token"
       type: "object"
+    RequestDetailResponse:
+      properties:
+        courseOrProject:
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        displayName:
+          type:
+          - "string"
+          - "null"
+        extraNote:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        purpose:
+          type: "string"
+        reqEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reqStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        requesterId:
+          format: "int64"
+          type: "integer"
+        requesterName:
+          type: "string"
+        review:
+          anyOf:
+          - $ref: "#/components/schemas/RequestReviewResponse"
+          - type: "null"
+        status:
+          $ref: "#/components/schemas/RequestStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/VmRequestSpecResponse"
+          - type: "null"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "createdAt"
+      - "id"
+      - "orgId"
+      - "orgName"
+      - "purpose"
+      - "requesterId"
+      - "requesterName"
+      - "status"
+      - "type"
+      - "updatedAt"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     RequestOptionsResponse:
       properties:
         allowedRootDomains:
@@ -2826,6 +2920,45 @@ components:
       - "reservedSubdomains"
       - "sshHost"
       type: "object"
+    RequestReviewResponse:
+      properties:
+        comment:
+          type:
+          - "string"
+          - "null"
+        decidedAt:
+          format: "date-time"
+          type: "string"
+        decision:
+          $ref: "#/components/schemas/ReviewDecision"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reviewerId:
+          format: "int64"
+          type: "integer"
+        reviewerName:
+          type: "string"
+      required:
+      - "decidedAt"
+      - "decision"
+      - "reviewerId"
+      - "reviewerName"
+      type: "object"
+    RequestStatus:
+      enum:
+      - "SUBMITTED"
+      - "APPROVED"
+      - "REJECTED"
+      - "CANCELED"
+      type: "string"
     RequiredRecord:
       properties:
         name:
@@ -2907,6 +3040,10 @@ components:
       - "memoryMb"
       - "vcpu"
       type: "object"
+    ResourceType:
+      enum:
+      - "VM"
+      type: "string"
     Resources:
       properties:
         activeVms:
@@ -4066,6 +4203,31 @@ components:
       required:
       - "blocked"
       type: "object"
+    VmGrantedSpecResponse:
+      properties:
+        grantedDiskGb:
+          format: "int32"
+          type: "integer"
+        grantedImageId:
+          format: "int64"
+          type: "integer"
+        grantedMemoryMb:
+          format: "int32"
+          type: "integer"
+        grantedVcpu:
+          format: "int32"
+          type: "integer"
+        nodeId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "grantedDiskGb"
+      - "grantedImageId"
+      - "grantedMemoryMb"
+      - "grantedVcpu"
+      type: "object"
     VmPasswordResponse:
       properties:
         password:
@@ -4094,15 +4256,8 @@ components:
       required:
       - "endDate"
       type: "object"
-    VmRequestDetailResponse:
+    VmRequestSpecResponse:
       properties:
-        courseOrProject:
-          type:
-          - "string"
-          - "null"
-        createdAt:
-          format: "date-time"
-          type: "string"
         desiredSlug:
           type:
           - "string"
@@ -4111,60 +4266,27 @@ components:
           type:
           - "string"
           - "null"
-        displayName:
-          type:
-          - "string"
-          - "null"
-        extraNote:
-          type:
-          - "string"
-          - "null"
         flavorId:
           format: "int64"
           type:
           - "integer"
           - "null"
-        id:
-          format: "int64"
-          type: "integer"
+        granted:
+          anyOf:
+          - $ref: "#/components/schemas/VmGrantedSpecResponse"
+          - type: "null"
         imageId:
           format: "int64"
           type: "integer"
-        orgId:
-          format: "int64"
-          type: "integer"
-        orgName:
-          type: "string"
-        purpose:
-          type: "string"
         reqDiskGb:
           format: "int32"
           type: "integer"
-        reqEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqMemoryMb:
           format: "int32"
           type: "integer"
-        reqStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqVcpu:
           format: "int32"
           type: "integer"
-        requesterId:
-          format: "int64"
-          type: "integer"
-        requesterName:
-          type: "string"
-        review:
-          anyOf:
-          - $ref: "#/components/schemas/VmRequestReviewResponse"
-          - type: "null"
         rootDomain:
           type:
           - "string"
@@ -4173,97 +4295,12 @@ components:
           type:
           - "string"
           - "null"
-        status:
-          $ref: "#/components/schemas/VmRequestStatus"
-        updatedAt:
-          format: "date-time"
-          type: "string"
-        workspaceId:
-          format: "int64"
-          type: "integer"
-        workspaceName:
-          type: "string"
       required:
-      - "createdAt"
-      - "id"
       - "imageId"
-      - "orgId"
-      - "orgName"
-      - "purpose"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"
-      - "requesterId"
-      - "requesterName"
-      - "status"
-      - "updatedAt"
-      - "workspaceId"
-      - "workspaceName"
       type: "object"
-    VmRequestReviewResponse:
-      properties:
-        comment:
-          type:
-          - "string"
-          - "null"
-        decidedAt:
-          format: "date-time"
-          type: "string"
-        decision:
-          $ref: "#/components/schemas/ReviewDecision"
-        grantedDiskGb:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        grantedEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
-        grantedImageId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
-        grantedMemoryMb:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        grantedStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
-        grantedVcpu:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        nodeId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
-        reviewerId:
-          format: "int64"
-          type: "integer"
-        reviewerName:
-          type: "string"
-      required:
-      - "decidedAt"
-      - "decision"
-      - "reviewerId"
-      - "reviewerName"
-      type: "object"
-    VmRequestStatus:
-      enum:
-      - "SUBMITTED"
-      - "APPROVED"
-      - "REJECTED"
-      - "CANCELED"
-      type: "string"
     VmSettingValueType:
       enum:
       - "BOOLEAN"
@@ -5533,6 +5570,170 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-relay-controller"
+  /admin/requests:
+    get:
+      operationId: "listAdminRequests"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/RequestStatus"
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}:
+    get:
+      operationId: "getAdminRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/approve:
+    post:
+      operationId: "approveRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/context:
+    get:
+      operationId: "getApprovalContext"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalContextResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/reject:
+    post:
+      operationId: "rejectRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
   /admin/routes:
     get:
       operationId: "listAdminRoutes"
@@ -6116,165 +6317,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-flavor-controller"
-  /admin/vm-requests:
-    get:
-      operationId: "listAdminVmRequests"
-      parameters:
-      - in: "query"
-        name: "status"
-        required: false
-        schema:
-          $ref: "#/components/schemas/VmRequestStatus"
-      - in: "query"
-        name: "orgId"
-        required: false
-        schema:
-          format: "int64"
-          type: "integer"
-      - in: "query"
-        name: "page"
-        required: false
-        schema:
-          default: 0
-          format: "int32"
-          minimum: 0
-          type: "integer"
-      - in: "query"
-        name: "size"
-        required: false
-        schema:
-          default: 20
-          format: "int32"
-          maximum: 100
-          minimum: 1
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}:
-    get:
-      operationId: "getAdminVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/approve:
-    post:
-      operationId: "approveVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApproveVmRequestRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/context:
-    get:
-      operationId: "getApprovalContext"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/ApprovalContextResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/reject:
-    post:
-      operationId: "rejectVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RejectVmRequestRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
   /admin/vms:
     get:
       operationId: "listAdminVms"
@@ -7790,35 +7832,20 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "os-image-controller"
-  /vm-flavors:
+  /requests:
     get:
-      operationId: "listVmFlavors"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/VmFlavorResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "vm-flavor-controller"
-  /vm-requests:
-    get:
-      operationId: "listVmRequests"
+      operationId: "listRequests"
       parameters:
       - in: "query"
         name: "status"
         required: false
         schema:
-          $ref: "#/components/schemas/VmRequestStatus"
+          $ref: "#/components/schemas/RequestStatus"
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
       - in: "query"
         name: "workspaceId"
         required: false
@@ -7847,7 +7874,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
+                $ref: "#/components/schemas/PageResponseRequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -7856,21 +7883,21 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
+      - "request-controller"
     post:
-      operationId: "createVmRequest"
+      operationId: "createRequest"
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateVmRequestRequest"
+              $ref: "#/components/schemas/CreateRequestRequest"
         required: true
       responses:
         "201":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "Created"
         default:
           content:
@@ -7879,10 +7906,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
-  /vm-requests/{requestId}:
+      - "request-controller"
+  /requests/{requestId}:
     get:
-      operationId: "getVmRequest"
+      operationId: "getRequest"
       parameters:
       - in: "path"
         name: "requestId"
@@ -7895,7 +7922,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -7904,10 +7931,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
-  /vm-requests/{requestId}/cancel:
+      - "request-controller"
+  /requests/{requestId}/cancel:
     post:
-      operationId: "cancelVmRequest"
+      operationId: "cancelRequest"
       parameters:
       - in: "path"
         name: "requestId"
@@ -7920,7 +7947,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -7929,7 +7956,27 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
+      - "request-controller"
+  /vm-flavors:
+    get:
+      operationId: "listVmFlavors"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmFlavorResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "vm-flavor-controller"
   /vms:
     get:
       operationId: "listVms"

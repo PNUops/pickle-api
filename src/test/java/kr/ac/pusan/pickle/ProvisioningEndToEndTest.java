@@ -163,15 +163,17 @@ class ProvisioningEndToEndTest {
         long flavorId = flavor.get("id").asLong();
 
         // 5. submit the vm-request pre-filled with the chosen preset's specs
-        MvcResult requestResult = postJson("/api/v1/vm-requests", userToken, Map.of(
+        MvcResult requestResult = postJson("/api/v1/requests", userToken, Map.of(
+                "type", "VM",
                 "workspaceId", workspaceId,
                 "orgId", orgId,
-                "imageId", imageId,
-                "flavorId", flavorId,
                 "purpose", "종단 검증용 서버",
-                "reqVcpu", flavor.get("vcpu").asInt(),
-                "reqMemoryMb", flavor.get("memoryMb").asInt(),
-                "reqDiskGb", flavor.get("diskGb").asInt()))
+                "vm", Map.of(
+                        "imageId", imageId,
+                        "flavorId", flavorId,
+                        "reqVcpu", flavor.get("vcpu").asInt(),
+                        "reqMemoryMb", flavor.get("memoryMb").asInt(),
+                        "reqDiskGb", flavor.get("diskGb").asInt())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andReturn();
@@ -180,13 +182,13 @@ class ProvisioningEndToEndTest {
 
         // 6. the seeded ORG_ADMIN logs in and finds the request in the queue
         String adminToken = login(SeedFixtures.ORGADMIN_EMAIL, "pickle-test-orgadmin!");
-        mockMvc.perform(get("/api/v1/admin/vm-requests?status=SUBMITTED")
+        mockMvc.perform(get("/api/v1/admin/requests?status=SUBMITTED")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestId)).exists());
 
         // 7. the approval context loads with all panels
-        mockMvc.perform(get("/api/v1/admin/vm-requests/" + requestId + "/context")
+        mockMvc.perform(get("/api/v1/admin/requests/" + requestId + "/context")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicant.email").value(USER_EMAIL))
@@ -195,12 +197,13 @@ class ProvisioningEndToEndTest {
                 .andExpect(jsonPath("$.guidance").isNotEmpty());
 
         // 8. approve with the requested spec
-        postJson("/api/v1/admin/vm-requests/" + requestId + "/approve", adminToken, Map.of(
-                "grantedVcpu", flavor.get("vcpu").asInt(),
-                "grantedMemoryMb", flavor.get("memoryMb").asInt(),
-                "grantedDiskGb", flavor.get("diskGb").asInt(),
-                "grantedImageId", imageId,
-                "comment", "요청 사양 그대로 승인합니다."))
+        postJson("/api/v1/admin/requests/" + requestId + "/approve", adminToken, Map.of(
+                "comment", "요청 사양 그대로 승인합니다.",
+                "vm", Map.of(
+                        "grantedVcpu", flavor.get("vcpu").asInt(),
+                        "grantedMemoryMb", flavor.get("memoryMb").asInt(),
+                        "grantedDiskGb", flavor.get("diskGb").asInt(),
+                        "grantedImageId", imageId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));

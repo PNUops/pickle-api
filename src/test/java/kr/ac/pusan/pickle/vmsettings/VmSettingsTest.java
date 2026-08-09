@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vmsettings;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -281,12 +282,7 @@ class VmSettingsTest {
     }
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '설정 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "설정 테스트", imageId, 1, 1024, 10);
         String hostname = "vmset-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

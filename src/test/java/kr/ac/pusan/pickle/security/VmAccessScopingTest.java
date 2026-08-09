@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.security;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -473,12 +474,7 @@ class VmAccessScopingTest {
      * real transition on a fixture the next case would inherit.
      */
     private long insertVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '접근 범위 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, workspaceOwner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, workspaceOwner.getId(), "접근 범위 테스트", imageId, 1, 1024, 10);
         String hostname = "scope-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

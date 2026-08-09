@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -142,12 +143,7 @@ class AdminNodesTest {
         long workspaceId = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
                 Long.class, slug, slug);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '노드 집계 테스트', ?, ?, ?, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId, vcpu, memoryMb);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "노드 집계 테스트", imageId, vcpu, memoryMb, 10);
         jdbcTemplate.update("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)

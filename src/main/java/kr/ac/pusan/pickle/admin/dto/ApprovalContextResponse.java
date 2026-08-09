@@ -4,8 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
-import kr.ac.pusan.pickle.vmrequest.ReviewDecision;
-import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import kr.ac.pusan.pickle.request.ReviewDecision;
+import kr.ac.pusan.pickle.request.RequestStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -49,7 +49,7 @@ public record ApprovalContextResponse(
     public record HistoryEntry(
             Long requestId,
             Instant submittedAt,
-            VmRequestStatus status,
+            RequestStatus status,
             @Nullable ReviewDecision decision,
             @Nullable String comment,
             @Nullable String reviewerName) {

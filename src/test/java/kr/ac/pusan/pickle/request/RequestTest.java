@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.vmrequest;
+package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -52,7 +52,7 @@ import tools.jackson.databind.ObjectMapper;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
-class VmRequestTest {
+class RequestTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -127,7 +127,7 @@ class VmRequestTest {
         addMember(requesterToken, workspaceId, member.getEmail(), "MEMBER");
 
         // OWNER submits with the chosen preset's specs → 201 SUBMITTED, review null
-        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
+        postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
@@ -137,29 +137,29 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
                 .andExpect(jsonPath("$.requesterId").value(requester.getId()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
-                .andExpect(jsonPath("$.imageId").value(image.getId()))
-                .andExpect(jsonPath("$.flavorId").value(basicFlavor.getId()));
+                .andExpect(jsonPath("$.vm.imageId").value(image.getId()))
+                .andExpect(jsonPath("$.vm.flavorId").value(basicFlavor.getId()));
 
         // any member may ask — what a request costs is decided at approval,
         // and reaching the resulting VM is the access list's business
-        postJson("/api/v1/vm-requests", memberToken, validBody(workspaceId))
+        postJson("/api/v1/requests", memberToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.requesterId").value(member.getId()));
 
         // a non-member still cannot submit → 403 WORKSPACE_ROLE_INSUFFICIENT
-        postJson("/api/v1/vm-requests", outsiderToken, validBody(workspaceId))
+        postJson("/api/v1/requests", outsiderToken, validBody(workspaceId))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // unknown workspace / org / image → 404
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "workspaceId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "workspaceId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "orgId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "orgId", 999_999))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "imageId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.imageId", 999_999))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "flavorId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.flavorId", 999_999))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
@@ -168,47 +168,48 @@ class VmRequestTest {
                 "ubuntu", "24.04", "ubuntu", 1002,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(workspaceId), "imageId", disabled.getId()))
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "vm.imageId", disabled.getId()))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("imageId"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
 
         // below the OS image's minimum disk → 422, whatever the preset offers
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "reqDiskGb", 5))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.reqDiskGb"))
                 .andExpect(jsonPath("$.errors[0].message").value("이 OS의 최소 디스크 크기는 10GiB입니다."));
 
         // spec above the chosen preset requires specReason (contract prose rule)
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "reqMemoryMb", 4096))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.reqMemoryMb", 4096))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("specReason"));
-        Map<String, Object> bigWithReason = with(validBody(workspaceId), "reqMemoryMb", 4096);
-        bigWithReason.put("specReason", "동시 접속 부하 테스트를 위해 메모리 증설이 필요합니다.");
-        postJson("/api/v1/vm-requests", requesterToken, bigWithReason)
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
+        Map<String, Object> bigWithReason = with(
+                with(validBody(workspaceId), "vm.reqMemoryMb", 4096),
+                "vm.specReason", "동시 접속 부하 테스트를 위해 메모리 증설이 필요합니다.");
+        postJson("/api/v1/requests", requesterToken, bigWithReason)
                 .andExpect(status().isCreated());
 
         // end date before start date → 422
         Map<String, Object> badDates = validBody(workspaceId);
         badDates.put("reqStartDate", "2026-08-01");
         badDates.put("reqEndDate", "2026-07-01");
-        postJson("/api/v1/vm-requests", requesterToken, badDates)
+        postJson("/api/v1/requests", requesterToken, badDates)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
 
         // the form carries no domain axis (contract v0.29.0): a submitted
         // desiredSubdomain is an unknown field, ignored — nothing is reserved
         // and the response echoes null (the field survives for OLD requests)
-        postJson("/api/v1/vm-requests", requesterToken,
+        postJson("/api/v1/requests", requesterToken,
                 with(validBody(workspaceId), "desiredSubdomain", "vmr-ignored-x1"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSubdomain").value((Object) null))
-                .andExpect(jsonPath("$.rootDomain").value((Object) null));
+                .andExpect(jsonPath("$.vm.desiredSubdomain").value((Object) null))
+                .andExpect(jsonPath("$.vm.rootDomain").value((Object) null));
 
         // missing purpose → 422
         Map<String, Object> noPurpose = validBody(workspaceId);
         noPurpose.remove("purpose");
-        postJson("/api/v1/vm-requests", requesterToken, noPurpose)
+        postJson("/api/v1/requests", requesterToken, noPurpose)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
@@ -219,7 +220,7 @@ class VmRequestTest {
         assertThat(audits).isPositive();
 
         // unauthenticated → 401
-        mockMvc.perform(get("/api/v1/vm-requests")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/requests")).andExpect(status().isUnauthorized());
     }
 
     /**
@@ -232,36 +233,36 @@ class VmRequestTest {
         long workspaceId = createTeam(requesterToken, "vmr-flavor-x1");
 
         // 'small' as-is (1 vCPU / 1024MiB / 10GiB) → 201, no reason needed
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, smallFlavor))
+        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, smallFlavor))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.flavorId").value(smallFlavor.getId()))
-                .andExpect(jsonPath("$.reqVcpu").value(1));
+                .andExpect(jsonPath("$.vm.flavorId").value(smallFlavor.getId()))
+                .andExpect(jsonPath("$.vm.reqVcpu").value(1));
 
         // each axis independently: 2 vCPU exceeds 'small' → specReason required
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "reqVcpu", 2))
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, smallFlavor), "vm.reqVcpu", 2))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("specReason"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
                         .value("선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "reqMemoryMb", 2048))
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, smallFlavor), "vm.reqMemoryMb", 2048))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("specReason"));
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "reqDiskGb", 20))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, smallFlavor), "vm.reqDiskGb", 20))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("specReason"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
 
         // the very same spec against 'basic' (2 / 2048 / 20) is free
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, basicFlavor))
+        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, basicFlavor))
                 .andExpect(status().isCreated());
 
         // the disk floor is the OS image's min, not the preset's
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "reqDiskGb", 5))
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, smallFlavor), "vm.reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("reqDiskGb"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.reqDiskGb"));
     }
 
     @Test
@@ -270,10 +271,10 @@ class VmRequestTest {
         VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 프리셋", 2, 2048, 20,
                 CatalogStatus.DISABLED, null));
 
-        postJson("/api/v1/vm-requests", requesterToken, bodyFor(workspaceId, retired))
+        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, retired))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("flavorId"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.flavorId"))
                 .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양 프리셋입니다."));
 
         // both axes retired → one error per axis, and the spec check is skipped
@@ -281,12 +282,12 @@ class VmRequestTest {
                 "비활성 OS", "ubuntu", "24.04", "ubuntu", 1004,
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(bodyFor(workspaceId, retired), "imageId", retiredImage.getId()))
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, retired), "vm.imageId", retiredImage.getId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors.length()").value(2))
-                .andExpect(jsonPath("$.errors[0].field").value("imageId"))
-                .andExpect(jsonPath("$.errors[1].field").value("flavorId"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"))
+                .andExpect(jsonPath("$.errors[1].field").value("vm.flavorId"));
     }
 
     /**
@@ -314,17 +315,17 @@ class VmRequestTest {
                     .andExpect(jsonPath("$.length()").value(0));
 
             // an image that exists but is no longer selectable → 422 on the field
-            postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(workspaceId), "imageId", image.getId()))
+            postJson("/api/v1/requests", requesterToken,
+                    with(validBody(workspaceId), "vm.imageId", image.getId()))
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                    .andExpect(jsonPath("$.errors[0].field").value("imageId"))
+                    .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"))
                     .andExpect(jsonPath("$.errors[0].message")
                             .value("더 이상 선택할 수 없는 OS 이미지입니다."));
 
             // an id that never existed → 404 with a stated reason, not a 500
-            postJson("/api/v1/vm-requests", requesterToken,
-                    with(validBody(workspaceId), "imageId", 999_999))
+            postJson("/api/v1/requests", requesterToken,
+                    with(validBody(workspaceId), "vm.imageId", 999_999))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                     .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
@@ -332,14 +333,14 @@ class VmRequestTest {
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
             Map<String, Object> withoutImage = validBody(workspaceId);
             withoutImage.remove("imageId");
-            postJson("/api/v1/vm-requests", requesterToken, withoutImage)
+            postJson("/api/v1/requests", requesterToken, withoutImage)
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                    .andExpect(jsonPath("$.errors[0].field").value("imageId"));
+                    .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
 
             // and none of the three attempts left a row behind
             assertThat(jdbcTemplate.queryForObject(
-                    "select count(*) from vm_requests where workspace_id = ?", Long.class, workspaceId))
+                    "select count(*) from requests where workspace_id = ?", Long.class, workspaceId))
                     .isZero();
         } finally {
             active.forEach(row -> row.setStatus(CatalogStatus.ACTIVE));
@@ -352,25 +353,25 @@ class VmRequestTest {
         long workspaceId = createTeam(requesterToken, "vmr-dname-x1");
 
         // over 100 chars → 422 (bean validation)
-        postJson("/api/v1/vm-requests", requesterToken,
+        postJson("/api/v1/requests", requesterToken,
                 with(validBody(workspaceId), "displayName", "가".repeat(101)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("displayName"));
 
         // echoed in the detail; omitted → null
-        String response = postJson("/api/v1/vm-requests", requesterToken,
+        String response = postJson("/api/v1/requests", requesterToken,
                 with(validBody(workspaceId), "displayName", "데이터분석 실습 서버"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"))
                 .andReturn().getResponse().getContentAsString();
         long requestId = objectMapper.readTree(response).get("id").asLong();
-        mockMvc.perform(get("/api/v1/vm-requests/" + requestId)
+        mockMvc.perform(get("/api/v1/requests/" + requestId)
                         .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"));
 
-        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
+        postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayName").value((Object) null));
     }
@@ -380,34 +381,34 @@ class VmRequestTest {
         long workspaceId = createTeam(requesterToken, "vmr-slug-x1");
 
         // desiredSlug echoed in the detail; omitted → null
-        String mine = postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
+        String mine = postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"))
+                .andExpect(jsonPath("$.vm.desiredSlug").value("vmr-slug-mine"))
                 .andReturn().getResponse().getContentAsString();
         long mineId = objectMapper.readTree(mine).get("id").asLong();
-        postJson("/api/v1/vm-requests", requesterToken, validBody(workspaceId))
+        postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSlug").value((Object) null));
+                .andExpect(jsonPath("$.vm.desiredSlug").value((Object) null));
 
         // malformed slug → 422 (bean validation pattern)
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "-bad-"))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.desiredSlug", "-bad-"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "ab"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"));
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.desiredSlug", "ab"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"));
 
         // reserved word (shared with reservedSubdomains) → 422
-        postJson("/api/v1/vm-requests", requesterToken, with(validBody(workspaceId), "desiredSlug", "www"))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.desiredSlug", "www"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"));
 
         // another SUBMITTED request already asks for the slug → 422
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value("이미 신청 중인 호스트명입니다."));
 
         // an existing vms.hostname blocks the slug — even soft-deleted (never recycled)
@@ -418,22 +419,22 @@ class VmRequestTest {
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 vm.getId());
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(workspaceId), "desiredSlug", "vmr-slug-taken"))
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-taken"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("desiredSlug"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.desiredSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 호스트명입니다."));
 
         // a rejected request is terminal — its desired slug is submittable again
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         String orgAdminToken = jwtService.createAccessToken(orgAdmin);
-        postJson("/api/v1/admin/vm-requests/" + mineId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + mineId + "/reject", orgAdminToken,
                 Map.of("comment", "슬러그 재사용 테스트를 위해 반려합니다."))
                 .andExpect(status().isOk());
-        postJson("/api/v1/vm-requests", requesterToken,
-                with(validBody(workspaceId), "desiredSlug", "vmr-slug-mine"))
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "vm.desiredSlug", "vmr-slug-mine"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.desiredSlug").value("vmr-slug-mine"));
+                .andExpect(jsonPath("$.vm.desiredSlug").value("vmr-slug-mine"));
     }
 
     @Test
@@ -444,7 +445,7 @@ class VmRequestTest {
         long second = submit(requesterToken, workspaceId);
 
         // a plain member sees the workspace's requests, newest first
-        mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/requests").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
@@ -453,44 +454,44 @@ class VmRequestTest {
                 .andExpect(jsonPath("$.content[1].id").value(first));
 
         // paging envelope: size=1 → two pages
-        mockMvc.perform(get("/api/v1/vm-requests?size=1").header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/requests?size=1").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.totalPages").value(2));
 
         // invalid paging → 422
-        mockMvc.perform(get("/api/v1/vm-requests?size=101").header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/requests?size=101").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
         // outsider sees nothing and cannot filter by this workspace
-        mockMvc.perform(get("/api/v1/vm-requests").header("Authorization", "Bearer " + outsiderToken))
+        mockMvc.perform(get("/api/v1/requests").header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
-        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
         // member workspaceId + status filters
-        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId + "&status=SUBMITTED")
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId + "&status=SUBMITTED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2));
-        mockMvc.perform(get("/api/v1/vm-requests?workspaceId=" + workspaceId + "&status=CANCELED")
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId + "&status=CANCELED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
 
         // detail: participant ok, outsider 403, unknown id 404
-        mockMvc.perform(get("/api/v1/vm-requests/" + first).header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/requests/" + first).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(first))
                 .andExpect(jsonPath("$.review").value((Object) null));
-        mockMvc.perform(get("/api/v1/vm-requests/" + first).header("Authorization", "Bearer " + outsiderToken))
+        mockMvc.perform(get("/api/v1/requests/" + first).header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        mockMvc.perform(get("/api/v1/vm-requests/999999").header("Authorization", "Bearer " + requesterToken))
+        mockMvc.perform(get("/api/v1/requests/999999").header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
@@ -505,29 +506,29 @@ class VmRequestTest {
         long second = submit(otherMemberToken, workspaceId);
 
         // a fellow member who did not ask, and an outsider, cannot cancel → 403
-        postJson("/api/v1/vm-requests/" + first + "/cancel", otherMemberToken, Map.of())
+        postJson("/api/v1/requests/" + first + "/cancel", otherMemberToken, Map.of())
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        postJson("/api/v1/vm-requests/" + first + "/cancel", outsiderToken, Map.of())
+        postJson("/api/v1/requests/" + first + "/cancel", outsiderToken, Map.of())
                 .andExpect(status().isForbidden());
 
         // requester cancels own request → 200 CANCELED
-        postJson("/api/v1/vm-requests/" + first + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + first + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 
         // second cancel → 409 REQUEST_ALREADY_DECIDED
-        postJson("/api/v1/vm-requests/" + first + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + first + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
         // the workspace's OWNER may cancel another member's request
-        postJson("/api/v1/vm-requests/" + second + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + second + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 
         // unknown request → 404
-        postJson("/api/v1/vm-requests/999999/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/999999/cancel", requesterToken, Map.of())
                 .andExpect(status().isNotFound());
 
         // cancellations are audit-logged
@@ -543,25 +544,35 @@ class VmRequestTest {
     }
 
     private Map<String, Object> bodyFor(long workspaceId, VmFlavor flavor) {
+        Map<String, Object> vm = new HashMap<>();
+        vm.put("imageId", image.getId());
+        vm.put("flavorId", flavor.getId());
+        vm.put("reqVcpu", flavor.getVcpu());
+        vm.put("reqMemoryMb", flavor.getMemoryMb());
+        vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
+        body.put("type", "VM");
         body.put("workspaceId", workspaceId);
         body.put("orgId", org.getId());
-        body.put("imageId", image.getId());
-        body.put("flavorId", flavor.getId());
         body.put("purpose", "수업 실습용 서버");
-        body.put("reqVcpu", flavor.getVcpu());
-        body.put("reqMemoryMb", flavor.getMemoryMb());
-        body.put("reqDiskGb", flavor.getDiskGb());
+        body.put("vm", vm);
         return body;
     }
 
+    /** Dotted keys address the nested per-type member: {@code with(body, "vm.imageId", 1)}. */
+    @SuppressWarnings("unchecked")
     private static Map<String, Object> with(Map<String, Object> body, String key, Object value) {
-        body.put(key, value);
+        int dot = key.indexOf('.');
+        if (dot < 0) {
+            body.put(key, value);
+            return body;
+        }
+        ((Map<String, Object>) body.get(key.substring(0, dot))).put(key.substring(dot + 1), value);
         return body;
     }
 
     private long submit(String token, long workspaceId) throws Exception {
-        String response = postJson("/api/v1/vm-requests", token, validBody(workspaceId))
+        String response = postJson("/api/v1/requests", token, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(response).get("id").asLong();

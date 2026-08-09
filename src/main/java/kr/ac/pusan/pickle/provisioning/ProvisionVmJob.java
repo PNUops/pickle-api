@@ -38,8 +38,8 @@ import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
+import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
+import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.scheduling.JobScheduler;
 import org.slf4j.Logger;
@@ -107,7 +107,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ProvisioningTaskRepository taskRepository;
     private final NodeRepository nodeRepository;
     private final OsImageRepository imageRepository;
-    private final VmRequestReviewRepository reviewRepository;
+    private final VmRequestDetailRepository vmRequestDetailRepository;
     private final IpPoolRepository poolRepository;
     private final IpAllocationRepository allocationRepository;
     private final IpamService ipamService;
@@ -126,7 +126,7 @@ public class ProvisionVmJob implements ProvisioningService {
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
-            OsImageRepository imageRepository, VmRequestReviewRepository reviewRepository,
+            OsImageRepository imageRepository, VmRequestDetailRepository vmRequestDetailRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
             VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
@@ -140,7 +140,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.taskRepository = taskRepository;
         this.nodeRepository = nodeRepository;
         this.imageRepository = imageRepository;
-        this.reviewRepository = reviewRepository;
+        this.vmRequestDetailRepository = vmRequestDetailRepository;
         this.poolRepository = poolRepository;
         this.allocationRepository = allocationRepository;
         this.ipamService = ipamService;
@@ -305,8 +305,8 @@ public class ProvisionVmJob implements ProvisioningService {
     private void place(Vm vm) {
         OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow(
                 () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + "이 존재하지 않습니다"));
-        Long forcedNodeId = reviewRepository.findByRequestId(vm.getRequestId())
-                .map(VmRequestReview::getNodeId).orElse(null);
+        Long forcedNodeId = vmRequestDetailRepository.findById(vm.getRequestId())
+                .map(VmRequestDetail::getNodeId).orElse(null);
         Node node = placementService.place(vm, image, forcedNodeId);
         vmRepository.assignNode(vm.getId(), node.getId(), Instant.now());
     }

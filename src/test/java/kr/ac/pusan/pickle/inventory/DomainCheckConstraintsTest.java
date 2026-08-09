@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.inventory;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -71,14 +72,14 @@ class DomainCheckConstraintsTest {
     void nonPositiveRequestSpecIsRejected() {
         assertThatThrownBy(() -> insertRequest(0, 1024, 10, null, null))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_vm_requests_positive_specs");
+                .hasMessageContaining("chk_vm_request_details_positive_specs");
     }
 
     @Test
     void reversedRequestDatesAreRejected() {
         assertThatThrownBy(() -> insertRequest(1, 1024, 10, "2026-08-01", "2026-07-01"))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_vm_requests_date_order");
+                .hasMessageContaining("chk_requests_date_order");
     }
 
     @Test
@@ -95,25 +96,26 @@ class DomainCheckConstraintsTest {
     }
 
     @Test
-    void approveReviewMissingGrantedSpecIsRejected() {
+    void partialGrantedSpecIsRejected() {
         long requestId = insertRequest(1, 1024, 10, null, null);
-        // APPROVE with the granted spec absent (granted_image_id null) must fail.
+        // A granted spec that is present but incomplete (no image) must fail:
+        // the constraint moved to the detail row with the columns it guards.
         assertThatThrownBy(() -> jdbc.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision,
-                                                granted_vcpu, granted_memory_mb, granted_disk_gb)
-                values (?, ?, 'APPROVE', 2, 2048, 20)
-                """, requestId, requesterId))
+                update vm_request_details
+                   set granted_vcpu = 2, granted_memory_mb = 2048, granted_disk_gb = 20
+                 where request_id = ?
+                """, requestId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_reviews_approve_granted");
+                .hasMessageContaining("chk_vm_request_details_approved_granted");
     }
 
     @Test
     void rejectReviewWithNullGrantsIsAccepted() {
-        // The mirror case: REJECT rows legitimately leave every granted column
-        // null and must pass the approve-granted constraint.
+        // The mirror case: a REJECT leaves every granted column null and must
+        // pass both the review's own constraints and the detail row's.
         long requestId = insertRequest(1, 1024, 10, null, null);
         int inserted = jdbc.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision, comment)
+                insert into request_reviews (request_id, reviewer_id, decision, comment)
                 values (?, ?, 'REJECT', '반려 사유')
                 """, requestId, requesterId);
         assertThat(inserted).isEqualTo(1);
@@ -145,14 +147,7 @@ class DomainCheckConstraintsTest {
     }
 
     private long insertRequest(int vcpu, int memoryMb, int diskGb, String start, String end) {
-        return jdbc.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb,
-                                         req_start_date, req_end_date)
-                values (?, ?, ?, '제약 테스트', ?, ?, ?, ?,
-                        cast(? as date), cast(? as date))
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId,
-                vcpu, memoryMb, diskGb, start, end);
+        return RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, requesterId, "제약 테스트",
+                imageId, vcpu, memoryMb, diskGb, start, end);
     }
 }

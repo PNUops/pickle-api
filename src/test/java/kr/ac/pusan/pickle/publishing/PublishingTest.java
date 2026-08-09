@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -263,8 +264,8 @@ class PublishingTest {
         // fallback — a body without a name is 422, period.
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
         jdbcTemplate.update("""
-                update vm_requests set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
-                 where id = (select request_id from vms where id = ?)
+                update vm_request_details set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
+                 where request_id = (select request_id from vms where id = ?)
                 """, vmId);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -2041,12 +2042,7 @@ class PublishingTest {
                 insert into workspace_members (workspace_id, user_id, role)
                 values (?, ?, 'OWNER'::workspace_member_role)
                 """, foreignWorkspaceId, outsiderId);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '목록 범위 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, foreignWorkspaceId, orgId, outsiderId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, foreignWorkspaceId, orgId, outsiderId, "목록 범위 테스트", imageId, 1, 1024, 10);
         String hostname = "pubf-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long foreignVmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
@@ -2124,17 +2120,8 @@ class PublishingTest {
      * means the body must name the domain itself or answer 422.
      */
     private long publishableVm(String desiredSubdomain, String rootDomain, VmStatus status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
-        jdbcTemplate.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision,
-                        granted_vcpu, granted_memory_mb, granted_disk_gb, granted_image_id)
-                values (?, ?, 'APPROVE'::review_decision, 1, 1024, 10, ?)
-                """, requestId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "공개 테스트", imageId, 1, 1024, 10);
+        RequestFixtures.approveVmRequest(jdbcTemplate, requestId, owner.getId(), imageId, 1, 1024, 10);
         String hostname = "pub-" + UUID.randomUUID().toString().substring(0, 12);
         int vmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""

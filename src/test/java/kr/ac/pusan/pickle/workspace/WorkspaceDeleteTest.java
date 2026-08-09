@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.workspace;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -156,14 +157,14 @@ class WorkspaceDeleteTest {
                 .andExpect(status().isNoContent());
 
         // the in-flight request is CANCELED in the same unit and audited
-        assertThat(jdbcTemplate.queryForObject("select status from vm_requests where id = ?",
+        assertThat(jdbcTemplate.queryForObject("select status from requests where id = ?",
                 String.class, requestId)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs where action='request.cancel' and target_id=?
                 """, Long.class, requestId)).isEqualTo(1L);
 
         // approving the now-canceled request hits the existing SUBMITTED guard → 409
-        mockMvc.perform(post("/api/v1/admin/vm-requests/" + requestId + "/approve")
+        mockMvc.perform(post("/api/v1/admin/requests/" + requestId + "/approve")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -174,21 +175,11 @@ class WorkspaceDeleteTest {
     }
 
     private long insertSubmittedRequest(long workspaceId) {
-        return jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '워크스페이스 삭제 취소 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
+        return RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "워크스페이스 삭제 취소 테스트", imageId, 1, 1024, 10);
     }
 
     private long insertVm(long workspaceId, String status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '워크스페이스 삭제 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "워크스페이스 삭제 테스트", imageId, 1, 1024, 10);
         String hostname = "gdel-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

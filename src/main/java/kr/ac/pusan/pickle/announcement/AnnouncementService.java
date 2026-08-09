@@ -25,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Announcement send (contract {@code createAnnouncement}). Scope rules:
  * ALL is SYS_ADMIN-only (403); an ORG_ADMIN's ORG scope is pinned to their own
  * org (mismatch 422); WORKSPACE scope is gated — for an ORG_ADMIN — on the workspace
- * having resources (vm_requests / non-DELETED VMs) in their org (else 404,
+ * having resources (requests / non-DELETED VMs) in their org (else 404,
  * existence masked); a gated workspace's recipients are all its ACTIVE members.
  * ORG-scope recipients follow the canonical <b>derived org membership</b>
  * ({@link OrgMembershipSql}) — ACTIVE members of org-linked workspaces plus the

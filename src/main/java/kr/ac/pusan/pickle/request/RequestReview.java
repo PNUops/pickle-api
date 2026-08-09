@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.vmrequest;
+package kr.ac.pusan.pickle.request;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -16,12 +16,14 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * Approve/reject decision with the granted values (vm_request_reviews).
- * One row per request; granted columns are null on REJECT.
+ * Approve/reject decision (request_reviews). One row per request; the granted
+ * period is null on REJECT. What was granted of the resource itself lives on
+ * the request's per-type detail row, since only the period is common to every
+ * resource type.
  */
 @Entity
-@Table(name = "vm_request_reviews")
-public class VmRequestReview {
+@Table(name = "request_reviews")
+public class RequestReview {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,17 +42,9 @@ public class VmRequestReview {
 
     private String comment;
 
-    @Column(name = "granted_vcpu")
-    private Integer grantedVcpu;
 
-    @Column(name = "granted_memory_mb")
-    private Integer grantedMemoryMb;
 
-    @Column(name = "granted_disk_gb")
-    private Integer grantedDiskGb;
 
-    @Column(name = "granted_image_id")
-    private Long grantedImageId;
 
     @Column(name = "granted_start_date")
     private LocalDate grantedStartDate;
@@ -58,9 +52,6 @@ public class VmRequestReview {
     @Column(name = "granted_end_date")
     private LocalDate grantedEndDate;
 
-    /** Reviewer-forced placement node; null = auto placement. */
-    @Column(name = "node_id")
-    private Long nodeId;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -70,12 +61,12 @@ public class VmRequestReview {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    protected VmRequestReview() {
+    protected RequestReview() {
     }
 
     /** Rejection: decision row with the (mandatory) reviewer comment only. */
-    public static VmRequestReview reject(Long requestId, Long reviewerId, String comment) {
-        VmRequestReview review = new VmRequestReview();
+    public static RequestReview reject(Long requestId, Long reviewerId, String comment) {
+        RequestReview review = new RequestReview();
         review.requestId = requestId;
         review.reviewerId = reviewerId;
         review.decision = ReviewDecision.REJECT;
@@ -83,22 +74,16 @@ public class VmRequestReview {
         return review;
     }
 
-    /** Approval: decision row carrying the granted spec. */
-    public static VmRequestReview approve(Long requestId, Long reviewerId, String comment,
-            int grantedVcpu, int grantedMemoryMb, int grantedDiskGb, Long grantedImageId,
-            LocalDate grantedStartDate, LocalDate grantedEndDate, Long nodeId) {
-        VmRequestReview review = new VmRequestReview();
+    /** Approval: decision row carrying the granted period. */
+    public static RequestReview approve(Long requestId, Long reviewerId, String comment,
+            LocalDate grantedStartDate, LocalDate grantedEndDate) {
+        RequestReview review = new RequestReview();
         review.requestId = requestId;
         review.reviewerId = reviewerId;
         review.decision = ReviewDecision.APPROVE;
         review.comment = comment;
-        review.grantedVcpu = grantedVcpu;
-        review.grantedMemoryMb = grantedMemoryMb;
-        review.grantedDiskGb = grantedDiskGb;
-        review.grantedImageId = grantedImageId;
         review.grantedStartDate = grantedStartDate;
         review.grantedEndDate = grantedEndDate;
-        review.nodeId = nodeId;
         return review;
     }
 
@@ -122,32 +107,12 @@ public class VmRequestReview {
         return comment;
     }
 
-    public Integer getGrantedVcpu() {
-        return grantedVcpu;
-    }
-
-    public Integer getGrantedMemoryMb() {
-        return grantedMemoryMb;
-    }
-
-    public Integer getGrantedDiskGb() {
-        return grantedDiskGb;
-    }
-
-    public Long getGrantedImageId() {
-        return grantedImageId;
-    }
-
     public LocalDate getGrantedStartDate() {
         return grantedStartDate;
     }
 
     public LocalDate getGrantedEndDate() {
         return grantedEndDate;
-    }
-
-    public Long getNodeId() {
-        return nodeId;
     }
 
     public Instant getCreatedAt() {

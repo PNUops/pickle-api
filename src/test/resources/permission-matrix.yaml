@@ -78,10 +78,10 @@ operations:
   - { id: removeWorkspaceMember,    method: DELETE, path: "/workspaces/{workspaceId}/members/{userId}", roles: { USER: allow_workspace_scoped:OWNER, ORG_MANAGER: allow_workspace_scoped:OWNER, ORG_ADMIN: allow_workspace_scoped:OWNER, SYS_MANAGER: allow_workspace_scoped:OWNER, SYS_ADMIN: allow_workspace_scoped:OWNER } }
 
   # ── 3.5 VM requests (workspace-role-scoped) ───────────────────────────────────
-  - { id: createVmRequest,      method: POST,   path: "/vm-requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
-  - { id: listVmRequests,       method: GET,    path: "/vm-requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
-  - { id: getVmRequest,         method: GET,    path: "/vm-requests/{requestId}",         roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
-  - { id: cancelVmRequest,      method: POST,   path: "/vm-requests/{requestId}/cancel",  roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: createRequest,      method: POST,   path: "/requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: listRequests,       method: GET,    path: "/requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: getRequest,         method: GET,    path: "/requests/{requestId}",         roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: cancelRequest,      method: POST,   path: "/requests/{requestId}/cancel",  roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
 
   # ── 3.6 VMs (access-list scoped; deleteVm has service-layer admin override) ─
   - { id: listVms,              method: GET,    path: "/vms",                             roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
@@ -125,11 +125,11 @@ operations:
   - { id: markAllNotificationsRead,   method: POST, path: "/notifications/read-all",              roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.9 Admin — VM request approval ───────────────────────────────────────
-  - { id: listAdminVmRequests,  method: GET,    path: "/admin/vm-requests",                        roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getAdminVmRequest,    method: GET,    path: "/admin/vm-requests/{requestId}",            roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getApprovalContext,   method: GET,    path: "/admin/vm-requests/{requestId}/context",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: approveVmRequest,     method: POST,   path: "/admin/vm-requests/{requestId}/approve",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
-  - { id: rejectVmRequest,      method: POST,   path: "/admin/vm-requests/{requestId}/reject",     roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminRequests,  method: GET,    path: "/admin/requests",                        roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminRequest,    method: GET,    path: "/admin/requests/{requestId}",            roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getApprovalContext,   method: GET,    path: "/admin/requests/{requestId}/context",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: approveRequest,     method: POST,   path: "/admin/requests/{requestId}/approve",    roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: rejectRequest,      method: POST,   path: "/admin/requests/{requestId}/reject",     roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
   # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
   - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }

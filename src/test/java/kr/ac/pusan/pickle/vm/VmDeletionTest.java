@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
@@ -1184,12 +1185,7 @@ class VmDeletionTest {
     }
 
     private long createVm(VmStatus status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '삭제 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "삭제 테스트", imageId, 1, 1024, 10);
         String hostname = "vmdel-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""

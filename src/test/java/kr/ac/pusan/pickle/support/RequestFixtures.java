@@ -1,0 +1,79 @@
+package kr.ac.pusan.pickle.support;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/**
+ * Seeds requests straight into the database, for tests whose subject is
+ * something downstream of a request rather than the request flow itself.
+ *
+ * <p>A request now spans two tables — the common row and the per-type detail —
+ * so the pair is written here rather than in every test that needs one. A new
+ * resource type adds a method here and nothing anywhere else.
+ */
+public final class RequestFixtures {
+
+    private RequestFixtures() {
+    }
+
+    /** A submitted VM request with the given specification. Returns its id. */
+    public static long insertVmRequest(JdbcTemplate jdbc, long workspaceId, long orgId,
+            long requesterId, String purpose, Long imageId, int vcpu, int memoryMb, int diskGb) {
+        Long resolvedImageId = imageId != null ? imageId
+                : jdbc.queryForObject("select min(id) from os_images", Long.class);
+        long requestId = jdbc.queryForObject("""
+                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose)
+                values ('VM', ?, ?, ?, ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requesterId, purpose);
+        jdbc.update("""
+                insert into vm_request_details (request_id, image_id, req_vcpu, req_memory_mb, req_disk_gb)
+                values (?, ?, ?, ?, ?)
+                """, requestId, resolvedImageId, vcpu, memoryMb, diskGb);
+        return requestId;
+    }
+
+    /** A submitted VM request carrying a requested period. */
+    public static long insertVmRequest(JdbcTemplate jdbc, long workspaceId, long orgId,
+            long requesterId, String purpose, Long imageId, int vcpu, int memoryMb, int diskGb,
+            String startDate, String endDate) {
+        long requestId = insertVmRequest(jdbc, workspaceId, orgId, requesterId, purpose, imageId,
+                vcpu, memoryMb, diskGb);
+        jdbc.update("update requests set req_start_date = cast(? as date),"
+                + " req_end_date = cast(? as date) where id = ?", startDate, endDate, requestId);
+        return requestId;
+    }
+
+    /** A VM request already in a given status, for queue and summary fixtures. */
+    public static long insertVmRequestWithStatus(JdbcTemplate jdbc, long workspaceId, long orgId,
+            long requesterId, String purpose, Long imageId, String status) {
+        long requestId = insertVmRequest(jdbc, workspaceId, orgId, requesterId, purpose, imageId);
+        jdbc.update("update requests set status = ?::request_status where id = ?", status, requestId);
+        return requestId;
+    }
+
+    /**
+     * Marks a request approved: the decision row plus the granted specification
+     * on its VM detail row, which is where the specification now lives.
+     */
+    public static void approveVmRequest(JdbcTemplate jdbc, long requestId, long reviewerId,
+            Long imageId, int vcpu, int memoryMb, int diskGb) {
+        Long resolvedImageId = imageId != null ? imageId
+                : jdbc.queryForObject("select min(id) from os_images", Long.class);
+        jdbc.update("""
+                insert into request_reviews (request_id, reviewer_id, decision)
+                values (?, ?, 'APPROVE'::review_decision)
+                """, requestId, reviewerId);
+        jdbc.update("""
+                update vm_request_details
+                   set granted_vcpu = ?, granted_memory_mb = ?, granted_disk_gb = ?,
+                       granted_image_id = ?
+                 where request_id = ?
+                """, vcpu, memoryMb, diskGb, resolvedImageId, requestId);
+    }
+
+    /** The same, with the platform's usual small specification. */
+    public static long insertVmRequest(JdbcTemplate jdbc, long workspaceId, long orgId,
+            long requesterId, String purpose, Long imageId) {
+        return insertVmRequest(jdbc, workspaceId, orgId, requesterId, purpose, imageId, 2, 2048, 10);
+    }
+}

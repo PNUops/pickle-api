@@ -28,4 +28,5 @@ public interface ResourceTypeAdapter {
      * still read it, so a membership that ends must take those grants too.
      */
     List<Long> idsOwnedByWorkspace(long workspaceId);
+
 }

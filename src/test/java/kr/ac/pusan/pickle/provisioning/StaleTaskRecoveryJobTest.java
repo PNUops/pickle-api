@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
@@ -152,12 +153,7 @@ class StaleTaskRecoveryJobTest {
     }
 
     private long createVm(String status) {
-        long requestId = jdbc.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '스테일 회수 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, requesterId, "스테일 회수 테스트", imageId, 1, 1024, 10);
         String hostname = "stale-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbc.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

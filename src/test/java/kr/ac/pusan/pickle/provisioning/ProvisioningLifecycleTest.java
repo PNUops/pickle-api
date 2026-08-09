@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -170,12 +171,7 @@ class ProvisioningLifecycleTest {
 
     /** Minimal request→vm graph for the FK chains under test. */
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '수명주기 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "수명주기 테스트", imageId, 1, 1024, 10);
         String hostname = "lifec-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

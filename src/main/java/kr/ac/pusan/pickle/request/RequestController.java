@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.vmrequest;
+package kr.ac.pusan.pickle.request;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
@@ -7,9 +7,10 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.vmrequest.dto.CreateVmRequestRequest;
-import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
+import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
+import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,46 +22,47 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code vm-requests} (openapi.yaml v0.2.3, server /api/v1). */
+/** Contract tag {@code requests} (server /api/v1). */
 @RestController
-@RequestMapping("/api/v1/vm-requests")
-public class VmRequestController {
+@RequestMapping("/api/v1/requests")
+public class RequestController {
 
-    private final VmRequestService vmRequestService;
+    private final RequestService requestService;
 
-    public VmRequestController(VmRequestService vmRequestService) {
-        this.vmRequestService = vmRequestService;
+    public RequestController(RequestService requestService) {
+        this.requestService = requestService;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public VmRequestDetailResponse createVmRequest(
+    public RequestDetailResponse createRequest(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody CreateVmRequestRequest request,
+            @Valid @RequestBody CreateRequestRequest request,
             HttpServletRequest httpRequest) {
-        return vmRequestService.create(principal, request, clientIp(httpRequest));
+        return requestService.create(principal, request, clientIp(httpRequest));
     }
 
     @GetMapping
-    public PageResponse<VmRequestDetailResponse> listVmRequests(
+    public PageResponse<RequestDetailResponse> listRequests(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) VmRequestStatus status,
+            @RequestParam(required = false) RequestStatus status,
+            @RequestParam(required = false) ResourceType type,
             @RequestParam(required = false) Long workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return vmRequestService.list(principal, status, workspaceId, page, size);
+        return requestService.list(principal, status, type, workspaceId, page, size);
     }
 
     @GetMapping("/{requestId}")
-    public VmRequestDetailResponse getVmRequest(@AuthenticationPrincipal AuthenticatedUser principal,
+    public RequestDetailResponse getRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long requestId) {
-        return vmRequestService.get(principal, requestId);
+        return requestService.get(principal, requestId);
     }
 
     @PostMapping("/{requestId}/cancel")
-    public VmRequestDetailResponse cancelVmRequest(@AuthenticationPrincipal AuthenticatedUser principal,
+    public RequestDetailResponse cancelRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long requestId,
             HttpServletRequest httpRequest) {
-        return vmRequestService.cancel(principal, requestId, clientIp(httpRequest));
+        return requestService.cancel(principal, requestId, clientIp(httpRequest));
     }
 }

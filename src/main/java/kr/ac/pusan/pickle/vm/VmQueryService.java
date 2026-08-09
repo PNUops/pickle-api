@@ -37,6 +37,7 @@ import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -104,7 +105,17 @@ public class VmQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long workspaceId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Page<VmSummaryResponse> result = listPage(actor, workspaceId,
+                PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id")));
+        return PageResponse.of(result.getContent(), result);
+    }
+
+    /**
+     * The same list, as a {@link Page} — what the resource inventory reuses so
+     * that one set of visibility rules serves both surfaces.
+     */
+    @Transactional(readOnly = true)
+    public Page<VmSummaryResponse> listPage(AuthenticatedUser actor, Long workspaceId, Pageable pageable) {
         List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
         Map<Long, String> workspaceNames = memberships.stream()
                 .collect(Collectors.toMap(m -> m.getWorkspace().getId(), m -> m.getWorkspace().getName()));
@@ -128,7 +139,7 @@ public class VmQueryService {
                 .map(m -> m.getWorkspace().getId())
                 .collect(Collectors.toSet());
         VmListAccess access = listAccess(actor.id(), vms);
-        return PageResponse.of(vms.stream()
+        return new PageImpl<>(vms.stream()
                 .map(vm -> {
                     String workspaceName = workspaceNames.getOrDefault(vm.getWorkspaceId(), "");
                     String displayName = displayNames.get(vm.getId());
@@ -144,7 +155,7 @@ public class VmQueryService {
                             access.ownerNames().getOrDefault(vm.getId(), List.of()),
                             ownedWorkspaceIds.contains(vm.getWorkspaceId()));
                 })
-                .toList(), result);
+                .toList(), pageable, result.getTotalElements());
     }
 
     /** Which of these VMs the requester may see in full, and who to ask about the rest. */

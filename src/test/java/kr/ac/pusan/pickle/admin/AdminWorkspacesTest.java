@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -75,11 +76,7 @@ class AdminWorkspacesTest {
                 """, workspaceId, ownerId, workspaceId, disabledMemberId);
         // link the workspace to the seed org (derived membership: ≥1 request in the org)
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        jdbcTemplate.update("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '워크스페이스 조회 테스트', ?, 1, 1024, 10)
-                """, workspaceId, orgId, ownerId, imageId);
+        RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, ownerId, "워크스페이스 조회 테스트", imageId, 1, 1024, 10);
     }
 
     @Test

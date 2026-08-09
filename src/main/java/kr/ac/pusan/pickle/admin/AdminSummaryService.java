@@ -78,14 +78,14 @@ public class AdminSummaryService {
         LocalDate today = ClockConfig.todayKst(clock);
         Instant decidedSince = clock.instant().minus(Duration.ofDays(14));
 
-        long pending = count("select count(*) from vm_requests"
+        long pending = count("select count(*) from requests"
                 + " where (?::bigint is null or org_id = ?) and status = 'SUBMITTED'",
                 scopedOrgId, scopedOrgId);
         RecentDecisions decisions = jdbcTemplate.queryForObject("""
                 select count(*) filter (where r.decision = 'APPROVE') as approved,
                        count(*) filter (where r.decision = 'REJECT') as rejected
-                  from vm_request_reviews r
-                  join vm_requests q on q.id = r.request_id
+                  from request_reviews r
+                  join requests q on q.id = r.request_id
                  where (?::bigint is null or q.org_id = ?) and r.created_at >= ?
                 """, (rs, rowNum) -> new RecentDecisions(rs.getLong("approved"),
                 rs.getLong("rejected")), scopedOrgId, scopedOrgId,

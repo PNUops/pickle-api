@@ -24,11 +24,11 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.vmrequest.VmRequest;
-import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.request.RequestRepository;
+import kr.ac.pusan.pickle.request.RequestReview;
+import kr.ac.pusan.pickle.request.RequestReviewRepository;
+import kr.ac.pusan.pickle.request.RequestStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -54,16 +54,16 @@ public class ApprovalContextService {
     private static final int HISTORY_LIMIT = 20;
 
     private final ApprovalService approvalService;
-    private final VmRequestRepository requestRepository;
-    private final VmRequestReviewRepository reviewRepository;
+    private final RequestRepository requestRepository;
+    private final RequestReviewRepository reviewRepository;
     private final VmRepository vmRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
     private final OrgHeadroomService orgHeadroomService;
 
-    public ApprovalContextService(ApprovalService approvalService, VmRequestRepository requestRepository,
-            VmRequestReviewRepository reviewRepository, VmRepository vmRepository,
+    public ApprovalContextService(ApprovalService approvalService, RequestRepository requestRepository,
+            RequestReviewRepository reviewRepository, VmRepository vmRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             UserRepository userRepository, OrgHeadroomService orgHeadroomService) {
         this.approvalService = approvalService;
@@ -78,7 +78,7 @@ public class ApprovalContextService {
 
     @Transactional(readOnly = true)
     public ApprovalContextResponse context(AuthenticatedUser actor, long requestId) {
-        VmRequest request = approvalService.findScoped(actor, requestId);
+        Request request = approvalService.findScoped(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
         // (WITHDRAWN + later anonymization keep the row), so
         // applicant.signupAt/email are always non-null per contract.
@@ -97,14 +97,14 @@ public class ApprovalContextService {
                 headroom.guidance());
     }
 
-    private Applicant applicantPanel(VmRequest request, User applicant) {
+    private Applicant applicantPanel(Request request, User applicant) {
         return new Applicant(
                 applicant.getId(),
                 applicant.getName(),
                 applicant.getEmail(),
                 applicant.getCreatedAt(),
-                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), VmRequestStatus.APPROVED),
-                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), VmRequestStatus.REJECTED));
+                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.APPROVED),
+                requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.REJECTED));
     }
 
     private Resources applicantResources(Long userId) {
@@ -132,21 +132,21 @@ public class ApprovalContextService {
                 briefs(activeVms), ResourceTotalsResponse.of(activeVms));
     }
 
-    private List<HistoryEntry> history(VmRequest request) {
-        List<VmRequest> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
+    private List<HistoryEntry> history(Request request) {
+        List<Request> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
                 request.getId(), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id")));
         if (prior.isEmpty()) {
             return List.of();
         }
-        Map<Long, VmRequestReview> reviews = reviewRepository
-                .findByRequestIdIn(prior.stream().map(VmRequest::getId).toList())
-                .stream().collect(Collectors.toMap(VmRequestReview::getRequestId, Function.identity()));
+        Map<Long, RequestReview> reviews = reviewRepository
+                .findByRequestIdIn(prior.stream().map(Request::getId).toList())
+                .stream().collect(Collectors.toMap(RequestReview::getRequestId, Function.identity()));
         Map<Long, User> reviewers = userRepository
-                .findAllById(reviews.values().stream().map(VmRequestReview::getReviewerId).toList())
+                .findAllById(reviews.values().stream().map(RequestReview::getReviewerId).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
         return prior.stream()
                 .map(r -> {
-                    VmRequestReview review = reviews.get(r.getId());
+                    RequestReview review = reviews.get(r.getId());
                     User reviewer = review != null ? reviewers.get(review.getReviewerId()) : null;
                     return new HistoryEntry(r.getId(), r.getCreatedAt(), r.getStatus(),
                             review != null ? review.getDecision() : null,

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.audit;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * self-scoped (login rows included, filters cannot widen it), and
  * {@code /admin/audit} pins ORG_ADMIN to actors of their own org via the
  * canonical <b>derived membership</b> rule enforced in SQL — regular users belong
- * to an org through workspaces holding vm_requests / non-DELETED VMs in it.
+ * to an org through workspaces holding requests / non-DELETED VMs in it.
  * System rows (null actor) and cross-org actors stay invisible; a cross-org
  * {@code orgId} masks as 404; SYS_ADMIN sees everything with filters.
  */
@@ -74,7 +75,7 @@ class AuditReadApiTest {
         peer = ensureRegularUser("aud.peer@pusan.ac.kr", "감사동료");
         otherOrgUser = ensureRegularUser("aud.other@pusan.ac.kr", "감사타인");
         // derived org membership: self+peer share a workspace with a seed-org
-        // vm_request; the third user's workspace is linked to the other org only
+        // request; the third user's workspace is linked to the other org only
         long ownWorkspace = createWorkspace("audown", self.getId(), peer.getId());
         linkWorkspaceToOrg(ownWorkspace, org.getId(), self.getId());
         long otherWorkspace = createWorkspace("audoth", otherOrgUser.getId());
@@ -205,14 +206,9 @@ class AuditReadApiTest {
         return workspaceId;
     }
 
-    /** Derived-membership link: one vm_request of the workspace in the org. */
+    /** Derived-membership link: one request of the workspace in the org. */
     private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
-        jdbcTemplate.update("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '조직 연계(테스트)', (select min(id) from os_images),
-                        1, 1024, 20)
-                """, workspaceId, orgId, requesterId);
+        RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "조직 연계(테스트)", null, 1, 1024, 20);
     }
 
     private User ensureRegularUser(String email, String name) {

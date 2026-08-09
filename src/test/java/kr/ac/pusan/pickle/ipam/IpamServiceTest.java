@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.ipam;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -222,12 +223,7 @@ class IpamServiceTest {
 
     /** Minimal request→vm graph; ip_allocations.vm_id has a real FK to vms. */
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, 'IPAM 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "IPAM 테스트", imageId, 1, 1024, 10);
         String hostname = "ipam-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.Timestamp;
@@ -251,12 +252,7 @@ class DomainReservationSweeperTest {
     }
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '예약 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, ownerId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, ownerId, "예약 테스트", imageId, 1, 1024, 10);
         String hostname = "dres-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

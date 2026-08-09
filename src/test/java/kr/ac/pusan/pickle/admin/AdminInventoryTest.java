@@ -178,16 +178,17 @@ class AdminInventoryTest {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/v1/vm-requests")
+                        .post("/api/v1/requests")
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(requester))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": %d, "orgId": %d, "purpose": "은퇴 OS 이미지 거부 확인",
-                                 "imageId": %d, "flavorId": %d, "reqVcpu": 2,
-                                 "reqMemoryMb": 2048, "reqDiskGb": 20}
+                                {"type": "VM", "workspaceId": %d, "orgId": %d,
+                                 "purpose": "은퇴 OS 이미지 거부 확인",
+                                 "vm": {"imageId": %d, "flavorId": %d, "reqVcpu": 2,
+                                        "reqMemoryMb": 2048, "reqDiskGb": 20}}
                                 """.formatted(workspaceId, orgId, imageId, flavorId)))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("imageId"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
     }
 
     @Test

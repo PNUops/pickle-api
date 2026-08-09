@@ -27,9 +27,9 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.vmrequest.VmRequest;
-import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
+import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.request.RequestRepository;
+import kr.ac.pusan.pickle.request.RequestStatus;
 import java.time.Instant;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -50,21 +50,21 @@ public class WorkspaceService {
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
     private final VmRepository vmRepository;
-    private final VmRequestRepository vmRequestRepository;
+    private final RequestRepository requestRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final List<ResourceTypeAdapter> resourceAdapters;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository, VmRepository vmRepository,
-            VmRequestRepository vmRequestRepository, AuditService auditService,
+            RequestRepository requestRepository, AuditService auditService,
             NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
         this.vmRepository = vmRepository;
-        this.vmRequestRepository = vmRequestRepository;
+        this.requestRepository = requestRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
         this.resourceAdapters = resourceAdapters;
@@ -297,15 +297,15 @@ public class WorkspaceService {
         // use) — a request the approver already decided is left alone, and its
         // approval that lost the row lock hits the existing SUBMITTED check
         // (409 REQUEST_ALREADY_DECIDED) once this delete commits.
-        for (VmRequest pending : vmRequestRepository
-                .findByWorkspaceIdAndStatus(workspaceId, VmRequestStatus.SUBMITTED)) {
-            VmRequest locked = vmRequestRepository.findWithLockById(pending.getId()).orElse(null);
-            if (locked == null || locked.getStatus() != VmRequestStatus.SUBMITTED) {
+        for (Request pending : requestRepository
+                .findByWorkspaceIdAndStatus(workspaceId, RequestStatus.SUBMITTED)) {
+            Request locked = requestRepository.findWithLockById(pending.getId()).orElse(null);
+            if (locked == null || locked.getStatus() != RequestStatus.SUBMITTED) {
                 continue;
             }
-            locked.setStatus(VmRequestStatus.CANCELED);
+            locked.setStatus(RequestStatus.CANCELED);
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.REQUEST_CANCEL, "vm_request", locked.getId(),
+                    AuditService.REQUEST_CANCEL, "request", locked.getId(),
                     Map.of("workspaceId", workspaceId, "reason", "workspace_deleted"), ip);
         }
 

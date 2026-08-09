@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.vmrequest;
+package kr.ac.pusan.pickle.request;
 
 /** Contract enum {@code ReviewDecision}. */
 public enum ReviewDecision {

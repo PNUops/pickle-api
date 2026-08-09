@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.security;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -93,17 +94,17 @@ class ManagerRoleScopingTest {
     @Test
     void orgManagerReadsOwnOrgAndMasksForeignOrgAs404() throws Exception {
         // own-org request is visible; the foreign-org request is masked
-        get("/api/v1/admin/vm-requests/" + requestInOrgA, orgManagerAToken)
+        get("/api/v1/admin/requests/" + requestInOrgA, orgManagerAToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value((int) requestInOrgA));
-        get("/api/v1/admin/vm-requests/" + requestInOrgB, orgManagerAToken)
+        get("/api/v1/admin/requests/" + requestInOrgB, orgManagerAToken)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        get("/api/v1/admin/vm-requests/" + requestInOrgB + "/context", orgManagerAToken)
+        get("/api/v1/admin/requests/" + requestInOrgB + "/context", orgManagerAToken)
                 .andExpect(status().isNotFound());
 
         // deciding a foreign-org request is masked as 404, not 403 (existence privacy)
-        postJson("/api/v1/admin/vm-requests/" + requestInOrgB + "/reject", orgManagerAToken,
+        postJson("/api/v1/admin/requests/" + requestInOrgB + "/reject", orgManagerAToken,
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
@@ -118,7 +119,7 @@ class ManagerRoleScopingTest {
 
         // and it can read its own org's dashboard + queue
         get("/api/v1/admin/summary", orgManagerAToken).andExpect(status().isOk());
-        get("/api/v1/admin/vm-requests", orgManagerAToken)
+        get("/api/v1/admin/requests", orgManagerAToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgA)).exists())
                 .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgB)).doesNotExist());
@@ -127,7 +128,7 @@ class ManagerRoleScopingTest {
     @Test
     void orgManagerMayDecideOwnOrgRequest() throws Exception {
         // §3.9 †15: approve/reject is the org tier's daily load, granted org-scoped
-        postJson("/api/v1/admin/vm-requests/" + requestInOrgA + "/reject", orgManagerAToken,
+        postJson("/api/v1/admin/requests/" + requestInOrgA + "/reject", orgManagerAToken,
                 Map.of("comment", "기관 자원 여유 부족으로 반려합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
@@ -144,7 +145,7 @@ class ManagerRoleScopingTest {
             get("/api/v1" + path, sysManagerToken).andExpect(status().isOk());
         }
         // system-wide queue: sees both orgs' requests (no org pin)
-        get("/api/v1/admin/vm-requests", sysManagerToken)
+        get("/api/v1/admin/requests", sysManagerToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgA)).exists())
                 .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgB)).exists());
@@ -176,7 +177,7 @@ class ManagerRoleScopingTest {
         // broadcast + approval decisions
         postJson("/api/v1/admin/announcements", sysManagerToken,
                 Map.of("title", "x", "body", "y", "scope", "ALL")).andExpect(status().isForbidden());
-        postJson("/api/v1/admin/vm-requests/" + requestInOrgA + "/reject", sysManagerToken,
+        postJson("/api/v1/admin/requests/" + requestInOrgA + "/reject", sysManagerToken,
                 Map.of("comment", "차단")).andExpect(status().isForbidden());
     }
 
@@ -246,12 +247,7 @@ class ManagerRoleScopingTest {
                 insert into workspaces (kind, name, slug)
                 values ('TEAM'::workspace_kind, ?, ?) returning id
                 """, Long.class, "mgr-grp-" + slug(), "mgr-grp-" + slug());
-        return jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '운영자 스코핑 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, requesterId, imageId);
+        return RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "운영자 스코핑 테스트", imageId);
     }
 
     private long insertActiveVmInOrg(long orgId) {
@@ -261,12 +257,7 @@ class ManagerRoleScopingTest {
                 insert into workspaces (kind, name, slug)
                 values ('TEAM'::workspace_kind, ?, ?) returning id
                 """, Long.class, "mgr-vmgrp-" + slug(), "mgr-vmgrp-" + slug());
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, 'deleteVm 오버라이드 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, foreignAdminB.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, foreignAdminB.getId(), "deleteVm 오버라이드 테스트", imageId);
         String hostname = "mgr-vm-" + slug();
         return jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

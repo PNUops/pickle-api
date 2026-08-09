@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.sshgw;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -444,12 +445,7 @@ class InternalSshGatewayRouteTest {
     }
 
     private long createVm(String slug, VmStatus status, String ip, boolean blocked, String hostKey) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, 'SSH 라우트 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, memberId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, memberId, "SSH 라우트 테스트", imageId, 1, 1024, 10);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id

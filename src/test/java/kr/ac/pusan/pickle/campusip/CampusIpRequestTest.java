@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.campusip;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -274,13 +275,7 @@ class CampusIpRequestTest {
 
     private long vm() {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '교내 IP 테스트', (select min(id) from os_images),
-                        1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, owner.getId());
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "교내 IP 테스트", null, 1, 1024, 10);
         String hostname = "cip-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

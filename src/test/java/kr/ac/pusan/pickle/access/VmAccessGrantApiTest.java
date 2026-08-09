@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.access;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -537,7 +538,7 @@ class VmAccessGrantApiTest {
         // decidable so the reviewer can reject it instead
         assertThat(vmCountForRequest(departedRequest)).isZero();
         assertThat(vmCountForRequest(suspendedRequest)).isZero();
-        mockMvc.perform(get("/api/v1/admin/vm-requests/" + departedRequest)
+        mockMvc.perform(get("/api/v1/admin/requests/" + departedRequest)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
@@ -678,12 +679,7 @@ class VmAccessGrantApiTest {
     // ── fixture helpers ────────────────────────────────────────────────────
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (workspace_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '접근 권한 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, workspaceId, orgId, vmOwner.getId(), image.getId());
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, vmOwner.getId(), "접근 권한 테스트", image.getId(), 1, 1024, 10);
         String hostname = "vmacc-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
@@ -706,16 +702,19 @@ class VmAccessGrantApiTest {
     }
 
     private long submitRequest(String token) throws Exception {
+        Map<String, Object> vm = new HashMap<>();
+        vm.put("imageId", image.getId());
+        vm.put("flavorId", flavor.getId());
+        vm.put("reqVcpu", flavor.getVcpu());
+        vm.put("reqMemoryMb", flavor.getMemoryMb());
+        vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
+        body.put("type", "VM");
         body.put("workspaceId", workspaceId);
         body.put("orgId", orgId);
-        body.put("imageId", image.getId());
-        body.put("flavorId", flavor.getId());
         body.put("purpose", "접근 권한 테스트용 신청");
-        body.put("reqVcpu", flavor.getVcpu());
-        body.put("reqMemoryMb", flavor.getMemoryMb());
-        body.put("reqDiskGb", flavor.getDiskGb());
-        String response = mockMvc.perform(post("/api/v1/vm-requests")
+        body.put("vm", vm);
+        String response = mockMvc.perform(post("/api/v1/requests")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
@@ -731,7 +730,7 @@ class VmAccessGrantApiTest {
         body.put("grantedDiskGb", flavor.getDiskGb());
         body.put("grantedImageId", image.getId());
         body.put("comment", "신청 사양 그대로 승인합니다.");
-        return mockMvc.perform(post("/api/v1/admin/vm-requests/" + requestId + "/approve")
+        return mockMvc.perform(post("/api/v1/admin/requests/" + requestId + "/approve")
                 .header("Authorization", "Bearer " + orgAdminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
