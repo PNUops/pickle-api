@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.AccessGranteeType;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -19,6 +20,7 @@ import kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceMemberRequest;
 import kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceRequest;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.resource.ResourceTypeAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -51,11 +53,12 @@ public class WorkspaceService {
     private final VmRequestRepository vmRequestRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
+    private final List<ResourceTypeAdapter> resourceAdapters;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository, VmRepository vmRepository,
             VmRequestRepository vmRequestRepository, AuditService auditService,
-            NotificationService notificationService) {
+            NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
@@ -64,6 +67,7 @@ public class WorkspaceService {
         this.vmRequestRepository = vmRequestRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
+        this.resourceAdapters = resourceAdapters;
     }
 
     @Transactional(readOnly = true)
@@ -233,11 +237,28 @@ public class WorkspaceService {
         // Leaving the workspace takes the access it carried: a grant may only name
         // a member of the owning workspace, so the rows go with the membership
         // rather than lying dormant until a rejoin silently restores them.
-        int revokedGrants = grantRepository.deleteUserGrantsInWorkspace(workspaceId, targetUserId);
+        int revokedGrants = revokeGrantsOnWorkspaceResources(workspaceId, targetUserId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_REMOVE,
                 "workspace", workspaceId,
                 Map.of("userId", targetUserId, "previousRole", target.getRole().name(),
                         "selfLeave", selfLeave, "revokedGrants", revokedGrants), ip);
+    }
+
+    /**
+     * Takes one person's grants on everything the workspace owns, whatever kind
+     * of thing that is. Each resource type answers for itself, so a type added
+     * later is revoked here without this method being touched.
+     */
+    private int revokeGrantsOnWorkspaceResources(long workspaceId, long userId) {
+        int revoked = 0;
+        for (ResourceTypeAdapter adapter : resourceAdapters) {
+            List<Long> resourceIds = adapter.idsOwnedByWorkspace(workspaceId);
+            if (!resourceIds.isEmpty()) {
+                revoked += grantRepository.deleteUserGrantsOnResources(
+                        AccessGranteeType.USER, userId, adapter.type(), resourceIds);
+            }
+        }
+        return revoked;
     }
 
     /**

@@ -52,15 +52,22 @@ public interface ResourceAccessGrantRepository extends JpaRepository<ResourceAcc
     void deleteByUserId(Long userId);
 
     /**
-     * Drops one person's grants on every resource a workspace owns — what losing
-     * workspace membership means for the access lists.
+     * Drops one person's grants on a named set of resources of one type — what
+     * losing workspace membership means for the access lists.
+     *
+     * <p>The caller supplies the ids, which is what keeps this free of any one
+     * resource type: the query named {@code 'VM'} and the {@code vms} table
+     * directly until adapters could answer "what does this workspace own".
+     * Both enums travel as parameters rather than as literals, for the reason
+     * spelled out above {@code findBy...RoleIn}.
      */
     @Modifying
-    @Query(value = """
-            delete from resource_access_grants g
-             where g.grantee_type = 'USER' and g.user_id = :userId
-               and g.resource_type = 'VM'
-               and g.resource_id in (select v.id from vms v where v.workspace_id = :workspaceId)
-            """, nativeQuery = true)
-    int deleteUserGrantsInWorkspace(@Param("workspaceId") Long workspaceId, @Param("userId") Long userId);
+    @Query("""
+            delete from ResourceAccessGrant g
+             where g.granteeType = :granteeType and g.userId = :userId
+               and g.resourceType = :resourceType and g.resourceId in :resourceIds
+            """)
+    int deleteUserGrantsOnResources(@Param("granteeType") AccessGranteeType granteeType,
+            @Param("userId") Long userId, @Param("resourceType") ResourceType resourceType,
+            @Param("resourceIds") Collection<Long> resourceIds);
 }
