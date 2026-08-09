@@ -6,10 +6,13 @@ on:
     branches: [main]
 
 # A branch that gets three pushes in a minute ran three full jobs, and the two
-# that no longer describe anything were still occupying runners.
+# that no longer describe anything were still occupying runners. Cancelling is
+# right for a branch, where only the newest push is under review, and wrong for
+# the default branch, where each run records the state of a commit that is
+# already merged and cancelling leaves that commit with no result at all.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Without this the job's token carries whatever the repository default grants.
 # Nothing here writes anything.
