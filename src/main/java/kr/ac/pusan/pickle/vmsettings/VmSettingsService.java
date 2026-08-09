@@ -9,12 +9,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
@@ -77,18 +77,18 @@ public class VmSettingsService {
 
     private final VmSettingRepository settingRepository;
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Map<String, VmSettingDef> registry;
 
     public VmSettingsService(VmSettingRepository settingRepository, VmRepository vmRepository,
-            GroupMemberRepository groupMemberRepository, UserRepository userRepository,
+            VmAccessService vmAccessService, UserRepository userRepository,
             AuditService auditService, ObjectMapper objectMapper) {
         this.settingRepository = settingRepository;
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
@@ -207,7 +207,7 @@ public class VmSettingsService {
     /** EDITOR+ only; non-member answers 404 (existence masking). */
     @Transactional(readOnly = true)
     public List<VmSettingView> get(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmSettingsService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         GroupMemberRole actorRole = memberRole(vm, actor);
         if (!actorRole.atLeast(GroupMemberRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
@@ -224,7 +224,7 @@ public class VmSettingsService {
     @Transactional
     public List<VmSettingView> patch(AuthenticatedUser actor, long vmId,
             Map<String, JsonNode> settings, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmSettingsService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         GroupMemberRole actorRole = memberRole(vm, actor);
         if (settings == null || settings.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -383,14 +383,9 @@ public class VmSettingsService {
     }
 
     private GroupMemberRole memberRole(Vm vm, AuthenticatedUser actor) {
-        return groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmSettingsService::vmNotFound);
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+        VmAccess access = vmAccessService.of(vm, actor.id());
+        access.requireVisible();
+        return access.role();
     }
 
     private static Map<String, VmSettingDef> buildRegistry(ObjectMapper mapper) {

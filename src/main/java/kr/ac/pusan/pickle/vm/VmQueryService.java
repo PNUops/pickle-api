@@ -3,8 +3,8 @@ package kr.ac.pusan.pickle.vm;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMember;
@@ -32,7 +32,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,6 +54,7 @@ public class VmQueryService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final GroupRepository groupRepository;
     private final OrgRepository orgRepository;
     private final IpAddressResolver ipAddressResolver;
@@ -66,6 +66,7 @@ public class VmQueryService {
     private final String sshHost;
 
     public VmQueryService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+            VmAccessService vmAccessService,
             GroupRepository groupRepository, OrgRepository orgRepository,
             IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
@@ -75,6 +76,7 @@ public class VmQueryService {
             @Value("${pickle.ssh.advertised-host:}") String sshHost) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.groupRepository = groupRepository;
         this.orgRepository = orgRepository;
         this.ipAddressResolver = ipAddressResolver;
@@ -126,12 +128,8 @@ public class VmQueryService {
 
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
-        Vm vm = requireVisibleVm(actor, vmId);
-        GroupMemberRole myGroupRole = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmQueryService::vmNotFound);
-        return detailOf(vm, myGroupRole);
+        VmAccess access = vmAccessService.of(actor, vmId);
+        return detailOf(access.requireVisible(), access.role());
     }
 
     /**
@@ -199,17 +197,7 @@ public class VmQueryService {
      * consistent with the power/delete paths).
      */
     private Vm requireVisibleVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId)
-                .orElseThrow(VmQueryService::vmNotFound);
-        if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
-            throw vmNotFound();
-        }
-        return vm;
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+        return vmAccessService.of(actor, vmId).requireVisible();
     }
 
     /**

@@ -4,13 +4,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.SshGatewayProperties;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.settings.SettingsService;
@@ -72,14 +71,14 @@ public class SshGatewayRouteService {
     private final SshGatewayProperties properties;
     private final UserSshKeyRepository sshKeyRepository;
     private final UserRepository userRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final VmSettingsService vmSettingsService;
 
     public SshGatewayRouteService(VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             SettingsService settingsService, AuditService auditService,
             RateLimitService rateLimitService, SshGatewayProperties properties,
             UserSshKeyRepository sshKeyRepository, UserRepository userRepository,
-            GroupMemberRepository groupMemberRepository, VmSettingsService vmSettingsService) {
+            VmAccessService vmAccessService, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.settingsService = settingsService;
@@ -88,7 +87,7 @@ public class SshGatewayRouteService {
         this.properties = properties;
         this.sshKeyRepository = sshKeyRepository;
         this.userRepository = userRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.vmSettingsService = vmSettingsService;
     }
 
@@ -170,12 +169,8 @@ public class SshGatewayRouteService {
                     .filter(owner -> owner.getStatus() == UserStatus.ACTIVE).isEmpty()) {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
-            GroupMemberRole role = groupMemberRepository
-                    .findByGroupIdAndUserId(vm.getGroupId(), key.get().getUserId())
-                    .map(GroupMember::getRole)
-                    .orElse(null);
             // VIEWER and non-members are denied identically (one code, no oracle).
-            if (role == null || !role.atLeast(GroupMemberRole.MEMBER)) {
+            if (!vmAccessService.of(vm, key.get().getUserId()).atLeast(GroupMemberRole.MEMBER)) {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_NOT_MEMBER));
             }
         } else if (RouteRequest.AUTH_PASSWORD.equals(ctx.authMethod())) {

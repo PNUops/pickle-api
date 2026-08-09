@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -77,6 +78,7 @@ public class VmDeletionService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
     private final SettingsService settingsService;
@@ -90,7 +92,7 @@ public class VmDeletionService {
     private final PortMappingTeardownService portMappingTeardown;
     private final VmSettingsService vmSettingsService;
 
-    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository, VmAccessService vmAccessService,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService,
@@ -100,6 +102,7 @@ public class VmDeletionService {
             PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.vmEventRepository = vmEventRepository;
         this.settingsService = settingsService;
@@ -262,7 +265,7 @@ public class VmDeletionService {
     @Transactional
     public MessageResponse forceDelete(AuthenticatedUser actor, long vmId,
             ForceDeleteVmRequest request, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (!vm.getName().equals(request.confirmName())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
                     "확인용 이름이 일치하지 않습니다",
@@ -357,32 +360,25 @@ public class VmDeletionService {
      * below OWNER gets 403.
      */
     private Vm requireDeletableByActor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.SYS_ADMIN) {
             return vm;
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
             if (!vm.getOrgId().equals(actor.orgId())) {
-                throw vmNotFound();
+                throw VmAccessService.vmNotFound();
             }
             return vm;
         }
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmDeletionService::vmNotFound);
-        if (role != GroupMemberRole.OWNER) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM을 삭제할 권한이 없습니다", "그룹 소유자(OWNER) 또는 관리자만 VM을 삭제할 수 있습니다.");
-        }
-        return vm;
+        return vmAccessService.of(vm, actor.id()).requireAtLeast(GroupMemberRole.OWNER,
+                "VM을 삭제할 권한이 없습니다", "그룹 소유자(OWNER) 또는 관리자만 VM을 삭제할 수 있습니다.");
     }
 
     /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
     private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
-            throw vmNotFound();
+            throw VmAccessService.vmNotFound();
         }
         return vm;
     }
@@ -423,11 +419,6 @@ public class VmDeletionService {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 수행할 수 없는 작업입니다",
                 "취소할 수 있는 삭제가 없습니다. 이미 파기가 시작되었거나 완료된 상태일 수 있습니다.");
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
     // ── notifications / enqueue ────────────────────────────────────────────
