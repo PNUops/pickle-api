@@ -5,16 +5,20 @@ import java.util.Map;
 import kr.ac.pusan.pickle.access.dto.AddVmAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.UpdateVmAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.VmAccessGrantView;
+import kr.ac.pusan.pickle.access.dto.VmAccessListResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.group.Group;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -39,24 +43,32 @@ public class VmAccessGrantService {
     private final VmAccessService vmAccessService;
     private final ResourceAccessGrantRepository grantRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final GroupRepository groupRepository;
+    private final VmSettingsService vmSettingsService;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public VmAccessGrantService(VmAccessService vmAccessService,
             ResourceAccessGrantRepository grantRepository,
-            GroupMemberRepository groupMemberRepository, UserRepository userRepository,
+            GroupMemberRepository groupMemberRepository, GroupRepository groupRepository,
+            VmSettingsService vmSettingsService, UserRepository userRepository,
             AuditService auditService) {
         this.vmAccessService = vmAccessService;
         this.grantRepository = grantRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.groupRepository = groupRepository;
+        this.vmSettingsService = vmSettingsService;
         this.userRepository = userRepository;
         this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
-    public List<VmAccessGrantView> list(AuthenticatedUser actor, long vmId) {
-        requireManager(actor, vmId);
-        return views(vmId);
+    public VmAccessListResponse list(AuthenticatedUser actor, long vmId) {
+        Vm vm = requireManager(actor, vmId).vm();
+        String groupName = groupRepository.findById(vm.getGroupId())
+                .map(Group::getName).orElse("");
+        return VmAccessListResponse.of(vm, groupName,
+                vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME), views(vmId));
     }
 
     @Transactional

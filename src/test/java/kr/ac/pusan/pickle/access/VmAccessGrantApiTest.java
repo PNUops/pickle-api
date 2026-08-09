@@ -154,18 +154,22 @@ class VmAccessGrantApiTest {
         // the VM's own owner reads the list and sees the entry that made them one
         listGrants(vmOwnerToken, vmId)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].granteeType").value("USER"))
-                .andExpect(jsonPath("$[0].user.userId").value(vmOwner.getId().intValue()))
-                .andExpect(jsonPath("$[0].user.name").value("자원소유자"))
-                .andExpect(jsonPath("$[0].role").value("OWNER"));
+                .andExpect(jsonPath("$.grants.length()").value(1))
+                // The list names its VM so that whoever may manage it without
+                // being able to open it still knows what they are deciding about.
+                .andExpect(jsonPath("$.vm.id").value((int) vmId))
+                .andExpect(jsonPath("$.vm.groupId").value((int) groupId))
+                .andExpect(jsonPath("$.grants[0].granteeType").value("USER"))
+                .andExpect(jsonPath("$.grants[0].user.userId").value(vmOwner.getId().intValue()))
+                .andExpect(jsonPath("$.grants[0].user.name").value("자원소유자"))
+                .andExpect(jsonPath("$.grants[0].role").value("OWNER"));
 
         grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
 
         // the recovery path: a group owner with no grant at all manages it too
         listGrants(groupOwnerToken, vmId)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.grants.length()").value(2));
 
         // a plain member of the owning group, and a VIEWER grant, are both refused
         // in the open — they can already see the VM listed, so hiding it would lie
@@ -261,9 +265,9 @@ class VmAccessGrantApiTest {
         long grantId = addGrantId(vmOwnerToken, vmId, groupGrant("MEMBER"));
         listGrants(vmOwnerToken, vmId)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[1].granteeType").value("GROUP"))
-                .andExpect(jsonPath("$[1].user").value((Object) null))
-                .andExpect(jsonPath("$[1].role").value("MEMBER"));
+                .andExpect(jsonPath("$.grants[1].granteeType").value("GROUP"))
+                .andExpect(jsonPath("$.grants[1].user").value((Object) null))
+                .andExpect(jsonPath("$.grants[1].role").value("MEMBER"));
 
         // the cap holds on PATCH …
         updateGrant(vmOwnerToken, vmId, grantId, "EDITOR")
