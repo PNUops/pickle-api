@@ -5,7 +5,7 @@
 # Why it exists: this repo is published. The rules below were enforced by hand
 # twice (2026-07-24, 2026-07-26) and both passes missed real violations —
 # including a whole class, because a word-boundary pattern never matched a
-# letter suffix like M4A. A grep that runs on every verify is the only version
+# letter suffix like M9Z. A grep that runs on every verify is the only version
 # of this that stays true.
 #
 # Design constraint: the gate itself is published, so it must not catalogue the
@@ -32,7 +32,7 @@
 HYGIENE_PRIVATE='(\binfra/|pickle/secrets|(^|[^a-z])secrets/|\b(deploy|smoke|apply|create|sync|provision)-[a-z][a-z-]*\.sh\b)'
 
 # Internal process vocabulary, in the case it is normally written. The trailing
-# [A-Z]? is load-bearing: M4A, W2-B.
+# [A-Z]? is load-bearing: M9Z, W2-B.
 HYGIENE_TOKENS='\b(M[0-9]+(\.[0-9]+)?[A-Z]?|W[0-9]+(\.[0-9]+)?(-[A-Z])?|G[0-9]|B[0-9]|A[0-9]|C[0-9]|R[12]|S([1-9]|1[0-3])|O([1-9]|10)|F[0-9]|H1|WP-[A-Z0-9]+|api-[A-Z]|Lane [A-Z])\b'
 
 # The same vocabulary in lowercase — the case the pattern above can never see,
@@ -70,8 +70,8 @@ HYGIENE_TOKEN_BODY_LC='m[0-9]{1,2}(\.[0-9]+)?[a-z]?|w[0-9]{1,2}(\.[0-9]+)?(-[a-z
 HYGIENE_TOKENS_LC='(^|:| )[([]('"$HYGIENE_TOKEN_BODY_LC"')([])]|[A-Z]|\.([^A-Za-z]|$)| [^=+*/<>&|%^~]| $|$)|(^|:| )('"$HYGIENE_TOKEN_BODY_LC"')([A-Z]|\.([^A-Za-z]|$)|[,:]( |$)| [^=+*/<>&|%^~]| $|$)'
 
 # A path is not running text: its word separators are / _ . and -, so the same
-# vocabulary needs its own opening set there. Without it `notes/m4a-rollout.txt`
-# would pass while `notes/M4A-rollout.txt` fails, because \b already treats the
+# vocabulary needs its own opening set there. Without it `notes/m9z-rollout.txt`
+# would pass while `notes/M9Z-rollout.txt` fails, because \b already treats the
 # slash as a word start — the capitalised rule reaches into a path and the
 # lowercase one has to reach just as far.
 HYGIENE_TOKENS_LC_PATH='(^|[/_.-])('"$HYGIENE_TOKEN_BODY_LC"')([A-Z]|[^A-Za-z0-9_]|$)'
@@ -84,7 +84,7 @@ HYGIENE_PHRASES='보안 게이트|review finding|gate finding|work package'
 # Substrings that merely LOOK like a token or a reference. They are REMOVED from
 # the line before the test, never used to suppress the line: a line-level
 # exclusion exempts everything else on that line, which is how an earlier
-# revision let `M4A … contract v0.14.1` through, and how any comment sharing a
+# revision let `M9Z … contract v0.14.1` through, and how any comment sharing a
 # line with an inline SVG passed. `d="…"` is stripped as a whole attribute so the
 # next path command (M12…) cannot survive as a lookalike.
 # `SHA256:` covers an SSH key fingerprint: what follows is base64, and a base64
@@ -275,7 +275,7 @@ hygiene_selftest() {
       rc=1
     fi
   done <<'SAMPLES'
-see docs/registry/topology.md for the layout
+see docs/handbook/layout.md for the layout
 described in incident-playbook.md
 provisioned by infra/scripts/build-image.sh
 the vault at pickle/secrets holds it
@@ -283,7 +283,7 @@ restored from secrets/ca/example.key
 run deploy-widgets.sh after this
 gated by smoke-widgets.sh
 M6 shipped this
-M4A milestone per contract v0.4.0
+M9Z milestone per contract v0.4.0
 W1.5 lesson applied
 phase roles (W3)
 launch gate G5 pending
@@ -295,15 +295,15 @@ S13 hardening item
 O7 operations item
 O10 operations item
 discovered as H1
-admin (WP-F3) queries
-landed with the api-B merge
-frame protocol (Lane C agreement)
+admin (WP-Z9) queries
+landed with the api-Z merge
+frame protocol (Lane Z agreement)
 보안 게이트 M-1
-M4A gate mandated in contract v0.14.1 rollout
-M4A gate applies to host 10.32.0.5
+M9Z gate mandated in contract v0.14.1 rollout
+M9Z gate applies to host 10.32.0.5
 milestone M6 done <path d="M0 0"/>
 m6 shipped this in lowercase
-m4a rollout in lowercase
+m9z rollout in lowercase
 w1.5 lesson applied
 phase roles (w3)
 launch gate g5 pending
@@ -319,7 +319,7 @@ frame protocol (lane c agreement)
 void m7Rejects() {
 shipped in m6.
 fingerprint SHA256:g1A4pfkmf+XmceT0lCSr03Ev landed with the api-b merge
-key SHA256:g1A4pfkmf+XmceT0lCSr03Ev rotated in the M4A rollout
+key SHA256:g1A4pfkmf+XmceT0lCSr03Ev rotated in the M9Z rollout
 config value "gate g5 pending"
 void m6KeysAppearInCatalog() {
 w3 lesson applied here
@@ -370,8 +370,8 @@ SAMPLES
     git -C "$tmp" rm -q --cached "$bad_path" >/dev/null 2>&1
     rm -rf "${tmp:?}/${bad_path%%/*}"
   done <<'PATHS'
-notes/m4a-rollout.txt
-notes/M4A-rollout.txt
+notes/m9z-rollout.txt
+notes/M9Z-rollout.txt
 wp-f3/readme.txt
 PATHS
 
