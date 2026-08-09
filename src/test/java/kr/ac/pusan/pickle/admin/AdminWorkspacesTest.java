@@ -65,9 +65,9 @@ class AdminWorkspacesTest {
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         slug = "agr-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name, slug, description)
-                values ('TEAM', ?, ?, '워크스페이스 조회 테스트') returning id
-                """, Long.class, slug, slug);
+                insert into workspaces (kind, name, description)
+                values ('TEAM', ?, '워크스페이스 조회 테스트') returning id
+                """, Long.class, slug);
         ownerId = ensureUser("agr.owner." + slug + "@pusan.ac.kr", UserStatus.ACTIVE).getId();
         disabledMemberId = ensureUser("agr.off." + slug + "@pusan.ac.kr", UserStatus.DISABLED).getId();
         jdbcTemplate.update("""
@@ -95,7 +95,7 @@ class AdminWorkspacesTest {
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", workspaceId)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.slug").value(slug))
+                .andExpect(jsonPath("$.name").value(slug))
                 .andExpect(jsonPath("$.kind").value("TEAM"))
                 .andExpect(jsonPath("$.memberCount").value(1))
                 .andExpect(jsonPath("$.vmCount").value(0))
@@ -116,9 +116,9 @@ class AdminWorkspacesTest {
         // soft-deleted → 404 for everyone
         String deletedSlug = "agr-del-" + UUID.randomUUID().toString().substring(0, 8);
         long deleted = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name, slug, deleted_at, deleted_by)
-                values ('TEAM', ?, ?, now(), ?) returning id
-                """, Long.class, deletedSlug, deletedSlug, ownerId);
+                insert into workspaces (kind, name, deleted_at, deleted_by)
+                values ('TEAM', ?, now(), ?) returning id
+                """, Long.class, deletedSlug, ownerId);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", deleted)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
@@ -126,8 +126,8 @@ class AdminWorkspacesTest {
         // a workspace with no request/VM in the admin's org → 404 for the org tier
         String foreignSlug = "agr-for-" + UUID.randomUUID().toString().substring(0, 8);
         long unlinked = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, foreignSlug, foreignSlug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, foreignSlug);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", unlinked)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
@@ -147,7 +147,7 @@ class AdminWorkspacesTest {
     // ── fixtures ───────────────────────────────────────────────────────────
 
     private String bySlug() {
-        return "$[?(@.slug == '%s')]".formatted(slug);
+        return "$[?(@.name == '%s')]".formatted(slug);
     }
 
     private User ensureUser(String email, UserStatus status) {

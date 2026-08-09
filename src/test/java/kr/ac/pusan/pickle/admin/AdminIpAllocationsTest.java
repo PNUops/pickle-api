@@ -152,8 +152,8 @@ class AdminIpAllocationsTest {
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String slug = "adip-" + UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "IP 할당 테스트", imageId);
         String hostname = "adip-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""

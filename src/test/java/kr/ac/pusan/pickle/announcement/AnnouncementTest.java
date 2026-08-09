@@ -327,8 +327,8 @@ class AnnouncementTest {
     private long createWorkspace(String prefix, long... memberIds) {
         String slug = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id
-                """, Long.class, slug, slug);
+                insert into workspaces (kind, name) values ('TEAM', ?) returning id
+                """, Long.class, slug);
         for (long memberId : memberIds) {
             jdbcTemplate.update("""
                     insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')

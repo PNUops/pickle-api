@@ -224,8 +224,8 @@ class AdminSummariesTest {
     private long createWorkspace() {
         String slug = "ads-" + UUID.randomUUID().toString().substring(0, 8);
         return jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
     }
 
     private long createRequest(long workspaceId, String status) {

@@ -32,7 +32,6 @@ public final class ErrorCodes {
     public static final String ACCOUNT_INVALID_STATE = "ACCOUNT_INVALID_STATE";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
-    public static final String WORKSPACE_SLUG_DUPLICATE = "WORKSPACE_SLUG_DUPLICATE";
     public static final String WORKSPACE_MEMBER_MANAGE_FORBIDDEN = "WORKSPACE_MEMBER_MANAGE_FORBIDDEN";
     public static final String WORKSPACE_MEMBER_USER_NOT_FOUND = "WORKSPACE_MEMBER_USER_NOT_FOUND";
     public static final String WORKSPACE_MEMBER_ALREADY_EXISTS = "WORKSPACE_MEMBER_ALREADY_EXISTS";

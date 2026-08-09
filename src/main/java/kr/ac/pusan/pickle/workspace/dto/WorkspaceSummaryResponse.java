@@ -10,14 +10,13 @@ public record WorkspaceSummaryResponse(
         Long id,
         WorkspaceKind kind,
         String name,
-        String slug,
         @Nullable String description,
         WorkspaceMemberRole myRole,
         long memberCount) {
 
     public static WorkspaceSummaryResponse from(WorkspaceMember membership, long memberCount) {
         var workspace = membership.getWorkspace();
-        return new WorkspaceSummaryResponse(workspace.getId(), workspace.getKind(), workspace.getName(), workspace.getSlug(),
+        return new WorkspaceSummaryResponse(workspace.getId(), workspace.getKind(), workspace.getName(),
                 workspace.getDescription(), membership.getRole(), memberCount);
     }
 }

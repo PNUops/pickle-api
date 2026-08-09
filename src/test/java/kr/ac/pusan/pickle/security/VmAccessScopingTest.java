@@ -486,11 +486,18 @@ class VmAccessScopingTest {
     }
 
     private long ensureWorkspace() {
+        // Reused across the cases in this class, and workspaces carry no unique
+        // key to upsert on any more, so this looks before it writes.
+        List<Long> existing = jdbcTemplate.queryForList("""
+                select id from workspaces
+                 where name = '접근 범위 테스트 팀' and deleted_at is null
+                """, Long.class);
+        if (!existing.isEmpty()) {
+            return existing.getFirst();
+        }
         return jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name, slug)
-                values ('TEAM'::workspace_kind, '접근 범위 테스트 팀', 'vm-access-scoping')
-                on conflict (slug) where deleted_at is null
-                    do update set name = excluded.name
+                insert into workspaces (kind, name)
+                values ('TEAM'::workspace_kind, '접근 범위 테스트 팀')
                 returning id
                 """, Long.class);
     }

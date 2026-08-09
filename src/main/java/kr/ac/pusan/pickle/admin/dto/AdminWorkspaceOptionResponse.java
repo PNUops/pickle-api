@@ -8,6 +8,6 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
  * doubling as the admin workspace-list row since v0.19.0 ({@code kind} and
  * {@code createdAt} added — additive, picker consumers unaffected).
  */
-public record AdminWorkspaceOptionResponse(long id, String name, String slug, long memberCount,
+public record AdminWorkspaceOptionResponse(long id, String name, long memberCount,
         WorkspaceKind kind, Instant createdAt) {
 }

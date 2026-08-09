@@ -580,7 +580,7 @@ class RequestTest {
 
     private long createTeam(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug, "slug", slug))
+                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();

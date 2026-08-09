@@ -86,8 +86,8 @@ class DriftReconcilerTest {
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "drift-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         logAppender = new ListAppender<>();
         logAppender.start();
         ((Logger) LoggerFactory.getLogger(DriftReconciler.class)).addAppender(logAppender);

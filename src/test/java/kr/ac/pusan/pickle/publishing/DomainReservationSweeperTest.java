@@ -64,8 +64,8 @@ class DomainReservationSweeperTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         String slug = "dres-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
         editorId = createUser("manager." + slug + "@pusan.ac.kr");
         addMember(ownerId, "OWNER");

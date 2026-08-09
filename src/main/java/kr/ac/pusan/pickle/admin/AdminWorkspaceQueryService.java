@@ -39,7 +39,7 @@ public class AdminWorkspaceQueryService {
     public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, Long orgId) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         String select = """
-                select g.id, g.name, g.slug, g.kind, g.created_at,
+                select g.id, g.name, g.kind, g.created_at,
                        (select count(*) from workspace_members gm
                           join users mu on mu.id = gm.user_id
                          where gm.workspace_id = g.id and mu.status = 'ACTIVE')
@@ -60,7 +60,7 @@ public class AdminWorkspaceQueryService {
     private static AdminWorkspaceOptionResponse toOption(java.sql.ResultSet rs, int rowNum)
             throws java.sql.SQLException {
         return new AdminWorkspaceOptionResponse(rs.getLong("id"), rs.getString("name"),
-                rs.getString("slug"), rs.getLong("member_count"),
+                rs.getLong("member_count"),
                 WorkspaceKind.valueOf(rs.getString("kind")),
                 rs.getTimestamp("created_at").toInstant());
     }
@@ -83,7 +83,7 @@ public class AdminWorkspaceQueryService {
             }
         }
         List<AdminWorkspaceDetailResponse> rows = jdbcTemplate.query("""
-                select g.id, g.kind, g.name, g.slug, g.description, g.created_at,
+                select g.id, g.kind, g.name, g.description, g.created_at,
                        (select count(*) from workspace_members gm
                           join users mu on mu.id = gm.user_id
                          where gm.workspace_id = g.id and mu.status = 'ACTIVE')
@@ -94,7 +94,7 @@ public class AdminWorkspaceQueryService {
                  where g.id = ? and g.deleted_at is null
                 """, (rs, rowNum) -> new AdminWorkspaceDetailResponse(rs.getLong("id"),
                         WorkspaceKind.valueOf(rs.getString("kind")), rs.getString("name"),
-                        rs.getString("slug"), rs.getString("description"),
+                        rs.getString("description"),
                         rs.getTimestamp("created_at").toInstant(),
                         rs.getLong("member_count"), rs.getLong("vm_count"), List.of()),
                 workspaceId);
@@ -115,7 +115,7 @@ public class AdminWorkspaceQueryService {
                         UserStatus.valueOf(rs.getString("status")),
                         rs.getTimestamp("created_at").toInstant()),
                 workspaceId);
-        return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(), base.slug(),
+        return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),
                 base.description(), base.createdAt(), base.memberCount(), base.vmCount(), members);
     }
 

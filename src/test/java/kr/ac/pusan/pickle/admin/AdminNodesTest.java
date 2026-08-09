@@ -141,8 +141,8 @@ class AdminNodesTest {
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "nodesum-" + UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "노드 집계 테스트", imageId, vcpu, memoryMb, 10);
         jdbcTemplate.update("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,

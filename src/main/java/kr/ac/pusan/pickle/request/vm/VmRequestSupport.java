@@ -27,7 +27,6 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
-import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -45,7 +44,6 @@ public class VmRequestSupport implements RequestTypeHandler {
     private final VmFlavorRepository flavorRepository;
     private final NodeRepository nodeRepository;
     private final VmRepository vmRepository;
-    private final WorkspaceRepository workspaceRepository;
     private final VmSlugPolicy slugPolicy;
     private final VmSettingsService vmSettingsService;
     private final JobScheduler jobScheduler;
@@ -54,14 +52,13 @@ public class VmRequestSupport implements RequestTypeHandler {
 
     public VmRequestSupport(VmRequestDetailRepository detailRepository, OsImageRepository imageRepository,
             VmFlavorRepository flavorRepository, NodeRepository nodeRepository, VmRepository vmRepository,
-            WorkspaceRepository workspaceRepository, VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService, JobScheduler jobScheduler,
+            VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService, JobScheduler jobScheduler,
             ProvisioningService provisioningService) {
         this.detailRepository = detailRepository;
         this.imageRepository = imageRepository;
         this.flavorRepository = flavorRepository;
         this.nodeRepository = nodeRepository;
         this.vmRepository = vmRepository;
-        this.workspaceRepository = workspaceRepository;
         this.slugPolicy = slugPolicy;
         this.vmSettingsService = vmSettingsService;
         this.jobScheduler = jobScheduler;
@@ -174,7 +171,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         Long nodeId = spec.nodeId() != null ? spec.nodeId() : image.getNodeId();
         String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
-                : generateHostname(workspaceRepository.findById(request.getWorkspaceId()).orElseThrow().getSlug());
+                : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName()));
         // The guest admin account comes from the granted image (each
         // distribution ships its own), never from a platform-wide constant.
         Vm vm = vmRepository.save(new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
@@ -271,7 +268,11 @@ public class VmRequestSupport implements RequestTypeHandler {
         }
     }
 
-    /** Unique hostname: workspace slug + short random suffix (DB unique as backstop). */
+    /**
+     * Unique hostname: a sanitized seed plus a short random suffix (the DB
+     * unique constraint is the backstop). The seed used to be the workspace
+     * slug, which no longer exists.
+     */
     private String generateHostname(String seed) {
         for (int attempt = 0; attempt < HOSTNAME_MAX_ATTEMPTS; attempt++) {
             StringBuilder suffix = new StringBuilder(HOSTNAME_SUFFIX_LENGTH);

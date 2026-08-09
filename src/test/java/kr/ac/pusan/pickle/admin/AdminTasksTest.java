@@ -179,8 +179,8 @@ class AdminTasksTest {
     private long createWorkspace() {
         String slug = "adt-" + UUID.randomUUID().toString().substring(0, 8);
         return jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
     }
 
     private long createVm(long workspaceId) {

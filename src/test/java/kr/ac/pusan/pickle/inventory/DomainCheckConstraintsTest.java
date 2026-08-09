@@ -44,8 +44,8 @@ class DomainCheckConstraintsTest {
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "chk-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbc.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
     }
 
     @Test

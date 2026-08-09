@@ -5,7 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,7 +31,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Workspace management per contract: creation (TEAM/PROJECT only, unique slug),
+ * Workspace management per contract: creation (TEAM/PROJECT only),
  * member management role matrix (OWNER-only), owner appointment and release,
  * last-owner protection, self-leave and PERSONAL immutability.
  */
@@ -88,44 +87,43 @@ class WorkspacesTest {
     }
 
     @Test
-    void createValidatesKindAndSlugAndListsMyWorkspaces() throws Exception {
+    void createValidatesKindAndListsMyWorkspaces() throws Exception {
         postJson("/api/v1/workspaces", ownerToken,
-                Map.of("kind", "PROJECT", "name", "캡스톤 3조", "slug", "grp-create-x1",
+                Map.of("kind", "PROJECT", "name", "캡스톤 3조",
                         "description", "2026-1 캡스톤디자인 3조"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.kind").value("PROJECT"))
-                .andExpect(jsonPath("$.slug").value("grp-create-x1"))
+                .andExpect(jsonPath("$.name").value("캡스톤 3조"))
                 .andExpect(jsonPath("$.members.length()").value(1))
                 .andExpect(jsonPath("$.members[0].userId").value(owner.getId()))
                 .andExpect(jsonPath("$.members[0].role").value("OWNER"))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty());
 
-        // duplicate slug → 409 WORKSPACE_SLUG_DUPLICATE
+        // A name is not a key: the same one twice is two workspaces, since
+        // nothing addresses a workspace by name.
         postJson("/api/v1/workspaces", peerToken,
-                Map.of("kind", "TEAM", "name", "다른 팀", "slug", "grp-create-x1"))
-                .andExpect(status().isConflict())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.code").value("WORKSPACE_SLUG_DUPLICATE"));
+                Map.of("kind", "PROJECT", "name", "캡스톤 3조"))
+                .andExpect(status().isCreated());
 
         // PERSONAL cannot be created manually → 422
         postJson("/api/v1/workspaces", ownerToken,
-                Map.of("kind", "PERSONAL", "name", "개인", "slug", "grp-create-personal"))
+                Map.of("kind", "PERSONAL", "name", "개인"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("kind"));
 
-        // slug charset/shape is validated
+        // a blank name is refused
         postJson("/api/v1/workspaces", ownerToken,
-                Map.of("kind", "TEAM", "name", "팀", "slug", "Bad_Slug!"))
+                Map.of("kind", "TEAM", "name", " "))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("slug"));
+                .andExpect(jsonPath("$.errors[0].field").value("name"));
 
         // my-workspaces list carries myRole and memberCount
         mockMvc.perform(get("/api/v1/workspaces").header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'grp-create-x1')].myRole")
+                .andExpect(jsonPath("$[?(@.name == '캡스톤 3조')].myRole")
                         .value(org.hamcrest.Matchers.contains("OWNER")))
-                .andExpect(jsonPath("$[?(@.slug == 'grp-create-x1')].memberCount")
+                .andExpect(jsonPath("$[?(@.name == '캡스톤 3조')].memberCount")
                         .value(org.hamcrest.Matchers.contains(1)));
 
         // workspace.create is audit-logged
@@ -344,7 +342,7 @@ class WorkspacesTest {
 
     private long createWorkspace(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug, "slug", slug))
+                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();

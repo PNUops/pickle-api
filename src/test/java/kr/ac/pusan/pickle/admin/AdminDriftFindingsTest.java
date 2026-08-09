@@ -101,8 +101,8 @@ class AdminDriftFindingsTest {
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "adf-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(

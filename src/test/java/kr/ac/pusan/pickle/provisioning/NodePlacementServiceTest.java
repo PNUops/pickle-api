@@ -56,8 +56,8 @@ class NodePlacementServiceTest {
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "place-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbc.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         imageName = "place-tmpl-" + UUID.randomUUID().toString().substring(0, 8);
     }
 

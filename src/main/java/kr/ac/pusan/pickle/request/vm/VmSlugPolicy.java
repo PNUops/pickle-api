@@ -24,7 +24,31 @@ public class VmSlugPolicy {
     /** RFC 1123-style label, lowercase alnum + hyphen, 3–40 chars, no leading/trailing hyphen. */
     private static final Pattern SLUG = Pattern.compile("^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$");
 
+    /** What a generated hostname falls back to when the seed yields nothing usable. */
+    private static final String DEFAULT_SEED = "vm";
+
     private final SettingsService settingsService;
+
+    /**
+     * Turns a free-text name into the leading part of a generated hostname:
+     * lowercase, alphanumerics and hyphens only, short enough to leave room for
+     * the random suffix. Korean names collapse to nothing here, which is why
+     * there is a fallback rather than an error — the suffix carries uniqueness,
+     * and the seed only makes the name recognisable.
+     */
+    public static String sanitizeSeed(String name) {
+        if (name == null) {
+            return DEFAULT_SEED;
+        }
+        String seed = name.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9-]+", "-")
+                .replaceAll("-{2,}", "-")
+                .replaceAll("^-+|-+$", "");
+        if (seed.length() > 20) {
+            seed = seed.substring(0, 20).replaceAll("-+$", "");
+        }
+        return seed.isBlank() ? DEFAULT_SEED : seed;
+    }
 
     public VmSlugPolicy(SettingsService settingsService) {
         this.settingsService = settingsService;

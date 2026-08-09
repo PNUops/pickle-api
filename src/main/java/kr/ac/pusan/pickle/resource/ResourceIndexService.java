@@ -22,8 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>With one resource type this delegates; with several it will have to merge
  * pages that each know their own ordering, which is a real decision (a merged
  * page cannot be produced by asking each type for page N). It is deliberately
- * not solved before there is a second type to solve it against — see
- * `convention/add-resource-type.md`.
+ * not solved before there is a second type to solve it against, and
+ * {@link #soleAdapter()} fails loudly rather than letting one type's rows pass
+ * for the whole inventory.
  */
 @Service
 public class ResourceIndexService {

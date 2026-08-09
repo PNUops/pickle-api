@@ -428,7 +428,7 @@ class VmPowerControlTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "전원 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "전원 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();

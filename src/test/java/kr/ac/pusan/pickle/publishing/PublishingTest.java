@@ -2034,8 +2034,8 @@ class PublishingTest {
     private long foreignWorkspaceDomain() {
         String slug = "pubf-" + UUID.randomUUID().toString().substring(0, 8);
         long foreignWorkspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         long outsiderId = userRepository.findByEmail("pub.outsider@pusan.ac.kr")
                 .orElseThrow().getId();
         jdbcTemplate.update("""
@@ -2155,7 +2155,7 @@ class PublishingTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "공개 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "공개 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();

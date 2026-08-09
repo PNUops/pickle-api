@@ -170,7 +170,7 @@ class AccountLifecycleTest {
         User user = createActiveUser("wd.owner@pusan.ac.kr", "유일소유자");
         personalWorkspaceService.ensurePersonalWorkspace(user);
         Org org = ensureOrg();
-        Workspace team = workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, "연구팀", uniqueSlug("team"), null));
+        Workspace team = workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, "연구팀", null));
         workspaceMemberRepository.save(new WorkspaceMember(team, user.getId(), WorkspaceMemberRole.OWNER));
         createActiveVm(team.getId(), org.getId(), user.getId());
 

@@ -92,20 +92,12 @@ public class WorkspaceService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("kind",
                     "PERSONAL 워크스페이스는 자동 생성됩니다. TEAM 또는 PROJECT만 생성할 수 있습니다.")));
         }
-        if (workspaceRepository.existsBySlugAndDeletedAtIsNull(request.slug())) {
-            throw slugDuplicate(request.slug());
-        }
-        Workspace workspace;
-        try {
-            workspace = workspaceRepository.save(new Workspace(request.kind(), request.name().strip(),
-                    request.slug(), normalize(request.description())));
-        } catch (DataIntegrityViolationException raceWithConcurrentCreate) {
-            throw slugDuplicate(request.slug());
-        }
+        Workspace workspace = workspaceRepository.save(new Workspace(request.kind(),
+                request.name().strip(), normalize(request.description())));
         workspaceMemberRepository.save(new WorkspaceMember(workspace, actor.id(), WorkspaceMemberRole.OWNER));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_CREATE,
                 "workspace", workspace.getId(),
-                Map.of("kind", workspace.getKind().name(), "name", workspace.getName(), "slug", workspace.getSlug()), ip);
+                Map.of("kind", workspace.getKind().name(), "name", workspace.getName()), ip);
         return toDetail(workspace, WorkspaceMemberRole.OWNER);
     }
 
@@ -314,8 +306,7 @@ public class WorkspaceService {
         List<Long> recipients = notificationService.workspaceMemberIds(workspaceId);
         workspace.softDelete(actor.id(), Instant.now());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_DELETE,
-                "workspace", workspaceId, Map.of("kind", workspace.getKind().name(), "name", workspace.getName(),
-                        "slug", workspace.getSlug()), ip);
+                "workspace", workspaceId, Map.of("kind", workspace.getKind().name(), "name", workspace.getName()), ip);
         notificationService.publish(recipients, NotificationEvent.WORKSPACE_DELETED,
                 Map.of("workspaceId", workspaceId, "workspaceName", workspace.getName()), "workspace_deleted:" + workspaceId);
     }
@@ -378,8 +369,4 @@ public class WorkspaceService {
                 "다른 구성원을 소유자로 지정한 뒤 다시 시도해 주세요.");
     }
 
-    private static ApiException slugDuplicate(String slug) {
-        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_SLUG_DUPLICATE,
-                "이미 사용 중인 slug입니다", "'" + slug + "'은(는) 이미 다른 워크스페이스가 사용 중입니다.");
-    }
 }

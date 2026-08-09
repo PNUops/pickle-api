@@ -679,8 +679,6 @@ components:
           type: "array"
         name:
           type: "string"
-        slug:
-          type: "string"
         vmCount:
           format: "int64"
           type: "integer"
@@ -691,7 +689,6 @@ components:
       - "memberCount"
       - "members"
       - "name"
-      - "slug"
       - "vmCount"
       type: "object"
     AdminWorkspaceMemberResponse:
@@ -733,15 +730,12 @@ components:
           type: "integer"
         name:
           type: "string"
-        slug:
-          type: "string"
       required:
       - "createdAt"
       - "id"
       - "kind"
       - "memberCount"
       - "name"
-      - "slug"
       type: "object"
     AllocationStatus:
       enum:
@@ -1373,14 +1367,9 @@ components:
           maxLength: 100
           minLength: 0
           type: "string"
-        slug:
-          minLength: 1
-          pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
-          type: "string"
       required:
       - "kind"
       - "name"
-      - "slug"
       type: "object"
     DisableMfaRequest:
       properties:
@@ -4564,8 +4553,6 @@ components:
           $ref: "#/components/schemas/WorkspaceMemberRole"
         name:
           type: "string"
-        slug:
-          type: "string"
       required:
       - "createdAt"
       - "id"
@@ -4573,7 +4560,6 @@ components:
       - "members"
       - "myRole"
       - "name"
-      - "slug"
       type: "object"
     WorkspaceKind:
       enum:
@@ -4648,15 +4634,12 @@ components:
           $ref: "#/components/schemas/WorkspaceMemberRole"
         name:
           type: "string"
-        slug:
-          type: "string"
       required:
       - "id"
       - "kind"
       - "memberCount"
       - "myRole"
       - "name"
-      - "slug"
       type: "object"
   securitySchemes:
     bearerAuth:

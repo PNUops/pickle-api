@@ -30,9 +30,6 @@ public class Workspace {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, unique = true)
-    private String slug;
-
     private String description;
 
     /** Soft-delete stamp. A non-null value hides the workspace everywhere. */
@@ -54,10 +51,9 @@ public class Workspace {
     protected Workspace() {
     }
 
-    public Workspace(WorkspaceKind kind, String name, String slug, String description) {
+    public Workspace(WorkspaceKind kind, String name, String description) {
         this.kind = kind;
         this.name = name;
-        this.slug = slug;
         this.description = description;
     }
 
@@ -75,10 +71,6 @@ public class Workspace {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getSlug() {
-        return slug;
     }
 
     public String getDescription() {

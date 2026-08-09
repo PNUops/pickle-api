@@ -16,7 +16,6 @@ public record AdminWorkspaceDetailResponse(
         long id,
         WorkspaceKind kind,
         String name,
-        String slug,
         @Nullable String description,
         Instant createdAt,
         long memberCount,

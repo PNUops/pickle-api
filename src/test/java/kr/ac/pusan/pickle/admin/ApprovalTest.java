@@ -208,14 +208,14 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.vm.granted.nodeId").value((Object) null))
                 .andExpect(jsonPath("$.review.decidedAt").isNotEmpty());
 
-        // a CREATING vm row exists with the granted spec and a slug-prefixed hostname
+        // a CREATING vm row exists with the granted spec and a generated hostname
         List<Vm> vms = vmRepository.findAll().stream()
                 .filter(vm -> vm.getRequestId() == requestId)
                 .toList();
         assertThat(vms).hasSize(1);
         Vm vm = vms.getFirst();
         assertThat(vm.getStatus()).isEqualTo(VmStatus.CREATING);
-        assertThat(vm.getHostname()).startsWith("appr-approve-x1-");
+        assertThat(vm.getHostname()).matches("[a-z0-9-]+-[a-z0-9]{4}");
         assertThat(vm.getVcpu()).isEqualTo(2);
         assertThat(vm.getMemoryMb()).isEqualTo(2048);
         assertThat(vm.getDiskGb()).isEqualTo(20);
@@ -338,7 +338,9 @@ class ApprovalTest {
         Vm auto = vmRepository.findAll().stream()
                 .filter(vm -> vm.getRequestId() == otherRequestId && vm.getDeletedAt() == null)
                 .findFirst().orElseThrow();
-        assertThat(auto.getHostname()).matches("appr-slug-x1-[a-z0-9]{4}");
+        // No display name was requested, so the seed falls back and only the
+        // random suffix distinguishes it.
+        assertThat(auto.getHostname()).matches("vm-[a-z0-9]{4}");
     }
 
     @Test
@@ -639,7 +641,7 @@ class ApprovalTest {
 
     private long createTeam(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug, "slug", slug))
+                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();

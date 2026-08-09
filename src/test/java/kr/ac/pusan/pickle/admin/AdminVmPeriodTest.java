@@ -78,8 +78,8 @@ class AdminVmPeriodTest {
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         String slug = "avp-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         User member = ensureUser("avp.member." + slug + "@pusan.ac.kr", UserRole.USER, null);
         memberId = member.getId();
         jdbcTemplate.update("""

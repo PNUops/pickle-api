@@ -12,7 +12,6 @@ public record WorkspaceDetailResponse(
         Long id,
         WorkspaceKind kind,
         String name,
-        String slug,
         @Nullable String description,
         WorkspaceMemberRole myRole,
         List<WorkspaceMemberResponse> members,
@@ -20,7 +19,7 @@ public record WorkspaceDetailResponse(
 
     public static WorkspaceDetailResponse from(Workspace workspace, WorkspaceMemberRole myRole,
             List<WorkspaceMemberResponse> members) {
-        return new WorkspaceDetailResponse(workspace.getId(), workspace.getKind(), workspace.getName(), workspace.getSlug(),
+        return new WorkspaceDetailResponse(workspace.getId(), workspace.getKind(), workspace.getName(),
                 workspace.getDescription(), myRole, members, workspace.getCreatedAt());
     }
 }

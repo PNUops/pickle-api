@@ -196,9 +196,9 @@ class TerminalMintTest {
 
     private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name, slug)
-                values ('TEAM'::workspace_kind, '터미널팀', ?) returning id
-                """, Long.class, "term-" + UUID.randomUUID().toString().substring(0, 8));
+                insert into workspaces (kind, name)
+                values ('TEAM'::workspace_kind, '터미널팀') returning id
+                """, Long.class);
     }
 
     private void addMember(long workspaceId, long userId, String role) {

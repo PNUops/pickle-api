@@ -67,7 +67,6 @@ class ProvisioningEndToEndTest {
 
     private static final String USER_EMAIL = "e2e.user@pusan.ac.kr";
     private static final String USER_PASSWORD = "E2e-Corr3ct-horse!";
-    private static final String WORKSPACE_SLUG = "e2e-team";
 
     /**
      * First value of {@code vmid_seq} (V50) — deterministic because this test
@@ -146,7 +145,7 @@ class ProvisioningEndToEndTest {
 
         // 3. create a TEAM workspace
         MvcResult workspaceResult = postJson("/api/v1/workspaces", userToken,
-                Map.of("kind", "TEAM", "name", "종단 테스트 팀", "slug", WORKSPACE_SLUG))
+                Map.of("kind", "TEAM", "name", "종단 테스트 팀"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long workspaceId = objectMapper.readTree(workspaceResult.getResponse().getContentAsString())
@@ -221,7 +220,8 @@ class ProvisioningEndToEndTest {
         JsonNode vms = getJson("/api/v1/vms", userToken);
         JsonNode vm = vms.get("content").get(0);
         long vmId = vm.get("id").asLong();
-        assertThat(vm.get("hostname").asString()).startsWith(WORKSPACE_SLUG + "-");
+        // Generated from the requested display name plus a random suffix.
+        assertThat(vm.get("hostname").asString()).matches("[a-z0-9-]+-[a-z0-9]{4}");
         assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
         mockMvc.perform(get("/api/v1/vms/" + vmId)
