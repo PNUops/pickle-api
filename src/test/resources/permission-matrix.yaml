@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.34.0, 144 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.34.0, 145 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -79,6 +79,7 @@ operations:
 
   # ── 3.5 VM requests (workspace-role-scoped) ───────────────────────────────────
   - { id: createRequest,      method: POST,   path: "/requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: listResources,      method: GET,    path: "/resources",                       roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: listRequests,       method: GET,    path: "/requests",                     roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: getRequest,         method: GET,    path: "/requests/{requestId}",         roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: cancelRequest,      method: POST,   path: "/requests/{requestId}/cancel",  roles: { USER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }

@@ -2522,6 +2522,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseResourceSummaryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/ResourceSummaryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseUserAdminViewResponse:
       properties:
         content:
@@ -3024,6 +3049,49 @@ components:
       - "MEMBER"
       - "VIEWER"
       type: "string"
+    ResourceSummaryResponse:
+      properties:
+        accessLimited:
+          type: "boolean"
+        accessManageAllowed:
+          type: "boolean"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        displayName:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        ownerNames:
+          items:
+            type: "string"
+          type: "array"
+        status:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "accessLimited"
+      - "accessManageAllowed"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "ownerNames"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     ResourceTotalsResponse:
       properties:
         diskGb:
@@ -7957,6 +8025,53 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "request-controller"
+  /resources:
+    get:
+      operationId: "listResources"
+      parameters:
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseResourceSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "resource-index-controller"
   /vm-flavors:
     get:
       operationId: "listVmFlavors"

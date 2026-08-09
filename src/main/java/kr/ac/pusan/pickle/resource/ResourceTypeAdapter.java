@@ -2,6 +2,10 @@ package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.resource.dto.ResourceSummaryResponse;
+import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 /**
  * What the resource-generic machinery needs to know about one kind of resource.
@@ -29,4 +33,11 @@ public interface ResourceTypeAdapter {
      */
     List<Long> idsOwnedByWorkspace(long workspaceId);
 
+    /**
+     * This type's contribution to the inventory the requester may see, with the
+     * same visibility rules the type's own list endpoint applies: a row the
+     * requester holds no grant on comes back limited rather than omitted, so
+     * they can see it exists and ask.
+     */
+    Page<ResourceSummaryResponse> page(AuthenticatedUser actor, Long workspaceId, Pageable pageable);
 }
