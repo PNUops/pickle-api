@@ -8,6 +8,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -15,9 +17,7 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -77,6 +77,7 @@ public class VmDeletionService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
     private final SettingsService settingsService;
@@ -90,7 +91,7 @@ public class VmDeletionService {
     private final PortMappingTeardownService portMappingTeardown;
     private final VmSettingsService vmSettingsService;
 
-    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository, VmAccessService vmAccessService,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService,
@@ -100,6 +101,7 @@ public class VmDeletionService {
             PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.vmEventRepository = vmEventRepository;
         this.settingsService = settingsService;
@@ -262,7 +264,7 @@ public class VmDeletionService {
     @Transactional
     public MessageResponse forceDelete(AuthenticatedUser actor, long vmId,
             ForceDeleteVmRequest request, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (!vm.getName().equals(request.confirmName())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
                     "확인용 이름이 일치하지 않습니다",
@@ -352,37 +354,37 @@ public class VmDeletionService {
     // ── shared guards ──────────────────────────────────────────────────────
 
     /**
-     * Self-delete authorization: group OWNER, ORG_ADMIN of the VM's org, or
-     * SYS_ADMIN. Non-members and cross-org admins get 404 (masking); a member
-     * below OWNER gets 403.
+     * Self-delete authorization: an owner of the VM's access list, an owner of
+     * the group that owns it (deletion is one of the three standing rights),
+     * ORG_ADMIN of the VM's org, or SYS_ADMIN. Non-members and cross-org admins
+     * get 404 (masking); anyone else who can see the VM gets 403.
      */
     private Vm requireDeletableByActor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.SYS_ADMIN) {
             return vm;
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
             if (!vm.getOrgId().equals(actor.orgId())) {
-                throw vmNotFound();
+                throw VmAccessService.vmNotFound();
             }
             return vm;
         }
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmDeletionService::vmNotFound);
-        if (role != GroupMemberRole.OWNER) {
+        VmAccess access = vmAccessService.of(vm, actor.id());
+        if (!access.manages()) {
+            access.requireVisible();
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM을 삭제할 권한이 없습니다", "그룹 소유자(OWNER) 또는 관리자만 VM을 삭제할 수 있습니다.");
+                    "VM을 삭제할 권한이 없습니다",
+                    "이 VM의 소유자, 그룹 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
         }
         return vm;
     }
 
     /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
     private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmDeletionService::vmNotFound);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
-            throw vmNotFound();
+            throw VmAccessService.vmNotFound();
         }
         return vm;
     }
@@ -425,27 +427,17 @@ public class VmDeletionService {
                 "취소할 수 있는 삭제가 없습니다. 이미 파기가 시작되었거나 완료된 상태일 수 있습니다.");
     }
 
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
-    }
-
     // ── notifications / enqueue ────────────────────────────────────────────
 
     /**
-     * Group members' user ids, optionally plus the org's admins (ACTIVE only).
+     * Everyone this VM concerns — its grantees and the owners of the group that
+     * owns it — optionally plus the org's admins (ACTIVE only).
      * Notifications are INSERTed in the deletion transaction itself, so they
      * exist iff the deletion intent committed; email leaves asynchronously via
      * the dispatcher.
      */
     private List<Long> recipients(Vm vm, boolean includeOrgAdmins) {
-        Set<Long> userIds = new LinkedHashSet<>();
-        List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(vm.getGroupId())
-                .stream().map(GroupMember::getUserId).toList();
-        userRepository.findAllById(memberIds).stream()
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                .map(User::getId)
-                .forEach(userIds::add);
+        Set<Long> userIds = new LinkedHashSet<>(notificationService.vmAudienceIds(vm));
         if (includeOrgAdmins) {
             userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId()).stream()
                     .filter(user -> user.getStatus() == UserStatus.ACTIVE)

@@ -53,7 +53,13 @@ class ReauthCoverageTest {
             "GET /me/ssh-keys/{keyId}/private-key",
             "POST /groups/{groupId}/members",
             "PATCH /groups/{groupId}/members/{userId}",
-            "DELETE /groups/{groupId}/members/{userId}"));
+            "DELETE /groups/{groupId}/members/{userId}",
+            // Editing a VM's access list is what decides who reaches the VM at
+            // all, so it steps up exactly as changing group membership does.
+            // Reading the list does not.
+            "POST /vms/{vmId}/access",
+            "PATCH /vms/{vmId}/access/{grantId}",
+            "DELETE /vms/{vmId}/access/{grantId}"));
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

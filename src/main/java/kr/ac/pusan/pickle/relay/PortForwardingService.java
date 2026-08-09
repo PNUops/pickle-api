@@ -5,15 +5,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -63,7 +62,7 @@ public class PortForwardingService {
     static final int GUEST_SSH_PORT = 22;
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final RelayRepository relayRepository;
     private final PortMappingRepository portMappingRepository;
     private final RelayGenerations relayGenerations;
@@ -78,14 +77,14 @@ public class PortForwardingService {
     private final SecureRandom random = new SecureRandom();
 
     public PortForwardingService(VmRepository vmRepository,
-            GroupMemberRepository groupMemberRepository, RelayRepository relayRepository,
+            VmAccessService vmAccessService, RelayRepository relayRepository,
             PortMappingRepository portMappingRepository, RelayGenerations relayGenerations,
             SettingsService settingsService, RateLimitService rateLimitService,
             IpAddressResolver ipAddressResolver, VmEventRepository vmEventRepository,
             AuditService auditService, NotificationService notificationService,
             JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.relayRepository = relayRepository;
         this.portMappingRepository = portMappingRepository;
         this.relayGenerations = relayGenerations;
@@ -294,25 +293,13 @@ public class PortForwardingService {
     // ── authorization (publishing pattern: 404 mask, 403 for members) ───────
 
     private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(PortForwardingService::vmNotFound);
-        if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
-            throw vmNotFound();
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireVisible();
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(PortForwardingService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(PortForwardingService::vmNotFound);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "포트 포워딩을 관리할 권한이 없습니다",
-                    "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 포트 포워딩을 설정할 수 있습니다.");
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
+                "포트 포워딩을 관리할 권한이 없습니다",
+                "이 VM의 소유자 또는 편집자만 포트포워딩을 설정할 수 있습니다.");
     }
 
     /**
@@ -332,11 +319,6 @@ public class PortForwardingService {
     private static ApiException invalidVmState(String detail) {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 포트를 공개할 수 없습니다", detail);
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
     private static ApiException mappingNotFound() {

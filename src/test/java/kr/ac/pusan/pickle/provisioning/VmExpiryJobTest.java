@@ -4,6 +4,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -152,8 +153,12 @@ class VmExpiryJobTest {
         ownerId = createUser("owner." + slug + "@pusan.ac.kr");
         editorId = createUser("manager." + slug + "@pusan.ac.kr");
         memberId = createUser("member." + slug + "@pusan.ac.kr");
+        // The three audiences an expiry notice has to tell apart: the group's
+        // owner, who hears about every VM of the group; the VM's own EDITOR
+        // grantee (written per VM in createVm); and a plain member the VM was
+        // never opened to, who hears nothing.
         addMember(ownerId, "OWNER");
-        addMember(editorId, "EDITOR");
+        addMember(editorId, "MEMBER");
         addMember(memberId, "MEMBER");
         nodeName = "wmexp-" + UUID.randomUUID().toString().substring(0, 8);
         nodeId = jdbcTemplate.queryForObject("""
@@ -186,7 +191,8 @@ class VmExpiryJobTest {
         assertThat(stageOf(vm14)).isEqualTo(14);
         assertThat(stageOf(vmLate)).isEqualTo(7);
 
-        // recipients: OWNER + EDITOR, never the plain MEMBER; D-1 is HIGH
+        // recipients: the VM's EDITOR grantee + the group's owner, never a member
+        // the VM was not opened to; D-1 is HIGH
         assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, editorId);
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
@@ -256,7 +262,8 @@ class VmExpiryJobTest {
                 select count(*) from vm_events
                  where vm_id = ? and type = 'EXPIRE_STOP' and actor_id is null
                 """, Long.class, vmExpired)).isEqualTo(1);
-        // HIGH notification to OWNER/EDITOR + the org's ORG_ADMINs
+        // HIGH notification to those the VM makes responsible (its EDITOR grantee
+        // and the group's owner) + the org's ORG_ADMINs
         assertThat(jdbcTemplate.queryForList("""
                 select user_id from notifications
                  where event = 'vm.expiry.stopped' and payload ->> 'vmId' = ?
@@ -371,7 +378,7 @@ class VmExpiryJobTest {
                 returning id
                 """, Long.class, groupId, orgId, requesterId, imageId);
         String hostname = "vexp-vm-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  end_date)
@@ -379,6 +386,8 @@ class VmExpiryJobTest {
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status, endDate);
+        grantVmToUser(jdbcTemplate, vmId, editorId, "EDITOR");
+        return vmId;
     }
 
     private void stubGuestRunning(int vmid) {

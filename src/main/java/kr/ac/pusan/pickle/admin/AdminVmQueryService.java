@@ -82,7 +82,7 @@ public class AdminVmQueryService {
     /**
      * Contract {@code GET /admin/vms/{vmId}} (v0.17.0): org-scoped admin view
      * of the full detail — the viewer is not a group member, so
-     * {@code myGroupRole} is null and password reveal stays off.
+     * {@code myResourceRole} is null and password reveal stays off.
      */
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, long vmId) {

@@ -5,6 +5,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveVmRequestRequest;
 import kr.ac.pusan.pickle.admin.dto.RejectVmRequestRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -14,6 +18,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.Group;
+import kr.ac.pusan.pickle.group.GroupMemberRepository;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
@@ -23,6 +28,8 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vmrequest.VmRequest;
@@ -66,6 +73,9 @@ public class ApprovalService {
     private final OsImageRepository imageRepository;
     private final NodeRepository nodeRepository;
     private final GroupRepository groupRepository;
+    private final GroupMemberRepository groupMemberRepository;
+    private final ResourceAccessGrantRepository grantRepository;
+    private final UserRepository userRepository;
     private final JobScheduler jobScheduler;
     private final ProvisioningService provisioningService;
     private final AuditService auditService;
@@ -76,7 +86,10 @@ public class ApprovalService {
 
     public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
             VmRequestAssembler assembler, VmRepository vmRepository, OsImageRepository imageRepository,
-            NodeRepository nodeRepository, GroupRepository groupRepository, JobScheduler jobScheduler,
+            NodeRepository nodeRepository, GroupRepository groupRepository,
+            GroupMemberRepository groupMemberRepository,
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
+            JobScheduler jobScheduler,
             ProvisioningService provisioningService, AuditService auditService,
             NotificationService notificationService,
             VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService) {
@@ -87,6 +100,9 @@ public class ApprovalService {
         this.imageRepository = imageRepository;
         this.nodeRepository = nodeRepository;
         this.groupRepository = groupRepository;
+        this.groupMemberRepository = groupMemberRepository;
+        this.grantRepository = grantRepository;
+        this.userRepository = userRepository;
         this.jobScheduler = jobScheduler;
         this.provisioningService = provisioningService;
         this.auditService = auditService;
@@ -169,6 +185,19 @@ public class ApprovalService {
                         "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
             }
         }
+        // The VM is created with its requester as its owner, so approval needs
+        // that person to still be someone who can hold a grant here. If they
+        // left the group or the platform meanwhile, the request is no longer
+        // approvable and the reviewer rejects it instead — inventing a
+        // different owner would be the platform guessing whose VM this is.
+        if (groupMemberRepository.findByGroupIdAndUserId(request.getGroupId(),
+                request.getRequesterId()).isEmpty()
+                || userRepository.findById(request.getRequesterId())
+                        .filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_REQUESTER_INELIGIBLE,
+                    "신청자가 더 이상 이 그룹의 활성 구성원이 아닙니다",
+                    "승인하면 이 VM의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
@@ -200,6 +229,11 @@ public class ApprovalService {
                 : null;
 
         long vmId = vm.getId();
+        // The VM starts private: its requester, and nobody else. Anyone who
+        // should reach it is added to its access list afterwards, so a VM is
+        // never open by default through a step somebody forgot.
+        grantRepository.save(ResourceAccessGrant.forUser(ResourceType.VM, vmId,
+                request.getRequesterId(), ResourceRole.OWNER));
         // The OSS JobRunr storage provider writes with its own connection and
         // commits immediately, so an in-transaction enqueue could (a) leave an
         // orphaned durable job if this tx rolls back, or (b) let a worker pick

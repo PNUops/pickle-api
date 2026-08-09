@@ -147,7 +147,7 @@ public class AdminPortMappingService {
         Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);
         if (vm != null) {
             notificationService.publish(
-                    notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                    notificationService.vmResponsibleIds(vm),
                     NotificationEvent.PORT_MAPPING_SUSPENDED,
                     Map.of("vmId", vm.getId(), "vmName", vm.getName(),
                             "proto", mapping.getProto().name(),
@@ -193,7 +193,7 @@ public class AdminPortMappingService {
         Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);
         if (vm != null) {
             notificationService.publish(
-                    notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                    notificationService.vmResponsibleIds(vm),
                     NotificationEvent.PORT_MAPPING_DELETED,
                     Map.of("vmId", vm.getId(), "vmName", vm.getName(),
                             "proto", mapping.getProto().name(),

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vmsettings;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
@@ -37,6 +38,10 @@ import tools.jackson.databind.ObjectMapper;
  * masking, per-key required-role on PATCH (ssh_password_enabled→EDITOR,
  * password_reveal_min_role→OWNER), 422/409 guards, the audited old→new trail,
  * and the enforcement getters feature code relies on.
+ *
+ * <p>Every role named here is a rung on the VM's access list, written by
+ * {@link #createVm}: settings are inside the VM, so owning the group carries
+ * none of them and each fixture user needs a grant of its own.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -86,8 +91,8 @@ class VmSettingsTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createTeam("vmset-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, editor.getEmail(), "EDITOR");
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        addMember(groupId, editor.getEmail(), "MEMBER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -150,7 +155,7 @@ class VmSettingsTest {
         patchSettings(ownerToken, vmId, Map.of("password_reveal_min_role", "EDITOR"))
                 .andExpect(status().isOk());
         assertThat(vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE))
-                .isEqualTo(GroupMemberRole.EDITOR);
+                .isEqualTo(ResourceRole.EDITOR);
     }
 
     @Test
@@ -178,7 +183,7 @@ class VmSettingsTest {
     }
 
     @Test
-    void m6KeysAppearInCatalogWithRolesAndDefaults() throws Exception {
+    void settingsCatalogCarriesEachKeysRequiredRoleValueTypeAndDefault() throws Exception {
         long vmId = createVm();
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
                         .header("Authorization", "Bearer " + ownerToken))
@@ -283,13 +288,18 @@ class VmSettingsTest {
                 returning id
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmset-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
+        // The VM skips approval, so nobody is on its list until we say so.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, editor.getId(), "EDITOR");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {

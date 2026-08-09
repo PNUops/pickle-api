@@ -30,6 +30,10 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /** SSH gateway route resolution: the VM a client slug (hostname) maps to. */
     java.util.Optional<Vm> findByHostname(String hostname);
 
+    /** VM ids of the given groups — for building an access-scoped id filter. */
+    @Query("select v.id from Vm v where v.groupId in :groupIds")
+    List<Long> findIdsByGroupIdIn(@Param("groupIds") Collection<Long> groupIds);
+
     Page<Vm> findByGroupIdIn(Collection<Long> groupIds, Pageable pageable);
 
     Page<Vm> findByGroupId(Long groupId, Pageable pageable);

@@ -7,14 +7,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.TerminalProperties;
 import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.group.GroupRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -63,7 +62,7 @@ public class TerminalService {
 
     private final SettingsService settingsService;
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final GroupRepository groupRepository;
     private final OrgRepository orgRepository;
     private final UserRepository userRepository;
@@ -76,7 +75,7 @@ public class TerminalService {
     private final TerminalProperties properties;
 
     public TerminalService(SettingsService settingsService, VmRepository vmRepository,
-            GroupMemberRepository groupMemberRepository, GroupRepository groupRepository,
+            VmAccessService vmAccessService, GroupRepository groupRepository,
             OrgRepository orgRepository, UserRepository userRepository,
             IpAddressResolver ipAddressResolver, RateLimitService rateLimitService,
             AuditService auditService, TicketRegistry ticketRegistry,
@@ -84,7 +83,7 @@ public class TerminalService {
             TerminalProperties properties) {
         this.settingsService = settingsService;
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.groupRepository = groupRepository;
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
@@ -115,18 +114,9 @@ public class TerminalService {
         //    404 (existence stays private); a VIEWER already sees the VM via getVm,
         //    so it gets an honest 403 (same as the power-control paths) rather than
         //    a misleading 404.
-        Vm vm = vmRepository.findById(vmId).orElseThrow(TerminalService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElse(null);
-        if (role == null) {
-            throw vmNotFound();
-        }
-        if (!role.atLeast(GroupMemberRole.MEMBER)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "웹 터미널을 열 권한이 없습니다", "그룹의 MEMBER 이상만 웹 터미널을 사용할 수 있습니다.");
-        }
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.MEMBER,
+                "웹 터미널을 열 권한이 없습니다", "이 VM의 참여자 이상만 웹 터미널을 사용할 수 있습니다.");
         // 3) RUNNING.
         if (vm.getStatus() != VmStatus.RUNNING) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
@@ -380,11 +370,7 @@ public class TerminalService {
         if (vm.isSshGatewayBlocked()) {
             return Authz.deny(TerminalReasons.ACCESS_REVOKED);
         }
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), userId)
-                .map(GroupMember::getRole)
-                .orElse(null);
-        if (role == null || !role.atLeast(GroupMemberRole.MEMBER)) {
+        if (!vmAccessService.of(vm, userId).atLeast(ResourceRole.MEMBER)) {
             return Authz.deny(TerminalReasons.ACCESS_REVOKED);
         }
         return Authz.allow(vm);
@@ -411,10 +397,5 @@ public class TerminalService {
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
                 "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 }

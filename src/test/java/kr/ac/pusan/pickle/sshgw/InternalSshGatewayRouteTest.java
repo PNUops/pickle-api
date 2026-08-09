@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.sshgw;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningGroup;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -462,6 +463,10 @@ class InternalSshGatewayRouteTest {
                 """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, imageId,
                 status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
+        // SSH is never implied by group standing, so the VM is opened to the whole
+        // owning group at MEMBER: every member's key resolves, an outsider's does
+        // not — the same split the identity gate used to read off the group rung.
+        grantVmToOwningGroup(jdbcTemplate, vmId, "MEMBER");
         return vmId;
     }
 

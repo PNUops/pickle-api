@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.security.JwtService;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -33,7 +34,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 교내 IP 신청 workflow: the USER-role gate + group OWNER/EDITOR scoping,
+ * 교내 IP 신청 workflow: the USER-role gate + VM access-list scoping,
  * port/purpose validation with normalization, the one-live-request rule,
  * REQUESTED-only cancellation, and the admin transition matrix
  * (REQUESTED → APPROVED|REJECTED, APPROVED → GRANTED|REJECTED,
@@ -63,6 +64,8 @@ class CampusIpRequestTest {
     private JdbcTemplate jdbcTemplate;
 
     private User owner;
+    private User viewer;
+    private User plainUser;
     private String ownerToken;
     private String viewerToken;
     private String outsiderToken;
@@ -75,11 +78,11 @@ class CampusIpRequestTest {
         // Manager-tier accounts must belong to an org (users check constraint).
         Long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         owner = ensureUser("cip.owner@pusan.ac.kr", "교내IP소유자", UserRole.ORG_MANAGER, orgId);
-        User viewer = ensureUser("cip.viewer@pusan.ac.kr", "교내IP뷰어", UserRole.ORG_MANAGER,
+        viewer = ensureUser("cip.viewer@pusan.ac.kr", "교내IP뷰어", UserRole.ORG_MANAGER,
                 orgId);
         User outsider = ensureUser("cip.outsider@pusan.ac.kr", "교내IP외부인",
                 UserRole.ORG_MANAGER, orgId);
-        User plainUser = ensureUser("cip.user@pusan.ac.kr", "교내IP일반", UserRole.USER, null);
+        plainUser = ensureUser("cip.user@pusan.ac.kr", "교내IP일반", UserRole.USER, null);
         User sysAdmin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
         ownerToken = jwtService.createAccessToken(owner);
         viewerToken = jwtService.createAccessToken(viewer);
@@ -87,24 +90,26 @@ class CampusIpRequestTest {
         plainUserToken = jwtService.createAccessToken(plainUser);
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
         groupId = createTeam("cip-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, viewer.getEmail(), "VIEWER");
-        addMember(groupId, plainUser.getEmail(), "EDITOR");
+        // Both join as plain members; the rung each acts at on a VM is written
+        // onto that VM's access list by vm().
+        addMember(groupId, viewer.getEmail(), "MEMBER");
+        addMember(groupId, plainUser.getEmail(), "MEMBER");
     }
 
     // ── eligibility ─────────────────────────────────────────────────────────
 
     @Test
-    void plainUserMayRequestWhenTheGroupRoleAllows() throws Exception {
+    void plainUserMayRequestWhenTheAccessListAllows() throws Exception {
         long vmId = vm();
-        // No role tier gate (2026-07-29 revision): a plain USER who is an
-        // EDITOR of the owning group may request, exactly like publishing.
+        // No role tier gate (2026-07-29 revision): a plain USER granted EDITOR
+        // on the VM may request, exactly like publishing.
         request(vmId, plainUserToken, "서비스 운영", List.of(80))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("REQUESTED"));
     }
 
     @Test
-    void groupScopingMasksAndRefusesLikePublishing() throws Exception {
+    void accessScopingMasksAndRefusesLikePublishing() throws Exception {
         long vmId = vm();
         request(vmId, outsiderToken, "서비스 운영", List.of(80))
                 .andExpect(status().isNotFound())
@@ -112,7 +117,7 @@ class CampusIpRequestTest {
         request(vmId, viewerToken, "서비스 운영", List.of(80))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
-        // reads only need membership: a VIEWER may list
+        // reads need only a place on the list: a VIEWER grantee may list
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                         .get("/api/v1/vms/" + vmId + "/campus-ip-requests")
                         .header("Authorization", "Bearer " + viewerToken))
@@ -291,6 +296,12 @@ class CampusIpRequestTest {
                 values ((select id from ip_pools where name = 'guest-private'), ?::inet, ?,
                         'ALLOCATED')
                 """, ip, vmId);
+        // An inserted VM has an empty access list, so say who reaches it: the
+        // requester as the owner approval would have made them, and the two
+        // members at the rungs the request/read checks distinguish.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, plainUser.getId(), "EDITOR");
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
         return vmId;
     }
 

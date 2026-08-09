@@ -67,7 +67,7 @@ public class VmGatewayBlockService {
                     blocked ? AuditService.VM_GATEWAY_BLOCK : AuditService.VM_GATEWAY_UNBLOCK,
                     "vm", vmId, auditDetail, ip);
         }
-        // Viewer is an admin, not a group member → myGroupRole null (period-update precedent).
+        // Viewer is an admin, not a grantee → myResourceRole null (period-update precedent).
         return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
     }
 

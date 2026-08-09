@@ -6,9 +6,12 @@ import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.revokeVmGrants;
 import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -47,6 +50,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -56,6 +60,12 @@ import tools.jackson.databind.ObjectMapper;
  * name-confirmed force deletes, the {@link DeleteVmJob} destroy pipeline
  * against real pve1 captures (incl. the ACPI-timeout → force-stop fallback,
  * fixture 61), retry-then-park, and the sweeper's due selection.
+ *
+ * <p>Deletion and the two protection settings sit on different axes now, so
+ * {@link #createVm} writes both standings the tests need: the fixture owner is
+ * the VM's resource OWNER (deletion, and the OWNER-only protection keys), while
+ * the second member is granted the MEMBER rung the stop-protection case
+ * exercises. A member with no grant reaches nothing at all.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -252,6 +262,101 @@ class VmDeletionTest {
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
+                .andExpect(status().isAccepted());
+    }
+
+    /**
+     * The standing an owner of the owning group holds when the access list
+     * names them nowhere: they may destroy the VM and decide who reaches it,
+     * and that is the whole of it — the standing is not a rung, so it opens
+     * nothing the VM holds, down to its detail. Keeping both halves in one
+     * test is deliberate: the permission is only correct in combination, and a
+     * later change that widened standing into content access would still pass
+     * either half alone.
+     */
+    @Test
+    void groupOwnerStandingCarriesDeletionButNothingInsideTheVm() throws Exception {
+        long vmId = createVm(VmStatus.RUNNING);
+        // Strip the list this fixture normally writes: the owner is now backed
+        // by nothing but their rung in the group, which is the case under test.
+        revokeVmGrants(jdbcTemplate, vmId);
+        jdbcTemplate.update(
+                "update settings set value = 'true'::jsonb where key = 'web_terminal_enabled'");
+
+        // Not even the detail read: standing rights are deliberately not a
+        // rung, so what a group owner keeps without a grant is knowing the VM
+        // exists (the listing's limited view), not anything it holds. The 403
+        // rather than 404 is the difference from a stranger.
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+
+        // Everything inside it is refused. Shutdown is chosen over start so the
+        // VM's state is valid for the op and only the access check can refuse.
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/terminal-sessions")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId + "/password")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("settings", Map.of("ssh_password_enabled", false)))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+
+        // What they do keep is knowing it is there. The list row is the
+        // restricted one — name, state and who to ask — and it carries the flag
+        // the console needs to offer access management from a row whose detail
+        // page the same person cannot open.
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessLimited")
+                        .value(org.hamcrest.Matchers.contains(true)))
+                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessManageAllowed")
+                        .value(org.hamcrest.Matchers.contains(true)))
+                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].hostname")
+                        .value(org.hamcrest.Matchers.contains((Object) null)));
+
+        // And the recovery path itself is open: they may read the access list
+        // and put someone on it, which is the whole point of keeping deletion
+        // and list management outside the rungs.
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId + "/access")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/vms/" + vmId + "/access")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "granteeType", "USER",
+                                "userId", member.getId(),
+                                "role", "VIEWER"))))
+                .andExpect(status().isCreated());
+
+        // A member the list now names, but only as a viewer, still cannot destroy it.
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + memberToken)
+                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+
+        // The group owner, still named nowhere on the list, may.
+        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
     }
 
@@ -1087,13 +1192,19 @@ class VmDeletionTest {
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmdel-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status.name());
+        // Inserted straight into the table, so approval never named the
+        // requester: without these rows the state and protection guards below
+        // would never be reached, every call stopping at the access check.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {

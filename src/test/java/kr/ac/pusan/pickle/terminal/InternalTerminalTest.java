@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.terminal;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -126,6 +127,9 @@ class InternalTerminalTest {
     void redeemReCheckMembershipRemovedIsAccessRevoked() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, "172.29.5.13", false, HOST_KEY);
         String ticket = mintTicket(UUID.randomUUID().toString(), vmId);
+        // Leaving the group is what the product cascades the grants off, but the
+        // grant row is left standing here on purpose: losing membership alone
+        // must already end the session, whatever the access list still says.
         jdbcTemplate.update("delete from group_members where group_id = ? and user_id = ?",
                 groupId, member.getId());
         redeem(ticket, SSHGW_IP)
@@ -411,6 +415,9 @@ class InternalTerminalTest {
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId,
                 status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
+        // The VM is inserted rather than approved, so nobody is on its access
+        // list yet; the redeem re-check wants MEMBER on the VM itself.
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
         return vmId;
     }
 }

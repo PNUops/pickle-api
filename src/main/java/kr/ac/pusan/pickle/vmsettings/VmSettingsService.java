@@ -9,13 +9,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -63,12 +63,12 @@ public class VmSettingsService {
      * request-time external syncs here.
      */
     private record VmSettingDef(String key, VmSettingValueType type, List<String> allowedValues,
-            JsonNode defaultValue, GroupMemberRole requiredRole, String label, String description,
+            JsonNode defaultValue, ResourceRole requiredRole, String label, String description,
             String auditAction, int maxLength) {
 
         /** {@code maxLength} 0 means "no cap" (only STRING keys use it today). */
         VmSettingDef(String key, VmSettingValueType type, List<String> allowedValues,
-                JsonNode defaultValue, GroupMemberRole requiredRole, String label, String description,
+                JsonNode defaultValue, ResourceRole requiredRole, String label, String description,
                 String auditAction) {
             this(key, type, allowedValues, defaultValue, requiredRole, label, description,
                     auditAction, 0);
@@ -77,18 +77,18 @@ public class VmSettingsService {
 
     private final VmSettingRepository settingRepository;
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final Map<String, VmSettingDef> registry;
 
     public VmSettingsService(VmSettingRepository settingRepository, VmRepository vmRepository,
-            GroupMemberRepository groupMemberRepository, UserRepository userRepository,
+            VmAccessService vmAccessService, UserRepository userRepository,
             AuditService auditService, ObjectMapper objectMapper) {
         this.settingRepository = settingRepository;
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
@@ -107,11 +107,11 @@ public class VmSettingsService {
 
     /** Group-role setting, e.g. {@code password_reveal_min_role} for reveal. */
     @Transactional(readOnly = true)
-    public GroupMemberRole role(long vmId, String key) {
+    public ResourceRole role(long vmId, String key) {
         VmSettingDef def = requireDef(key);
         JsonNode value = currentValue(vmId, def);
         String raw = value.isString() ? value.asString() : def.defaultValue().asString();
-        return GroupMemberRole.valueOf(raw);
+        return ResourceRole.valueOf(raw);
     }
 
     /** STRING setting (e.g. {@code display_name}); blank/absent → null. */
@@ -207,11 +207,11 @@ public class VmSettingsService {
     /** EDITOR+ only; non-member answers 404 (existence masking). */
     @Transactional(readOnly = true)
     public List<VmSettingView> get(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmSettingsService::vmNotFound);
-        GroupMemberRole actorRole = memberRole(vm, actor);
-        if (!actorRole.atLeast(GroupMemberRole.EDITOR)) {
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        ResourceRole actorRole = memberRole(vm, actor);
+        if (!actorRole.atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM 설정에 접근할 권한이 없습니다", "그룹의 EDITOR 이상만 VM 설정을 볼 수 있습니다.");
+                    "VM 설정에 접근할 권한이 없습니다", "이 VM의 편집자 이상만 VM 설정을 볼 수 있습니다.");
         }
         return buildViews(vm, actorRole);
     }
@@ -224,8 +224,8 @@ public class VmSettingsService {
     @Transactional
     public List<VmSettingView> patch(AuthenticatedUser actor, long vmId,
             Map<String, JsonNode> settings, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmSettingsService::vmNotFound);
-        GroupMemberRole actorRole = memberRole(vm, actor);
+        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        ResourceRole actorRole = memberRole(vm, actor);
         if (settings == null || settings.isEmpty()) {
             throw ApiException.validationFailed(List.of(
                     new FieldValidationError("settings", "변경할 설정을 1개 이상 지정해 주세요.")));
@@ -259,7 +259,7 @@ public class VmSettingsService {
             if (!actorRole.atLeast(def.requiredRole())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                         "설정을 변경할 권한이 없습니다",
-                        "`" + key + "` 설정은 그룹의 " + def.requiredRole()
+                        "`" + key + "` 설정은 이 VM의 " + def.requiredRole()
                                 + " 이상만 변경할 수 있습니다.");
             }
         }
@@ -306,7 +306,7 @@ public class VmSettingsService {
         return normalized;
     }
 
-    private List<VmSettingView> buildViews(Vm vm, GroupMemberRole actorRole) {
+    private List<VmSettingView> buildViews(Vm vm, ResourceRole actorRole) {
         Map<String, VmSetting> rows = settingRepository.findByVmId(vm.getId()).stream()
                 .collect(Collectors.toMap(VmSetting::getKey, Function.identity()));
         Map<Long, String> updaterNames = updaterNames(rows.values());
@@ -382,32 +382,27 @@ public class VmSettingsService {
         return def;
     }
 
-    private GroupMemberRole memberRole(Vm vm, AuthenticatedUser actor) {
-        return groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmSettingsService::vmNotFound);
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+    private ResourceRole memberRole(Vm vm, AuthenticatedUser actor) {
+        VmAccess access = vmAccessService.of(vm, actor.id());
+        access.requireVisible();
+        return access.role();
     }
 
     private static Map<String, VmSettingDef> buildRegistry(ObjectMapper mapper) {
         Map<String, VmSettingDef> map = new LinkedHashMap<>();
         map.put(SSH_PASSWORD_ENABLED, new VmSettingDef(SSH_PASSWORD_ENABLED,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
-                GroupMemberRole.EDITOR, "비밀번호 SSH 허용",
+                ResourceRole.EDITOR, "비밀번호 SSH 허용",
                 "SSH 게이트웨이에서 비밀번호 접속을 허용합니다. 켜면 접속자 개인을 식별할 수 없습니다.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(PASSWORD_REVEAL_MIN_ROLE, new VmSettingDef(PASSWORD_REVEAL_MIN_ROLE,
                 VmSettingValueType.ENUM, List.of("MEMBER", "EDITOR", "OWNER"),
-                mapper.valueToTree("MEMBER"), GroupMemberRole.OWNER, "비밀번호 열람 최소 역할",
-                "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 그룹 역할입니다.",
+                mapper.valueToTree("MEMBER"), ResourceRole.OWNER, "비밀번호 열람 최소 역할",
+                "VM 비밀번호(= sudo 자격)를 열람할 수 있는 최소 등급입니다(이 VM의 접근 권한 기준).",
                 AuditService.VM_SETTING_UPDATE));
         map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
-                GroupMemberRole.OWNER, "삭제 보호",
+                ResourceRole.OWNER, "삭제 보호",
                 "켜면 본인·관리자 일반·강제 삭제 접수가 모두 거부됩니다(논리적 잠금 — 파기 "
                         + "시점에도 재확인). 이와 별개로 모든 VM은 Proxmox 네이티브 protection "
                         + "플래그로 하이퍼바이저 수준에서 상시 보호되며, 실제 파기 직전에만 "
@@ -415,13 +410,13 @@ public class VmSettingsService {
                 AuditService.VM_SETTING_UPDATE));
         map.put(STOP_PROTECTION, new VmSettingDef(STOP_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
-                GroupMemberRole.OWNER, "중지 보호",
+                ResourceRole.OWNER, "중지 보호",
                 "켜면 종료·재부팅·강제 종료를 EDITOR 이상만 수행할 수 있습니다(시작은 제한 없음). "
                         + "한계: sudo 가능한 구성원은 게스트 내부에서 여전히 종료할 수 있습니다.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(DISPLAY_NAME, new VmSettingDef(DISPLAY_NAME,
                 VmSettingValueType.STRING, null, mapper.nullNode(),
-                GroupMemberRole.EDITOR, "표시명",
+                ResourceRole.EDITOR, "표시명",
                 "콘솔 목록·상세에 이름 대신 표시할 별칭입니다(최대 " + DISPLAY_NAME_MAX_LENGTH
                         + "자, 빈 문자열로 해제). 호스트네임·슬러그·Proxmox 이름은 바뀌지 않습니다.",
                 AuditService.VM_SETTING_UPDATE, DISPLAY_NAME_MAX_LENGTH));

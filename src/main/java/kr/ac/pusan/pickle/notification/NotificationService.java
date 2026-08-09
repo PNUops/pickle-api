@@ -1,8 +1,15 @@
 package kr.ac.pusan.pickle.notification;
 
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import kr.ac.pusan.pickle.access.AccessGranteeType;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.group.GroupMember;
@@ -13,6 +20,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.vm.Vm;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -47,16 +55,19 @@ public class NotificationService {
     private final NotificationComposer composer;
     private final NotificationRepository notificationRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
 
     public NotificationService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
             NotificationComposer composer, NotificationRepository notificationRepository,
-            GroupMemberRepository groupMemberRepository, UserRepository userRepository) {
+            GroupMemberRepository groupMemberRepository,
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.composer = composer;
         this.notificationRepository = notificationRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.grantRepository = grantRepository;
         this.userRepository = userRepository;
     }
 
@@ -91,14 +102,58 @@ public class NotificationService {
 
     // ── recipient resolution helpers (ACTIVE users only) ───────────────────
 
-    /** ACTIVE group members holding OWNER (optionally EDITOR too). */
-    public List<Long> groupRoleHolderIds(long groupId, boolean includeEditors) {
+    /** ACTIVE owners of the group. */
+    public List<Long> groupOwnerIds(long groupId) {
         List<Long> memberIds = groupMemberRepository.findByGroupIdOrderByIdAsc(groupId).stream()
-                .filter(m -> m.getRole() == GroupMemberRole.OWNER
-                        || (includeEditors && m.getRole() == GroupMemberRole.EDITOR))
+                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
                 .map(GroupMember::getUserId)
                 .toList();
-        return userRepository.findAllById(memberIds).stream()
+        return activeAmong(memberIds);
+    }
+
+    /**
+     * Who hears about one VM's operational life — expiry, provisioning
+     * outcomes, a domain or route that failed: the people its access list makes
+     * responsible for it, plus the owners of the group that owns it.
+     *
+     * <p>This used to be the group's owners and editors. That rung no longer
+     * says anything about a particular VM, so the question moved to the VM's
+     * own list; right after the changeover both answers name the same people.
+     */
+    public List<Long> vmResponsibleIds(Vm vm) {
+        return vmRecipients(vm, List.of(ResourceRole.OWNER, ResourceRole.EDITOR));
+    }
+
+    /** Narrower audience: only those the list makes an owner of the VM. */
+    public List<Long> vmOwnerIds(Vm vm) {
+        return vmRecipients(vm, List.of(ResourceRole.OWNER));
+    }
+
+    /**
+     * Everyone the VM concerns — every grantee at any rung plus the group's
+     * owners. For news that matters to whoever was using it, above all its
+     * deletion.
+     */
+    public List<Long> vmAudienceIds(Vm vm) {
+        return vmRecipients(vm, List.of(ResourceRole.values()));
+    }
+
+    private List<Long> vmRecipients(Vm vm, Collection<ResourceRole> roles) {
+        Set<Long> ids = grantRepository
+                .findByResourceTypeAndResourceIdAndGranteeTypeAndRoleIn(ResourceType.VM,
+                        vm.getId(), AccessGranteeType.USER, roles)
+                .stream()
+                .map(ResourceAccessGrant::getUserId)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        ids.addAll(groupMemberRepository.findByGroupIdOrderByIdAsc(vm.getGroupId()).stream()
+                .filter(m -> m.getRole() == GroupMemberRole.OWNER)
+                .map(GroupMember::getUserId)
+                .toList());
+        return activeAmong(List.copyOf(ids));
+    }
+
+    private List<Long> activeAmong(List<Long> userIds) {
+        return userRepository.findAllById(userIds).stream()
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .map(User::getId)
                 .toList();

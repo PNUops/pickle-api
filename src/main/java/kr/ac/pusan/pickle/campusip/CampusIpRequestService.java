@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.campusip.dto.AdminCampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
@@ -17,9 +19,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -64,19 +63,19 @@ public class CampusIpRequestService {
 
     private final CampusIpRequestRepository requestRepository;
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
     public CampusIpRequestService(CampusIpRequestRepository requestRepository,
-            VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+            VmRepository vmRepository, VmAccessService vmAccessService,
             UserRepository userRepository, NotificationService notificationService,
             AuditService auditService, ObjectMapper objectMapper) {
         this.requestRepository = requestRepository;
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
@@ -294,25 +293,13 @@ public class CampusIpRequestService {
 
     /** Membership check (VIEWER+): non-members get the 404 existence mask. */
     private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(CampusIpRequestService::vmNotFound);
-        if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
-            throw vmNotFound();
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireVisible();
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(CampusIpRequestService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(CampusIpRequestService::vmNotFound);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "교내 IP를 신청할 권한이 없습니다",
-                    "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 교내 IP를 신청할 수 있습니다.");
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
+                "교내 IP를 신청할 권한이 없습니다",
+                "이 VM의 소유자 또는 편집자만 교내 IP를 신청할 수 있습니다.");
     }
 
     private static ApiException liveRequestExists() {
@@ -329,10 +316,5 @@ public class CampusIpRequestService {
     private static ApiException requestNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", "해당 교내 IP 신청이 존재하지 않습니다.");
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 }

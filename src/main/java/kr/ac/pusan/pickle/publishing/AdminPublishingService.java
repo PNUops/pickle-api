@@ -201,7 +201,7 @@ public class AdminPublishingService {
                         "관리자 해제 — " + domain.getFqdn()));
             }
             notificationService.publish(
-                    notificationService.groupRoleHolderIds(vm.getGroupId(), true),
+                    notificationService.vmResponsibleIds(vm),
                     NotificationEvent.DOMAIN_ADMIN_RELEASED,
                     Map.of("vmId", vm.getId(), "vmName", vm.getName(),
                             "fqdn", domain.getFqdn()),

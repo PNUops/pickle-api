@@ -499,7 +499,7 @@ class ApprovalTest {
         String ctxUserToken = jwtService.createAccessToken(ctxUser);
 
         long groupId = createTeam(ctxUserToken, "appr-ctx-x1");
-        addMember(ctxUserToken, groupId, "appr.other.admin@pusan.ac.kr", "VIEWER");
+        addMember(ctxUserToken, groupId, "appr.other.admin@pusan.ac.kr", "MEMBER");
 
         // history material: one rejected, one approved (creates an active VM)
         long rejected = submit(ctxUserToken, groupId, ctxOrg.getId());

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.terminal;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -31,9 +32,14 @@ import org.springframework.test.web.servlet.ResultActions;
 
 /**
  * Web-terminal ticket mint gate chain (contract {@code createTerminalSession}):
- * kill switch (503) → visible VM + MEMBER+ (404 mask for
- * non-member/VIEWER) → RUNNING (409) → per-VM admin block (403) → dual-key rate
- * limit (429) → concurrent cap (409), then a 201 with a no-store one-time ticket.
+ * kill switch (503) → visible VM + MEMBER+ on the VM's access list (404 mask
+ * for an outsider, 403 for a grantee below MEMBER) → RUNNING (409) → per-VM
+ * admin block (403) → dual-key rate limit (429) → concurrent cap (409), then a
+ * 201 with a no-store one-time ticket.
+ *
+ * <p>Opening a terminal is one of the things standing in the owning group never
+ * buys, so both fixture users hold a real grant on each VM: one at MEMBER, one
+ * at VIEWER.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -93,8 +99,10 @@ class TerminalMintTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         groupId = createGroup();
+        // Both belong to the owning group; what separates them is the rung each
+        // one is given on the VM itself (see createVm).
         addMember(groupId, member.getId(), "MEMBER");
-        addMember(groupId, viewer.getId(), "VIEWER");
+        addMember(groupId, viewer.getId(), "MEMBER");
     }
 
     @Test
@@ -124,7 +132,8 @@ class TerminalMintTest {
         long vmId = createVm(VmStatus.RUNNING, false);
         // non-member: existence masked as 404.
         mint(outsiderToken, vmId).andExpect(status().isNotFound());
-        // VIEWER already sees the VM (getVm), so it gets an honest role 403.
+        // a VIEWER grantee already sees the VM (getVm), so it gets an honest
+        // role 403.
         mint(viewerToken, vmId)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
@@ -199,6 +208,10 @@ class TerminalMintTest {
                 """, groupId, userId, role);
     }
 
+    /**
+     * A VM inserted this way never passes approval, so it starts with an empty
+     * access list; the two fixture rungs are written on it here.
+     */
     private long createVm(VmStatus status, boolean blocked) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
@@ -207,7 +220,7 @@ class TerminalMintTest {
                 returning id
                 """, Long.class, groupId, orgId, member.getId(), imageId);
         String hostname = "term-" + UUID.randomUUID().toString().substring(0, 12);
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  ssh_gateway_blocked)
@@ -215,6 +228,9 @@ class TerminalMintTest {
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet(), status.name(), blocked);
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        return vmId;
     }
 
     private User ensureUser(String email, String name) {

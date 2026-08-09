@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.user;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.RefreshTokenRepository;
@@ -37,6 +38,7 @@ public class AccountService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final GroupMemberRepository groupMemberRepository;
+    private final ResourceAccessGrantRepository grantRepository;
     private final VmRepository vmRepository;
     private final UserSshKeyRepository userSshKeyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
@@ -47,7 +49,8 @@ public class AccountService {
     private final MfaService mfaService;
 
     public AccountService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-            GroupMemberRepository groupMemberRepository, VmRepository vmRepository,
+            GroupMemberRepository groupMemberRepository,
+            ResourceAccessGrantRepository grantRepository, VmRepository vmRepository,
             UserSshKeyRepository userSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             RateLimitService rateLimitService, AuditService auditService,
@@ -55,6 +58,7 @@ public class AccountService {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.groupMemberRepository = groupMemberRepository;
+        this.grantRepository = grantRepository;
         this.vmRepository = vmRepository;
         this.userSshKeyRepository = userSshKeyRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -110,6 +114,9 @@ public class AccountService {
         userSshKeyRepository.deleteByUserId(user.getId());
         personalGroup(liveMemberships).ifPresent(group -> group.softDelete(user.getId(), now));
         groupMemberRepository.deleteByUserId(user.getId());
+        // Grants only ever name a member of the owning group, so they go
+        // with the memberships rather than outliving the account.
+        grantRepository.deleteByUserId(user.getId());
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), fromStatus,
                 UserStatus.WITHDRAWN, user.getId(), null));
 

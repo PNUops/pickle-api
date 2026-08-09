@@ -721,7 +721,7 @@ public class ProvisionVmJob implements ProvisioningService {
     /** Creation notice to the owning group's OWNERs; failure never fails the VM. */
     private void publishCreated(Vm vm, String ip) {
         try {
-            List<Long> recipients = notificationService.groupRoleHolderIds(vm.getGroupId(), false);
+            List<Long> recipients = notificationService.vmOwnerIds(vm);
             if (recipients.isEmpty()) {
                 log.warn("provision vm {}: no group OWNER to notify", vm.getId());
                 return;
@@ -756,7 +756,7 @@ public class ProvisionVmJob implements ProvisioningService {
             args.put("vmId", vmId);
             args.put("hostname", vm.getHostname());
             args.put("reason", reason);
-            notificationService.publish(notificationService.groupRoleHolderIds(vm.getGroupId(), false),
+            notificationService.publish(notificationService.vmOwnerIds(vm),
                     NotificationEvent.VM_CREATE_FAILED, args, "vm_create_failed:" + vmId);
             Map<String, Object> adminArgs = new LinkedHashMap<>(args);
             adminArgs.put("admin", true);

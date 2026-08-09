@@ -3,14 +3,14 @@ package kr.ac.pusan.pickle.vm;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
@@ -45,7 +45,7 @@ public class VmPasswordService {
             VmStatus.DELETING, VmStatus.DELETED, VmStatus.ERROR, VmStatus.NEEDS_ADMIN);
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final VmSettingsService vmSettingsService;
     private final CredentialCipher credentialCipher;
     private final VmPasswordGenerator passwordGenerator;
@@ -57,14 +57,14 @@ public class VmPasswordService {
     private final Integer sshPort;
 
     public VmPasswordService(VmRepository vmRepository,
-            GroupMemberRepository groupMemberRepository, VmSettingsService vmSettingsService,
+            VmAccessService vmAccessService, VmSettingsService vmSettingsService,
             CredentialCipher credentialCipher, VmPasswordGenerator passwordGenerator,
             PasswordEncoder passwordEncoder, NodeRepository nodeRepository, ProxmoxClient proxmox,
             AuditService auditService,
             @Value("${pickle.ssh.advertised-host:}") String sshHost,
             @Value("${pickle.ssh.advertised-port:0}") int sshPort) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.vmSettingsService = vmSettingsService;
         this.credentialCipher = credentialCipher;
         this.passwordGenerator = passwordGenerator;
@@ -81,12 +81,12 @@ public class VmPasswordService {
     public VmPasswordResponse reveal(AuthenticatedUser actor, long vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
-        GroupMemberRole minRole =
+        ResourceRole minRole =
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
         if (!memberVm.role().atLeast(minRole)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "비밀번호를 열람할 권한이 없습니다",
-                    "이 VM은 그룹의 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
+                    "이 VM은 접근 권한 " + minRole + " 이상만 비밀번호를 열람할 수 있습니다.");
         }
         if (FORBIDDEN_REVEAL_STATUSES.contains(vm.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
@@ -117,10 +117,10 @@ public class VmPasswordService {
     public VmPasswordResponse regenerate(AuthenticatedUser actor, long vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
-        if (!memberVm.role().atLeast(GroupMemberRole.EDITOR)) {
+        if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
                     "비밀번호를 재생성할 권한이 없습니다",
-                    "그룹의 EDITOR 이상만 비밀번호를 재생성할 수 있습니다.");
+                    "이 VM의 편집자 이상만 비밀번호를 재생성할 수 있습니다.");
         }
         if (vm.getStatus() != VmStatus.RUNNING || vm.getProxmoxVmid() == null) {
             throw agentUnavailable();
@@ -142,27 +142,18 @@ public class VmPasswordService {
         return new VmPasswordResponse(password, vm.getSshUsername(), sshHost, sshPort);
     }
 
-    private record MemberVm(Vm vm, GroupMemberRole role) {
+    private record MemberVm(Vm vm, ResourceRole role) {
     }
 
     /** Non-member answers 404 (masking); returns the VM and the actor's role. */
     private MemberVm requireMemberVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmPasswordService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmPasswordService::vmNotFound);
-        return new MemberVm(vm, role);
+        VmAccess access = vmAccessService.of(actor, vmId);
+        return new MemberVm(access.requireVisible(), access.role());
     }
 
     private static ApiException agentUnavailable() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 수행할 수 없는 작업입니다",
                 "VM이 실행 중이고 게스트 에이전트가 응답할 때만 비밀번호를 재생성할 수 있습니다.");
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 }

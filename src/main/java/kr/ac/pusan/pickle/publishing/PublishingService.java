@@ -4,10 +4,18 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.AccessGranteeType;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -18,7 +26,6 @@ import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.group.GroupMember;
 import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
@@ -71,6 +78,8 @@ public class PublishingService {
 
     private final VmRepository vmRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
+    private final ResourceAccessGrantRepository grantRepository;
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
@@ -87,6 +96,8 @@ public class PublishingService {
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+            VmAccessService vmAccessService,
+            ResourceAccessGrantRepository grantRepository,
             DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             PublicationAssembler assembler, SubdomainPolicy subdomainPolicy,
@@ -96,6 +107,8 @@ public class PublishingService {
             RateLimitService rateLimitService) {
         this.vmRepository = vmRepository;
         this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
+        this.grantRepository = grantRepository;
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -201,7 +214,7 @@ public class PublishingService {
     public PageResponse<DomainSummaryView> listDomains(AuthenticatedUser actor, Long vmId,
             DomainStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        Page<Domain> result = domainRepository.findForMember(myGroupIds(actor), vmId,
+        Page<Domain> result = domainRepository.findForReachableVms(reachableVmIds(actor), vmId,
                 status != null ? status.name() : null, pageable);
         return PageResponse.of(result.getContent().stream().map(assembler::toDomainSummary).toList(),
                 result);
@@ -390,7 +403,7 @@ public class PublishingService {
      * network-free) transaction; unrelated VMs never contend.</p>
      */
     private void requirePlatformSlotFree(long vmId) {
-        vmRepository.findByIdForUpdate(vmId).orElseThrow(PublishingService::vmNotFound);
+        vmRepository.findByIdForUpdate(vmId).orElseThrow(VmAccessService::vmNotFound);
         int limit = settingsService.integer(SettingsService.PLATFORM_SUBDOMAINS_PER_VM,
                 SubdomainPolicy.DEFAULT_SUBDOMAINS_PER_VM);
         long serving = domainRepository.countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(
@@ -568,24 +581,13 @@ public class PublishingService {
     // ── authorization helpers ────────────────────────────────────────────────
 
     private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(PublishingService::vmNotFound);
-        if (groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id()).isEmpty()) {
-            throw vmNotFound();
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireVisible();
     }
 
     private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(PublishingService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository.findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(PublishingService::vmNotFound);
-        if (role != GroupMemberRole.OWNER && role != GroupMemberRole.EDITOR) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "HTTP 서비스를 공개할 권한이 없습니다",
-                    "그룹 소유자(OWNER) 또는 편집자(EDITOR)만 도메인·포트를 설정할 수 있습니다.");
-        }
-        return vm;
+        return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
+                "HTTP 서비스를 공개할 권한이 없습니다",
+                "이 VM의 소유자 또는 편집자만 도메인·포트를 설정할 수 있습니다.");
     }
 
     private void requirePublishableState(Vm vm) {
@@ -596,11 +598,41 @@ public class PublishingService {
         }
     }
 
-    private List<Long> myGroupIds(AuthenticatedUser actor) {
-        List<Long> ids = groupMemberRepository.findWithGroupByUserId(actor.id()).stream()
+    /**
+     * The VMs whose domains this requester may see: the ones the access lists
+     * name them on. Owning the group is not enough — a domain names its VM, and
+     * that is inside. Empty means empty, so a sentinel keeps the {@code in}
+     * clause valid.
+     */
+    private List<Long> reachableVmIds(AuthenticatedUser actor) {
+        List<GroupMember> memberships = groupMemberRepository.findWithGroupByUserId(actor.id());
+        Set<Long> vmIds = new LinkedHashSet<>();
+        Set<Long> memberGroupIds = memberships.stream()
                 .map(m -> m.getGroup().getId())
-                .toList();
-        return ids.isEmpty() ? List.of(-1L) : ids;
+                .collect(java.util.stream.Collectors.toSet());
+        // Only grants on VMs of a group this person still belongs to, the same
+        // re-check the access resolver makes: a grant that outlived its
+        // membership must not keep answering here either.
+        List<Long> memberVmIds = memberGroupIds.isEmpty() ? List.of()
+                : vmRepository.findIdsByGroupIdIn(List.copyOf(memberGroupIds));
+        Set<Long> reachableByMembership = Set.copyOf(memberVmIds);
+        for (ResourceAccessGrant grant : grantRepository.findByResourceTypeAndUserId(
+                ResourceType.VM, actor.id())) {
+            if (reachableByMembership.contains(grant.getResourceId())) {
+                vmIds.add(grant.getResourceId());
+            }
+        }
+        // Group-wide grants name nobody, so they are matched through the VMs of
+        // the groups this person belongs to.
+        if (!memberVmIds.isEmpty()) {
+            Set<Long> groupWide = grantRepository
+                    .findByResourceTypeAndResourceIdIn(ResourceType.VM, memberVmIds).stream()
+                    .filter(grant -> grant.getGranteeType() == AccessGranteeType.GROUP)
+                    .map(ResourceAccessGrant::getResourceId)
+                    .collect(java.util.stream.Collectors.toSet());
+            vmIds.addAll(groupWide);
+        }
+        return vmIds.isEmpty() ? List.of(-1L) : List.copyOf(vmIds);
     }
 
     private void enqueueAfterCommit(JobLambda job) {
@@ -614,11 +646,6 @@ public class PublishingService {
                 action.run();
             }
         });
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
     private static ApiException domainNotServing() {

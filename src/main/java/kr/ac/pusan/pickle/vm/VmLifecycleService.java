@@ -5,14 +5,14 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.VmAccess;
+import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.ClockConfig;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
 import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
@@ -61,7 +61,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class VmLifecycleService {
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final VmAccessService vmAccessService;
     private final VmSettingsService vmSettingsService;
     private final AdminVmAccess adminVmAccess;
     private final AuditService auditService;
@@ -69,12 +69,12 @@ public class VmLifecycleService {
     private final VmPowerJobs vmPowerJobs;
     private final Clock clock;
 
-    public VmLifecycleService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository,
+    public VmLifecycleService(VmRepository vmRepository, VmAccessService vmAccessService,
             VmSettingsService vmSettingsService, AdminVmAccess adminVmAccess,
             AuditService auditService, JobScheduler jobScheduler, VmPowerJobs vmPowerJobs,
             Clock clock) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.vmAccessService = vmAccessService;
         this.vmSettingsService = vmSettingsService;
         this.adminVmAccess = adminVmAccess;
         this.auditService = auditService;
@@ -228,7 +228,7 @@ public class VmLifecycleService {
     }
 
     /** A power-controllable VM plus the requester's role in its group. */
-    private record Controllable(Vm vm, GroupMemberRole role) {
+    private record Controllable(Vm vm, ResourceRole role) {
     }
 
     /**
@@ -237,16 +237,10 @@ public class VmLifecycleService {
      * stop-protected ops can additionally require EDITOR.
      */
     private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmLifecycleService::vmNotFound);
-        GroupMemberRole role = groupMemberRepository
-                .findByGroupIdAndUserId(vm.getGroupId(), actor.id())
-                .map(GroupMember::getRole)
-                .orElseThrow(VmLifecycleService::vmNotFound);
-        if (role == GroupMemberRole.VIEWER) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
-                    "VM을 제어할 권한이 없습니다", "그룹의 MEMBER 이상만 VM 전원을 제어할 수 있습니다.");
-        }
-        return new Controllable(vm, role);
+        VmAccess access = vmAccessService.of(actor, vmId);
+        Vm vm = access.requireAtLeast(ResourceRole.MEMBER,
+                "VM을 제어할 권한이 없습니다", "이 VM의 참여자 이상만 VM 전원을 제어할 수 있습니다.");
+        return new Controllable(vm, access.role());
     }
 
     /**
@@ -256,14 +250,14 @@ public class VmLifecycleService {
      * member-facing power ops call this — the admin intervention path
      * (contract v0.17.0) deliberately bypasses it, per the class javadoc.
      */
-    private void requireStopAllowed(long vmId, GroupMemberRole role) {
-        if (role.atLeast(GroupMemberRole.EDITOR)) {
+    private void requireStopAllowed(long vmId, ResourceRole role) {
+        if (role.atLeast(ResourceRole.EDITOR)) {
             return;
         }
         if (vmSettingsService.bool(vmId, VmSettingsService.STOP_PROTECTION)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_STOP_PROTECTED,
                     "중지 보호가 설정된 VM입니다",
-                    "중지 보호가 켜져 있어 그룹의 EDITOR 이상만 종료·재부팅·강제 종료할 수 있습니다.");
+                    "중지 보호가 켜져 있어 이 VM의 편집자 이상만 종료·재부팅·강제 종료할 수 있습니다.");
         }
     }
 
@@ -274,7 +268,7 @@ public class VmLifecycleService {
      * consistency with the existing power 409s.
      */
     private ApiException powerConflict(long vmId, String invalidStateDetail) {
-        Vm current = vmRepository.findById(vmId).orElseThrow(VmLifecycleService::vmNotFound);
+        Vm current = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (current.getPendingPowerAction() != null) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                     "현재 상태에서는 수행할 수 없는 작업입니다",
@@ -287,11 +281,6 @@ public class VmLifecycleService {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
                 "현재 상태에서는 수행할 수 없는 작업입니다",
                 baseDetail + " (현재 상태 " + vm.getStatus() + ")");
-    }
-
-    private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
     }
 
     /**

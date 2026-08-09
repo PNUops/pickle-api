@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.vm;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -49,10 +50,14 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Power control per contract v0.3.1: the per-op 409 state matrix,
- * group-role authorization (non-member 404 masking / VIEWER 403), the
+ * access-list authorization (non-member 404 masking / VIEWER grant 403), the
  * accept-time REBOOTING intent transition + after-commit enqueue, and the
  * {@link VmPowerJobs} worker against WireMock-served real pve1 captures
  * (start happy path; ACPI-timeout shutdown failure without force fallback).
+ *
+ * <p>The three fixture members all belong to the owning group; what separates
+ * them is the rung each is granted on every VM this class creates, since power
+ * control reads the VM's access list and never the group ladder.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -143,7 +148,7 @@ class VmPowerControlTest {
         nodeId = ensureWireMockNode();
         groupId = createTeam("vmpow-" + UUID.randomUUID().toString().substring(0, 8));
         addMember(groupId, member.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "VIEWER");
+        addMember(groupId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -173,10 +178,10 @@ class VmPowerControlTest {
     }
 
     @Test
-    void powerOpsAuthorizeByGroupRole() throws Exception {
+    void powerOpsAuthorizeByTheAccessList() throws Exception {
         long vmId = createVm(VmStatus.STOPPED);
 
-        // non-member → 404 (existence masked), VIEWER → 403, MEMBER → 202
+        // non-member → 404 (existence masked), VIEWER grant → 403, MEMBER → 202
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound())
@@ -200,8 +205,8 @@ class VmPowerControlTest {
     @Test
     void startIsUnaffectedByStopProtection() throws Exception {
         long vmId = createVm(VmStatus.STOPPED);
-        // stop protection ON: shutdown/reboot/force-stop require group EDITOR+,
-        // but START is deliberately never gated by it.
+        // stop protection ON: shutdown/reboot/force-stop require an EDITOR+
+        // grant, but START is deliberately never gated by it.
         jdbcTemplate.update("insert into vm_settings (vm_id, key, value) values (?, ?, 'true'::jsonb)",
                 vmId, "stop_protection");
 
@@ -407,13 +412,19 @@ class VmPowerControlTest {
                 """, Long.class, groupId, orgId, owner.getId(), imageId);
         String hostname = "vmpow-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
-        return jdbcTemplate.queryForObject("""
+        long vmId = jdbcTemplate.queryForObject("""
                 insert into vms (node_id, group_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
                 """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status.name());
+        // A VM inserted here never went through approval, so its access list
+        // starts empty: spell out the three standings the tests below compare.
+        grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
+        grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
+        return vmId;
     }
 
     private long createTeam(String slug) throws Exception {
