@@ -6,10 +6,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import kr.ac.pusan.pickle.access.dto.AddVmAccessGrantRequest;
-import kr.ac.pusan.pickle.access.dto.UpdateVmAccessGrantRequest;
-import kr.ac.pusan.pickle.access.dto.VmAccessGrantView;
-import kr.ac.pusan.pickle.access.dto.VmAccessListResponse;
+import kr.ac.pusan.pickle.access.dto.AddResourceAccessGrantRequest;
+import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
+import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
+import kr.ac.pusan.pickle.access.dto.ResourceAccessListResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
@@ -39,7 +39,7 @@ public class VmAccessGrantController {
     @GetMapping
     @Operation(summary = "접근 권한 목록",
             description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
-    public VmAccessListResponse listVmAccessGrants(
+    public ResourceAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
         return service.list(principal, vmId);
@@ -52,10 +52,10 @@ public class VmAccessGrantController {
             description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 VM의 접근 권한을 부여합니다. "
                     + "사용자는 이 VM을 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
                     + "참여자·열람자까지만 부여할 수 있습니다.")
-    public VmAccessGrantView addVmAccessGrant(
+    public ResourceAccessGrantView addVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
-            @Valid @RequestBody AddVmAccessGrantRequest request,
+            @Valid @RequestBody AddResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
         return service.add(principal, vmId, request, clientIp(httpRequest));
     }
@@ -63,11 +63,11 @@ public class VmAccessGrantController {
     @PatchMapping("/{grantId}")
     @RequireReauth
     @Operation(summary = "접근 권한 등급 변경")
-    public VmAccessGrantView updateVmAccessGrant(
+    public ResourceAccessGrantView updateVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId,
             @PathVariable long grantId,
-            @Valid @RequestBody UpdateVmAccessGrantRequest request,
+            @Valid @RequestBody UpdateResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
         return service.update(principal, vmId, grantId, request, clientIp(httpRequest));
     }

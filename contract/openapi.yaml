@@ -43,7 +43,7 @@ components:
       - "createdAt"
       - "id"
       type: "object"
-    AddVmAccessGrantRequest:
+    AddResourceAccessGrantRequest:
       properties:
         granteeType:
           $ref: "#/components/schemas/AccessGranteeType"
@@ -3031,6 +3031,78 @@ components:
       - "allocatedVcpu"
       - "guidance"
       type: "object"
+    ResourceAccessGrantView:
+      description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 워크스페이스 전체입니다."
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        granteeType:
+          $ref: "#/components/schemas/AccessGranteeType"
+          description: "대상 종류 — USER는 지정된 사용자, WORKSPACE은 소유 워크스페이스 전체"
+        id:
+          format: "int64"
+          type: "integer"
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "이 대상이 이 VM에서 갖는 등급"
+        user:
+          anyOf:
+          - $ref: "#/components/schemas/Grantee"
+          - type: "null"
+          description: "대상 사용자. 워크스페이스 전체 항목이면 null입니다."
+      required:
+      - "createdAt"
+      - "granteeType"
+      - "id"
+      - "role"
+      type: "object"
+    ResourceAccessListResponse:
+      description: "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보"
+      properties:
+        grants:
+          description: "접근 권한 항목"
+          items:
+            $ref: "#/components/schemas/ResourceAccessGrantView"
+          type: "array"
+        resource:
+          $ref: "#/components/schemas/ResourceBrief"
+          description: "이 목록이 속한 리소스"
+      required:
+      - "grants"
+      - "resource"
+      type: "object"
+    ResourceBrief:
+      description: "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보"
+      properties:
+        displayName:
+          description: "표시명. 지정되지 않았으면 null입니다."
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        status:
+          description: "리소스 종류의 상태값. 종류마다 어휘가 다릅니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "id"
+      - "name"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     ResourceRole:
       enum:
       - "OWNER"
@@ -3623,6 +3695,14 @@ components:
           - "integer"
           - "null"
       type: "object"
+    UpdateResourceAccessGrantRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "새 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
+      required:
+      - "role"
+      type: "object"
     UpdateUserAdminRequest:
       properties:
         orgId:
@@ -3632,14 +3712,6 @@ components:
           - "null"
         role:
           $ref: "#/components/schemas/UserRole"
-      type: "object"
-    UpdateVmAccessGrantRequest:
-      properties:
-        role:
-          $ref: "#/components/schemas/ResourceRole"
-          description: "새 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
-      required:
-      - "role"
       type: "object"
     UpdateVmFlavorRequest:
       properties:
@@ -3895,74 +3967,6 @@ components:
           type: "string"
       required:
       - "token"
-      type: "object"
-    Vm:
-      description: "접근 권한이 없는 사람에게도 보이는 범위의 VM 정보"
-      properties:
-        displayName:
-          description: "표시명. 지정되지 않았으면 null입니다."
-          type:
-          - "string"
-          - "null"
-        id:
-          format: "int64"
-          type: "integer"
-        name:
-          type: "string"
-        status:
-          $ref: "#/components/schemas/VmStatus"
-        workspaceId:
-          format: "int64"
-          type: "integer"
-        workspaceName:
-          type: "string"
-      required:
-      - "id"
-      - "name"
-      - "status"
-      - "workspaceId"
-      - "workspaceName"
-      type: "object"
-    VmAccessGrantView:
-      description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 워크스페이스 전체입니다."
-      properties:
-        createdAt:
-          format: "date-time"
-          type: "string"
-        granteeType:
-          $ref: "#/components/schemas/AccessGranteeType"
-          description: "대상 종류 — USER는 지정된 사용자, WORKSPACE은 소유 워크스페이스 전체"
-        id:
-          format: "int64"
-          type: "integer"
-        role:
-          $ref: "#/components/schemas/ResourceRole"
-          description: "이 대상이 이 VM에서 갖는 등급"
-        user:
-          anyOf:
-          - $ref: "#/components/schemas/Grantee"
-          - type: "null"
-          description: "대상 사용자. 워크스페이스 전체 항목이면 null입니다."
-      required:
-      - "createdAt"
-      - "granteeType"
-      - "id"
-      - "role"
-      type: "object"
-    VmAccessListResponse:
-      description: "VM 접근 권한 목록과, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보"
-      properties:
-        grants:
-          description: "접근 권한 항목"
-          items:
-            $ref: "#/components/schemas/VmAccessGrantView"
-          type: "array"
-        vm:
-          $ref: "#/components/schemas/Vm"
-          description: "이 목록이 속한 VM"
-      required:
-      - "grants"
-      - "vm"
       type: "object"
     VmBriefResponse:
       properties:
@@ -8196,7 +8200,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessListResponse"
+                $ref: "#/components/schemas/ResourceAccessListResponse"
           description: "OK"
         default:
           content:
@@ -8229,14 +8233,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AddVmAccessGrantRequest"
+              $ref: "#/components/schemas/AddResourceAccessGrantRequest"
         required: true
       responses:
         "201":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessGrantView"
+                $ref: "#/components/schemas/ResourceAccessGrantView"
           description: "Created"
         "403":
           content:
@@ -8322,14 +8326,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateVmAccessGrantRequest"
+              $ref: "#/components/schemas/UpdateResourceAccessGrantRequest"
         required: true
       responses:
         "200":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessGrantView"
+                $ref: "#/components/schemas/ResourceAccessGrantView"
           description: "OK"
         "403":
           content:

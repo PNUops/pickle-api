@@ -158,8 +158,8 @@ class VmAccessGrantApiTest {
                 .andExpect(jsonPath("$.grants.length()").value(1))
                 // The list names its VM so that whoever may manage it without
                 // being able to open it still knows what they are deciding about.
-                .andExpect(jsonPath("$.vm.id").value((int) vmId))
-                .andExpect(jsonPath("$.vm.workspaceId").value((int) workspaceId))
+                .andExpect(jsonPath("$.resource.id").value((int) vmId))
+                .andExpect(jsonPath("$.resource.workspaceId").value((int) workspaceId))
                 .andExpect(jsonPath("$.grants[0].granteeType").value("USER"))
                 .andExpect(jsonPath("$.grants[0].user.userId").value(vmOwner.getId().intValue()))
                 .andExpect(jsonPath("$.grants[0].user.name").value("자원소유자"))

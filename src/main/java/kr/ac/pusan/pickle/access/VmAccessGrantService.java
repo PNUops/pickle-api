@@ -2,10 +2,10 @@ package kr.ac.pusan.pickle.access;
 
 import java.util.List;
 import java.util.Map;
-import kr.ac.pusan.pickle.access.dto.AddVmAccessGrantRequest;
-import kr.ac.pusan.pickle.access.dto.UpdateVmAccessGrantRequest;
-import kr.ac.pusan.pickle.access.dto.VmAccessGrantView;
-import kr.ac.pusan.pickle.access.dto.VmAccessListResponse;
+import kr.ac.pusan.pickle.access.dto.AddResourceAccessGrantRequest;
+import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
+import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
+import kr.ac.pusan.pickle.access.dto.ResourceAccessListResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -63,17 +63,17 @@ public class VmAccessGrantService {
     }
 
     @Transactional(readOnly = true)
-    public VmAccessListResponse list(AuthenticatedUser actor, long vmId) {
+    public ResourceAccessListResponse list(AuthenticatedUser actor, long vmId) {
         Vm vm = requireManager(actor, vmId).vm();
         String workspaceName = workspaceRepository.findById(vm.getWorkspaceId())
                 .map(Workspace::getName).orElse("");
-        return VmAccessListResponse.of(vm, workspaceName,
+        return ResourceAccessListResponse.of(vm, workspaceName,
                 vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME), views(vmId));
     }
 
     @Transactional
-    public VmAccessGrantView add(AuthenticatedUser actor, long vmId,
-            AddVmAccessGrantRequest request, String ip) {
+    public ResourceAccessGrantView add(AuthenticatedUser actor, long vmId,
+            AddResourceAccessGrantRequest request, String ip) {
         VmAccess before = requireManager(actor, vmId);
         Vm vm = before.vm();
         ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.WORKSPACE
@@ -94,8 +94,8 @@ public class VmAccessGrantService {
     }
 
     @Transactional
-    public VmAccessGrantView update(AuthenticatedUser actor, long vmId, long grantId,
-            UpdateVmAccessGrantRequest request, String ip) {
+    public ResourceAccessGrantView update(AuthenticatedUser actor, long vmId, long grantId,
+            UpdateResourceAccessGrantRequest request, String ip) {
         VmAccess before = requireManager(actor, vmId);
         ResourceAccessGrant grant = requireGrant(vmId, grantId);
         ResourceRole previous = grant.getRole();
@@ -210,7 +210,7 @@ public class VmAccessGrantService {
         return vmAccessService.of(before.vm(), actor.id()).atLeast(ResourceRole.MEMBER);
     }
 
-    private List<VmAccessGrantView> views(long vmId) {
+    private List<ResourceAccessGrantView> views(long vmId) {
         List<ResourceAccessGrant> grants = grantRepository
                 .findByResourceTypeAndResourceIdOrderByIdAsc(ResourceType.VM, vmId);
         Map<Long, User> users = userRepository.findAllById(grants.stream()
@@ -218,13 +218,13 @@ public class VmAccessGrantService {
                         .toList()).stream()
                 .collect(java.util.stream.Collectors.toMap(User::getId, user -> user));
         return grants.stream()
-                .map(grant -> VmAccessGrantView.of(grant,
+                .map(grant -> ResourceAccessGrantView.of(grant,
                         grant.getUserId() == null ? null : users.get(grant.getUserId())))
                 .toList();
     }
 
-    private VmAccessGrantView view(ResourceAccessGrant grant) {
-        return VmAccessGrantView.of(grant,
+    private ResourceAccessGrantView view(ResourceAccessGrant grant) {
+        return ResourceAccessGrantView.of(grant,
                 grant.getUserId() == null ? null : userRepository.findById(grant.getUserId())
                         .orElse(null));
     }

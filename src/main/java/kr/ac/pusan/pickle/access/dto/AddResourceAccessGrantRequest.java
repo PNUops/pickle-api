@@ -7,7 +7,7 @@ import kr.ac.pusan.pickle.access.ResourceRole;
 import org.jspecify.annotations.Nullable;
 
 /** Adds one entry to a VM's access list. */
-public record AddVmAccessGrantRequest(
+public record AddResourceAccessGrantRequest(
         @Schema(description = "USER는 지정된 사용자 한 명, WORKSPACE은 소유 워크스페이스 전체")
         @NotNull AccessGranteeType granteeType,
         @Schema(description = "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 워크스페이스의 구성원이어야 합니다.")
