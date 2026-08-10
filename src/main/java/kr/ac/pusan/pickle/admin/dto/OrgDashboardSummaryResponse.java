@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
@@ -25,6 +26,8 @@ public record OrgDashboardSummaryResponse(
             long allocatedDiskGb,
             @Nullable Long capacityVcpu,
             @Nullable Long capacityMemoryMb,
+            @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null")
+            @Nullable Long capacityDiskGb,
             String guidance) {
     }
 

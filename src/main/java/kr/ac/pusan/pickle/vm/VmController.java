@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.vm;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -9,11 +10,13 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.proxmox.RrdTimeframe;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
+import kr.ac.pusan.pickle.vm.dto.VmMetricsResponse;
 import kr.ac.pusan.pickle.vm.dto.VmPasswordResponse;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
@@ -34,7 +37,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code vms} (openapi.yaml v0.3.2, server /api/v1). */
+/** Contract tag {@code vms} (openapi.yaml v0.35.0, server /api/v1). */
 @RestController
 @RequestMapping("/api/v1/vms")
 public class VmController {
@@ -44,15 +47,17 @@ public class VmController {
     private final VmDeletionService vmDeletionService;
     private final VmPasswordService vmPasswordService;
     private final VmSettingsService vmSettingsService;
+    private final VmMetricsService vmMetricsService;
 
     public VmController(VmQueryService vmQueryService, VmLifecycleService vmLifecycleService,
             VmDeletionService vmDeletionService, VmPasswordService vmPasswordService,
-            VmSettingsService vmSettingsService) {
+            VmSettingsService vmSettingsService, VmMetricsService vmMetricsService) {
         this.vmQueryService = vmQueryService;
         this.vmLifecycleService = vmLifecycleService;
         this.vmDeletionService = vmDeletionService;
         this.vmPasswordService = vmPasswordService;
         this.vmSettingsService = vmSettingsService;
+        this.vmMetricsService = vmMetricsService;
     }
 
     @GetMapping
@@ -114,6 +119,16 @@ public class VmController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return vmQueryService.events(principal, vmId, page, size);
+    }
+
+    /** Live usage series from the hypervisor (contract v0.35.0); nothing is stored here. */
+    @GetMapping("/{vmId}/metrics")
+    public VmMetricsResponse getVmMetrics(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable long vmId,
+            @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
+                    + "(해상도는 구간에 따라 거칠어짐)")
+            @RequestParam(defaultValue = "HOUR") RrdTimeframe timeframe) {
+        return vmMetricsService.metrics(principal, vmId, timeframe);
     }
 
     /** Re-viewable reveal (GET since v0.7.0 — no side effect); never cached. */

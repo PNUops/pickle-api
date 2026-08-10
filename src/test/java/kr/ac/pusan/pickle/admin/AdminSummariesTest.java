@@ -202,7 +202,10 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.sshPasswordEnabledVmCount").isNumber())
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].allocatedCount")
                         .exists())
-                .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].freeCount").exists());
+                .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].freeCount").exists())
+                // One live tile per node, whatever the hypervisor answers.
+                .andExpect(jsonPath("$.nodesLive").isArray())
+                .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].reachable").exists());
     }
 
     /** One RUNNING VM in workspaceBig so the platform-wide summary has this org's data. */

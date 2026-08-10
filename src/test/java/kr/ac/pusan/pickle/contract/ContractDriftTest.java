@@ -229,7 +229,11 @@ class ContractDriftTest {
             "POST /vms/{vmId}/campus-ip-requests",
             "DELETE /vms/{vmId}/campus-ip-requests/{requestId}",
             "GET /admin/campus-ip-requests",
-            "POST /admin/campus-ip-requests/{requestId}/status");
+            "POST /admin/campus-ip-requests/{requestId}/status",
+            // Usage monitoring, read live from the hypervisor (contract v0.35.0).
+            "GET /vms/{vmId}/metrics",
+            "GET /admin/nodes/{nodeId}/metrics",
+            "GET /admin/capacity-trend");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

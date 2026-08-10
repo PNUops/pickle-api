@@ -74,6 +74,7 @@ public class AdminNodeQueryService {
                 : round2((double) allocation.memoryMb() / node.getMemoryMb());
         return new NodeSummaryResponse(node.getId(), node.getName(), node.getStatus(),
                 node.getCpuThreads(), node.getMemoryMb(), node.getVmBridge(), node.getStorage(),
+                node.getDiskCapacityGb(),
                 allocation.running(), allocation.vcpu(), allocation.memoryMb(),
                 cpuRatio, memoryRatio, cpuWarn, memoryWarn, ipPool);
     }

@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.34.0, 145 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.35.0, 148 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -100,6 +100,7 @@ operations:
   - { id: getVmSettings,        method: GET,    path: "/vms/{vmId}/settings",             roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   - { id: updateVmSettings,     method: PATCH,  path: "/vms/{vmId}/settings",             roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   - { id: listVmEvents,         method: GET,    path: "/vms/{vmId}/events",               roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
+  - { id: getVmMetrics,         method: GET,    path: "/vms/{vmId}/metrics",              roles: { USER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: createVmDomain,       method: POST,   path: "/vms/{vmId}/domains",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   # createTerminalSession: workspace MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
@@ -180,9 +181,11 @@ operations:
   # ── 3.16 Admin — summary (system summary SYS tier) ────────────────────────
   - { id: getAdminSummary,      method: GET,  path: "/admin/summary",         roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getSystemSummary,     method: GET,  path: "/admin/system-summary",  roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminCapacityTrend, method: GET, path: "/admin/capacity-trend",  roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.17 Admin — infra read (SYS tier) ────────────────────────────────────
   - { id: listAdminNodes,       method: GET,   path: "/admin/nodes",                    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminNodeMetrics,  method: GET,   path: "/admin/nodes/{nodeId}/metrics",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminNode,      method: PATCH, path: "/admin/nodes/{nodeId}",           roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listAdminOsImages,   method: GET,   path: "/admin/os-images",                roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminOsImage,  method: PATCH, path: "/admin/os-images/{imageId}",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

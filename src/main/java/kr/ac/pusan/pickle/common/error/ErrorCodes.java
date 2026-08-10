@@ -79,6 +79,9 @@ public final class ErrorCodes {
     public static final String CAMPUS_IP_REQUEST_EXISTS = "CAMPUS_IP_REQUEST_EXISTS";
     /** The requested status change is not a legal transition from the current state. */
     public static final String CAMPUS_IP_INVALID_TRANSITION = "CAMPUS_IP_INVALID_TRANSITION";
+    // 사용량 시계열 (contract v0.35.0). The hypervisor is the source and it can
+    // be unreachable; the read answers 503 rather than an empty chart.
+    public static final String METRICS_UNAVAILABLE = "METRICS_UNAVAILABLE";
     // 점검 모드 (contract v0.9.0, GET /meta/status): 비관리자 요청 503.
     public static final String MAINTENANCE_MODE = "MAINTENANCE_MODE";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.admin.dto.NodeLiveResponse;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.Attention;
@@ -21,13 +22,21 @@ import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.Tasks;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.inventory.Node;
+import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
+import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
+import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
+import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
+import kr.ac.pusan.pickle.proxmox.dto.NodeStorageStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -44,6 +53,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminSummaryService {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminSummaryService.class);
+
     private final JdbcTemplate jdbcTemplate;
     private final OrgRepository orgRepository;
     private final OrgHeadroomService orgHeadroomService;
@@ -51,12 +62,15 @@ public class AdminSummaryService {
     private final DriftFindingRepository driftFindingRepository;
     private final IpPoolRepository ipPoolRepository;
     private final IpamService ipamService;
+    private final NodeRepository nodeRepository;
+    private final ProxmoxClient proxmoxClient;
     private final Clock clock;
 
     public AdminSummaryService(JdbcTemplate jdbcTemplate, OrgRepository orgRepository,
             OrgHeadroomService orgHeadroomService, AdminNodeQueryService adminNodeQueryService,
             DriftFindingRepository driftFindingRepository, IpPoolRepository ipPoolRepository,
-            IpamService ipamService, Clock clock) {
+            IpamService ipamService, NodeRepository nodeRepository, ProxmoxClient proxmoxClient,
+            Clock clock) {
         this.jdbcTemplate = jdbcTemplate;
         this.orgRepository = orgRepository;
         this.orgHeadroomService = orgHeadroomService;
@@ -64,6 +78,8 @@ public class AdminSummaryService {
         this.driftFindingRepository = driftFindingRepository;
         this.ipPoolRepository = ipPoolRepository;
         this.ipamService = ipamService;
+        this.nodeRepository = nodeRepository;
+        this.proxmoxClient = proxmoxClient;
         this.clock = clock;
     }
 
@@ -94,7 +110,8 @@ public class AdminSummaryService {
         OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(scopedOrgId);
         Resource resource = new Resource(headroom.allocated().vcpu(),
                 headroom.allocated().memoryMb(), headroom.allocated().diskGb(),
-                headroom.capacityVcpu(), headroom.capacityMemoryMb(), headroom.guidance());
+                headroom.capacityVcpu(), headroom.capacityMemoryMb(), headroom.capacityDiskGb(),
+                headroom.guidance());
 
         List<TopWorkspace> topWorkspaces = jdbcTemplate.query("""
                 select v.workspace_id, g.name, count(*) as vm_count
@@ -180,7 +197,58 @@ public class AdminSummaryService {
         return new SystemDashboardSummaryResponse(nodes, vmCountsByStatus(null), tasks,
                 notificationFailureCount(), certExpiring30d,
                 driftFindingRepository.countByStatus(DriftFindingStatus.OPEN),
-                sshPasswordEnabledVms, pools);
+                sshPasswordEnabledVms, pools, nodesLive());
+    }
+
+    /**
+     * What the hypervisor says about each node right now — the half of the
+     * system panel the database cannot answer (real memory in use, live CPU,
+     * how full the guest-disk pool actually is).
+     *
+     * <p>Every node is probed on its own and a failure is an answer, not an
+     * error: a dead or unconfigured Proxmox endpoint yields
+     * {@code reachable: false} and the panel still renders. A dashboard that
+     * 500s when the hypervisor is down hides exactly the state it exists to
+     * show. Both refusals the client can raise before a reply are caught for
+     * that reason — the HTTP/transport failure and the unconfigured-token
+     * refusal, which is the same "cannot ask PVE" from the operator's side.
+     */
+    private List<NodeLiveResponse> nodesLive() {
+        List<NodeLiveResponse> live = new ArrayList<>();
+        for (Node node : nodeRepository.findAll(org.springframework.data.domain.Sort.by("id"))) {
+            try {
+                NodeStatusInfo status = proxmoxClient.nodeStatus(node.getApiHost(), node.getName());
+                NodeStorageStatus storage = guestStorage(node);
+                live.add(new NodeLiveResponse(node.getId(), node.getName(), true,
+                        status.memory() == null ? null : status.memory().total(),
+                        status.memory() == null ? null : status.memory().used(),
+                        status.cpu(),
+                        storage == null ? null : storage.total(),
+                        storage == null ? null : storage.used(),
+                        clock.instant()));
+            } catch (ProxmoxApiException | IllegalStateException e) {
+                log.warn("Node {} live probe failed: {}", node.getName(), e.getMessage());
+                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+            }
+        }
+        return live;
+    }
+
+    /**
+     * The pool guest disks are carved out of: the storage the node is
+     * configured to clone onto, and failing that the first active thin pool the
+     * token may see. Anything else on the host is somebody else's storage.
+     */
+    private NodeStorageStatus guestStorage(Node node) {
+        List<NodeStorageStatus> storages = proxmoxClient.nodeStorage(node.getApiHost(),
+                node.getName());
+        return storages.stream()
+                .filter(storage -> storage.storage().equals(node.getStorage()))
+                .findFirst()
+                .orElseGet(() -> storages.stream()
+                        .filter(storage -> "lvmthin".equals(storage.type()) && storage.isActive())
+                        .findFirst()
+                        .orElse(null));
     }
 
     /** FAILED notification deliveries (surfaced on the system dashboard). */
@@ -218,8 +286,12 @@ public class AdminSummaryService {
      * SYS_ADMIN: an explicit {@code orgId} must exist (unknown → 404), and no
      * {@code orgId} means the platform-wide aggregate (null scope) — the
      * console home calls the summary without a drill-in for both roles.
+     *
+     * <p>Package-private rather than private because the capacity trend is the
+     * same panel over time and must be scoped by the identical rule; two copies
+     * of a pinning rule is how one of them drifts open.
      */
-    private Long resolveOrgId(AuthenticatedUser actor, Long orgId) {
+    Long resolveOrgId(AuthenticatedUser actor, Long orgId) {
         if (actor.role().isOrgTier()) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,

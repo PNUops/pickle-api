@@ -1060,12 +1060,75 @@ components:
         cpuThreads:
           format: "int64"
           type: "integer"
+        diskGb:
+          description: "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
         memoryMb:
           format: "int64"
           type: "integer"
       required:
       - "cpuThreads"
       - "memoryMb"
+      type: "object"
+    CapacityTrendPointResponse:
+      properties:
+        day:
+          format: "date"
+          type: "string"
+        diskGb:
+          format: "int64"
+          type: "integer"
+        memoryMb:
+          format: "int64"
+          type: "integer"
+        vcpu:
+          format: "int64"
+          type: "integer"
+        vmCount:
+          format: "int64"
+          type: "integer"
+      required:
+      - "day"
+      - "diskGb"
+      - "memoryMb"
+      - "vcpu"
+      - "vmCount"
+      type: "object"
+    CapacityTrendResponse:
+      properties:
+        capacityCpuThreads:
+          format: "int64"
+          type: "integer"
+        capacityDiskGb:
+          description: "ACTIVE 노드의 thin pool 용량 합(GB) — 오버프로비저닝 전제의 조언용 분모, 용량 미등록\
+            \ 노드가 있으면 null"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        capacityMemoryMb:
+          format: "int64"
+          type: "integer"
+        from:
+          format: "date"
+          type: "string"
+        points:
+          description: "일 단위 스냅샷 — 해당 일 종료 시점에 살아 있던 VM의 할당 합"
+          items:
+            $ref: "#/components/schemas/CapacityTrendPointResponse"
+          type: "array"
+        to:
+          format: "date"
+          type: "string"
+      required:
+      - "capacityCpuThreads"
+      - "capacityMemoryMb"
+      - "from"
+      - "points"
+      - "to"
       type: "object"
     CatalogStatus:
       enum:
@@ -1843,6 +1906,132 @@ components:
       - "otpauthUri"
       - "secret"
       type: "object"
+    NodeLiveResponse:
+      properties:
+        checkedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        cpu:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        memTotalBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        memUsedBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        name:
+          type: "string"
+        nodeId:
+          format: "int64"
+          type: "integer"
+        reachable:
+          description: "false = 이 노드의 Proxmox API가 응답하지 않음 — 나머지 필드는 null"
+          type: "boolean"
+        storageTotalBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        storageUsedBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "name"
+      - "nodeId"
+      - "reachable"
+      type: "object"
+    NodeMetricPointResponse:
+      properties:
+        cpu:
+          description: "노드 전체 스레드를 1.0으로 본 사용률 (0~1)"
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        iowait:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        loadavg:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        memTotalBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        memUsedBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        netinBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        netoutBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        rootTotalBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        rootUsedBytes:
+          description: "노드 루트 파일시스템 사용량 — 게스트 디스크가 사는 thin pool은 스토리지 상태 값으로 따로 제공"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        swapTotalBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        swapUsedBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        time:
+          format: "date-time"
+          type: "string"
+      required:
+      - "time"
+      type: "object"
+    NodeMetricsResponse:
+      properties:
+        fetchedAt:
+          format: "date-time"
+          type: "string"
+        points:
+          items:
+            $ref: "#/components/schemas/NodeMetricPointResponse"
+          type: "array"
+        timeframe:
+          type: "string"
+      required:
+      - "fetchedAt"
+      - "points"
+      - "timeframe"
+      type: "object"
     NodeRatio:
       properties:
         cpuOvercommitRatio:
@@ -1891,6 +2080,12 @@ components:
         cpuWarnThreshold:
           format: "double"
           type: "number"
+        diskCapacityGb:
+          description: "게스트 디스크가 놓이는 thin pool 용량(GB) — 아직 측정되지 않았으면 null"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
         id:
           format: "int64"
           type: "integer"
@@ -2052,6 +2247,13 @@ components:
           $ref: "#/components/schemas/ResourceTotalsResponse"
         capacity:
           $ref: "#/components/schemas/Capacity"
+        diskUsageRatio:
+          description: "할당 디스크 / thin pool 용량 — 용량 미등록 노드가 있으면 null. 오버프로비저닝 전제라 1을\
+            \ 넘을 수 있고 경고 임계값은 없습니다."
+          format: "double"
+          type:
+          - "number"
+          - "null"
         memoryUsageRatio:
           format: "double"
           type: "number"
@@ -3013,6 +3215,12 @@ components:
         allocatedVcpu:
           format: "int64"
           type: "integer"
+        capacityDiskGb:
+          description: "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
         capacityMemoryMb:
           format: "int64"
           type:
@@ -3239,6 +3447,14 @@ components:
       - "status"
       - "targetPort"
       type: "object"
+    RrdTimeframe:
+      enum:
+      - "HOUR"
+      - "DAY"
+      - "WEEK"
+      - "MONTH"
+      - "YEAR"
+      type: "string"
     ScheduleVmDeletionRequest:
       properties:
         reason:
@@ -3406,6 +3622,10 @@ components:
           items:
             $ref: "#/components/schemas/NodeRatio"
           type: "array"
+        nodesLive:
+          items:
+            $ref: "#/components/schemas/NodeLiveResponse"
+          type: "array"
         notificationFailureCount:
           format: "int64"
           type: "integer"
@@ -3426,6 +3646,7 @@ components:
       - "certExpiring30dCount"
       - "ipPools"
       - "nodes"
+      - "nodesLive"
       - "notificationFailureCount"
       - "openDriftFindingCount"
       - "sshPasswordEnabledVmCount"
@@ -4289,6 +4510,82 @@ components:
       - "grantedMemoryMb"
       - "grantedVcpu"
       type: "object"
+    VmMetricPointResponse:
+      properties:
+        cpu:
+          description: "할당된 vCPU 전체를 1.0으로 본 사용률 (0~1)"
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        diskReadBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        diskWriteBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        maxmemBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        memBytes:
+          description: "게스트 내부 기준 메모리 사용량(바이트). 게스트 에이전트가 보고하지 않으면 하이퍼바이저 관점 값으로 대\
+            체됩니다."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        memHostBytes:
+          description: "하이퍼바이저 관점 메모리 사용량(바이트) — 게스트 페이지 캐시 포함."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        netinBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        netoutBps:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        time:
+          format: "date-time"
+          type: "string"
+      required:
+      - "time"
+      type: "object"
+    VmMetricsResponse:
+      properties:
+        available:
+          type: "boolean"
+        fetchedAt:
+          format: "date-time"
+          type: "string"
+        points:
+          items:
+            $ref: "#/components/schemas/VmMetricPointResponse"
+          type: "array"
+        timeframe:
+          type: "string"
+        unavailableReason:
+          description: "NOT_PROVISIONED = 아직 프로비저닝되지 않았거나 삭제된 VM"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "available"
+      - "fetchedAt"
+      - "points"
+      - "timeframe"
+      type: "object"
     VmPasswordResponse:
       properties:
         password:
@@ -4657,7 +4954,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.34.0"
+  version: "0.35.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -4871,6 +5168,40 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-campus-ip-request-controller"
+  /admin/capacity-trend:
+    get:
+      operationId: "getAdminCapacityTrend"
+      parameters:
+      - in: "query"
+        name: "days"
+        required: false
+        schema:
+          default: 90
+          format: "int32"
+          maximum: 365
+          minimum: 7
+          type: "integer"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CapacityTrendResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-summary-controller"
   /admin/certificates:
     get:
       operationId: "listAdminCertificates"
@@ -5192,6 +5523,38 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/NodeSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-node-controller"
+  /admin/nodes/{nodeId}/metrics:
+    get:
+      operationId: "getAdminNodeMetrics"
+      parameters:
+      - in: "path"
+        name: "nodeId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR (해상도는 구간에 따라 거칠어짐)"
+        in: "query"
+        name: "timeframe"
+        required: false
+        schema:
+          $ref: "#/components/schemas/RrdTimeframe"
+          default: "HOUR"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NodeMetricsResponse"
           description: "OK"
         default:
           content:
@@ -8523,6 +8886,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
           description: "Accepted"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "vm-controller"
+  /vms/{vmId}/metrics:
+    get:
+      operationId: "getVmMetrics"
+      parameters:
+      - in: "path"
+        name: "vmId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR (해상도는 구간에 따라 거칠어짐)"
+        in: "query"
+        name: "timeframe"
+        required: false
+        schema:
+          $ref: "#/components/schemas/RrdTimeframe"
+          default: "HOUR"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/VmMetricsResponse"
+          description: "OK"
         default:
           content:
             application/problem+json:
