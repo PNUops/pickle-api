@@ -36,6 +36,12 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class AuditQueryService {
+    /**
+     * The scope an id no org has resolves to: a filter value no row carries, so
+     * the page comes back empty exactly as a non-matching number made it.
+     */
+    private static final Long NO_SUCH_ORG = -1L;
+
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -188,7 +194,10 @@ public class AuditQueryService {
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
             // An id no org has filters to nothing, as a non-matching number did.
-            return orgId != null && requested == null ? -1L : requested;
+            if (orgId != null && requested == null) {
+                return NO_SUCH_ORG;
+            }
+            return requested;
         }
         if (actor.orgId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,

@@ -43,6 +43,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AdminUserQueryService {
+    /**
+     * The scope an id no org has resolves to: a filter value no row carries, so
+     * the page comes back empty exactly as a non-matching number made it.
+     */
+    private static final Long NO_SUCH_ORG = -1L;
+
 
     /** Whitelisted {@code sort} → SQL order-by. Default is latest signup ({@code -id}). */
     private static final Map<String, String> SORTS = Map.of(
@@ -239,7 +245,10 @@ public class AdminUserQueryService {
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
             // An id no org has filters to nothing, as a non-matching number did.
-            return orgId != null && requested == null ? -1L : requested;
+            if (orgId != null && requested == null) {
+                return NO_SUCH_ORG;
+            }
+            return requested;
         }
         if (actor.orgId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
