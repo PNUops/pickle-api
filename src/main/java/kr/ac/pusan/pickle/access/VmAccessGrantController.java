@@ -24,15 +24,21 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Contract tag {@code vm-access}: who may reach one VM, and at what rung. */
+/**
+ * Contract tag {@code vm-access}: who may reach one VM, and at what rung.
+ *
+ * <p>The rules are {@link ResourceAccessGrantService}'s and know nothing about
+ * VMs; this class is the VM's path into them, and is the whole of what a second
+ * resource type needs to open its own access list.
+ */
 @Tag(name = "vm-access", description = "VM 접근 권한 — 이 VM에 누가 접근할 수 있는지를 정합니다.")
 @RestController
 @RequestMapping("/api/v1/vms/{vmId}/access")
 public class VmAccessGrantController {
 
-    private final VmAccessGrantService service;
+    private final ResourceAccessGrantService service;
 
-    public VmAccessGrantController(VmAccessGrantService service) {
+    public VmAccessGrantController(ResourceAccessGrantService service) {
         this.service = service;
     }
 
@@ -42,7 +48,7 @@ public class VmAccessGrantController {
     public ResourceAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable long vmId) {
-        return service.list(principal, vmId);
+        return service.list(principal, ResourceType.VM, vmId);
     }
 
     @PostMapping
@@ -57,7 +63,7 @@ public class VmAccessGrantController {
             @PathVariable long vmId,
             @Valid @RequestBody AddResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
-        return service.add(principal, vmId, request, clientIp(httpRequest));
+        return service.add(principal, ResourceType.VM, vmId, request, clientIp(httpRequest));
     }
 
     @PatchMapping("/{grantId}")
@@ -69,7 +75,8 @@ public class VmAccessGrantController {
             @PathVariable long grantId,
             @Valid @RequestBody UpdateResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
-        return service.update(principal, vmId, grantId, request, clientIp(httpRequest));
+        return service.update(principal, ResourceType.VM, vmId, grantId, request,
+                clientIp(httpRequest));
     }
 
     @DeleteMapping("/{grantId}")
@@ -83,6 +90,6 @@ public class VmAccessGrantController {
             @PathVariable long vmId,
             @PathVariable long grantId,
             HttpServletRequest httpRequest) {
-        service.remove(principal, vmId, grantId, clientIp(httpRequest));
+        service.remove(principal, ResourceType.VM, vmId, grantId, clientIp(httpRequest));
     }
 }
