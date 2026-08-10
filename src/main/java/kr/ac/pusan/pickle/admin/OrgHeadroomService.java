@@ -87,6 +87,12 @@ public class OrgHeadroomService {
      * with the node, so one unmeasured ACTIVE node makes the sum a number
      * smaller than the truth — which would read as less headroom than there is.
      * The whole figure goes null in that case instead.
+     *
+     * <p>Which is what an added node looks like: a new node arrives with no
+     * measurement, so the disk capacity of the whole platform reads null until
+     * that node is measured, and every surface hanging off it (the dashboard
+     * disk bar, the capacity trend's disk line) empties for as long. That is
+     * this rule working, not a regression introduced by adding the node.
      */
     public PlatformCapacity capacity() {
         List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
