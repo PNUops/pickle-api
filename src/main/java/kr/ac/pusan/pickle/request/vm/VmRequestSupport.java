@@ -173,7 +173,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
                 : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName(),
-                        request.getWorkspaceId()));
+                        request.getWorkspaceId()), request.getWorkspaceId());
         // The guest admin account comes from the granted image (each
         // distribution ships its own), never from a platform-wide constant.
         Vm vm = vmRepository.save(new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
@@ -220,6 +220,13 @@ public class VmRequestSupport implements RequestTypeHandler {
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", detail);
+    }
+
+    /** Whether the slug policy would accept this name, without collecting the reasons. */
+    private boolean policyAccepts(String candidate) {
+        List<FieldValidationError> rejected = new ArrayList<>();
+        slugPolicy.validateSlug(candidate, "hostname", rejected);
+        return rejected.isEmpty();
     }
 
     private VmRequestDetail detail(Request request) {
@@ -280,19 +287,22 @@ public class VmRequestSupport implements RequestTypeHandler {
      * a profanity by accident, and a hostname is an SSH name and a subdomain
      * default -- exactly what that list exists to protect.
      */
-    private String generateHostname(String seed) {
+    private String generateHostname(String seed, long workspaceId) {
+        // A seed the policy refuses cannot be rescued by another suffix, so it is
+        // replaced once rather than retried: the profanity list matches on
+        // substrings, and a display name like "XXX 프로젝트" would otherwise burn
+        // every attempt and fail the approval with a 500.
+        String effective = policyAccepts(seed + "-aaaa") ? seed : VmSlugPolicy.fallbackSeed(workspaceId);
         for (int attempt = 0; attempt < HOSTNAME_MAX_ATTEMPTS; attempt++) {
             StringBuilder suffix = new StringBuilder(HOSTNAME_SUFFIX_LENGTH);
             for (int i = 0; i < HOSTNAME_SUFFIX_LENGTH; i++) {
                 suffix.append(HOSTNAME_SUFFIX_ALPHABET[random.nextInt(HOSTNAME_SUFFIX_ALPHABET.length)]);
             }
-            String hostname = seed + "-" + suffix;
-            List<FieldValidationError> rejected = new ArrayList<>();
-            slugPolicy.validateSlug(hostname, "hostname", rejected);
-            if (rejected.isEmpty() && !vmRepository.existsByHostname(hostname)) {
+            String hostname = effective + "-" + suffix;
+            if (policyAccepts(hostname) && !vmRepository.existsByHostname(hostname)) {
                 return hostname;
             }
         }
-        throw new IllegalStateException("Could not generate a unique hostname from seed " + seed);
+        throw new IllegalStateException("Could not generate a unique hostname from seed " + effective);
     }
 }

@@ -49,9 +49,14 @@ public class VmSlugPolicy {
             seed = seed.substring(0, 20).replaceAll("-+$", "");
         }
         if (seed.isBlank() || seed.length() < 2) {
-            return DEFAULT_SEED + workspaceId;
+            return fallbackSeed(workspaceId);
         }
         return seed;
+    }
+
+    /** The seed used when a display name yields none, or yields one the policy refuses. */
+    public static String fallbackSeed(long workspaceId) {
+        return DEFAULT_SEED + workspaceId;
     }
 
     public VmSlugPolicy(SettingsService settingsService) {
