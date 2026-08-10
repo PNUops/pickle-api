@@ -610,6 +610,33 @@ class ApprovalTest {
         }
     }
 
+    /**
+     * Deleting a workspace cancels the requests it can see, but a request
+     * submitted concurrently with the delete commits after that sweep has run
+     * and stays SUBMITTED. Approving it would create a VM inside a workspace
+     * nobody can reach, so approval refuses; rejection is the way out, and it
+     * still works because it creates nothing.
+     */
+    @Test
+    void approvalRefusesARequestWhoseWorkspaceIsGone() throws Exception {
+        long workspaceId = createTeam(userToken, "appr-deleted-ws");
+        long requestId = submit(userToken, workspaceId);
+        long survivor = submit(userToken, workspaceId);
+        jdbcTemplate.update("update workspaces set deleted_at = now(), deleted_by = ? where id = ?",
+                regularUser.getId(), workspaceId);
+
+        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKSPACE_DELETED"));
+        assertThat(vmRepository.findAll().stream()
+                .filter(vm -> vm.getRequestId() == requestId)).isEmpty();
+
+        postJson("/api/v1/admin/requests/" + survivor + "/reject", orgAdminToken,
+                Map.of("comment", "워크스페이스가 삭제되어 반려합니다."))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+    }
+
     private Map<String, Object> approveBody() {
         Map<String, Object> vm = new HashMap<>();
         vm.put("grantedVcpu", 2);

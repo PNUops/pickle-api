@@ -18,9 +18,12 @@ import org.jspecify.annotations.Nullable;
  * {@code ownerNames} says who to ask, and everything else the row would reveal
  * about the machine is omitted rather than blanked in the console. The redaction
  * happens here because a field the API sends has already left the building.
+ * {@code name} is the SSH slug on an open row, so a restricted row carries the
+ * display name there instead — see {@link #restricted}.
  */
 public record VmSummaryResponse(
         Long id,
+        @Schema(description = "SSH 슬러그. 접근 권한이 없으면 대신 표시 이름이 들어갑니다.")
         String name,
         @Schema(description = "SSH 슬러그. 접근 권한이 없으면 생략됩니다.")
         @Nullable String hostname,
@@ -57,12 +60,30 @@ public record VmSummaryResponse(
                 false);
     }
 
-    /** Name, state and who to ask — nothing about the machine itself. */
+    /**
+     * Name, state and who to ask — nothing about the machine itself.
+     *
+     * <p>{@code name} is the SSH slug: the same string one types to reach the
+     * machine, so it is exactly what somebody without a grant must not be handed.
+     * The display name takes its place, and {@code displayName} itself is left
+     * null so the row still renders as one label — a list that shows both would
+     * print the name twice.
+     */
     public static VmSummaryResponse restricted(Vm vm, String workspaceName, String displayName,
             List<String> ownerNames, boolean accessManageAllowed) {
-        return new VmSummaryResponse(vm.getId(), vm.getName(), null, vm.getStatus(),
+        return new VmSummaryResponse(vm.getId(), restrictedName(vm, displayName), null, vm.getStatus(),
                 null, null, null, vm.getWorkspaceId(), workspaceName, null,
-                displayName, null, null, null,
+                null, null, null, null,
                 null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed);
+    }
+
+    /**
+     * What a restricted row is called. The display name when the VM has one;
+     * otherwise its id, which the row already carries and which no slug can be
+     * confused with. Never null: the console picks the label as
+     * {@code displayName || name}, so a null name would leave the row nameless.
+     */
+    private static String restrictedName(Vm vm, String displayName) {
+        return displayName != null && !displayName.isBlank() ? displayName : "VM #" + vm.getId();
     }
 }

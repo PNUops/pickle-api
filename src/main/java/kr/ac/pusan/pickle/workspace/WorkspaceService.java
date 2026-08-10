@@ -25,8 +25,6 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
-import kr.ac.pusan.pickle.vm.VmRepository;
-import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestStatus;
@@ -49,21 +47,19 @@ public class WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
-    private final VmRepository vmRepository;
     private final RequestRepository requestRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
     private final List<ResourceTypeAdapter> resourceAdapters;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository, UserRepository userRepository, VmRepository vmRepository,
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             RequestRepository requestRepository, AuditService auditService,
             NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
-        this.vmRepository = vmRepository;
         this.requestRepository = requestRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -256,11 +252,12 @@ public class WorkspaceService {
     /**
      * Soft-deletes a workspace (contract {@code deleteWorkspace}). OWNER only;
      * non-members are masked as 404 and members below OWNER get 403. PERSONAL
-     * workspaces are never deletable (409), and a workspace with any non-destroyed VM
-     * (DELETED excluded, DELETING counts as blocking — shared
-     * {@link VmRepository#countActiveByWorkspaceId}) is refused (409). The row is
-     * kept (VM/audit history) with {@code deleted_at} stamped; ACTIVE members
-     * are notified and the deletion is audited.
+     * workspaces are never deletable (409), and a workspace still holding any
+     * resource that is not fully destroyed is refused (409) — every type answers
+     * for itself through {@link ResourceTypeAdapter#countLiveInWorkspace}, so a
+     * type added later blocks deletion without this method being touched. The row
+     * is kept (resource/audit history) with {@code deleted_at} stamped; ACTIVE
+     * members are notified and the deletion is audited.
      */
     @Transactional
     public void delete(AuthenticatedUser actor, long workspaceId, String ip) {
@@ -277,13 +274,7 @@ public class WorkspaceService {
                     "워크스페이스를 삭제할 수 없습니다",
                     "개인 워크스페이스는 삭제할 수 없습니다. 계정 탈퇴 시에만 함께 정리됩니다.");
         }
-        if (vmRepository.countActiveByWorkspaceId(workspaceId, VmStatus.DELETED) > 0) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_HAS_ACTIVE_VMS,
-                    "워크스페이스를 삭제할 수 없습니다",
-                    "워크스페이스에 삭제되지 않은 VM이 있습니다. VM 삭제(파기 완료) 후 다시 시도해 주세요.");
-        }
-
-        // Cancel the workspace's in-flight (SUBMITTED) VM requests in this tx so an
+        // Cancel the workspace's in-flight (SUBMITTED) requests in this tx so an
         // approval racing the delete can't provision into a dead workspace. Each
         // request is locked and re-checked (same guard the cancel/approve paths
         // use) — a request the approver already decided is left alone, and its
@@ -299,6 +290,19 @@ public class WorkspaceService {
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.REQUEST_CANCEL, "request", locked.getId(),
                     Map.of("workspaceId", workspaceId, "reason", "workspace_deleted"), ip);
+        }
+
+        // Counted after the request rows are locked, not before: an approval
+        // holding one of those locks has not committed its resource yet, so a
+        // count taken first reads zero and then waits for that very approval —
+        // and the workspace is soft-deleted around a live resource. Taking the
+        // locks first means an approval that won the race has committed by the
+        // time this count runs, and read-committed sees it.
+        if (resourceAdapters.stream()
+                .anyMatch(adapter -> adapter.countLiveInWorkspace(workspaceId) > 0)) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_HAS_ACTIVE_VMS,
+                    "워크스페이스를 삭제할 수 없습니다",
+                    "워크스페이스에 삭제되지 않은 리소스가 있습니다. 리소스 삭제(파기 완료) 후 다시 시도해 주세요.");
         }
 
         // Recipients are resolved before the soft-delete flips visibility; the

@@ -121,12 +121,14 @@ public class NotificationService {
      * own list; right after the changeover both answers name the same people.
      */
     public List<Long> vmResponsibleIds(Vm vm) {
-        return vmRecipients(vm, List.of(ResourceRole.OWNER, ResourceRole.EDITOR));
+        return resourceRecipients(ResourceType.VM, vm.getId(), vm.getWorkspaceId(),
+                List.of(ResourceRole.OWNER, ResourceRole.EDITOR));
     }
 
     /** Narrower audience: only those the list makes an owner of the VM. */
     public List<Long> vmOwnerIds(Vm vm) {
-        return vmRecipients(vm, List.of(ResourceRole.OWNER));
+        return resourceRecipients(ResourceType.VM, vm.getId(), vm.getWorkspaceId(),
+                List.of(ResourceRole.OWNER));
     }
 
     /**
@@ -135,17 +137,26 @@ public class NotificationService {
      * deletion.
      */
     public List<Long> vmAudienceIds(Vm vm) {
-        return vmRecipients(vm, List.of(ResourceRole.values()));
+        return resourceRecipients(ResourceType.VM, vm.getId(), vm.getWorkspaceId(),
+                List.of(ResourceRole.values()));
     }
 
-    private List<Long> vmRecipients(Vm vm, Collection<ResourceRole> roles) {
+    /**
+     * Who hears about one resource, whatever kind it is: the people its access
+     * list names at the given rungs, plus the owners of the workspace that owns
+     * it. The rule is the same for every type — a grant is a grant — so a second
+     * kind of resource answers this question by calling here with its own type
+     * rather than by growing a parallel audience rule beside this one.
+     */
+    public List<Long> resourceRecipients(ResourceType type, long resourceId, long workspaceId,
+            Collection<ResourceRole> roles) {
         Set<Long> ids = grantRepository
-                .findByResourceTypeAndResourceIdAndGranteeTypeAndRoleIn(ResourceType.VM,
-                        vm.getId(), AccessGranteeType.USER, roles)
+                .findByResourceTypeAndResourceIdAndGranteeTypeAndRoleIn(type,
+                        resourceId, AccessGranteeType.USER, roles)
                 .stream()
                 .map(ResourceAccessGrant::getUserId)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        ids.addAll(workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(vm.getWorkspaceId()).stream()
+        ids.addAll(workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspaceId).stream()
                 .filter(m -> m.getRole() == WorkspaceMemberRole.OWNER)
                 .map(WorkspaceMember::getUserId)
                 .toList());

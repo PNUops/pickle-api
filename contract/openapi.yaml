@@ -4772,6 +4772,7 @@ components:
           - "integer"
           - "null"
         name:
+          description: "SSH 슬러그. 접근 권한이 없으면 대신 표시 이름이 들어갑니다."
           type: "string"
         orgName:
           type:

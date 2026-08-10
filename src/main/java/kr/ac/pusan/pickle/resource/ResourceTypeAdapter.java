@@ -34,6 +34,17 @@ public interface ResourceTypeAdapter {
     List<Long> idsOwnedByWorkspace(long workspaceId);
 
     /**
+     * How many of this type the workspace still holds that are not yet fully
+     * destroyed — what stands between the workspace and its own deletion.
+     *
+     * <p>A resource on its way out counts: it still holds the platform's
+     * resources until its destruction completes, and the workspace it belongs to
+     * has to outlive it. Only the rows whose history is all that is left of them
+     * are excluded.
+     */
+    long countLiveInWorkspace(long workspaceId);
+
+    /**
      * This type's contribution to the inventory the requester may see, with the
      * same visibility rules the type's own list endpoint applies: a row the
      * requester holds no grant on comes back limited rather than omitted, so

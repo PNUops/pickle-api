@@ -6,6 +6,7 @@ import kr.ac.pusan.pickle.resource.dto.ResourceSummaryResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmQueryService;
 import kr.ac.pusan.pickle.vm.VmRepository;
+import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -32,6 +33,12 @@ public class VmResourceAdapter implements ResourceTypeAdapter {
     @Override
     public List<Long> idsOwnedByWorkspace(long workspaceId) {
         return vmRepository.findIdsByWorkspaceIdIn(List.of(workspaceId));
+    }
+
+    @Override
+    public long countLiveInWorkspace(long workspaceId) {
+        // DELETING counts: the VM is still there until its destruction finishes.
+        return vmRepository.countActiveByWorkspaceId(workspaceId, VmStatus.DELETED);
     }
 
     @Override

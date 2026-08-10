@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -59,6 +60,7 @@ public class ApprovalService {
     private final RequestAssembler assembler;
     private final Map<ResourceType, RequestTypeHandler> handlers;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
@@ -67,6 +69,7 @@ public class ApprovalService {
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             RequestAssembler assembler, List<RequestTypeHandler> handlers,
             WorkspaceMemberRepository workspaceMemberRepository,
+            WorkspaceRepository workspaceRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             AuditService auditService, NotificationService notificationService) {
         this.requestRepository = requestRepository;
@@ -75,6 +78,7 @@ public class ApprovalService {
         this.handlers = handlers.stream()
                 .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.workspaceRepository = workspaceRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
@@ -116,6 +120,16 @@ public class ApprovalService {
             ApproveRequestRequest form, String ip) {
         Request request = findScopedWithLock(actor, requestId);
         requireSubmitted(request);
+        // Approval creates a resource inside the workspace, so the workspace has
+        // to still be there. Deleting a workspace cancels its in-flight requests,
+        // but a request submitted concurrently with that delete commits after the
+        // sweep has already run and stays SUBMITTED — this is what stops it from
+        // being approved into a workspace nobody can reach.
+        if (workspaceRepository.findByIdAndDeletedAtIsNull(request.getWorkspaceId()).isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_DELETED,
+                    "워크스페이스가 삭제되었습니다",
+                    "삭제된 워크스페이스에는 리소스를 만들 수 없습니다. 이 신청은 반려해 주세요.");
+        }
         RequestTypeHandler handler = handlerFor(request);
 
         List<FieldValidationError> errors = new ArrayList<>();
@@ -167,7 +181,7 @@ public class ApprovalService {
         Map<String, Object> notifyArgs = new LinkedHashMap<>();
         notifyArgs.put("requestId", request.getId());
         notifyArgs.put("type", request.getResourceType().name());
-        notifyArgs.put("hostname", created.resourceName());
+        notifyArgs.put("resourceName", created.resourceName());
         String reviewComment = Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);
@@ -187,7 +201,8 @@ public class ApprovalService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
                 "request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
-                Map.of("requestId", request.getId(), "comment", form.comment().strip()), null);
+                Map.of("requestId", request.getId(), "comment", form.comment().strip(),
+                        "type", request.getResourceType().name()), null);
         return assembler.toDetail(request);
     }
 

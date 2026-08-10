@@ -87,7 +87,7 @@ public class RequestService {
         // reaching VMs, which is now the access list's business, and asking is
         // not the step that costs anything — approval is.
         workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
-                .orElseThrow(RequestService::requestRoleInsufficient);
+                .orElseThrow(RequestService::notWorkspaceMember);
 
         Org org = orgRepository.findById(form.orgId())
                 .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
@@ -214,8 +214,14 @@ public class RequestService {
                 "리소스를 찾을 수 없습니다", detail);
     }
 
-    private static ApiException requestRoleInsufficient() {
-        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                "VM을 신청할 권한이 없습니다", "워크스페이스 소유자(OWNER) 또는 편집자(EDITOR)만 VM을 신청할 수 있습니다.");
+    /**
+     * The only standing this path still asks for is membership, and it is not
+     * about VMs: any type of request travels through here, and what the refusal
+     * has to tell the caller is that they are outside the workspace.
+     */
+    private static ApiException notWorkspaceMember() {
+        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_MEMBERSHIP_REQUIRED,
+                "워크스페이스 구성원이 아닙니다",
+                "이 워크스페이스의 구성원만 신청할 수 있습니다. 워크스페이스 소유자에게 구성원 추가를 요청해 주세요.");
     }
 }

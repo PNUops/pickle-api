@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.request;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -146,10 +147,13 @@ class RequestTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.requesterId").value(member.getId()));
 
-        // a non-member still cannot submit → 403 WORKSPACE_ROLE_INSUFFICIENT
+        // a non-member still cannot submit, and the refusal names the remedy:
+        // joining the workspace, not a rung they are missing
         postJson("/api/v1/requests", outsiderToken, validBody(workspaceId))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBERSHIP_REQUIRED"))
+                .andExpect(jsonPath("$.detail").value(
+                        containsString("구성원")));
 
         // unknown workspace / org / image → 404
         postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "workspaceId", 999_999))

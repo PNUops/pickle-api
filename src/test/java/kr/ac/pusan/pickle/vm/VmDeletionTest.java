@@ -329,7 +329,12 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessManageAllowed")
                         .value(org.hamcrest.Matchers.contains(true)))
                 .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].hostname")
-                        .value(org.hamcrest.Matchers.contains((Object) null)));
+                        .value(org.hamcrest.Matchers.contains((Object) null)))
+                // Blanking `hostname` alone still handed the slug over: `name`
+                // is the same string on an open row. This VM has no display
+                // name, so the restricted row falls back to its id.
+                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                        .value(org.hamcrest.Matchers.contains("VM #" + vmId)));
 
         // And the recovery path itself is open: they may read the access list
         // and put someone on it, which is the whole point of keeping deletion

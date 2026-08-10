@@ -37,9 +37,22 @@ public final class ErrorCodes {
     public static final String WORKSPACE_MEMBER_ALREADY_EXISTS = "WORKSPACE_MEMBER_ALREADY_EXISTS";
     public static final String WORKSPACE_SOLE_OWNER_REMOVAL = "WORKSPACE_SOLE_OWNER_REMOVAL";
     public static final String WORKSPACE_ROLE_INSUFFICIENT = "WORKSPACE_ROLE_INSUFFICIENT";
+    /**
+     * The caller is not a member of the workspace at all, on a path where every
+     * member is allowed. Distinct from {@link #WORKSPACE_ROLE_INSUFFICIENT}
+     * because the remedy is different: being added to the workspace, not being
+     * moved up a rung.
+     */
+    public static final String WORKSPACE_MEMBERSHIP_REQUIRED = "WORKSPACE_MEMBERSHIP_REQUIRED";
     // Workspace deletion (contract v0.9.0).
     public static final String WORKSPACE_HAS_ACTIVE_VMS = "WORKSPACE_HAS_ACTIVE_VMS";
     public static final String WORKSPACE_PERSONAL_UNDELETABLE = "WORKSPACE_PERSONAL_UNDELETABLE";
+    /**
+     * The workspace the operation would act in has been soft-deleted. Raised on
+     * approval, where the resource would otherwise be created inside a workspace
+     * that no longer exists.
+     */
+    public static final String WORKSPACE_DELETED = "WORKSPACE_DELETED";
     public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
     public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
     public static final String REQUEST_REQUESTER_INELIGIBLE = "REQUEST_REQUESTER_INELIGIBLE";
