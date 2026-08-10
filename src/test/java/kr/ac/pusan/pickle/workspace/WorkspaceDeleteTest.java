@@ -95,12 +95,19 @@ class WorkspaceDeleteTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
-        // an active VM blocks deletion → 409
+        // an active resource blocks deletion → 409
         long vmId = insertVm(workspaceId, "RUNNING");
+        // The delete cancels in-flight requests before it counts what the
+        // workspace holds — the order that keeps a racing approval from slipping
+        // a live VM in behind the count. A refused delete must therefore leave
+        // those requests exactly as it found them.
+        long pendingRequestId = insertSubmittedRequest(workspaceId);
         mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
+        assertThat(jdbcTemplate.queryForObject("select status::text from requests where id = ?",
+                String.class, pendingRequestId)).isEqualTo("SUBMITTED");
         // even a DELETING VM still blocks
         jdbcTemplate.update("update vms set status = 'DELETING' where id = ?", vmId);
         mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
