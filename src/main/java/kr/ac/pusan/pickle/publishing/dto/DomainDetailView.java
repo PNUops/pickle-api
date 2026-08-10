@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import org.jspecify.annotations.Nullable;
@@ -11,8 +12,8 @@ import org.jspecify.annotations.Nullable;
  * (null for platform subdomains).
  */
 public record DomainDetailView(
-        Long id,
-        Long vmId,
+        UUID id,
+        UUID vmId,
         DomainKind kind,
         String fqdn,
         @Nullable String rootDomain,

@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -47,7 +48,7 @@ public class AdminRelayService {
             int usagePercent = (int) (mappingCount * 100 / relay.bandSize());
             boolean contactLost = relay.getLastContactAt() != null
                     && relay.getLastContactAt().isBefore(lostBefore);
-            return new AdminRelayView(relay.getId(), relay.getName(), relay.getPublicHost(),
+            return new AdminRelayView(relay.getPublicId(), relay.getName(), relay.getPublicHost(),
                     relay.getPortBandStart(), relay.getPortBandEnd(), relay.isEnabled(),
                     relay.getTokenHash() != null, relay.getMappingGeneration(),
                     relay.getAppliedGeneration(), relay.getLastContactAt(), contactLost,
@@ -61,16 +62,16 @@ public class AdminRelayService {
      * never logged or audited.
      */
     @Transactional
-    public RelayTokenResponse issueToken(AuthenticatedUser actor, long relayId, String ip) {
-        Relay relay = relayRepository.findById(relayId)
+    public RelayTokenResponse issueToken(AuthenticatedUser actor, UUID relayId, String ip) {
+        Relay relay = relayRepository.findByPublicId(relayId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
                         "해당 릴레이가 존재하지 않습니다."));
         String token = RelayTokens.newToken();
         relay.setTokenHash(RelayTokens.sha256Hex(token));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.RELAY_TOKEN_ISSUE, "relay", relayId,
+                AuditService.RELAY_TOKEN_ISSUE, "relay", relay.getPublicId(),
                 Map.of("relayName", relay.getName(), "rotated", true), ip);
-        return new RelayTokenResponse(relayId, token);
+        return new RelayTokenResponse(relay.getPublicId(), token);
     }
 }

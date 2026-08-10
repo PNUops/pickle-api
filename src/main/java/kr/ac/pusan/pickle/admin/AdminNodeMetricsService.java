@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.NodeMetricPointResponse;
 import kr.ac.pusan.pickle.admin.dto.NodeMetricsResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -44,8 +45,8 @@ public class AdminNodeMetricsService {
         this.clock = clock;
     }
 
-    public NodeMetricsResponse metrics(long nodeId, RrdTimeframe timeframe) {
-        Node node = nodeRepository.findById(nodeId).orElseThrow(() -> new ApiException(
+    public NodeMetricsResponse metrics(UUID nodeId, RrdTimeframe timeframe) {
+        Node node = nodeRepository.findByPublicId(nodeId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
                 "해당 노드가 존재하지 않습니다."));
         List<NodeMetricPointResponse> points;

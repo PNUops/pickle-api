@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
@@ -84,8 +85,9 @@ public class VmLifecycleService {
     }
 
     @Transactional
-    public MessageResponse start(AuthenticatedUser actor, long vmId) {
+    public MessageResponse start(AuthenticatedUser actor, UUID vmId) {
         Vm vm = requireMemberControllableVm(actor, vmId).vm();
+        long id = vm.getId();
         // Expiry guard: a past end date (KST, inclusive end) refuses start
         // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
         if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
@@ -94,55 +96,59 @@ public class VmLifecycleService {
                     "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 관리자에게 기간 연장을 요청해 주세요."
                             .formatted(vm.getEndDate()));
         }
-        claimPowerAction(vmId, PowerAction.START, List.of(VmStatus.STOPPED),
+        claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse shutdown(AuthenticatedUser actor, long vmId) {
+    public MessageResponse shutdown(AuthenticatedUser actor, UUID vmId) {
         Controllable controllable = requireMemberControllableVm(actor, vmId);
-        requireStopAllowed(vmId, controllable.role());
-        claimPowerAction(vmId, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
+        long id = controllable.vm().getId();
+        requireStopAllowed(id, controllable.role());
+        claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse reboot(AuthenticatedUser actor, long vmId) {
+    public MessageResponse reboot(AuthenticatedUser actor, UUID vmId) {
         Controllable controllable = requireMemberControllableVm(actor, vmId);
-        requireStopAllowed(vmId, controllable.role());
+        long id = controllable.vm().getId();
+        requireStopAllowed(id, controllable.role());
         // Intent is visible immediately (and force-stop can target a hung
         // reboot); the CAS loses to a concurrent transition OR a live claim → 409.
-        if (vmRepository.claimReboot(vmId, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
-            throw powerConflict(vmId, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+        if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
+            throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
         }
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId));
         return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse forceStop(AuthenticatedUser actor, long vmId) {
+    public MessageResponse forceStop(AuthenticatedUser actor, UUID vmId) {
         Controllable controllable = requireMemberControllableVm(actor, vmId);
-        requireStopAllowed(vmId, controllable.role());
-        claimPowerAction(vmId, PowerAction.FORCE_STOP,
+        long id = controllable.vm().getId();
+        requireStopAllowed(id, controllable.role());
+        claimPowerAction(id, PowerAction.FORCE_STOP,
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     /* ─── admin intervention (org-scoped, stop-protection bypass, audited) ─── */
 
     @Transactional
-    public MessageResponse adminStart(AuthenticatedUser actor, long vmId, String ip) {
+    public MessageResponse adminStart(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        long id = vm.getId();
         // Same expiry guard as the member path: extend the period first.
         if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
@@ -150,46 +156,49 @@ public class VmLifecycleService {
                     "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 먼저 기간을 연장해 주세요."
                             .formatted(vm.getEndDate()));
         }
-        claimPowerAction(vmId, PowerAction.START, List.of(VmStatus.STOPPED),
+        claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse adminShutdown(AuthenticatedUser actor, long vmId, String ip) {
+    public MessageResponse adminShutdown(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
-        claimPowerAction(vmId, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
+        long id = vm.getId();
+        claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse adminReboot(AuthenticatedUser actor, long vmId, String ip) {
+    public MessageResponse adminReboot(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
-        if (vmRepository.claimReboot(vmId, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
-            throw powerConflict(vmId, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+        long id = vm.getId();
+        if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
+            throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
         }
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId));
         return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
     @Transactional
-    public MessageResponse adminForceStop(AuthenticatedUser actor, long vmId, String ip) {
+    public MessageResponse adminForceStop(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
-        claimPowerAction(vmId, PowerAction.FORCE_STOP,
+        long id = vm.getId();
+        claimPowerAction(id, PowerAction.FORCE_STOP,
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(vmId, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -199,7 +208,7 @@ public class VmLifecycleService {
      * member path). Reads are not audited, matching the other admin surfaces.
      */
     private void recordAdminPowerAudit(AuthenticatedUser actor, Vm vm, String action, String ip) {
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), action, "vm", vm.getId(),
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), action, "vm", vm.getPublicId(),
                 Map.of("fromStatus", vm.getStatus().name()), ip);
     }
 
@@ -236,7 +245,7 @@ public class VmLifecycleService {
      * 404 (masking), a member below MEMBER answers 403. The role is returned so
      * stop-protected ops can additionally require EDITOR.
      */
-    private Controllable requireMemberControllableVm(AuthenticatedUser actor, long vmId) {
+    private Controllable requireMemberControllableVm(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         Vm vm = access.requireAtLeast(ResourceRole.MEMBER,
                 "VM을 제어할 권한이 없습니다", "이 VM의 참여자 이상만 VM 전원을 제어할 수 있습니다.");

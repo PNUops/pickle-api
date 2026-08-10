@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.audit;
 
 import java.util.Map;
+import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -162,14 +163,22 @@ public class AuditService {
         this.self = self;
     }
 
+    /**
+     * {@code targetId} is the target row's <b>public</b> identifier: the column
+     * is text and holds a UUID string. Targets that have no public identity
+     * (a refresh token, a settings key) pass null and put whatever identifies
+     * them in {@code detail}. Rows written before V78 hold the internal number
+     * of the day as text and mean what they always meant.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void record(Long actorId, String actorRole, String action, String targetType, Long targetId,
+    public void record(Long actorId, String actorRole, String action, String targetType, UUID targetId,
             Map<String, Object> detail, String ip) {
         String detailJson = (detail == null || detail.isEmpty()) ? null : objectMapper.writeValueAsString(detail);
         jdbcTemplate.update("""
                 insert into audit_logs (actor_id, actor_role, action, target_type, target_id, detail, ip)
                 values (?, ?, ?, ?, ?, ?::jsonb, ?)
-                """, actorId, actorRole, action, targetType, targetId, detailJson, ip);
+                """, actorId, actorRole, action, targetType,
+                targetId == null ? null : targetId.toString(), detailJson, ip);
     }
 
     /**
@@ -186,7 +195,7 @@ public class AuditService {
      * therefore keep calling {@link #record} directly.</p>
      */
     public void recordAfterCommit(Long actorId, String actorRole, String action, String targetType,
-            Long targetId, Map<String, Object> detail, String ip) {
+            UUID targetId, Map<String, Object> detail, String ip) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             record(actorId, actorRole, action, targetType, targetId, detail, ip);
             return;

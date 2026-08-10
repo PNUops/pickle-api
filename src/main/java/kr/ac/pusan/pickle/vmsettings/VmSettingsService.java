@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceRole;
@@ -206,8 +207,8 @@ public class VmSettingsService {
 
     /** EDITOR+ only; non-member answers 404 (existence masking). */
     @Transactional(readOnly = true)
-    public List<VmSettingView> get(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+    public List<VmSettingView> get(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
         ResourceRole actorRole = memberRole(vm, actor);
         if (!actorRole.atLeast(ResourceRole.EDITOR)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
@@ -222,9 +223,10 @@ public class VmSettingsService {
      * VM → 409. Every change is audited (old→new). Returns the full list.
      */
     @Transactional
-    public List<VmSettingView> patch(AuthenticatedUser actor, long vmId,
+    public List<VmSettingView> patch(AuthenticatedUser actor, UUID publicVmId,
             Map<String, JsonNode> settings, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        Vm vm = vmRepository.findByPublicId(publicVmId).orElseThrow(VmAccessService::vmNotFound);
+        long vmId = vm.getId();
         ResourceRole actorRole = memberRole(vm, actor);
         if (settings == null || settings.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -278,7 +280,7 @@ public class VmSettingsService {
                 settingRepository.save(row);
             }
             auditService.recordAfterCommit(actor.id(), actor.role().name(), def.auditAction(),
-                    "vm", vmId, Map.of("key", def.key(), "old", oldValue, "new", newValue), ip);
+                    "vm", vm.getPublicId(), Map.of("key", def.key(), "old", oldValue, "new", newValue), ip);
         }
         return buildViews(vm, actorRole);
     }

@@ -104,7 +104,7 @@ public class TerminalService {
      * service-layer here (existence-masking 404 for non-members).
      */
     @Transactional(readOnly = true)
-    public TerminalTicketResponse mint(AuthenticatedUser actor, long vmId, String clientIp) {
+    public TerminalTicketResponse mint(AuthenticatedUser actor, UUID publicVmId, String clientIp) {
         // 1) global kill switch first (a disabled feature reveals nothing).
         if (!settingsService.bool(SettingsService.WEB_TERMINAL_ENABLED, false)) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.TERMINAL_DISABLED,
@@ -114,7 +114,7 @@ public class TerminalService {
         //    404 (existence stays private); a VIEWER already sees the VM via getVm,
         //    so it gets an honest 403 (same as the power-control paths) rather than
         //    a misleading 404.
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        Vm vm = vmRepository.findByPublicId(publicVmId).orElseThrow(VmAccessService::vmNotFound);
         vmAccessService.of(vm, actor.id()).requireAtLeast(ResourceRole.MEMBER,
                 "웹 터미널을 열 권한이 없습니다", "이 VM의 참여자 이상만 웹 터미널을 사용할 수 있습니다.");
         // 3) RUNNING.
@@ -232,7 +232,7 @@ public class TerminalService {
         detail.put("vmId", s.vmId());
         detail.put("clientIp", clientIp);
         auditService.record(s.userId(), roleName(s.userRole()), AuditService.TERMINAL_SESSION_START,
-                "vm", s.vmId(), detail, clientIp);
+                "vm", vmPublicId(s.vmId()), detail, clientIp);
     }
 
     /**
@@ -256,7 +256,7 @@ public class TerminalService {
         detail.put("bytesIn", request.bytesIn());
         detail.put("bytesOut", request.bytesOut());
         auditService.record(s.userId(), roleName(s.userRole()), AuditService.TERMINAL_SESSION_END,
-                "vm", s.vmId(), detail, s.clientIp());
+                "vm", vmPublicId(s.vmId()), detail, s.clientIp());
     }
 
     // ── internal: revalidate ──────────────────────────────────────────────────
@@ -338,7 +338,8 @@ public class TerminalService {
             detail.put("sessionId", sessionId);
             detail.put("vmId", known.get().vmId());
             auditService.record(actor.id(), actor.role().name(),
-                    AuditService.TERMINAL_FORCE_TERMINATE, "vm", known.get().vmId(), detail, ip);
+                    AuditService.TERMINAL_FORCE_TERMINATE, "vm", vmPublicId(known.get().vmId()),
+                    detail, ip);
         }
     }
 
@@ -397,5 +398,15 @@ public class TerminalService {
     private static ApiException sessionUserGone() {
         return new ApiException(HttpStatus.UNAUTHORIZED, ErrorCodes.AUTH_TOKEN_INVALID,
                 "인증이 필요합니다", "액세스 토큰이 없거나 만료되었습니다. 토큰을 갱신한 뒤 다시 시도해 주세요.");
+    }
+
+    /**
+     * The VM's public identifier for the audit trail. The gateway contract
+     * itself stays on the internal id (a Go client decodes it as int64), so
+     * the translation happens here, at the audit boundary.
+     */
+    private UUID vmPublicId(Long vmId) {
+        return vmId == null ? null
+                : vmRepository.findById(vmId).map(Vm::getPublicId).orElse(null);
     }
 }

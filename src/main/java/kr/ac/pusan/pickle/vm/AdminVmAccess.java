@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -21,8 +22,8 @@ public class AdminVmAccess {
         this.vmRepository = vmRepository;
     }
 
-    public Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(AdminVmAccess::vmNotFound);
+    public Vm requireOrgScopedVm(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound);
         if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
             throw vmNotFound();
         }

@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminNotificationResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -54,8 +55,10 @@ public class AdminNotificationService {
                 "select count(*) from notifications n join users u on u.id = n.user_id"
                         + BASE_WHERE, Long.class, filters);
         List<AdminNotificationResponse> content = jdbcTemplate.query("""
-                select n.id, n.event, n.title, n.body, n.link_path, n.importance, n.created_at,
-                       n.read_at, n.user_id, u.email, n.channel::text as channel,
+                select n.public_id, n.event, n.title, n.body, n.link_path, n.importance,
+                       n.created_at,
+                       n.read_at, u.public_id as user_public_id, u.email,
+                       n.channel::text as channel,
                        n.status::text as status, n.attempts, n.last_error, n.sent_at
                   from notifications n
                   join users u on u.id = n.user_id
@@ -70,15 +73,16 @@ public class AdminNotificationService {
 
     /** CAS FAILED→PENDING due now; anything else answers 409 (404 when absent). */
     @Transactional
-    public MessageResponse resend(AuthenticatedUser actor, long notificationId, String ip) {
+    public MessageResponse resend(AuthenticatedUser actor, UUID notificationId, String ip) {
         int updated = jdbcTemplate.update("""
                 update notifications
                    set status = 'PENDING', next_attempt_at = now()
-                 where id = ? and status = 'FAILED'
+                 where public_id = ? and status = 'FAILED'
                 """, notificationId);
         if (updated == 0) {
             Long found = jdbcTemplate.queryForObject(
-                    "select count(*) from notifications where id = ?", Long.class, notificationId);
+                    "select count(*) from notifications where public_id = ?", Long.class,
+                    notificationId);
             if (found == null || found == 0) {
                 throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다.");
@@ -93,7 +97,7 @@ public class AdminNotificationService {
 
     private static AdminNotificationResponse mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new AdminNotificationResponse(
-                rs.getLong("id"),
+                rs.getObject("public_id", java.util.UUID.class),
                 rs.getString("event"),
                 rs.getString("title"),
                 rs.getString("body"),
@@ -101,7 +105,7 @@ public class AdminNotificationService {
                 NotificationImportance.valueOf(rs.getString("importance")),
                 instant(rs.getTimestamp("created_at")),
                 instant(rs.getTimestamp("read_at")),
-                rs.getLong("user_id"),
+                rs.getObject("user_public_id", java.util.UUID.class),
                 rs.getString("email"),
                 NotificationChannel.valueOf(rs.getString("channel")),
                 NotificationStatus.valueOf(rs.getString("status")),

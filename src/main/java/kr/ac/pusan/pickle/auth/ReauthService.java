@@ -56,7 +56,7 @@ public class ReauthService {
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,
-                    "user", user.getId(), Map.of("result", "mismatch"), ip);
+                    "user", user.getPublicId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
@@ -65,7 +65,7 @@ public class ReauthService {
         repository.save(new AuthReverification(user.getId(), TokenHasher.sha256Hex(rawToken),
                 user.getTokenVersion(), expiresAt, ip));
         auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,
-                "user", user.getId(), Map.of("result", "success"), ip);
+                "user", user.getPublicId(), Map.of("result", "success"), ip);
         return new ReverifyResponse(rawToken, expiresAt);
     }
 

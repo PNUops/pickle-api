@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import org.jspecify.annotations.Nullable;
@@ -13,8 +14,8 @@ import org.jspecify.annotations.Nullable;
  * grace setting.
  */
 public record DomainSummaryView(
-        Long id,
-        Long vmId,
+        UUID id,
+        UUID vmId,
         DomainKind kind,
         String fqdn,
         @Nullable String rootDomain,

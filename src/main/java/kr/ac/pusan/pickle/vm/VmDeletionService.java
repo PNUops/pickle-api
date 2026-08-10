@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
@@ -119,8 +120,9 @@ public class VmDeletionService {
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
 
     @Transactional
-    public VmDeletionResponse selfDelete(AuthenticatedUser actor, long vmId, String ip) {
-        Vm vm = requireDeletableByActor(actor, vmId);
+    public VmDeletionResponse selfDelete(AuthenticatedUser actor, UUID publicVmId, String ip) {
+        Vm vm = requireDeletableByActor(actor, publicVmId);
+        long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         requireNotDeletionProtected(vmId);
         if (vm.getStatus() == VmStatus.ERROR) {
@@ -139,14 +141,14 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
-                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "workspaceId", vm.getWorkspaceId(), "scheduledFor", scheduledFor.toString()), ip);
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
         notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_ACCEPTED,
-                Map.of("vmId", vmId, "vmName", vm.getName(), "scheduledFor", scheduledFor), null);
-        return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.id(), null, true);
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor), null);
+        return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.publicId(), null, true);
     }
 
     /** ERROR VM: nothing to destroy — release the IP and finish immediately. */
@@ -176,17 +178,18 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
                 "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
-                "vm", vm.getId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "workspaceId", vm.getWorkspaceId(), "immediate", true), ip);
-        return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.id(), null, false);
+        return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.publicId(), null, false);
     }
 
     // ── admin scheduled delete ─────────────────────────────────────────────
 
     @Transactional
-    public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, long vmId,
+    public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
-        Vm vm = requireOrgScopedVm(actor, vmId);
+        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         // CREATING is deliberately accepted (unlike self-delete): the schedule
         // is intent-only, and the sweeper waits for a sweepable power state —
@@ -208,21 +211,22 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
                 "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
-                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "workspaceId", vm.getWorkspaceId(),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_SCHEDULED,
-                Map.of("vmId", vmId, "vmName", vm.getName(), "reason", reason,
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "reason", reason,
                         "scheduledFor", request.scheduledFor()), null);
-        return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.id(),
+        return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.publicId(),
                 reason, true);
     }
 
     // ── admin cancel (the only cancellation path — users have none) ─────
 
     @Transactional
-    public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, long vmId, String ip) {
-        Vm vm = requireOrgScopedVm(actor, vmId);
+    public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
+        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {
             // SELF: the VM entered DELETING at acceptance — cancel restores
@@ -251,20 +255,21 @@ public class VmDeletionService {
                         ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 취소"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
+                AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vm.getPublicId(),
                 Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "workspaceId", vm.getWorkspaceId(), "canceledKind", vm.getDeleteKind().name()), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
-                Map.of("vmId", vmId, "vmName", vm.getName()), null);
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
         return new MessageResponse("삭제가 취소되었습니다.");
     }
 
     // ── force delete (SYS_ADMIN, immediate, not cancelable) ────────────────
 
     @Transactional
-    public MessageResponse forceDelete(AuthenticatedUser actor, long vmId,
+    public MessageResponse forceDelete(AuthenticatedUser actor, UUID publicVmId,
             ForceDeleteVmRequest request, String ip) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+        Vm vm = vmRepository.findByPublicId(publicVmId).orElseThrow(VmAccessService::vmNotFound);
+        long vmId = vm.getId();
         if (!vm.getName().equals(request.confirmName())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_CONFIRM_NAME_MISMATCH,
                     "확인용 이름이 일치하지 않습니다",
@@ -298,11 +303,11 @@ public class VmDeletionService {
                 overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
-                "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
                         "workspaceId", vm.getWorkspaceId(), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
         notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
-                Map.of("vmId", vmId, "vmName", vm.getName()), null);
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
         return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
     }
 
@@ -359,8 +364,8 @@ public class VmDeletionService {
      * ORG_ADMIN of the VM's org, or SYS_ADMIN. Non-members and cross-org admins
      * get 404 (masking); anyone else who can see the VM gets 403.
      */
-    private Vm requireDeletableByActor(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+    private Vm requireDeletableByActor(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.SYS_ADMIN) {
             return vm;
         }
@@ -381,8 +386,8 @@ public class VmDeletionService {
     }
 
     /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
-    private Vm requireOrgScopedVm(AuthenticatedUser actor, long vmId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+    private Vm requireOrgScopedVm(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
         if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
             throw VmAccessService.vmNotFound();
         }

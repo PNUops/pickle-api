@@ -128,7 +128,7 @@ public class RelaySyncService {
             // Direct record (not after-commit): a security signal, keep it even
             // if something later in this tx were to fail.
             auditService.record(null, AuditService.ACTOR_ROLE_RELAY,
-                    AuditService.RELAY_SYNC_VIOLATION, "relay", relayId,
+                    AuditService.RELAY_SYNC_VIOLATION, "relay", relayPublicId(relayId),
                     Map.of("reported", reported, "storedApplied", state.applied(),
                             "currentGeneration", state.current(),
                             "agentVersion", agentVersion == null ? "" : agentVersion), null);
@@ -198,7 +198,7 @@ public class RelaySyncService {
                 // baseline stays put, and the event is audited. Bounds the
                 // bigint totals against a lying or corrupted agent.
                 auditService.record(null, AuditService.ACTOR_ROLE_RELAY,
-                        AuditService.RELAY_SYNC_VIOLATION, "relay", relayId,
+                        AuditService.RELAY_SYNC_VIOLATION, "relay", relayPublicId(relayId),
                         Map.of("kind", "counter_sanity", "mappingId", mappingId,
                                 "maxReported", String.valueOf(raw.max())), null);
                 log.warn("relay {} reported an insane counter for mapping {} (max {})",
@@ -273,23 +273,37 @@ public class RelaySyncService {
         if (suspended != 1) {
             return; // already suspended (e.g. duplicated report row)
         }
+        // v.public_id, not v.id: the notification's link path is built from
+        // this map by string concatenation, so a numeric id here renders a
+        // console link that resolves to nothing.
         Map<String, Object> context = jdbcTemplate.queryForObject("""
-                select m.vm_id, v.name as vm_name, m.proto, m.public_port
+                select v.public_id as vm_public_id, v.name as vm_name, m.proto, m.public_port,
+                       m.public_id as mapping_public_id
                   from port_mappings m join vms v on v.id = m.vm_id where m.id = ?
                 """, (rs, rowNum) -> Map.of(
-                        "vmId", rs.getLong("vm_id"), "vmName", rs.getString("vm_name"),
-                        "proto", rs.getString("proto"), "publicPort", rs.getInt("public_port")),
+                        "vmId", rs.getObject("vm_public_id", java.util.UUID.class),
+                        "vmName", rs.getString("vm_name"),
+                        "proto", rs.getString("proto"), "publicPort", rs.getInt("public_port"),
+                        "mappingPublicId", rs.getObject("mapping_public_id", java.util.UUID.class)),
                 mappingId);
+        java.util.UUID mappingPublicId = (java.util.UUID) context.get("mappingPublicId");
         Map<String, Object> args = new LinkedHashMap<>(context);
+        args.remove("mappingPublicId");
         args.put("reason", reason);
         notificationService.publish(notificationService.sysAdminIds(),
                 NotificationEvent.PORT_MAPPING_SUSPENDED, args, "pm_auto_suspend:" + mappingId);
         auditService.recordAfterCommit(null, AuditService.ACTOR_ROLE_RELAY, AuditService.PORT_MAPPING_SUSPEND,
-                "port_mapping", mappingId, Map.of("auto", true, "relayId", relayId,
+                "port_mapping", mappingPublicId, Map.of("auto", true, "relayId", relayId,
                         "connsPerMin", connsPerMin, "mbytesPerMin", mbytesPerMin,
                         "connsLimit", connsLimit, "mbytesLimit", mbytesLimit), null);
         log.warn("port mapping {} auto-suspended (conns/min {} vs {}, MB/min {} vs {})",
                 mappingId, connsPerMin, connsLimit, mbytesPerMin, mbytesLimit);
+    }
+
+    /** The relay's public identifier, for the audit trail's target column. */
+    private java.util.UUID relayPublicId(long relayId) {
+        return jdbcTemplate.queryForObject("select public_id from relays where id = ?",
+                java.util.UUID.class, relayId);
     }
 
     // ── snapshot ─────────────────────────────────────────────────────────────

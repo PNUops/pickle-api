@@ -4,6 +4,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.relay.dto.AdminRelayView;
 import kr.ac.pusan.pickle.relay.dto.RelayTokenResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -41,7 +42,7 @@ public class AdminRelayController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     @RequireReauth
     public RelayTokenResponse issueAdminRelayToken(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long relayId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID relayId,
             HttpServletRequest httpRequest) {
         return adminRelayService.issueToken(principal, relayId, clientIp(httpRequest));
     }

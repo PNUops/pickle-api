@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -22,11 +23,16 @@ public class Org {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * The identifier this row wears outside the API boundary. Internal joins,
+     * sorts and foreign keys keep using {@link #id}.
+     */
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "public_id", nullable = false, updatable = false, unique = true)
+    private UUID publicId = UUID.randomUUID();
+
     @Column(nullable = false)
     private String name;
-
-    @Column(nullable = false, unique = true)
-    private String slug;
 
     private String description;
 
@@ -54,14 +60,17 @@ public class Org {
     protected Org() {
     }
 
-    public Org(String name, String slug, String description) {
+    public Org(String name, String description) {
         this.name = name;
-        this.slug = slug;
         this.description = description;
     }
 
     public Long getId() {
         return id;
+    }
+
+    public UUID getPublicId() {
+        return publicId;
     }
 
     public String getName() {
@@ -70,10 +79,6 @@ public class Org {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getSlug() {
-        return slug;
     }
 
     public String getDescription() {

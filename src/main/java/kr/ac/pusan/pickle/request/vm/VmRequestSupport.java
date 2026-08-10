@@ -81,9 +81,9 @@ public class VmRequestSupport implements RequestTypeHandler {
         // A reference to something that does not exist is a 404 here, as it is
         // for the workspace and the organisation; only a row that exists but may
         // no longer be chosen is a validation error.
-        OsImage image = imageRepository.findById(spec.imageId())
+        OsImage image = imageRepository.findByPublicId(spec.imageId())
                 .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
-        VmFlavor flavor = flavorRepository.findById(spec.flavorId())
+        VmFlavor flavor = flavorRepository.findByPublicId(spec.flavorId())
                 .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
         boolean axesActive = true;
         if (image.getStatus() != CatalogStatus.ACTIVE) {
@@ -103,7 +103,10 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public void saveDetail(Request request, CreateRequestRequest form) {
         CreateVmRequestSpec spec = form.vm();
-        detailRepository.save(new VmRequestDetail(request.getId(), spec.imageId(), spec.flavorId(),
+        // validateCreate already 404'd on an unknown reference, so both resolve.
+        long imageId = imageRepository.findByPublicId(spec.imageId()).orElseThrow().getId();
+        long flavorId = flavorRepository.findByPublicId(spec.flavorId()).orElseThrow().getId();
+        detailRepository.save(new VmRequestDetail(request.getId(), imageId, flavorId,
                 spec.reqVcpu(), spec.reqMemoryMb(), spec.reqDiskGb(),
                 Texts.blankToNull(spec.specReason()), Texts.blankToNull(spec.desiredSlug())));
     }
@@ -123,7 +126,7 @@ public class VmRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("vm", "VM 승인 항목(vm)을 입력해 주세요."));
             return;
         }
-        OsImage image = imageRepository.findById(spec.grantedImageId()).orElse(null);
+        OsImage image = imageRepository.findByPublicId(spec.grantedImageId()).orElse(null);
         if (image == null || image.getStatus() != CatalogStatus.ACTIVE) {
             errors.add(new FieldValidationError("vm.grantedImageId", "사용할 수 없는 OS 이미지입니다."));
         } else if (spec.grantedDiskGb() < image.getMinDiskGb()) {
@@ -131,10 +134,12 @@ public class VmRequestSupport implements RequestTypeHandler {
                     "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
         if (spec.nodeId() != null) {
-            if (!nodeRepository.existsById(spec.nodeId())) {
+            Long nodeId = nodeRepository.findByPublicId(spec.nodeId())
+                    .map(kr.ac.pusan.pickle.inventory.Node::getId).orElse(null);
+            if (nodeId == null) {
                 errors.add(new FieldValidationError("vm.nodeId", "존재하지 않는 노드입니다."));
             } else if (image != null && !imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), spec.nodeId(), CatalogStatus.ACTIVE)) {
+                    image.getName(), nodeId, CatalogStatus.ACTIVE)) {
                 // Forced node must host the granted image — the provisioning
                 // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.
@@ -162,14 +167,17 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public Materialized materialize(Request request, ApproveRequestRequest form, AuthenticatedUser actor) {
         ApproveVmRequestSpec spec = form.vm();
-        OsImage image = imageRepository.findById(spec.grantedImageId()).orElseThrow();
+        OsImage image = imageRepository.findByPublicId(spec.grantedImageId()).orElseThrow();
         VmRequestDetail detail = detail(request);
+        Long forcedNodeId = spec.nodeId() == null ? null
+                : nodeRepository.findByPublicId(spec.nodeId())
+                        .map(kr.ac.pusan.pickle.inventory.Node::getId).orElseThrow();
         detail.grant(spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
-                image.getId(), spec.nodeId());
+                image.getId(), forcedNodeId);
 
         // Auto placement: the image's node (single-node cluster; the
         // scoring placement step arrives with the provisioning pipeline).
-        Long nodeId = spec.nodeId() != null ? spec.nodeId() : image.getNodeId();
+        Long nodeId = forcedNodeId != null ? forcedNodeId : image.getNodeId();
         String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
                 : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName(),

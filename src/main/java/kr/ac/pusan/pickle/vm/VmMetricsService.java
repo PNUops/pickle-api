@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.vm;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -59,7 +60,7 @@ public class VmMetricsService {
         this.clock = clock;
     }
 
-    public VmMetricsResponse metrics(AuthenticatedUser actor, long vmId, RrdTimeframe timeframe) {
+    public VmMetricsResponse metrics(AuthenticatedUser actor, UUID vmId, RrdTimeframe timeframe) {
         Vm vm = vmAccessService.of(actor, vmId).requireVisible();
         if (vm.getProxmoxVmid() == null || vm.getStatus() == VmStatus.DELETED) {
             return new VmMetricsResponse(timeframe.name(), clock.instant(), false, NOT_PROVISIONED,

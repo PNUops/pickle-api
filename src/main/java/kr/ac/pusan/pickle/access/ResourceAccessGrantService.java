@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.dto.AddResourceAccessGrantRequest;
@@ -77,22 +78,25 @@ public class ResourceAccessGrantService {
 
     @Transactional(readOnly = true)
     public ResourceAccessListResponse list(AuthenticatedUser actor, ResourceType type,
-            long resourceId) {
+            UUID resourceId) {
         Managed managed = requireManager(actor, type, resourceId);
-        String workspaceName = workspaceRepository.findById(managed.resource().workspaceId())
-                .map(Workspace::getName).orElse("");
-        return ResourceAccessListResponse.of(type, managed.resource(), workspaceName,
-                views(type, resourceId));
+        Workspace workspace = workspaceRepository.findById(managed.resource().workspaceId())
+                .orElse(null);
+        return ResourceAccessListResponse.of(type, managed.resource(),
+                workspace == null ? null : workspace.getPublicId(),
+                workspace == null ? "" : workspace.getName(),
+                views(type, managed.resource().id()));
     }
 
     @Transactional
-    public ResourceAccessGrantView add(AuthenticatedUser actor, ResourceType type, long resourceId,
+    public ResourceAccessGrantView add(AuthenticatedUser actor, ResourceType type, UUID resourceId,
             AddResourceAccessGrantRequest request, String ip) {
         Managed managed = requireManager(actor, type, resourceId);
+        long id = managed.resource().id();
         ResourceAccessGrant grant = request.granteeType() == AccessGranteeType.WORKSPACE
-                ? ResourceAccessGrant.forOwningWorkspace(type, resourceId,
+                ? ResourceAccessGrant.forOwningWorkspace(type, id,
                         requireWorkspaceWideRole(request.role()))
-                : ResourceAccessGrant.forUser(type, resourceId,
+                : ResourceAccessGrant.forUser(type, id,
                         requireEligibleMember(managed, request.userId()), request.role());
         ResourceAccessGrant saved;
         try {
@@ -106,7 +110,7 @@ public class ResourceAccessGrantService {
 
     @Transactional
     public ResourceAccessGrantView update(AuthenticatedUser actor, ResourceType type,
-            long resourceId, long grantId, UpdateResourceAccessGrantRequest request, String ip) {
+            UUID resourceId, UUID grantId, UpdateResourceAccessGrantRequest request, String ip) {
         Managed managed = requireManager(actor, type, resourceId);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
         ResourceRole previous = grant.getRole();
@@ -118,7 +122,7 @@ public class ResourceAccessGrantService {
     }
 
     @Transactional
-    public void remove(AuthenticatedUser actor, ResourceType type, long resourceId, long grantId,
+    public void remove(AuthenticatedUser actor, ResourceType type, UUID resourceId, UUID grantId,
             String ip) {
         Managed managed = requireManager(actor, type, resourceId);
         ResourceAccessGrant grant = requireGrant(managed, grantId);
@@ -127,11 +131,11 @@ public class ResourceAccessGrantService {
     }
 
     /** Managing the list is a resource owner's right, or a workspace owner's standing one. */
-    private Managed requireManager(AuthenticatedUser actor, ResourceType type, long resourceId) {
+    private Managed requireManager(AuthenticatedUser actor, ResourceType type, UUID resourceId) {
         ResourceTypeAdapter adapter = adapterFor(type);
-        ResourceIdentity resource = adapter.identify(resourceId)
+        ResourceIdentity resource = adapter.identifyByPublicId(resourceId)
                 .orElseThrow(() -> adapter.accessMessages().notFound());
-        ResourceStanding standing = resolver.standing(type, resourceId, resource.workspaceId(),
+        ResourceStanding standing = resolver.standing(type, resource.id(), resource.workspaceId(),
                 actor.id());
         if (!standing.manages()) {
             // An outsider is not told the resource exists and a member without
@@ -156,16 +160,20 @@ public class ResourceAccessGrantService {
      * rule that keeps the list from disagreeing with the 404 that hides the
      * resource from everyone else.
      */
-    private long requireEligibleMember(Managed managed, Long userId) {
-        if (userId == null) {
+    private long requireEligibleMember(Managed managed, UUID publicUserId) {
+        if (publicUserId == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("userId",
                     "대상 사용자를 지정해 주세요.")));
         }
+        // An id no account has is refused as ineligible, not as missing: the
+        // grantee's existence is not this endpoint's to disclose.
+        Long userId = userRepository.findByPublicId(publicUserId)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .map(kr.ac.pusan.pickle.user.User::getId)
+                .orElseThrow(() -> managed.messages().granteeIneligible());
         boolean member = workspaceMemberRepository
                 .findByWorkspaceIdAndUserId(managed.resource().workspaceId(), userId).isPresent();
-        boolean active = userRepository.findById(userId)
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE).isPresent();
-        if (!member || !active) {
+        if (!member) {
             throw managed.messages().granteeIneligible();
         }
         return userId;
@@ -182,8 +190,8 @@ public class ResourceAccessGrantService {
     }
 
     /** A grant id means nothing outside the resource it was issued under. */
-    private ResourceAccessGrant requireGrant(Managed managed, long grantId) {
-        return grantRepository.findById(grantId)
+    private ResourceAccessGrant requireGrant(Managed managed, UUID grantId) {
+        return grantRepository.findByPublicId(grantId)
                 .filter(grant -> grant.getResourceType() == managed.adapter().type()
                         && grant.getResourceId() == managed.resource().id())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
@@ -204,12 +212,11 @@ public class ResourceAccessGrantService {
         if (previousRole != null) {
             detail.put("previousRole", previousRole.name());
         }
-        long resourceId = managed.resource().id();
         auditService.recordAfterCommit(actor.id(), actor.role().name(), names.actionOf(change),
-                names.targetType(), resourceId, Map.copyOf(detail), ip);
+                names.targetType(), managed.resource().publicId(), Map.copyOf(detail), ip);
         if (opensTheDoorForActor(actor, managed, change, grant)) {
             auditService.recordAfterCommit(actor.id(), actor.role().name(), names.breakGlass(),
-                    names.targetType(), resourceId, Map.copyOf(detail), ip);
+                    names.targetType(), managed.resource().publicId(), Map.copyOf(detail), ip);
         }
     }
 

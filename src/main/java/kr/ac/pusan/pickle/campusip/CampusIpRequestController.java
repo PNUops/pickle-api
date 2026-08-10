@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CreateCampusIpRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -37,14 +38,14 @@ public class CampusIpRequestController {
 
     @GetMapping
     public List<CampusIpRequestView> listVmCampusIpRequests(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return campusIpRequestService.list(principal, vmId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CampusIpRequestView requestVmCampusIp(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             @Valid @RequestBody CreateCampusIpRequest request, HttpServletRequest httpRequest) {
         return campusIpRequestService.create(principal, vmId, request, clientIp(httpRequest));
     }
@@ -53,8 +54,8 @@ public class CampusIpRequestController {
     @DeleteMapping("/{requestId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancelVmCampusIpRequest(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            @PathVariable long requestId, HttpServletRequest httpRequest) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
+            @PathVariable UUID requestId, HttpServletRequest httpRequest) {
         campusIpRequestService.cancel(principal, vmId, requestId, clientIp(httpRequest));
     }
 }

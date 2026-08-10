@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.announcement.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.UUID;
 import kr.ac.pusan.pickle.announcement.AnnouncementScope;
 import org.jspecify.annotations.Nullable;
 
@@ -16,6 +17,6 @@ public record AnnouncementCreateRequest(
         String body,
         @NotNull(message = "공지 범위를 선택해 주세요.")
         AnnouncementScope scope,
-        @Nullable Long orgId,
-        @Nullable Long workspaceId) {
+        @Nullable UUID orgId,
+        @Nullable UUID workspaceId) {
 }

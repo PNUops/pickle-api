@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.AccessGranteeType;
 import kr.ac.pusan.pickle.access.ResourceAccessGrant;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
@@ -205,9 +206,10 @@ public class NotificationService {
      * Other users' rows answer 404 (existence masked).
      */
     @Transactional
-    public NotificationView markRead(long actorUserId, long notificationId) {
+    public NotificationView markRead(long actorUserId, UUID notificationId) {
         Notification notification = notificationRepository
-                .findByIdAndUserId(notificationId, actorUserId)
+                .findByPublicId(notificationId)
+                .filter(row -> row.getUserId() == actorUserId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 알림이 존재하지 않습니다."));

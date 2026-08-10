@@ -137,7 +137,7 @@ public class MfaService {
         List<String> codes = replaceRecoveryCodes(userId);
 
         auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_MFA_ENROLL,
-                "user", user.getId(), Map.of(), ip);
+                "user", user.getPublicId(), Map.of(), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_MFA_ENROLLED, Map.of(),
                 "account_mfa_enrolled:" + user.getId() + ":" + mfa.getEnabledAt());
         return new MfaRecoveryCodesResponse(codes);
@@ -166,7 +166,7 @@ public class MfaService {
         recoveryCodeRepository.deleteByUserId(userId);
 
         auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_MFA_DISABLE,
-                "user", user.getId(), Map.of(), ip);
+                "user", user.getPublicId(), Map.of(), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_MFA_DISABLED, Map.of(),
                 "account_mfa_disabled:" + user.getId() + ":" + Instant.now().toEpochMilli());
     }
@@ -310,7 +310,7 @@ public class MfaService {
         recoveryCodeRepository.deleteByUserId(target.getId());
 
         auditService.record(actorId, actorRole, AuditService.ACCOUNT_MFA_RESET,
-                "user", target.getId(), Map.of("targetEmail", target.getEmail()), ip);
+                "user", target.getPublicId(), Map.of("targetEmail", target.getEmail()), ip);
         notificationService.publish(target.getId(), NotificationEvent.ACCOUNT_MFA_RESET, Map.of(),
                 "account_mfa_reset:" + target.getId() + ":" + Instant.now().toEpochMilli());
     }

@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
@@ -14,11 +15,11 @@ import org.jspecify.annotations.Nullable;
  * nullable per contract (VM rows are permanent, so normally always present).
  */
 public record AdminTaskResponse(
-        Long taskId,
-        Long vmId,
+        UUID taskId,
+        UUID vmId,
         @Nullable String vmName,
         @Nullable String hostname,
-        @Nullable Long orgId,
+        @Nullable UUID orgId,
         @Nullable String orgName,
         @Nullable String workspaceName,
         ProvisioningTaskKind kind,
@@ -32,13 +33,13 @@ public record AdminTaskResponse(
         Instant createdAt,
         Instant updatedAt) {
 
-    public static AdminTaskResponse from(ProvisioningTask task, Vm vm, String orgName,
-            String workspaceName) {
+    public static AdminTaskResponse from(ProvisioningTask task, Vm vm, UUID vmId, UUID orgId,
+            String orgName, String workspaceName) {
         ProvisioningTaskResponse view = ProvisioningTaskResponse.from(task);
-        return new AdminTaskResponse(task.getId(), task.getVmId(),
+        return new AdminTaskResponse(task.getPublicId(), vmId,
                 vm == null ? null : vm.getName(),
                 vm == null ? null : vm.getHostname(),
-                vm == null ? null : vm.getOrgId(),
+                orgId,
                 orgName,
                 workspaceName,
                 view.kind(), view.status(), view.currentStep(), view.totalSteps(),

@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.jspecify.annotations.Nullable;
@@ -22,7 +23,7 @@ import org.jspecify.annotations.Nullable;
  * display name there instead — see {@link #restricted}.
  */
 public record VmSummaryResponse(
-        Long id,
+        UUID id,
         @Schema(description = "SSH 슬러그. 접근 권한이 없으면 대신 표시 이름이 들어갑니다.")
         String name,
         @Schema(description = "SSH 슬러그. 접근 권한이 없으면 생략됩니다.")
@@ -34,11 +35,12 @@ public record VmSummaryResponse(
         @Nullable Integer memoryMb,
         @Schema(description = "디스크(GiB). 접근 권한이 없으면 생략됩니다.")
         @Nullable Integer diskGb,
-        Long workspaceId,
+        @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID workspaceId,
         String workspaceName,
         @Nullable String orgName,
         @Nullable String displayName,
-        @Nullable Long requestId,
+        @Nullable UUID requestId,
         @Nullable String statusDetail,
         @Nullable Boolean sshGatewayBlocked,
         @Nullable LocalDate endDate,
@@ -51,11 +53,11 @@ public record VmSummaryResponse(
         @Schema(description = "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 워크스페이스 소유자가 참입니다.")
         boolean accessManageAllowed) {
 
-    public static VmSummaryResponse from(Vm vm, String workspaceName, String orgName,
-            String displayName) {
-        return new VmSummaryResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getWorkspaceId(), workspaceName, orgName,
-                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
+    public static VmSummaryResponse from(Vm vm, UUID workspaceId, String workspaceName,
+            String orgName, String displayName, UUID requestId) {
+        return new VmSummaryResponse(vm.getPublicId(), vm.getName(), vm.getHostname(), vm.getStatus(),
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), workspaceId, workspaceName, orgName,
+                displayName, requestId, vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getEndDate(), vm.getExpiryStoppedAt(), vm.getCreatedAt(), false, List.of(),
                 false);
     }
@@ -69,10 +71,10 @@ public record VmSummaryResponse(
      * null so the row still renders as one label — a list that shows both would
      * print the name twice.
      */
-    public static VmSummaryResponse restricted(Vm vm, String workspaceName, String displayName,
-            List<String> ownerNames, boolean accessManageAllowed) {
-        return new VmSummaryResponse(vm.getId(), restrictedName(vm, displayName), null, vm.getStatus(),
-                null, null, null, vm.getWorkspaceId(), workspaceName, null,
+    public static VmSummaryResponse restricted(Vm vm, UUID workspaceId, String workspaceName,
+            String displayName, List<String> ownerNames, boolean accessManageAllowed) {
+        return new VmSummaryResponse(vm.getPublicId(), restrictedName(vm, displayName), null, vm.getStatus(),
+                null, null, null, workspaceId, workspaceName, null,
                 null, null, null, null,
                 null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed);
     }
@@ -84,6 +86,6 @@ public record VmSummaryResponse(
      * {@code displayName || name}, so a null name would leave the row nameless.
      */
     private static String restrictedName(Vm vm, String displayName) {
-        return displayName != null && !displayName.isBlank() ? displayName : "VM #" + vm.getId();
+        return displayName != null && !displayName.isBlank() ? displayName : "VM #" + vm.getPublicId();
     }
 }

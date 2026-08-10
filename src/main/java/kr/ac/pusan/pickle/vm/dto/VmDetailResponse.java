@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -19,23 +20,27 @@ import org.jspecify.annotations.Nullable;
  * VM is unpublished.
  */
 public record VmDetailResponse(
-        Long id,
+        UUID id,
         String name,
         String hostname,
         VmStatus status,
         int vcpu,
         int memoryMb,
         int diskGb,
-        Long workspaceId,
+        @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID workspaceId,
         String workspaceName,
         @Nullable String orgName,
         @Nullable String displayName,
-        Long requestId,
+        @Schema(description = "이 VM을 만든 신청. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID requestId,
         @Nullable String statusDetail,
         boolean sshGatewayBlocked,
         Instant createdAt,
-        Long orgId,
-        Long imageId,
+        @Schema(description = "소속 기관. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID orgId,
+        @Schema(description = "생성에 쓰인 OS 이미지. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID imageId,
         @Nullable String ipAddress,
         String sshUsername,
         String sshHost,
@@ -67,7 +72,8 @@ public record VmDetailResponse(
      * Admin surfaces pass {@code myResourceRole} null and get them all false —
      * their own authorization is org-scoped and lives elsewhere.
      */
-    public static VmDetailResponse from(Vm vm, String workspaceName, String orgName, String displayName,
+    public static VmDetailResponse from(Vm vm, VmReferences refs, String workspaceName,
+            String orgName, String displayName,
             String ipAddress, String sshHost, ResourceRole myResourceRole,
             boolean passwordRevealAllowed, boolean accessManageAllowed,
             ProvisioningTaskResponse provisioning, List<PublicationView> publications) {
@@ -75,13 +81,13 @@ public record VmDetailResponse(
                 && myResourceRole.atLeast(ResourceRole.MEMBER);
         boolean atLeastEditor = myResourceRole != null
                 && myResourceRole.atLeast(ResourceRole.EDITOR);
-        return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getWorkspaceId(), workspaceName, orgName,
-                displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
-                vm.getCreatedAt(), vm.getOrgId(),
-                vm.getImageId(), ipAddress, vm.getSshUsername(), sshHost, myResourceRole,
+        return new VmDetailResponse(vm.getPublicId(), vm.getName(), vm.getHostname(), vm.getStatus(),
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), refs.workspaceId(), workspaceName, orgName,
+                displayName, refs.requestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
+                vm.getCreatedAt(), refs.orgId(),
+                refs.imageId(), ipAddress, vm.getSshUsername(), sshHost, myResourceRole,
                 vm.getStartDate(), vm.getEndDate(), vm.getExpiryStoppedAt(), provisioning,
-                VmDeletionResponse.from(vm), publications,
+                VmDeletionResponse.from(vm, refs.deleteRequestedById()), publications,
                 vm.getPasswordEnc() != null, passwordRevealAllowed,
                 atLeastMember, atLeastMember, atLeastEditor, accessManageAllowed,
                 accessManageAllowed, vm.getUpdatedAt());

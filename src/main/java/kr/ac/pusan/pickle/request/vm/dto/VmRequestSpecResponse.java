@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.request.vm.dto;
 
 import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -9,8 +10,8 @@ import org.jspecify.annotations.Nullable;
  * request is approved.
  */
 public record VmRequestSpecResponse(
-        Long imageId,
-        @Nullable Long flavorId,
+        UUID imageId,
+        @Nullable UUID flavorId,
         int reqVcpu,
         int reqMemoryMb,
         int reqDiskGb,
@@ -20,12 +21,13 @@ public record VmRequestSpecResponse(
         @Nullable String rootDomain,
         @Nullable VmGrantedSpecResponse granted) {
 
-    public static VmRequestSpecResponse from(VmRequestDetail detail) {
+    public static VmRequestSpecResponse from(VmRequestDetail detail, UUID imageId, UUID flavorId,
+            UUID grantedImageId, UUID nodeId) {
         VmGrantedSpecResponse granted = detail.getGrantedVcpu() != null
                 ? new VmGrantedSpecResponse(detail.getGrantedVcpu(), detail.getGrantedMemoryMb(),
-                        detail.getGrantedDiskGb(), detail.getGrantedImageId(), detail.getNodeId())
+                        detail.getGrantedDiskGb(), grantedImageId, nodeId)
                 : null;
-        return new VmRequestSpecResponse(detail.getImageId(), detail.getFlavorId(),
+        return new VmRequestSpecResponse(imageId, flavorId,
                 detail.getReqVcpu(), detail.getReqMemoryMb(), detail.getReqDiskGb(),
                 detail.getSpecReason(), detail.getDesiredSlug(), detail.getDesiredSubdomain(),
                 detail.getRootDomain(), granted);

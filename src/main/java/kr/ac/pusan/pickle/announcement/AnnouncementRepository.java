@@ -1,12 +1,17 @@
 package kr.ac.pusan.pickle.announcement;
 
 import org.springframework.data.domain.Page;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AnnouncementRepository extends JpaRepository<Announcement, Long> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Announcement> findByPublicId(UUID publicId);
 
     Page<Announcement> findAllByOrderByIdDesc(Pageable pageable);
 

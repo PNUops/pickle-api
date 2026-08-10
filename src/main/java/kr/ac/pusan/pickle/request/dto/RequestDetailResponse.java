@@ -1,7 +1,9 @@
 package kr.ac.pusan.pickle.request.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import kr.ac.pusan.pickle.request.vm.dto.VmRequestSpecResponse;
@@ -13,13 +15,16 @@ import org.jspecify.annotations.Nullable;
  * populated: the one named by {@code type}.
  */
 public record RequestDetailResponse(
-        Long id,
+        UUID id,
         ResourceType type,
-        Long workspaceId,
+        @Schema(description = "신청 대상 워크스페이스. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID workspaceId,
         String workspaceName,
-        Long orgId,
+        @Schema(description = "신청 대상 기관. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID orgId,
         String orgName,
-        Long requesterId,
+        @Schema(description = "신청자. 행이 사라진 경우에만 null입니다.")
+        @Nullable UUID requesterId,
         String requesterName,
         String purpose,
         @Nullable String courseOrProject,

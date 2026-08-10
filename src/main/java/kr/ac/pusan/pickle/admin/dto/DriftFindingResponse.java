@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.provisioning.DriftFinding;
 import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
@@ -9,9 +10,9 @@ import tools.jackson.databind.JsonNode;
 
 /** Contract {@code DriftFindingView}. */
 public record DriftFindingResponse(
-        Long id,
+        UUID id,
         DriftFindingKind kind,
-        @Nullable Long vmId,
+        @Nullable UUID vmId,
         @Nullable String vmName,
         @Nullable Integer proxmoxVmid,
         @Nullable String nodeName,
@@ -21,16 +22,16 @@ public record DriftFindingResponse(
         Instant firstSeenAt,
         Instant lastSeenAt,
         @Nullable Instant resolvedAt,
-        @Nullable Long resolvedById,
+        @Nullable UUID resolvedById,
         @Nullable String resolvedByEmail,
         @Nullable String resolutionNote) {
 
     public static DriftFindingResponse from(DriftFinding finding, JsonNode detail,
-            String resolvedByEmail, String vmName) {
-        return new DriftFindingResponse(finding.getId(), finding.getKind(), finding.getVmId(),
+            UUID vmId, String vmName, UUID resolvedById, String resolvedByEmail) {
+        return new DriftFindingResponse(finding.getPublicId(), finding.getKind(), vmId,
                 vmName, finding.getProxmoxVmid(), finding.getNodeName(), finding.getSummary(), detail,
                 finding.getStatus(), finding.getFirstSeenAt(), finding.getLastSeenAt(),
-                finding.getResolvedAt(), finding.getResolvedBy(), resolvedByEmail,
+                finding.getResolvedAt(), resolvedById, resolvedByEmail,
                 finding.getResolutionNote());
     }
 }

@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.AccessGranteeType;
@@ -127,9 +128,10 @@ public class PublishingService {
     // ── create / update / delete a domain ────────────────────────────────────
 
     @Transactional
-    public PublicationView createDomain(AuthenticatedUser actor, long vmId, Integer port,
+    public PublicationView createDomain(AuthenticatedUser actor, UUID publicVmId, Integer port,
             String subdomain, String rootDomain, String customDomain, String ip) {
-        Vm vm = requireVmOwnerOrEditor(actor, vmId);
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        long vmId = vm.getId();
         requirePublishableState(vm);
         if (Texts.blankToNull(subdomain) != null && Texts.blankToNull(customDomain) != null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("subdomain",
@@ -142,16 +144,17 @@ public class PublishingService {
                 : createPlatform(vm, resolvedPort, subdomain, rootDomain);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(), domain.getFqdn()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_PUBLISH,
-                "vm", vmId, Map.of("fqdn", domain.getFqdn(), "port", resolvedPort,
+                "vm", vm.getPublicId(), Map.of("fqdn", domain.getFqdn(), "port", resolvedPort,
                         "kind", domain.getKind().name()), ip);
-        return assembler.toPublication(domain);
+        return assembler.toPublication(domain, vm.getPublicId());
     }
 
     @Transactional
-    public PublicationView updateDomain(AuthenticatedUser actor, long domainId, Integer port,
+    public PublicationView updateDomain(AuthenticatedUser actor, UUID publicDomainId, Integer port,
             String ip) {
-        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        Vm vm = requireVmOwnerOrEditor(actor, domain.getVmId());
+        Domain domain = domainRepository.findByPublicId(publicDomainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        Vm vm = requireVmOwnerOrEditorOf(actor, domain.getVmId());
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
         }
@@ -176,8 +179,8 @@ public class PublishingService {
             enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_UPDATE,
-                "domain", domainId, Map.of("fqdn", domain.getFqdn(), "port", resolvedPort), ip);
-        return assembler.toPublication(domain);
+                "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn(), "port", resolvedPort), ip);
+        return assembler.toPublication(domain, vm.getPublicId());
     }
 
     /**
@@ -189,9 +192,10 @@ public class PublishingService {
      * row) is removed outright, freeing the name immediately.
      */
     @Transactional
-    public MessageResponse deleteDomain(AuthenticatedUser actor, long domainId, String ip) {
-        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmOwnerOrEditor(actor, domain.getVmId());
+    public MessageResponse deleteDomain(AuthenticatedUser actor, UUID publicDomainId, String ip) {
+        Domain domain = domainRepository.findByPublicId(publicDomainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        requireVmOwnerOrEditorOf(actor, domain.getVmId());
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
         }
@@ -202,7 +206,7 @@ public class PublishingService {
                     domain.getFqdn()));
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_DELETE,
-                "domain", domainId, Map.of("fqdn", domain.getFqdn()), ip);
+                "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
         return domain.getReleasedAt() != null && domain.getStatus() != DomainStatus.REMOVED
                 ? new MessageResponse("도메인 해제를 접수했습니다. 이름은 유예 기간 동안 이 VM에 예약됩니다.")
                 : new MessageResponse("도메인 삭제를 접수했습니다.");
@@ -211,26 +215,36 @@ public class PublishingService {
     // ── domain reads ─────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public PageResponse<DomainSummaryView> listDomains(AuthenticatedUser actor, Long vmId,
+    public PageResponse<DomainSummaryView> listDomains(AuthenticatedUser actor, UUID publicVmId,
             DomainStatus status, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        // An id no VM has filters to nothing, as a non-matching number did.
+        Long vmId = publicVmId == null ? null
+                : vmRepository.findByPublicId(publicVmId).map(Vm::getId).orElse(-1L);
         Page<Domain> result = domainRepository.findForReachableVms(reachableVmIds(actor), vmId,
                 status != null ? status.name() : null, pageable);
-        return PageResponse.of(result.getContent().stream().map(assembler::toDomainSummary).toList(),
-                result);
+        Map<Long, UUID> vmPublicIds = vmRepository.findAllById(result.getContent().stream()
+                        .map(Domain::getVmId).distinct().toList()).stream()
+                .collect(java.util.stream.Collectors.toMap(Vm::getId, Vm::getPublicId));
+        return PageResponse.of(result.getContent().stream()
+                .map(domain -> assembler.toDomainSummary(domain, vmPublicIds.get(domain.getVmId())))
+                .toList(), result);
     }
 
     @Transactional(readOnly = true)
-    public DomainDetailView getDomain(AuthenticatedUser actor, long domainId) {
-        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmMember(actor, domain.getVmId());
-        return assembler.toDomainDetail(domain);
+    public DomainDetailView getDomain(AuthenticatedUser actor, UUID publicDomainId) {
+        Domain domain = domainRepository.findByPublicId(publicDomainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        Vm vm = requireVmMemberOf(actor, domain.getVmId());
+        return assembler.toDomainDetail(domain, vm.getPublicId());
     }
 
     @Transactional
-    public DomainDetailView verifyDomain(AuthenticatedUser actor, long domainId, String ip) {
-        Domain domain = domainRepository.findById(domainId).orElseThrow(PublishingService::domainNotFound);
-        requireVmOwnerOrEditor(actor, domain.getVmId());
+    public DomainDetailView verifyDomain(AuthenticatedUser actor, UUID publicDomainId, String ip) {
+        Domain domain = domainRepository.findByPublicId(publicDomainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        Vm vm = requireVmOwnerOrEditorOf(actor, domain.getVmId());
+        long domainId = domain.getId();
         // Same 404 mask as update/delete: a REMOVED row is gone to its owner.
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
@@ -245,8 +259,8 @@ public class PublishingService {
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_VERIFY,
-                "domain", domainId, Map.of("fqdn", domain.getFqdn()), ip);
-        return assembler.toDomainDetail(domain);
+                "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
+        return assembler.toDomainDetail(domain, vm.getPublicId());
     }
 
     // ── shared creation core ─────────────────────────────────────────────────
@@ -580,11 +594,24 @@ public class PublishingService {
 
     // ── authorization helpers ────────────────────────────────────────────────
 
-    private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmMember(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireVisible();
     }
 
-    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
+    /** The same two gates reached from a row that already names its VM internally. */
+    private Vm requireVmMemberOf(AuthenticatedUser actor, long vmId) {
+        return vmAccessService.of(vmRepository.findById(vmId)
+                .orElseThrow(VmAccessService::vmNotFound), actor.id()).requireVisible();
+    }
+
+    private Vm requireVmOwnerOrEditorOf(AuthenticatedUser actor, long vmId) {
+        return vmAccessService.of(vmRepository.findById(vmId)
+                .orElseThrow(VmAccessService::vmNotFound), actor.id())
+                .requireAtLeast(ResourceRole.EDITOR,
+                        "도메인을 관리할 권한이 없습니다", "이 VM의 편집자 이상만 도메인을 관리할 수 있습니다.");
+    }
+
+    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "HTTP 서비스를 공개할 권한이 없습니다",
                 "이 VM의 소유자 또는 편집자만 도메인·포트를 설정할 수 있습니다.");

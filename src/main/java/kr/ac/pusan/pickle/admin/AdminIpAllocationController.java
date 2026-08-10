@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.IpAllocationResponse;
@@ -50,13 +51,16 @@ public class AdminIpAllocationController {
 
     @GetMapping
     public PageResponse<IpAllocationResponse> listIpAllocations(
-            @RequestParam(required = false) Long poolId,
+            @RequestParam(required = false) UUID poolId,
             @RequestParam(required = false) AllocationStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         Specification<IpAllocation> spec = (root, query, cb) -> cb.conjunction();
         if (poolId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("poolId"), poolId));
+            // An id no pool has filters to nothing, as a non-matching number did.
+            Long scopedPoolId = ipPoolRepository.findByPublicId(poolId).map(IpPool::getId)
+                    .orElse(-1L);
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("poolId"), scopedPoolId));
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
@@ -65,18 +69,23 @@ public class AdminIpAllocationController {
                 Sort.by(Sort.Order.desc("allocatedAt"), Sort.Order.desc("id")));
         Page<IpAllocation> result = ipAllocationRepository.findAll(spec, pageable);
 
-        Map<Long, String> poolNames = ipPoolRepository.findAllById(result.getContent().stream()
+        Map<Long, IpPool> pools = ipPoolRepository.findAllById(result.getContent().stream()
                         .map(IpAllocation::getPoolId).distinct().toList()).stream()
-                .collect(Collectors.toMap(IpPool::getId, IpPool::getName));
+                .collect(Collectors.toMap(IpPool::getId, Function.identity()));
         Map<Long, Vm> vms = vmRepository.findAllById(result.getContent().stream()
                         .map(IpAllocation::getVmId).filter(Objects::nonNull).distinct().toList())
                 .stream()
                 .collect(Collectors.toMap(Vm::getId, Function.identity()));
 
         List<IpAllocationResponse> content = result.getContent().stream()
-                .map(allocation -> IpAllocationResponse.from(allocation,
-                        poolNames.get(allocation.getPoolId()),
-                        allocation.getVmId() == null ? null : vms.get(allocation.getVmId())))
+                .map(allocation -> {
+                    IpPool pool = pools.get(allocation.getPoolId());
+                    Vm vm = allocation.getVmId() == null ? null : vms.get(allocation.getVmId());
+                    return IpAllocationResponse.from(allocation,
+                            pool == null ? null : pool.getPublicId(),
+                            pool == null ? null : pool.getName(),
+                            vm == null ? null : vm.getPublicId(), vm);
+                })
                 .toList();
         return PageResponse.of(content, result);
     }

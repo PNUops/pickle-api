@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.vm;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,6 +21,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.publishing.Domain;
@@ -27,12 +30,15 @@ import kr.ac.pusan.pickle.publishing.DomainRepository;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.PublicationAssembler;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
+import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.dto.ProvisioningTaskResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
+import kr.ac.pusan.pickle.vm.dto.VmReferences;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,6 +74,8 @@ public class VmQueryService {
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
+    private final OsImageRepository osImageRepository;
+    private final RequestRepository requestRepository;
     private final IpAddressResolver ipAddressResolver;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final VmEventRepository vmEventRepository;
@@ -81,6 +89,7 @@ public class VmQueryService {
             ResourceAccessGrantRepository grantRepository,
             UserRepository userRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
+            OsImageRepository osImageRepository, RequestRepository requestRepository,
             IpAddressResolver ipAddressResolver,
             ProvisioningTaskRepository provisioningTaskRepository,
             VmEventRepository vmEventRepository,
@@ -94,6 +103,8 @@ public class VmQueryService {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
+        this.osImageRepository = osImageRepository;
+        this.requestRepository = requestRepository;
         this.ipAddressResolver = ipAddressResolver;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.vmEventRepository = vmEventRepository;
@@ -104,7 +115,7 @@ public class VmQueryService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long workspaceId, int page, int size) {
+    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, UUID workspaceId, int page, int size) {
         Page<VmSummaryResponse> result = listPage(actor, workspaceId,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id")));
         return PageResponse.of(result.getContent(), result);
@@ -115,15 +126,20 @@ public class VmQueryService {
      * that one set of visibility rules serves both surfaces.
      */
     @Transactional(readOnly = true)
-    public Page<VmSummaryResponse> listPage(AuthenticatedUser actor, Long workspaceId, Pageable pageable) {
+    public Page<VmSummaryResponse> listPage(AuthenticatedUser actor, UUID workspaceId, Pageable pageable) {
         List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
-        Map<Long, String> workspaceNames = memberships.stream()
-                .collect(Collectors.toMap(m -> m.getWorkspace().getId(), m -> m.getWorkspace().getName()));
-        List<Long> workspaceIds = List.copyOf(workspaceNames.keySet());
+        Map<Long, Workspace> workspaces = memberships.stream()
+                .collect(Collectors.toMap(m -> m.getWorkspace().getId(), WorkspaceMember::getWorkspace,
+                        (first, second) -> first));
+        List<Long> workspaceIds = List.copyOf(workspaces.keySet());
         Page<Vm> result;
         if (workspaceId != null) {
-            result = workspaceIds.contains(workspaceId)
-                    ? vmRepository.findByWorkspaceId(workspaceId, pageable)
+            // An unknown workspace id and one outside my memberships answer the
+            // same empty page: the contract defines no 403 for the list.
+            Long filterId = workspaceRepository.findByPublicId(workspaceId)
+                    .map(Workspace::getId).orElse(null);
+            result = filterId != null && workspaceIds.contains(filterId)
+                    ? vmRepository.findByWorkspaceId(filterId, pageable)
                     : Page.empty(pageable);
         } else {
             result = workspaceIds.isEmpty()
@@ -132,6 +148,7 @@ public class VmQueryService {
         }
         List<Vm> vms = result.getContent();
         Map<Long, String> orgNames = orgNames(vms);
+        Map<Long, UUID> requestIds = requestPublicIds(vms);
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
         Set<Long> ownedWorkspaceIds = memberships.stream()
@@ -141,17 +158,20 @@ public class VmQueryService {
         VmListAccess access = listAccess(actor.id(), vms);
         return new PageImpl<>(vms.stream()
                 .map(vm -> {
-                    String workspaceName = workspaceNames.getOrDefault(vm.getWorkspaceId(), "");
+                    Workspace workspace = workspaces.get(vm.getWorkspaceId());
+                    UUID workspacePublicId = workspace == null ? null : workspace.getPublicId();
+                    String workspaceName = workspace == null ? "" : workspace.getName();
                     String displayName = displayNames.get(vm.getId());
                     // Only a grant opens the row. A workspace owner without one gets
                     // the same restricted row as anyone else, plus the flag that
                     // lets the console offer them the access list — the way back
                     // in for a VM whose own owner is gone.
                     if (access.reachable().contains(vm.getId())) {
-                        return VmSummaryResponse.from(vm, workspaceName, orgNames.get(vm.getOrgId()),
-                                displayName);
+                        return VmSummaryResponse.from(vm, workspacePublicId, workspaceName,
+                                orgNames.get(vm.getOrgId()), displayName,
+                                requestIds.get(vm.getRequestId()));
                     }
-                    return VmSummaryResponse.restricted(vm, workspaceName, displayName,
+                    return VmSummaryResponse.restricted(vm, workspacePublicId, workspaceName, displayName,
                             access.ownerNames().getOrDefault(vm.getId(), List.of()),
                             ownedWorkspaceIds.contains(vm.getWorkspaceId()));
                 })
@@ -189,6 +209,22 @@ public class VmQueryService {
         return new VmListAccess(reachable, ownerNames);
     }
 
+    /**
+     * Batch request-reference join for the summary views. The summary reports
+     * which request produced the VM and had no join for it while the id was
+     * the VM's own column; a public id lives on the request row, so it needs
+     * one. Shared with the admin list so both pages pay for it once.
+     */
+    public Map<Long, UUID> requestPublicIds(List<Vm> vms) {
+        List<Long> requestIds = vms.stream().map(Vm::getRequestId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (requestIds.isEmpty()) {
+            return Map.of();
+        }
+        return requestRepository.findAllById(requestIds).stream()
+                .collect(Collectors.toMap(Request::getId, Request::getPublicId));
+    }
+
     /** Batch org-name join for the summary views (avoids N+1). */
     private Map<Long, String> orgNames(List<Vm> vms) {
         List<Long> orgIds = vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
@@ -201,7 +237,7 @@ public class VmQueryService {
     }
 
     @Transactional(readOnly = true)
-    public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
+    public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         return detailOf(access.requireVisible(), access.role(), access.manages());
     }
@@ -226,10 +262,20 @@ public class VmQueryService {
         long vmId = vm.getId();
         // History-preserving joins: a DELETED vm's workspace/org may have been
         // deleted afterwards, so this deliberately reads all workspaces/orgs.
-        String workspaceName = workspaceRepository.findById(vm.getWorkspaceId())
-                .map(Workspace::getName).orElse("");
-        String orgName = vm.getOrgId() == null ? null
-                : orgRepository.findById(vm.getOrgId()).map(Org::getName).orElse(null);
+        Workspace workspace = workspaceRepository.findById(vm.getWorkspaceId()).orElse(null);
+        String workspaceName = workspace == null ? "" : workspace.getName();
+        Org org = vm.getOrgId() == null ? null
+                : orgRepository.findById(vm.getOrgId()).orElse(null);
+        String orgName = org == null ? null : org.getName();
+        VmReferences refs = new VmReferences(
+                workspace == null ? null : workspace.getPublicId(),
+                org == null ? null : org.getPublicId(),
+                vm.getImageId() == null ? null
+                        : osImageRepository.findById(vm.getImageId()).map(OsImage::getPublicId).orElse(null),
+                vm.getRequestId() == null ? null
+                        : requestRepository.findById(vm.getRequestId()).map(Request::getPublicId).orElse(null),
+                vm.getDeleteRequestedBy() == null ? null
+                        : userRepository.findById(vm.getDeleteRequestedBy()).map(User::getPublicId).orElse(null));
         String displayName = vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME);
         String ipAddress = liveIpAddress(vm);
         ProvisioningTaskResponse provisioning = provisioningTaskRepository
@@ -245,20 +291,19 @@ public class VmQueryService {
                 .filter(domain -> domain.getStatus() != DomainStatus.REMOVED)
                 .filter(publicationAssembler::hasLiveRoute)
                 .sorted(java.util.Comparator.comparing(Domain::getId))
-                .map(publicationAssembler::toPublication)
+                .map(domain -> publicationAssembler.toPublication(domain, vm.getPublicId()))
                 .toList();
         boolean passwordRevealAllowed = myResourceRole != null && myResourceRole.atLeast(
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
-        return VmDetailResponse.from(vm, workspaceName, orgName, displayName, ipAddress, sshHost,
+        return VmDetailResponse.from(vm, refs, workspaceName, orgName, displayName, ipAddress, sshHost,
                 myResourceRole, passwordRevealAllowed, accessManageAllowed, provisioning,
                 publications);
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */
     @Transactional(readOnly = true)
-    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, long vmId, int page, int size) {
-        requireVisibleVm(actor, vmId);
-        return eventsOf(vmId, page, size);
+    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page, int size) {
+        return eventsOf(requireVisibleVm(actor, vmId).getId(), page, size);
     }
 
     /**
@@ -269,8 +314,12 @@ public class VmQueryService {
     public PageResponse<VmEventResponse> eventsOf(long vmId, int page, int size) {
         Page<VmEvent> result = vmEventRepository.findByVmIdOrderByIdDesc(vmId,
                 PageRequest.of(page, size));
-        return PageResponse.of(result.getContent().stream().map(VmEventResponse::from).toList(),
-                result);
+        Map<Long, UUID> actorIds = userRepository.findAllById(result.getContent().stream()
+                        .map(VmEvent::getActorId).filter(java.util.Objects::nonNull).distinct().toList())
+                .stream().collect(Collectors.toMap(User::getId, User::getPublicId));
+        return PageResponse.of(result.getContent().stream()
+                .map(event -> VmEventResponse.from(event, actorIds.get(event.getActorId())))
+                .toList(), result);
     }
 
     /**
@@ -278,7 +327,7 @@ public class VmQueryService {
      * non-member cannot probe which VM ids exist (masking, contract v0.3.2 —
      * consistent with the power/delete paths).
      */
-    private Vm requireVisibleVm(AuthenticatedUser actor, long vmId) {
+    private Vm requireVisibleVm(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireVisible();
     }
 

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.DriftFindingResponse;
 import kr.ac.pusan.pickle.admin.dto.ResolveDriftFindingRequest;
@@ -67,21 +68,29 @@ public class AdminDriftService {
         Pageable pageable = PageRequest.of(page, size,
                 Sort.by(Sort.Order.desc("lastSeenAt"), Sort.Order.desc("id")));
         Page<DriftFinding> result = driftFindingRepository.findAll(spec, pageable);
-        Map<Long, String> emails = emailsById(result.getContent());
-        Map<Long, String> vmNames = vmNamesById(result.getContent());
+        Map<Long, User> resolvers = resolversById(result.getContent());
+        Map<Long, Vm> vms = vmsById(result.getContent());
         List<DriftFindingResponse> content = result.getContent().stream()
-                .map(finding -> toResponse(finding, finding.getResolvedBy() == null ? null
-                        : emails.get(finding.getResolvedBy()),
-                        finding.getVmId() == null ? null : vmNames.get(finding.getVmId())))
+                .map(finding -> {
+                    Vm vm = finding.getVmId() == null ? null : vms.get(finding.getVmId());
+                    User resolver = finding.getResolvedBy() == null ? null
+                            : resolvers.get(finding.getResolvedBy());
+                    return toResponse(finding, vm == null ? null : vm.getPublicId(),
+                            vm == null ? null : vm.getName(),
+                            resolver == null ? null : resolver.getPublicId(),
+                            resolver == null ? null : resolver.getEmail());
+                })
                 .toList();
         return PageResponse.of(content, result);
     }
 
     /** Contract {@code resolveDriftFinding}: CAS OPEN→RESOLVED with the acting admin. */
     @Transactional
-    public DriftFindingResponse resolve(AuthenticatedUser actor, long findingId,
+    public DriftFindingResponse resolve(AuthenticatedUser actor, UUID publicFindingId,
             ResolveDriftFindingRequest request, String ip) {
         String note = request == null ? null : request.note();
+        long findingId = driftFindingRepository.findByPublicId(publicFindingId)
+                .map(DriftFinding::getId).orElse(-1L);
         if (driftFindingRepository.resolve(findingId, actor.id(), note, Instant.now()) == 0) {
             driftFindingRepository.findById(findingId)
                     .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
@@ -92,16 +101,17 @@ public class AdminDriftService {
         }
         DriftFinding finding = driftFindingRepository.findById(findingId).orElseThrow();
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DRIFT_RESOLVE,
-                "drift_finding", findingId,
+                "drift_finding", finding.getPublicId(),
                 note == null ? Map.of("kind", finding.getKind().name())
                         : Map.of("kind", finding.getKind().name(), "note", note),
                 ip);
         String vmName = finding.getVmId() == null ? null
                 : vmRepository.findById(finding.getVmId()).map(Vm::getName).orElse(null);
-        return toResponse(finding, actor.email(), vmName);
+        return toResponse(finding, vmPublicId(finding.getVmId()), vmName,
+                actor.publicId(), actor.email());
     }
 
-    private Map<Long, String> emailsById(List<DriftFinding> findings) {
+    private Map<Long, User> resolversById(List<DriftFinding> findings) {
         List<Long> ids = findings.stream()
                 .map(DriftFinding::getResolvedBy)
                 .filter(Objects::nonNull)
@@ -109,11 +119,11 @@ public class AdminDriftService {
                 .toList();
         return ids.isEmpty() ? Map.of()
                 : userRepository.findAllById(ids).stream()
-                        .collect(Collectors.toMap(User::getId, User::getEmail));
+                        .collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
     }
 
     /** VM-name join (v0.9.0 display field); null vmId (UNMANAGED_GUEST) → no entry. */
-    private Map<Long, String> vmNamesById(List<DriftFinding> findings) {
+    private Map<Long, Vm> vmsById(List<DriftFinding> findings) {
         List<Long> ids = findings.stream()
                 .map(DriftFinding::getVmId)
                 .filter(Objects::nonNull)
@@ -121,13 +131,18 @@ public class AdminDriftService {
                 .toList();
         return ids.isEmpty() ? Map.of()
                 : vmRepository.findAllById(ids).stream()
-                        .collect(Collectors.toMap(Vm::getId, Vm::getName));
+                        .collect(Collectors.toMap(Vm::getId, java.util.function.Function.identity()));
     }
 
-    private DriftFindingResponse toResponse(DriftFinding finding, String resolvedByEmail,
-            String vmName) {
+    private DriftFindingResponse toResponse(DriftFinding finding, UUID vmId, String vmName,
+            UUID resolvedById, String resolvedByEmail) {
         JsonNode detail = finding.getDetail() == null ? null
                 : objectMapper.readTree(finding.getDetail());
-        return DriftFindingResponse.from(finding, detail, resolvedByEmail, vmName);
+        return DriftFindingResponse.from(finding, detail, vmId, vmName, resolvedById, resolvedByEmail);
+    }
+
+    private UUID vmPublicId(Long vmId) {
+        return vmId == null ? null
+                : vmRepository.findById(vmId).map(Vm::getPublicId).orElse(null);
     }
 }

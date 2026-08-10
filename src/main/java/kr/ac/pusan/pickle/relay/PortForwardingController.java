@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.relay.dto.CreatePortForwardingRequest;
 import kr.ac.pusan.pickle.relay.dto.PortForwardingView;
@@ -37,14 +38,14 @@ public class PortForwardingController {
 
     @GetMapping
     public List<PortForwardingView> listVmPortForwardings(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return portForwardingService.list(principal, vmId);
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PortForwardingView createVmPortForwarding(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             @Valid @RequestBody CreatePortForwardingRequest request,
             HttpServletRequest httpRequest) {
         return portForwardingService.create(principal, vmId, request, clientIp(httpRequest));
@@ -53,8 +54,8 @@ public class PortForwardingController {
     @DeleteMapping("/{portForwardingId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse deleteVmPortForwarding(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
-            @PathVariable long portForwardingId, HttpServletRequest httpRequest) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
+            @PathVariable UUID portForwardingId, HttpServletRequest httpRequest) {
         return portForwardingService.delete(principal, vmId, portForwardingId,
                 clientIp(httpRequest));
     }

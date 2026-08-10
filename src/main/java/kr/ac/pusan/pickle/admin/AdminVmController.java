@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
 import kr.ac.pusan.pickle.admin.dto.VmGatewayBlockUpdateRequest;
@@ -67,8 +68,8 @@ public class AdminVmController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public PageResponse<VmSummaryResponse> listAdminVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId,
-            @RequestParam(required = false) Long workspaceId,
+            @RequestParam(required = false) UUID orgId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(required = false) VmStatus status,
             @RequestParam(required = false) @Min(1) Integer expiringInDays,
             @RequestParam(required = false) Boolean expired,
@@ -87,7 +88,7 @@ public class AdminVmController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public VmDetailResponse getAdminVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId) {
+            @PathVariable UUID vmId) {
         return adminVmQueryService.get(principal, vmId);
     }
 
@@ -95,7 +96,7 @@ public class AdminVmController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public PageResponse<VmEventResponse> listAdminVmEvents(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return adminVmQueryService.events(principal, vmId, page, size);
@@ -106,7 +107,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminStartVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId, HttpServletRequest httpRequest) {
+            @PathVariable UUID vmId, HttpServletRequest httpRequest) {
         return vmLifecycleService.adminStart(principal, vmId, clientIp(httpRequest));
     }
 
@@ -115,7 +116,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminShutdownVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId, HttpServletRequest httpRequest) {
+            @PathVariable UUID vmId, HttpServletRequest httpRequest) {
         return vmLifecycleService.adminShutdown(principal, vmId, clientIp(httpRequest));
     }
 
@@ -124,7 +125,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminRebootVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId, HttpServletRequest httpRequest) {
+            @PathVariable UUID vmId, HttpServletRequest httpRequest) {
         return vmLifecycleService.adminReboot(principal, vmId, clientIp(httpRequest));
     }
 
@@ -133,7 +134,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse adminForceStopVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId, HttpServletRequest httpRequest) {
+            @PathVariable UUID vmId, HttpServletRequest httpRequest) {
         return vmLifecycleService.adminForceStop(principal, vmId, clientIp(httpRequest));
     }
 
@@ -142,7 +143,7 @@ public class AdminVmController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public VmDetailResponse updateVmPeriod(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Valid @RequestBody VmPeriodUpdateRequest request,
             HttpServletRequest httpRequest) {
         return vmPeriodService.updatePeriod(principal, vmId, request, clientIp(httpRequest));
@@ -156,7 +157,7 @@ public class AdminVmController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public VmDetailResponse updateVmGatewayBlock(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Valid @RequestBody VmGatewayBlockUpdateRequest request,
             HttpServletRequest httpRequest) {
         return vmGatewayBlockService.updateBlock(principal, vmId, request, clientIp(httpRequest));
@@ -166,7 +167,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public VmDeletionResponse scheduleVmDeletion(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Valid @RequestBody ScheduleVmDeletionRequest request,
             HttpServletRequest httpRequest) {
         return vmDeletionService.scheduleDeletion(principal, vmId, request,
@@ -175,7 +176,7 @@ public class AdminVmController {
 
     @PostMapping("/{vmId}/cancel-scheduled-delete")
     public MessageResponse cancelScheduledVmDeletion(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
         return vmDeletionService.cancelScheduledDeletion(principal, vmId, clientIp(httpRequest));
     }
@@ -185,7 +186,7 @@ public class AdminVmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse forceDeleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Valid @RequestBody ForceDeleteVmRequest request,
             HttpServletRequest httpRequest) {
         return vmDeletionService.forceDelete(principal, vmId, request,

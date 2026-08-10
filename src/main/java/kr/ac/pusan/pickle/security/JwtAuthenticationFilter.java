@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -50,12 +51,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private void authenticate(HttpServletRequest request, String token) {
         try {
             Claims claims = jwtService.parse(token);
-            long userId = Long.parseLong(claims.getSubject());
+            // A subject that is not a UUID throws IllegalArgumentException, which
+            // the catch below already treats as an invalid token.
+            UUID userId = UUID.fromString(claims.getSubject());
             Integer tokenVersion = claims.get(JwtService.CLAIM_TOKEN_VERSION, Integer.class);
             if (tokenVersion == null) {
                 return;
             }
-            userRepository.findById(userId)
+            userRepository.findByPublicId(userId)
                     .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                     .filter(user -> user.getTokenVersion() == tokenVersion)
                     .ifPresent(user -> setAuthentication(request, user));
@@ -67,7 +70,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private void setAuthentication(HttpServletRequest request, User user) {
         AuthenticatedUser principal =
-                new AuthenticatedUser(user.getId(), user.getEmail(), user.getRole(), user.getOrgId());
+                new AuthenticatedUser(user.getId(), user.getPublicId(), user.getEmail(),
+                        user.getRole(), user.getOrgId());
         var authentication = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name())));
         authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

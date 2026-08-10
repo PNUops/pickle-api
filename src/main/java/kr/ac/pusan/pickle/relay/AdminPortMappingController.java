@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
@@ -46,8 +47,8 @@ public class AdminPortMappingController {
 
     @GetMapping
     public PageResponse<AdminPortMappingResponse> listAdminPortMappings(
-            @RequestParam(required = false) Long relayId,
-            @RequestParam(required = false) Long vmId,
+            @RequestParam(required = false) UUID relayId,
+            @RequestParam(required = false) UUID vmId,
             @RequestParam(required = false) PortMappingStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
@@ -57,7 +58,7 @@ public class AdminPortMappingController {
     /** 200 with the updated row (contract): convergence itself stays async. */
     @PostMapping("/{mappingId}/suspend")
     public AdminPortMappingResponse suspendAdminPortMapping(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID mappingId,
             @Valid @RequestBody SuspendPortMappingRequest request,
             HttpServletRequest httpRequest) {
         return adminPortMappingService.suspend(principal, mappingId, request.reason().strip(),
@@ -66,7 +67,7 @@ public class AdminPortMappingController {
 
     @PostMapping("/{mappingId}/unsuspend")
     public AdminPortMappingResponse unsuspendAdminPortMapping(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID mappingId,
             HttpServletRequest httpRequest) {
         return adminPortMappingService.unsuspend(principal, mappingId, clientIp(httpRequest));
     }
@@ -74,7 +75,7 @@ public class AdminPortMappingController {
     @DeleteMapping("/{mappingId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse deleteAdminPortMapping(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID mappingId,
             HttpServletRequest httpRequest) {
         return adminPortMappingService.delete(principal, mappingId, clientIp(httpRequest));
     }
@@ -89,7 +90,7 @@ public class AdminPortMappingController {
     @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
             schema = @Schema(implementation = UpdatePortMappingGuardsRequest.class)))
     public AdminPortMappingResponse updateAdminPortMappingGuards(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long mappingId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID mappingId,
             @RequestBody tools.jackson.databind.JsonNode body, HttpServletRequest httpRequest) {
         return adminPortMappingService.updateGuards(principal, mappingId, body,
                 clientIp(httpRequest));

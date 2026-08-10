@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Pageable;
@@ -14,6 +15,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 public interface RouteRepository extends JpaRepository<Route, Long> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Route> findByPublicId(UUID publicId);
 
     /**
      * The route, locked for one SHORT apply phase — the prepare that reads the

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.access;
 
+import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.resource.VmResourceAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -40,14 +41,14 @@ public class VmAccessService {
 
     /** Standing of {@code actor} on {@code vmId}; unknown VM answers 404. */
     @Transactional(readOnly = true)
-    public VmAccess of(AuthenticatedUser actor, long vmId) {
+    public VmAccess of(AuthenticatedUser actor, UUID vmId) {
         return of(vmId, actor.id());
     }
 
     /** Standing of one user on {@code vmId}; unknown VM answers 404. */
     @Transactional(readOnly = true)
-    public VmAccess of(long vmId, long userId) {
-        Vm vm = vmRepository.findById(vmId).orElseThrow(VmAccessService::vmNotFound);
+    public VmAccess of(UUID vmId, long userId) {
+        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
         return of(vm, userId);
     }
 

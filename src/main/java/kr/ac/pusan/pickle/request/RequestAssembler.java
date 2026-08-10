@@ -7,7 +7,14 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.inventory.Node;
+import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
+import kr.ac.pusan.pickle.inventory.VmFlavor;
+import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -34,15 +41,23 @@ public class RequestAssembler {
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final UserRepository userRepository;
+    private final OsImageRepository osImageRepository;
+    private final VmFlavorRepository vmFlavorRepository;
+    private final NodeRepository nodeRepository;
 
     public RequestAssembler(RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository, WorkspaceRepository workspaceRepository,
-            OrgRepository orgRepository, UserRepository userRepository) {
+            OrgRepository orgRepository, UserRepository userRepository,
+            OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
+            NodeRepository nodeRepository) {
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
+        this.osImageRepository = osImageRepository;
+        this.vmFlavorRepository = vmFlavorRepository;
+        this.nodeRepository = nodeRepository;
     }
 
     public RequestDetailResponse toDetail(Request request) {
@@ -71,6 +86,19 @@ public class RequestAssembler {
                 .findByRequestIdIn(idsOfType(requests, ResourceType.VM)).stream()
                 .collect(Collectors.toMap(VmRequestDetail::getRequestId, Function.identity()));
 
+        // The per-type spec reports its catalog references by public id, so the
+        // rows behind them are batched here beside the display-name joins.
+        Map<Long, UUID> imageIds = publicIds(osImageRepository.findAllById(ids(Stream.concat(
+                vmDetails.values().stream().map(VmRequestDetail::getImageId),
+                vmDetails.values().stream().map(VmRequestDetail::getGrantedImageId)))),
+                OsImage::getId, OsImage::getPublicId);
+        Map<Long, UUID> flavorIds = publicIds(vmFlavorRepository.findAllById(ids(
+                vmDetails.values().stream().map(VmRequestDetail::getFlavorId))),
+                VmFlavor::getId, VmFlavor::getPublicId);
+        Map<Long, UUID> nodeIds = publicIds(nodeRepository.findAllById(ids(
+                vmDetails.values().stream().map(VmRequestDetail::getNodeId))),
+                Node::getId, Node::getPublicId);
+
         List<RequestDetailResponse> details = new ArrayList<>(requests.size());
         for (Request request : requests) {
             RequestReview review = reviews.get(request.getId());
@@ -79,18 +107,24 @@ public class RequestAssembler {
             User requester = users.get(request.getRequesterId());
             VmRequestDetail vmDetail = vmDetails.get(request.getId());
             details.add(new RequestDetailResponse(
-                    request.getId(),
+                    request.getPublicId(),
                     request.getResourceType(),
-                    request.getWorkspaceId(), workspace != null ? workspace.getName() : null,
-                    request.getOrgId(), org != null ? org.getName() : null,
-                    request.getRequesterId(), requester != null ? requester.getName() : "탈퇴 회원",
+                    workspace != null ? workspace.getPublicId() : null,
+                    workspace != null ? workspace.getName() : null,
+                    org != null ? org.getPublicId() : null, org != null ? org.getName() : null,
+                    requester != null ? requester.getPublicId() : null,
+                    requester != null ? requester.getName() : "탈퇴 회원",
                     request.getPurpose(), request.getCourseOrProject(), request.getExtraNote(),
                     request.getReqStartDate(), request.getReqEndDate(), request.getDisplayName(),
                     request.getStatus(),
                     review != null
                             ? RequestReviewResponse.from(review, users.get(review.getReviewerId()))
                             : null,
-                    vmDetail != null ? VmRequestSpecResponse.from(vmDetail) : null,
+                    vmDetail != null ? VmRequestSpecResponse.from(vmDetail,
+                            imageIds.get(vmDetail.getImageId()),
+                            flavorIds.get(vmDetail.getFlavorId()),
+                            imageIds.get(vmDetail.getGrantedImageId()),
+                            nodeIds.get(vmDetail.getNodeId())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;
@@ -103,8 +137,13 @@ public class RequestAssembler {
                 .toList();
     }
 
+    private static <T> Map<Long, UUID> publicIds(List<T> rows, Function<T, Long> idOf,
+            Function<T, UUID> publicIdOf) {
+        return rows.stream().collect(Collectors.toMap(idOf, publicIdOf));
+    }
+
     private static Set<Long> ids(Stream<Long> stream) {
-        return stream.collect(Collectors.toSet());
+        return stream.filter(java.util.Objects::nonNull).collect(Collectors.toSet());
     }
 
     private static <T> Map<Long, T> byId(List<T> entities, Function<T, Long> idOf) {

@@ -44,7 +44,6 @@ public class DevDataSeeder implements ApplicationRunner {
     public static final int SEED_TEMPLATE_VMID = 1001;
 
     public static final String ORG_NAME = "테스트 기관";
-    public static final String ORG_SLUG = "test-org";
 
     private final UserRepository userRepository;
     private final OrgRepository orgRepository;
@@ -79,10 +78,10 @@ public class DevDataSeeder implements ApplicationRunner {
         seedUser(properties.sysadminEmail(), properties.sysadminPassword(), "시스템 관리자",
                 UserRole.SYS_ADMIN, null);
 
-        Org org = orgRepository.findBySlug(ORG_SLUG)
+        Org org = orgRepository.findFirstByNameOrderByIdAsc(ORG_NAME)
                 .orElseGet(() -> {
-                    log.info("Seeding org '{}' ({})", ORG_NAME, ORG_SLUG);
-                    Org seedOrg = new Org(ORG_NAME, ORG_SLUG, ORG_NAME + " (개발용 시드 기관)");
+                    log.info("Seeding org '{}'", ORG_NAME);
+                    Org seedOrg = new Org(ORG_NAME, ORG_NAME + " (개발용 시드 기관)");
                     seedOrg.setHidden(true);
                     return orgRepository.save(seedOrg);
                 });

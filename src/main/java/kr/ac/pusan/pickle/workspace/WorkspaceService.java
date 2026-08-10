@@ -29,6 +29,7 @@ import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import java.time.Instant;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -92,22 +93,25 @@ public class WorkspaceService {
                 request.name().strip(), normalize(request.description())));
         workspaceMemberRepository.save(new WorkspaceMember(workspace, actor.id(), WorkspaceMemberRole.OWNER));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_CREATE,
-                "workspace", workspace.getId(),
+                "workspace", workspace.getPublicId(),
                 Map.of("kind", workspace.getKind().name(), "name", workspace.getName()), ip);
         return toDetail(workspace, WorkspaceMemberRole.OWNER);
     }
 
     @Transactional(readOnly = true)
-    public WorkspaceDetailResponse get(AuthenticatedUser actor, long workspaceId) {
-        Workspace workspace = findWorkspace(workspaceId);
+    public WorkspaceDetailResponse get(AuthenticatedUser actor, UUID publicWorkspaceId) {
+        Workspace workspace = findWorkspace(publicWorkspaceId);
+        long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id())
                 .orElseThrow(() -> accessDenied("워크스페이스 구성원만 조회할 수 있습니다."));
         return toDetail(workspace, membership.getRole());
     }
 
     @Transactional
-    public WorkspaceDetailResponse update(AuthenticatedUser actor, long workspaceId, UpdateWorkspaceRequest request) {
-        Workspace workspace = findWorkspace(workspaceId);
+    public WorkspaceDetailResponse update(AuthenticatedUser actor, UUID publicWorkspaceId,
+            UpdateWorkspaceRequest request) {
+        Workspace workspace = findWorkspace(publicWorkspaceId);
+        long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id())
                 .orElseThrow(() -> accessDenied("워크스페이스 소유자(OWNER)만 수정할 수 있습니다."));
         if (membership.getRole() != WorkspaceMemberRole.OWNER) {
@@ -131,9 +135,10 @@ public class WorkspaceService {
     }
 
     @Transactional
-    public WorkspaceMemberResponse addMember(AuthenticatedUser actor, long workspaceId,
+    public WorkspaceMemberResponse addMember(AuthenticatedUser actor, UUID publicWorkspaceId,
             AddWorkspaceMemberRequest request, String ip) {
-        Workspace workspace = findWorkspace(workspaceId);
+        Workspace workspace = findWorkspace(publicWorkspaceId);
+        long workspaceId = workspace.getId();
         requireOwnerForMemberManagement(workspace, actor, "워크스페이스 소유자(OWNER)만 구성원을 추가할 수 있습니다.",
                 "PERSONAL 워크스페이스에는 구성원을 추가할 수 없습니다.");
         if (request.role() == WorkspaceMemberRole.OWNER) {
@@ -160,15 +165,17 @@ public class WorkspaceService {
                     "이미 워크스페이스 구성원입니다", "해당 사용자는 이미 이 워크스페이스의 구성원입니다.");
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_ADD,
-                "workspace", workspaceId,
+                "workspace", workspace.getPublicId(),
                 Map.of("userId", target.getId(), "email", target.getEmail(), "role", member.getRole().name()), ip);
         return WorkspaceMemberResponse.from(member, target);
     }
 
     @Transactional
-    public WorkspaceMemberResponse updateMemberRole(AuthenticatedUser actor, long workspaceId, long targetUserId,
-            UpdateWorkspaceMemberRequest request, String ip) {
-        Workspace workspace = findWorkspace(workspaceId);
+    public WorkspaceMemberResponse updateMemberRole(AuthenticatedUser actor, UUID publicWorkspaceId,
+            UUID publicUserId, UpdateWorkspaceMemberRequest request, String ip) {
+        Workspace workspace = findWorkspace(publicWorkspaceId);
+        long workspaceId = workspace.getId();
+        long targetUserId = memberUserId(publicUserId);
         requireOwnerForMemberManagement(workspace, actor,
                 "워크스페이스 소유자(OWNER)만 역할을 변경할 수 있습니다.", "PERSONAL 워크스페이스의 구성원은 변경할 수 없습니다.");
         // Locked before the count below. With one owner per workspace the count could
@@ -194,15 +201,18 @@ public class WorkspaceService {
         // never committed.
         User targetUser = userRepository.findById(targetUserId).orElseThrow(WorkspaceService::memberNotFound);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_UPDATE,
-                "workspace", workspaceId,
+                "workspace", workspace.getPublicId(),
                 Map.of("userId", targetUserId, "previousRole", previousRole.name(),
                         "role", target.getRole().name()), ip);
         return WorkspaceMemberResponse.from(target, targetUser);
     }
 
     @Transactional
-    public void removeMember(AuthenticatedUser actor, long workspaceId, long targetUserId, String ip) {
-        Workspace workspace = findWorkspace(workspaceId);
+    public void removeMember(AuthenticatedUser actor, UUID publicWorkspaceId, UUID publicUserId,
+            String ip) {
+        Workspace workspace = findWorkspace(publicWorkspaceId);
+        long workspaceId = workspace.getId();
+        long targetUserId = memberUserId(publicUserId);
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw memberManageForbidden("구성원을 관리할 권한이 없습니다", "PERSONAL 워크스페이스의 구성원은 변경할 수 없습니다.");
         }
@@ -227,7 +237,7 @@ public class WorkspaceService {
         // rather than lying dormant until a rejoin silently restores them.
         int revokedGrants = revokeGrantsOnWorkspaceResources(workspaceId, targetUserId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_REMOVE,
-                "workspace", workspaceId,
+                "workspace", workspace.getPublicId(),
                 Map.of("userId", targetUserId, "previousRole", target.getRole().name(),
                         "selfLeave", selfLeave, "revokedGrants", revokedGrants), ip);
     }
@@ -260,9 +270,10 @@ public class WorkspaceService {
      * members are notified and the deletion is audited.
      */
     @Transactional
-    public void delete(AuthenticatedUser actor, long workspaceId, String ip) {
-        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+    public void delete(AuthenticatedUser actor, UUID publicWorkspaceId, String ip) {
+        Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
                 .orElseThrow(WorkspaceService::workspaceNotFound);
+        long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id())
                 .orElseThrow(WorkspaceService::workspaceNotFound); // non-member: mask existence
         if (membership.getRole() != WorkspaceMemberRole.OWNER) {
@@ -282,13 +293,14 @@ public class WorkspaceService {
         // (409 REQUEST_ALREADY_DECIDED) once this delete commits.
         for (Request pending : requestRepository
                 .findByWorkspaceIdAndStatus(workspaceId, RequestStatus.SUBMITTED)) {
-            Request locked = requestRepository.findWithLockById(pending.getId()).orElse(null);
+            Request locked = requestRepository.findWithLockByPublicId(pending.getPublicId())
+                    .orElse(null);
             if (locked == null || locked.getStatus() != RequestStatus.SUBMITTED) {
                 continue;
             }
             locked.setStatus(RequestStatus.CANCELED);
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.REQUEST_CANCEL, "request", locked.getId(),
+                    AuditService.REQUEST_CANCEL, "request", locked.getPublicId(),
                     Map.of("workspaceId", workspaceId, "reason", "workspace_deleted"), ip);
         }
 
@@ -310,9 +322,11 @@ public class WorkspaceService {
         List<Long> recipients = notificationService.workspaceMemberIds(workspaceId);
         workspace.softDelete(actor.id(), Instant.now());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_DELETE,
-                "workspace", workspaceId, Map.of("kind", workspace.getKind().name(), "name", workspace.getName()), ip);
+                "workspace", workspace.getPublicId(),
+                Map.of("kind", workspace.getKind().name(), "name", workspace.getName()), ip);
         notificationService.publish(recipients, NotificationEvent.WORKSPACE_DELETED,
-                Map.of("workspaceId", workspaceId, "workspaceName", workspace.getName()), "workspace_deleted:" + workspaceId);
+                Map.of("workspaceId", workspace.getPublicId(), "workspaceName", workspace.getName()),
+                "workspace_deleted:" + workspaceId);
     }
 
     /**
@@ -341,9 +355,19 @@ public class WorkspaceService {
     }
 
     /** All read/manage paths exclude soft-deleted workspaces — a deleted workspace answers 404. */
-    private Workspace findWorkspace(long workspaceId) {
-        return workspaceRepository.findByIdAndDeletedAtIsNull(workspaceId)
+    private Workspace findWorkspace(UUID publicWorkspaceId) {
+        return workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
                 .orElseThrow(WorkspaceService::workspaceNotFound);
+    }
+
+    /**
+     * The member behind a public account id. An id no account has reads as
+     * "not a member of this workspace", the same 404 a real account outside
+     * the workspace gets.
+     */
+    private long memberUserId(UUID publicUserId) {
+        return userRepository.findByPublicId(publicUserId).map(User::getId)
+                .orElseThrow(WorkspaceService::memberNotFound);
     }
 
     private static ApiException workspaceNotFound() {

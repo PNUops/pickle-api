@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.relay.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.relay.PortForwardApplyState;
 import kr.ac.pusan.pickle.relay.PortMappingProto;
 import kr.ac.pusan.pickle.relay.PortMappingStatus;
@@ -9,10 +10,10 @@ import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code AdminPortMappingResponse} — one mapping with context. */
 public record AdminPortMappingResponse(
-        Long id,
-        Long relayId,
+        UUID id,
+        UUID relayId,
         String relayName,
-        Long vmId,
+        UUID vmId,
         @Nullable String vmName,
         PortMappingProto proto,
         int publicPort,
@@ -23,7 +24,7 @@ public record AdminPortMappingResponse(
         String suspendedReason,
         @Nullable
         @Schema(description = "정지한 관리자 id (자동 정지면 null)")
-        Long suspendedBy,
+        UUID suspendedBy,
         PortForwardApplyState applyState,
         @Nullable
         @Schema(description = "동시 연결 상한 오버라이드 (null = 에이전트 기본, 0 = 해제)")
@@ -40,6 +41,6 @@ public record AdminPortMappingResponse(
         @Nullable
         @Schema(description = "출발지별 버스트 오버라이드")
         Integer perSourceBurst,
-        Long createdBy,
+        @Nullable UUID createdBy,
         Instant createdAt) {
 }

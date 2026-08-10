@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.campusip.dto.AdminCampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.UpdateCampusIpRequestStatusRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -39,7 +40,7 @@ public class AdminCampusIpRequestController {
     @GetMapping
     public PageResponse<AdminCampusIpRequestView> listAdminCampusIpRequests(
             @RequestParam(required = false) CampusIpRequestStatus status,
-            @RequestParam(required = false) Long vmId,
+            @RequestParam(required = false) UUID vmId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return campusIpRequestService.adminList(status, vmId, page, size);
@@ -48,7 +49,7 @@ public class AdminCampusIpRequestController {
     @PostMapping("/{requestId}/status")
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public AdminCampusIpRequestView updateAdminCampusIpRequestStatus(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long requestId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID requestId,
             @Valid @RequestBody UpdateCampusIpRequestStatusRequest request,
             HttpServletRequest httpRequest) {
         return campusIpRequestService.updateStatus(principal, requestId, request,

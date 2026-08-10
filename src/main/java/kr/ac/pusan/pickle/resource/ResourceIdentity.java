@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.resource;
 
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -13,12 +14,13 @@ import org.jspecify.annotations.Nullable;
  * cannot leak past the limited view even by accident.
  *
  * @param id          the resource's id within its type
+ * @param publicId    the identifier it wears outside the API boundary
  * @param workspaceId the workspace that owns it, and whose owners hold standing
  *                    rights over it
  * @param name        the name it is listed under
  * @param displayName the name its owners gave it, or null if they gave none
  * @param status      this type's own state vocabulary, as a plain string
  */
-public record ResourceIdentity(long id, long workspaceId, String name,
+public record ResourceIdentity(long id, UUID publicId, long workspaceId, String name,
         @Nullable String displayName, String status) {
 }

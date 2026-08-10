@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.resource.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import org.jspecify.annotations.Nullable;
 
@@ -20,12 +21,12 @@ import org.jspecify.annotations.Nullable;
  * meaning neither side has.
  */
 public record ResourceSummaryResponse(
-        Long id,
+        UUID id,
         ResourceType type,
         String name,
         @Nullable String displayName,
         String status,
-        Long workspaceId,
+        UUID workspaceId,
         String workspaceName,
         /** True when the caller may see that it exists but not what it is. */
         boolean accessLimited,

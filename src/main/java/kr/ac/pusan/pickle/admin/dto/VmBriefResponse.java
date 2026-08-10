@@ -1,13 +1,14 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.LocalDate;
+import java.util.UUID;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmBrief} (approval-context VM line). */
 public record VmBriefResponse(
-        Long id,
+        UUID id,
         String name,
         VmStatus status,
         int vcpu,
@@ -16,7 +17,7 @@ public record VmBriefResponse(
         @Nullable LocalDate endDate) {
 
     public static VmBriefResponse from(Vm vm) {
-        return new VmBriefResponse(vm.getId(), vm.getName(), vm.getStatus(),
+        return new VmBriefResponse(vm.getPublicId(), vm.getName(), vm.getStatus(),
                 vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getEndDate());
     }
 }

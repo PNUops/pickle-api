@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CreateVmFlavorRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateVmFlavorRequest;
 import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
@@ -57,7 +58,7 @@ public class AdminVmFlavorController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public VmFlavorResponse updateAdminVmFlavor(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long flavorId,
+            @PathVariable UUID flavorId,
             @Valid @RequestBody UpdateVmFlavorRequest request,
             HttpServletRequest httpRequest) {
         return adminInventoryService.updateFlavor(principal, flavorId, request, clientIp(httpRequest));

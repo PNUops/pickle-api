@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.publishing;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -11,6 +12,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CertificateRepository extends JpaRepository<Certificate, Long> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Certificate> findByPublicId(UUID publicId);
 
     /** The current cert for a custom domain (excludes revoked/archived). */
     Optional<Certificate> findFirstByDomainIdAndStatusNot(Long domainId, CertificateStatus status);

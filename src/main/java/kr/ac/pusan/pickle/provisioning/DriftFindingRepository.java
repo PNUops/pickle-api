@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.provisioning;
 
 import java.time.Instant;
 import java.util.Collection;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -17,6 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 public interface DriftFindingRepository
         extends JpaRepository<DriftFinding, Long>, JpaSpecificationExecutor<DriftFinding> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<DriftFinding> findByPublicId(UUID publicId);
 
     /**
      * Records one observation of a drift condition: inserts an OPEN finding or

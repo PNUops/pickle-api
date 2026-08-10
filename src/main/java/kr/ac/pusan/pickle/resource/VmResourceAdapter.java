@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
 import java.util.Optional;
+import kr.ac.pusan.pickle.vm.Vm;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceAccessAudit;
 import kr.ac.pusan.pickle.access.ResourceAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -64,10 +66,18 @@ public class VmResourceAdapter implements ResourceTypeAdapter {
         // No filter on status: a destroyed VM keeps its row and its access
         // list, which is what lets the people who used it still read its
         // history.
-        return vmRepository.findById(resourceId)
-                .map(vm -> new ResourceIdentity(vm.getId(), vm.getWorkspaceId(), vm.getName(),
-                        vmSettingsService.string(vm.getId(), VmSettingsService.DISPLAY_NAME),
-                        vm.getStatus().name()));
+        return vmRepository.findById(resourceId).map(this::identityOf);
+    }
+
+    @Override
+    public Optional<ResourceIdentity> identifyByPublicId(UUID publicId) {
+        return vmRepository.findByPublicId(publicId).map(this::identityOf);
+    }
+
+    private ResourceIdentity identityOf(Vm vm) {
+        return new ResourceIdentity(vm.getId(), vm.getPublicId(), vm.getWorkspaceId(), vm.getName(),
+                vmSettingsService.string(vm.getId(), VmSettingsService.DISPLAY_NAME),
+                vm.getStatus().name());
     }
 
     @Override
@@ -92,7 +102,7 @@ public class VmResourceAdapter implements ResourceTypeAdapter {
     }
 
     @Override
-    public Page<ResourceSummaryResponse> page(AuthenticatedUser actor, Long workspaceId,
+    public Page<ResourceSummaryResponse> page(AuthenticatedUser actor, UUID workspaceId,
             Pageable pageable) {
         // Reuses the VM list rather than re-deriving visibility: the masking
         // rules live in one place, so the inventory cannot drift into showing

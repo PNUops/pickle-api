@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.publishing.dto.CreateVmDomainRequest;
@@ -46,7 +47,7 @@ public class PublishingController {
     @PostMapping("/vms/{vmId}/domains")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public PublicationView createVmDomain(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             @RequestBody(required = false) CreateVmDomainRequest request,
             HttpServletRequest httpRequest) {
         CreateVmDomainRequest body = request != null ? request
@@ -59,7 +60,7 @@ public class PublishingController {
     @PatchMapping("/domains/{domainId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public PublicationView updateDomain(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID domainId,
             @RequestBody UpdateDomainRequest request, HttpServletRequest httpRequest) {
         return publishingService.updateDomain(principal, domainId, request.port(),
                 clientIp(httpRequest));
@@ -68,7 +69,7 @@ public class PublishingController {
     @GetMapping("/domains")
     public PageResponse<DomainSummaryView> listDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long vmId,
+            @RequestParam(required = false) UUID vmId,
             @RequestParam(required = false) DomainStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
@@ -77,14 +78,14 @@ public class PublishingController {
 
     @GetMapping("/domains/{domainId}")
     public DomainDetailView getDomain(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long domainId) {
+            @PathVariable UUID domainId) {
         return publishingService.getDomain(principal, domainId);
     }
 
     @DeleteMapping("/domains/{domainId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse deleteDomain(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID domainId,
             HttpServletRequest httpRequest) {
         return publishingService.deleteDomain(principal, domainId, clientIp(httpRequest));
     }
@@ -92,7 +93,7 @@ public class PublishingController {
     @PostMapping("/domains/{domainId}/verify")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public DomainDetailView verifyDomain(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long domainId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID domainId,
             HttpServletRequest httpRequest) {
         return publishingService.verifyDomain(principal, domainId, clientIp(httpRequest));
     }

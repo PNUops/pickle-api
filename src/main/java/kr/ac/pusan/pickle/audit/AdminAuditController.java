@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.audit;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.time.LocalDate;
+import java.util.UUID;
 import kr.ac.pusan.pickle.audit.dto.AuditLogViewResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -41,7 +42,7 @@ public class AdminAuditController {
             LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate to,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return auditQueryService.adminAudit(principal, actorEmail, action, targetType, targetId,

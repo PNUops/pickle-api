@@ -167,7 +167,7 @@ public class AuthService {
         termsService.recordSignupConsents(user.getId(), request.consents());
         sendVerificationMail(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_SIGNUP,
-                "user", user.getId(), Map.of("email", user.getEmail()), ip);
+                "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
     }
 
     private static MessageResponse signupAccepted() {
@@ -199,7 +199,7 @@ public class AuthService {
         }
         personalWorkspaceService.ensurePersonalWorkspace(user);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_VERIFY,
-                "user", user.getId(), Map.of("email", user.getEmail()), ip);
+                "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
         return new MessageResponse("이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.");
     }
 
@@ -231,7 +231,7 @@ public class AuthService {
             rateLimitService.registerLoginFailure(email, ip);
             auditService.record(found.map(User::getId).orElse(null),
                     found.map(u -> u.getRole().name()).orElse(null), AuditService.AUTH_LOGIN_FAILED,
-                    "user", found.map(User::getId).orElse(null),
+                    "user", found.map(User::getPublicId).orElse(null),
                     Map.of("email", email, "reason", "bad_credentials"), ip);
             throw invalidCredentials();
         }
@@ -239,14 +239,14 @@ public class AuthService {
         User user = found.get();
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
-                    "user", user.getId(), Map.of("email", email, "reason", "email_not_verified"), ip);
+                    "user", user.getPublicId(), Map.of("email", email, "reason", "email_not_verified"), ip);
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_EMAIL_NOT_VERIFIED,
                     "이메일 인증이 필요합니다", "가입 시 발송된 인증 메일을 확인한 뒤 다시 로그인해 주세요.");
         }
         if (user.getStatus() != UserStatus.ACTIVE) {
             // Uniform 401: do not disclose DISABLED/WITHDRAWN state.
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
-                    "user", user.getId(),
+                    "user", user.getPublicId(),
                     Map.of("email", email, "reason", "status_" + user.getStatus().name().toLowerCase(Locale.ROOT)),
                     ip);
             throw invalidCredentials();
@@ -262,7 +262,7 @@ public class AuthService {
         rateLimitService.clearLoginFailures(email, ip);
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
-                "user", user.getId(), Map.of("email", email), ip);
+                "user", user.getPublicId(), Map.of("email", email), ip);
         return new AuthResult(
                 new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
                 issued.rawToken());
@@ -287,7 +287,7 @@ public class AuthService {
         if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
-                    "user", user.getId(), Map.of("email", user.getEmail(), "reason", "mfa_code"), ip);
+                    "user", user.getPublicId(), Map.of("email", user.getEmail(), "reason", "mfa_code"), ip);
             throw MfaService.loginCodeInvalid();
         }
         mfaService.consumeChallenge(challenge);
@@ -295,7 +295,7 @@ public class AuthService {
 
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
-                "user", user.getId(), Map.of("email", user.getEmail(), "stage", "mfa"), ip);
+                "user", user.getPublicId(), Map.of("email", user.getEmail(), "stage", "mfa"), ip);
         return new AuthResult(
                 new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
                 issued.rawToken());
@@ -316,7 +316,7 @@ public class AuthService {
             // Theft signal: reuse of a rotated token revokes the whole chain.
             refreshTokenService.revokeChainFrom(current.getId());
             auditService.record(current.getUserId(), null, AuditService.AUTH_REFRESH_REUSE_DETECTED,
-                    "refresh_token", current.getId(), Map.of(), ip);
+                    "refresh_token", null, Map.of("refreshTokenId", current.getId()), ip);
             throw refreshTokenInvalid();
         }
         if (current.isExpired(Instant.now())) {
@@ -337,7 +337,7 @@ public class AuthService {
                     // Lost a race with another rotation of the same token: reuse.
                     refreshTokenService.revokeChainFrom(current.getId());
                     auditService.record(current.getUserId(), null, AuditService.AUTH_REFRESH_REUSE_DETECTED,
-                            "refresh_token", current.getId(), Map.of(), ip);
+                            "refresh_token", null, Map.of("refreshTokenId", current.getId()), ip);
                     return refreshTokenInvalid();
                 });
         return new AuthResult(
@@ -353,7 +353,7 @@ public class AuthService {
         refreshTokenService.findByRawToken(rawToken).ifPresent(token -> {
             refreshTokenService.revoke(token.getId());
             auditService.record(token.getUserId(), null, AuditService.AUTH_LOGOUT,
-                    "refresh_token", token.getId(), Map.of(), ip);
+                    "refresh_token", null, Map.of("refreshTokenId", token.getId()), ip);
         });
     }
 
@@ -378,7 +378,7 @@ public class AuthService {
             // hijacked session cannot switch endpoints to keep guessing.
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_PASSWORD_CHANGE,
-                    "user", user.getId(), Map.of("result", "mismatch"), ip);
+                    "user", user.getPublicId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
@@ -392,7 +392,7 @@ public class AuthService {
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
 
         auditService.recordAfterCommit(user.getId(), user.getRole().name(),
-                AuditService.ACCOUNT_PASSWORD_CHANGE, "user", user.getId(), Map.of(), ip);
+                AuditService.ACCOUNT_PASSWORD_CHANGE, "user", user.getPublicId(), Map.of(), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
                 "account_password_changed:" + user.getId() + ":" + user.getTokenVersion());
         return new AuthResult(
@@ -451,7 +451,7 @@ public class AuthService {
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
 
         auditService.recordAfterCommit(user.getId(), user.getRole().name(),
-                AuditService.ACCOUNT_PASSWORD_RESET, "user", user.getId(), Map.of(), ip);
+                AuditService.ACCOUNT_PASSWORD_RESET, "user", user.getPublicId(), Map.of(), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
                 "account_password_reset:" + user.getId() + ":" + user.getTokenVersion());
         return new MessageResponse("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.");

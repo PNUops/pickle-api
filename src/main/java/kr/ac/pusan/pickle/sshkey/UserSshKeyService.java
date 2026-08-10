@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.sshkey;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.crypto.GeneratedSshKeyPair;
@@ -85,9 +86,10 @@ public class UserSshKeyService {
      * answer 404 (existence masking).
      */
     @Transactional
-    public SshKeyPrivateKeyResponse downloadPrivateKey(AuthenticatedUser actor, long keyId,
+    public SshKeyPrivateKeyResponse downloadPrivateKey(AuthenticatedUser actor, UUID keyId,
             String ip) {
-        UserSshKey key = repository.findByIdAndUserId(keyId, actor.id())
+        UserSshKey key = repository.findByPublicId(keyId)
+                .filter(row -> row.getUserId() == actor.id())
                 .orElseThrow(UserSshKeyService::keyNotFound);
         if (key.getPrivateKeyEnc() == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
@@ -96,18 +98,19 @@ public class UserSshKeyService {
         }
         String privateKey = credentialCipher.decrypt(key.getPrivateKeyEnc());
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.USER_SSH_KEY_DOWNLOAD, "ssh_key", key.getId(),
+                AuditService.USER_SSH_KEY_DOWNLOAD, "ssh_key", key.getPublicId(),
                 Map.of("fingerprint", key.getFingerprintSha256()), ip);
         return new SshKeyPrivateKeyResponse(privateKey, PRIVATE_KEY_FILENAME);
     }
 
     @Transactional
-    public void delete(AuthenticatedUser actor, long keyId, String ip) {
-        UserSshKey key = repository.findByIdAndUserId(keyId, actor.id())
+    public void delete(AuthenticatedUser actor, UUID keyId, String ip) {
+        UserSshKey key = repository.findByPublicId(keyId)
+                .filter(row -> row.getUserId() == actor.id())
                 .orElseThrow(UserSshKeyService::keyNotFound);
         repository.delete(key);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.USER_SSH_KEY_DELETE, "ssh_key", key.getId(),
+                AuditService.USER_SSH_KEY_DELETE, "ssh_key", key.getPublicId(),
                 Map.of("fingerprint", key.getFingerprintSha256()), ip);
     }
 
@@ -134,7 +137,7 @@ public class UserSshKeyService {
                 parsed.algorithm().wireType(), parsed.normalizedLine(), parsed.fingerprint(),
                 privateKeyEnc));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), auditAction,
-                "ssh_key", saved.getId(),
+                "ssh_key", saved.getPublicId(),
                 Map.of("fingerprint", saved.getFingerprintSha256(),
                         "algorithm", saved.getAlgorithm()), ip);
         return saved;

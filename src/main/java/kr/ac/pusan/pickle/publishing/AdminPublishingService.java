@@ -5,6 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -90,7 +91,7 @@ public class AdminPublishingService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, Long orgId,
+    public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, UUID orgId,
             RouteStatus status, int page, int size) {
         Long scopedOrgId = scopedOrgId(actor, orgId);
         Page<Route> routes = routeRepository.findAdmin(scopedOrgId, name(status), page(page, size));
@@ -100,12 +101,13 @@ public class AdminPublishingService {
         List<AdminRouteView> content = routes.getContent().stream().map(route -> {
             Domain domain = ctx.domains.get(route.getDomainId());
             Vm vm = domain != null ? ctx.vms.get(domain.getVmId()) : null;
-            return new AdminRouteView(route.getId(), route.getDomainId(),
+            return new AdminRouteView(route.getPublicId(),
+                    domain != null ? domain.getPublicId() : null,
                     domain != null ? domain.getFqdn() : null,
                     domain != null ? domain.getKind() : null,
-                    vm != null ? vm.getId() : null, name(vm),
-                    vm != null ? vm.getWorkspaceId() : null, ctx.workspaceName(vm),
-                    vm != null ? vm.getOrgId() : null, ctx.orgName(vm),
+                    vm != null ? vm.getPublicId() : null, name(vm),
+                    ctx.workspaceId(vm), ctx.workspaceName(vm),
+                    ctx.orgId(vm), ctx.orgName(vm),
                     route.getTargetPort(), route.getProtocol(), route.getStatus(),
                     route.getAppliedGeneration(), route.getAppliedAt(), route.getLastError(),
                     route.getUpdatedAt());
@@ -121,7 +123,7 @@ public class AdminPublishingService {
      * identically, and "why is this subdomain taken" has no answer here.
      */
     @Transactional(readOnly = true)
-    public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, Long orgId,
+    public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
             DomainKind kind, DomainStatus status, int page, int size) {
         Long scopedOrgId = scopedOrgId(actor, orgId);
         Page<Domain> domains = domainRepository.findAdmin(scopedOrgId, name(kind), name(status),
@@ -133,19 +135,20 @@ public class AdminPublishingService {
                     .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                     .map(Route::getStatus).orElse(null);
             var certStatus = assembler.certificateFor(domain).map(Certificate::getStatus).orElse(null);
-            return new AdminDomainView(domain.getId(), domain.getVmId(), domain.getKind(),
+            return new AdminDomainView(domain.getPublicId(),
+                    vm != null ? vm.getPublicId() : null, domain.getKind(),
                     domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                     domain.getVerifiedAt(), domain.getReleasedAt(),
                     assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
-                    vm != null ? vm.getWorkspaceId() : null, ctx.workspaceName(vm),
-                    vm != null ? vm.getOrgId() : null, ctx.orgName(vm),
+                    ctx.workspaceId(vm), ctx.workspaceName(vm),
+                    ctx.orgId(vm), ctx.orgName(vm),
                     routeStatus, certStatus, domain.getUpdatedAt());
         }).toList();
         return PageResponse.of(content, domains);
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<AdminCertificateView> listCertificates(AuthenticatedUser actor, Long orgId,
+    public PageResponse<AdminCertificateView> listCertificates(AuthenticatedUser actor, UUID orgId,
             CertificateStatus status, Integer expiringInDays, int page, int size) {
         Long scopedOrgId = scopedOrgId(actor, orgId);
         Instant now = Instant.now();
@@ -153,9 +156,15 @@ public class AdminPublishingService {
                 ? certificateRepository.findAdminExpiring(scopedOrgId, name(status),
                         now.plus(expiringInDays, ChronoUnit.DAYS), page(page, size))
                 : certificateRepository.findAdmin(scopedOrgId, name(status), page(page, size));
+        // The certificate names its domain by public id, and unlike its sibling
+        // listings this one had no domain load at all — hence the batch.
+        Map<Long, UUID> domainIds = domainRepository.findAllById(certs.getContent().stream()
+                        .map(Certificate::getDomainId).filter(java.util.Objects::nonNull)
+                        .distinct().toList()).stream()
+                .collect(Collectors.toMap(Domain::getId, Domain::getPublicId));
         List<AdminCertificateView> content = certs.getContent().stream()
-                .map(cert -> new AdminCertificateView(cert.getId(), cert.getKind(), cert.getStatus(),
-                        cert.getScope(), cert.getDomainId(), cert.getNotAfter(),
+                .map(cert -> new AdminCertificateView(cert.getPublicId(), cert.getKind(), cert.getStatus(),
+                        cert.getScope(), domainIds.get(cert.getDomainId()), cert.getNotAfter(),
                         // a FAILED cert has no meaningful expiry countdown
                         cert.getStatus() == CertificateStatus.FAILED ? null
                                 : daysUntilExpiry(now, cert.getNotAfter()),
@@ -190,7 +199,7 @@ public class AdminPublishingService {
      * gets none — same as a user's immediate return).
      */
     @Transactional
-    public MessageResponse forceRelease(AuthenticatedUser actor, long domainId, String ip) {
+    public MessageResponse forceRelease(AuthenticatedUser actor, UUID domainId, String ip) {
         Domain domain = requireScopedDomain(actor, domainId);
         boolean served = assembler.hasLiveRoute(domain);
         publishingService.forceTeardown(domain);
@@ -203,12 +212,12 @@ public class AdminPublishingService {
             notificationService.publish(
                     notificationService.vmResponsibleIds(vm),
                     NotificationEvent.DOMAIN_ADMIN_RELEASED,
-                    Map.of("vmId", vm.getId(), "vmName", vm.getName(),
+                    Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(),
                             "fqdn", domain.getFqdn()),
                     null);
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.DOMAIN_FORCE_RELEASE, "domain", domainId,
+                AuditService.DOMAIN_FORCE_RELEASE, "domain", domain.getPublicId(),
                 Map.of("fqdn", domain.getFqdn()), ip);
         return new MessageResponse("도메인을 강제 해제했습니다. 라우트 제거가 곧 적용되며, 이름은 즉시 회수됩니다.");
     }
@@ -219,15 +228,16 @@ public class AdminPublishingService {
      * in {@link DomainVerificationJob} still bounds the load.
      */
     @Transactional
-    public MessageResponse verify(AuthenticatedUser actor, long domainId, String ip) {
-        Domain domain = requireScopedDomain(actor, domainId);
+    public MessageResponse verify(AuthenticatedUser actor, UUID publicDomainId, String ip) {
+        Domain domain = requireScopedDomain(actor, publicDomainId);
+        long domainId = domain.getId();
         if (domain.getKind() != DomainKind.CUSTOM) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_CUSTOM,
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
         runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.DOMAIN_ADMIN_VERIFY, "domain", domainId,
+                AuditService.DOMAIN_ADMIN_VERIFY, "domain", domain.getPublicId(),
                 Map.of("fqdn", domain.getFqdn()), ip);
         return new MessageResponse("소유권 재검증을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
@@ -243,8 +253,8 @@ public class AdminPublishingService {
      * answers 409.
      */
     @Transactional
-    public MessageResponse applyRoute(AuthenticatedUser actor, long routeId, String ip) {
-        Route route = routeRepository.findById(routeId)
+    public MessageResponse applyRoute(AuthenticatedUser actor, UUID routeId, String ip) {
+        Route route = routeRepository.findByPublicId(routeId)
                 .orElseThrow(AdminPublishingService::routeNotFound);
         Domain domain = domainRepository.findById(route.getDomainId())
                 .orElseThrow(AdminPublishingService::routeNotFound);
@@ -269,7 +279,7 @@ public class AdminPublishingService {
             }
         });
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ROUTE_APPLY,
-                "route", routeId, Map.of("fqdn", domain.getFqdn()), ip);
+                "route", route.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);
         return new MessageResponse("라우트 재적용을 접수했습니다. 잠시 후 적용 상태가 갱신됩니다.");
     }
 
@@ -278,8 +288,8 @@ public class AdminPublishingService {
      * domain, and an org-tier actor naming another org's domain all answer the
      * same 404.
      */
-    private Domain requireScopedDomain(AuthenticatedUser actor, long domainId) {
-        Domain domain = domainRepository.findById(domainId)
+    private Domain requireScopedDomain(AuthenticatedUser actor, UUID domainId) {
+        Domain domain = domainRepository.findByPublicId(domainId)
                 .orElseThrow(AdminPublishingService::domainNotFound);
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
@@ -319,7 +329,7 @@ public class AdminPublishingService {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private Long scopedOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long scopedOrgId(AuthenticatedUser actor, UUID orgId) {
         if (actor.role().isOrgTier()) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
@@ -327,7 +337,9 @@ public class AdminPublishingService {
             }
             return actor.orgId();
         }
-        return orgId;
+        // An id no org has filters to nothing, as a non-matching number did.
+        return orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
     }
 
     private static Pageable page(int page, int size) {
@@ -380,6 +392,16 @@ public class AdminPublishingService {
             }
             Org org = orgs.get(vm.getOrgId());
             return org != null ? org.getName() : null;
+        }
+
+        UUID workspaceId(Vm vm) {
+            Workspace workspace = vm == null ? null : workspaces.get(vm.getWorkspaceId());
+            return workspace != null ? workspace.getPublicId() : null;
+        }
+
+        UUID orgId(Vm vm) {
+            Org org = vm == null ? null : orgs.get(vm.getOrgId());
+            return org != null ? org.getPublicId() : null;
         }
     }
 }

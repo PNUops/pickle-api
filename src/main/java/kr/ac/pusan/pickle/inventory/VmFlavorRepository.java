@@ -1,10 +1,15 @@
 package kr.ac.pusan.pickle.inventory;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface VmFlavorRepository extends JpaRepository<VmFlavor, Long> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<VmFlavor> findByPublicId(UUID publicId);
 
     /**
      * Display order of the spec presets: smallest first, on the three numbers
