@@ -21,8 +21,11 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 import kr.ac.pusan.pickle.proxmox.dto.AgentInterface;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
+import kr.ac.pusan.pickle.proxmox.dto.NodeRrdSample;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
+import kr.ac.pusan.pickle.proxmox.dto.NodeStorageStatus;
 import kr.ac.pusan.pickle.proxmox.dto.TaskStatus;
+import kr.ac.pusan.pickle.proxmox.dto.VmRrdSample;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -71,6 +74,15 @@ public class ProxmoxClient {
             };
     private static final TypeReference<Envelope<NodeStatusInfo>> NODE_STATUS_RESPONSE = new TypeReference<>() {
     };
+    private static final TypeReference<Envelope<List<VmRrdSample>>> VM_RRD_RESPONSE =
+            new TypeReference<>() {
+            };
+    private static final TypeReference<Envelope<List<NodeRrdSample>>> NODE_RRD_RESPONSE =
+            new TypeReference<>() {
+            };
+    private static final TypeReference<Envelope<List<NodeStorageStatus>>> NODE_STORAGE_RESPONSE =
+            new TypeReference<>() {
+            };
     private static final TypeReference<Envelope<AgentResult<List<AgentInterface>>>> AGENT_NETIF_RESPONSE =
             new TypeReference<>() {
             };
@@ -99,9 +111,41 @@ public class ProxmoxClient {
         return call(HttpMethod.GET, builder.build().encode().toUri(), null, CLUSTER_RESOURCES_RESPONSE);
     }
 
-    /** {@code GET /nodes/{n}/status} — capacity info for placement scoring. */
+    /** {@code GET /nodes/{n}/status} — live CPU/memory numbers for the admin dashboard. */
     public NodeStatusInfo nodeStatus(String apiHost, String node) {
         return call(HttpMethod.GET, uri(apiHost, "nodes", node, "status"), null, NODE_STATUS_RESPONSE);
+    }
+
+    /** {@code GET /nodes/{n}/storage} — pool capacity/usage (needs Datastore.Audit). */
+    public List<NodeStorageStatus> nodeStorage(String apiHost, String node) {
+        List<NodeStorageStatus> data = call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "storage"), null, NODE_STORAGE_RESPONSE);
+        return data != null ? data : List.of();
+    }
+
+    // --- RRD time series ------------------------------------------------------
+
+    /** {@code GET /nodes/{n}/qemu/{id}/rrddata?timeframe=&cf=AVERAGE}. */
+    public List<VmRrdSample> vmRrdData(String apiHost, String node, int vmid,
+            RrdTimeframe timeframe) {
+        URI uri = baseBuilder(apiHost)
+                .pathSegment("nodes", node, "qemu", String.valueOf(vmid), "rrddata")
+                .queryParam("timeframe", timeframe.queryValue())
+                .queryParam("cf", "AVERAGE")
+                .build().encode().toUri();
+        List<VmRrdSample> data = call(HttpMethod.GET, uri, null, VM_RRD_RESPONSE);
+        return data != null ? data : List.of();
+    }
+
+    /** {@code GET /nodes/{n}/rrddata?timeframe=&cf=AVERAGE}. */
+    public List<NodeRrdSample> nodeRrdData(String apiHost, String node, RrdTimeframe timeframe) {
+        URI uri = baseBuilder(apiHost)
+                .pathSegment("nodes", node, "rrddata")
+                .queryParam("timeframe", timeframe.queryValue())
+                .queryParam("cf", "AVERAGE")
+                .build().encode().toUri();
+        List<NodeRrdSample> data = call(HttpMethod.GET, uri, null, NODE_RRD_RESPONSE);
+        return data != null ? data : List.of();
     }
 
     // --- VM lifecycle (async: return UPID) -----------------------------------

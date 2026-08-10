@@ -17,6 +17,7 @@ import static kr.ac.pusan.pickle.support.ProxmoxWireMockSupport.okFixture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
+import static org.assertj.core.api.Assertions.within;
 
 import com.github.tomakehurst.wiremock.http.Fault;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
@@ -26,8 +27,11 @@ import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.proxmox.dto.AgentInterface;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
+import kr.ac.pusan.pickle.proxmox.dto.NodeRrdSample;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
+import kr.ac.pusan.pickle.proxmox.dto.NodeStorageStatus;
 import kr.ac.pusan.pickle.proxmox.dto.TaskStatus;
+import kr.ac.pusan.pickle.proxmox.dto.VmRrdSample;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -272,6 +276,95 @@ class ProxmoxClientTest {
         assertThat(status.cpuinfo().sockets()).isEqualTo(2);
         assertThat(status.memory().total()).isEqualTo(84322545664L);
         assertThat(status.memory().available()).isEqualTo(79304998912L);
+    }
+
+    @Test
+    void vmRrdDataParsesRunningSeries() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/qemu/100007/rrddata"))
+                .willReturn(okFixture("72-vm-rrddata")));
+
+        List<VmRrdSample> samples = client.vmRrdData(wm.apiHost(), NODE, 100007, RrdTimeframe.HOUR);
+
+        assertThat(samples).hasSize(60);
+        VmRrdSample first = samples.getFirst();
+        assertThat(first.time()).isEqualTo(1786335540L);
+        assertThat(first.cpu()).isCloseTo(0.00199935354434689, within(1e-12));
+        assertThat(first.mem()).isEqualTo(798183424.0);
+        assertThat(first.memhost()).isEqualTo(1001170944.0);
+        assertThat(first.maxmem()).isEqualTo(2147483648.0);
+        assertThat(first.maxcpu()).isEqualTo(2.0);
+        assertThat(first.diskwrite()).isCloseTo(273.066666666667, within(1e-6));
+        wm.server().verify(getRequestedFor(urlPathEqualTo("/api2/json/nodes/pve1/qemu/100007/rrddata"))
+                .withQueryParam("timeframe", equalTo("hour"))
+                .withQueryParam("cf", equalTo("AVERAGE"))
+                .withHeader("Authorization", equalTo(EXPECTED_AUTHORIZATION)));
+    }
+
+    @Test
+    void vmRrdDataStoppedVmRowsCarryNullMetrics() {
+        // Captured from a stopped guest: rows keep only time and the maxima,
+        // so every activity metric must come back null (chart gap), not zero.
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/qemu/1001/rrddata"))
+                .willReturn(okFixture("73-vm-rrddata-stopped")));
+
+        List<VmRrdSample> samples = client.vmRrdData(wm.apiHost(), NODE, 1001, RrdTimeframe.HOUR);
+
+        assertThat(samples).isNotEmpty();
+        VmRrdSample first = samples.getFirst();
+        assertThat(first.time()).isNotNull();
+        assertThat(first.maxmem()).isEqualTo(2147483648.0);
+        assertThat(first.cpu()).isNull();
+        assertThat(first.mem()).isNull();
+        assertThat(first.netin()).isNull();
+        assertThat(first.diskwrite()).isNull();
+    }
+
+    @Test
+    void nodeRrdDataParsesSeries() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/rrddata"))
+                .willReturn(okFixture("74-node-rrddata")));
+
+        List<NodeRrdSample> samples = client.nodeRrdData(wm.apiHost(), NODE, RrdTimeframe.HOUR);
+
+        assertThat(samples).hasSize(60);
+        NodeRrdSample first = samples.getFirst();
+        assertThat(first.time()).isEqualTo(1786335540L);
+        assertThat(first.memtotal()).isEqualTo(84322545664.0);
+        assertThat(first.rootused()).isCloseTo(29561723699.2, within(1e-3));
+        assertThat(first.loadavg()).isCloseTo(0.673333333333333, within(1e-12));
+        wm.server().verify(getRequestedFor(urlPathEqualTo("/api2/json/nodes/pve1/rrddata"))
+                .withQueryParam("timeframe", equalTo("hour"))
+                .withQueryParam("cf", equalTo("AVERAGE")));
+    }
+
+    @Test
+    void vmRrdDataServerErrorThrowsTransient() {
+        // PVE answers 500 for an unknown vmid's rrddata (measured on pve1).
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/qemu/999999/rrddata"))
+                .willReturn(aResponse().withStatus(500)
+                        .withBody("{\"message\":\"no such VM ('999999')\",\"data\":null}")));
+
+        ProxmoxApiException e = catchThrowableOfType(ProxmoxApiException.class,
+                () -> client.vmRrdData(wm.apiHost(), NODE, 999999, RrdTimeframe.HOUR));
+
+        assertThat(e.statusCode()).isEqualTo(500);
+        assertThat(e.isTransient()).isTrue();
+    }
+
+    @Test
+    void nodeStorageParsesPoolCapacity() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/storage"))
+                .willReturn(okFixture("75-node-storage")));
+
+        List<NodeStorageStatus> storages = client.nodeStorage(wm.apiHost(), NODE);
+
+        assertThat(storages).hasSize(1);
+        NodeStorageStatus pool = storages.getFirst();
+        assertThat(pool.storage()).isEqualTo("local-lvm");
+        assertThat(pool.type()).isEqualTo("lvmthin");
+        assertThat(pool.isActive()).isTrue();
+        assertThat(pool.total()).isEqualTo(900735172608L);
+        assertThat(pool.usedFraction()).isCloseTo(0.0280999999996838, within(1e-12));
     }
 
     @Test
