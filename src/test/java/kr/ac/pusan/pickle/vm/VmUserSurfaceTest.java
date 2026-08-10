@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -33,8 +34,8 @@ import tools.jackson.databind.ObjectMapper;
  * User surface assembly per contract v0.3.1: the VM event history
  * endpoint (visibility + newest-first paging), the VmDetail lifecycle fields
  * (provisioning task view with Korean step labels, pending deletion,
- * passwordAvailable, ipAddress), VmSummary.groupName,
- * GroupDetail.myRole and OrgSummary.status.
+ * passwordAvailable, ipAddress), VmSummary.workspaceName,
+ * WorkspaceDetail.myRole and OrgSummary.status.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -69,8 +70,8 @@ class VmUserSurfaceTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
-    private String groupName;
+    private long workspaceId;
+    private String workspaceName;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -84,9 +85,9 @@ class VmUserSurfaceTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         String slug = "vmsurf-" + UUID.randomUUID().toString().substring(0, 8);
-        groupName = "표면 테스트 " + slug;
-        groupId = createTeam(slug, groupName);
-        addMember(groupId, viewer.getEmail(), "MEMBER");
+        workspaceName = "표면 테스트 " + slug;
+        workspaceId = createTeam(slug, workspaceName);
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -155,7 +156,7 @@ class VmUserSurfaceTest {
         mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.groupName").value(groupName))
+                .andExpect(jsonPath("$.workspaceName").value(workspaceName))
                 .andExpect(jsonPath("$.ipAddress").value(ip))
                 .andExpect(jsonPath("$.passwordAvailable").value(true))
                 .andExpect(jsonPath("$.provisioning.kind").value("PROVISION"))
@@ -203,25 +204,25 @@ class VmUserSurfaceTest {
     }
 
     @Test
-    void vmListCarriesGroupName() throws Exception {
+    void vmListCarriesWorkspaceName() throws Exception {
         long vmId = createVm();
-        mockMvc.perform(get("/api/v1/vms?groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/vms?workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(vmId))
-                .andExpect(jsonPath("$.content[0].groupName").value(groupName));
+                .andExpect(jsonPath("$.content[0].workspaceName").value(workspaceName));
     }
 
     @Test
-    void groupDetailExposesMyRoleAndOrgSummaryExposesStatus() throws Exception {
-        mockMvc.perform(get("/api/v1/groups/" + groupId)
+    void workspaceDetailExposesMyRoleAndOrgSummaryExposesStatus() throws Exception {
+        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("OWNER"));
-        // myRole is the group ladder, which now has only the two rungs that
-        // describe standing in a group — this member's read on the VM comes
+        // myRole is the workspace ladder, which now has only the two rungs that
+        // describe standing in a workspace — this member's read on the VM comes
         // from the access list and does not show up here.
-        mockMvc.perform(get("/api/v1/groups/" + groupId)
+        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("MEMBER"));
@@ -255,19 +256,14 @@ class VmUserSurfaceTest {
     }
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '표면 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "표면 테스트", imageId, 1, 1024, 10);
         String hostname = "vmsurf-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING')
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
         // These VMs bypass approval, so their access list has to be written
         // here: the requester as resource OWNER, and the second member with the
@@ -278,11 +274,11 @@ class VmUserSurfaceTest {
     }
 
     private long createTeam(String slug, String name) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", name, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", name))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
@@ -293,8 +289,8 @@ class VmUserSurfaceTest {
         return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)

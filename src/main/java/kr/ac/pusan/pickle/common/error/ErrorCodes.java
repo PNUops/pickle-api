@@ -24,7 +24,7 @@ public final class ErrorCodes {
     public static final String MFA_ENROLLMENT_REQUIRED = "MFA_ENROLLMENT_REQUIRED";
     // Terms/consent — contract tag me/reference, v0.9.0.
     public static final String CONSENT_VERSION_MISMATCH = "CONSENT_VERSION_MISMATCH";
-    public static final String ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP = "ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP";
+    public static final String ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE = "ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE";
     public static final String ACCOUNT_HAS_ACTIVE_VMS = "ACCOUNT_HAS_ACTIVE_VMS";
     public static final String ACCOUNT_SELF_DISABLE_FORBIDDEN = "ACCOUNT_SELF_DISABLE_FORBIDDEN";
     public static final String ACCOUNT_NOT_DISABLED = "ACCOUNT_NOT_DISABLED";
@@ -32,15 +32,14 @@ public final class ErrorCodes {
     public static final String ACCOUNT_INVALID_STATE = "ACCOUNT_INVALID_STATE";
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
-    public static final String GROUP_SLUG_DUPLICATE = "GROUP_SLUG_DUPLICATE";
-    public static final String GROUP_MEMBER_MANAGE_FORBIDDEN = "GROUP_MEMBER_MANAGE_FORBIDDEN";
-    public static final String GROUP_MEMBER_USER_NOT_FOUND = "GROUP_MEMBER_USER_NOT_FOUND";
-    public static final String GROUP_MEMBER_ALREADY_EXISTS = "GROUP_MEMBER_ALREADY_EXISTS";
-    public static final String GROUP_SOLE_OWNER_REMOVAL = "GROUP_SOLE_OWNER_REMOVAL";
-    public static final String GROUP_ROLE_INSUFFICIENT = "GROUP_ROLE_INSUFFICIENT";
-    // Group deletion (contract v0.9.0).
-    public static final String GROUP_HAS_ACTIVE_VMS = "GROUP_HAS_ACTIVE_VMS";
-    public static final String GROUP_PERSONAL_UNDELETABLE = "GROUP_PERSONAL_UNDELETABLE";
+    public static final String WORKSPACE_MEMBER_MANAGE_FORBIDDEN = "WORKSPACE_MEMBER_MANAGE_FORBIDDEN";
+    public static final String WORKSPACE_MEMBER_USER_NOT_FOUND = "WORKSPACE_MEMBER_USER_NOT_FOUND";
+    public static final String WORKSPACE_MEMBER_ALREADY_EXISTS = "WORKSPACE_MEMBER_ALREADY_EXISTS";
+    public static final String WORKSPACE_SOLE_OWNER_REMOVAL = "WORKSPACE_SOLE_OWNER_REMOVAL";
+    public static final String WORKSPACE_ROLE_INSUFFICIENT = "WORKSPACE_ROLE_INSUFFICIENT";
+    // Workspace deletion (contract v0.9.0).
+    public static final String WORKSPACE_HAS_ACTIVE_VMS = "WORKSPACE_HAS_ACTIVE_VMS";
+    public static final String WORKSPACE_PERSONAL_UNDELETABLE = "WORKSPACE_PERSONAL_UNDELETABLE";
     public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
     public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
     public static final String REQUEST_REQUESTER_INELIGIBLE = "REQUEST_REQUESTER_INELIGIBLE";

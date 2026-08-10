@@ -1,48 +1,40 @@
 package kr.ac.pusan.pickle.admin;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceAccessGrant;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
-import kr.ac.pusan.pickle.admin.dto.ApproveVmRequestRequest;
-import kr.ac.pusan.pickle.admin.dto.RejectVmRequestRequest;
+import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
+import kr.ac.pusan.pickle.admin.dto.RejectRequestRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupRepository;
-import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.CatalogStatus;
-import kr.ac.pusan.pickle.inventory.OsImage;
-import kr.ac.pusan.pickle.inventory.OsImageRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
-import kr.ac.pusan.pickle.provisioning.ProvisioningService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
-import kr.ac.pusan.pickle.vm.Vm;
-import kr.ac.pusan.pickle.vm.VmRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequest;
-import kr.ac.pusan.pickle.vmrequest.VmRequestAssembler;
-import kr.ac.pusan.pickle.vmrequest.VmRequestRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReview;
-import kr.ac.pusan.pickle.vmrequest.VmRequestReviewRepository;
-import kr.ac.pusan.pickle.vmrequest.VmRequestStatus;
-import kr.ac.pusan.pickle.vmrequest.VmSlugPolicy;
-import kr.ac.pusan.pickle.vmrequest.dto.VmRequestDetailResponse;
-import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
-import org.jobrunr.scheduling.JobScheduler;
+import kr.ac.pusan.pickle.request.Request;
+import kr.ac.pusan.pickle.request.RequestAssembler;
+import kr.ac.pusan.pickle.request.RequestRepository;
+import kr.ac.pusan.pickle.request.RequestSpecs;
+import kr.ac.pusan.pickle.request.RequestReview;
+import kr.ac.pusan.pickle.request.RequestTypeHandler;
+import kr.ac.pusan.pickle.request.RequestReviewRepository;
+import kr.ac.pusan.pickle.request.RequestStatus;
+import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -62,58 +54,36 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 @Service
 public class ApprovalService {
 
-    private static final char[] HOSTNAME_SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789".toCharArray();
-    private static final int HOSTNAME_SUFFIX_LENGTH = 4;
-    private static final int HOSTNAME_MAX_ATTEMPTS = 10;
-
-    private final VmRequestRepository requestRepository;
-    private final VmRequestReviewRepository reviewRepository;
-    private final VmRequestAssembler assembler;
-    private final VmRepository vmRepository;
-    private final OsImageRepository imageRepository;
-    private final NodeRepository nodeRepository;
-    private final GroupRepository groupRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final RequestRepository requestRepository;
+    private final RequestReviewRepository reviewRepository;
+    private final RequestAssembler assembler;
+    private final Map<ResourceType, RequestTypeHandler> handlers;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
-    private final JobScheduler jobScheduler;
-    private final ProvisioningService provisioningService;
     private final AuditService auditService;
     private final NotificationService notificationService;
-    private final VmSlugPolicy slugPolicy;
-    private final VmSettingsService vmSettingsService;
-    private final SecureRandom random = new SecureRandom();
 
-    public ApprovalService(VmRequestRepository requestRepository, VmRequestReviewRepository reviewRepository,
-            VmRequestAssembler assembler, VmRepository vmRepository, OsImageRepository imageRepository,
-            NodeRepository nodeRepository, GroupRepository groupRepository,
-            GroupMemberRepository groupMemberRepository,
+    public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
+            RequestAssembler assembler, List<RequestTypeHandler> handlers,
+            WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
-            JobScheduler jobScheduler,
-            ProvisioningService provisioningService, AuditService auditService,
-            NotificationService notificationService,
-            VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService) {
+            AuditService auditService, NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
-        this.vmRepository = vmRepository;
-        this.imageRepository = imageRepository;
-        this.nodeRepository = nodeRepository;
-        this.groupRepository = groupRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.handlers = handlers.stream()
+                .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
-        this.jobScheduler = jobScheduler;
-        this.provisioningService = provisioningService;
         this.auditService = auditService;
         this.notificationService = notificationService;
-        this.slugPolicy = slugPolicy;
-        this.vmSettingsService = vmSettingsService;
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<VmRequestDetailResponse> list(AuthenticatedUser actor, VmRequestStatus status,
-            Long orgId, int page, int size) {
+    public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
+            ResourceType type, Long orgId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         // Org tier is always pinned to their own org; orgId is sys-tier-only.
         Long scopedOrgId = actor.role().isOrgTier() ? actor.orgId() : orgId;
@@ -122,154 +92,82 @@ public class ApprovalService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        Page<VmRequest> result;
+        Specification<Request> spec = Specification.unrestricted();
         if (scopedOrgId != null) {
-            result = status != null
-                    ? requestRepository.findByOrgIdAndStatus(scopedOrgId, status, pageable)
-                    : requestRepository.findByOrgId(scopedOrgId, pageable);
-        } else {
-            result = status != null
-                    ? requestRepository.findByStatus(status, pageable)
-                    : requestRepository.findAll(pageable);
+            spec = spec.and(RequestSpecs.org(scopedOrgId));
         }
+        if (status != null) {
+            spec = spec.and(RequestSpecs.status(status));
+        }
+        if (type != null) {
+            spec = spec.and(RequestSpecs.type(type));
+        }
+        Page<Request> result = requestRepository.findAll(spec, pageable);
         return PageResponse.of(assembler.toDetails(result.getContent()), result);
     }
 
     @Transactional(readOnly = true)
-    public VmRequestDetailResponse get(AuthenticatedUser actor, long requestId) {
+    public RequestDetailResponse get(AuthenticatedUser actor, long requestId) {
         return assembler.toDetail(findScoped(actor, requestId));
     }
 
     @Transactional
-    public VmRequestDetailResponse approve(AuthenticatedUser actor, long requestId,
-            ApproveVmRequestRequest form, String ip) {
-        VmRequest request = findScopedWithLock(actor, requestId);
+    public RequestDetailResponse approve(AuthenticatedUser actor, long requestId,
+            ApproveRequestRequest form, String ip) {
+        Request request = findScopedWithLock(actor, requestId);
         requireSubmitted(request);
+        RequestTypeHandler handler = handlerFor(request);
 
         List<FieldValidationError> errors = new ArrayList<>();
-        OsImage image = imageRepository.findById(form.grantedImageId()).orElse(null);
-        if (image == null || image.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("grantedImageId", "사용할 수 없는 OS 이미지입니다."));
-        } else if (form.grantedDiskGb() < image.getMinDiskGb()) {
-            errors.add(new FieldValidationError("grantedDiskGb",
-                    "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
-        }
         if (form.grantedStartDate() != null && form.grantedEndDate() != null
                 && form.grantedEndDate().isBefore(form.grantedStartDate())) {
             errors.add(new FieldValidationError("grantedEndDate", "종료일은 시작일 이후여야 합니다."));
         }
-        if (form.nodeId() != null) {
-            if (!nodeRepository.existsById(form.nodeId())) {
-                errors.add(new FieldValidationError("nodeId", "존재하지 않는 노드입니다."));
-            } else if (image != null && !imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), form.nodeId(), CatalogStatus.ACTIVE)) {
-                // Forced node must host the granted image — the provisioning
-                // pipeline clones the image on the placed node, so a node without it
-                // guarantees a mid-pipeline clone failure.
-                errors.add(new FieldValidationError("nodeId", "선택한 노드에 해당 OS 이미지가 없습니다."));
-            }
-        }
-        // Publishing is self-service (v0.22.0): approval no longer touches
-        // subdomain names — they are validated at submit and finalized at
-        // publish time by PublishingService.
-        // VM slug finalization (v0.12.0): the admin accepts/changes the
-        // requester's desiredSlug here; null/blank keeps today's auto path.
-        // vms.hostname is checked against ALL rows incl. soft-deleted —
-        // slugs are never recycled (the unique constraint is the backstop).
-        String grantedSlug = Texts.blankToNull(form.grantedSlug());
-        if (grantedSlug != null) {
-            int slugErrorsBefore = errors.size();
-            slugPolicy.validateSlug(grantedSlug, "grantedSlug", errors);
-            if (errors.size() == slugErrorsBefore && vmRepository.existsByHostname(grantedSlug)) {
-                errors.add(new FieldValidationError("grantedSlug",
-                        "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
-            }
-        }
-        // The VM is created with its requester as its owner, so approval needs
-        // that person to still be someone who can hold a grant here. If they
-        // left the group or the platform meanwhile, the request is no longer
-        // approvable and the reviewer rejects it instead — inventing a
-        // different owner would be the platform guessing whose VM this is.
-        if (groupMemberRepository.findByGroupIdAndUserId(request.getGroupId(),
+        handler.validateApprove(request, form, errors);
+        // The resource is created with its requester as its owner, so approval
+        // needs that person to still be someone who can hold a grant here. If
+        // they left the workspace or the platform meanwhile, the request is no
+        // longer approvable and the reviewer rejects it instead — inventing a
+        // different owner would be the platform guessing whose resource this is.
+        if (workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(),
                 request.getRequesterId()).isEmpty()
                 || userRepository.findById(request.getRequesterId())
                         .filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_REQUESTER_INELIGIBLE,
-                    "신청자가 더 이상 이 그룹의 활성 구성원이 아닙니다",
-                    "승인하면 이 VM의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
+                    "신청자가 더 이상 이 워크스페이스의 활성 구성원이 아닙니다",
+                    "승인하면 이 리소스의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
 
-        reviewRepository.save(VmRequestReview.approve(request.getId(), actor.id(),
-                Texts.blankToNull(form.comment()),
-                form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(), image.getId(),
-                form.grantedStartDate(), form.grantedEndDate(), form.nodeId()));
-        request.setStatus(VmRequestStatus.APPROVED);
+        reviewRepository.save(RequestReview.approve(request.getId(), actor.id(),
+                Texts.blankToNull(form.comment()), form.grantedStartDate(), form.grantedEndDate()));
+        request.setStatus(RequestStatus.APPROVED);
+        RequestTypeHandler.Materialized created = handler.materialize(request, form, actor);
 
-        // Auto placement: the image's node (single-node cluster; the
-        // scoring placement step arrives with the provisioning pipeline).
-        Long nodeId = form.nodeId() != null ? form.nodeId() : image.getNodeId();
-        Group group = groupRepository.findById(request.getGroupId()).orElseThrow();
-        String hostname = grantedSlug != null ? grantedSlug : generateHostname(group.getSlug());
-        // The guest admin account comes from the granted image (each
-        // distribution ships its own), never from a platform-wide constant.
-        Vm vm = vmRepository.save(new Vm(nodeId, request.getGroupId(), request.getOrgId(),
-                request.getId(), hostname, hostname, image.getId(), image.getSshUsername(),
-                form.grantedVcpu(), form.grantedMemoryMb(), form.grantedDiskGb(),
-                form.grantedStartDate(), form.grantedEndDate()));
-        // Requester-chosen display name (request form) — seeded as the
-        // vm_settings row; audited via the request.approve entry below. The
-        // seeder sanitizes, so it returns what was actually stored (null when
-        // the name collapsed to nothing and no row was written).
-        String storedDisplayName = request.getDisplayName() != null
-                ? vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
-                        request.getRequesterId())
-                : null;
-
-        long vmId = vm.getId();
-        // The VM starts private: its requester, and nobody else. Anyone who
-        // should reach it is added to its access list afterwards, so a VM is
-        // never open by default through a step somebody forgot.
-        grantRepository.save(ResourceAccessGrant.forUser(ResourceType.VM, vmId,
-                request.getRequesterId(), ResourceRole.OWNER));
-        // The OSS JobRunr storage provider writes with its own connection and
-        // commits immediately, so an in-transaction enqueue could (a) leave an
-        // orphaned durable job if this tx rolls back, or (b) let a worker pick
-        // the job before the vm row is visible. Enqueue after commit instead.
-        // Trade-off: a crash in the tiny window between commit and enqueue
-        // loses the job (VM stays CREATING) — recovered by StaleTaskRecoveryJob,
-        // which re-enqueues stuck-CREATING VMs without a PROVISION task
-        // (every 10 min; the drift reconciler does NOT see them — its working
-        // set is vmid-bearing rows only, and these have no vmid yet).
+        // The resource starts private: its requester, and nobody else. Anyone
+        // who should reach it is added to its access list afterwards, so a
+        // resource is never open by default through a step somebody forgot.
+        grantRepository.save(ResourceAccessGrant.forUser(request.getResourceType(),
+                created.resourceId(), request.getRequesterId(), ResourceRole.OWNER));
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                jobScheduler.enqueue(() -> provisioningService.provisionVm(vmId));
+                created.afterCommit().run();
             }
         });
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
-        auditArgs.put("vmId", vmId);
-        auditArgs.put("hostname", hostname);
-        auditArgs.put("grantedVcpu", form.grantedVcpu());
-        auditArgs.put("grantedMemoryMb", form.grantedMemoryMb());
-        auditArgs.put("grantedDiskGb", form.grantedDiskGb());
-        auditArgs.put("nodeId", nodeId);
-        if (storedDisplayName != null) {
-            // Records the seeded display name's provenance (initializeDisplayName
-            // itself does not audit — this entry is the audit trail). The stored
-            // value, not the raw request value: an entry claiming a name that was
-            // never written would be a lie in the audit trail.
-            auditArgs.put("displayName", storedDisplayName);
-        }
+        auditArgs.put("type", request.getResourceType().name());
+        auditArgs.putAll(created.auditArgs());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
-                "vm_request", request.getId(), auditArgs, ip);
+                "request", request.getId(), auditArgs, ip);
         // In-tx insert: the notice exists iff the approval committed.
         Map<String, Object> notifyArgs = new LinkedHashMap<>();
         notifyArgs.put("requestId", request.getId());
-        notifyArgs.put("hostname", hostname);
+        notifyArgs.put("type", request.getResourceType().name());
+        notifyArgs.put("hostname", created.resourceName());
         String reviewComment = Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);
@@ -280,29 +178,29 @@ public class ApprovalService {
     }
 
     @Transactional
-    public VmRequestDetailResponse reject(AuthenticatedUser actor, long requestId,
-            RejectVmRequestRequest form, String ip) {
-        VmRequest request = findScopedWithLock(actor, requestId);
+    public RequestDetailResponse reject(AuthenticatedUser actor, long requestId,
+            RejectRequestRequest form, String ip) {
+        Request request = findScopedWithLock(actor, requestId);
         requireSubmitted(request);
-        reviewRepository.save(VmRequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
-        request.setStatus(VmRequestStatus.REJECTED);
+        reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
+        request.setStatus(RequestStatus.REJECTED);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
-                "vm_request", request.getId(), Map.of("groupId", request.getGroupId()), ip);
+                "request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
                 Map.of("requestId", request.getId(), "comment", form.comment().strip()), null);
         return assembler.toDetail(request);
     }
 
     /** Org-scoped lookup: unknown id and other-org requests both answer 404. */
-    VmRequest findScoped(AuthenticatedUser actor, long requestId) {
+    Request findScoped(AuthenticatedUser actor, long requestId) {
         return scoped(actor, requestRepository.findById(requestId).orElse(null));
     }
 
-    private VmRequest findScopedWithLock(AuthenticatedUser actor, long requestId) {
+    private Request findScopedWithLock(AuthenticatedUser actor, long requestId) {
         return scoped(actor, requestRepository.findWithLockById(requestId).orElse(null));
     }
 
-    private VmRequest scoped(AuthenticatedUser actor, VmRequest request) {
+    private Request scoped(AuthenticatedUser actor, Request request) {
         if (request == null
                 || (actor.role().isOrgTier() && !request.getOrgId().equals(actor.orgId()))) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
@@ -311,25 +209,20 @@ public class ApprovalService {
         return request;
     }
 
-    private static void requireSubmitted(VmRequest request) {
-        if (request.getStatus() != VmRequestStatus.SUBMITTED) {
+    private RequestTypeHandler handlerFor(Request request) {
+        RequestTypeHandler handler = handlers.get(request.getResourceType());
+        if (handler == null) {
+            throw new IllegalStateException(
+                    "No handler for resource type " + request.getResourceType());
+        }
+        return handler;
+    }
+
+    private static void requireSubmitted(Request request) {
+        if (request.getStatus() != RequestStatus.SUBMITTED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_ALREADY_DECIDED,
                     "이미 처리된 신청입니다", "이 신청은 이미 승인, 반려 또는 취소되었습니다.");
         }
     }
 
-    /** Unique hostname: group slug + short random suffix (DB unique as backstop). */
-    private String generateHostname(String groupSlug) {
-        for (int attempt = 0; attempt < HOSTNAME_MAX_ATTEMPTS; attempt++) {
-            StringBuilder suffix = new StringBuilder(HOSTNAME_SUFFIX_LENGTH);
-            for (int i = 0; i < HOSTNAME_SUFFIX_LENGTH; i++) {
-                suffix.append(HOSTNAME_SUFFIX_ALPHABET[random.nextInt(HOSTNAME_SUFFIX_ALPHABET.length)]);
-            }
-            String hostname = groupSlug + "-" + suffix;
-            if (!vmRepository.existsByHostname(hostname)) {
-                return hostname;
-            }
-        }
-        throw new IllegalStateException("Could not generate a unique hostname for slug " + groupSlug);
-    }
 }

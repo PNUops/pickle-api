@@ -35,8 +35,8 @@ public class Vm {
     @Column(name = "node_id", nullable = false)
     private Long nodeId;
 
-    @Column(name = "group_id", nullable = false)
-    private Long groupId;
+    @Column(name = "workspace_id", nullable = false)
+    private Long workspaceId;
 
     @Column(name = "org_id", nullable = false)
     private Long orgId;
@@ -177,11 +177,11 @@ public class Vm {
     protected Vm() {
     }
 
-    public Vm(Long nodeId, Long groupId, Long orgId, Long requestId, String name, String hostname,
+    public Vm(Long nodeId, Long workspaceId, Long orgId, Long requestId, String name, String hostname,
             Long imageId, String sshUsername, int vcpu, int memoryMb, int diskGb,
             LocalDate startDate, LocalDate endDate) {
         this.nodeId = nodeId;
-        this.groupId = groupId;
+        this.workspaceId = workspaceId;
         this.orgId = orgId;
         this.requestId = requestId;
         this.name = name;
@@ -207,8 +207,8 @@ public class Vm {
         return nodeId;
     }
 
-    public Long getGroupId() {
-        return groupId;
+    public Long getWorkspaceId() {
+        return workspaceId;
     }
 
     public Long getOrgId() {

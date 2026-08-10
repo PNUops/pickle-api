@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code campus-ip}: 교내 IP 신청 self-service. Authorization is
- * service-layer group scoping only (same shape as port forwarding and
+ * service-layer workspace scoping only (same shape as port forwarding and
  * publishing): reads need membership, writes need OWNER/EDITOR — no role
  * tier gate.
  */

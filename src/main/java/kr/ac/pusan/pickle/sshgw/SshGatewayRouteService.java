@@ -33,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
  * and fail-closed, encoding the precedence <b>global kill switch &gt; admin
  * per-VM block &gt; user setting</b>: rate limit → kill switch → slug exists →
  * RUNNING → per-VM block → identity (publickey fingerprint must map to a
- * registered key whose owner is a MEMBER+ of the VM's group, or password path
+ * registered key whose owner is a MEMBER+ of the VM's workspace, or password path
  * requires the per-VM {@code ssh_password_enabled} opt-in) → a collected host
  * key to pin → a live IP.
  *

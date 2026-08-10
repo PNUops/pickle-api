@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * Contract schema {@code VmDetail} (= VmSummary + org/image/access fields
  * plus the lifecycle surface, the publish surface, and the SSH
- * surface: the requester's group role, whether the stored password is available
+ * surface: the requester's workspace role, whether the stored password is available
  * and revealable by the requester, and the SSH gateway host for connect hints).
  * {@code publications} lists every serving domain in id order — empty when the
  * VM is unpublished.
@@ -26,8 +26,8 @@ public record VmDetailResponse(
         int vcpu,
         int memoryMb,
         int diskGb,
-        Long groupId,
-        String groupName,
+        Long workspaceId,
+        String workspaceName,
         @Nullable String orgName,
         @Nullable String displayName,
         Long requestId,
@@ -63,11 +63,11 @@ public record VmDetailResponse(
     /**
      * The five booleans are the console's gate. They exist because the answer is
      * no longer a comparison the client can make: it depends on the access list
-     * and on a group owner's standing rights, which the client cannot see.
+     * and on a workspace owner's standing rights, which the client cannot see.
      * Admin surfaces pass {@code myResourceRole} null and get them all false —
      * their own authorization is org-scoped and lives elsewhere.
      */
-    public static VmDetailResponse from(Vm vm, String groupName, String orgName, String displayName,
+    public static VmDetailResponse from(Vm vm, String workspaceName, String orgName, String displayName,
             String ipAddress, String sshHost, ResourceRole myResourceRole,
             boolean passwordRevealAllowed, boolean accessManageAllowed,
             ProvisioningTaskResponse provisioning, List<PublicationView> publications) {
@@ -76,7 +76,7 @@ public record VmDetailResponse(
         boolean atLeastEditor = myResourceRole != null
                 && myResourceRole.atLeast(ResourceRole.EDITOR);
         return new VmDetailResponse(vm.getId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getGroupId(), groupName, orgName,
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), vm.getWorkspaceId(), workspaceName, orgName,
                 displayName, vm.getRequestId(), vm.getStatusDetail(), vm.isSshGatewayBlocked(),
                 vm.getCreatedAt(), vm.getOrgId(),
                 vm.getImageId(), ipAddress, vm.getSshUsername(), sshHost, myResourceRole,

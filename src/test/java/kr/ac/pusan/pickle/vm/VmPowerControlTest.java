@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -55,9 +56,9 @@ import tools.jackson.databind.ObjectMapper;
  * {@link VmPowerJobs} worker against WireMock-served real pve1 captures
  * (start happy path; ACPI-timeout shutdown failure without force fallback).
  *
- * <p>The three fixture members all belong to the owning group; what separates
+ * <p>The three fixture members all belong to the owning workspace; what separates
  * them is the rung each is granted on every VM this class creates, since power
- * control reads the VM's access list and never the group ladder.
+ * control reads the VM's access list and never the workspace ladder.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -129,7 +130,7 @@ class VmPowerControlTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
     private int proxmoxVmid;
 
     @BeforeEach
@@ -146,9 +147,9 @@ class VmPowerControlTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = ensureWireMockNode();
-        groupId = createTeam("vmpow-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, member.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "MEMBER");
+        workspaceId = createTeam("vmpow-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(workspaceId, member.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -189,7 +190,7 @@ class VmPowerControlTest {
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isAccepted());
@@ -404,20 +405,15 @@ class VmPowerControlTest {
     }
 
     private long createVm(VmStatus status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '전원 제어 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "전원 제어 테스트", imageId, 1, 1024, 10);
         String hostname = "vmpow-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status.name());
         // A VM inserted here never went through approval, so its access list
         // starts empty: spell out the three standings the tests below compare.
@@ -428,11 +424,11 @@ class VmPowerControlTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "전원 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "전원 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
@@ -443,8 +439,8 @@ class VmPowerControlTest {
         return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)

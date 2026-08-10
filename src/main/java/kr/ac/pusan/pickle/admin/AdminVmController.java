@@ -68,7 +68,7 @@ public class AdminVmController {
     public PageResponse<VmSummaryResponse> listAdminVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) Long orgId,
-            @RequestParam(required = false) Long groupId,
+            @RequestParam(required = false) Long workspaceId,
             @RequestParam(required = false) VmStatus status,
             @RequestParam(required = false) @Min(1) Integer expiringInDays,
             @RequestParam(required = false) Boolean expired,
@@ -78,7 +78,7 @@ public class AdminVmController {
             @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return adminVmQueryService.list(principal, orgId, groupId, status, expiringInDays, expired,
+        return adminVmQueryService.list(principal, orgId, workspaceId, status, expiringInDays, expired,
                 q, sort, page, size);
     }
 

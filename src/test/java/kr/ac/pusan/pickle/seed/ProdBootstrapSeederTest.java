@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import kr.ac.pusan.pickle.auth.PasswordPolicy;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -42,13 +42,13 @@ class ProdBootstrapSeederTest {
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
-    private PersonalGroupService personalGroupService;
+    private PersonalWorkspaceService personalWorkspaceService;
 
     /** Real policy (no deps): exercises the same weak-password bar as signup. */
     private final PasswordPolicy passwordPolicy = new PasswordPolicy();
 
     private ProdBootstrapSeeder seederWith(MockEnvironment env) {
-        return new ProdBootstrapSeeder(userRepository, passwordEncoder, personalGroupService,
+        return new ProdBootstrapSeeder(userRepository, passwordEncoder, personalWorkspaceService,
                 passwordPolicy, env);
     }
 
@@ -74,7 +74,7 @@ class ProdBootstrapSeederTest {
         assertThat(admin.getRole()).isEqualTo(UserRole.SYS_ADMIN);
         assertThat(admin.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(admin.getEmailVerifiedAt()).isNotNull();
-        verify(personalGroupService).ensurePersonalGroup(any(User.class));
+        verify(personalWorkspaceService).ensurePersonalWorkspace(any(User.class));
     }
 
     @Test
@@ -85,7 +85,7 @@ class ProdBootstrapSeederTest {
         seederWith(validEnv()).run(null);
 
         verify(userRepository, never()).save(any());
-        verify(personalGroupService, never()).ensurePersonalGroup(any());
+        verify(personalWorkspaceService, never()).ensurePersonalWorkspace(any());
     }
 
     @Test

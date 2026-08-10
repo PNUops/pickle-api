@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * backfill): under the current policy a custom name is never held after
  * release, so they are reclaimed with no grace at all.
  *
- * <p>Seven days before a platform reservation expires the owning group's
+ * <p>Seven days before a platform reservation expires the owning workspace's
  * OWNER/EDITORs get an advance notice; the dedup key carries the release
  * timestamp, so a name that was revived and released again notifies afresh.
  * When the grace itself is seven days or shorter the notice would fire

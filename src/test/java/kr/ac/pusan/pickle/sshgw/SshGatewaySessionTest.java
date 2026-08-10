@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.sshgw;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -63,7 +64,7 @@ class SshGatewaySessionTest {
     private long imageId;
     private long nodeId;
     private long poolId;
-    private long groupId;
+    private long workspaceId;
     private long memberId;
     private long otherId;
 
@@ -81,8 +82,8 @@ class SshGatewaySessionTest {
         otherId = ensureUser("sshgw.session.other@pusan.ac.kr", "다른소유자");
         // Fresh keys each test so a prior test's last_used_at bump does not bleed in.
         jdbcTemplate.update("delete from user_ssh_keys where user_id in (?, ?)", memberId, otherId);
-        groupId = createGroup();
-        addMember(groupId, memberId, "MEMBER");
+        workspaceId = createWorkspace();
+        addMember(workspaceId, memberId, "MEMBER");
         registerKey(memberId, FP_MEMBER);
         registerKey(memberId, FP_MEMBER2);
         registerKey(otherId, FP_OTHER);
@@ -232,39 +233,34 @@ class SshGatewaySessionTest {
         return user.getId();
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, '세션팀', ?) returning id
-                """, Long.class, "sshgw-sess-" + UUID.randomUUID().toString().substring(0, 8));
+                insert into workspaces (kind, name)
+                values ('TEAM'::workspace_kind, '세션팀') returning id
+                """, Long.class);
     }
 
-    private void addMember(long groupId, long userId, String role) {
+    private void addMember(long workspaceId, long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                on conflict (group_id, user_id) do update set role = excluded.role
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                on conflict (workspace_id, user_id) do update set role = excluded.role
+                """, workspaceId, userId, role);
     }
 
     private long createVm(String slug, String ip) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, 'SSH 세션 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, memberId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, memberId, "SSH 세션 테스트", imageId, 1, 1024, 10);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
                 """, Long.class, poolId, ip);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status,
                                  ip_allocation_id, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, slug, slug, imageId,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, slug, slug, imageId,
                 VmStatus.RUNNING.name(), allocationId, HOST_KEY);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
         return vmId;

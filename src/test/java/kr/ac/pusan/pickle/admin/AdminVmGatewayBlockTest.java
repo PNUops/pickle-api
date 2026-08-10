@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -52,7 +53,7 @@ class AdminVmGatewayBlockTest {
     private JdbcTemplate jdbcTemplate;
 
     private long orgId;
-    private long groupId;
+    private long workspaceId;
     private String sysAdminToken;
     private String orgAdminToken;
 
@@ -64,9 +65,9 @@ class AdminVmGatewayBlockTest {
         orgAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow());
         String slug = "agb-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
     }
 
     @Test
@@ -100,7 +101,7 @@ class AdminVmGatewayBlockTest {
         assertThat(auditCount(vmId, "vm.gateway_block")).isEqualTo(1);
 
         // the admin list exposes the flag
-        mockMvc.perform(get("/api/v1/admin/vms?groupId=" + groupId)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceId)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id == %d)].sshGatewayBlocked".formatted(vmId))
@@ -190,19 +191,14 @@ class AdminVmGatewayBlockTest {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '차단 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "차단 테스트", imageId);
         String hostname = "agb-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, status);
     }
 }

@@ -188,7 +188,7 @@ public class AdminPortMappingService {
         portMappingRepository.delete(mapping);
         vmEventRepository.save(new VmEvent(mapping.getVmId(), VmEventType.PORT_FORWARD_DELETE,
                 actor.id(), "관리자 삭제 — " + mapping.getProto() + " " + mapping.getPublicPort()));
-        // Same channel as an admin suspend: the owning group loses an external
+        // Same channel as an admin suspend: the owning workspace loses an external
         // access path and must not learn it from a dead connection.
         Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);
         if (vm != null) {

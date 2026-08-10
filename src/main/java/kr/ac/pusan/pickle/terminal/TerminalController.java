@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Web-terminal ticket mint (contract {@code createTerminalSession}, v0.10.0). No
- * {@code @PreAuthorize}: authorization is service-layer (group MEMBER+, with
+ * {@code @PreAuthorize}: authorization is service-layer (workspace MEMBER+, with
  * non-members/VIEWER/missing VM masked as 404). The ticket response is never
  * cached ({@code Cache-Control: no-store}).
  */

@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.access;
 
-import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningGroup;
+import kr.ac.pusan.pickle.support.RequestFixtures;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -48,8 +49,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>Two axes meet on this surface and the tests keep them apart on purpose.
  * The resource axis is the list itself — a rung there is the only thing that
- * lets anyone act inside a VM. The group axis contributes exactly one thing: an
- * owner of the owning group manages the list whether or not they appear on it,
+ * lets anyone act inside a VM. The workspace axis contributes exactly one thing: an
+ * owner of the owning workspace manages the list whether or not they appear on it,
  * which is the recovery path for a VM whose own owner is gone. Because that
  * standing can be used to hand its holder real access, the edits that do so are
  * marked in the audit trail as break-glass, and several tests below exist only
@@ -83,18 +84,18 @@ class VmAccessGrantApiTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    /** Owner of the group that owns every VM here; deliberately never granted. */
-    private User groupOwner;
+    /** Owner of the workspace that owns every VM here; deliberately never granted. */
+    private User workspaceOwner;
     /** Holds the OWNER rung on each VM, which is the ordinary way to manage a list. */
     private User vmOwner;
-    /** In the owning group, on no VM's list — the honest 403 case. */
+    /** In the owning workspace, on no VM's list — the honest 403 case. */
     private User member;
-    /** In the owning group, granted VIEWER where a test needs a below-MEMBER rung. */
+    /** In the owning workspace, granted VIEWER where a test needs a below-MEMBER rung. */
     private User viewer;
-    /** Outside the owning group — the masked 404 case. */
+    /** Outside the owning workspace — the masked 404 case. */
     private User outsider;
 
-    private String groupOwnerToken;
+    private String workspaceOwnerToken;
     private String vmOwnerToken;
     private String memberToken;
     private String viewerToken;
@@ -105,16 +106,16 @@ class VmAccessGrantApiTest {
     private long nodeId;
     private OsImage image;
     private VmFlavor flavor;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
-        groupOwner = ensureUser("vmacc.groupowner@pusan.ac.kr", "그룹소유자");
+        workspaceOwner = ensureUser("vmacc.workspaceowner@pusan.ac.kr", "워크스페이스소유자");
         vmOwner = ensureUser("vmacc.vmowner@pusan.ac.kr", "자원소유자");
         member = ensureUser("vmacc.member@pusan.ac.kr", "일반구성원");
         viewer = ensureUser("vmacc.viewer@pusan.ac.kr", "열람자");
         outsider = ensureUser("vmacc.outsider@pusan.ac.kr", "외부인");
-        groupOwnerToken = jwtService.createAccessToken(groupOwner);
+        workspaceOwnerToken = jwtService.createAccessToken(workspaceOwner);
         vmOwnerToken = jwtService.createAccessToken(vmOwner);
         memberToken = jwtService.createAccessToken(member);
         viewerToken = jwtService.createAccessToken(viewer);
@@ -132,23 +133,23 @@ class VmAccessGrantApiTest {
                 .filter(candidate -> candidate.getName().equals("basic"))
                 .findFirst().orElseThrow();
 
-        // A fresh group per test: several tests remove people from it, and a
-        // group carried across methods would make that removal order-dependent.
-        groupId = createTeam("vmacc-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, vmOwner.getEmail());
-        addMember(groupId, member.getEmail());
-        addMember(groupId, viewer.getEmail());
+        // A fresh workspace per test: several tests remove people from it, and a
+        // workspace carried across methods would make that removal order-dependent.
+        workspaceId = createTeam("vmacc-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(workspaceId, vmOwner.getEmail());
+        addMember(workspaceId, member.getEmail());
+        addMember(workspaceId, viewer.getEmail());
     }
 
     // ── who may manage the list ────────────────────────────────────────────
 
     /**
      * The management gate, including the distinction the masking policy turns
-     * on: a member of the owning group is told the VM exists and refused (403),
+     * on: a member of the owning workspace is told the VM exists and refused (403),
      * while an outsider is not told that much (404).
      */
     @Test
-    void onlyTheResourceOwnerAndTheGroupOwnerManageTheList() throws Exception {
+    void onlyTheResourceOwnerAndTheWorkspaceOwnerManageTheList() throws Exception {
         long vmId = createVm();
 
         // the VM's own owner reads the list and sees the entry that made them one
@@ -157,8 +158,8 @@ class VmAccessGrantApiTest {
                 .andExpect(jsonPath("$.grants.length()").value(1))
                 // The list names its VM so that whoever may manage it without
                 // being able to open it still knows what they are deciding about.
-                .andExpect(jsonPath("$.vm.id").value((int) vmId))
-                .andExpect(jsonPath("$.vm.groupId").value((int) groupId))
+                .andExpect(jsonPath("$.resource.id").value((int) vmId))
+                .andExpect(jsonPath("$.resource.workspaceId").value((int) workspaceId))
                 .andExpect(jsonPath("$.grants[0].granteeType").value("USER"))
                 .andExpect(jsonPath("$.grants[0].user.userId").value(vmOwner.getId().intValue()))
                 .andExpect(jsonPath("$.grants[0].user.name").value("자원소유자"))
@@ -166,19 +167,19 @@ class VmAccessGrantApiTest {
 
         grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
 
-        // the recovery path: a group owner with no grant at all manages it too
-        listGrants(groupOwnerToken, vmId)
+        // the recovery path: a workspace owner with no grant at all manages it too
+        listGrants(workspaceOwnerToken, vmId)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.grants.length()").value(2));
 
-        // a plain member of the owning group, and a VIEWER grant, are both refused
+        // a plain member of the owning workspace, and a VIEWER grant, are both refused
         // in the open — they can already see the VM listed, so hiding it would lie
         listGrants(memberToken, vmId)
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         listGrants(viewerToken, vmId)
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // an outsider is not told the VM exists
         listGrants(outsiderToken, vmId)
@@ -188,7 +189,7 @@ class VmAccessGrantApiTest {
         // the writes are guarded by the very same split
         addGrant(memberToken, vmId, userGrant(member.getId(), "MEMBER"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         addGrant(outsiderToken, vmId, userGrant(member.getId(), "MEMBER"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -202,15 +203,15 @@ class VmAccessGrantApiTest {
     // ── what the list will accept ──────────────────────────────────────────
 
     /**
-     * A named grant may only reach an active member of the owning group. The
+     * A named grant may only reach an active member of the owning workspace. The
      * rule is what keeps the list from contradicting the 404 that hides the VM:
      * a row for someone the VM is invisible to would be a grant nobody can use.
      */
     @Test
-    void aUserGrantOnlyNamesAnActiveMemberOfTheOwningGroup() throws Exception {
+    void aUserGrantOnlyNamesAnActiveMemberOfTheOwningWorkspace() throws Exception {
         long vmId = createVm();
 
-        // somebody outside the owning group cannot be put on the list
+        // somebody outside the owning workspace cannot be put on the list
         addGrant(vmOwnerToken, vmId, userGrant(outsider.getId(), "MEMBER"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -218,14 +219,14 @@ class VmAccessGrantApiTest {
 
         // nor can a member whose account is no longer active
         User disabled = ensureUser("vmacc.disabled-" + UUID.randomUUID() + "@pusan.ac.kr", "비활성구성원");
-        addMember(groupId, disabled.getEmail());
+        addMember(workspaceId, disabled.getEmail());
         jdbcTemplate.update("update users set status = 'DISABLED'::user_status where id = ?",
                 disabled.getId());
         addGrant(vmOwnerToken, vmId, userGrant(disabled.getId(), "MEMBER"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.errors[0].field").value("userId"));
 
-        // a USER grant that names nobody is the same field error, not a group grant
+        // a USER grant that names nobody is the same field error, not a workspace grant
         Map<String, Object> nameless = new HashMap<>();
         nameless.put("granteeType", "USER");
         nameless.put("role", "MEMBER");
@@ -245,27 +246,27 @@ class VmAccessGrantApiTest {
     }
 
     /**
-     * A group-wide grant is capped below the rungs that configure or command a
+     * A workspace-wide grant is capped below the rungs that configure or command a
      * VM, on the way in and on every later change of rung — a PATCH that could
      * raise it afterwards would make the cap decorative.
      */
     @Test
-    void aGroupWideGrantIsCappedAtMemberOnAddAndOnUpdate() throws Exception {
+    void aWorkspaceWideGrantIsCappedAtMemberOnAddAndOnUpdate() throws Exception {
         long vmId = createVm();
 
-        addGrant(vmOwnerToken, vmId, groupGrant("OWNER"))
+        addGrant(vmOwnerToken, vmId, workspaceGrant("OWNER"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("role"));
-        addGrant(vmOwnerToken, vmId, groupGrant("EDITOR"))
+        addGrant(vmOwnerToken, vmId, workspaceGrant("EDITOR"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.errors[0].field").value("role"));
 
-        // the two permitted rungs go in, and a group-wide row names nobody
-        long grantId = addGrantId(vmOwnerToken, vmId, groupGrant("MEMBER"));
+        // the two permitted rungs go in, and a workspace-wide row names nobody
+        long grantId = addGrantId(vmOwnerToken, vmId, workspaceGrant("MEMBER"));
         listGrants(vmOwnerToken, vmId)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.grants[1].granteeType").value("GROUP"))
+                .andExpect(jsonPath("$.grants[1].granteeType").value("WORKSPACE"))
                 .andExpect(jsonPath("$.grants[1].user").value((Object) null))
                 .andExpect(jsonPath("$.grants[1].role").value("MEMBER"));
 
@@ -291,7 +292,7 @@ class VmAccessGrantApiTest {
     }
 
     /**
-     * One entry per person and at most one for the group: a second entry for the
+     * One entry per person and at most one for the workspace: a second entry for the
      * same target is a conflict rather than a silent second opinion on their rung.
      */
     @Test
@@ -306,13 +307,13 @@ class VmAccessGrantApiTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_ACCESS_GRANT_EXISTS"));
 
-        addGrant(vmOwnerToken, vmId, groupGrant("MEMBER"))
+        addGrant(vmOwnerToken, vmId, workspaceGrant("MEMBER"))
                 .andExpect(status().isCreated());
-        addGrant(vmOwnerToken, vmId, groupGrant("VIEWER"))
+        addGrant(vmOwnerToken, vmId, workspaceGrant("VIEWER"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_ACCESS_GRANT_EXISTS"));
 
-        // three rows: the seeded owner, the one member, the one group-wide entry
+        // three rows: the seeded owner, the one member, the one workspace-wide entry
         assertThat(grantCount(vmId)).isEqualTo(3);
         assertThat(roleOfUserGrant(vmId, member.getId())).isEqualTo("MEMBER");
     }
@@ -321,12 +322,12 @@ class VmAccessGrantApiTest {
 
     /**
      * The rung someone acts at is the higher of their own grant and the
-     * group-wide one, proved by an action rather than by reading rows back: a
-     * VIEWER who is refused power control gains it from a group-wide MEMBER
+     * workspace-wide one, proved by an action rather than by reading rows back: a
+     * VIEWER who is refused power control gains it from a workspace-wide MEMBER
      * grant, while their own row still says VIEWER.
      */
     @Test
-    void theEffectiveRungIsTheHigherOfTheOwnAndGroupWideGrant() throws Exception {
+    void theEffectiveRungIsTheHigherOfTheOwnAndWorkspaceWideGrant() throws Exception {
         long vmId = createVm();
         grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "VIEWER");
 
@@ -339,10 +340,10 @@ class VmAccessGrantApiTest {
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
-        // the group-wide grant raises everyone in the group, this person included
-        grantVmToOwningGroup(jdbcTemplate, vmId, "MEMBER");
+        // the workspace-wide grant raises everyone in the workspace, this person included
+        grantVmToOwningWorkspace(jdbcTemplate, vmId, "MEMBER");
         mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
@@ -355,7 +356,7 @@ class VmAccessGrantApiTest {
         // the maximum is computed, not written back: the personal row is untouched
         assertThat(roleOfUserGrant(vmId, viewer.getId())).isEqualTo("VIEWER");
 
-        // and the group-wide grant reaches only the owning group — an outsider
+        // and the workspace-wide grant reaches only the owning workspace — an outsider
         // is still not told the VM exists
         mockMvc.perform(get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + outsiderToken))
@@ -365,17 +366,17 @@ class VmAccessGrantApiTest {
     // ── break-glass auditing ───────────────────────────────────────────────
 
     /**
-     * A group owner holds no way inside a VM until they edit the list, so the
+     * A workspace owner holds no way inside a VM until they edit the list, so the
      * edits that put them inside are recorded twice: once as the ordinary
      * change, once as a break-glass event. Revocation never qualifies.
      */
     @Test
-    void aGroupOwnerLettingThemselvesInIsRecordedAsBreakGlass() throws Exception {
+    void aWorkspaceOwnerLettingThemselvesInIsRecordedAsBreakGlass() throws Exception {
         long vmId = createVm();
 
         // granting themselves a rung that reaches the VM's contents
-        long selfGrantId = addGrantId(groupOwnerToken, vmId,
-                userGrant(groupOwner.getId(), "MEMBER"));
+        long selfGrantId = addGrantId(workspaceOwnerToken, vmId,
+                userGrant(workspaceOwner.getId(), "MEMBER"));
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isEqualTo(1);
         // the marker carries the same detail as the change it shadows
@@ -384,18 +385,18 @@ class VmAccessGrantApiTest {
         assertThat(auditDetail(AuditService.VM_ACCESS_BREAK_GLASS, vmId, "role"))
                 .isEqualTo("MEMBER");
 
-        // A group-wide grant is included deliberately: without it the same
+        // A workspace-wide grant is included deliberately: without it the same
         // result could be reached without the marker. It needs a VM of its own
         // — on the one above the self-grant already put them inside, and an
         // actor who is already inside opens no door.
-        long groupWideVm = createVm();
-        addGrant(groupOwnerToken, groupWideVm, groupGrant("MEMBER"))
+        long workspaceWideVm = createVm();
+        addGrant(workspaceOwnerToken, workspaceWideVm, workspaceGrant("MEMBER"))
                 .andExpect(status().isCreated());
-        assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, groupWideVm)).isEqualTo(1);
-        assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, groupWideVm)).isEqualTo(1);
+        assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, workspaceWideVm)).isEqualTo(1);
+        assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, workspaceWideVm)).isEqualTo(1);
 
         // taking access away opens no door, whoever it belongs to
-        deleteGrant(groupOwnerToken, vmId, selfGrantId)
+        deleteGrant(workspaceOwnerToken, vmId, selfGrantId)
                 .andExpect(status().isNoContent());
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_REMOVE, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isEqualTo(1);
@@ -403,7 +404,7 @@ class VmAccessGrantApiTest {
 
     /**
      * The boundary of the marker: it fires on the actor ending up at MEMBER or
-     * above, so a group owner parking themselves at VIEWER — which reaches
+     * above, so a workspace owner parking themselves at VIEWER — which reaches
      * nothing inside the VM — is an ordinary edit, and the later raise is what
      * trips it.
      */
@@ -411,20 +412,20 @@ class VmAccessGrantApiTest {
     void aSelfGrantBelowMemberIsNotBreakGlass() throws Exception {
         long vmId = createVm();
 
-        // VIEWER is no more than the standing read a group owner already had
-        long selfGrantId = addGrantId(groupOwnerToken, vmId,
-                userGrant(groupOwner.getId(), "VIEWER"));
+        // VIEWER is no more than the standing read a workspace owner already had
+        long selfGrantId = addGrantId(workspaceOwnerToken, vmId,
+                userGrant(workspaceOwner.getId(), "VIEWER"));
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isZero();
 
-        // and neither is a group-wide grant that stops at the same rung
-        addGrant(groupOwnerToken, vmId, groupGrant("VIEWER"))
+        // and neither is a workspace-wide grant that stops at the same rung
+        addGrant(workspaceOwnerToken, vmId, workspaceGrant("VIEWER"))
                 .andExpect(status().isCreated());
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, vmId)).isEqualTo(2);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isZero();
 
         // raising their own rung to one that reaches the contents is the event
-        updateGrant(groupOwnerToken, vmId, selfGrantId, "MEMBER")
+        updateGrant(workspaceOwnerToken, vmId, selfGrantId, "MEMBER")
                 .andExpect(status().isOk());
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_UPDATE, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isEqualTo(1);
@@ -442,13 +443,13 @@ class VmAccessGrantApiTest {
     @Test
     void anActorAlreadyInsideNeverTripsBreakGlassNotEvenWhenSteppingDown() throws Exception {
         long vmId = createVm();
-        // A resource owner who is only a plain member of the group: they hold no
+        // A resource owner who is only a plain member of the workspace: they hold no
         // standing rights, so no edit of theirs can be an escape hatch.
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "OWNER");
         long ownGrantId = userGrantId(vmId, member.getId());
 
-        // opening the VM to the whole group is ordinary list-keeping for them
-        addGrant(memberToken, vmId, groupGrant("MEMBER"))
+        // opening the VM to the whole workspace is ordinary list-keeping for them
+        addGrant(memberToken, vmId, workspaceGrant("MEMBER"))
                 .andExpect(status().isCreated());
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isZero();
@@ -465,25 +466,25 @@ class VmAccessGrantApiTest {
     // ── lifecycle cleanup ──────────────────────────────────────────────────
 
     /**
-     * A grant may only name a member of the owning group, so leaving the group
+     * A grant may only name a member of the owning workspace, so leaving the workspace
      * takes the grants with it rather than leaving rows a rejoin would silently
      * restore. The removal audit says how many went.
      */
     @Test
-    void leavingTheOwningGroupTakesThatPersonsGrants() throws Exception {
+    void leavingTheOwningWorkspaceTakesThatPersonsGrants() throws Exception {
         long firstVm = createVm();
         long secondVm = createVm();
         grantVmToUser(jdbcTemplate, firstVm, member.getId(), "EDITOR");
         grantVmToUser(jdbcTemplate, secondVm, member.getId(), "MEMBER");
         grantVmToUser(jdbcTemplate, firstVm, viewer.getId(), "VIEWER");
 
-        // removed by the group owner: both grants go, and the audit counts them
-        mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + member.getId())
-                        .header("Authorization", "Bearer " + groupOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(groupOwnerToken)))
+        // removed by the workspace owner: both grants go, and the audit counts them
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + member.getId())
+                        .header("Authorization", "Bearer " + workspaceOwnerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken)))
                 .andExpect(status().isNoContent());
-        assertThat(userGrantCountInGroup(member.getId(), groupId)).isZero();
-        assertThat(groupAuditDetail(AuditService.GROUP_MEMBER_REMOVE, groupId, "revokedGrants"))
+        assertThat(userGrantCountInWorkspace(member.getId(), workspaceId)).isZero();
+        assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
                 .isEqualTo("2");
 
         // the VM they were an EDITOR of is now invisible to them, not merely closed
@@ -492,14 +493,14 @@ class VmAccessGrantApiTest {
                 .andExpect(status().isNotFound());
 
         // a withdrawal of one's own accord is the same cleanup
-        mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + viewer.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + viewer.getId())
                         .header("Authorization", "Bearer " + viewerToken)
                         .header(ReauthTestSupport.HEADER, reauth(viewerToken)))
                 .andExpect(status().isNoContent());
-        assertThat(userGrantCountInGroup(viewer.getId(), groupId)).isZero();
-        assertThat(groupAuditDetail(AuditService.GROUP_MEMBER_REMOVE, groupId, "revokedGrants"))
+        assertThat(userGrantCountInWorkspace(viewer.getId(), workspaceId)).isZero();
+        assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
                 .isEqualTo("1");
-        assertThat(groupAuditDetail(AuditService.GROUP_MEMBER_REMOVE, groupId, "selfLeave"))
+        assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "selfLeave"))
                 .isEqualTo("true");
 
         // the VM's own owner is untouched by either departure
@@ -513,19 +514,19 @@ class VmAccessGrantApiTest {
      */
     @Test
     void approvalRefusesARequesterWhoCanNoLongerHoldAGrant() throws Exception {
-        // (a) the requester left the group between submitting and the decision
-        User departing = groupMember("vmacc.departing", "탈퇴신청자");
+        // (a) the requester left the workspace between submitting and the decision
+        User departing = workspaceMember("vmacc.departing", "탈퇴신청자");
         long departedRequest = submitRequest(jwtService.createAccessToken(departing));
-        mockMvc.perform(delete("/api/v1/groups/" + groupId + "/members/" + departing.getId())
-                        .header("Authorization", "Bearer " + groupOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(groupOwnerToken)))
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + departing.getId())
+                        .header("Authorization", "Bearer " + workspaceOwnerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken)))
                 .andExpect(status().isNoContent());
         approveRequest(departedRequest)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_REQUESTER_INELIGIBLE"));
 
         // (b) still a member, but the account is no longer active
-        User suspended = groupMember("vmacc.suspended", "비활성신청자");
+        User suspended = workspaceMember("vmacc.suspended", "비활성신청자");
         long suspendedRequest = submitRequest(jwtService.createAccessToken(suspended));
         jdbcTemplate.update("update users set status = 'DISABLED'::user_status where id = ?",
                 suspended.getId());
@@ -537,7 +538,7 @@ class VmAccessGrantApiTest {
         // decidable so the reviewer can reject it instead
         assertThat(vmCountForRequest(departedRequest)).isZero();
         assertThat(vmCountForRequest(suspendedRequest)).isZero();
-        mockMvc.perform(get("/api/v1/admin/vm-requests/" + departedRequest)
+        mockMvc.perform(get("/api/v1/admin/requests/" + departedRequest)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
@@ -663,9 +664,9 @@ class VmAccessGrantApiTest {
         return body;
     }
 
-    private static Map<String, Object> groupGrant(String role) {
+    private static Map<String, Object> workspaceGrant(String role) {
         Map<String, Object> body = new HashMap<>();
-        body.put("granteeType", "GROUP");
+        body.put("granteeType", "WORKSPACE");
         body.put("role", role);
         return body;
     }
@@ -678,19 +679,14 @@ class VmAccessGrantApiTest {
     // ── fixture helpers ────────────────────────────────────────────────────
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '접근 권한 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, vmOwner.getId(), image.getId());
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, vmOwner.getId(), "접근 권한 테스트", image.getId(), 1, 1024, 10);
         String hostname = "vmacc-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'STOPPED'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 image.getId(), VMID_SEQ.incrementAndGet());
         // Nothing approved this VM, so its list starts empty: name its owner the
         // way the approval step would have.
@@ -698,24 +694,27 @@ class VmAccessGrantApiTest {
         return vmId;
     }
 
-    /** A brand-new active account already added to this test's owning group. */
-    private User groupMember(String emailPrefix, String name) throws Exception {
+    /** A brand-new active account already added to this test's owning workspace. */
+    private User workspaceMember(String emailPrefix, String name) throws Exception {
         User user = ensureUser(emailPrefix + "-" + UUID.randomUUID() + "@pusan.ac.kr", name);
-        addMember(groupId, user.getEmail());
+        addMember(workspaceId, user.getEmail());
         return user;
     }
 
     private long submitRequest(String token) throws Exception {
+        Map<String, Object> vm = new HashMap<>();
+        vm.put("imageId", image.getId());
+        vm.put("flavorId", flavor.getId());
+        vm.put("reqVcpu", flavor.getVcpu());
+        vm.put("reqMemoryMb", flavor.getMemoryMb());
+        vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
-        body.put("groupId", groupId);
+        body.put("type", "VM");
+        body.put("workspaceId", workspaceId);
         body.put("orgId", orgId);
-        body.put("imageId", image.getId());
-        body.put("flavorId", flavor.getId());
         body.put("purpose", "접근 권한 테스트용 신청");
-        body.put("reqVcpu", flavor.getVcpu());
-        body.put("reqMemoryMb", flavor.getMemoryMb());
-        body.put("reqDiskGb", flavor.getDiskGb());
-        String response = mockMvc.perform(post("/api/v1/vm-requests")
+        body.put("vm", vm);
+        String response = mockMvc.perform(post("/api/v1/requests")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
@@ -731,15 +730,15 @@ class VmAccessGrantApiTest {
         body.put("grantedDiskGb", flavor.getDiskGb());
         body.put("grantedImageId", image.getId());
         body.put("comment", "신청 사양 그대로 승인합니다.");
-        return mockMvc.perform(post("/api/v1/admin/vm-requests/" + requestId + "/approve")
+        return mockMvc.perform(post("/api/v1/admin/requests/" + requestId + "/approve")
                 .header("Authorization", "Bearer " + orgAdminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
-                        .header("Authorization", "Bearer " + groupOwnerToken)
+        String body = mockMvc.perform(post("/api/v1/workspaces")
+                        .header("Authorization", "Bearer " + workspaceOwnerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("kind", "TEAM",
                                 "name", "접근 권한 테스트 " + slug, "slug", slug))))
@@ -748,11 +747,11 @@ class VmAccessGrantApiTest {
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    /** Adds a plain member: the group ladder has only OWNER and MEMBER left. */
-    private void addMember(long groupId, String email) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
-                        .header("Authorization", "Bearer " + groupOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(groupOwnerToken))
+    /** Adds a plain member: the workspace ladder has only OWNER and MEMBER left. */
+    private void addMember(long workspaceId, String email) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+                        .header("Authorization", "Bearer " + workspaceOwnerToken)
+                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", "MEMBER"))))
@@ -778,17 +777,17 @@ class VmAccessGrantApiTest {
     }
 
     /**
-     * Grants this person holds on the VMs of one group. Scoped to the group
+     * Grants this person holds on the VMs of one workspace. Scoped to the workspace
      * because the fixture accounts are shared across the methods here and carry
-     * grants on other groups' VMs, which the cascade correctly leaves alone.
+     * grants on other workspaces' VMs, which the cascade correctly leaves alone.
      */
-    private int userGrantCountInGroup(long userId, long groupId) {
+    private int userGrantCountInWorkspace(long userId, long workspaceId) {
         return jdbcTemplate.queryForObject("""
                 select count(*) from resource_access_grants g
                  where g.grantee_type = 'USER' and g.user_id = ?
                    and g.resource_type = 'VM'
-                   and g.resource_id in (select v.id from vms v where v.group_id = ?)
-                """, Integer.class, userId, groupId);
+                   and g.resource_id in (select v.id from vms v where v.workspace_id = ?)
+                """, Integer.class, userId, workspaceId);
     }
 
     private String roleOfGrant(long grantId) {
@@ -826,12 +825,12 @@ class VmAccessGrantApiTest {
                 """, String.class, key, action, vmId);
     }
 
-    private String groupAuditDetail(String action, long groupId, String key) {
+    private String workspaceAuditDetail(String action, long workspaceId, String key) {
         return jdbcTemplate.queryForObject("""
                 select detail ->> ? from audit_logs
-                 where action = ? and target_type = 'group' and target_id = ?
+                 where action = ? and target_type = 'workspace' and target_id = ?
                  order by id desc limit 1
-                """, String.class, key, action, groupId);
+                """, String.class, key, action, workspaceId);
     }
 
     private int vmCountForRequest(long requestId) {

@@ -17,7 +17,7 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -48,7 +48,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * The three deletion flows (contract v0.3.1):
  *
  * <ul>
- *   <li><b>Self-delete</b> (group OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
+ *   <li><b>Self-delete</b> (workspace OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
  *       immediate DELETING + async graceful shutdown, hard delete after
  *       {@code settings.vm_delete_grace_hours}; users cannot cancel.
  *       ERROR VMs (compensated create failures) collapse to an immediate
@@ -58,7 +58,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *       dropped 2026-07-27 — it forced within-notice deletions into the
  *       immediate force delete, erasing the cancellable middle state; the
  *       console warns below the recommended 7 days instead), reason mandatory
- *       and mailed to the group.</li>
+ *       and mailed to the workspace.</li>
  *   <li><b>Force delete</b> (SYS_ADMIN): name-confirmed immediate
  *       stop+destroy, never cancelable, audited separately.</li>
  * </ul>
@@ -76,7 +76,7 @@ public class VmDeletionService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of("Asia/Seoul"));
 
     private final VmRepository vmRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
@@ -91,7 +91,7 @@ public class VmDeletionService {
     private final PortMappingTeardownService portMappingTeardown;
     private final VmSettingsService vmSettingsService;
 
-    public VmDeletionService(VmRepository vmRepository, GroupMemberRepository groupMemberRepository, VmAccessService vmAccessService,
+    public VmDeletionService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository, VmAccessService vmAccessService,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService,
@@ -100,7 +100,7 @@ public class VmDeletionService {
             PublishingTeardownService publishingTeardown,
             PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
-        this.groupMemberRepository = groupMemberRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
         this.vmEventRepository = vmEventRepository;
@@ -140,7 +140,7 @@ public class VmDeletionService {
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId(), "scheduledFor", scheduledFor.toString()), ip);
+                        "workspaceId", vm.getWorkspaceId(), "scheduledFor", scheduledFor.toString()), ip);
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
@@ -177,7 +177,7 @@ public class VmDeletionService {
                 "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId(), "immediate", true), ip);
+                        "workspaceId", vm.getWorkspaceId(), "immediate", true), ip);
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.id(), null, false);
     }
 
@@ -209,7 +209,7 @@ public class VmDeletionService {
                 "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId(),
+                        "workspaceId", vm.getWorkspaceId(),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_SCHEDULED,
                 Map.of("vmId", vmId, "vmName", vm.getName(), "reason", reason,
@@ -253,7 +253,7 @@ public class VmDeletionService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vmId,
                 Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId(), "canceledKind", vm.getDeleteKind().name()), ip);
+                        "workspaceId", vm.getWorkspaceId(), "canceledKind", vm.getDeleteKind().name()), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
                 Map.of("vmId", vmId, "vmName", vm.getName()), null);
         return new MessageResponse("삭제가 취소되었습니다.");
@@ -277,7 +277,7 @@ public class VmDeletionService {
         boolean protectedVm = vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION);
         if (protectedVm && !request.overridesProtection()) {
             throw deletionProtected(
-                    "삭제 보호가 켜져 있습니다. 소유 그룹 OWNER가 해제하거나, 회수가 시급하면 "
+                    "삭제 보호가 켜져 있습니다. 소유 워크스페이스 OWNER가 해제하거나, 회수가 시급하면 "
                             + "overrideProtection: true를 명시해 강제 삭제해야 합니다.");
         }
         boolean overrodeProtection = protectedVm && request.overridesProtection();
@@ -299,7 +299,7 @@ public class VmDeletionService {
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
                 "vm", vmId, Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "groupId", vm.getGroupId(), "overrodeProtection", overrodeProtection), ip);
+                        "workspaceId", vm.getWorkspaceId(), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
         notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vmId, "vmName", vm.getName()), null);
@@ -355,7 +355,7 @@ public class VmDeletionService {
 
     /**
      * Self-delete authorization: an owner of the VM's access list, an owner of
-     * the group that owns it (deletion is one of the three standing rights),
+     * the workspace that owns it (deletion is one of the three standing rights),
      * ORG_ADMIN of the VM's org, or SYS_ADMIN. Non-members and cross-org admins
      * get 404 (masking); anyone else who can see the VM gets 403.
      */
@@ -373,9 +373,9 @@ public class VmDeletionService {
         VmAccess access = vmAccessService.of(vm, actor.id());
         if (!access.manages()) {
             access.requireVisible();
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.GROUP_ROLE_INSUFFICIENT,
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "VM을 삭제할 권한이 없습니다",
-                    "이 VM의 소유자, 그룹 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
+                    "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
         }
         return vm;
     }
@@ -430,7 +430,7 @@ public class VmDeletionService {
     // ── notifications / enqueue ────────────────────────────────────────────
 
     /**
-     * Everyone this VM concerns — its grantees and the owners of the group that
+     * Everyone this VM concerns — its grantees and the owners of the workspace that
      * owns it — optionally plus the org's admins (ACTIVE only).
      * Notifications are INSERTed in the deletion transaction itself, so they
      * exist iff the deletion intent committed; email leaves asynchronously via

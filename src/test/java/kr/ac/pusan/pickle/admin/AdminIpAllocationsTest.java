@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -150,21 +151,16 @@ class AdminIpAllocationsTest {
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String slug = "adip-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, 'IP 할당 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+        long workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "IP 할당 테스트", imageId);
         String hostname = "adip-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'STOPPED'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
     }
 }

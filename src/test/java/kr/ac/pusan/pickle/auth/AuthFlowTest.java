@@ -105,7 +105,7 @@ class AuthFlowTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
-        // verify-email → 200, account ACTIVE + PERSONAL group
+        // verify-email → 200, account ACTIVE + PERSONAL workspace
         postJson("/api/v1/auth/verify-email", Map.of("token", verificationToken))
                 .andExpect(status().isOk());
 
@@ -156,9 +156,9 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.email").value(EMAIL))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.orgId").value((Object) null))
-                .andExpect(jsonPath("$.memberships[0].groupKind").value("PERSONAL"))
+                .andExpect(jsonPath("$.memberships[0].workspaceKind").value("PERSONAL"))
                 .andExpect(jsonPath("$.memberships[0].role").value("OWNER"))
-                .andExpect(jsonPath("$.memberships[0].groupName").value("홍길동"))
+                .andExpect(jsonPath("$.memberships[0].workspaceName").value("홍길동"))
                 // contract-gate carryover: fields reflect the 2FA/consent surface
                 .andExpect(jsonPath("$.mfaEnabled").value(false))
                 .andExpect(jsonPath("$.pendingConsents").isArray());

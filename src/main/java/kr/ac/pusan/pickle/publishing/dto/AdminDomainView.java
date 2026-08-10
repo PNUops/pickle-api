@@ -8,7 +8,7 @@ import kr.ac.pusan.pickle.publishing.RouteStatus;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Contract schema {@code AdminDomainView} (= DomainSummary + VM/group/org context
+ * Contract schema {@code AdminDomainView} (= DomainSummary + VM/workspace/org context
  * + route/cert status).
  *
  * <p>{@code releasedAt}/{@code reservedUntil} carry the same meaning and the
@@ -29,8 +29,8 @@ public record AdminDomainView(
         @Nullable Instant reservedUntil,
         Instant createdAt,
         String vmName,
-        Long groupId,
-        String groupName,
+        Long workspaceId,
+        String workspaceName,
         Long orgId,
         String orgName,
         @Nullable RouteStatus routeStatus,

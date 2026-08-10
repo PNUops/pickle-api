@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -133,25 +134,20 @@ class AdminNodesTest {
                 .andExpect(jsonPath(byId + ".ipPool.freeCount").value(Matchers.hasItem(8)));
     }
 
-    /** Minimal request→vm FK chain on the given node (dedicated group per VM). */
+    /** Minimal request→vm FK chain on the given node (dedicated workspace per VM). */
     private void createVm(long nodeId, String status, int vcpu, int memoryMb) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "nodesum-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '노드 집계 테스트', ?, ?, ?, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
+        long workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "노드 집계 테스트", imageId, vcpu, memoryMb, 10);
         jdbcTemplate.update("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?::vm_status)
-                """, nodeId, groupId, orgId, requestId, slug, slug, imageId, vcpu, memoryMb, status);
+                """, nodeId, workspaceId, orgId, requestId, slug, slug, imageId, vcpu, memoryMb, status);
     }
 }

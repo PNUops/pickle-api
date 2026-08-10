@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
@@ -160,7 +161,7 @@ class PublishingTest {
     private String ownerToken;
     private String editorToken;
     private String viewerToken;
-    /** A member of the owning group whom no VM's access list ever names. */
+    /** A member of the owning workspace whom no VM's access list ever names. */
     private String bystanderToken;
     private String outsiderToken;
     private String orgAdminToken;
@@ -168,8 +169,8 @@ class PublishingTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
-    private String groupSlug;
+    private long workspaceId;
+    private String workspaceSlug;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -203,14 +204,14 @@ class PublishingTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        groupSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = createTeam(groupSlug);
-        // The group ladder no longer says anything about a VM: everyone joins
+        workspaceSlug = "pub-" + UUID.randomUUID().toString().substring(0, 8);
+        workspaceId = createTeam(workspaceSlug);
+        // The workspace ladder no longer says anything about a VM: everyone joins
         // as a plain member and the rung they act at is written onto each VM's
         // access list by publishableVm().
-        addMember(groupId, editor.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "MEMBER");
-        addMember(groupId, bystander.getEmail(), "MEMBER");
+        addMember(workspaceId, editor.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
+        addMember(workspaceId, bystander.getEmail(), "MEMBER");
     }
 
     // ── authorization ────────────────────────────────────────────────────────
@@ -220,7 +221,7 @@ class PublishingTest {
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
         String body = "{\"port\":8080,\"subdomain\":\"team-alpha\"}";
 
-        // outside the owning group → 404 (existence masked)
+        // outside the owning workspace → 404 (existence masked)
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
@@ -231,7 +232,7 @@ class PublishingTest {
                         .header("Authorization", "Bearer " + viewerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // granted EDITOR on the VM → 202
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + editorToken)
@@ -263,8 +264,8 @@ class PublishingTest {
         // fallback — a body without a name is 422, period.
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
         jdbcTemplate.update("""
-                update vm_requests set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
-                 where id = (select request_id from vms where id = ?)
+                update vm_request_details set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
+                 where request_id = (select request_id from vms where id = ?)
                 """, vmId);
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -374,7 +375,7 @@ class PublishingTest {
     }
 
     @Test
-    void domainListingScopesToOwnGroupsAndHidesRemovedByDefault() throws Exception {
+    void domainListingScopesToOwnWorkspacesAndHidesRemovedByDefault() throws Exception {
         long vmId = publishableVm("team-ulist", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long liveId = domainIdForVm(vmId);
@@ -391,10 +392,10 @@ class PublishingTest {
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(goneId)).isEqualTo("REMOVED");
 
-        // A domain owned by a group the caller is no member of.
-        long foreignId = foreignGroupDomain();
+        // A domain owned by a workspace the caller is no member of.
+        long foreignId = foreignWorkspaceDomain();
 
-        // Default listing: own groups only, REMOVED hidden — a removed domain
+        // Default listing: own workspaces only, REMOVED hidden — a removed domain
         // is gone from its owner's view, not a row lingering as "reserved".
         Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
         assertThat(defaults).containsKey(liveId);
@@ -410,15 +411,15 @@ class PublishingTest {
         assertThat(removed).doesNotContainKey(foreignId);
         assertThat(removed.get(goneId).get("releasedAt").isNull()).isTrue();
 
-        // The foreign group's member sees their own row, never this group's.
+        // The foreign workspace's member sees their own row, never this workspace's.
         Map<Long, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
         assertThat(outsider).containsKey(foreignId);
         assertThat(outsider).doesNotContainKey(liveId);
 
-        // Belonging to the owning group is no longer enough to see what its
+        // Belonging to the owning workspace is no longer enough to see what its
         // VMs publish: the listing is scoped to the VMs the caller can actually
         // reach, and reaching one means being named on its access list. The
-        // contrast pins the rule down — same group, same VM, and the only
+        // contrast pins the rule down — same workspace, same VM, and the only
         // difference is a grant, of which the lowest rung already suffices.
         assertThat(listDomains(bystanderToken, "")).doesNotContainKey(liveId);
         assertThat(listDomains(viewerToken, "")).containsKey(liveId);
@@ -1808,7 +1809,7 @@ class PublishingTest {
     }
 
     @Test
-    void adminForceReleaseNotifiesTheOwningGroupAndLogsTheVmEvent() throws Exception {
+    void adminForceReleaseNotifiesTheOwningWorkspaceAndLogsTheVmEvent() throws Exception {
         long vmId = publishableVm("team-fnote", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long servingId = domainIdForVm(vmId);
@@ -1816,7 +1817,7 @@ class PublishingTest {
         mockMvc.perform(post("/api/v1/admin/domains/" + servingId + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
-        // The owning group is told, same channel as an admin mapping delete:
+        // The owning workspace is told, same channel as an admin mapping delete:
         // the audit row alone reaches no user, and a public address
         // disappearing must not be discovered from a dead link.
         assertThat(adminReleaseNoticeCount("team-fnote.pusan.dev")).isEqualTo(1);
@@ -1828,7 +1829,7 @@ class PublishingTest {
                    and detail = '관리자 해제 — team-fnote.pusan.dev'
                 """, Long.class, vmId)).isEqualTo(1);
 
-        // A reserved (non-serving) row: still a notification — the group
+        // A reserved (non-serving) row: still a notification — the workspace
         // loses its name claim — but no UNPUBLISH event, since no traffic
         // path went down (same as a user's immediate return).
         publish(vmId, "{\"port\":80,\"subdomain\":\"team-fnote2\"}")
@@ -2027,38 +2028,33 @@ class PublishingTest {
     }
 
     /**
-     * A serving platform domain in a group the suite's owner is NO member of
+     * A serving platform domain in a workspace the suite's owner is NO member of
      * (the outsider's own team) — the listing-scope counterexample.
      */
-    private long foreignGroupDomain() {
+    private long foreignWorkspaceDomain() {
         String slug = "pubf-" + UUID.randomUUID().toString().substring(0, 8);
-        long foreignGroupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+        long foreignWorkspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         long outsiderId = userRepository.findByEmail("pub.outsider@pusan.ac.kr")
                 .orElseThrow().getId();
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, 'OWNER'::group_member_role)
-                """, foreignGroupId, outsiderId);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '목록 범위 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, foreignGroupId, orgId, outsiderId, imageId);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'OWNER'::workspace_member_role)
+                """, foreignWorkspaceId, outsiderId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, foreignWorkspaceId, orgId, outsiderId, "목록 범위 테스트", imageId, 1, 1024, 10);
         String hostname = "pubf-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long foreignVmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, nodeId, foreignGroupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, foreignWorkspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
-        // Owning the foreign group is not by itself a way into its VMs, so the
+        // Owning the foreign workspace is not by itself a way into its VMs, so the
         // requester is named on this one exactly as approval would have named
         // them. Without it the listing below would be empty for the wrong
-        // reason and would stop testing that scoping is per group.
+        // reason and would stop testing that scoping is per workspace.
         AccessGrantFixtures.grantVmToUser(jdbcTemplate, foreignVmId, outsiderId, "OWNER");
         return jdbcTemplate.queryForObject("""
                 insert into domains (vm_id, kind, fqdn, root_domain, status)
@@ -2124,25 +2120,16 @@ class PublishingTest {
      * means the body must name the domain itself or answer 422.
      */
     private long publishableVm(String desiredSubdomain, String rootDomain, VmStatus status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '공개 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
-        jdbcTemplate.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision,
-                        granted_vcpu, granted_memory_mb, granted_disk_gb, granted_image_id)
-                values (?, ?, 'APPROVE'::review_decision, 1, 1024, 10, ?)
-                """, requestId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "공개 테스트", imageId, 1, 1024, 10);
+        RequestFixtures.approveVmRequest(jdbcTemplate, requestId, owner.getId(), imageId, 1, 1024, 10);
         String hostname = "pub-" + UUID.randomUUID().toString().substring(0, 12);
         int vmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vmid, status.name());
         String ip = "172.29.200." + IP_SEQ.getAndIncrement();
         long allocId = jdbcTemplate.queryForObject("""
@@ -2164,11 +2151,11 @@ class PublishingTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "공개 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "공개 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
@@ -2179,8 +2166,8 @@ class PublishingTest {
         return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)

@@ -4,7 +4,7 @@ components:
     AccessGranteeType:
       enum:
       - "USER"
-      - "GROUP"
+      - "WORKSPACE"
       type: "string"
     ActivateMfaRequest:
       properties:
@@ -43,34 +43,35 @@ components:
       - "createdAt"
       - "id"
       type: "object"
-    AddGroupMemberRequest:
-      properties:
-        email:
-          format: "email"
-          minLength: 1
-          type: "string"
-        role:
-          $ref: "#/components/schemas/GroupMemberRole"
-      required:
-      - "email"
-      - "role"
-      type: "object"
-    AddVmAccessGrantRequest:
+    AddResourceAccessGrantRequest:
       properties:
         granteeType:
           $ref: "#/components/schemas/AccessGranteeType"
-          description: "USER는 지정된 사용자 한 명, GROUP은 소유 그룹 전체"
+          description: "USER는 지정된 사용자 한 명, WORKSPACE은 소유 워크스페이스 전체"
         role:
           $ref: "#/components/schemas/ResourceRole"
-          description: "부여할 등급. 그룹 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
+          description: "부여할 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
         userId:
-          description: "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 그룹의 구성원이어야 합니다."
+          description: "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 워크스페이스의 구성원이어야 합니\
+            다."
           format: "int64"
           type:
           - "integer"
           - "null"
       required:
       - "granteeType"
+      - "role"
+      type: "object"
+    AddWorkspaceMemberRequest:
+      properties:
+        email:
+          format: "email"
+          minLength: 1
+          type: "string"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+      required:
+      - "email"
       - "role"
       type: "object"
     AdminCampusIpRequestView:
@@ -189,11 +190,6 @@ components:
           type: "string"
         fqdn:
           type: "string"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
         id:
           format: "int64"
           type: "integer"
@@ -239,11 +235,14 @@ components:
           type: "integer"
         vmName:
           type: "string"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
       required:
       - "createdAt"
       - "fqdn"
-      - "groupId"
-      - "groupName"
       - "id"
       - "kind"
       - "orgId"
@@ -251,93 +250,8 @@ components:
       - "status"
       - "vmId"
       - "vmName"
-      type: "object"
-    AdminGroupDetailResponse:
-      properties:
-        createdAt:
-          format: "date-time"
-          type: "string"
-        description:
-          type:
-          - "string"
-          - "null"
-        id:
-          format: "int64"
-          type: "integer"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-        memberCount:
-          format: "int64"
-          type: "integer"
-        members:
-          items:
-            $ref: "#/components/schemas/AdminGroupMemberResponse"
-          type: "array"
-        name:
-          type: "string"
-        slug:
-          type: "string"
-        vmCount:
-          format: "int64"
-          type: "integer"
-      required:
-      - "createdAt"
-      - "id"
-      - "kind"
-      - "memberCount"
-      - "members"
-      - "name"
-      - "slug"
-      - "vmCount"
-      type: "object"
-    AdminGroupMemberResponse:
-      properties:
-        email:
-          type: "string"
-        groupRole:
-          $ref: "#/components/schemas/GroupMemberRole"
-        joinedAt:
-          format: "date-time"
-          type: "string"
-        name:
-          type: "string"
-        userId:
-          format: "int64"
-          type: "integer"
-        userStatus:
-          $ref: "#/components/schemas/UserStatus"
-      required:
-      - "email"
-      - "groupRole"
-      - "joinedAt"
-      - "name"
-      - "userId"
-      - "userStatus"
-      type: "object"
-    AdminGroupOptionResponse:
-      properties:
-        createdAt:
-          format: "date-time"
-          type: "string"
-        id:
-          format: "int64"
-          type: "integer"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-        memberCount:
-          format: "int64"
-          type: "integer"
-        name:
-          type: "string"
-        slug:
-          type: "string"
-      required:
-      - "createdAt"
-      - "id"
-      - "kind"
-      - "memberCount"
-      - "name"
-      - "slug"
+      - "workspaceId"
+      - "workspaceName"
       type: "object"
     AdminNotificationResponse:
       properties:
@@ -623,11 +537,6 @@ components:
           $ref: "#/components/schemas/DomainKind"
         fqdn:
           type: "string"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
         id:
           format: "int64"
           type: "integer"
@@ -657,12 +566,15 @@ components:
           type: "integer"
         vmName:
           type: "string"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
       required:
       - "domainId"
       - "domainKind"
       - "fqdn"
-      - "groupId"
-      - "groupName"
       - "id"
       - "orgId"
       - "orgName"
@@ -671,6 +583,8 @@ components:
       - "targetPort"
       - "vmId"
       - "vmName"
+      - "workspaceId"
+      - "workspaceName"
       type: "object"
     AdminTaskResponse:
       properties:
@@ -683,10 +597,6 @@ components:
         currentStep:
           format: "int32"
           type: "integer"
-        groupName:
-          type:
-          - "string"
-          - "null"
         hostname:
           type:
           - "string"
@@ -730,6 +640,10 @@ components:
           type:
           - "string"
           - "null"
+        workspaceName:
+          type:
+          - "string"
+          - "null"
       required:
       - "attempts"
       - "createdAt"
@@ -742,6 +656,87 @@ components:
       - "updatedAt"
       - "vmId"
       type: "object"
+    AdminWorkspaceDetailResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        description:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        memberCount:
+          format: "int64"
+          type: "integer"
+        members:
+          items:
+            $ref: "#/components/schemas/AdminWorkspaceMemberResponse"
+          type: "array"
+        name:
+          type: "string"
+        vmCount:
+          format: "int64"
+          type: "integer"
+      required:
+      - "createdAt"
+      - "id"
+      - "kind"
+      - "memberCount"
+      - "members"
+      - "name"
+      - "vmCount"
+      type: "object"
+    AdminWorkspaceMemberResponse:
+      properties:
+        email:
+          type: "string"
+        joinedAt:
+          format: "date-time"
+          type: "string"
+        name:
+          type: "string"
+        userId:
+          format: "int64"
+          type: "integer"
+        userStatus:
+          $ref: "#/components/schemas/UserStatus"
+        workspaceRole:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+      required:
+      - "email"
+      - "joinedAt"
+      - "name"
+      - "userId"
+      - "userStatus"
+      - "workspaceRole"
+      type: "object"
+    AdminWorkspaceOptionResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        memberCount:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+      required:
+      - "createdAt"
+      - "id"
+      - "kind"
+      - "memberCount"
+      - "name"
+      type: "object"
     AllocationStatus:
       enum:
       - "ALLOCATED"
@@ -753,11 +748,6 @@ components:
           maxLength: 10000
           minLength: 0
           type: "string"
-        groupId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
         orgId:
           format: "int64"
           type:
@@ -769,6 +759,11 @@ components:
           maxLength: 200
           minLength: 0
           type: "string"
+        workspaceId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
       required:
       - "body"
       - "scope"
@@ -778,18 +773,13 @@ components:
       enum:
       - "ALL"
       - "ORG"
-      - "GROUP"
+      - "WORKSPACE"
       type: "string"
     AnnouncementView:
       properties:
         createdAt:
           format: "date-time"
           type: "string"
-        groupId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
         id:
           format: "int64"
           type: "integer"
@@ -805,6 +795,11 @@ components:
           $ref: "#/components/schemas/AnnouncementScope"
         title:
           type: "string"
+        workspaceId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
       required:
       - "createdAt"
       - "id"
@@ -844,8 +839,6 @@ components:
           $ref: "#/components/schemas/Applicant"
         applicantResources:
           $ref: "#/components/schemas/Resources"
-        group:
-          $ref: "#/components/schemas/GroupPanel"
         guidance:
           type: "string"
         history:
@@ -854,15 +847,17 @@ components:
           type: "array"
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
+        workspace:
+          $ref: "#/components/schemas/WorkspacePanel"
       required:
       - "applicant"
       - "applicantResources"
-      - "group"
       - "guidance"
       - "history"
       - "orgHeadroom"
+      - "workspace"
       type: "object"
-    ApproveVmRequestRequest:
+    ApproveRequestRequest:
       properties:
         comment:
           maxLength: 2000
@@ -870,15 +865,27 @@ components:
           type:
           - "string"
           - "null"
-        grantedDiskGb:
-          format: "int32"
-          minimum: 1
-          type: "integer"
         grantedEndDate:
           format: "date"
           type:
           - "string"
           - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/ApproveVmRequestSpec"
+          - type: "null"
+      type: "object"
+    ApproveVmRequestSpec:
+      properties:
+        grantedDiskGb:
+          format: "int32"
+          minimum: 1
+          type: "integer"
         grantedImageId:
           format: "int64"
           type: "integer"
@@ -888,11 +895,6 @@ components:
           type: "integer"
         grantedSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type:
-          - "string"
-          - "null"
-        grantedStartDate:
-          format: "date"
           type:
           - "string"
           - "null"
@@ -1169,33 +1171,6 @@ components:
       - "ports"
       - "purpose"
       type: "object"
-    CreateGroupRequest:
-      properties:
-        description:
-          maxLength: 500
-          minLength: 0
-          type:
-          - "string"
-          - "null"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-          description: "그룹 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다"
-          enum:
-          - "TEAM"
-          - "PROJECT"
-        name:
-          maxLength: 100
-          minLength: 0
-          type: "string"
-        slug:
-          minLength: 1
-          pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
-          type: "string"
-      required:
-      - "kind"
-      - "name"
-      - "slug"
-      type: "object"
     CreateOrgRequest:
       properties:
         description:
@@ -1230,6 +1205,58 @@ components:
       required:
       - "proto"
       - "targetPort"
+      type: "object"
+    CreateRequestRequest:
+      properties:
+        courseOrProject:
+          maxLength: 200
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        displayName:
+          maxLength: 100
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        extraNote:
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "int64"
+          type: "integer"
+        purpose:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        reqEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reqStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/CreateVmRequestSpec"
+          - type: "null"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "orgId"
+      - "purpose"
+      - "type"
+      - "workspaceId"
       type: "object"
     CreateVmDomainRequest:
       properties:
@@ -1284,65 +1311,27 @@ components:
       - "name"
       - "vcpu"
       type: "object"
-    CreateVmRequestRequest:
+    CreateVmRequestSpec:
       properties:
-        courseOrProject:
-          maxLength: 200
-          minLength: 0
-          type:
-          - "string"
-          - "null"
         desiredSlug:
           pattern: "^\\s*$|^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$"
-          type:
-          - "string"
-          - "null"
-        displayName:
-          maxLength: 100
-          minLength: 0
-          type:
-          - "string"
-          - "null"
-        extraNote:
-          maxLength: 2000
-          minLength: 0
           type:
           - "string"
           - "null"
         flavorId:
           format: "int64"
           type: "integer"
-        groupId:
-          format: "int64"
-          type: "integer"
         imageId:
           format: "int64"
           type: "integer"
-        orgId:
-          format: "int64"
-          type: "integer"
-        purpose:
-          maxLength: 2000
-          minLength: 0
-          type: "string"
         reqDiskGb:
           format: "int32"
           minimum: 1
           type: "integer"
-        reqEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqMemoryMb:
           format: "int32"
           minimum: 256
           type: "integer"
-        reqStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqVcpu:
           format: "int32"
           minimum: 1
@@ -1355,13 +1344,32 @@ components:
           - "null"
       required:
       - "flavorId"
-      - "groupId"
       - "imageId"
-      - "orgId"
-      - "purpose"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"
+      type: "object"
+    CreateWorkspaceRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+          description: "워크스페이스 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다"
+          enum:
+          - "TEAM"
+          - "PROJECT"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
+      required:
+      - "kind"
+      - "name"
       type: "object"
     DisableMfaRequest:
       properties:
@@ -1629,122 +1637,6 @@ components:
       - "name"
       - "userId"
       type: "object"
-    GroupDetailResponse:
-      properties:
-        createdAt:
-          format: "date-time"
-          type: "string"
-        description:
-          type:
-          - "string"
-          - "null"
-        id:
-          format: "int64"
-          type: "integer"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-        members:
-          items:
-            $ref: "#/components/schemas/GroupMemberResponse"
-          type: "array"
-        myRole:
-          $ref: "#/components/schemas/GroupMemberRole"
-        name:
-          type: "string"
-        slug:
-          type: "string"
-      required:
-      - "createdAt"
-      - "id"
-      - "kind"
-      - "members"
-      - "myRole"
-      - "name"
-      - "slug"
-      type: "object"
-    GroupKind:
-      enum:
-      - "PERSONAL"
-      - "TEAM"
-      - "PROJECT"
-      type: "string"
-    GroupMemberResponse:
-      properties:
-        email:
-          type: "string"
-        name:
-          type: "string"
-        role:
-          $ref: "#/components/schemas/GroupMemberRole"
-        userId:
-          format: "int64"
-          type: "integer"
-      required:
-      - "email"
-      - "name"
-      - "role"
-      - "userId"
-      type: "object"
-    GroupMemberRole:
-      enum:
-      - "OWNER"
-      - "MEMBER"
-      type: "string"
-    GroupPanel:
-      properties:
-        activeVms:
-          items:
-            $ref: "#/components/schemas/VmBriefResponse"
-          type: "array"
-        id:
-          format: "int64"
-          type: "integer"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-        members:
-          items:
-            $ref: "#/components/schemas/MemberBrief"
-          type: "array"
-        name:
-          type: "string"
-        totals:
-          $ref: "#/components/schemas/ResourceTotalsResponse"
-      required:
-      - "activeVms"
-      - "id"
-      - "kind"
-      - "members"
-      - "name"
-      - "totals"
-      type: "object"
-    GroupSummaryResponse:
-      properties:
-        description:
-          type:
-          - "string"
-          - "null"
-        id:
-          format: "int64"
-          type: "integer"
-        kind:
-          $ref: "#/components/schemas/GroupKind"
-        memberCount:
-          format: "int64"
-          type: "integer"
-        myRole:
-          $ref: "#/components/schemas/GroupMemberRole"
-        name:
-          type: "string"
-        slug:
-          type: "string"
-      required:
-      - "id"
-      - "kind"
-      - "memberCount"
-      - "myRole"
-      - "name"
-      - "slug"
-      type: "object"
     HistoryEntry:
       properties:
         comment:
@@ -1763,7 +1655,7 @@ components:
           - "string"
           - "null"
         status:
-          $ref: "#/components/schemas/VmRequestStatus"
+          $ref: "#/components/schemas/RequestStatus"
         submittedAt:
           format: "date-time"
           type: "string"
@@ -1876,7 +1768,7 @@ components:
         name:
           type: "string"
         role:
-          $ref: "#/components/schemas/GroupMemberRole"
+          $ref: "#/components/schemas/WorkspaceMemberRole"
         userId:
           format: "int64"
           type: "integer"
@@ -1887,20 +1779,20 @@ components:
       type: "object"
     Membership:
       properties:
-        groupId:
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        workspaceId:
           format: "int64"
           type: "integer"
-        groupKind:
-          $ref: "#/components/schemas/GroupKind"
-        groupName:
+        workspaceKind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
           type: "string"
-        role:
-          $ref: "#/components/schemas/GroupMemberRole"
       required:
-      - "groupId"
-      - "groupKind"
-      - "groupName"
       - "role"
+      - "workspaceId"
+      - "workspaceKind"
+      - "workspaceName"
       type: "object"
     MessageResponse:
       properties:
@@ -2107,9 +1999,9 @@ components:
           $ref: "#/components/schemas/RecentDecisions"
         resource:
           $ref: "#/components/schemas/Resource"
-        topGroupsByVmCount:
+        topWorkspacesByVmCount:
           items:
-            $ref: "#/components/schemas/TopGroup"
+            $ref: "#/components/schemas/TopWorkspace"
           type: "array"
         vmCountsByStatus:
           additionalProperties:
@@ -2123,7 +2015,7 @@ components:
       - "publishedServiceCount"
       - "recentDecisions14d"
       - "resource"
-      - "topGroupsByVmCount"
+      - "topWorkspacesByVmCount"
       - "vmCountsByStatus"
       type: "object"
     OrgDetailResponse:
@@ -2594,6 +2486,56 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseRequestDetailResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/RequestDetailResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseResourceSummaryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/ResourceSummaryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseUserAdminViewResponse:
       properties:
         content:
@@ -2624,31 +2566,6 @@ components:
         content:
           items:
             $ref: "#/components/schemas/VmEventResponse"
-          type: "array"
-        page:
-          format: "int32"
-          type: "integer"
-        size:
-          format: "int32"
-          type: "integer"
-        totalElements:
-          format: "int64"
-          type: "integer"
-        totalPages:
-          format: "int32"
-          type: "integer"
-      required:
-      - "content"
-      - "page"
-      - "size"
-      - "totalElements"
-      - "totalPages"
-      type: "object"
-    PageResponseVmRequestDetailResponse:
-      properties:
-        content:
-          items:
-            $ref: "#/components/schemas/VmRequestDetailResponse"
           type: "array"
         page:
           format: "int32"
@@ -2903,7 +2820,7 @@ components:
       - "code"
       - "password"
       type: "object"
-    RejectVmRequestRequest:
+    RejectRequestRequest:
       properties:
         comment:
           maxLength: 2000
@@ -2924,6 +2841,82 @@ components:
       - "relayId"
       - "token"
       type: "object"
+    RequestDetailResponse:
+      properties:
+        courseOrProject:
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        displayName:
+          type:
+          - "string"
+          - "null"
+        extraNote:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        orgId:
+          format: "int64"
+          type: "integer"
+        orgName:
+          type: "string"
+        purpose:
+          type: "string"
+        reqEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reqStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        requesterId:
+          format: "int64"
+          type: "integer"
+        requesterName:
+          type: "string"
+        review:
+          anyOf:
+          - $ref: "#/components/schemas/RequestReviewResponse"
+          - type: "null"
+        status:
+          $ref: "#/components/schemas/RequestStatus"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/VmRequestSpecResponse"
+          - type: "null"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "createdAt"
+      - "id"
+      - "orgId"
+      - "orgName"
+      - "purpose"
+      - "requesterId"
+      - "requesterName"
+      - "status"
+      - "type"
+      - "updatedAt"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     RequestOptionsResponse:
       properties:
         allowedRootDomains:
@@ -2941,6 +2934,45 @@ components:
       - "reservedSubdomains"
       - "sshHost"
       type: "object"
+    RequestReviewResponse:
+      properties:
+        comment:
+          type:
+          - "string"
+          - "null"
+        decidedAt:
+          format: "date-time"
+          type: "string"
+        decision:
+          $ref: "#/components/schemas/ReviewDecision"
+        grantedEndDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        grantedStartDate:
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reviewerId:
+          format: "int64"
+          type: "integer"
+        reviewerName:
+          type: "string"
+      required:
+      - "decidedAt"
+      - "decision"
+      - "reviewerId"
+      - "reviewerName"
+      type: "object"
+    RequestStatus:
+      enum:
+      - "SUBMITTED"
+      - "APPROVED"
+      - "REJECTED"
+      - "CANCELED"
+      type: "string"
     RequiredRecord:
       properties:
         name:
@@ -2999,6 +3031,78 @@ components:
       - "allocatedVcpu"
       - "guidance"
       type: "object"
+    ResourceAccessGrantView:
+      description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 워크스페이스 전체입니다."
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        granteeType:
+          $ref: "#/components/schemas/AccessGranteeType"
+          description: "대상 종류 — USER는 지정된 사용자, WORKSPACE은 소유 워크스페이스 전체"
+        id:
+          format: "int64"
+          type: "integer"
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "이 대상이 이 VM에서 갖는 등급"
+        user:
+          anyOf:
+          - $ref: "#/components/schemas/Grantee"
+          - type: "null"
+          description: "대상 사용자. 워크스페이스 전체 항목이면 null입니다."
+      required:
+      - "createdAt"
+      - "granteeType"
+      - "id"
+      - "role"
+      type: "object"
+    ResourceAccessListResponse:
+      description: "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보"
+      properties:
+        grants:
+          description: "접근 권한 항목"
+          items:
+            $ref: "#/components/schemas/ResourceAccessGrantView"
+          type: "array"
+        resource:
+          $ref: "#/components/schemas/ResourceBrief"
+          description: "이 목록이 속한 리소스"
+      required:
+      - "grants"
+      - "resource"
+      type: "object"
+    ResourceBrief:
+      description: "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보"
+      properties:
+        displayName:
+          description: "표시명. 지정되지 않았으면 null입니다."
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        status:
+          description: "리소스 종류의 상태값. 종류마다 어휘가 다릅니다."
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "id"
+      - "name"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     ResourceRole:
       enum:
       - "OWNER"
@@ -3006,6 +3110,49 @@ components:
       - "MEMBER"
       - "VIEWER"
       type: "string"
+    ResourceSummaryResponse:
+      properties:
+        accessLimited:
+          type: "boolean"
+        accessManageAllowed:
+          type: "boolean"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        displayName:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        name:
+          type: "string"
+        ownerNames:
+          items:
+            type: "string"
+          type: "array"
+        status:
+          type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
+      required:
+      - "accessLimited"
+      - "accessManageAllowed"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "ownerNames"
+      - "status"
+      - "type"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     ResourceTotalsResponse:
       properties:
         diskGb:
@@ -3022,6 +3169,10 @@ components:
       - "memoryMb"
       - "vcpu"
       type: "object"
+    ResourceType:
+      enum:
+      - "VM"
+      type: "string"
     Resources:
       properties:
         activeVms:
@@ -3235,7 +3386,7 @@ components:
     SuspendPortMappingRequest:
       properties:
         reason:
-          description: "정지 사유 (소유 그룹에 알림으로 전달)"
+          description: "정지 사유 (소유 워크스페이스에 알림으로 전달)"
           maxLength: 500
           minLength: 0
           type: "string"
@@ -3324,8 +3475,6 @@ components:
       properties:
         clientIp:
           type: "string"
-        groupName:
-          type: "string"
         orgId:
           format: "int64"
           type: "integer"
@@ -3348,9 +3497,10 @@ components:
           type: "integer"
         vmName:
           type: "string"
+        workspaceName:
+          type: "string"
       required:
       - "clientIp"
-      - "groupName"
       - "orgId"
       - "orgName"
       - "sessionId"
@@ -3360,6 +3510,7 @@ components:
       - "userName"
       - "vmId"
       - "vmName"
+      - "workspaceName"
       type: "object"
     TerminalTicketResponse:
       properties:
@@ -3425,20 +3576,20 @@ components:
       - "title"
       - "version"
       type: "object"
-    TopGroup:
+    TopWorkspace:
       properties:
-        groupId:
-          format: "int64"
-          type: "integer"
         name:
           type: "string"
         vmCount:
           format: "int64"
           type: "integer"
+        workspaceId:
+          format: "int64"
+          type: "integer"
       required:
-      - "groupId"
       - "name"
       - "vmCount"
+      - "workspaceId"
       type: "object"
     UnreadCountResponse:
       properties:
@@ -3476,26 +3627,6 @@ components:
         port:
           format: "int32"
           type: "integer"
-      type: "object"
-    UpdateGroupMemberRequest:
-      properties:
-        role:
-          $ref: "#/components/schemas/GroupMemberRole"
-      required:
-      - "role"
-      type: "object"
-    UpdateGroupRequest:
-      properties:
-        description:
-          maxLength: 500
-          minLength: 0
-          type:
-          - "string"
-          - "null"
-        name:
-          maxLength: 100
-          minLength: 0
-          type: "string"
       type: "object"
     UpdateNodeStatusRequest:
       properties:
@@ -3564,6 +3695,14 @@ components:
           - "integer"
           - "null"
       type: "object"
+    UpdateResourceAccessGrantRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/ResourceRole"
+          description: "새 등급. 워크스페이스 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
+      required:
+      - "role"
+      type: "object"
     UpdateUserAdminRequest:
       properties:
         orgId:
@@ -3573,14 +3712,6 @@ components:
           - "null"
         role:
           $ref: "#/components/schemas/UserRole"
-      type: "object"
-    UpdateVmAccessGrantRequest:
-      properties:
-        role:
-          $ref: "#/components/schemas/ResourceRole"
-          description: "새 등급. 그룹 전체 항목에는 MEMBER 또는 VIEWER만 지정할 수 있습니다."
-      required:
-      - "role"
       type: "object"
     UpdateVmFlavorRequest:
       properties:
@@ -3619,6 +3750,26 @@ components:
           type:
           - "integer"
           - "null"
+      type: "object"
+    UpdateWorkspaceMemberRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+      required:
+      - "role"
+      type: "object"
+    UpdateWorkspaceRequest:
+      properties:
+        description:
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        name:
+          maxLength: 100
+          minLength: 0
+          type: "string"
       type: "object"
     UserAdminDetailResponse:
       properties:
@@ -3817,74 +3968,6 @@ components:
       required:
       - "token"
       type: "object"
-    Vm:
-      description: "접근 권한이 없는 사람에게도 보이는 범위의 VM 정보"
-      properties:
-        displayName:
-          description: "표시명. 지정되지 않았으면 null입니다."
-          type:
-          - "string"
-          - "null"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
-        id:
-          format: "int64"
-          type: "integer"
-        name:
-          type: "string"
-        status:
-          $ref: "#/components/schemas/VmStatus"
-      required:
-      - "groupId"
-      - "groupName"
-      - "id"
-      - "name"
-      - "status"
-      type: "object"
-    VmAccessGrantView:
-      description: "VM 접근 권한 한 건. 대상은 지정된 사용자 한 명이거나 소유 그룹 전체입니다."
-      properties:
-        createdAt:
-          format: "date-time"
-          type: "string"
-        granteeType:
-          $ref: "#/components/schemas/AccessGranteeType"
-          description: "대상 종류 — USER는 지정된 사용자, GROUP은 소유 그룹 전체"
-        id:
-          format: "int64"
-          type: "integer"
-        role:
-          $ref: "#/components/schemas/ResourceRole"
-          description: "이 대상이 이 VM에서 갖는 등급"
-        user:
-          anyOf:
-          - $ref: "#/components/schemas/Grantee"
-          - type: "null"
-          description: "대상 사용자. 그룹 전체 항목이면 null입니다."
-      required:
-      - "createdAt"
-      - "granteeType"
-      - "id"
-      - "role"
-      type: "object"
-    VmAccessListResponse:
-      description: "VM 접근 권한 목록과, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보"
-      properties:
-        grants:
-          description: "접근 권한 항목"
-          items:
-            $ref: "#/components/schemas/VmAccessGrantView"
-          type: "array"
-        vm:
-          $ref: "#/components/schemas/Vm"
-          description: "이 목록이 속한 VM"
-      required:
-      - "grants"
-      - "vm"
-      type: "object"
     VmBriefResponse:
       properties:
         diskGb:
@@ -3983,11 +4066,6 @@ components:
           type:
           - "string"
           - "null"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
         hostname:
           type: "string"
         id:
@@ -4060,14 +4138,17 @@ components:
         vcpu:
           format: "int32"
           type: "integer"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
       required:
       - "accessAllowed"
       - "accessManageAllowed"
       - "createdAt"
       - "deleteAllowed"
       - "diskGb"
-      - "groupId"
-      - "groupName"
       - "hostname"
       - "id"
       - "imageId"
@@ -4086,6 +4167,8 @@ components:
       - "status"
       - "updatedAt"
       - "vcpu"
+      - "workspaceId"
+      - "workspaceName"
       type: "object"
     VmEventResponse:
       properties:
@@ -4181,6 +4264,31 @@ components:
       required:
       - "blocked"
       type: "object"
+    VmGrantedSpecResponse:
+      properties:
+        grantedDiskGb:
+          format: "int32"
+          type: "integer"
+        grantedImageId:
+          format: "int64"
+          type: "integer"
+        grantedMemoryMb:
+          format: "int32"
+          type: "integer"
+        grantedVcpu:
+          format: "int32"
+          type: "integer"
+        nodeId:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "grantedDiskGb"
+      - "grantedImageId"
+      - "grantedMemoryMb"
+      - "grantedVcpu"
+      type: "object"
     VmPasswordResponse:
       properties:
         password:
@@ -4209,15 +4317,8 @@ components:
       required:
       - "endDate"
       type: "object"
-    VmRequestDetailResponse:
+    VmRequestSpecResponse:
       properties:
-        courseOrProject:
-          type:
-          - "string"
-          - "null"
-        createdAt:
-          format: "date-time"
-          type: "string"
         desiredSlug:
           type:
           - "string"
@@ -4226,65 +4327,27 @@ components:
           type:
           - "string"
           - "null"
-        displayName:
-          type:
-          - "string"
-          - "null"
-        extraNote:
-          type:
-          - "string"
-          - "null"
         flavorId:
           format: "int64"
           type:
           - "integer"
           - "null"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
-        id:
-          format: "int64"
-          type: "integer"
+        granted:
+          anyOf:
+          - $ref: "#/components/schemas/VmGrantedSpecResponse"
+          - type: "null"
         imageId:
           format: "int64"
           type: "integer"
-        orgId:
-          format: "int64"
-          type: "integer"
-        orgName:
-          type: "string"
-        purpose:
-          type: "string"
         reqDiskGb:
           format: "int32"
           type: "integer"
-        reqEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqMemoryMb:
           format: "int32"
           type: "integer"
-        reqStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
         reqVcpu:
           format: "int32"
           type: "integer"
-        requesterId:
-          format: "int64"
-          type: "integer"
-        requesterName:
-          type: "string"
-        review:
-          anyOf:
-          - $ref: "#/components/schemas/VmRequestReviewResponse"
-          - type: "null"
         rootDomain:
           type:
           - "string"
@@ -4293,92 +4356,12 @@ components:
           type:
           - "string"
           - "null"
-        status:
-          $ref: "#/components/schemas/VmRequestStatus"
-        updatedAt:
-          format: "date-time"
-          type: "string"
       required:
-      - "createdAt"
-      - "groupId"
-      - "groupName"
-      - "id"
       - "imageId"
-      - "orgId"
-      - "orgName"
-      - "purpose"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"
-      - "requesterId"
-      - "requesterName"
-      - "status"
-      - "updatedAt"
       type: "object"
-    VmRequestReviewResponse:
-      properties:
-        comment:
-          type:
-          - "string"
-          - "null"
-        decidedAt:
-          format: "date-time"
-          type: "string"
-        decision:
-          $ref: "#/components/schemas/ReviewDecision"
-        grantedDiskGb:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        grantedEndDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
-        grantedImageId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
-        grantedMemoryMb:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        grantedStartDate:
-          format: "date"
-          type:
-          - "string"
-          - "null"
-        grantedVcpu:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        nodeId:
-          format: "int64"
-          type:
-          - "integer"
-          - "null"
-        reviewerId:
-          format: "int64"
-          type: "integer"
-        reviewerName:
-          type: "string"
-      required:
-      - "decidedAt"
-      - "decision"
-      - "reviewerId"
-      - "reviewerName"
-      type: "object"
-    VmRequestStatus:
-      enum:
-      - "SUBMITTED"
-      - "APPROVED"
-      - "REJECTED"
-      - "CANCELED"
-      type: "string"
     VmSettingValueType:
       enum:
       - "BOOLEAN"
@@ -4452,7 +4435,7 @@ components:
           description: "true면 이 VM의 접근 권한이 없어 이름·상태·소유자만 표시됩니다."
           type: "boolean"
         accessManageAllowed:
-          description: "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 그룹 소유자가 참입니다."
+          description: "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 워크스페이스 소유자가 참입니다."
           type: "boolean"
         createdAt:
           format: "date-time"
@@ -4477,11 +4460,6 @@ components:
           type:
           - "string"
           - "null"
-        groupId:
-          format: "int64"
-          type: "integer"
-        groupName:
-          type: "string"
         hostname:
           description: "SSH 슬러그. 접근 권한이 없으면 생략됩니다."
           type:
@@ -4528,16 +4506,21 @@ components:
           type:
           - "integer"
           - "null"
+        workspaceId:
+          format: "int64"
+          type: "integer"
+        workspaceName:
+          type: "string"
       required:
       - "accessLimited"
       - "accessManageAllowed"
       - "createdAt"
-      - "groupId"
-      - "groupName"
       - "id"
       - "name"
       - "ownerNames"
       - "status"
+      - "workspaceId"
+      - "workspaceName"
       type: "object"
     WithdrawRequest:
       properties:
@@ -4552,6 +4535,116 @@ components:
       required:
       - "password"
       type: "object"
+    WorkspaceDetailResponse:
+      properties:
+        createdAt:
+          format: "date-time"
+          type: "string"
+        description:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        members:
+          items:
+            $ref: "#/components/schemas/WorkspaceMemberResponse"
+          type: "array"
+        myRole:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        name:
+          type: "string"
+      required:
+      - "createdAt"
+      - "id"
+      - "kind"
+      - "members"
+      - "myRole"
+      - "name"
+      type: "object"
+    WorkspaceKind:
+      enum:
+      - "PERSONAL"
+      - "TEAM"
+      - "PROJECT"
+      type: "string"
+    WorkspaceMemberResponse:
+      properties:
+        email:
+          type: "string"
+        name:
+          type: "string"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        userId:
+          format: "int64"
+          type: "integer"
+      required:
+      - "email"
+      - "name"
+      - "role"
+      - "userId"
+      type: "object"
+    WorkspaceMemberRole:
+      enum:
+      - "OWNER"
+      - "MEMBER"
+      type: "string"
+    WorkspacePanel:
+      properties:
+        activeVms:
+          items:
+            $ref: "#/components/schemas/VmBriefResponse"
+          type: "array"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        members:
+          items:
+            $ref: "#/components/schemas/MemberBrief"
+          type: "array"
+        name:
+          type: "string"
+        totals:
+          $ref: "#/components/schemas/ResourceTotalsResponse"
+      required:
+      - "activeVms"
+      - "id"
+      - "kind"
+      - "members"
+      - "name"
+      - "totals"
+      type: "object"
+    WorkspaceSummaryResponse:
+      properties:
+        description:
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "int64"
+          type: "integer"
+        kind:
+          $ref: "#/components/schemas/WorkspaceKind"
+        memberCount:
+          format: "int64"
+          type: "integer"
+        myRole:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+        name:
+          type: "string"
+      required:
+      - "id"
+      - "kind"
+      - "memberCount"
+      - "myRole"
+      - "name"
+      type: "object"
   securitySchemes:
     bearerAuth:
       bearerFormat: "JWT"
@@ -4564,7 +4657,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.33.0"
+  version: "0.34.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -5010,58 +5103,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
-  /admin/groups:
-    get:
-      operationId: "listAdminGroups"
-      parameters:
-      - in: "query"
-        name: "orgId"
-        required: false
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/AdminGroupOptionResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-group-controller"
-  /admin/groups/{groupId}:
-    get:
-      operationId: "getAdminGroup"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AdminGroupDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-group-controller"
   /admin/ip-allocations:
     get:
       operationId: "listIpAllocations"
@@ -5584,6 +5625,170 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-relay-controller"
+  /admin/requests:
+    get:
+      operationId: "listAdminRequests"
+      parameters:
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/RequestStatus"
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseRequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}:
+    get:
+      operationId: "getAdminRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/approve:
+    post:
+      operationId: "approveRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/context:
+    get:
+      operationId: "getApprovalContext"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApprovalContextResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
+  /admin/requests/{requestId}/reject:
+    post:
+      operationId: "rejectRequest"
+      parameters:
+      - in: "path"
+        name: "requestId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequestRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-request-controller"
   /admin/routes:
     get:
       operationId: "listAdminRoutes"
@@ -6167,165 +6372,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-flavor-controller"
-  /admin/vm-requests:
-    get:
-      operationId: "listAdminVmRequests"
-      parameters:
-      - in: "query"
-        name: "status"
-        required: false
-        schema:
-          $ref: "#/components/schemas/VmRequestStatus"
-      - in: "query"
-        name: "orgId"
-        required: false
-        schema:
-          format: "int64"
-          type: "integer"
-      - in: "query"
-        name: "page"
-        required: false
-        schema:
-          default: 0
-          format: "int32"
-          minimum: 0
-          type: "integer"
-      - in: "query"
-        name: "size"
-        required: false
-        schema:
-          default: 20
-          format: "int32"
-          maximum: 100
-          minimum: 1
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}:
-    get:
-      operationId: "getAdminVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/approve:
-    post:
-      operationId: "approveVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApproveVmRequestRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/context:
-    get:
-      operationId: "getApprovalContext"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/ApprovalContextResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
-  /admin/vm-requests/{requestId}/reject:
-    post:
-      operationId: "rejectVmRequest"
-      parameters:
-      - in: "path"
-        name: "requestId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RejectVmRequestRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-vm-request-controller"
   /admin/vms:
     get:
       operationId: "listAdminVms"
@@ -6337,7 +6383,7 @@ paths:
           format: "int64"
           type: "integer"
       - in: "query"
-        name: "groupId"
+        name: "workspaceId"
         required: false
         schema:
           format: "int64"
@@ -6726,6 +6772,58 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-vm-controller"
+  /admin/workspaces:
+    get:
+      operationId: "listAdminWorkspaces"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminWorkspaceOptionResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
+  /admin/workspaces/{workspaceId}:
+    get:
+      operationId: "getAdminWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminWorkspaceDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-workspace-controller"
   /auth/login:
     post:
       operationId: "login"
@@ -7136,257 +7234,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
-  /groups:
-    get:
-      operationId: "listGroups"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/GroupSummaryResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-    post:
-      operationId: "createGroup"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateGroupRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/GroupDetailResponse"
-          description: "Created"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-  /groups/{groupId}:
-    delete:
-      operationId: "deleteGroup"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "204":
-          description: "No Content"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-    get:
-      operationId: "getGroup"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/GroupDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-    patch:
-      operationId: "updateGroup"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateGroupRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/GroupDetailResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-  /groups/{groupId}/members:
-    post:
-      operationId: "addGroupMember"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
-          거나 만료·무효면 403 REAUTH_REQUIRED."
-        in: "header"
-        name: "X-Reauth-Token"
-        required: false
-        schema:
-          type: "string"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AddGroupMemberRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/GroupMemberResponse"
-          description: "Created"
-        "403":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-  /groups/{groupId}/members/{userId}:
-    delete:
-      operationId: "removeGroupMember"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      - in: "path"
-        name: "userId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
-          거나 만료·무효면 403 REAUTH_REQUIRED."
-        in: "header"
-        name: "X-Reauth-Token"
-        required: false
-        schema:
-          type: "string"
-      responses:
-        "204":
-          description: "No Content"
-        "403":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
-    patch:
-      operationId: "updateGroupMember"
-      parameters:
-      - in: "path"
-        name: "groupId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      - in: "path"
-        name: "userId"
-        required: true
-        schema:
-          format: "int64"
-          type: "integer"
-      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
-          거나 만료·무효면 403 REAUTH_REQUIRED."
-        in: "header"
-        name: "X-Reauth-Token"
-        required: false
-        schema:
-          type: "string"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateGroupMemberRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/GroupMemberResponse"
-          description: "OK"
-        "403":
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "group-controller"
   /me:
     get:
       operationId: "me"
@@ -8040,37 +7887,22 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "os-image-controller"
-  /vm-flavors:
+  /requests:
     get:
-      operationId: "listVmFlavors"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/VmFlavorResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "vm-flavor-controller"
-  /vm-requests:
-    get:
-      operationId: "listVmRequests"
+      operationId: "listRequests"
       parameters:
       - in: "query"
         name: "status"
         required: false
         schema:
-          $ref: "#/components/schemas/VmRequestStatus"
+          $ref: "#/components/schemas/RequestStatus"
       - in: "query"
-        name: "groupId"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "workspaceId"
         required: false
         schema:
           format: "int64"
@@ -8097,7 +7929,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/PageResponseVmRequestDetailResponse"
+                $ref: "#/components/schemas/PageResponseRequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -8106,21 +7938,21 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
+      - "request-controller"
     post:
-      operationId: "createVmRequest"
+      operationId: "createRequest"
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateVmRequestRequest"
+              $ref: "#/components/schemas/CreateRequestRequest"
         required: true
       responses:
         "201":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "Created"
         default:
           content:
@@ -8129,10 +7961,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
-  /vm-requests/{requestId}:
+      - "request-controller"
+  /requests/{requestId}:
     get:
-      operationId: "getVmRequest"
+      operationId: "getRequest"
       parameters:
       - in: "path"
         name: "requestId"
@@ -8145,7 +7977,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -8154,10 +7986,10 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
-  /vm-requests/{requestId}/cancel:
+      - "request-controller"
+  /requests/{requestId}/cancel:
     post:
-      operationId: "cancelVmRequest"
+      operationId: "cancelRequest"
       parameters:
       - in: "path"
         name: "requestId"
@@ -8170,7 +8002,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmRequestDetailResponse"
+                $ref: "#/components/schemas/RequestDetailResponse"
           description: "OK"
         default:
           content:
@@ -8179,13 +8011,80 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
-      - "vm-request-controller"
+      - "request-controller"
+  /resources:
+    get:
+      operationId: "listResources"
+      parameters:
+      - in: "query"
+        name: "type"
+        required: false
+        schema:
+          $ref: "#/components/schemas/ResourceType"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseResourceSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "resource-index-controller"
+  /vm-flavors:
+    get:
+      operationId: "listVmFlavors"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/VmFlavorResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "vm-flavor-controller"
   /vms:
     get:
       operationId: "listVms"
       parameters:
       - in: "query"
-        name: "groupId"
+        name: "workspaceId"
         required: false
         schema:
           format: "int64"
@@ -8286,8 +8185,8 @@ paths:
       - "vm-controller"
   /vms/{vmId}/access:
     get:
-      description: "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 그룹 소\
-        유자만 볼 수 있습니다."
+      description: "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 워크스페\
+        이스 소유자만 볼 수 있습니다."
       operationId: "listVmAccessGrants"
       parameters:
       - in: "path"
@@ -8301,7 +8200,7 @@ paths:
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessListResponse"
+                $ref: "#/components/schemas/ResourceAccessListResponse"
           description: "OK"
         default:
           content:
@@ -8313,8 +8212,8 @@ paths:
       tags:
       - "vm-access"
     post:
-      description: "지정한 사용자 또는 소유 그룹 전체에 이 VM의 접근 권한을 부여합니다. 사용자는 이 VM을 소유한 그룹의 구성\
-        원이어야 하고, 그룹 전체에는 참여자·열람자까지만 부여할 수 있습니다."
+      description: "지정한 사용자 또는 소유 워크스페이스 전체에 이 VM의 접근 권한을 부여합니다. 사용자는 이 VM을 소유한 워크\
+        스페이스의 구성원이어야 하고, 워크스페이스 전체에는 참여자·열람자까지만 부여할 수 있습니다."
       operationId: "addVmAccessGrant"
       parameters:
       - in: "path"
@@ -8334,14 +8233,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AddVmAccessGrantRequest"
+              $ref: "#/components/schemas/AddResourceAccessGrantRequest"
         required: true
       responses:
         "201":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessGrantView"
+                $ref: "#/components/schemas/ResourceAccessGrantView"
           description: "Created"
         "403":
           content:
@@ -8427,14 +8326,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateVmAccessGrantRequest"
+              $ref: "#/components/schemas/UpdateResourceAccessGrantRequest"
         required: true
       responses:
         "200":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/VmAccessGrantView"
+                $ref: "#/components/schemas/ResourceAccessGrantView"
           description: "OK"
         "403":
           content:
@@ -8968,6 +8867,257 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "terminal-controller"
+  /workspaces:
+    get:
+      operationId: "listWorkspaces"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/WorkspaceSummaryResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+    post:
+      operationId: "createWorkspace"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceDetailResponse"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+  /workspaces/{workspaceId}:
+    delete:
+      operationId: "deleteWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+    get:
+      operationId: "getWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+    patch:
+      operationId: "updateWorkspace"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+  /workspaces/{workspaceId}/members:
+    post:
+      operationId: "addWorkspaceMember"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddWorkspaceMemberRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceMemberResponse"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+  /workspaces/{workspaceId}/members/{userId}:
+    delete:
+      operationId: "removeWorkspaceMember"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
+    patch:
+      operationId: "updateWorkspaceMember"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "int64"
+          type: "integer"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceMemberRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkspaceMemberResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "workspace-controller"
 security:
 - bearerAuth: []
 servers:

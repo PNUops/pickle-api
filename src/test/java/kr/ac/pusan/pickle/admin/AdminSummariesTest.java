@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -30,7 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Dashboard summaries per contract: the org panel counts (requests, decisions,
- * VM statuses, resource guidance, top groups, published services, expiry and
+ * VM statuses, resource guidance, top workspaces, published services, expiry and
  * attention counters — all scoped to a freshly created org so counts are
  * exact) with the ORG_ADMIN pinning/404-mask, and the SYS_ADMIN system panel
  * shape (nodes/tasks/ip pools; the system-wide counters such as
@@ -64,8 +65,8 @@ class AdminSummariesTest {
     private String orgAdminToken;
     private String sysAdminToken;
     private String userToken;
-    private long groupBig;
-    private long groupSmall;
+    private long workspaceBig;
+    private long workspaceSmall;
 
     @BeforeEach
     void setUp() {
@@ -78,21 +79,21 @@ class AdminSummariesTest {
         userToken = jwtService.createAccessToken(regularUser);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
-        groupBig = createGroup();
-        groupSmall = createGroup();
+        workspaceBig = createWorkspace();
+        workspaceSmall = createWorkspace();
     }
 
     @Test
     void orgSummaryAggregatesAreExactForAFreshOrg() throws Exception {
         LocalDate today = LocalDate.now(KST);
-        // 2 VMs in groupBig (one RUNNING expiring in 10d, one NEEDS_ADMIN
-        // already expired), 1 STOPPED in groupSmall without endDate
-        long vmExpiring = createVm(groupBig, "RUNNING", today.plusDays(10));
-        long vmExpired = createVm(groupBig, "NEEDS_ADMIN", today.minusDays(1));
-        createVm(groupSmall, "STOPPED", null);
+        // 2 VMs in workspaceBig (one RUNNING expiring in 10d, one NEEDS_ADMIN
+        // already expired), 1 STOPPED in workspaceSmall without endDate
+        long vmExpiring = createVm(workspaceBig, "RUNNING", today.plusDays(10));
+        long vmExpired = createVm(workspaceBig, "NEEDS_ADMIN", today.minusDays(1));
+        createVm(workspaceSmall, "STOPPED", null);
         // request queue: one SUBMITTED, one APPROVED with a fresh review
-        createRequest(groupBig, "SUBMITTED");
-        long approved = createRequest(groupBig, "APPROVED");
+        createRequest(workspaceBig, "SUBMITTED");
+        long approved = createRequest(workspaceBig, "APPROVED");
         createReview(approved, "APPROVE");
         // one FAILED task on the expired VM
         jdbcTemplate.update("""
@@ -125,10 +126,10 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.resource.allocatedMemoryMb").value(6144))
                 .andExpect(jsonPath("$.resource.allocatedDiskGb").value(30))
                 .andExpect(jsonPath("$.resource.guidance").isNotEmpty())
-                .andExpect(jsonPath("$.topGroupsByVmCount[0].groupId").value(groupBig))
-                .andExpect(jsonPath("$.topGroupsByVmCount[0].vmCount").value(2))
-                .andExpect(jsonPath("$.topGroupsByVmCount[1].groupId").value(groupSmall))
-                .andExpect(jsonPath("$.topGroupsByVmCount[1].vmCount").value(1))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[0].workspaceId").value(workspaceBig))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[0].vmCount").value(2))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[1].workspaceId").value(workspaceSmall))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[1].vmCount").value(1))
                 .andExpect(jsonPath("$.publishedServiceCount").value(1))
                 .andExpect(jsonPath("$.expiringVmCount30d").value(1))
                 .andExpect(jsonPath("$.attention.failedTaskCount").value(1))
@@ -172,7 +173,7 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.vmCountsByStatus.RUNNING").isNumber())
                 .andExpect(jsonPath("$.resource.allocatedVcpu").isNumber())
                 .andExpect(jsonPath("$.resource.guidance").isNotEmpty())
-                .andExpect(jsonPath("$.topGroupsByVmCount").isArray())
+                .andExpect(jsonPath("$.topWorkspacesByVmCount").isArray())
                 .andExpect(jsonPath("$.attention.failedTaskCount").isNumber())
                 // spans orgs: the probe VM counts without any org filter
                 .andExpect(jsonPath("$.vmCountsByStatus.RUNNING", greaterThanOrEqualTo(1)));
@@ -204,9 +205,9 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.ipPools[?(@.name == 'guest-private')].freeCount").exists());
     }
 
-    /** One RUNNING VM in groupBig so the platform-wide summary has this org's data. */
+    /** One RUNNING VM in workspaceBig so the platform-wide summary has this org's data. */
     private void createPlatformWideProbeVm() {
-        createVm(groupBig, "RUNNING", null);
+        createVm(workspaceBig, "RUNNING", null);
     }
 
     // --- fixtures ---------------------------------------------------------------
@@ -220,49 +221,46 @@ class AdminSummariesTest {
         return userRepository.save(user);
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         String slug = "ads-" + UUID.randomUUID().toString().substring(0, 8);
         return jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
     }
 
-    private long createRequest(long groupId, String status) {
+    private long createRequest(long workspaceId, String status) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
-        return jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb, status)
-                values (?, ?, ?, '요약 테스트', ?, 2, 2048, 10,
-                        ?::vm_request_status)
-                returning id
-                """, Long.class, groupId, org.getId(), requesterId, imageId, status);
+        return RequestFixtures.insertVmRequestWithStatus(jdbcTemplate, workspaceId, org.getId(),
+                requesterId, "요약 테스트", imageId, status);
     }
 
     private void createReview(long requestId, String decision) {
         long reviewerId = SeedFixtures.sysadminId(jdbcTemplate);
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        // APPROVE rows must carry the granted spec (chk_reviews_approve_granted)
-        jdbcTemplate.update("""
-                insert into vm_request_reviews (request_id, reviewer_id, decision, granted_vcpu,
-                                                granted_memory_mb, granted_disk_gb,
-                                                granted_image_id)
-                values (?, ?, ?::review_decision, 2, 2048, 10, ?)
-                """, requestId, reviewerId, decision, imageId);
+        // APPROVE rows carry the granted spec, which now lives on the detail row
+        if ("APPROVE".equals(decision)) {
+            RequestFixtures.approveVmRequest(jdbcTemplate, requestId, reviewerId, imageId, 2, 2048, 10);
+        } else {
+            jdbcTemplate.update("""
+                    insert into request_reviews (request_id, reviewer_id, decision, comment)
+                    values (?, ?, ?::review_decision, '반려')
+                    """, requestId, reviewerId, decision);
+        }
     }
 
     /** 2 vCPU / 2048 MiB / 10 GiB VM with an optional endDate. */
-    private long createVm(long groupId, String status, LocalDate endDate) {
-        long requestId = createRequest(groupId, "APPROVED");
+    private long createVm(long workspaceId, String status, LocalDate endDate) {
+        long requestId = createRequest(workspaceId, "APPROVED");
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
         String hostname = "ads-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status, end_date)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, ?::vm_status, ?)
                 returning id
-                """, Long.class, nodeId, groupId, org.getId(), requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, org.getId(), requestId, hostname, hostname,
                 imageId, status, endDate);
     }
 }

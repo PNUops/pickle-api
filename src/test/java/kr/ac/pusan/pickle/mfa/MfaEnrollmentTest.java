@@ -149,7 +149,7 @@ class MfaEnrollmentTest {
             u.setEmailVerifiedAt(Instant.now());
             return userRepository.save(u);
         });
-        mockMvc.perform(get("/api/v1/groups")
+        mockMvc.perform(get("/api/v1/workspaces")
                 .header("Authorization", "Bearer " + jwtService.createAccessToken(admin)))
                 .andExpect(status().isOk());
     }

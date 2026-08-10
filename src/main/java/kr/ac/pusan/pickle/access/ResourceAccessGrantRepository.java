@@ -12,7 +12,7 @@ public interface ResourceAccessGrantRepository extends JpaRepository<ResourceAcc
 
     /**
      * Every grant on one resource — the two rows the judgment needs (the
-     * requester's own and the group-wide one) plus the list surfaces' contents.
+     * requester's own and the workspace-wide one) plus the list surfaces' contents.
      */
     List<ResourceAccessGrant> findByResourceTypeAndResourceIdOrderByIdAsc(ResourceType resourceType,
             Long resourceId);
@@ -33,8 +33,8 @@ public interface ResourceAccessGrantRepository extends JpaRepository<ResourceAcc
     /**
      * The grants at one of {@code roles} on a resource — how a notification
      * finds its audience now that reaching a VM is a grant rather than a rung in
-     * its group. Callers pass {@code USER} for {@code granteeType}: a group-wide
-     * grant names nobody, and the group's owners are added separately when the
+     * its workspace. Callers pass {@code USER} for {@code granteeType}: a workspace-wide
+     * grant names nobody, and the workspace's owners are added separately when the
      * message concerns them.
      *
      * <p>Derived rather than written as JPQL on purpose. An enum literal spelled
@@ -52,15 +52,22 @@ public interface ResourceAccessGrantRepository extends JpaRepository<ResourceAcc
     void deleteByUserId(Long userId);
 
     /**
-     * Drops one person's grants on every resource a group owns — what losing
-     * group membership means for the access lists.
+     * Drops one person's grants on a named set of resources of one type — what
+     * losing workspace membership means for the access lists.
+     *
+     * <p>The caller supplies the ids, which is what keeps this free of any one
+     * resource type: the query named {@code 'VM'} and the {@code vms} table
+     * directly until adapters could answer "what does this workspace own".
+     * Both enums travel as parameters rather than as literals, for the reason
+     * spelled out above {@code findBy...RoleIn}.
      */
     @Modifying
-    @Query(value = """
-            delete from resource_access_grants g
-             where g.grantee_type = 'USER' and g.user_id = :userId
-               and g.resource_type = 'VM'
-               and g.resource_id in (select v.id from vms v where v.group_id = :groupId)
-            """, nativeQuery = true)
-    int deleteUserGrantsInGroup(@Param("groupId") Long groupId, @Param("userId") Long userId);
+    @Query("""
+            delete from ResourceAccessGrant g
+             where g.granteeType = :granteeType and g.userId = :userId
+               and g.resourceType = :resourceType and g.resourceId in :resourceIds
+            """)
+    int deleteUserGrantsOnResources(@Param("granteeType") AccessGranteeType granteeType,
+            @Param("userId") Long userId, @Param("resourceType") ResourceType resourceType,
+            @Param("resourceIds") Collection<Long> resourceIds);
 }

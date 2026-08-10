@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vmsettings;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
  * and the enforcement getters feature code relies on.
  *
  * <p>Every role named here is a rung on the VM's access list, written by
- * {@link #createVm}: settings are inside the VM, so owning the group carries
+ * {@link #createVm}: settings are inside the VM, so owning the workspace carries
  * none of them and each fixture user needs a grant of its own.
  */
 @SpringBootTest
@@ -75,7 +76,7 @@ class VmSettingsTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -90,9 +91,9 @@ class VmSettingsTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = createTeam("vmset-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, editor.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "MEMBER");
+        workspaceId = createTeam("vmset-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(workspaceId, editor.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -114,7 +115,7 @@ class VmSettingsTest {
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
@@ -147,7 +148,7 @@ class VmSettingsTest {
         // EDITOR cannot change the OWNER-only key
         patchSettings(editorToken, vmId, Map.of("password_reveal_min_role", "EDITOR"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"))
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"))
                 .andExpect(jsonPath("$.detail").value(
                         org.hamcrest.Matchers.containsString("password_reveal_min_role")));
 
@@ -249,10 +250,10 @@ class VmSettingsTest {
         // EDITOR blocked from both protection keys (role gate)
         patchSettings(editorToken, vmId, Map.of("deletion_protection", true))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         patchSettings(editorToken, vmId, Map.of("stop_protection", true))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // Both keys are pure pickle-side state (the PVE protection flag is
         // always-on platform state, not mirrored from here), so OWNER toggles
         // succeed even on this vmid-less VM with no Proxmox behind it.
@@ -281,19 +282,14 @@ class VmSettingsTest {
     }
 
     private long createVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '설정 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "설정 테스트", imageId, 1, 1024, 10);
         String hostname = "vmset-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'RUNNING'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
         // The VM skips approval, so nobody is on its list until we say so.
         grantVmToUser(jdbcTemplate, vmId, owner.getId(), "OWNER");
@@ -303,18 +299,18 @@ class VmSettingsTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "설정 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "설정 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)

@@ -10,8 +10,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -60,18 +60,18 @@ public class AdminVmQueryService {
             "-createdAt", Sort.by(Sort.Order.desc("createdAt")));
 
     private final VmRepository vmRepository;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final VmSettingsService vmSettingsService;
     private final VmQueryService vmQueryService;
     private final AdminVmAccess adminVmAccess;
     private final Clock clock;
 
-    public AdminVmQueryService(VmRepository vmRepository, GroupRepository groupRepository,
+    public AdminVmQueryService(VmRepository vmRepository, WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, VmSettingsService vmSettingsService,
             VmQueryService vmQueryService, AdminVmAccess adminVmAccess, Clock clock) {
         this.vmRepository = vmRepository;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.vmSettingsService = vmSettingsService;
         this.vmQueryService = vmQueryService;
@@ -81,7 +81,7 @@ public class AdminVmQueryService {
 
     /**
      * Contract {@code GET /admin/vms/{vmId}} (v0.17.0): org-scoped admin view
-     * of the full detail — the viewer is not a group member, so
+     * of the full detail — the viewer is not a workspace member, so
      * {@code myResourceRole} is null and password reveal stays off.
      */
     @Transactional(readOnly = true)
@@ -99,7 +99,7 @@ public class AdminVmQueryService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long groupId,
+    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long workspaceId,
             VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
             int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
@@ -115,8 +115,8 @@ public class AdminVmQueryService {
         if (scopedOrgId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
         }
-        if (groupId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("groupId"), groupId));
+        if (workspaceId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("workspaceId"), workspaceId));
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
@@ -138,9 +138,9 @@ public class AdminVmQueryService {
         }
         Page<Vm> result = vmRepository.findAll(spec, pageable);
         List<Vm> vms = result.getContent();
-        Map<Long, String> groupNames = groupRepository.findAllById(
-                        vms.stream().map(Vm::getGroupId).distinct().toList())
-                .stream().collect(Collectors.toMap(Group::getId, Group::getName));
+        Map<Long, String> workspaceNames = workspaceRepository.findAllById(
+                        vms.stream().map(Vm::getWorkspaceId).distinct().toList())
+                .stream().collect(Collectors.toMap(Workspace::getId, Workspace::getName));
         Map<Long, String> orgNames = orgRepository.findAllById(
                         vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
                                 .distinct().toList())
@@ -148,7 +148,7 @@ public class AdminVmQueryService {
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
         return PageResponse.of(vms.stream()
-                .map(vm -> VmSummaryResponse.from(vm, groupNames.getOrDefault(vm.getGroupId(), ""),
+                .map(vm -> VmSummaryResponse.from(vm, workspaceNames.getOrDefault(vm.getWorkspaceId(), ""),
                         orgNames.get(vm.getOrgId()), displayNames.get(vm.getId())))
                 .toList(), result);
     }

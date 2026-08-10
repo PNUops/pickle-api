@@ -5,7 +5,7 @@ import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.RouteStatus;
 import org.jspecify.annotations.Nullable;
 
-/** Contract schema {@code AdminRouteView} — a route with VM/group/org context. */
+/** Contract schema {@code AdminRouteView} — a route with VM/workspace/org context. */
 public record AdminRouteView(
         Long id,
         Long domainId,
@@ -13,8 +13,8 @@ public record AdminRouteView(
         DomainKind domainKind,
         Long vmId,
         String vmName,
-        Long groupId,
-        String groupName,
+        Long workspaceId,
+        String workspaceName,
         Long orgId,
         String orgName,
         int targetPort,

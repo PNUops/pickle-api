@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -41,7 +42,7 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>The rung each fixture user acts at comes from the VM's access list, which
  * {@link #createVm} writes: everyone here is a plain member of the owning
- * group, and a member with no grant reaches nothing.
+ * workspace, and a member with no grant reaches nothing.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -85,7 +86,7 @@ class VmPasswordTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -104,9 +105,9 @@ class VmPasswordTest {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = createTeam("vmpw-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, member.getEmail(), "MEMBER");
-        addMember(groupId, viewer.getEmail(), "MEMBER");
+        workspaceId = createTeam("vmpw-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(workspaceId, member.getEmail(), "MEMBER");
+        addMember(workspaceId, viewer.getEmail(), "MEMBER");
     }
 
     @Test
@@ -126,7 +127,7 @@ class VmPasswordTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, memberReauth))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // the OWNER still can (OWNER ≥ EDITOR)
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -142,7 +143,7 @@ class VmPasswordTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, memberReauth))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(post("/api/v1/vms/" + running + "/password/regenerate")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, outsiderReauth))
@@ -218,7 +219,7 @@ class VmPasswordTest {
                         .header("Authorization", "Bearer " + viewerToken)
                         .header(ReauthTestSupport.HEADER, viewerReauth))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, outsiderReauth))
@@ -238,20 +239,15 @@ class VmPasswordTest {
     // ── helpers ────────────────────────────────────────────────────────────
 
     private long createVm(VmStatus status, String initialPassword) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '비밀번호 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "비밀번호 테스트", imageId, 1, 1024, 10);
         String hostname = "vmpw-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status,
                                  password_enc, password_hash)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet(), status.name(),
                 initialPassword == null ? null : credentialCipher.encrypt(initialPassword),
                 initialPassword == null ? null : "bcrypt-hash");
@@ -264,18 +260,18 @@ class VmPasswordTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "비번 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "비번 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)

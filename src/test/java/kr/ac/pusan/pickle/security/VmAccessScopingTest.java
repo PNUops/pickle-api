@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.security;
 
-import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningGroup;
+import kr.ac.pusan.pickle.support.RequestFixtures;
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,12 +57,12 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <ol>
  *   <li>outsider — the VM's existence is masked, so 404 and not 403;</li>
- *   <li>owning-group member with no grant — the VM is already listed to them,
- *       so an honest 403 {@code GROUP_ROLE_INSUFFICIENT};</li>
+ *   <li>owning-workspace member with no grant — the VM is already listed to them,
+ *       so an honest 403 {@code WORKSPACE_ROLE_INSUFFICIENT};</li>
  *   <li>a grant one rung below what the op needs — 403 (skipped for the
  *       VIEWER-rung ops, which sit on the floor);</li>
  *   <li>a grant at exactly the required rung — allowed;</li>
- *   <li>a group OWNER holding no grant at all — allowed only for the standing
+ *   <li>a workspace OWNER holding no grant at all — allowed only for the standing
  *       rights ({@link kr.ac.pusan.pickle.access.VmAccess#manages()}: deletion
  *       and the access list) and for the plain reads their standing VIEWER
  *       covers; refused for everything inside the VM.</li>
@@ -83,7 +84,7 @@ import tools.jackson.databind.ObjectMapper;
  *   <li>sudo mode ({@code @RequireReauth}) answers 403 as well, which would
  *       make a denial pass for the wrong reason — the ops that need it are
  *       marked in the table and always carry a live token, and every expected
- *       403 additionally asserts the {@code GROUP_ROLE_INSUFFICIENT} code so a
+ *       403 additionally asserts the {@code WORKSPACE_ROLE_INSUFFICIENT} code so a
  *       {@code REAUTH_REQUIRED} can never be mistaken for it;</li>
  *   <li>the web terminal's kill switch is read before authorization and answers
  *       503, so it is switched on for every case.</li>
@@ -107,7 +108,7 @@ class VmAccessScopingTest {
     private static final AtomicInteger PUBLIC_PORT_SEQ = new AtomicInteger(40_000);
 
     /**
-     * The ops a group owner reaches through their standing rights rather than
+     * The ops a workspace owner reaches through their standing rights rather than
      * through a rung — {@code VmAccess.manages()}. This is the whole of that
      * standing: every other op in the table is refused to them, whatever its
      * rung, so a new op needs one table row and nothing else.
@@ -135,7 +136,7 @@ class VmAccessScopingTest {
         MEMBER_WITHOUT_GRANT,
         GRANT_BELOW_RUNG,
         GRANT_AT_RUNG,
-        GROUP_OWNER_WITHOUT_GRANT
+        WORKSPACE_OWNER_WITHOUT_GRANT
     }
 
     /** The throwaway resources one (op, scenario) pair acts on. */
@@ -239,18 +240,18 @@ class VmAccessScopingTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
-    private User groupOwner;
+    private User workspaceOwner;
     private User member;
     private User listedBystander;
     private User spareBystander;
     private User outsider;
-    private String groupOwnerToken;
+    private String workspaceOwnerToken;
     private String memberToken;
     private String outsiderToken;
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
     private long relayId;
 
     @BeforeEach
@@ -259,26 +260,26 @@ class VmAccessScopingTest {
         // createTerminalSession rows would all answer 503 and prove nothing.
         jdbcTemplate.update("update settings set value = ?::jsonb where key = 'web_terminal_enabled'",
                 "true");
-        groupOwner = ensureUser("scope.owner@pusan.ac.kr", "범위그룹소유자");
+        workspaceOwner = ensureUser("scope.owner@pusan.ac.kr", "범위워크스페이스소유자");
         member = ensureUser("scope.member@pusan.ac.kr", "범위구성원");
         listedBystander = ensureUser("scope.listed@pusan.ac.kr", "범위등재자");
         spareBystander = ensureUser("scope.spare@pusan.ac.kr", "범위예비자");
         outsider = ensureUser("scope.outsider@pusan.ac.kr", "범위외부인");
-        groupOwnerToken = jwtService.createAccessToken(groupOwner);
+        workspaceOwnerToken = jwtService.createAccessToken(workspaceOwner);
         memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
-        groupId = ensureGroup();
-        addMember(groupOwner.getId(), "OWNER");
+        workspaceId = ensureWorkspace();
+        addMember(workspaceOwner.getId(), "OWNER");
         addMember(member.getId(), "MEMBER");
         addMember(listedBystander.getId(), "MEMBER");
         addMember(spareBystander.getId(), "MEMBER");
-        // The outsider must stay out of the group: their whole purpose is the
+        // The outsider must stay out of the workspace: their whole purpose is the
         // 404 mask, which a stray membership row would turn into a 403.
-        jdbcTemplate.update("delete from group_members where group_id = ? and user_id = ?",
-                groupId, outsider.getId());
+        jdbcTemplate.update("delete from workspace_members where workspace_id = ? and user_id = ?",
+                workspaceId, outsider.getId());
         relayId = ensureRelay();
     }
 
@@ -313,17 +314,17 @@ class VmAccessScopingTest {
             // and would otherwise let this case pass without the rung being
             // consulted at all.
             assertThat(errorCode(response)).as("%s: 403 error code", where)
-                    .isEqualTo("GROUP_ROLE_INSUFFICIENT");
+                    .isEqualTo("WORKSPACE_ROLE_INSUFFICIENT");
         }
     }
 
     /**
-     * The strongest grant wins. Someone named personally at VIEWER, in a group
+     * The strongest grant wins. Someone named personally at VIEWER, in a workspace
      * the whole of which holds MEMBER, acts as a MEMBER — the two are combined,
      * not overridden by whichever is more specific.
      */
     @Test
-    void personalAndGroupWideGrantsCombineToTheStrongest() throws Exception {
+    void personalAndWorkspaceWideGrantsCombineToTheStrongest() throws Exception {
         long vmId = insertVm();
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "VIEWER");
 
@@ -333,11 +334,11 @@ class VmAccessScopingTest {
                                 .header("Authorization", "Bearer " + memberToken))
                 .andReturn().getResponse();
         assertThat(viewerOnly.getStatus()).isEqualTo(403);
-        assertThat(errorCode(viewerOnly)).isEqualTo("GROUP_ROLE_INSUFFICIENT");
+        assertThat(errorCode(viewerOnly)).isEqualTo("WORKSPACE_ROLE_INSUFFICIENT");
 
-        // Adding a group-wide MEMBER grant raises them; the personal VIEWER row
+        // Adding a workspace-wide MEMBER grant raises them; the personal VIEWER row
         // is still there and must not hold them down.
-        grantVmToOwningGroup(jdbcTemplate, vmId, "MEMBER");
+        grantVmToOwningWorkspace(jdbcTemplate, vmId, "MEMBER");
         MockHttpServletResponse combined = mockMvc.perform(
                         MockMvcRequestBuilders.post("/api/v1/vms/" + vmId + "/start")
                                 .header("Authorization", "Bearer " + memberToken))
@@ -353,13 +354,13 @@ class VmAccessScopingTest {
         return switch (scenario) {
             case NON_MEMBER, MEMBER_WITHOUT_GRANT, GRANT_BELOW_RUNG -> false;
             case GRANT_AT_RUNG -> true;
-            // A group owner's standing is exactly: manage the list and delete.
+            // A workspace owner's standing is exactly: manage the list and delete.
             // It is deliberately not a rung, so it does not even carry the
             // VIEWER reads — the VM's address, its guest account and its
             // published ports are inside, and inside needs a grant. What they
             // keep without one is knowing the VM exists, which is the listing's
             // limited view rather than any operation in this table.
-            case GROUP_OWNER_WITHOUT_GRANT -> MANAGED_OPS.contains(scopedOp.id());
+            case WORKSPACE_OWNER_WITHOUT_GRANT -> MANAGED_OPS.contains(scopedOp.id());
         };
     }
 
@@ -376,7 +377,7 @@ class VmAccessScopingTest {
         }
         return switch (scenario) {
             case NON_MEMBER -> new Requester(outsider.getId(), outsiderToken);
-            case GROUP_OWNER_WITHOUT_GRANT -> new Requester(groupOwner.getId(), groupOwnerToken);
+            case WORKSPACE_OWNER_WITHOUT_GRANT -> new Requester(workspaceOwner.getId(), workspaceOwnerToken);
             default -> new Requester(member.getId(), memberToken);
         };
     }
@@ -446,14 +447,14 @@ class VmAccessScopingTest {
                 values (?, ?, 'TCP', ?, 8080, 'ACTIVE', 0, ?)
                 returning id
                 """, Long.class, relayId, vmId, PUBLIC_PORT_SEQ.incrementAndGet(),
-                groupOwner.getId());
+                workspaceOwner.getId());
         long campusIpRequestId = jdbcTemplate.queryForObject("""
                 insert into campus_ip_requests (vm_id, requested_by, purpose, ports)
                 values (?, ?, '접근 범위 테스트', '[80]'::jsonb)
                 returning id
-                """, Long.class, vmId, groupOwner.getId());
+                """, Long.class, vmId, workspaceOwner.getId());
         // The {grantId} target is deliberately a USER row for somebody else: a
-        // group-wide row here would raise the requester's own rung and quietly
+        // workspace-wide row here would raise the requester's own rung and quietly
         // turn the below-rung scenarios into passes.
         grantVmToUser(jdbcTemplate, vmId, listedBystander.getId(), "VIEWER");
         long grantId = jdbcTemplate.queryForObject("""
@@ -473,38 +474,40 @@ class VmAccessScopingTest {
      * real transition on a fixture the next case would inherit.
      */
     private long insertVm() {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '접근 범위 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, groupOwner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, workspaceOwner.getId(), "접근 범위 테스트", imageId, 1, 1024, 10);
         String hostname = "scope-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, 'CREATING'::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, VMID_SEQ.incrementAndGet());
     }
 
-    private long ensureGroup() {
+    private long ensureWorkspace() {
+        // Reused across the cases in this class, and workspaces carry no unique
+        // key to upsert on any more, so this looks before it writes.
+        List<Long> existing = jdbcTemplate.queryForList("""
+                select id from workspaces
+                 where name = '접근 범위 테스트 팀' and deleted_at is null
+                """, Long.class);
+        if (!existing.isEmpty()) {
+            return existing.getFirst();
+        }
         return jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, '접근 범위 테스트 팀', 'vm-access-scoping')
-                on conflict (slug) where deleted_at is null
-                    do update set name = excluded.name
+                insert into workspaces (kind, name)
+                values ('TEAM'::workspace_kind, '접근 범위 테스트 팀')
                 returning id
                 """, Long.class);
     }
 
     private void addMember(long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                on conflict (group_id, user_id) do update set role = excluded.role
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                on conflict (workspace_id, user_id) do update set role = excluded.role
+                """, workspaceId, userId, role);
     }
 
     /**

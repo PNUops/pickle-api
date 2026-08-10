@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.terminal;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -68,7 +69,7 @@ class InternalTerminalTest {
     private long imageId;
     private long nodeId;
     private long poolId;
-    private long groupId;
+    private long workspaceId;
     private User member;
 
     @BeforeEach
@@ -81,8 +82,8 @@ class InternalTerminalTest {
                 Long.class);
         nodeId = ensureNode();
         member = ensureUser("term.redeem.member@pusan.ac.kr", "리딤멤버");
-        groupId = createGroup();
-        addMember(groupId, member.getId(), "MEMBER");
+        workspaceId = createWorkspace();
+        addMember(workspaceId, member.getId(), "MEMBER");
     }
 
     // ── redeem ─────────────────────────────────────────────────────────────
@@ -127,11 +128,11 @@ class InternalTerminalTest {
     void redeemReCheckMembershipRemovedIsAccessRevoked() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, "172.29.5.13", false, HOST_KEY);
         String ticket = mintTicket(UUID.randomUUID().toString(), vmId);
-        // Leaving the group is what the product cascades the grants off, but the
+        // Leaving the workspace is what the product cascades the grants off, but the
         // grant row is left standing here on purpose: losing membership alone
         // must already end the session, whatever the access list still says.
-        jdbcTemplate.update("delete from group_members where group_id = ? and user_id = ?",
-                groupId, member.getId());
+        jdbcTemplate.update("delete from workspace_members where workspace_id = ? and user_id = ?",
+                workspaceId, member.getId());
         redeem(ticket, SSHGW_IP)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.reason").value("ACCESS_REVOKED"));
@@ -379,40 +380,35 @@ class InternalTerminalTest {
         });
     }
 
-    private long createGroup() {
+    private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
-                insert into groups (kind, name, slug)
-                values ('TEAM'::group_kind, '리딤팀', ?) returning id
-                """, Long.class, "termr-" + UUID.randomUUID().toString().substring(0, 8));
+                insert into workspaces (kind, name)
+                values ('TEAM'::workspace_kind, '리딤팀') returning id
+                """, Long.class);
     }
 
-    private void addMember(long groupId, long userId, String role) {
+    private void addMember(long workspaceId, long userId, String role) {
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, ?::group_member_role)
-                on conflict (group_id, user_id) do update set role = excluded.role
-                """, groupId, userId, role);
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, ?::workspace_member_role)
+                on conflict (workspace_id, user_id) do update set role = excluded.role
+                """, workspaceId, userId, role);
     }
 
     private long createVm(VmStatus status, String ip, boolean blocked, String hostKey) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '리딤 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, member.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, member.getId(), "리딤 테스트", imageId, 1, 1024, 10);
         long allocationId = jdbcTemplate.queryForObject("""
                 insert into ip_allocations (pool_id, ip, status) values (?, ?::inet, 'ALLOCATED')
                 returning id
                 """, Long.class, poolId, ip);
         String hostname = "termr-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status,
                                  ip_allocation_id, ssh_gateway_blocked, ssh_host_key)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?::vm_status, ?, ?, ?)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname, imageId,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId,
                 status.name(), allocationId, blocked, hostKey);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
         // The VM is inserted rather than approved, so nobody is on its access

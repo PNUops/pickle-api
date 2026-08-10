@@ -30,21 +30,21 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     /** SSH gateway route resolution: the VM a client slug (hostname) maps to. */
     java.util.Optional<Vm> findByHostname(String hostname);
 
-    /** VM ids of the given groups — for building an access-scoped id filter. */
-    @Query("select v.id from Vm v where v.groupId in :groupIds")
-    List<Long> findIdsByGroupIdIn(@Param("groupIds") Collection<Long> groupIds);
+    /** VM ids of the given workspaces — for building an access-scoped id filter. */
+    @Query("select v.id from Vm v where v.workspaceId in :workspaceIds")
+    List<Long> findIdsByWorkspaceIdIn(@Param("workspaceIds") Collection<Long> workspaceIds);
 
-    Page<Vm> findByGroupIdIn(Collection<Long> groupIds, Pageable pageable);
+    Page<Vm> findByWorkspaceIdIn(Collection<Long> workspaceIds, Pageable pageable);
 
-    Page<Vm> findByGroupId(Long groupId, Pageable pageable);
+    Page<Vm> findByWorkspaceId(Long workspaceId, Pageable pageable);
 
-    /** Currently allocated (= not deleted) VMs of the given groups. */
+    /** Currently allocated (= not deleted) VMs of the given workspaces. */
     @Query("""
             select v from Vm v
-             where v.groupId in :groupIds and v.deletedAt is null and v.status <> :deleted
+             where v.workspaceId in :workspaceIds and v.deletedAt is null and v.status <> :deleted
              order by v.id
             """)
-    List<Vm> findActiveByGroupIdIn(@Param("groupIds") Collection<Long> groupIds,
+    List<Vm> findActiveByWorkspaceIdIn(@Param("workspaceIds") Collection<Long> workspaceIds,
             @Param("deleted") VmStatus deleted);
 
     /**
@@ -60,23 +60,23 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     List<Vm> findActiveByOrgId(@Param("orgId") Long orgId, @Param("deleted") VmStatus deleted);
 
     /**
-     * Shared blocker query — group deletion and account withdrawal both refuse
-     * while a group still has non-destroyed VMs (everything but DELETED,
+     * Shared blocker query — workspace deletion and account withdrawal both refuse
+     * while a workspace still has non-destroyed VMs (everything but DELETED,
      * DELETING included). Defined once so both callers bind to one predicate
      * instead of drifting apart.
      */
     @Query("""
             select count(v) from Vm v
-             where v.groupId = :groupId and v.deletedAt is null and v.status <> :deleted
+             where v.workspaceId = :workspaceId and v.deletedAt is null and v.status <> :deleted
             """)
-    long countActiveByGroupId(@Param("groupId") Long groupId, @Param("deleted") VmStatus deleted);
+    long countActiveByWorkspaceId(@Param("workspaceId") Long workspaceId, @Param("deleted") VmStatus deleted);
 
-    /** Multi-group variant of {@link #countActiveByGroupId} (withdrawal scan). */
+    /** Multi-workspace variant of {@link #countActiveByWorkspaceId} (withdrawal scan). */
     @Query("""
             select count(v) from Vm v
-             where v.groupId in :groupIds and v.deletedAt is null and v.status <> :deleted
+             where v.workspaceId in :workspaceIds and v.deletedAt is null and v.status <> :deleted
             """)
-    long countActiveByGroupIdIn(@Param("groupIds") Collection<Long> groupIds,
+    long countActiveByWorkspaceIdIn(@Param("workspaceIds") Collection<Long> workspaceIds,
             @Param("deleted") VmStatus deleted);
 
     /** DB-intent capacity already granted on a node, for placement scoring. */

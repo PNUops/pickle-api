@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.provisioning;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -45,7 +46,7 @@ class NodePlacementServiceTest {
 
     private long orgId;
     private long requesterId;
-    private long groupId;
+    private long workspaceId;
     private String imageName;
     private OsImage image;
 
@@ -54,9 +55,9 @@ class NodePlacementServiceTest {
         orgId = SeedFixtures.seedOrgId(jdbc);
         requesterId = SeedFixtures.orgadminId(jdbc);
         String slug = "place-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbc.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+        workspaceId = jdbc.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         imageName = "place-tmpl-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
@@ -118,19 +119,14 @@ class NodePlacementServiceTest {
     }
 
     private Vm vm(long nodeId) {
-        long requestId = jdbc.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '배치 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, image.getId());
+        long requestId = RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, requesterId, "배치 테스트", image.getId(), 1, 1024, 10);
         String hostname = "place-vm-" + UUID.randomUUID().toString().substring(0, 12);
         long vmId = jdbc.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 image.getId());
         return vmRepository.findById(vmId).orElseThrow();
     }

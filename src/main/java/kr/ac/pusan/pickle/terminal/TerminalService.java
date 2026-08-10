@@ -13,8 +13,8 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.TerminalProperties;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -63,7 +63,7 @@ public class TerminalService {
     private final SettingsService settingsService;
     private final VmRepository vmRepository;
     private final VmAccessService vmAccessService;
-    private final GroupRepository groupRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final UserRepository userRepository;
     private final IpAddressResolver ipAddressResolver;
@@ -75,7 +75,7 @@ public class TerminalService {
     private final TerminalProperties properties;
 
     public TerminalService(SettingsService settingsService, VmRepository vmRepository,
-            VmAccessService vmAccessService, GroupRepository groupRepository,
+            VmAccessService vmAccessService, WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, UserRepository userRepository,
             IpAddressResolver ipAddressResolver, RateLimitService rateLimitService,
             AuditService auditService, TicketRegistry ticketRegistry,
@@ -84,7 +84,7 @@ public class TerminalService {
         this.settingsService = settingsService;
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
-        this.groupRepository = groupRepository;
+        this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
         this.ipAddressResolver = ipAddressResolver;
@@ -110,7 +110,7 @@ public class TerminalService {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.TERMINAL_DISABLED,
                     "웹 터미널을 사용할 수 없습니다", "웹 터미널 기능이 현재 비활성화되어 있습니다.");
         }
-        // 2) visible VM + group MEMBER+. A non-member (or missing VM) is masked as
+        // 2) visible VM + workspace MEMBER+. A non-member (or missing VM) is masked as
         //    404 (existence stays private); a VIEWER already sees the VM via getVm,
         //    so it gets an honest 403 (same as the power-control paths) rather than
         //    a misleading 404.
@@ -303,9 +303,9 @@ public class TerminalService {
         Map<Long, User> users = userRepository.findAllById(
                         sessions.stream().map(MirrorSession::userId).distinct().toList())
                 .stream().collect(Collectors.toMap(User::getId, u -> u));
-        Map<Long, String> groupNames = groupRepository.findAllById(
-                        vms.values().stream().map(Vm::getGroupId).distinct().toList())
-                .stream().collect(Collectors.toMap(Group::getId, Group::getName));
+        Map<Long, String> workspaceNames = workspaceRepository.findAllById(
+                        vms.values().stream().map(Vm::getWorkspaceId).distinct().toList())
+                .stream().collect(Collectors.toMap(Workspace::getId, Workspace::getName));
         Map<Long, String> orgNames = orgRepository.findAllById(
                         sessions.stream().map(MirrorSession::orgId).distinct().toList())
                 .stream().collect(Collectors.toMap(Org::getId, Org::getName));
@@ -316,7 +316,7 @@ public class TerminalService {
             views.add(new TerminalSessionView(
                     s.sessionId(), s.vmId(), vm != null ? vm.getName() : "", s.orgId(),
                     orgNames.getOrDefault(s.orgId(), ""),
-                    vm != null ? groupNames.getOrDefault(vm.getGroupId(), "") : "",
+                    vm != null ? workspaceNames.getOrDefault(vm.getWorkspaceId(), "") : "",
                     s.userId(), user != null ? user.getEmail() : "",
                     user != null ? user.getName() : "", s.clientIp(), s.startedAt()));
         }

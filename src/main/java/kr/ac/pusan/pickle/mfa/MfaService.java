@@ -43,8 +43,8 @@ public class MfaService {
     private static final int RECOVERY_CODE_COUNT = 10;
     /** Unambiguous alphabet (no 0/1/i/l/o) for human-typed recovery codes. */
     private static final String RECOVERY_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
-    private static final int RECOVERY_GROUPS = 3;
-    private static final int RECOVERY_GROUP_LEN = 4;
+    private static final int RECOVERY_WORKSPACES = 3;
+    private static final int RECOVERY_WORKSPACE_LEN = 4;
     private static final Duration LOGIN_CHALLENGE_TTL = Duration.ofMinutes(5);
 
     /** Rate-limit scopes for the password re-verification points (see {@link #guardPasswordAttempt}). */
@@ -350,11 +350,11 @@ public class MfaService {
 
     private String newRecoveryCode() {
         StringBuilder out = new StringBuilder();
-        for (int group = 0; group < RECOVERY_GROUPS; group++) {
-            if (group > 0) {
+        for (int workspace = 0; workspace < RECOVERY_WORKSPACES; workspace++) {
+            if (workspace > 0) {
                 out.append('-');
             }
-            for (int c = 0; c < RECOVERY_GROUP_LEN; c++) {
+            for (int c = 0; c < RECOVERY_WORKSPACE_LEN; c++) {
                 out.append(RECOVERY_ALPHABET.charAt(random.nextInt(RECOVERY_ALPHABET.length())));
             }
         }

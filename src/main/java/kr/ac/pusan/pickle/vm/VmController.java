@@ -58,10 +58,10 @@ public class VmController {
     @GetMapping
     public PageResponse<VmSummaryResponse> listVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long groupId,
+            @RequestParam(required = false) Long workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return vmQueryService.list(principal, groupId, page, size);
+        return vmQueryService.list(principal, workspaceId, page, size);
     }
 
     @GetMapping("/{vmId}")

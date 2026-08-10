@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.vm;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.deleteRequestedFor;
@@ -146,7 +147,7 @@ class VmDeletionTest {
     private long orgId;
     private long nodeId;
     private long imageId;
-    private long groupId;
+    private long workspaceId;
     private long poolId;
     private int proxmoxVmid;
 
@@ -169,8 +170,8 @@ class VmDeletionTest {
         poolId = jdbcTemplate.queryForObject(
                 "select id from ip_pools where name = 'guest-private'", Long.class);
         nodeId = ensureWireMockNode();
-        groupId = createTeam("vmdel-" + UUID.randomUUID().toString().substring(0, 8));
-        addMember(groupId, member.getEmail(), "MEMBER");
+        workspaceId = createTeam("vmdel-" + UUID.randomUUID().toString().substring(0, 8));
+        addMember(workspaceId, member.getEmail(), "MEMBER");
     }
 
     // ── self-delete ────────────────────────────────────────────────────────
@@ -208,7 +209,7 @@ class VmDeletionTest {
         assertThat(enqueued).isPositive();
 
         // notifications were inserted in-tx; the dispatcher emails them:
-        // group members + org admins, with both policy notices
+        // workspace members + org admins, with both policy notices
         notificationDispatchJob.dispatch();
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to)
@@ -235,7 +236,7 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, reauth(outsiderToken)))
@@ -266,7 +267,7 @@ class VmDeletionTest {
     }
 
     /**
-     * The standing an owner of the owning group holds when the access list
+     * The standing an owner of the owning workspace holds when the access list
      * names them nowhere: they may destroy the VM and decide who reaches it,
      * and that is the whole of it — the standing is not a rung, so it opens
      * nothing the VM holds, down to its detail. Keeping both halves in one
@@ -275,38 +276,38 @@ class VmDeletionTest {
      * either half alone.
      */
     @Test
-    void groupOwnerStandingCarriesDeletionButNothingInsideTheVm() throws Exception {
+    void workspaceOwnerStandingCarriesDeletionButNothingInsideTheVm() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
         // Strip the list this fixture normally writes: the owner is now backed
-        // by nothing but their rung in the group, which is the case under test.
+        // by nothing but their rung in the workspace, which is the case under test.
         revokeVmGrants(jdbcTemplate, vmId);
         jdbcTemplate.update(
                 "update settings set value = 'true'::jsonb where key = 'web_terminal_enabled'");
 
         // Not even the detail read: standing rights are deliberately not a
-        // rung, so what a group owner keeps without a grant is knowing the VM
+        // rung, so what a workspace owner keeps without a grant is knowing the VM
         // exists (the listing's limited view), not anything it holds. The 403
         // rather than 404 is the difference from a stranger.
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // Everything inside it is refused. Shutdown is chosen over start so the
         // VM's state is valid for the op and only the access check can refuse.
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(post("/api/v1/vms/" + vmId + "/terminal-sessions")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
@@ -314,7 +315,7 @@ class VmDeletionTest {
                         .content(objectMapper.writeValueAsString(
                                 Map.of("settings", Map.of("ssh_password_enabled", false)))))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // What they do keep is knowing it is there. The list row is the
         // restricted one — name, state and who to ask — and it carries the flag
@@ -351,9 +352,9 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("GROUP_ROLE_INSUFFICIENT"));
+                .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
-        // The group owner, still named nowhere on the list, may.
+        // The workspace owner, still named nowhere on the list, may.
         mockMvc.perform(delete("/api/v1/vms/" + vmId)
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
@@ -1184,20 +1185,15 @@ class VmDeletionTest {
     }
 
     private long createVm(VmStatus status) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '삭제 테스트', ?, 1, 1024, 10)
-                returning id
-                """, Long.class, groupId, orgId, owner.getId(), imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, owner.getId(), "삭제 테스트", imageId, 1, 1024, 10);
         String hostname = "vmdel-" + UUID.randomUUID().toString().substring(0, 12);
         proxmoxVmid = VMID_SEQ.incrementAndGet();
         long vmId = jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, ?, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, proxmoxVmid, status.name());
         // Inserted straight into the table, so approval never named the
         // requester: without these rows the state and protection guards below
@@ -1208,18 +1204,18 @@ class VmDeletionTest {
     }
 
     private long createTeam(String slug) throws Exception {
-        String body = mockMvc.perform(post("/api/v1/groups")
+        String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "삭제 테스트 " + slug, "slug", slug))))
+                                Map.of("kind", "TEAM", "name", "삭제 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(body).get("id").asLong();
     }
 
-    private void addMember(long groupId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/groups/" + groupId + "/members")
+    private void addMember(long workspaceId, String email, String role) throws Exception {
+        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)

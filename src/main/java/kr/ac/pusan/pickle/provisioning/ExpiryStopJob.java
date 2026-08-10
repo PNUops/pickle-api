@@ -39,7 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * On a confirmed stop, one transaction CASes status → STOPPED with
  * {@code expiry_stopped_at} + Korean {@code status_detail}, appends the
  * {@code EXPIRE_STOP} event (actor null) and publishes
- * {@code VM_EXPIRY_STOPPED} (HIGH) to the group's OWNER/EDITORs and the org's
+ * {@code VM_EXPIRY_STOPPED} (HIGH) to the workspace's OWNER/EDITORs and the org's
  * ORG_ADMINs. A Proxmox failure only logs — the claim is freed and the next
  * hourly sweep retries.</p>
  */

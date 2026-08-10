@@ -168,26 +168,27 @@ class AdminInventoryTest {
                 imageId);
         User requester = ensureUser("ait.user@pusan.ac.kr", UserRole.USER);
         String slug = "ait-" + UUID.randomUUID().toString().substring(0, 8);
-        long groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+        long workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         jdbcTemplate.update("""
-                insert into group_members (group_id, user_id, role)
-                values (?, ?, 'OWNER'::group_member_role)
-                """, groupId, requester.getId());
+                insert into workspace_members (workspace_id, user_id, role)
+                values (?, ?, 'OWNER'::workspace_member_role)
+                """, workspaceId, requester.getId());
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/v1/vm-requests")
+                        .post("/api/v1/requests")
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(requester))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"groupId": %d, "orgId": %d, "purpose": "은퇴 OS 이미지 거부 확인",
-                                 "imageId": %d, "flavorId": %d, "reqVcpu": 2,
-                                 "reqMemoryMb": 2048, "reqDiskGb": 20}
-                                """.formatted(groupId, orgId, imageId, flavorId)))
+                                {"type": "VM", "workspaceId": %d, "orgId": %d,
+                                 "purpose": "은퇴 OS 이미지 거부 확인",
+                                 "vm": {"imageId": %d, "flavorId": %d, "reqVcpu": 2,
+                                        "reqMemoryMb": 2048, "reqDiskGb": 20}}
+                                """.formatted(workspaceId, orgId, imageId, flavorId)))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("imageId"));
+                .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
     }
 
     @Test

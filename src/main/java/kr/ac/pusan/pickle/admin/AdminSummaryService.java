@@ -13,7 +13,7 @@ import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.Attention;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.RecentDecisions;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.Resource;
-import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.TopGroup;
+import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.TopWorkspace;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.IpPoolUsage;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.NodeRatio;
@@ -78,14 +78,14 @@ public class AdminSummaryService {
         LocalDate today = ClockConfig.todayKst(clock);
         Instant decidedSince = clock.instant().minus(Duration.ofDays(14));
 
-        long pending = count("select count(*) from vm_requests"
+        long pending = count("select count(*) from requests"
                 + " where (?::bigint is null or org_id = ?) and status = 'SUBMITTED'",
                 scopedOrgId, scopedOrgId);
         RecentDecisions decisions = jdbcTemplate.queryForObject("""
                 select count(*) filter (where r.decision = 'APPROVE') as approved,
                        count(*) filter (where r.decision = 'REJECT') as rejected
-                  from vm_request_reviews r
-                  join vm_requests q on q.id = r.request_id
+                  from request_reviews r
+                  join requests q on q.id = r.request_id
                  where (?::bigint is null or q.org_id = ?) and r.created_at >= ?
                 """, (rs, rowNum) -> new RecentDecisions(rs.getLong("approved"),
                 rs.getLong("rejected")), scopedOrgId, scopedOrgId,
@@ -96,15 +96,15 @@ public class AdminSummaryService {
                 headroom.allocated().memoryMb(), headroom.allocated().diskGb(),
                 headroom.capacityVcpu(), headroom.capacityMemoryMb(), headroom.guidance());
 
-        List<TopGroup> topGroups = jdbcTemplate.query("""
-                select v.group_id, g.name, count(*) as vm_count
+        List<TopWorkspace> topWorkspaces = jdbcTemplate.query("""
+                select v.workspace_id, g.name, count(*) as vm_count
                   from vms v
-                  join groups g on g.id = v.group_id
+                  join workspaces g on g.id = v.workspace_id
                  where (?::bigint is null or v.org_id = ?) and v.status <> 'DELETED'
-                 group by v.group_id, g.name
-                 order by vm_count desc, v.group_id
+                 group by v.workspace_id, g.name
+                 order by vm_count desc, v.workspace_id
                  limit 10
-                """, (rs, rowNum) -> new TopGroup(rs.getLong("group_id"), rs.getString("name"),
+                """, (rs, rowNum) -> new TopWorkspace(rs.getLong("workspace_id"), rs.getString("name"),
                 rs.getLong("vm_count")), scopedOrgId, scopedOrgId);
 
         long published = count("""
@@ -137,7 +137,7 @@ public class AdminSummaryService {
                         """, Long.class, scopedOrgId, scopedOrgId, today));
 
         return new OrgDashboardSummaryResponse(pending, decisions,
-                vmCountsByStatus(scopedOrgId), resource, topGroups,
+                vmCountsByStatus(scopedOrgId), resource, topWorkspaces,
                 published, expiring30d, attention);
     }
 

@@ -360,7 +360,7 @@ public class RouteApplyJob {
         log.warn("route-apply failed for {}: {}", domain.getFqdn(), error);
     }
 
-    /** Group OWNER/EDITOR notice for a route outcome (same tx as the record). */
+    /** Workspace OWNER/EDITOR notice for a route outcome (same tx as the record). */
     private void notifyDomainOutcome(Domain domain, NotificationEvent event, String reason,
             String dedupKey) {
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);

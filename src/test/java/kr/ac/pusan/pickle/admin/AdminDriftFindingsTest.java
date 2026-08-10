@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -74,7 +75,7 @@ class AdminDriftFindingsTest {
     private long orgId;
     private long imageId;
     private long requesterId;
-    private long groupId;
+    private long workspaceId;
     private String sysAdminToken;
     private String orgAdminToken;
     private final List<Long> createdNodeIds = new ArrayList<>();
@@ -99,9 +100,9 @@ class AdminDriftFindingsTest {
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "adf-" + UUID.randomUUID().toString().substring(0, 8);
-        groupId = jdbcTemplate.queryForObject(
-                "insert into groups (kind, name, slug) values ('TEAM', ?, ?) returning id",
-                Long.class, slug, slug);
+        workspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, slug);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
@@ -353,19 +354,14 @@ class AdminDriftFindingsTest {
     }
 
     private long createVm(long nodeId, int proxmoxVmid, String status, int vcpu, int memoryMb) {
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '드리프트 리포트 테스트', ?, ?, ?, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId, vcpu, memoryMb);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "드리프트 리포트 테스트", imageId, vcpu, memoryMb, 10);
         String hostname = "adf-vm-" + UUID.randomUUID().toString().substring(0, 12);
         return jdbcTemplate.queryForObject("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, proxmox_vmid, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?, ?::vm_status)
                 returning id
-                """, Long.class, nodeId, groupId, orgId, requestId, hostname, hostname,
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vcpu, memoryMb, proxmoxVmid, status);
     }
 }

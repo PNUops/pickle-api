@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.user;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,13 +16,13 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupKind;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.group.GroupRepository;
-import kr.ac.pusan.pickle.group.PersonalGroupService;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
+import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
@@ -68,13 +69,13 @@ class AccountLifecycleTest {
     @Autowired
     private UserRepository userRepository;
     @Autowired
-    private GroupRepository groupRepository;
+    private WorkspaceRepository workspaceRepository;
     @Autowired
-    private GroupMemberRepository groupMemberRepository;
+    private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired
     private UserSshKeyRepository userSshKeyRepository;
     @Autowired
-    private PersonalGroupService personalGroupService;
+    private PersonalWorkspaceService personalWorkspaceService;
     @Autowired
     private OrgRepository orgRepository;
     @Autowired
@@ -165,26 +166,26 @@ class AccountLifecycleTest {
     }
 
     @Test
-    void withdrawBlockedForSoleOwnerOfGroupWithActiveVms() throws Exception {
+    void withdrawBlockedForSoleOwnerOfWorkspaceWithActiveVms() throws Exception {
         User user = createActiveUser("wd.owner@pusan.ac.kr", "유일소유자");
-        personalGroupService.ensurePersonalGroup(user);
+        personalWorkspaceService.ensurePersonalWorkspace(user);
         Org org = ensureOrg();
-        Group team = groupRepository.save(new Group(GroupKind.TEAM, "연구팀", uniqueSlug("team"), null));
-        groupMemberRepository.save(new GroupMember(team, user.getId(), GroupMemberRole.OWNER));
+        Workspace team = workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, "연구팀", null));
+        workspaceMemberRepository.save(new WorkspaceMember(team, user.getId(), WorkspaceMemberRole.OWNER));
         createActiveVm(team.getId(), org.getId(), user.getId());
 
         postJson("/api/v1/me/withdraw", jwtService.createAccessToken(user), Map.of("password", OLD_PASSWORD))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ACCOUNT_SOLE_OWNER_OF_ACTIVE_GROUP"));
+                .andExpect(jsonPath("$.code").value("ACCOUNT_SOLE_OWNER_OF_ACTIVE_WORKSPACE"));
     }
 
     @Test
-    void withdrawBlockedWhenPersonalGroupHasActiveVms() throws Exception {
+    void withdrawBlockedWhenPersonalWorkspaceHasActiveVms() throws Exception {
         User user = createActiveUser("wd.personal@pusan.ac.kr", "개인VM보유");
-        personalGroupService.ensurePersonalGroup(user);
+        personalWorkspaceService.ensurePersonalWorkspace(user);
         Org org = ensureOrg();
-        long personalGroupId = personalGroupId(user.getId());
-        createActiveVm(personalGroupId, org.getId(), user.getId());
+        long personalWorkspaceId = personalWorkspaceId(user.getId());
+        createActiveVm(personalWorkspaceId, org.getId(), user.getId());
 
         postJson("/api/v1/me/withdraw", jwtService.createAccessToken(user), Map.of("password", OLD_PASSWORD))
                 .andExpect(status().isConflict())
@@ -194,8 +195,8 @@ class AccountLifecycleTest {
     @Test
     void withdrawTearsDownAccountAndBlocksReuse() throws Exception {
         User user = createActiveUser("wd.happy@pusan.ac.kr", "탈퇴자");
-        personalGroupService.ensurePersonalGroup(user);
-        long personalGroupId = personalGroupId(user.getId());
+        personalWorkspaceService.ensurePersonalWorkspace(user);
+        long personalWorkspaceId = personalWorkspaceId(user.getId());
         insertSshKey(user.getId());
         insertRefreshToken(user.getId());
         String access = jwtService.createAccessToken(user);
@@ -216,9 +217,9 @@ class AccountLifecycleTest {
         assertThat(reloaded.getWithdrawnAt()).isNotNull();
         // login stays a uniform 401 for a WITHDRAWN account
         loginExpect(user.getEmail(), OLD_PASSWORD).andExpect(status().isUnauthorized());
-        // memberships gone, PERSONAL group soft-deleted, SSH keys + sessions gone
-        assertThat(groupMemberRepository.findWithGroupByUserId(user.getId())).isEmpty();
-        assertThat(groupRepository.findById(personalGroupId).orElseThrow().getDeletedAt()).isNotNull();
+        // memberships gone, PERSONAL workspace soft-deleted, SSH keys + sessions gone
+        assertThat(workspaceMemberRepository.findWithWorkspaceByUserId(user.getId())).isEmpty();
+        assertThat(workspaceRepository.findById(personalWorkspaceId).orElseThrow().getDeletedAt()).isNotNull();
         assertThat(userSshKeyRepository.countByUserId(user.getId())).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from refresh_tokens where user_id = ?", Long.class, user.getId())).isZero();
@@ -258,10 +259,10 @@ class AccountLifecycleTest {
                 .orElseGet(() -> orgRepository.save(new Org("계정수명 테스트 기관", "acct-life-org", null)));
     }
 
-    private long personalGroupId(long userId) {
-        return groupMemberRepository.findWithGroupByUserId(userId).stream()
-                .filter(m -> m.getGroup().getKind() == GroupKind.PERSONAL)
-                .map(m -> m.getGroup().getId())
+    private long personalWorkspaceId(long userId) {
+        return workspaceMemberRepository.findWithWorkspaceByUserId(userId).stream()
+                .filter(m -> m.getWorkspace().getKind() == WorkspaceKind.PERSONAL)
+                .map(m -> m.getWorkspace().getId())
                 .findFirst().orElseThrow();
     }
 
@@ -280,21 +281,16 @@ class AccountLifecycleTest {
     }
 
     /** Minimal request→vm FK chain (RUNNING, so it counts as active). */
-    private void createActiveVm(long groupId, long orgId, long requesterId) {
+    private void createActiveVm(long workspaceId, long orgId, long requesterId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '탈퇴 차단 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "탈퇴 차단 테스트", imageId);
         String hostname = "acct-vm-" + UUID.randomUUID().toString().substring(0, 12);
         jdbcTemplate.update("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status)
-                """, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
     }
 
     private static String uniqueSlug(String base) {

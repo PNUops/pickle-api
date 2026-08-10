@@ -10,7 +10,7 @@ public record OrgDashboardSummaryResponse(
         RecentDecisions recentDecisions14d,
         Map<String, Long> vmCountsByStatus,
         Resource resource,
-        List<TopGroup> topGroupsByVmCount,
+        List<TopWorkspace> topWorkspacesByVmCount,
         long publishedServiceCount,
         long expiringVmCount30d,
         Attention attention) {
@@ -28,7 +28,7 @@ public record OrgDashboardSummaryResponse(
             String guidance) {
     }
 
-    public record TopGroup(Long groupId, String name, long vmCount) {
+    public record TopWorkspace(Long workspaceId, String name, long vmCount) {
     }
 
     public record Attention(long failedTaskCount, long needsAdminVmCount, long expiredVmCount) {

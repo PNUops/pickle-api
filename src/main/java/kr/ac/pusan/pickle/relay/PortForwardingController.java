@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code port-forwarding}: self-service relay port forwarding
- * for a VM. Authorization is service-layer group scoping (publishing
+ * for a VM. Authorization is service-layer workspace scoping (publishing
  * pattern): reads need membership, writes need OWNER/EDITOR.
  */
 @RestController

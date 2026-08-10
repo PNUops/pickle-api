@@ -34,8 +34,8 @@ public class Announcement {
     @Column(name = "org_id")
     private Long orgId;
 
-    @Column(name = "group_id")
-    private Long groupId;
+    @Column(name = "workspace_id")
+    private Long workspaceId;
 
     @Column(nullable = false)
     private String title;
@@ -53,12 +53,12 @@ public class Announcement {
     protected Announcement() {
     }
 
-    public Announcement(Long authorId, AnnouncementScope scope, Long orgId, Long groupId,
+    public Announcement(Long authorId, AnnouncementScope scope, Long orgId, Long workspaceId,
             String title, String body) {
         this.authorId = authorId;
         this.scope = scope;
         this.orgId = orgId;
-        this.groupId = groupId;
+        this.workspaceId = workspaceId;
         this.title = title;
         this.body = body;
     }
@@ -79,8 +79,8 @@ public class Announcement {
         return orgId;
     }
 
-    public Long getGroupId() {
-        return groupId;
+    public Long getWorkspaceId() {
+        return workspaceId;
     }
 
     public String getTitle() {

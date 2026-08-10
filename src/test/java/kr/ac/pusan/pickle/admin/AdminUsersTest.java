@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -8,12 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
-import kr.ac.pusan.pickle.group.Group;
-import kr.ac.pusan.pickle.group.GroupKind;
-import kr.ac.pusan.pickle.group.GroupMember;
-import kr.ac.pusan.pickle.group.GroupMemberRepository;
-import kr.ac.pusan.pickle.group.GroupMemberRole;
-import kr.ac.pusan.pickle.group.GroupRepository;
+import kr.ac.pusan.pickle.workspace.Workspace;
+import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.WorkspaceMember;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -55,9 +56,9 @@ class AdminUsersTest {
     @Autowired
     private OrgRepository orgRepository;
     @Autowired
-    private GroupRepository groupRepository;
+    private WorkspaceRepository workspaceRepository;
     @Autowired
-    private GroupMemberRepository groupMemberRepository;
+    private WorkspaceMemberRepository workspaceMemberRepository;
     @Autowired
     private JwtService jwtService;
     @Autowired
@@ -81,13 +82,12 @@ class AdminUsersTest {
         memberA = ensureUser("au.member@pusan.ac.kr", "A소속원", UserRole.USER, null, UserStatus.ACTIVE);
         foreign = ensureUser("au.foreign@pusan.ac.kr", "외부인", UserRole.USER, null, UserStatus.ACTIVE);
 
-        // memberA becomes derived-in-orgA: member of a group with a VM in orgA.
-        if (groupMemberRepository.findWithGroupByUserId(memberA.getId()).isEmpty()) {
-            Group group = groupRepository.save(
-                    new Group(GroupKind.TEAM, "A팀", "au-team-" + UUID.randomUUID().toString().substring(0, 8),
-                            null));
-            groupMemberRepository.save(new GroupMember(group, memberA.getId(), GroupMemberRole.OWNER));
-            createActiveVm(group.getId(), orgA.getId(), memberA.getId());
+        // memberA becomes derived-in-orgA: member of a workspace with a VM in orgA.
+        if (workspaceMemberRepository.findWithWorkspaceByUserId(memberA.getId()).isEmpty()) {
+            Workspace workspace = workspaceRepository.save(
+                    new Workspace(WorkspaceKind.TEAM, "A팀", null));
+            workspaceMemberRepository.save(new WorkspaceMember(workspace, memberA.getId(), WorkspaceMemberRole.OWNER));
+            createActiveVm(workspace.getId(), orgA.getId(), memberA.getId());
         }
 
         sysAdminToken = jwtService.createAccessToken(sysAdmin);
@@ -229,21 +229,16 @@ class AdminUsersTest {
                 .andExpect(jsonPath("$.mfaEnabled").value(false));
     }
 
-    private void createActiveVm(long groupId, long orgId, long requesterId) {
+    private void createActiveVm(long workspaceId, long orgId, long requesterId) {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        long requestId = jdbcTemplate.queryForObject("""
-                insert into vm_requests (group_id, org_id, requester_id, purpose, image_id,
-                                         req_vcpu, req_memory_mb, req_disk_gb)
-                values (?, ?, ?, '사용자관리 테스트', ?, 2, 2048, 10)
-                returning id
-                """, Long.class, groupId, orgId, requesterId, imageId);
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "사용자관리 테스트", imageId);
         String hostname = "au-vm-" + UUID.randomUUID().toString().substring(0, 12);
         jdbcTemplate.update("""
-                insert into vms (node_id, group_id, org_id, request_id, name, hostname,
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'RUNNING'::vm_status)
-                """, nodeId, groupId, orgId, requestId, hostname, hostname, imageId);
+                """, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
     }
 
     private User ensureUser(String email, String name, UserRole role, Long orgId, UserStatus status) {
