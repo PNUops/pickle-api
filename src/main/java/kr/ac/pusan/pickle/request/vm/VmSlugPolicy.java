@@ -32,22 +32,26 @@ public class VmSlugPolicy {
     /**
      * Turns a free-text name into the leading part of a generated hostname:
      * lowercase, alphanumerics and hyphens only, short enough to leave room for
-     * the random suffix. Korean names collapse to nothing here, which is why
-     * there is a fallback rather than an error — the suffix carries uniqueness,
-     * and the seed only makes the name recognisable.
+     * the random suffix.
+     *
+     * <p>Most display names here are Korean and collapse to nothing, so the
+     * caller passes a fallback that still identifies something — the owning
+     * workspace — rather than letting every generated hostname read
+     * {@code vm-????}. The workspace slug used to do this job and was always
+     * ASCII; it no longer exists, so the fallback is built from the id.
      */
-    public static String sanitizeSeed(String name) {
-        if (name == null) {
-            return DEFAULT_SEED;
-        }
-        String seed = name.toLowerCase(Locale.ROOT)
+    public static String sanitizeSeed(String name, long workspaceId) {
+        String seed = name == null ? "" : name.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9-]+", "-")
                 .replaceAll("-{2,}", "-")
                 .replaceAll("^-+|-+$", "");
         if (seed.length() > 20) {
             seed = seed.substring(0, 20).replaceAll("-+$", "");
         }
-        return seed.isBlank() ? DEFAULT_SEED : seed;
+        if (seed.isBlank() || seed.length() < 2) {
+            return DEFAULT_SEED + workspaceId;
+        }
+        return seed;
     }
 
     public VmSlugPolicy(SettingsService settingsService) {

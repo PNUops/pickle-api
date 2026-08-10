@@ -220,8 +220,8 @@ class ProvisioningEndToEndTest {
         JsonNode vms = getJson("/api/v1/vms", userToken);
         JsonNode vm = vms.get("content").get(0);
         long vmId = vm.get("id").asLong();
-        // Generated from the requested display name plus a random suffix.
-        assertThat(vm.get("hostname").asString()).matches("[a-z0-9-]+-[a-z0-9]{4}");
+        // No display name was sent, so the seed identifies the workspace.
+        assertThat(vm.get("hostname").asString()).matches("vm" + workspaceId + "-[a-z0-9]{4}");
         assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
         mockMvc.perform(get("/api/v1/vms/" + vmId)

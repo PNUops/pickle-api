@@ -332,7 +332,9 @@ class RequestTest {
 
             // nothing to pick ⇒ the field left out entirely → 422, never a null deref
             Map<String, Object> withoutImage = validBody(workspaceId);
-            withoutImage.remove("imageId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> vmSpec = (Map<String, Object>) withoutImage.get("vm");
+            vmSpec.remove("imageId");
             postJson("/api/v1/requests", requesterToken, withoutImage)
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
