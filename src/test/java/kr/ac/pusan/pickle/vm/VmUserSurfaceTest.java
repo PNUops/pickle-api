@@ -235,7 +235,7 @@ class VmUserSurfaceTest {
         mockMvc.perform(get("/api/v1/orgs")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'vus-visible')].status")
+                .andExpect(jsonPath("$[?(@.name == '표면 공개 기관')].status")
                         .value(org.hamcrest.Matchers.contains("ACTIVE")));
     }
 

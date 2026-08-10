@@ -312,7 +312,7 @@ class PortForwardingTest {
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
-        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings/" + mappingId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings/" + pub("port_mappings", mappingId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         Long rows = jdbcTemplate.queryForObject(
