@@ -11,7 +11,7 @@ import kr.ac.pusan.pickle.consent.dto.ConsentInput;
 /** Contract schema {@code SignupRequest}. */
 public record SignupRequest(
         @NotBlank(message = "이메일을 입력해 주세요.")
-        @Pattern(regexp = "^[A-Za-z0-9._%+-]+@pusan\\.ac\\.kr$",
+        @Pattern(regexp = "^[A-Za-z0-9._%+-]+@(pusan\\.ac\\.kr|pnuops\\.com)$",
                 message = "@pusan.ac.kr 이메일만 가입할 수 있습니다.")
         String email,
 
