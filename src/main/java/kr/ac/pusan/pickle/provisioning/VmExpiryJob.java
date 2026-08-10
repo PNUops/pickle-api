@@ -125,7 +125,7 @@ public class VmExpiryJob {
             }
             List<Long> recipients = notificationService.vmResponsibleIds(vm);
             notificationService.publish(recipients, NotificationEvent.VM_EXPIRY_NOTICE,
-                    Map.of("vmId", vm.getId(), "vmName", vm.getName(),
+                    Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(),
                             "endDate", String.valueOf(vm.getEndDate()), "days", stage),
                     "vm-expiry:%d:%s:D%d".formatted(vm.getId(), vm.getEndDate(), stage));
             log.info("vm {} expiry notice D-{} sent to {} recipient(s) (end date {})",

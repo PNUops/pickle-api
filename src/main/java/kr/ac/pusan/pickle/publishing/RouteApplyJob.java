@@ -368,8 +368,8 @@ public class RouteApplyJob {
             return;
         }
         Map<String, Object> args = reason == null
-                ? Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId())
-                : Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", reason);
+                ? Map.of("fqdn", domain.getFqdn(), "vmId", vm.getPublicId())
+                : Map.of("fqdn", domain.getFqdn(), "vmId", vm.getPublicId(), "reason", reason);
         notificationService.publish(notificationService.vmResponsibleIds(vm),
                 event, args, dedupKey);
     }

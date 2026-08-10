@@ -429,7 +429,7 @@ public class DeleteVmJob {
                 .map(User::getId)
                 .toList();
         notificationService.publish(admins, NotificationEvent.VM_DELETE_COMPLETED,
-                Map.of("vmId", vm.getId(), "vmName", vm.getName()),
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()),
                 "vm_delete_completed:" + vm.getId());
     }
 }

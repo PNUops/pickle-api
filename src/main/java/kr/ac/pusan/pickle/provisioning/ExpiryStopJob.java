@@ -156,7 +156,7 @@ public class ExpiryStopJob {
             recipients.addAll(notificationService.vmResponsibleIds(vm));
             recipients.addAll(notificationService.orgAdminIds(vm.getOrgId()));
             notificationService.publish(recipients, NotificationEvent.VM_EXPIRY_STOPPED,
-                    Map.of("vmId", vmId, "vmName", vm.getName(), "endDate",
+                    Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "endDate",
                             String.valueOf(vm.getEndDate())),
                     "vm-expiry-stopped:%d:%s".formatted(vmId, vm.getEndDate()));
             log.info("vm {} auto-stopped: usage period ended {}", vmId, vm.getEndDate());
