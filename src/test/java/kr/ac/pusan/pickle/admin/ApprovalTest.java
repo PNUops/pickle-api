@@ -331,7 +331,7 @@ class ApprovalTest {
                 .findFirst().orElseThrow();
         assertThat(named.getHostname()).isEqualTo("appr-slug-final");
 
-        // blank grantedSlug → today's auto generation (workspace slug + 4-char suffix)
+        // blank grantedSlug -> generated from the display name, or the workspace seed when there is none
         postJson("/api/v1/admin/requests/" + otherRequestId + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "  "))
                 .andExpect(status().isOk())
