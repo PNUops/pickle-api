@@ -372,8 +372,13 @@ public class ProxmoxClient {
 
     /**
      * Executes the request and unwraps the PVE {@code {"data": ...}} envelope.
-     * Error responses ({@code {"message": ..., "data": null}}) and transport
-     * failures both surface as {@link ProxmoxApiException}.
+     * Error responses ({@code {"message": ..., "data": null}}), transport
+     * failures and a 200 whose body is not the envelope the caller asked for
+     * all surface as {@link ProxmoxApiException} — an HTML error page from
+     * something standing in front of pveproxy, or a changed envelope during a
+     * PVE upgrade, must not reach a caller as a parser exception it would have
+     * to enumerate on top of this one. An unreadable body counts as transient:
+     * the same request against a settled host parses.
      */
     private <T> T call(HttpMethod method, URI uri, Map<String, String> form,
             TypeReference<Envelope<T>> responseType) {
@@ -396,7 +401,12 @@ public class ProxmoxClient {
                     throw new ProxmoxApiException(response.getStatusCode().value(),
                             extractErrorMessage(body), description);
                 }
-                return JSON.readValue(body, responseType).data();
+                try {
+                    return JSON.readValue(body, responseType).data();
+                } catch (RuntimeException e) {
+                    throw new ProxmoxApiException("Proxmox API returned an unreadable body on "
+                            + description + ": " + e.getMessage(), e);
+                }
             });
         } catch (ResourceAccessException e) {
             // connect/read timeout, connection refused/reset … — no HTTP response.

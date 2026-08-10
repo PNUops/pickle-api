@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.Resource;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse.TopWorkspace;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.IpPoolUsage;
+import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.LiveCoverage;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.NodeRatio;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse.Tasks;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -24,7 +25,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
-import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -168,9 +168,17 @@ public class AdminSummaryService {
      * every tile is an independent counter, each query and each collaborator
      * carries its own read transaction, and the entities read afterwards are
      * touched on basic columns only.
+     *
+     * <p>What one transaction did give the two node halves was one reading of
+     * the node table. Without it, a status change landing mid-request would let
+     * the ratio list and the live list describe different rows — the panel
+     * would show a node as ACTIVE and unreachable at the same time, which reads
+     * as an outage rather than as the parking the operator just did. So the
+     * rows are read once here and both halves are built from that one list.
      */
     public SystemDashboardSummaryResponse systemSummary() {
-        List<NodeRatio> nodes = adminNodeQueryService.listNodes().stream()
+        List<Node> nodeRows = nodeRepository.findAll(org.springframework.data.domain.Sort.by("id"));
+        List<NodeRatio> nodes = adminNodeQueryService.listNodes(nodeRows).stream()
                 .map(AdminSummaryService::toNodeRatio)
                 .toList();
         Tasks tasks = jdbcTemplate.queryForObject("""
@@ -204,10 +212,30 @@ public class AdminSummaryService {
                  where s.value = 'true'::jsonb and v.status <> 'DELETED'
                 """);
 
+        List<NodeLiveResponse> live = nodesLive(nodeRows);
         return new SystemDashboardSummaryResponse(nodes, vmCountsByStatus(null), tasks,
                 notificationFailureCount(), certExpiring30d,
                 driftFindingRepository.countByStatus(DriftFindingStatus.OPEN),
-                sshPasswordEnabledVms, pools, nodesLive());
+                sshPasswordEnabledVms, pools, live, liveCoverage(live));
+    }
+
+    /**
+     * How much of the platform the live numbers actually cover. Each live
+     * measurement is a per-node sum, and a sum over the nodes that answered is
+     * not the platform total: one node whose storage read is refused leaves a
+     * figure smaller than the truth, which an operator reads as free capacity
+     * that is not there. The counts say how many nodes are behind each sum so a
+     * client cannot present a subset as the whole — the same reason the org
+     * headroom figures null a disk number no node measured.
+     */
+    private static LiveCoverage liveCoverage(List<NodeLiveResponse> live) {
+        long memory = live.stream()
+                .filter(node -> node.memTotalBytes() != null && node.memUsedBytes() != null)
+                .count();
+        long storage = live.stream()
+                .filter(node -> node.storageTotalBytes() != null && node.storageUsedBytes() != null)
+                .count();
+        return new LiveCoverage(live.size(), (int) memory, (int) storage);
     }
 
     /**
@@ -228,21 +256,17 @@ public class AdminSummaryService {
      * so losing it leaves the two storage fields null on a node that is still
      * reachable rather than blanking a tile that did answer.
      *
-     * <p>An OFFLINE node is not probed at all — the operator has already said
-     * the host is down, and asking it only buys a timeout per dashboard load
-     * (the status poller skips OFFLINE for the same reason). It still gets a
-     * row, so the node count stays whole, and that row is
-     * {@code reachable: false}: no live numbers are known either way, and the
-     * node's own status is already on the panel beside it in the ratio list,
-     * which is where "the operator parked it" is said.
+     * <p>Every node is asked, an OFFLINE one included. OFFLINE excludes a node
+     * from new placements and leaves its existing guests running, so its RAM is
+     * still spoken for; skipping the probe would drop that usage out of the
+     * platform memory tile and show headroom the platform does not have. The
+     * cost of asking a host that really is dead — one read timeout per
+     * dashboard load — is accepted deliberately here and belongs to the
+     * scale-out round, which will probe nodes in parallel under a time budget.
      */
-    private List<NodeLiveResponse> nodesLive() {
+    private List<NodeLiveResponse> nodesLive(List<Node> nodes) {
         List<NodeLiveResponse> live = new ArrayList<>();
-        for (Node node : nodeRepository.findAll(org.springframework.data.domain.Sort.by("id"))) {
-            if (node.getStatus() == NodeStatus.OFFLINE) {
-                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
-                continue;
-            }
+        for (Node node : nodes) {
             NodeStatusInfo status;
             try {
                 status = proxmoxClient.nodeStatus(node.getApiHost(), node.getName());
@@ -285,7 +309,8 @@ public class AdminSummaryService {
         List<NodeStorageStatus> storages = proxmoxClient.nodeStorage(node.getApiHost(),
                 node.getName());
         return storages.stream()
-                .filter(storage -> storage.storage().equals(node.getStorage()))
+                // node.storage is NOT NULL; the PVE-supplied name may be absent.
+                .filter(storage -> node.getStorage().equals(storage.storage()))
                 .findFirst()
                 .orElseGet(() -> storages.stream()
                         .filter(storage -> "lvmthin".equals(storage.type()) && storage.isActive())

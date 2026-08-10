@@ -53,12 +53,25 @@ public class AdminNodeQueryService {
 
     @Transactional(readOnly = true)
     public List<NodeSummaryResponse> listNodes() {
+        return listNodes(nodeRepository.findAll(Sort.by("id")));
+    }
+
+    /**
+     * The same summaries over node rows the caller already read. The system
+     * dashboard builds two halves from one node list — these ratios and the
+     * live hypervisor probe — and reads the rows once so a status change
+     * landing mid-request cannot leave the two halves describing different
+     * rows. Only basic columns are touched, so rows read outside this
+     * transaction are fine.
+     */
+    @Transactional(readOnly = true)
+    public List<NodeSummaryResponse> listNodes(List<Node> nodes) {
         double cpuWarn = settingsService.decimal(SettingsService.VCPU_OVERCOMMIT_WARN,
                 DEFAULT_VCPU_OVERCOMMIT_WARN);
         double memoryWarn = settingsService.decimal(SettingsService.MEMORY_USAGE_WARN,
                 DEFAULT_MEMORY_USAGE_WARN);
         Map<Long, NodeAllocation> allocations = loadAllocations();
-        return nodeRepository.findAll(Sort.by("id")).stream()
+        return nodes.stream()
                 .map(node -> toSummary(node, allocations.getOrDefault(node.getId(),
                         NodeAllocation.EMPTY), cpuWarn, memoryWarn))
                 .toList();
