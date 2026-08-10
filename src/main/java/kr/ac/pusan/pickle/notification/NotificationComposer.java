@@ -6,6 +6,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import kr.ac.pusan.pickle.access.ResourceType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -48,19 +49,20 @@ public class NotificationComposer {
     public Composed compose(NotificationEvent event, Map<String, Object> args) {
         return switch (event) {
             case REQUEST_SUBMITTED -> requestSubmitted(event, args);
-            case REQUEST_APPROVED -> new Composed(event.id(), "VM 신청 승인",
+            case REQUEST_APPROVED -> new Composed(event.id(), resourceLabel(args) + " 신청 승인",
                     """
-                    VM 신청이 승인되었습니다. VM '%s' 생성이 시작됩니다.
-                    생성이 완료되면 다시 알려드립니다.%s""".formatted(str(args, "hostname"),
+                    %s 신청이 승인되었습니다. %s '%s' 생성이 시작됩니다.
+                    생성이 완료되면 다시 알려드립니다.%s""".formatted(resourceLabel(args),
+                            resourceLabel(args), str(args, "resourceName"),
                             args.get("comment") != null
                                     ? "\n\n- 검토 의견: " + str(args, "comment") : ""),
                     "/console/requests/" + args.get("requestId"), event.defaultImportance(),
-                    payload(args, "requestId", "hostname"));
-            case REQUEST_REJECTED -> new Composed(event.id(), "VM 신청 반려",
+                    payload(args, "requestId", "resourceName"));
+            case REQUEST_REJECTED -> new Composed(event.id(), resourceLabel(args) + " 신청 반려",
                     """
-                    VM 신청이 반려되었습니다.
+                    %s 신청이 반려되었습니다.
 
-                    - 반려 사유: %s""".formatted(str(args, "comment")),
+                    - 반려 사유: %s""".formatted(resourceLabel(args), str(args, "comment")),
                     "/console/requests/" + args.get("requestId"), event.defaultImportance(),
                     payload(args, "requestId"));
             case VM_CREATE_DONE -> new Composed(event.id(),
@@ -363,16 +365,17 @@ public class NotificationComposer {
 
     private Composed requestSubmitted(NotificationEvent event, Map<String, Object> args) {
         boolean admin = Boolean.TRUE.equals(args.get("admin"));
-        String title = admin ? "새 VM 신청 접수" : "VM 신청 접수";
+        String label = resourceLabel(args);
+        String title = admin ? "새 " + label + " 신청 접수" : label + " 신청 접수";
         String body = admin
                 ? """
-                  워크스페이스 '%s'에서 새 VM 신청이 접수되었습니다. 검토해 주세요.
+                  워크스페이스 '%s'에서 새 %s 신청이 접수되었습니다. 검토해 주세요.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), str(args, "purpose"))
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, str(args, "purpose"))
                 : """
-                  워크스페이스 '%s'의 VM 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
+                  워크스페이스 '%s'의 %s 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), str(args, "purpose"));
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, str(args, "purpose"));
         String link = (admin ? "/admin/requests/" : "/console/requests/") + args.get("requestId");
         return new Composed(event.id(), title, body, link, event.defaultImportance(),
                 payload(args, "requestId", "workspaceName"));
@@ -391,6 +394,26 @@ public class NotificationComposer {
                 "/console/vms/" + args.get("vmId"),
                 days <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
                 payload(args, "vmId", "vmName", "endDate"));
+    }
+
+    /**
+     * The word the request-flow notices use for the thing being asked for. The
+     * request events are shared by every resource type, so the type travels in
+     * the payload and the sentence reads it; a payload without one (or naming a
+     * type this build does not know) falls back to the generic word rather than
+     * asserting it is a VM.
+     */
+    private static String resourceLabel(Map<String, Object> args) {
+        Object type = args.get("type");
+        if (type == null) {
+            return "리소스";
+        }
+        for (ResourceType candidate : ResourceType.values()) {
+            if (candidate.name().equals(String.valueOf(type))) {
+                return candidate.label();
+            }
+        }
+        return "리소스";
     }
 
     private static String str(Map<String, Object> args, String key) {

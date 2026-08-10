@@ -9,5 +9,20 @@ package kr.ac.pusan.pickle.access;
  * in the authorization design.
  */
 public enum ResourceType {
-    VM
+    VM("VM");
+
+    private final String label;
+
+    ResourceType(String label) {
+        this.label = label;
+    }
+
+    /**
+     * What user-facing text calls this kind of thing. Notifications about the
+     * request flow are shared by every type, so the word has to come from the
+     * type rather than from the sentence it appears in.
+     */
+    public String label() {
+        return label;
+    }
 }
