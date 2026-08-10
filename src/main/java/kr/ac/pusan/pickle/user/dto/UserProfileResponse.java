@@ -23,10 +23,10 @@ public record UserProfileResponse(
         boolean mfaEnabled,
         List<TermsVersionView> pendingConsents) {
 
-    public record Membership(Long workspaceId, String workspaceName, WorkspaceKind workspaceKind, WorkspaceMemberRole role) {
+    public record Membership(UUID workspaceId, String workspaceName, WorkspaceKind workspaceKind, WorkspaceMemberRole role) {
 
         public static Membership from(WorkspaceMember member) {
-            return new Membership(member.getWorkspace().getId(), member.getWorkspace().getName(),
+            return new Membership(member.getWorkspace().getPublicId(), member.getWorkspace().getName(),
                     member.getWorkspace().getKind(), member.getRole());
         }
     }

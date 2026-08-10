@@ -1860,8 +1860,8 @@ components:
         role:
           $ref: "#/components/schemas/WorkspaceMemberRole"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         workspaceKind:
           $ref: "#/components/schemas/WorkspaceKind"
         workspaceName:
