@@ -428,6 +428,28 @@ class ProxmoxClientTest {
         assertThat(e.apiMessage()).contains("does not exist");
     }
 
+    /**
+     * A 200 whose body is not the envelope — an HTML error page from something
+     * standing in front of pveproxy, or a changed envelope mid-upgrade — must
+     * leave the client as the one exception callers already handle, or every
+     * caller has to enumerate the parser's types on top of it and the dashboard
+     * 500s the first time one is missed.
+     */
+    @Test
+    void anUnparseableOkBodyIsATransientApiFailure() {
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/status"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "text/html")
+                        .withBody("<html><body>502 Bad Gateway</body></html>")));
+
+        ProxmoxApiException e = catchThrowableOfType(ProxmoxApiException.class,
+                () -> client.nodeStatus(wm.apiHost(), NODE));
+
+        assertThat(e.statusCode()).isZero();
+        assertThat(e.isTransient()).isTrue();
+        assertThat(e.getMessage()).contains("/api2/json/nodes/pve1/status");
+    }
+
     @Test
     void transportFailureIsTransientWithoutStatusCode() {
         wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
