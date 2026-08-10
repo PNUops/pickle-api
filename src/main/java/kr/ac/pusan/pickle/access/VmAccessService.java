@@ -1,15 +1,10 @@
 package kr.ac.pusan.pickle.access;
 
-import java.util.List;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
-import kr.ac.pusan.pickle.workspace.WorkspaceMember;
-import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
-import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
+import kr.ac.pusan.pickle.resource.VmResourceAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,9 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
  * management — held here as a flag rather than folded into a rung, so that no
  * check for something inside the VM can be satisfied by it.
  *
- * <p>This is the VM adapter of a resource-generic model: containers and API
- * keys are meant to arrive as siblings of this class over the same table, which
- * is why grant rows are keyed by resource type rather than by vm_id.
+ * <p>This is the VM's face of a resource-generic model: what a grant is worth is
+ * worked out by {@link ResourceAccessResolver} for every type at once, and what
+ * is left here is loading the VM and carrying it alongside the answer. Containers
+ * and API keys arrive as siblings over the same table and the same resolver,
+ * which is why grant rows are keyed by resource type rather than by vm_id.
  *
  * <p>Admin surfaces are deliberately not routed through here: their scope is
  * the organisation, not the access list, and mixing the two is how a bypass
@@ -34,14 +31,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class VmAccessService {
 
     private final VmRepository vmRepository;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
-    private final ResourceAccessGrantRepository grantRepository;
+    private final ResourceAccessResolver resolver;
 
-    public VmAccessService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository) {
+    public VmAccessService(VmRepository vmRepository, ResourceAccessResolver resolver) {
         this.vmRepository = vmRepository;
-        this.workspaceMemberRepository = workspaceMemberRepository;
-        this.grantRepository = grantRepository;
+        this.resolver = resolver;
     }
 
     /** Standing of {@code actor} on {@code vmId}; unknown VM answers 404. */
@@ -60,12 +54,10 @@ public class VmAccessService {
     /** Standing on an already-loaded VM, for callers that resolved it first. */
     @Transactional(readOnly = true)
     public VmAccess of(Vm vm, long userId) {
-        WorkspaceMemberRole membership = workspaceMemberRepository
-                .findByWorkspaceIdAndUserId(vm.getWorkspaceId(), userId)
-                .map(WorkspaceMember::getRole)
-                .orElse(null);
-        return new VmAccess(vm, grantedRole(vm.getId(), userId, membership != null),
-                membership != null, membership == WorkspaceMemberRole.OWNER);
+        ResourceStanding standing = resolver.standing(ResourceType.VM, vm.getId(),
+                vm.getWorkspaceId(), userId);
+        return new VmAccess(vm, standing.grantedRole(), standing.owningWorkspaceMember(),
+                standing.standingRights());
     }
 
     /**
@@ -78,35 +70,8 @@ public class VmAccessService {
         return vmRepository.findById(vmId).map(vm -> of(vm, userId)).orElse(null);
     }
 
-    /**
-     * The strongest rung the access list gives this person: their own grant and
-     * the workspace-wide one, whichever is higher.
-     *
-     * <p>A grant counts only while its holder is still in the owning workspace.
-     * Losing membership already deletes their grants, so this changes nothing
-     * in practice — it is here so that a missed cleanup cannot leave someone
-     * reaching a VM of a workspace they left.
-     */
-    private ResourceRole grantedRole(long vmId, long userId, boolean owningWorkspaceMember) {
-        if (!owningWorkspaceMember) {
-            return null;
-        }
-        ResourceRole best = null;
-        List<ResourceAccessGrant> grants = grantRepository
-                .findByResourceTypeAndResourceIdOrderByIdAsc(ResourceType.VM, vmId);
-        for (ResourceAccessGrant grant : grants) {
-            boolean applies = grant.getGranteeType() == AccessGranteeType.WORKSPACE
-                    || Long.valueOf(userId).equals(grant.getUserId());
-            if (applies && (best == null || grant.getRole().atLeast(best))) {
-                best = grant.getRole();
-            }
-        }
-        return best;
-    }
-
     /** The masking 404: an existing but unreachable VM reads as a missing one. */
     public static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+        return VmResourceAdapter.MESSAGES.notFound();
     }
 }

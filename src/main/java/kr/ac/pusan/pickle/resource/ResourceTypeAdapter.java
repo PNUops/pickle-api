@@ -1,6 +1,9 @@
 package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
+import java.util.Optional;
+import kr.ac.pusan.pickle.access.ResourceAccessAudit;
+import kr.ac.pusan.pickle.access.ResourceAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.resource.dto.ResourceSummaryResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -23,6 +26,27 @@ public interface ResourceTypeAdapter {
 
     /** The type this adapter answers for. */
     ResourceType type();
+
+    /**
+     * The resource behind an id, reduced to what somebody without a grant may
+     * be told; empty when this type has nothing under that id.
+     *
+     * <p>Empty is what the masking 404 is built on, so a type whose rows outlive
+     * the thing they describe must still answer here: a destroyed VM keeps its
+     * row and its access list, and the people on that list may still read its
+     * history. "Gone" means the row is gone, not that the resource stopped
+     * running.
+     */
+    Optional<ResourceIdentity> identify(long resourceId);
+
+    /**
+     * What this type says when it refuses — the only part of the access rules
+     * that is allowed to differ between types.
+     */
+    ResourceAccessMessages accessMessages();
+
+    /** The names this type's access-list edits take in the audit trail. */
+    ResourceAccessAudit accessAudit();
 
     /**
      * Every resource of this type the workspace owns, destroyed ones included.

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.access.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.resource.ResourceIdentity;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -16,8 +17,9 @@ import org.jspecify.annotations.Nullable;
  * about. What it carries is exactly what such a person may already see in the
  * list — name, state, owning workspace — and nothing from inside.
  *
- * <p>Written in resource terms rather than VM terms so a second kind of
- * resource opens its own access list with a controller and nothing else.
+ * <p>Written in resource terms rather than VM terms: the identity comes from the
+ * resource type's own adapter, so a second kind of resource opens its own
+ * access list with a controller over the shared service and nothing else.
  */
 @Schema(description = "리소스 접근 권한 목록과, 그 목록이 어느 리소스의 것인지 알려 주는 최소 정보")
 public record ResourceAccessListResponse(
@@ -38,11 +40,11 @@ public record ResourceAccessListResponse(
             String workspaceName) {
     }
 
-    public static ResourceAccessListResponse of(kr.ac.pusan.pickle.vm.Vm vm, String workspaceName,
-            @Nullable String displayName, List<ResourceAccessGrantView> grants) {
+    public static ResourceAccessListResponse of(ResourceType type, ResourceIdentity resource,
+            String workspaceName, List<ResourceAccessGrantView> grants) {
         return new ResourceAccessListResponse(
-                new ResourceBrief(vm.getId(), ResourceType.VM, vm.getName(), displayName,
-                        vm.getStatus().name(), vm.getWorkspaceId(), workspaceName),
+                new ResourceBrief(resource.id(), type, resource.name(), resource.displayName(),
+                        resource.status(), resource.workspaceId(), workspaceName),
                 grants);
     }
 }
