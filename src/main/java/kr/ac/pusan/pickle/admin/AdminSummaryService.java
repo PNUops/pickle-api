@@ -24,6 +24,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -158,7 +159,16 @@ public class AdminSummaryService {
                 published, expiring30d, attention);
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Platform panel. Deliberately not {@code @Transactional}: it ends in a
+     * live hypervisor probe per node, and a shared transaction would pin a
+     * pooled database connection for the whole of that — long enough, with a
+     * stalled pveproxy, for a refreshing dashboard to drain the pool and take
+     * unrelated endpoints down with it. Nothing here needs one transaction:
+     * every tile is an independent counter, each query and each collaborator
+     * carries its own read transaction, and the entities read afterwards are
+     * touched on basic columns only.
+     */
     public SystemDashboardSummaryResponse systemSummary() {
         List<NodeRatio> nodes = adminNodeQueryService.listNodes().stream()
                 .map(AdminSummaryService::toNodeRatio)
@@ -212,24 +222,56 @@ public class AdminSummaryService {
      * show. Both refusals the client can raise before a reply are caught for
      * that reason — the HTTP/transport failure and the unconfigured-token
      * refusal, which is the same "cannot ask PVE" from the operator's side.
+     *
+     * <p>The two probes are separate answers. Status decides reachability;
+     * storage is a second call behind a second right ({@code Datastore.Audit}),
+     * so losing it leaves the two storage fields null on a node that is still
+     * reachable rather than blanking a tile that did answer.
+     *
+     * <p>An OFFLINE node is not probed at all — the operator has already said
+     * the host is down, and asking it only buys a timeout per dashboard load
+     * (the status poller skips OFFLINE for the same reason). It still gets a
+     * row, so the node count stays whole, and that row is
+     * {@code reachable: false}: no live numbers are known either way, and the
+     * node's own status is already on the panel beside it in the ratio list,
+     * which is where "the operator parked it" is said.
      */
     private List<NodeLiveResponse> nodesLive() {
         List<NodeLiveResponse> live = new ArrayList<>();
         for (Node node : nodeRepository.findAll(org.springframework.data.domain.Sort.by("id"))) {
+            if (node.getStatus() == NodeStatus.OFFLINE) {
+                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+                continue;
+            }
+            NodeStatusInfo status;
             try {
-                NodeStatusInfo status = proxmoxClient.nodeStatus(node.getApiHost(), node.getName());
-                NodeStorageStatus storage = guestStorage(node);
-                live.add(new NodeLiveResponse(node.getId(), node.getName(), true,
-                        status.memory() == null ? null : status.memory().total(),
-                        status.memory() == null ? null : status.memory().used(),
-                        status.cpu(),
-                        storage == null ? null : storage.total(),
-                        storage == null ? null : storage.used(),
-                        clock.instant()));
+                status = proxmoxClient.nodeStatus(node.getApiHost(), node.getName());
             } catch (ProxmoxApiException | IllegalStateException e) {
                 log.warn("Node {} live probe failed: {}", node.getName(), e.getMessage());
                 live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+                continue;
             }
+            // The client hands back whatever the PVE envelope held, so a 200
+            // with no data is possible and is not a reachable answer.
+            if (status == null) {
+                log.warn("Node {} live probe returned an empty status payload", node.getName());
+                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+                continue;
+            }
+            NodeStorageStatus storage = null;
+            try {
+                storage = guestStorage(node);
+            } catch (ProxmoxApiException | IllegalStateException e) {
+                log.warn("Node {} guest-storage read failed, tile keeps the status half: {}",
+                        node.getName(), e.getMessage());
+            }
+            live.add(new NodeLiveResponse(node.getId(), node.getName(), true,
+                    status.memory() == null ? null : status.memory().total(),
+                    status.memory() == null ? null : status.memory().used(),
+                    status.cpu(),
+                    storage == null ? null : storage.total(),
+                    storage == null ? null : storage.used(),
+                    clock.instant()));
         }
         return live;
     }

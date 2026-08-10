@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.vm.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
+import kr.ac.pusan.pickle.proxmox.RrdValues;
 import kr.ac.pusan.pickle.proxmox.dto.VmRrdSample;
 import org.jspecify.annotations.Nullable;
 
@@ -9,6 +10,11 @@ import org.jspecify.annotations.Nullable;
  * Contract schema {@code VmMetricPoint}. Every metric is nullable because an
  * RRD row omits the keys for intervals the VM was not running in, and that
  * absence is the honest gap a chart must draw rather than a zero.
+ *
+ * <p>{@code time} is the exception: it is the point's position on the axis and
+ * the contract's only required field here, so a row that arrives without one
+ * is dropped where the series is mapped rather than shipped as a null the
+ * console would have to guess about.
  */
 public record VmMetricPointResponse(
         Instant time,
@@ -25,21 +31,17 @@ public record VmMetricPointResponse(
         @Nullable Double diskReadBps,
         @Nullable Double diskWriteBps) {
 
+    /** Callers drop timeless rows first (see the class note); everything else may be null. */
     public static VmMetricPointResponse from(VmRrdSample sample) {
         return new VmMetricPointResponse(
-                sample.time() == null ? null : Instant.ofEpochSecond(sample.time()),
+                Instant.ofEpochSecond(sample.time()),
                 sample.cpu(),
-                bytes(sample.mem()),
-                bytes(sample.memhost()),
-                bytes(sample.maxmem()),
+                RrdValues.bytes(sample.mem()),
+                RrdValues.bytes(sample.memhost()),
+                RrdValues.bytes(sample.maxmem()),
                 sample.netin(),
                 sample.netout(),
                 sample.diskread(),
                 sample.diskwrite());
-    }
-
-    /** RRD carries byte counters as doubles (consolidated averages); a gap stays a gap. */
-    private static Long bytes(Double value) {
-        return value == null ? null : Math.round(value);
     }
 }

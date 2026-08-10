@@ -56,7 +56,10 @@ public class Node {
     @Column(name = "ip_pool_id")
     private Long ipPoolId;
 
-    /** Thin-pool size in GB, measured by the infra inventory script; null until measured (V76). */
+    /**
+     * Thin-pool size in GB, measured on the host by an operations tool; null
+     * until measured (V76).
+     */
     @Column(name = "disk_capacity_gb")
     private Long diskCapacityGb;
 

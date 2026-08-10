@@ -15,13 +15,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Usage time series of one node (contract op {@code getAdminNodeMetrics}),
  * read live from the hypervisor's RRD store like the per-VM series. Unlike a
  * VM, a node has no "not provisioned yet" state: a node row exists because the
  * host exists, so a host that cannot be asked is an outage and answers 503.
+ *
+ * <p>Deliberately not {@code @Transactional}, for the same reason as the per-VM
+ * series: the hypervisor read can run to the client read timeout and must not
+ * hold a pooled database connection while it does. The one database read here
+ * carries its own transaction and only basic columns of the node are read
+ * afterwards.
  */
 @Service
 public class AdminNodeMetricsService {
@@ -39,7 +44,6 @@ public class AdminNodeMetricsService {
         this.clock = clock;
     }
 
-    @Transactional(readOnly = true)
     public NodeMetricsResponse metrics(long nodeId, RrdTimeframe timeframe) {
         Node node = nodeRepository.findById(nodeId).orElseThrow(() -> new ApiException(
                 HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
@@ -48,9 +52,13 @@ public class AdminNodeMetricsService {
         try {
             points = proxmoxClient.nodeRrdData(node.getApiHost(), node.getName(), timeframe)
                     .stream()
+                    // A row with no timestamp has no place on the axis.
+                    .filter(sample -> sample.time() != null)
                     .map(NodeMetricPointResponse::from)
                     .toList();
-        } catch (ProxmoxApiException e) {
+        } catch (ProxmoxApiException | IllegalStateException e) {
+            // An unconfigured API token refuses before the request leaves, which
+            // is the same "PVE cannot be asked" as a transport failure.
             log.warn("Node {} usage read failed: {}", node.getName(), e.getMessage());
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, ErrorCodes.METRICS_UNAVAILABLE,
                     "사용량 데이터를 불러오지 못했습니다", "잠시 후 다시 시도해 주세요.");

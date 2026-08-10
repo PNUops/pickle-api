@@ -36,10 +36,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
 /**
- * The three answers the usage read can give, none of which is reachable
- * against the test database: a VM with no guest behind it must not produce a
- * Proxmox call at all, a live one must map the RRD rows gaps and all, and a
- * hypervisor that refuses must become a 503 rather than an empty chart.
+ * The answers the usage read can give, none of which is reachable against the
+ * test database: a VM with no guest behind it must not produce a Proxmox call
+ * at all, a live one must map the RRD rows gaps and all while dropping any row
+ * that carries no timestamp, and a hypervisor that refuses must become a 503
+ * rather than an empty chart — whether it refused over the wire or refused
+ * before the request left, because no API token is configured.
  */
 @ExtendWith(MockitoExtension.class)
 class VmMetricsServiceTest {
@@ -132,6 +134,44 @@ class VmMetricsServiceTest {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                     assertThat(ex.getCode()).isEqualTo(ErrorCodes.METRICS_UNAVAILABLE);
                 });
+    }
+
+    @Test
+    void anUnconfiguredApiTokenIsTheSameOutageAsARefusal() {
+        Vm vm = runningVm();
+        grantVisible(vm);
+        Node node = node();
+        when(nodeRepository.findById(3L)).thenReturn(Optional.of(node));
+        // What the client raises before the request leaves when the deployment
+        // carries no PVE token — a state the configuration explicitly allows.
+        when(proxmoxClient.vmRrdData(anyString(), anyString(), anyInt(), any()))
+                .thenThrow(new IllegalStateException("Proxmox API token is not configured"));
+
+        assertThatThrownBy(() -> service().metrics(ACTOR, 1L, RrdTimeframe.HOUR))
+                .isInstanceOfSatisfying(ApiException.class, ex -> {
+                    assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+                    assertThat(ex.getCode()).isEqualTo(ErrorCodes.METRICS_UNAVAILABLE);
+                });
+    }
+
+    @Test
+    void aRowWithoutATimestampIsDroppedRatherThanCharted() {
+        Vm vm = runningVm();
+        grantVisible(vm);
+        Node node = node();
+        when(nodeRepository.findById(3L)).thenReturn(Optional.of(node));
+        when(proxmoxClient.vmRrdData(anyString(), anyString(), anyInt(), any()))
+                .thenReturn(List.of(
+                        new VmRrdSample(null, 0.5, 2.0, 1.0e9, 1.0e9, 4.0e9,
+                                1.0, 2.0, 3.0, 4.0),
+                        new VmRrdSample(1_786_335_600L, 0.25, 2.0, 2.0e9, 2.0e9, 4.0e9,
+                                1.0, 2.0, 3.0, 4.0)));
+
+        VmMetricsResponse response = service().metrics(ACTOR, 1L, RrdTimeframe.HOUR);
+
+        assertThat(response.points()).hasSize(1);
+        assertThat(response.points().getFirst().time())
+                .isEqualTo(Instant.ofEpochSecond(1_786_335_600L));
     }
 
     private Vm runningVm() {
