@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.DisableUserRequest;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
@@ -50,7 +51,7 @@ public class AdminUserController {
             @RequestParam(required = false) @Size(min = 1, max = 100) String q,
             @RequestParam(required = false) UserStatus status,
             @RequestParam(required = false) UserRole role,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(
                     allowableValues = {"name", "-name", "email", "-email", "createdAt", "-createdAt"}))
             @RequestParam(required = false) String sort,
@@ -61,14 +62,14 @@ public class AdminUserController {
 
     @GetMapping("/{userId}")
     public UserAdminDetailResponse getUser(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long userId) {
+            @PathVariable UUID userId) {
         return adminUserQueryService.getUser(principal, userId);
     }
 
     @PostMapping("/{userId}/disable")
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public UserAdminDetailResponse disableUser(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long userId, @Valid @RequestBody DisableUserRequest request,
+            @PathVariable UUID userId, @Valid @RequestBody DisableUserRequest request,
             HttpServletRequest httpRequest) {
         return adminUserService.disable(principal, userId, request.reason(), clientIp(httpRequest));
     }
@@ -76,14 +77,14 @@ public class AdminUserController {
     @PostMapping("/{userId}/enable")
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public UserAdminDetailResponse enableUser(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long userId, HttpServletRequest httpRequest) {
+            @PathVariable UUID userId, HttpServletRequest httpRequest) {
         return adminUserService.enable(principal, userId, clientIp(httpRequest));
     }
 
     @PostMapping("/{userId}/mfa-reset")
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public MessageResponse resetUserMfa(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long userId, HttpServletRequest httpRequest) {
+            @PathVariable UUID userId, HttpServletRequest httpRequest) {
         return adminUserService.resetMfa(principal, userId, clientIp(httpRequest));
     }
 }

@@ -40,7 +40,7 @@ class AuditAfterCommitTest {
     void recordsOnceWhenTheBusinessTransactionCommits() {
         String action = uniqueAction();
         new TransactionTemplate(txManager).executeWithoutResult(status ->
-                auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", 1L,
+                auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", TARGET,
                         Map.of("k", "v"), "127.0.0.1"));
         assertThat(countByAction(action)).isEqualTo(1);
     }
@@ -49,7 +49,7 @@ class AuditAfterCommitTest {
     void recordsNothingWhenTheBusinessTransactionRollsBack() {
         String action = uniqueAction();
         new TransactionTemplate(txManager).executeWithoutResult(status -> {
-            auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", 1L,
+            auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", TARGET,
                     Map.of("k", "v"), "127.0.0.1");
             status.setRollbackOnly();
         });
@@ -59,10 +59,13 @@ class AuditAfterCommitTest {
     @Test
     void recordsImmediatelyWithNoActiveTransaction() {
         String action = uniqueAction();
-        auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", 1L,
+        auditService.recordAfterCommit(1L, "SYS_ADMIN", action, "test", TARGET,
                 Map.of("k", "v"), "127.0.0.1");
         assertThat(countByAction(action)).isEqualTo(1);
     }
+
+    /** Any well-formed public id: this test is about when the row is written. */
+    private static final UUID TARGET = UUID.fromString("00000000-0000-4000-8000-00000000a001");
 
     private static String uniqueAction() {
         return "test.after_commit." + UUID.randomUUID();

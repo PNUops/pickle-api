@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
@@ -108,7 +109,7 @@ class RequestTest {
         otherMemberToken = jwtService.createAccessToken(otherMember);
         memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
-        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
+        org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
         image = imageRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
@@ -133,19 +134,19 @@ class RequestTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.review").value((Object) null))
-                .andExpect(jsonPath("$.workspaceId").value(workspaceId))
+                .andExpect(jsonPath("$.workspaceId").value(pub("workspaces", workspaceId).toString()))
                 .andExpect(jsonPath("$.workspaceName").isNotEmpty())
                 .andExpect(jsonPath("$.orgName").isNotEmpty())
-                .andExpect(jsonPath("$.requesterId").value(requester.getId()))
+                .andExpect(jsonPath("$.requesterId").value(requester.getPublicId().toString()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
-                .andExpect(jsonPath("$.vm.imageId").value(image.getId()))
-                .andExpect(jsonPath("$.vm.flavorId").value(basicFlavor.getId()));
+                .andExpect(jsonPath("$.vm.imageId").value(image.getPublicId().toString()))
+                .andExpect(jsonPath("$.vm.flavorId").value(basicFlavor.getPublicId().toString()));
 
         // any member may ask — what a request costs is decided at approval,
         // and reaching the resulting VM is the access list's business
         postJson("/api/v1/requests", memberToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.requesterId").value(member.getId()));
+                .andExpect(jsonPath("$.requesterId").value(member.getPublicId().toString()));
 
         // a non-member still cannot submit, and the refusal names the remedy:
         // joining the workspace, not a rung they are missing
@@ -156,14 +157,14 @@ class RequestTest {
                         containsString("구성원")));
 
         // unknown workspace / org / image → 404
-        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "workspaceId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "workspaceId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "orgId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "orgId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.imageId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.imageId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.flavorId", 999_999))
+        postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.flavorId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
 
@@ -173,7 +174,7 @@ class RequestTest {
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
         postJson("/api/v1/requests", requesterToken,
-                with(validBody(workspaceId), "vm.imageId", disabled.getId()))
+                with(validBody(workspaceId), "vm.imageId", disabled.getPublicId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
 
@@ -239,7 +240,7 @@ class RequestTest {
         // 'small' as-is (1 vCPU / 1024MiB / 10GiB) → 201, no reason needed
         postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, smallFlavor))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.vm.flavorId").value(smallFlavor.getId()))
+                .andExpect(jsonPath("$.vm.flavorId").value(smallFlavor.getPublicId().toString()))
                 .andExpect(jsonPath("$.vm.reqVcpu").value(1));
 
         // each axis independently: 2 vCPU exceeds 'small' → specReason required
@@ -287,7 +288,7 @@ class RequestTest {
                 nodeRepository.findAll().getFirst().getId(), 1, 10,
                 CatalogStatus.DISABLED, null));
         postJson("/api/v1/requests", requesterToken,
-                with(bodyFor(workspaceId, retired), "vm.imageId", retiredImage.getId()))
+                with(bodyFor(workspaceId, retired), "vm.imageId", retiredImage.getPublicId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors.length()").value(2))
                 .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"))
@@ -320,7 +321,7 @@ class RequestTest {
 
             // an image that exists but is no longer selectable → 422 on the field
             postJson("/api/v1/requests", requesterToken,
-                    with(validBody(workspaceId), "vm.imageId", image.getId()))
+                    with(validBody(workspaceId), "vm.imageId", image.getPublicId()))
                     .andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                     .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"))
@@ -329,7 +330,7 @@ class RequestTest {
 
             // an id that never existed → 404 with a stated reason, not a 500
             postJson("/api/v1/requests", requesterToken,
-                    with(validBody(workspaceId), "vm.imageId", 999_999))
+                    with(validBody(workspaceId), "vm.imageId", SeedFixtures.UNKNOWN_ID))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
                     .andExpect(jsonPath("$.detail").value("해당 OS 이미지가 존재하지 않습니다."));
@@ -371,8 +372,8 @@ class RequestTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"))
                 .andReturn().getResponse().getContentAsString();
-        long requestId = objectMapper.readTree(response).get("id").asLong();
-        mockMvc.perform(get("/api/v1/requests/" + requestId)
+        long requestId = SeedFixtures.internalId(jdbcTemplate, "requests", UUID.fromString(objectMapper.readTree(response).get("id").asString()));
+        mockMvc.perform(get("/api/v1/requests/" + pub("requests", requestId))
                         .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"));
@@ -392,7 +393,7 @@ class RequestTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.vm.desiredSlug").value("vmr-slug-mine"))
                 .andReturn().getResponse().getContentAsString();
-        long mineId = objectMapper.readTree(mine).get("id").asLong();
+        long mineId = SeedFixtures.internalId(jdbcTemplate, "requests", UUID.fromString(objectMapper.readTree(mine).get("id").asString()));
         postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.vm.desiredSlug").value((Object) null));
@@ -434,7 +435,7 @@ class RequestTest {
         // a rejected request is terminal — its desired slug is submittable again
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         String orgAdminToken = jwtService.createAccessToken(orgAdmin);
-        postJson("/api/v1/admin/requests/" + mineId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", mineId) + "/reject", orgAdminToken,
                 Map.of("comment", "슬러그 재사용 테스트를 위해 반려합니다."))
                 .andExpect(status().isOk());
         postJson("/api/v1/requests", requesterToken,
@@ -456,8 +457,8 @@ class RequestTest {
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
                 .andExpect(jsonPath("$.totalElements").value(2))
-                .andExpect(jsonPath("$.content[0].id").value(second))
-                .andExpect(jsonPath("$.content[1].id").value(first));
+                .andExpect(jsonPath("$.content[0].id").value(pub("requests", second).toString()))
+                .andExpect(jsonPath("$.content[1].id").value(pub("requests", first).toString()));
 
         // paging envelope: size=1 → two pages
         mockMvc.perform(get("/api/v1/requests?size=1").header("Authorization", "Bearer " + memberToken))
@@ -474,30 +475,30 @@ class RequestTest {
         mockMvc.perform(get("/api/v1/requests").header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
-        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
         // member workspaceId + status filters
-        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId + "&status=SUBMITTED")
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + pub("workspaces", workspaceId) + "&status=SUBMITTED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2));
-        mockMvc.perform(get("/api/v1/requests?workspaceId=" + workspaceId + "&status=CANCELED")
+        mockMvc.perform(get("/api/v1/requests?workspaceId=" + pub("workspaces", workspaceId) + "&status=CANCELED")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
 
         // detail: participant ok, outsider 403, unknown id 404
-        mockMvc.perform(get("/api/v1/requests/" + first).header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/requests/" + pub("requests", first)).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(first))
+                .andExpect(jsonPath("$.id").value(pub("requests", first).toString()))
                 .andExpect(jsonPath("$.review").value((Object) null));
-        mockMvc.perform(get("/api/v1/requests/" + first).header("Authorization", "Bearer " + outsiderToken))
+        mockMvc.perform(get("/api/v1/requests/" + pub("requests", first)).header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        mockMvc.perform(get("/api/v1/requests/999999").header("Authorization", "Bearer " + requesterToken))
+        mockMvc.perform(get("/api/v1/requests/" + SeedFixtures.UNKNOWN_ID).header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
@@ -512,35 +513,35 @@ class RequestTest {
         long second = submit(otherMemberToken, workspaceId);
 
         // a fellow member who did not ask, and an outsider, cannot cancel → 403
-        postJson("/api/v1/requests/" + first + "/cancel", otherMemberToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", first) + "/cancel", otherMemberToken, Map.of())
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        postJson("/api/v1/requests/" + first + "/cancel", outsiderToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", first) + "/cancel", outsiderToken, Map.of())
                 .andExpect(status().isForbidden());
 
         // requester cancels own request → 200 CANCELED
-        postJson("/api/v1/requests/" + first + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", first) + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 
         // second cancel → 409 REQUEST_ALREADY_DECIDED
-        postJson("/api/v1/requests/" + first + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", first) + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
         // the workspace's OWNER may cancel another member's request
-        postJson("/api/v1/requests/" + second + "/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", second) + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CANCELED"));
 
         // unknown request → 404
-        postJson("/api/v1/requests/999999/cancel", requesterToken, Map.of())
+        postJson("/api/v1/requests/" + SeedFixtures.UNKNOWN_ID + "/cancel", requesterToken, Map.of())
                 .andExpect(status().isNotFound());
 
         // cancellations are audit-logged
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'request.cancel' and target_id in (?, ?)",
-                Long.class, first, second);
+                Long.class, pub("requests", first).toString(), pub("requests", second).toString());
         assertThat(audits).isEqualTo(2);
     }
 
@@ -551,15 +552,15 @@ class RequestTest {
 
     private Map<String, Object> bodyFor(long workspaceId, VmFlavor flavor) {
         Map<String, Object> vm = new HashMap<>();
-        vm.put("imageId", image.getId());
-        vm.put("flavorId", flavor.getId());
+        vm.put("imageId", image.getPublicId());
+        vm.put("flavorId", flavor.getPublicId());
         vm.put("reqVcpu", flavor.getVcpu());
         vm.put("reqMemoryMb", flavor.getMemoryMb());
         vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
         body.put("type", "VM");
-        body.put("workspaceId", workspaceId);
-        body.put("orgId", org.getId());
+        body.put("workspaceId", pub("workspaces", workspaceId));
+        body.put("orgId", org.getPublicId());
         body.put("purpose", "수업 실습용 서버");
         body.put("vm", vm);
         return body;
@@ -581,7 +582,7 @@ class RequestTest {
         String response = postJson("/api/v1/requests", token, validBody(workspaceId))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(response).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "requests", UUID.fromString(objectMapper.readTree(response).get("id").asString()));
     }
 
     private long createTeam(String token, String slug) throws Exception {
@@ -589,7 +590,7 @@ class RequestTest {
                 Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
@@ -598,7 +599,7 @@ class RequestTest {
     }
 
     private void addMember(String token, long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + token)
                         .header(ReauthTestSupport.HEADER, reauth(token))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -621,5 +622,10 @@ class RequestTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

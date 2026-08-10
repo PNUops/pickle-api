@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -85,26 +86,33 @@ public class AdminVmQueryService {
      * {@code myResourceRole} is null and password reveal stays off.
      */
     @Transactional(readOnly = true)
-    public VmDetailResponse get(AuthenticatedUser actor, long vmId) {
+    public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
         Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
         return vmQueryService.detailOf(vm, null);
     }
 
     /** Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): org-scoped history. */
     @Transactional(readOnly = true)
-    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, long vmId, int page,
+    public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
-        adminVmAccess.requireOrgScopedVm(actor, vmId);
-        return vmQueryService.eventsOf(vmId, page, size);
+        return vmQueryService.eventsOf(adminVmAccess.requireOrgScopedVm(actor, vmId).getId(),
+                page, size);
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, Long orgId, Long workspaceId,
+    public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, UUID orgId, UUID workspaceId,
             VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
             int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         Pageable pageable = PageRequest.of(page, size,
                 resolveSort(sort).and(Sort.by(Sort.Direction.DESC, "id")));
+        // An id no org or workspace has filters to nothing, as a non-matching
+        // numeric id did — it is a filter, not an addressed resource.
+        Long scopedWorkspaceId = workspaceId == null ? null
+                : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
+        if ((orgId != null && scopedOrgId == null) || (workspaceId != null && scopedWorkspaceId == null)) {
+            return PageResponse.of(List.of(), Page.empty(pageable));
+        }
         Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
         if (q != null && !q.isBlank()) {
             String pattern = "%" + escapeLike(q.trim().toLowerCase()) + "%";
@@ -115,8 +123,8 @@ public class AdminVmQueryService {
         if (scopedOrgId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
         }
-        if (workspaceId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("workspaceId"), workspaceId));
+        if (scopedWorkspaceId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("workspaceId"), scopedWorkspaceId));
         }
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
@@ -138,18 +146,25 @@ public class AdminVmQueryService {
         }
         Page<Vm> result = vmRepository.findAll(spec, pageable);
         List<Vm> vms = result.getContent();
-        Map<Long, String> workspaceNames = workspaceRepository.findAllById(
+        Map<Long, Workspace> workspaces = workspaceRepository.findAllById(
                         vms.stream().map(Vm::getWorkspaceId).distinct().toList())
-                .stream().collect(Collectors.toMap(Workspace::getId, Workspace::getName));
+                .stream().collect(Collectors.toMap(Workspace::getId, java.util.function.Function.identity()));
         Map<Long, String> orgNames = orgRepository.findAllById(
                         vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
                                 .distinct().toList())
                 .stream().collect(Collectors.toMap(Org::getId, Org::getName));
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
+        Map<Long, UUID> requestIds = vmQueryService.requestPublicIds(vms);
         return PageResponse.of(vms.stream()
-                .map(vm -> VmSummaryResponse.from(vm, workspaceNames.getOrDefault(vm.getWorkspaceId(), ""),
-                        orgNames.get(vm.getOrgId()), displayNames.get(vm.getId())))
+                .map(vm -> {
+                    Workspace workspace = workspaces.get(vm.getWorkspaceId());
+                    return VmSummaryResponse.from(vm,
+                            workspace == null ? null : workspace.getPublicId(),
+                            workspace == null ? "" : workspace.getName(),
+                            orgNames.get(vm.getOrgId()), displayNames.get(vm.getId()),
+                            requestIds.get(vm.getRequestId()));
+                })
                 .toList(), result);
     }
 
@@ -172,16 +187,18 @@ public class AdminVmQueryService {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
         if (!actor.role().isOrgTier()) {
-            return orgId;
+            return requested;
         }
         if (actor.orgId() == null) {
             // Defensive: an org-tier actor without a managed org sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !orgId.equals(actor.orgId())) {
+        if (orgId != null && !actor.orgId().equals(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }

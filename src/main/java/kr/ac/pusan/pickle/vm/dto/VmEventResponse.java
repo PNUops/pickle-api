@@ -1,20 +1,21 @@
 package kr.ac.pusan.pickle.vm.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmEvent} ({@code actorId} null = system/automatic). */
 public record VmEventResponse(
-        Long id,
+        UUID id,
         VmEventType type,
-        @Nullable Long actorId,
+        @Nullable UUID actorId,
         @Nullable String detail,
         Instant createdAt) {
 
-    public static VmEventResponse from(VmEvent event) {
-        return new VmEventResponse(event.getId(), event.getType(), event.getActorId(),
+    public static VmEventResponse from(VmEvent event, UUID actorId) {
+        return new VmEventResponse(event.getPublicId(), event.getType(), actorId,
                 event.getDetail(), event.getCreatedAt());
     }
 }

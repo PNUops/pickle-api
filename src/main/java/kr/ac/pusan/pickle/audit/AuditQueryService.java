@@ -6,6 +6,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.audit.dto.ActivityEntryResponse;
 import kr.ac.pusan.pickle.audit.dto.AuditLogViewResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -35,6 +36,12 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class AuditQueryService {
+    /**
+     * The scope an id no org has resolves to: a filter value no row carries, so
+     * the page comes back empty exactly as a non-matching number made it.
+     */
+    private static final Long NO_SUCH_ORG = -1L;
+
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -81,9 +88,9 @@ public class AuditQueryService {
                 select a.id, a.action, a.target_type, a.target_id, a.detail, a.ip, a.created_at
                   from audit_logs a"""
                 + where + " order by a.created_at desc, a.id desc limit ? offset ?",
-                (rs, rowNum) -> new ActivityEntryResponse(rs.getLong("id"),
+                (rs, rowNum) -> new ActivityEntryResponse(String.valueOf(rs.getLong("id")),
                         rs.getString("action"), rs.getString("target_type"),
-                        targetIdOf(rs.getObject("target_id", Long.class)),
+                        rs.getString("target_id"),
                         detailOf(rs.getString("detail")), rs.getString("ip"),
                         rs.getObject("created_at", OffsetDateTime.class).toInstant()),
                 params.toArray());
@@ -93,7 +100,7 @@ public class AuditQueryService {
     @Transactional(readOnly = true)
     public PageResponse<AuditLogViewResponse> adminAudit(AuthenticatedUser actor,
             String actorEmail, String action, String targetType, String targetId,
-            LocalDate from, LocalDate to, Long orgId, int page, int size) {
+            LocalDate from, LocalDate to, UUID orgId, int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
@@ -126,16 +133,20 @@ public class AuditQueryService {
         long total = queryCount("select count(*)" + base + where, params);
         params.add(size);
         params.add((long) page * size);
-        List<AuditLogViewResponse> content = jdbcTemplate.query("select a.id, a.actor_id, "
+        // u.public_id, not a.actor_id: the actor is reported by the identifier
+        // the API names accounts with. actor_id itself stays the internal key
+        // the join runs on.
+        List<AuditLogViewResponse> content = jdbcTemplate.query("select a.id, u.public_id "
+                + "as actor_public_id, "
                 + "a.actor_role, a.action, a.target_type, a.target_id, a.detail, a.ip, "
                 + "a.created_at, u.email as actor_email, u.name as actor_name, "
                 + ACTOR_ORG_NAME + " as org_name"
                 + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
-                (rs, rowNum) -> new AuditLogViewResponse(rs.getLong("id"),
-                        rs.getObject("actor_id", Long.class), rs.getString("actor_email"),
+                (rs, rowNum) -> new AuditLogViewResponse(String.valueOf(rs.getLong("id")),
+                        rs.getObject("actor_public_id", UUID.class), rs.getString("actor_email"),
                         rs.getString("actor_name"), rs.getString("actor_role"),
                         rs.getString("action"), rs.getString("target_type"),
-                        targetIdOf(rs.getObject("target_id", Long.class)),
+                        rs.getString("target_id"),
                         detailOf(rs.getString("detail")), rs.getString("ip"),
                         rs.getString("org_name"),
                         rs.getObject("created_at", OffsetDateTime.class).toInstant()),
@@ -172,24 +183,27 @@ public class AuditQueryService {
         return new PageResponse<>(content, page, size, total, totalPages);
     }
 
-    private static String targetIdOf(Long targetId) {
-        return targetId != null ? String.valueOf(targetId) : null;
-    }
-
     private JsonNode detailOf(String detailJson) {
         return detailJson != null ? objectMapper.readTree(detailJson) : null;
     }
 
     /** Org tier pinned to their org; another org's id answers 404. */
-    private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null : jdbcTemplate.query(
+                "select id from orgs where public_id = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
-            return orgId;
+            // An id no org has filters to nothing, as a non-matching number did.
+            if (orgId != null && requested == null) {
+                return NO_SUCH_ORG;
+            }
+            return requested;
         }
         if (actor.orgId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !orgId.equals(actor.orgId())) {
+        if (orgId != null && !actor.orgId().equals(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }

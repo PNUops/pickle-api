@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
@@ -45,7 +46,7 @@ public class AdminPublishingController {
     @GetMapping("/routes")
     public PageResponse<AdminRouteView> listAdminRoutes(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) RouteStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
@@ -55,7 +56,7 @@ public class AdminPublishingController {
     @GetMapping("/domains")
     public PageResponse<AdminDomainView> listAdminDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) DomainKind kind,
             @RequestParam(required = false) DomainStatus status,
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -66,7 +67,7 @@ public class AdminPublishingController {
     @GetMapping("/certificates")
     public PageResponse<AdminCertificateView> listAdminCertificates(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) CertificateStatus status,
             @RequestParam(required = false) @Min(1) Integer expiringInDays,
             @RequestParam(defaultValue = "0") @Min(0) int page,
@@ -87,7 +88,7 @@ public class AdminPublishingController {
     @PostMapping("/domains/{domainId}/force-release")
     public MessageResponse forceReleaseDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long domainId, HttpServletRequest httpRequest) {
+            @PathVariable UUID domainId, HttpServletRequest httpRequest) {
         return adminPublishingService.forceRelease(principal, domainId, clientIp(httpRequest));
     }
 
@@ -96,7 +97,7 @@ public class AdminPublishingController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse verifyAdminDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long domainId, HttpServletRequest httpRequest) {
+            @PathVariable UUID domainId, HttpServletRequest httpRequest) {
         return adminPublishingService.verify(principal, domainId, clientIp(httpRequest));
     }
 
@@ -105,7 +106,7 @@ public class AdminPublishingController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse applyAdminRoute(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long routeId, HttpServletRequest httpRequest) {
+            @PathVariable UUID routeId, HttpServletRequest httpRequest) {
         return adminPublishingService.applyRoute(principal, routeId, clientIp(httpRequest));
     }
 }

@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.DriftFindingResponse;
 import kr.ac.pusan.pickle.admin.dto.ResolveDriftFindingRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -49,7 +50,7 @@ public class AdminDriftController {
     @PostMapping("/{findingId}/resolve")
     public DriftFindingResponse resolveDriftFinding(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long findingId,
+            @PathVariable UUID findingId,
             @Valid @RequestBody(required = false) ResolveDriftFindingRequest request,
             HttpServletRequest httpRequest) {
         return adminDriftService.resolve(principal, findingId, request, clientIp(httpRequest));

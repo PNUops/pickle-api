@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import org.jspecify.annotations.Nullable;
 
@@ -11,7 +12,7 @@ import org.jspecify.annotations.Nullable;
  * (proxmox vmid, node, notes). Spec presets live in {@code VmFlavor}.
  */
 public record AdminOsImageResponse(
-        long id,
+        UUID id,
         String name,
         String displayName,
         String osFamily,
@@ -19,16 +20,16 @@ public record AdminOsImageResponse(
         String sshUsername,
         int version,
         int proxmoxVmid,
-        Long nodeId,
+        UUID nodeId,
         CatalogStatus status,
         int minDiskGb,
         @Nullable String notes) {
 
-    public static AdminOsImageResponse from(OsImage image) {
-        return new AdminOsImageResponse(image.getId(), image.getName(),
+    public static AdminOsImageResponse from(OsImage image, UUID nodeId) {
+        return new AdminOsImageResponse(image.getPublicId(), image.getName(),
                 image.getDisplayName(), image.getOsFamily(), image.getOsVersion(),
                 image.getSshUsername(), image.getVersion(), image.getProxmoxVmid(),
-                image.getNodeId(), image.getStatus(), image.getMinDiskGb(),
+                nodeId, image.getStatus(), image.getMinDiskGb(),
                 image.getNotes());
     }
 }

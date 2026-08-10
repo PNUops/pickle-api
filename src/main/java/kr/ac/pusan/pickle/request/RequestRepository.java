@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.request;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -13,13 +14,16 @@ import org.springframework.data.repository.query.Param;
 public interface RequestRepository extends JpaRepository<Request, Long>,
         JpaSpecificationExecutor<Request> {
 
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Request> findByPublicId(UUID publicId);
+
     /**
      * Locked lookup for decision/cancel mutations: concurrent decisions on the
      * same request serialize, so exactly one wins and the rest see 409.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select r from Request r where r.id = :id")
-    Optional<Request> findWithLockById(@Param("id") Long id);
+    @Query("select r from Request r where r.publicId = :publicId")
+    Optional<Request> findWithLockByPublicId(@Param("publicId") UUID publicId);
 
     /** All requests of a workspace in a given status (workspace-delete cancels its SUBMITTED ones). */
     List<Request> findByWorkspaceIdAndStatus(Long workspaceId, RequestStatus status);

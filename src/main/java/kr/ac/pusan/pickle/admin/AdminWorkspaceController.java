@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin;
 
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceOptionResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -32,14 +33,14 @@ public class AdminWorkspaceController {
     @GetMapping
     public List<AdminWorkspaceOptionResponse> listAdminWorkspaces(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId) {
+            @RequestParam(required = false) UUID orgId) {
         return adminWorkspaceQueryService.list(principal, orgId);
     }
 
     @GetMapping("/{workspaceId}")
     public AdminWorkspaceDetailResponse getAdminWorkspace(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId) {
+            @PathVariable UUID workspaceId) {
         return adminWorkspaceQueryService.get(principal, workspaceId);
     }
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -81,7 +82,7 @@ public class RequestService {
     public RequestDetailResponse create(AuthenticatedUser actor, CreateRequestRequest form, String ip) {
         RequestTypeHandler handler = handlerFor(form.type());
         // A soft-deleted workspace cannot receive new requests.
-        Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(form.workspaceId())
+        Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(form.workspaceId())
                 .orElseThrow(() -> notFound("해당 워크스페이스가 존재하지 않습니다."));
         // Any member may ask. The rung that used to gate this was really about
         // reaching VMs, which is now the access list's business, and asking is
@@ -89,7 +90,7 @@ public class RequestService {
         workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .orElseThrow(RequestService::notWorkspaceMember);
 
-        Org org = orgRepository.findById(form.orgId())
+        Org org = orgRepository.findByPublicId(form.orgId())
                 .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
         if (org.getStatus() != OrgStatus.ACTIVE) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
@@ -115,30 +116,35 @@ public class RequestService {
         auditArgs.put("orgId", org.getId());
         auditArgs.putAll(handler.submitAuditArgs(saved));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
-                "request", saved.getId(), auditArgs, ip);
+                "request", saved.getPublicId(), auditArgs, ip);
         // In-tx inserts: the notices exist iff the request row committed.
         notificationService.publish(actor.id(), NotificationEvent.REQUEST_SUBMITTED,
-                Map.of("requestId", saved.getId(), "workspaceName", workspace.getName(),
+                Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name()), null);
         notificationService.publish(
                 notificationService.orgAdminIds(org.getId()).stream()
                         .filter(adminId -> !adminId.equals(actor.id())).toList(),
                 NotificationEvent.REQUEST_SUBMITTED,
-                Map.of("requestId", saved.getId(), "workspaceName", workspace.getName(),
+                Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);
         return assembler.toDetail(saved);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
-            ResourceType type, Long workspaceId, int page, int size) {
+            ResourceType type, UUID workspaceId, int page, int size) {
         Specification<Request> spec;
         if (workspaceId != null) {
-            if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id()).isEmpty()) {
+            // Unknown id and one I am not a member of answer the same 403, so a
+            // workspace's existence stays private here as it did before.
+            Long scopedWorkspaceId = workspaceRepository.findByPublicId(workspaceId)
+                    .map(Workspace::getId).orElse(null);
+            if (scopedWorkspaceId == null || workspaceMemberRepository
+                    .findByWorkspaceIdAndUserId(scopedWorkspaceId, actor.id()).isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "해당 워크스페이스의 신청을 조회할 권한이 없습니다.");
             }
-            spec = RequestSpecs.workspace(workspaceId);
+            spec = RequestSpecs.workspace(scopedWorkspaceId);
         } else {
             spec = RequestSpecs.visibleTo(actor.id(), myWorkspaceIds(actor));
         }
@@ -153,8 +159,8 @@ public class RequestService {
     }
 
     @Transactional(readOnly = true)
-    public RequestDetailResponse get(AuthenticatedUser actor, long requestId) {
-        Request request = requestRepository.findById(requestId)
+    public RequestDetailResponse get(AuthenticatedUser actor, UUID requestId) {
+        Request request = requestRepository.findByPublicId(requestId)
                 .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
         boolean participant = request.getRequesterId().equals(actor.id())
                 || workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(), actor.id()).isPresent();
@@ -166,8 +172,8 @@ public class RequestService {
     }
 
     @Transactional
-    public RequestDetailResponse cancel(AuthenticatedUser actor, long requestId, String ip) {
-        Request request = requestRepository.findWithLockById(requestId)
+    public RequestDetailResponse cancel(AuthenticatedUser actor, UUID requestId, String ip) {
+        Request request = requestRepository.findWithLockByPublicId(requestId)
                 .orElseThrow(() -> notFound("해당 신청이 존재하지 않습니다."));
         boolean requester = request.getRequesterId().equals(actor.id());
         boolean workspaceOwner = workspaceMemberRepository
@@ -185,7 +191,7 @@ public class RequestService {
         }
         request.setStatus(RequestStatus.CANCELED);
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CANCEL,
-                "request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
+                "request", request.getPublicId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         return assembler.toDetail(request);
     }
 

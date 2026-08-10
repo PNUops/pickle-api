@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -24,7 +25,7 @@ public record ApproveVmRequestSpec(
         Integer grantedDiskGb,
 
         @NotNull(message = "부여 OS 이미지(grantedImageId)를 지정해 주세요.")
-        Long grantedImageId,
+        UUID grantedImageId,
 
         // 최종 호스트명(슬러그, v0.12.0) — null/공백이면 기존처럼 자동 생성.
         // Blank ≡ null이므로 패턴이 공백을 허용하고, 예약어·중복(파기 VM 포함)은
@@ -34,5 +35,5 @@ public record ApproveVmRequestSpec(
         @Nullable String grantedSlug,
 
         /** null이면 자동 배치. */
-        @Nullable Long nodeId) {
+        @Nullable UUID nodeId) {
 }

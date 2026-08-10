@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -20,6 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 public interface ProvisioningTaskRepository
         extends JpaRepository<ProvisioningTask, Long>, JpaSpecificationExecutor<ProvisioningTask> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<ProvisioningTask> findByPublicId(UUID publicId);
 
     List<ProvisioningTask> findByVmIdOrderByIdDesc(Long vmId);
 

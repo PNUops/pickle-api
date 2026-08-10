@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -101,18 +102,19 @@ public class PortForwardingService {
     // ── list ─────────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<PortForwardingView> list(AuthenticatedUser actor, long vmId) {
-        requireVmMember(actor, vmId);
-        List<PortMapping> mappings = portMappingRepository.findByVmIdOrderByIdAsc(vmId);
+    public List<PortForwardingView> list(AuthenticatedUser actor, UUID publicVmId) {
+        Vm vm = requireVmMember(actor, publicVmId);
+        List<PortMapping> mappings = portMappingRepository.findByVmIdOrderByIdAsc(vm.getId());
         return mappings.stream().map(this::toView).toList();
     }
 
     // ── create ───────────────────────────────────────────────────────────────
 
     @Transactional
-    public PortForwardingView create(AuthenticatedUser actor, long vmId,
+    public PortForwardingView create(AuthenticatedUser actor, UUID publicVmId,
             CreatePortForwardingRequest request, String ip) {
-        Vm vm = requireVmOwnerOrEditor(actor, vmId);
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        long vmId = vm.getId();
         if (!settingsService.bool(SettingsService.PORT_FORWARDING_ENABLED, false)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.PORT_FORWARDING_DISABLED,
                     "포트 포워딩이 비활성화되어 있습니다",
@@ -147,7 +149,7 @@ public class PortForwardingService {
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_CREATE, actor.id(),
                 request.proto() + " 공개 포트 할당 → 대상 포트 " + request.targetPort()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_PORT_FORWARD_CREATE, "vm", vmId,
+                AuditService.VM_PORT_FORWARD_CREATE, "vm", vm.getPublicId(),
                 Map.of("mappingId", mappingId, "relayId", relay.getId(),
                         "proto", request.proto().name(), "targetPort", request.targetPort()), ip);
         return toView(portMappingRepository.findById(mappingId).orElseThrow());
@@ -156,17 +158,19 @@ public class PortForwardingService {
     // ── delete ───────────────────────────────────────────────────────────────
 
     @Transactional
-    public MessageResponse delete(AuthenticatedUser actor, long vmId, long portForwardingId,
-            String ip) {
-        requireVmOwnerOrEditor(actor, vmId);
-        PortMapping mapping = portMappingRepository.findByIdAndVmId(portForwardingId, vmId)
+    public MessageResponse delete(AuthenticatedUser actor, UUID publicVmId,
+            UUID portForwardingId, String ip) {
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        long vmId = vm.getId();
+        PortMapping mapping = portMappingRepository.findByPublicId(portForwardingId)
+                .filter(row -> row.getVmId() == vmId)
                 .orElseThrow(PortForwardingService::mappingNotFound);
         relayGenerations.bump(mapping.getRelayId());
         portMappingRepository.delete(mapping);
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_DELETE, actor.id(),
                 mapping.getProto() + " " + mapping.getPublicPort() + " 공개 해제"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_PORT_FORWARD_DELETE, "vm", vmId,
+                AuditService.VM_PORT_FORWARD_DELETE, "vm", vm.getPublicId(),
                 Map.of("mappingId", mapping.getId(), "relayId", mapping.getRelayId(),
                         "proto", mapping.getProto().name(),
                         "publicPort", mapping.getPublicPort()), ip);
@@ -247,7 +251,7 @@ public class PortForwardingService {
 
     private PortForwardingView toView(PortMapping mapping) {
         Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
-        return new PortForwardingView(mapping.getId(), mapping.getProto(),
+        return new PortForwardingView(mapping.getPublicId(), mapping.getProto(),
                 mapping.getPublicPort(), relay.getPublicHost(), mapping.getTargetPort(),
                 mapping.getStatus(),
                 applyState(mapping, relay.getAppliedGeneration(), failedIds(relay)),
@@ -292,11 +296,11 @@ public class PortForwardingService {
 
     // ── authorization (publishing pattern: 404 mask, 403 for members) ───────
 
-    private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmMember(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireVisible();
     }
 
-    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "포트 포워딩을 관리할 권한이 없습니다",
                 "이 VM의 소유자 또는 편집자만 포트포워딩을 설정할 수 있습니다.");

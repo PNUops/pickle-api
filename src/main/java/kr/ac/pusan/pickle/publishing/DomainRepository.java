@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface DomainRepository extends JpaRepository<Domain, Long> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Domain> findByPublicId(UUID publicId);
 
     /** The live row holding an FQDN — the revive-or-409 pre-check. */
     Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);

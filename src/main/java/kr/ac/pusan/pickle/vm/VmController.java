@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.proxmox.RrdTimeframe;
@@ -63,7 +64,7 @@ public class VmController {
     @GetMapping
     public PageResponse<VmSummaryResponse> listVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long workspaceId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return vmQueryService.list(principal, workspaceId, page, size);
@@ -71,7 +72,7 @@ public class VmController {
 
     @GetMapping("/{vmId}")
     public VmDetailResponse getVm(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId) {
+            @PathVariable UUID vmId) {
         return vmQueryService.get(principal, vmId);
     }
 
@@ -79,7 +80,7 @@ public class VmController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     @RequireReauth
     public VmDeletionResponse deleteVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
         return vmDeletionService.selfDelete(principal, vmId, clientIp(httpRequest));
     }
@@ -87,35 +88,35 @@ public class VmController {
     @PostMapping("/{vmId}/start")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse startVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return vmLifecycleService.start(principal, vmId);
     }
 
     @PostMapping("/{vmId}/shutdown")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse shutdownVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return vmLifecycleService.shutdown(principal, vmId);
     }
 
     @PostMapping("/{vmId}/reboot")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse rebootVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return vmLifecycleService.reboot(principal, vmId);
     }
 
     @PostMapping("/{vmId}/force-stop")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse forceStopVm(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId) {
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId) {
         return vmLifecycleService.forceStop(principal, vmId);
     }
 
     @GetMapping("/{vmId}/events")
     public PageResponse<VmEventResponse> listVmEvents(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return vmQueryService.events(principal, vmId, page, size);
@@ -124,7 +125,7 @@ public class VmController {
     /** Live usage series from the hypervisor (contract v0.35.0); nothing is stored here. */
     @GetMapping("/{vmId}/metrics")
     public VmMetricsResponse getVmMetrics(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
                     + "(해상도는 구간에 따라 거칠어짐)")
             @RequestParam(defaultValue = "HOUR") RrdTimeframe timeframe) {
@@ -135,7 +136,7 @@ public class VmController {
     @GetMapping("/{vmId}/password")
     @RequireReauth
     public ResponseEntity<VmPasswordResponse> revealVmPassword(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
         VmPasswordResponse response =
                 vmPasswordService.reveal(principal, vmId, clientIp(httpRequest));
@@ -148,7 +149,7 @@ public class VmController {
     @PostMapping("/{vmId}/password/regenerate")
     @RequireReauth
     public ResponseEntity<VmPasswordResponse> regenerateVmPassword(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
         VmPasswordResponse response =
                 vmPasswordService.regenerate(principal, vmId, clientIp(httpRequest));
@@ -160,7 +161,7 @@ public class VmController {
     /** Per-VM settings (EDITOR+; non-member 404). */
     @GetMapping("/{vmId}/settings")
     public List<VmSettingView> getVmSettings(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId) {
+            @PathVariable UUID vmId) {
         return vmSettingsService.get(principal, vmId);
     }
 
@@ -168,7 +169,7 @@ public class VmController {
     @PatchMapping("/{vmId}/settings")
     @RequireReauth
     public List<VmSettingView> updateVmSettings(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long vmId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             @Valid @RequestBody VmSettingsUpdateRequest request, HttpServletRequest httpRequest) {
         return vmSettingsService.patch(principal, vmId, request.settings(), clientIp(httpRequest));
     }

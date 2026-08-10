@@ -82,7 +82,7 @@ public class AccountService {
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
-                    "user", user.getId(), Map.of("result", "mismatch"), ip);
+                    "user", user.getPublicId(), Map.of("result", "mismatch"), ip);
             throw passwordMismatch();
         }
         // 2FA-enrolled accounts must also present a valid TOTP or recovery code.
@@ -121,7 +121,7 @@ public class AccountService {
                 UserStatus.WITHDRAWN, user.getId(), null));
 
         auditService.recordAfterCommit(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
-                "user", user.getId(), Map.of("email", user.getEmail()), ip);
+                "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_WITHDRAWN,
                 Map.of("userId", user.getId(), "userEmail", user.getEmail()),
                 "account_withdrawn:" + user.getId());

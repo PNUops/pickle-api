@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.publishing.dto.CertificateView;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
@@ -52,17 +53,17 @@ public class PublicationAssembler {
         this.settingsService = settingsService;
     }
 
-    public DomainSummaryView toDomainSummary(Domain domain) {
-        return new DomainSummaryView(domain.getId(), domain.getVmId(), domain.getKind(),
+    public DomainSummaryView toDomainSummary(Domain domain, UUID vmId) {
+        return new DomainSummaryView(domain.getPublicId(), vmId, domain.getKind(),
                 domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                 domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
                 domain.getCreatedAt());
     }
 
-    public DomainDetailView toDomainDetail(Domain domain) {
+    public DomainDetailView toDomainDetail(Domain domain, UUID vmId) {
         DomainVerificationView verification = domain.getKind() == DomainKind.CUSTOM
                 ? verification(domain) : null;
-        return new DomainDetailView(domain.getId(), domain.getVmId(), domain.getKind(),
+        return new DomainDetailView(domain.getPublicId(), vmId, domain.getKind(),
                 domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                 domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
                 domain.getCreatedAt(), verification);
@@ -93,12 +94,12 @@ public class PublicationAssembler {
     }
 
     /** The full publish view for a domain — its live route and certificate. */
-    public PublicationView toPublication(Domain domain) {
+    public PublicationView toPublication(Domain domain, UUID vmId) {
         RouteView route = routeRepository.findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                 .map(RouteView::from)
                 .orElse(null);
         CertificateView certificate = certificateFor(domain).map(CertificateView::from).orElse(null);
-        return new PublicationView(domain.getFqdn(), toDomainDetail(domain), route, certificate);
+        return new PublicationView(domain.getFqdn(), toDomainDetail(domain, vmId), route, certificate);
     }
 
     /**

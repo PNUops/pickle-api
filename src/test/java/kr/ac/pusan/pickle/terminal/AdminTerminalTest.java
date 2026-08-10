@@ -138,14 +138,14 @@ class AdminTerminalTest {
     @Test
     void terminateRelaysToBridgeAndAuditsWhenKnown() throws Exception {
         String sessionId = startedSession(orgA);
-        long vmId = sessionRegistry.get(sessionId).orElseThrow().vmId();
-
         terminate(sysAdminToken, sessionId).andExpect(status().isNoContent());
 
         bridge.verify(1, postRequestedFor(urlEqualTo("/control/terminate")));
+        // The mirror's VM id belongs to no row here, so the session is what
+        // identifies this audit entry — which is what the detail carries.
         Long auditActor = jdbcTemplate.queryForObject(
                 "select actor_id from audit_logs where action = 'terminal.force_terminate' "
-                        + "and target_id = ? order by id desc limit 1", Long.class, vmId);
+                        + "and detail ->> 'sessionId' = ?", Long.class, sessionId);
         assertThat(auditActor).isEqualTo(sysAdmin.getId());
     }
 
@@ -179,15 +179,14 @@ class AdminTerminalTest {
         return sessionId;
     }
 
-    private long ensureOrg(String slug) {
-        Long existing = jdbcTemplate.query("select id from orgs where slug = ?",
-                rs -> rs.next() ? rs.getLong(1) : null, slug);
+    private long ensureOrg(String name) {
+        Long existing = jdbcTemplate.query("select id from orgs where name = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, name);
         if (existing != null) {
             return existing;
         }
         return jdbcTemplate.queryForObject(
-                "insert into orgs (name, slug) values ('터미널관리자B기관', ?) returning id",
-                Long.class, slug);
+                "insert into orgs (name) values (?) returning id", Long.class, name);
     }
 
     private User ensureUser(String email, String name, UserRole role, Long orgId) {
@@ -199,5 +198,10 @@ class AdminTerminalTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

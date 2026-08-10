@@ -264,7 +264,7 @@ class InternalTerminalTest {
         internal("/internal/terminal/session-end", SSHGW_IP, body).andExpect(status().isNoContent());
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'terminal.session_end' "
-                        + "and target_id = ?", Long.class, vmId)).isEqualTo(1L);
+                        + "and target_id = ?", Long.class, pub("vms", vmId).toString().toString())).isEqualTo(1L);
     }
 
     // ── revalidate ────────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ class InternalTerminalTest {
     private Set<String> detailKeys(String action, long vmId) {
         String detail = jdbcTemplate.queryForObject(
                 "select detail::text from audit_logs where action = ? and target_id = ? "
-                        + "order by id desc limit 1", String.class, action, vmId);
+                        + "order by id desc limit 1", String.class, action, pub("vms", vmId).toString());
         JsonNode node = objectMapper.readTree(detail);
         return new TreeSet<>(node.propertyNames());
     }
@@ -415,5 +415,10 @@ class InternalTerminalTest {
         // list yet; the redeem re-check wants MEMBER on the VM itself.
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "MEMBER");
         return vmId;
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

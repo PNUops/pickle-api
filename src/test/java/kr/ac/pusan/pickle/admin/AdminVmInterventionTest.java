@@ -90,39 +90,39 @@ class AdminVmInterventionTest {
                 """, vmId);
 
         // all admin tiers read the detail; the viewer has no workspace role
-        mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(vmId))
+                .andExpect(jsonPath("$.id").value(pub("vms", vmId).toString()))
                 .andExpect(jsonPath("$.myResourceRole").isEmpty())
                 .andExpect(jsonPath("$.passwordRevealAllowed").value(false));
-        mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(vmId));
+                .andExpect(jsonPath("$.id").value(pub("vms", vmId).toString()));
 
-        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].type").value("CREATE"));
 
         // cross-org admin: same 404 as an unknown id
-        Org otherOrg = orgRepository.findBySlug("avi-other").orElseGet(() ->
-                orgRepository.save(new Org("개입 테스트 타기관", "avi-other", null)));
+        Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관").orElseGet(() ->
+                orgRepository.save(new Org("개입 테스트 타기관", null)));
         String otherOrgAdminToken = jwtService.createAccessToken(
                 ensureUser("avi.other.admin@pusan.ac.kr", UserRole.ORG_ADMIN, otherOrg.getId()));
-        mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isNotFound());
 
         // a plain user is refused by the role gate
         String userToken = jwtService.createAccessToken(
                 ensureUser("avi.user@pusan.ac.kr", UserRole.USER, null));
-        mockMvc.perform(get("/api/v1/admin/vms/{id}", vmId)
+        mockMvc.perform(get("/api/v1/admin/vms/{id}", pub("vms", vmId))
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -132,7 +132,7 @@ class AdminVmInterventionTest {
         long vmId = createVm("STOPPED", null);
 
         // ORG_MANAGER may start an own-org VM (ratified scope)
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isAccepted());
         assertThat(jdbcTemplate.queryForObject(
@@ -141,7 +141,7 @@ class AdminVmInterventionTest {
         assertThat(auditCount(vmId, "vm.admin_start")).isEqualTo(1);
 
         // duplicate while the claim is in flight → 409, no extra audit row
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
@@ -149,17 +149,17 @@ class AdminVmInterventionTest {
 
         // wrong-state intent → 409 (RUNNING-only op on a STOPPED VM)
         long stopped = createVm("STOPPED", null);
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/shutdown", stopped)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/shutdown", pub("vms", stopped))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict());
 
         // reboot + force-stop accept from RUNNING and audit
         long running = createVm("RUNNING", null);
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/reboot", running)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/reboot", pub("vms", running))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isAccepted());
         assertThat(auditCount(running, "vm.admin_reboot")).isEqualTo(1);
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/force-stop", running)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/force-stop", pub("vms", running))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted());
         assertThat(auditCount(running, "vm.admin_force_stop")).isEqualTo(1);
@@ -172,7 +172,7 @@ class AdminVmInterventionTest {
                 insert into vm_settings (vm_id, key, value) values (?, 'stop_protection', 'true'::jsonb)
                 """, vmId);
 
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/shutdown", vmId)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/shutdown", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isAccepted());
         assertThat(auditCount(vmId, "vm.admin_shutdown")).isEqualTo(1);
@@ -183,7 +183,7 @@ class AdminVmInterventionTest {
         LocalDate today = LocalDate.now(KST);
         long vmId = createVm("STOPPED", today.minusDays(2));
 
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_EXPIRED"));
@@ -192,13 +192,13 @@ class AdminVmInterventionTest {
 
     @Test
     void crossOrgPowerIntentIsMaskedAs404() throws Exception {
-        Org otherOrg = orgRepository.findBySlug("avi-power-other").orElseGet(() ->
-                orgRepository.save(new Org("개입 전원 타기관", "avi-power-other", null)));
+        Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 전원 타기관").orElseGet(() ->
+                orgRepository.save(new Org("개입 전원 타기관", null)));
         String otherOrgAdminToken = jwtService.createAccessToken(
                 ensureUser("avi.pother.admin@pusan.ac.kr", UserRole.ORG_ADMIN, otherOrg.getId()));
         long vmId = createVm("STOPPED", null);
 
-        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/admin/vms/{id}/start", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -211,7 +211,7 @@ class AdminVmInterventionTest {
     private long auditCount(long vmId, String action) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, vmId);
+                Long.class, action, pub("vms", vmId).toString());
     }
 
     private User ensureUser(String email, UserRole role, Long userOrgId) {
@@ -238,5 +238,10 @@ class AdminVmInterventionTest {
                 returning id
                 """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, status, endDate);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

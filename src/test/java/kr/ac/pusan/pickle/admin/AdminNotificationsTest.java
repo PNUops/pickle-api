@@ -85,7 +85,7 @@ class AdminNotificationsTest {
                 .andExpect(jsonPath("$.content.length()").value(2))
                 .andExpect(jsonPath(byId(failed)).exists())
                 .andExpect(jsonPath(byId(sent)).exists())
-                .andExpect(jsonPath(byId(failed) + ".userId").value((int) recipientId))
+                .andExpect(jsonPath(byId(failed) + ".userId").value(pub("users", recipientId).toString()))
                 .andExpect(jsonPath(byId(failed) + ".userEmail").value(recipientEmail))
                 .andExpect(jsonPath(byId(failed) + ".channel").value("EMAIL"))
                 .andExpect(jsonPath(byId(failed) + ".status").value("FAILED"))
@@ -119,7 +119,7 @@ class AdminNotificationsTest {
                 "update notifications set next_attempt_at = now() + interval '1 day' where id = ?",
                 failed);
 
-        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", failed)
+        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", pub("notifications", failed))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
@@ -134,33 +134,33 @@ class AdminNotificationsTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'notification.resend' and target_id = ?
-                """, Long.class, failed)).isEqualTo(1);
+                """, Long.class, pub("notifications", failed).toString())).isEqualTo(1);
 
         // now PENDING → a second resend answers 409 (CAS idempotence)
-        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", failed)
+        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", pub("notifications", failed).toString())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("NOTIFICATION_NOT_RESENDABLE"));
 
-        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", sent)
+        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", pub("notifications", sent))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("NOTIFICATION_NOT_RESENDABLE"));
 
-        mockMvc.perform(post("/api/v1/admin/notifications/999999/resend")
+        mockMvc.perform(post("/api/v1/admin/notifications/" + SeedFixtures.UNKNOWN_ID + "/resend")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", failed)
+        mockMvc.perform(post("/api/v1/admin/notifications/{id}/resend", pub("notifications", failed))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isForbidden());
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────
 
-    private static String byId(long id) {
-        return "$.content[?(@.id == %d)]".formatted(id);
+    private String byId(long id) {
+        return "$.content[?(@.id == '%s')]".formatted(pub("notifications", id));
     }
 
     private long insertNotification(long userId, String event, String status, String lastError) {
@@ -171,5 +171,10 @@ class AdminNotificationsTest {
                         case when ? = 'SENT' then now() end)
                 returning id
                 """, Long.class, userId, event, status, lastError, status);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

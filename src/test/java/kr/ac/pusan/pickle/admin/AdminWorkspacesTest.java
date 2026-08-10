@@ -92,7 +92,7 @@ class AdminWorkspacesTest {
 
     @Test
     void detailListsEveryMemberWithAccountStatusAndVmCount() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", workspaceId)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value(slug))
@@ -101,15 +101,16 @@ class AdminWorkspacesTest {
                 .andExpect(jsonPath("$.vmCount").value(0))
                 .andExpect(jsonPath("$.members.length()").value(2))
                 .andExpect(jsonPath("$.members[0].workspaceRole").value("OWNER"))
-                .andExpect(jsonPath("$.members[?(@.userId == %d)].workspaceRole".formatted(ownerId))
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].workspaceRole"
+                        .formatted(pub("users", ownerId)))
                         .value("OWNER"))
-                .andExpect(jsonPath("$.members[?(@.userId == %d)].userStatus"
-                        .formatted(disabledMemberId)).value("DISABLED"));
+                .andExpect(jsonPath("$.members[?(@.userId == '%s')].userStatus"
+                        .formatted(pub("users", disabledMemberId))).value("DISABLED"));
     }
 
     @Test
     void unknownDeletedAndCrossOrgWorkspacesAnswerTheSame404() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/workspaces/999999")
+        mockMvc.perform(get("/api/v1/admin/workspaces/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
@@ -119,7 +120,7 @@ class AdminWorkspacesTest {
                 insert into workspaces (kind, name, deleted_at, deleted_by)
                 values ('TEAM', ?, now(), ?) returning id
                 """, Long.class, deletedSlug, ownerId);
-        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", deleted)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", deleted))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
@@ -128,18 +129,18 @@ class AdminWorkspacesTest {
         long unlinked = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
                 Long.class, foreignSlug);
-        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", unlinked)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
         // ...but the sys tier still sees it
-        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", unlinked)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
 
         // a plain user is refused by the role gate
         String userToken = jwtService.createAccessToken(
                 ensureUser("agr.user." + slug + "@pusan.ac.kr", UserStatus.ACTIVE));
-        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", workspaceId)
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
     }
@@ -158,5 +159,10 @@ class AdminWorkspacesTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

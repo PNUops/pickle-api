@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.github.tomakehurst.wiremock.client.WireMock;
 import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
@@ -148,61 +149,65 @@ class ProvisioningEndToEndTest {
                 Map.of("kind", "TEAM", "name", "종단 테스트 팀"))
                 .andExpect(status().isCreated())
                 .andReturn();
-        long workspaceId = objectMapper.readTree(workspaceResult.getResponse().getContentAsString())
-                .get("id").asLong();
+        long workspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces",
+                UUID.fromString(objectMapper
+                        .readTree(workspaceResult.getResponse().getContentAsString())
+                        .get("id").asString()));
 
         // 4. reference data: the two request axes from the API; the seed org via
         // JDBC because it is hidden and USER tokens do not see it in /orgs
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         JsonNode images = getJson("/api/v1/os-images", userToken);
         JsonNode image = findBy(images, "name", "ubuntu-24.04");
-        long imageId = image.get("id").asLong();
+        long imageId = SeedFixtures.internalId(jdbcTemplate, "os_images", UUID.fromString(image.get("id").asString()));
         JsonNode flavors = getJson("/api/v1/vm-flavors", userToken);
         JsonNode flavor = findBy(flavors, "name", "basic");
-        long flavorId = flavor.get("id").asLong();
+        long flavorId = SeedFixtures.internalId(jdbcTemplate, "vm_flavors", UUID.fromString(flavor.get("id").asString()));
 
         // 5. submit the vm-request pre-filled with the chosen preset's specs
         MvcResult requestResult = postJson("/api/v1/requests", userToken, Map.of(
                 "type", "VM",
-                "workspaceId", workspaceId,
-                "orgId", orgId,
+                "workspaceId", pub("workspaces", workspaceId),
+                "orgId", pub("orgs", orgId),
                 "purpose", "종단 검증용 서버",
                 "vm", Map.of(
-                        "imageId", imageId,
-                        "flavorId", flavorId,
+                        "imageId", pub("os_images", imageId),
+                        "flavorId", pub("vm_flavors", flavorId),
                         "reqVcpu", flavor.get("vcpu").asInt(),
                         "reqMemoryMb", flavor.get("memoryMb").asInt(),
                         "reqDiskGb", flavor.get("diskGb").asInt())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andReturn();
-        long requestId = objectMapper.readTree(requestResult.getResponse().getContentAsString())
-                .get("id").asLong();
+        long requestId = SeedFixtures.internalId(jdbcTemplate, "requests",
+                UUID.fromString(objectMapper
+                        .readTree(requestResult.getResponse().getContentAsString())
+                        .get("id").asString()));
 
         // 6. the seeded ORG_ADMIN logs in and finds the request in the queue
         String adminToken = login(SeedFixtures.ORGADMIN_EMAIL, "pickle-test-orgadmin!");
         mockMvc.perform(get("/api/v1/admin/requests?status=SUBMITTED")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestId)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestId))).exists());
 
         // 7. the approval context loads with all panels
-        mockMvc.perform(get("/api/v1/admin/requests/" + requestId + "/context")
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", requestId) + "/context")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.applicant.email").value(USER_EMAIL))
-                .andExpect(jsonPath("$.workspace.id").value(workspaceId))
+                .andExpect(jsonPath("$.workspace.id").value(pub("workspaces", workspaceId).toString()))
                 .andExpect(jsonPath("$.orgHeadroom.capacity.cpuThreads").value(40))
                 .andExpect(jsonPath("$.guidance").isNotEmpty());
 
         // 8. approve with the requested spec
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", adminToken, Map.of(
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", adminToken, Map.of(
                 "comment", "요청 사양 그대로 승인합니다.",
                 "vm", Map.of(
                         "grantedVcpu", flavor.get("vcpu").asInt(),
                         "grantedMemoryMb", flavor.get("memoryMb").asInt(),
                         "grantedDiskGb", flavor.get("diskGb").asInt(),
-                        "grantedImageId", imageId)))
+                        "grantedImageId", pub("os_images", imageId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));
@@ -210,7 +215,7 @@ class ProvisioningEndToEndTest {
         // 9. the background job server runs the real pipeline to completion:
         //    /vms must show RUNNING — the test fails if the VM stays CREATING
         await().atMost(Duration.ofSeconds(120)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() ->
-                mockMvc.perform(get("/api/v1/vms?workspaceId=" + workspaceId)
+                mockMvc.perform(get("/api/v1/vms?workspaceId=" + pub("workspaces", workspaceId))
                                 .header("Authorization", "Bearer " + userToken))
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.totalElements").value(1))
@@ -219,17 +224,18 @@ class ProvisioningEndToEndTest {
         // 10. VM summary/detail carry the granted spec and the pipeline results
         JsonNode vms = getJson("/api/v1/vms", userToken);
         JsonNode vm = vms.get("content").get(0);
-        long vmId = vm.get("id").asLong();
+        long vmId = SeedFixtures.internalId(jdbcTemplate, "vms", UUID.fromString(vm.get("id").asString()));
         // No display name was sent, so the seed identifies the workspace.
         assertThat(vm.get("hostname").asString()).matches("vm" + workspaceId + "-[a-z0-9]{4}");
-        assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
+        assertThat(vm.get("requestId").asString())
+                .isEqualTo(pub("requests", requestId).toString());
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("RUNNING"))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
-                .andExpect(jsonPath("$.orgId").value(orgId))
+                .andExpect(jsonPath("$.orgId").value(pub("orgs", orgId).toString()))
                 .andExpect(jsonPath("$.ipAddress").value(EXPECTED_IP))
                 .andExpect(jsonPath("$.passwordAvailable").value(true))
                 // contract v0.3.1: provisioning surfaces only in-flight or
@@ -332,5 +338,10 @@ class ProvisioningEndToEndTest {
             request = request.header("Authorization", "Bearer " + token);
         }
         return mockMvc.perform(request);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

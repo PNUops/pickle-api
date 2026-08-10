@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
@@ -62,7 +63,7 @@ public class AdminController {
 
     @PatchMapping("/orgs/{orgId}")
     public OrgDetailResponse updateOrg(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long orgId,
+            @PathVariable UUID orgId,
             @Valid @RequestBody UpdateOrgRequest request,
             HttpServletRequest httpRequest) {
         return adminService.updateOrg(principal, orgId, request, clientIp(httpRequest));
@@ -70,7 +71,7 @@ public class AdminController {
 
     @PatchMapping("/users/{userId}")
     public UserSummaryResponse updateUser(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long userId,
+            @PathVariable UUID userId,
             @Valid @RequestBody UpdateUserAdminRequest request,
             HttpServletRequest httpRequest) {
         return adminService.updateUser(principal, userId, request, clientIp(httpRequest));

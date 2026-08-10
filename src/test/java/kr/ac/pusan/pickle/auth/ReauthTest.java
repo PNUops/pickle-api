@@ -196,14 +196,14 @@ class ReauthTest {
         long vmId = createVm();
 
         // authenticated, authorized, but no sudo-mode proof → 403 REAUTH_REQUIRED
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"))
                 .andExpect(jsonPath("$.title").value("재인증이 필요합니다"));
 
         // a garbage header is no better than none
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, "not-a-token"))
                 .andExpect(status().isForbidden())
@@ -212,7 +212,7 @@ class ReauthTest {
         // with a freshly issued token the request reaches the endpoint's own logic
         String reauth = ReauthTestSupport.reauthHeaderViaApi(mockMvc, objectMapper, ownerToken,
                 PASSWORD);
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, reauth))
                 .andExpect(status().isOk())
@@ -226,11 +226,11 @@ class ReauthTest {
                 PASSWORD);
 
         // multi-use: one prompt covers a whole sensitive workflow
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, reauth))
                 .andExpect(status().isOk());
-        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, reauth)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -249,7 +249,7 @@ class ReauthTest {
                 values (?, ?, ?, now() - interval '1 minute', '127.0.0.1')
                 """, owner.getId(), ReauthTestSupport.sha256Hex(rawToken), owner.getTokenVersion());
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, rawToken))
                 .andExpect(status().isForbidden())
@@ -265,7 +265,7 @@ class ReauthTest {
         // the token works before the bump (no membership needed: the gate runs
         // before the endpoint, so a masked 404 already proves it got through)
         long vmId = createVm();
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + access)
                         .header(ReauthInterceptor.REAUTH_HEADER, reauth))
                 .andExpect(status().isNotFound());
@@ -282,7 +282,7 @@ class ReauthTest {
                 .andReturn().getResponse().getContentAsString();
         String newAccess = objectMapper.readTree(changed).get("accessToken").asString();
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + newAccess)
                         .header(ReauthInterceptor.REAUTH_HEADER, reauth))
                 .andExpect(status().isForbidden())
@@ -295,13 +295,13 @@ class ReauthTest {
         String outsiderReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate,
                 outsider.getId());
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER, outsiderReauth))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
         // and it is the OWNER's own token that unlocks the same call
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthInterceptor.REAUTH_HEADER,
                                 ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId())))
@@ -354,7 +354,7 @@ class ReauthTest {
                                 Map.of("kind", "TEAM", "name", "재인증 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private User ensureUser(String email, String name) {
@@ -364,5 +364,10 @@ class ReauthTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

@@ -114,7 +114,7 @@ class VmPasswordTest {
     void revealMinRoleRaiseBlocksMember() throws Exception {
         long vmId = createVm(VmStatus.RUNNING, PASSWORD);
         // default min-role MEMBER: a MEMBER may reveal
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, memberReauth))
                 .andExpect(status().isOk());
@@ -123,13 +123,13 @@ class VmPasswordTest {
                 insert into vm_settings (vm_id, key, value, updated_at)
                 values (?, 'password_reveal_min_role', '"EDITOR"'::jsonb, now())
                 """, vmId);
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, memberReauth))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // the OWNER still can (OWNER ≥ EDITOR)
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isOk());
@@ -139,18 +139,18 @@ class VmPasswordTest {
     void regenerateAuthzAndStateGuardsBeforeAgent() throws Exception {
         // MEMBER/VIEWER are below EDITOR → 403; non-member → 404
         long running = createVm(VmStatus.RUNNING, PASSWORD);
-        mockMvc.perform(post("/api/v1/vms/" + running + "/password/regenerate")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", running) + "/password/regenerate")
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, memberReauth))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(post("/api/v1/vms/" + running + "/password/regenerate")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", running) + "/password/regenerate")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, outsiderReauth))
                 .andExpect(status().isNotFound());
         // OWNER on a non-RUNNING VM → 409 before any guest-agent call
         long stopped = createVm(VmStatus.STOPPED, PASSWORD);
-        mockMvc.perform(post("/api/v1/vms/" + stopped + "/password/regenerate")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", stopped) + "/password/regenerate")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isConflict())
@@ -162,7 +162,7 @@ class VmPasswordTest {
         long vmId = createVm(VmStatus.RUNNING, PASSWORD);
 
         for (int i = 0; i < 2; i++) {
-            mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+            mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                             .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                     .andExpect(status().isOk())
@@ -185,7 +185,7 @@ class VmPasswordTest {
         List<Map<String, Object>> audits = jdbcTemplate.queryForList("""
                 select action, coalesce(detail::text, '') as detail from audit_logs
                  where action = 'vm.password_reveal' and target_id = ?
-                """, vmId);
+                """, pub("vms", vmId).toString());
         assertThat(audits).hasSize(2);
         assertThat((String) audits.getFirst().get("detail")).doesNotContain(PASSWORD);
         // nothing lands in vm_events either
@@ -203,7 +203,7 @@ class VmPasswordTest {
                 VmStatus.ERROR, VmStatus.NEEDS_ADMIN)) {
             jdbcTemplate.update("update vms set status = ?::vm_status where id = ?",
                     status.name(), vmId);
-            mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+            mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                             .header("Authorization", "Bearer " + ownerToken)
                             .header(ReauthTestSupport.HEADER, ownerReauth))
                     .andExpect(status().isConflict())
@@ -215,21 +215,21 @@ class VmPasswordTest {
 
         // VIEWER → 403, non-member → 404 (masked), unauthenticated → 401
         jdbcTemplate.update("update vms set status = 'RUNNING' where id = ?", vmId);
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + viewerToken)
                         .header(ReauthTestSupport.HEADER, viewerReauth))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, outsiderReauth))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/password"))
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password"))
                 .andExpect(status().isUnauthorized());
 
         // a VM without a stored password (e.g. a mock-provisioned VM) → 410
         long mockVm = createVm(VmStatus.RUNNING, null);
-        mockMvc.perform(get("/api/v1/vms/" + mockVm + "/password")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", mockVm) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isGone())
@@ -267,11 +267,11 @@ class VmPasswordTest {
                                 Map.of("kind", "TEAM", "name", "비번 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -286,5 +286,10 @@ class VmPasswordTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

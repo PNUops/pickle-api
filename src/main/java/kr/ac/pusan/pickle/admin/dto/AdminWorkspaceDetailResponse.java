@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import org.jspecify.annotations.Nullable;
 
@@ -13,7 +14,7 @@ import org.jspecify.annotations.Nullable;
  * (a workspace belongs to every org it has requests/VMs in).
  */
 public record AdminWorkspaceDetailResponse(
-        long id,
+        UUID id,
         WorkspaceKind kind,
         String name,
         @Nullable String description,

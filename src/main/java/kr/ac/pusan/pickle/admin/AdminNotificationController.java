@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminNotificationResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -51,7 +52,7 @@ public class AdminNotificationController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse resendAdminNotification(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long notificationId,
+            @PathVariable UUID notificationId,
             HttpServletRequest httpRequest) {
         return adminNotificationService.resend(principal, notificationId,
                 clientIp(httpRequest));

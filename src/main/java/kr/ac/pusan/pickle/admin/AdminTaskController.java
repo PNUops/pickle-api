@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminTaskResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -44,7 +45,7 @@ public class AdminTaskController {
             // a single value still binds to a one-element list (compat).
             @RequestParam(required = false) List<ProvisioningTaskStatus> status,
             @RequestParam(required = false) ProvisioningTaskKind kind,
-            @RequestParam(required = false) Long vmId,
+            @RequestParam(required = false) UUID vmId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return adminTaskService.list(status, kind, vmId, page, size);
@@ -54,7 +55,7 @@ public class AdminTaskController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public MessageResponse retryAdminTask(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long taskId,
+            @PathVariable UUID taskId,
             HttpServletRequest httpRequest) {
         return adminTaskService.retry(principal, taskId, clientIp(httpRequest));
     }

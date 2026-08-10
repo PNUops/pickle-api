@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse;
@@ -77,7 +78,7 @@ public class ApprovalContextService {
     }
 
     @Transactional(readOnly = true)
-    public ApprovalContextResponse context(AuthenticatedUser actor, long requestId) {
+    public ApprovalContextResponse context(AuthenticatedUser actor, UUID requestId) {
         Request request = approvalService.findScoped(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
         // (WITHDRAWN + later anonymization keep the row), so
@@ -101,7 +102,7 @@ public class ApprovalContextService {
 
     private Applicant applicantPanel(Request request, User applicant) {
         return new Applicant(
-                applicant.getId(),
+                applicant.getPublicId(),
                 applicant.getName(),
                 applicant.getEmail(),
                 applicant.getCreatedAt(),
@@ -125,12 +126,13 @@ public class ApprovalContextService {
                 .findAllById(members.stream().map(WorkspaceMember::getUserId).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
         List<MemberBrief> memberBriefs = members.stream()
-                .map(m -> new MemberBrief(m.getUserId(),
+                .map(m -> new MemberBrief(
+                        users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getPublicId() : null,
                         users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getName() : "탈퇴 회원",
                         m.getRole()))
                 .toList();
         List<Vm> activeVms = vmRepository.findActiveByWorkspaceIdIn(List.of(workspace.getId()), VmStatus.DELETED);
-        return new WorkspacePanel(workspace.getId(), workspace.getName(), workspace.getKind(), memberBriefs,
+        return new WorkspacePanel(workspace.getPublicId(), workspace.getName(), workspace.getKind(), memberBriefs,
                 briefs(activeVms), ResourceTotalsResponse.of(activeVms));
     }
 
@@ -150,7 +152,7 @@ public class ApprovalContextService {
                 .map(r -> {
                     RequestReview review = reviews.get(r.getId());
                     User reviewer = review != null ? reviewers.get(review.getReviewerId()) : null;
-                    return new HistoryEntry(r.getId(), r.getCreatedAt(), r.getStatus(),
+                    return new HistoryEntry(r.getPublicId(), r.getCreatedAt(), r.getStatus(),
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
                             reviewer != null ? reviewer.getName() : null);

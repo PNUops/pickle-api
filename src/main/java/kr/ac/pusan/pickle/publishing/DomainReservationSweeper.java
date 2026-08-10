@@ -144,7 +144,7 @@ public class DomainReservationSweeper {
             return;
         }
         notificationService.publish(notificationService.vmResponsibleIds(vm),
-                event, Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(),
+                event, Map.of("fqdn", domain.getFqdn(), "vmId", vm.getPublicId(),
                         "reservedUntil", reservedUntil), dedupKey);
     }
 }

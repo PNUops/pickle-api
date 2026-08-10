@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.dto.AddWorkspaceMemberRequest;
 import kr.ac.pusan.pickle.workspace.dto.CreateWorkspaceRequest;
 import kr.ac.pusan.pickle.workspace.dto.WorkspaceDetailResponse;
@@ -53,13 +54,13 @@ public class WorkspaceController {
 
     @GetMapping("/{workspaceId}")
     public WorkspaceDetailResponse getWorkspace(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId) {
+            @PathVariable UUID workspaceId) {
         return workspaceService.get(principal, workspaceId);
     }
 
     @PatchMapping("/{workspaceId}")
     public WorkspaceDetailResponse updateWorkspace(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId,
+            @PathVariable UUID workspaceId,
             @Valid @RequestBody UpdateWorkspaceRequest request) {
         return workspaceService.update(principal, workspaceId, request);
     }
@@ -67,7 +68,7 @@ public class WorkspaceController {
     @DeleteMapping("/{workspaceId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteWorkspace(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId,
+            @PathVariable UUID workspaceId,
             HttpServletRequest httpRequest) {
         workspaceService.delete(principal, workspaceId, clientIp(httpRequest));
     }
@@ -77,7 +78,7 @@ public class WorkspaceController {
     @RequireReauth
     public WorkspaceMemberResponse addWorkspaceMember(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId,
+            @PathVariable UUID workspaceId,
             @Valid @RequestBody AddWorkspaceMemberRequest request,
             HttpServletRequest httpRequest) {
         return workspaceService.addMember(principal, workspaceId, request, clientIp(httpRequest));
@@ -86,8 +87,8 @@ public class WorkspaceController {
     @PatchMapping("/{workspaceId}/members/{userId}")
     @RequireReauth
     public WorkspaceMemberResponse updateWorkspaceMember(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId,
-            @PathVariable long userId,
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID userId,
             @Valid @RequestBody UpdateWorkspaceMemberRequest request,
             HttpServletRequest httpRequest) {
         return workspaceService.updateMemberRole(principal, workspaceId, userId, request, clientIp(httpRequest));
@@ -97,8 +98,8 @@ public class WorkspaceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequireReauth
     public void removeWorkspaceMember(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long workspaceId,
-            @PathVariable long userId,
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID userId,
             HttpServletRequest httpRequest) {
         workspaceService.removeMember(principal, workspaceId, userId, clientIp(httpRequest));
     }

@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin;
 
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceMemberResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceOptionResponse;
@@ -28,6 +29,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AdminWorkspaceQueryService {
+    /**
+     * The scope an id no org has resolves to: a filter value no row carries, so
+     * the page comes back empty exactly as a non-matching number made it.
+     */
+    private static final Long NO_SUCH_ORG = -1L;
+
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -36,10 +43,10 @@ public class AdminWorkspaceQueryService {
     }
 
     @Transactional(readOnly = true)
-    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, Long orgId) {
+    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         String select = """
-                select g.id, g.name, g.kind, g.created_at,
+                select g.public_id, g.name, g.kind, g.created_at,
                        (select count(*) from workspace_members gm
                           join users mu on mu.id = gm.user_id
                          where gm.workspace_id = g.id and mu.status = 'ACTIVE')
@@ -59,7 +66,8 @@ public class AdminWorkspaceQueryService {
 
     private static AdminWorkspaceOptionResponse toOption(java.sql.ResultSet rs, int rowNum)
             throws java.sql.SQLException {
-        return new AdminWorkspaceOptionResponse(rs.getLong("id"), rs.getString("name"),
+        return new AdminWorkspaceOptionResponse(rs.getObject("public_id", UUID.class),
+                rs.getString("name"),
                 rs.getLong("member_count"),
                 WorkspaceKind.valueOf(rs.getString("kind")),
                 rs.getTimestamp("created_at").toInstant());
@@ -72,7 +80,12 @@ public class AdminWorkspaceQueryService {
      * user-facing workspace detail's member-only 403.
      */
     @Transactional(readOnly = true)
-    public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, long workspaceId) {
+    public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, UUID publicWorkspaceId) {
+        Long workspaceId = jdbcTemplate.query("select id from workspaces where public_id = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
+        if (workspaceId == null) {
+            throw workspaceNotFound();
+        }
         Long scopedOrgId = scopeOrgId(actor, null);
         if (scopedOrgId != null) {
             Boolean linked = jdbcTemplate.queryForObject(
@@ -83,7 +96,7 @@ public class AdminWorkspaceQueryService {
             }
         }
         List<AdminWorkspaceDetailResponse> rows = jdbcTemplate.query("""
-                select g.id, g.kind, g.name, g.description, g.created_at,
+                select g.public_id, g.kind, g.name, g.description, g.created_at,
                        (select count(*) from workspace_members gm
                           join users mu on mu.id = gm.user_id
                          where gm.workspace_id = g.id and mu.status = 'ACTIVE')
@@ -92,7 +105,8 @@ public class AdminWorkspaceQueryService {
                          where v.workspace_id = g.id and v.status <> 'DELETED') as vm_count
                   from workspaces g
                  where g.id = ? and g.deleted_at is null
-                """, (rs, rowNum) -> new AdminWorkspaceDetailResponse(rs.getLong("id"),
+                """, (rs, rowNum) -> new AdminWorkspaceDetailResponse(
+                        rs.getObject("public_id", UUID.class),
                         WorkspaceKind.valueOf(rs.getString("kind")), rs.getString("name"),
                         rs.getString("description"),
                         rs.getTimestamp("created_at").toInstant(),
@@ -103,13 +117,15 @@ public class AdminWorkspaceQueryService {
         }
         AdminWorkspaceDetailResponse base = rows.getFirst();
         List<AdminWorkspaceMemberResponse> members = jdbcTemplate.query("""
-                select gm.user_id, u.name, u.email, gm.role, u.status, gm.created_at
+                select u.public_id as user_public_id, u.name, u.email, gm.role, u.status,
+                       gm.created_at
                   from workspace_members gm
                   join users u on u.id = gm.user_id
                  where gm.workspace_id = ?
                  -- enum declaration order is OWNER first (V2), so asc = highest role first
                  order by gm.role asc, gm.user_id
-                """, (rs, rowNum) -> new AdminWorkspaceMemberResponse(rs.getLong("user_id"),
+                """, (rs, rowNum) -> new AdminWorkspaceMemberResponse(
+                        rs.getObject("user_public_id", UUID.class),
                         rs.getString("name"), rs.getString("email"),
                         WorkspaceMemberRole.valueOf(rs.getString("role")),
                         UserStatus.valueOf(rs.getString("status")),
@@ -125,15 +141,22 @@ public class AdminWorkspaceQueryService {
     }
 
     /** Org tier pinned to their org; another org's id answers 404. */
-    private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null : jdbcTemplate.query(
+                "select id from orgs where public_id = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
-            return orgId;
+            // An id no org has filters to nothing, as a non-matching number did.
+            if (orgId != null && requested == null) {
+                return NO_SUCH_ORG;
+            }
+            return requested;
         }
         if (actor.orgId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !orgId.equals(actor.orgId())) {
+        if (orgId != null && !actor.orgId().equals(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }

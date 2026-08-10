@@ -41,7 +41,7 @@ import org.springframework.util.AntPathMatcher;
 public class OpenApiConfig {
 
     /** Contract version served in {@code info.version}; bump on any contract change. */
-    public static final String CONTRACT_VERSION = "0.37.0";
+    public static final String CONTRACT_VERSION = "0.38.0";
 
     /** Name of the bearer-JWT security scheme in the published spec. */
     private static final String BEARER_SCHEME = "bearerAuth";
@@ -70,8 +70,8 @@ public class OpenApiConfig {
                         .type(SecurityScheme.Type.HTTP)
                         .scheme("bearer")
                         .bearerFormat("JWT")
-                        .description("액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub, role, org_id, "
-                                + "token_version. 비밀번호 변경·계정 비활성화 시 token_version이 올라가 "
+                        .description("액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub(계정 공개 식별자 UUID), "
+                                + "role, token_version. 비밀번호 변경·계정 비활성화 시 token_version이 올라가 "
                                 + "기존 토큰이 즉시 무효화됩니다. 리프레시 토큰은 보안 스킴이 아니라 "
                                 + "__Host-pickle_refresh httpOnly 쿠키로만 오갑니다.")))
                 // Applies to every operation unless the operation overrides it

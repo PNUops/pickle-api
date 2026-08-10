@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.resource;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.resource.dto.ResourceSummaryResponse;
@@ -27,7 +28,7 @@ public class ResourceIndexController {
     public PageResponse<ResourceSummaryResponse> listResources(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) ResourceType type,
-            @RequestParam(required = false) Long workspaceId,
+            @RequestParam(required = false) UUID workspaceId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return resourceIndexService.list(principal, type, workspaceId, page, size);

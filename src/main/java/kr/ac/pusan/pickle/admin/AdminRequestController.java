@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.admin.dto.RejectRequestRequest;
@@ -50,7 +51,7 @@ public class AdminRequestController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) RequestStatus status,
             @RequestParam(required = false) ResourceType type,
-            @RequestParam(required = false) Long orgId,
+            @RequestParam(required = false) UUID orgId,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return approvalService.list(principal, status, type, orgId, page, size);
@@ -58,20 +59,20 @@ public class AdminRequestController {
 
     @GetMapping("/{requestId}")
     public RequestDetailResponse getAdminRequest(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long requestId) {
+            @PathVariable UUID requestId) {
         return approvalService.get(principal, requestId);
     }
 
     @GetMapping("/{requestId}/context")
     public ApprovalContextResponse getApprovalContext(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long requestId) {
+            @PathVariable UUID requestId) {
         return approvalContextService.context(principal, requestId);
     }
 
     @PostMapping("/{requestId}/approve")
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
     public RequestDetailResponse approveRequest(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long requestId,
+            @PathVariable UUID requestId,
             @Valid @RequestBody ApproveRequestRequest request,
             HttpServletRequest httpRequest) {
         return approvalService.approve(principal, requestId, request, clientIp(httpRequest));
@@ -80,7 +81,7 @@ public class AdminRequestController {
     @PostMapping("/{requestId}/reject")
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
     public RequestDetailResponse rejectRequest(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long requestId,
+            @PathVariable UUID requestId,
             @Valid @RequestBody RejectRequestRequest request,
             HttpServletRequest httpRequest) {
         return approvalService.reject(principal, requestId, request, clientIp(httpRequest));

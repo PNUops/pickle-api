@@ -110,7 +110,7 @@ class AdminNodesTest {
         createVm(nodeId, "STOPPED", 2, 2048);
         createVm(nodeId, "ERROR", 4, 4096);
 
-        String byId = "$[?(@.id == %d)]".formatted(nodeId);
+        String byId = "$[?(@.id == '%s')]".formatted(pub("nodes", nodeId));
         mockMvc.perform(get("/api/v1/admin/nodes").header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId + ".status").value(Matchers.hasItem("MAINTENANCE")))
@@ -128,7 +128,7 @@ class AdminNodesTest {
                 .andExpect(jsonPath(byId + ".cpuWarnThreshold").value(Matchers.hasItem(3.0)))
                 .andExpect(jsonPath(byId + ".memoryWarnThreshold").value(Matchers.hasItem(0.8)))
                 .andExpect(jsonPath(byId + ".ipPool.id")
-                        .value(Matchers.hasItem(Math.toIntExact(poolId))))
+                        .value(Matchers.hasItem(pub("ip_pools", poolId).toString())))
                 .andExpect(jsonPath(byId + ".ipPool.cidr").value(Matchers.hasItem("10.99.0.0/28")))
                 .andExpect(jsonPath(byId + ".ipPool.allocatedCount").value(Matchers.hasItem(2)))
                 .andExpect(jsonPath(byId + ".ipPool.freeCount").value(Matchers.hasItem(8)));
@@ -149,5 +149,10 @@ class AdminNodesTest {
                                  image_id, vcpu, memory_mb, disk_gb, status)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, 10, ?::vm_status)
                 """, nodeId, workspaceId, orgId, requestId, slug, slug, imageId, vcpu, memoryMb, status);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.request.vm.dto.CreateVmRequestSpec;
 import org.jspecify.annotations.Nullable;
@@ -24,10 +25,10 @@ public record CreateRequestRequest(
         ResourceType type,
 
         @NotNull(message = "신청 워크스페이스(workspaceId)를 지정해 주세요.")
-        Long workspaceId,
+        UUID workspaceId,
 
         @NotNull(message = "기관(orgId)을 지정해 주세요.")
-        Long orgId,
+        UUID orgId,
 
         @NotBlank(message = "사용 목적을 입력해 주세요.")
         @Size(max = 2000, message = "사용 목적은 2000자 이하여야 합니다.")

@@ -67,7 +67,7 @@ class DevDataSeederTest {
 
     @Test
     void seedOrgIsNeutralAndHidden() {
-        Org org = orgRepository.findBySlug(DevDataSeeder.ORG_SLUG).orElseThrow();
+        Org org = orgRepository.findFirstByNameOrderByIdAsc(DevDataSeeder.ORG_NAME).orElseThrow();
         assertThat(org.getName()).isEqualTo(DevDataSeeder.ORG_NAME);
         assertThat(org.isHidden()).isTrue();
     }

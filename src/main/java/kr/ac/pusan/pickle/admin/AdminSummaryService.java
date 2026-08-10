@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.NodeLiveResponse;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse;
@@ -27,6 +28,7 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.ipam.IpPoolRepository;
 import kr.ac.pusan.pickle.ipam.IpamService;
+import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import kr.ac.pusan.pickle.provisioning.DriftFindingStatus;
@@ -90,7 +92,7 @@ public class AdminSummaryService {
      * no org filter anywhere below; the console home calls it that way).
      */
     @Transactional(readOnly = true)
-    public OrgDashboardSummaryResponse orgSummary(AuthenticatedUser actor, Long orgId) {
+    public OrgDashboardSummaryResponse orgSummary(AuthenticatedUser actor, UUID orgId) {
         Long scopedOrgId = resolveOrgId(actor, orgId);
         LocalDate today = ClockConfig.todayKst(clock);
         Instant decidedSince = clock.instant().minus(Duration.ofDays(14));
@@ -115,14 +117,16 @@ public class AdminSummaryService {
                 headroom.guidance());
 
         List<TopWorkspace> topWorkspaces = jdbcTemplate.query("""
-                select v.workspace_id, g.name, count(*) as vm_count
+                select g.public_id as workspace_public_id, v.workspace_id, g.name,
+                       count(*) as vm_count
                   from vms v
                   join workspaces g on g.id = v.workspace_id
                  where (?::bigint is null or v.org_id = ?) and v.status <> 'DELETED'
-                 group by v.workspace_id, g.name
+                 group by g.public_id, v.workspace_id, g.name
                  order by vm_count desc, v.workspace_id
                  limit 10
-                """, (rs, rowNum) -> new TopWorkspace(rs.getLong("workspace_id"), rs.getString("name"),
+                """, (rs, rowNum) -> new TopWorkspace(
+                rs.getObject("workspace_public_id", UUID.class), rs.getString("name"),
                 rs.getLong("vm_count")), scopedOrgId, scopedOrgId);
 
         long published = count("""
@@ -200,7 +204,7 @@ public class AdminSummaryService {
         List<IpPoolUsage> pools = new ArrayList<>();
         ipPoolRepository.findAll(org.springframework.data.domain.Sort.by("id")).forEach(pool -> {
             IpamService.PoolUsage usage = ipamService.poolUsage(pool.getId());
-            pools.add(new IpPoolUsage(pool.getId(), pool.getName(), pool.getCidr(),
+            pools.add(new IpPoolUsage(pool.getPublicId(), pool.getName(), pool.getCidr(),
                     usage.allocatedCount(), usage.freeCount()));
         });
 
@@ -272,14 +276,14 @@ public class AdminSummaryService {
                 status = proxmoxClient.nodeStatus(node.getApiHost(), node.getName());
             } catch (ProxmoxApiException | IllegalStateException e) {
                 log.warn("Node {} live probe failed: {}", node.getName(), e.getMessage());
-                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+                live.add(NodeLiveResponse.unreachable(node.getPublicId(), node.getName()));
                 continue;
             }
             // The client hands back whatever the PVE envelope held, so a 200
             // with no data is possible and is not a reachable answer.
             if (status == null) {
                 log.warn("Node {} live probe returned an empty status payload", node.getName());
-                live.add(NodeLiveResponse.unreachable(node.getId(), node.getName()));
+                live.add(NodeLiveResponse.unreachable(node.getPublicId(), node.getName()));
                 continue;
             }
             NodeStorageStatus storage = null;
@@ -289,7 +293,7 @@ public class AdminSummaryService {
                 log.warn("Node {} guest-storage read failed, tile keeps the status half: {}",
                         node.getName(), e.getMessage());
             }
-            live.add(new NodeLiveResponse(node.getId(), node.getName(), true,
+            live.add(new NodeLiveResponse(node.getPublicId(), node.getName(), true,
                     status.memory() == null ? null : status.memory().total(),
                     status.memory() == null ? null : status.memory().used(),
                     status.cpu(),
@@ -358,13 +362,15 @@ public class AdminSummaryService {
      * same panel over time and must be scoped by the identical rule; two copies
      * of a pinning rule is how one of them drifts open.
      */
-    Long resolveOrgId(AuthenticatedUser actor, Long orgId) {
+    Long resolveOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
         if (actor.role().isOrgTier()) {
             if (actor.orgId() == null) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
             }
-            if (orgId != null && !orgId.equals(actor.orgId())) {
+            if (orgId != null && !actor.orgId().equals(requested)) {
                 throw orgNotFound();
             }
             return actor.orgId();
@@ -372,10 +378,10 @@ public class AdminSummaryService {
         if (orgId == null) {
             return null; // SYS_ADMIN without drill-in → platform-wide
         }
-        if (orgRepository.findById(orgId).isEmpty()) {
+        if (requested == null) {
             throw orgNotFound();
         }
-        return orgId;
+        return requested;
     }
 
     private static ApiException orgNotFound() {

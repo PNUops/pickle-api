@@ -118,7 +118,7 @@ class InternalSshGatewayRouteTest {
         // NOT bump last_used_at.
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'sshgw.route' and target_id = ?",
-                Long.class, vmId)).isZero();
+                Long.class, pub("vms", vmId).toString())).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
                 Instant.class, FP_MEMBER)).isNull();
@@ -230,7 +230,7 @@ class InternalSshGatewayRouteTest {
                 .andExpect(jsonPath("$.hostKeys[0]").value(HOST_KEY));
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'sshgw.route' and target_id = ?",
-                Long.class, vmId)).isZero();
+                Long.class, pub("vms", vmId).toString())).isZero();
     }
 
     @Test
@@ -468,5 +468,10 @@ class InternalSshGatewayRouteTest {
 
     private static String uniqueSlug() {
         return "team-route-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.relay.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -10,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * are claims reported by the relay agent, not measurements.
  */
 public record AdminRelayView(
-        Long id,
+        UUID id,
         String name,
         @Nullable
         @Schema(description = "사용자 접속용 공개 호스트 (설정 전이면 null)")

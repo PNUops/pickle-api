@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -8,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 public record UserStatusChangeResponse(
         UserStatus fromStatus,
         UserStatus toStatus,
-        @Nullable Long actorId,
+        @Nullable UUID actorId,
         @Nullable String actorEmail,
         @Nullable String reason,
         Instant changedAt) {

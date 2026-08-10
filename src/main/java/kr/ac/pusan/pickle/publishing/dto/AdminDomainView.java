@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.publishing.CertificateStatus;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
@@ -18,8 +19,8 @@ import org.jspecify.annotations.Nullable;
  * occupied.</p>
  */
 public record AdminDomainView(
-        Long id,
-        Long vmId,
+        UUID id,
+        UUID vmId,
         DomainKind kind,
         String fqdn,
         @Nullable String rootDomain,
@@ -29,9 +30,9 @@ public record AdminDomainView(
         @Nullable Instant reservedUntil,
         Instant createdAt,
         String vmName,
-        Long workspaceId,
+        UUID workspaceId,
         String workspaceName,
-        Long orgId,
+        UUID orgId,
         String orgName,
         @Nullable RouteStatus routeStatus,
         @Nullable CertificateStatus certificateStatus,

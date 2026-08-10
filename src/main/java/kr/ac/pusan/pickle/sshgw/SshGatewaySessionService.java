@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.sshgw.dto.SessionRequest;
 import kr.ac.pusan.pickle.sshkey.UserSshKey;
@@ -112,7 +113,7 @@ public class SshGatewaySessionService {
             }
 
             auditService.record(actorId, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_SESSION,
-                    "vm", vmId, detail, request.sourceIp());
+                    "vm", vmPublicId(vmId), detail, request.sourceIp());
         } catch (RuntimeException e) {
             // Fire-and-forget: never let an audit failure affect the live session.
             log.warn("sshgw session audit failed (best-effort) for slug {}: {}",
@@ -184,5 +185,15 @@ public class SshGatewaySessionService {
             }
         }
         return out;
+    }
+
+    /**
+     * The VM's public identifier for the audit trail. The gateway contract
+     * itself stays on the internal id (a Go client decodes it as int64), so
+     * the translation happens here, at the audit boundary.
+     */
+    private UUID vmPublicId(Long vmId) {
+        return vmId == null ? null
+                : vmRepository.findById(vmId).map(Vm::getPublicId).orElse(null);
     }
 }

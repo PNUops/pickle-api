@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminOsImageResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOsImageStatusRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -43,7 +44,7 @@ public class AdminOsImageController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public AdminOsImageResponse updateAdminOsImage(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long imageId,
+            @PathVariable UUID imageId,
             @Valid @RequestBody UpdateOsImageStatusRequest request,
             HttpServletRequest httpRequest) {
         return adminInventoryService.updateCatalogStatus(principal, imageId, request,

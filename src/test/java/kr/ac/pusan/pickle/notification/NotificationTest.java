@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -104,7 +105,7 @@ class NotificationTest {
                 """, Long.class, bob.getId());
 
         // another user's row → 404 (masked), and bob still sees his own
-        mockMvc.perform(post("/api/v1/notifications/" + bobId + "/read")
+        mockMvc.perform(post("/api/v1/notifications/" + pub("notifications", bobId) + "/read")
                         .header("Authorization", "Bearer " + aliceToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -114,12 +115,12 @@ class NotificationTest {
                 .andExpect(jsonPath("$.totalElements").value(1));
 
         // idempotent read: the first readAt wins, the re-read still answers 200
-        String firstRead = mockMvc.perform(post("/api/v1/notifications/" + aliceFirstId + "/read")
+        String firstRead = mockMvc.perform(post("/api/v1/notifications/" + pub("notifications", aliceFirstId) + "/read")
                         .header("Authorization", "Bearer " + aliceToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.readAt").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
-        String secondRead = mockMvc.perform(post("/api/v1/notifications/" + aliceFirstId + "/read")
+        String secondRead = mockMvc.perform(post("/api/v1/notifications/" + pub("notifications", aliceFirstId) + "/read")
                         .header("Authorization", "Bearer " + aliceToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
@@ -278,5 +279,10 @@ class NotificationTest {
             user.setStatus(UserStatus.ACTIVE);
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

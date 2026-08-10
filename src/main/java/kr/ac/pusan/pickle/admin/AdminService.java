@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
@@ -18,7 +19,6 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,24 +51,18 @@ public class AdminService {
 
     @Transactional
     public OrgDetailResponse createOrg(AuthenticatedUser actor, CreateOrgRequest request, String ip) {
-        if (orgRepository.existsBySlug(request.slug())) {
-            throw orgSlugDuplicate(request.slug());
-        }
-        Org org;
-        try {
-            org = orgRepository.save(new Org(request.name().strip(), request.slug(),
-                    normalize(request.description())));
-        } catch (DataIntegrityViolationException raceWithConcurrentCreate) {
-            throw orgSlugDuplicate(request.slug());
-        }
+        // No duplicate check: the org slug carried the only uniqueness constraint
+        // this table ever had, and V78 dropped it. Two orgs may share a name.
+        Org org = orgRepository.save(new Org(request.name().strip(),
+                normalize(request.description())));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ORG_CREATE,
-                "org", org.getId(), Map.of("name", org.getName(), "slug", org.getSlug()), ip);
+                "org", org.getPublicId(), Map.of("name", org.getName()), ip);
         return OrgDetailResponse.from(org);
     }
 
     @Transactional
-    public OrgDetailResponse updateOrg(AuthenticatedUser actor, long orgId, UpdateOrgRequest request, String ip) {
-        Org org = orgRepository.findById(orgId)
+    public OrgDetailResponse updateOrg(AuthenticatedUser actor, UUID orgId, UpdateOrgRequest request, String ip) {
+        Org org = orgRepository.findByPublicId(orgId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "리소스를 찾을 수 없습니다", "해당 기관이 존재하지 않습니다."));
         if (request.isEmpty()) {
@@ -100,7 +94,7 @@ public class AdminService {
             org.setHidden(request.getHidden());
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.ORG_UPDATE,
-                "org", org.getId(), Map.of("name", org.getName(), "status", org.getStatus().name(),
+                "org", org.getPublicId(), Map.of("name", org.getName(), "status", org.getStatus().name(),
                         "hidden", org.isHidden()), ip);
         return OrgDetailResponse.from(org);
     }
@@ -110,9 +104,9 @@ public class AdminService {
      * outstanding access tokens of the target user become invalid immediately.
      */
     @Transactional
-    public UserSummaryResponse updateUser(AuthenticatedUser actor, long userId,
+    public UserSummaryResponse updateUser(AuthenticatedUser actor, UUID userId,
             UpdateUserAdminRequest request, String ip) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByPublicId(userId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                         "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
         if (request.isEmpty()) {
@@ -124,12 +118,14 @@ public class AdminService {
         UserRole targetRole = request.role() != null ? request.role() : user.getRole();
         if (targetRole.isOrgTier()) {
             // ORG_ADMIN and ORG_MANAGER both manage one org (per the permission matrix).
-            Long orgId = request.orgId() != null ? request.orgId() : user.getOrgId();
-            if (orgId == null) {
+            Long orgId = request.orgId() != null
+                    ? orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null)
+                    : user.getOrgId();
+            if (request.orgId() == null && orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "ORG_ADMIN·ORG_MANAGER 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
             }
-            if (!orgRepository.existsById(orgId)) {
+            if (orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "존재하지 않는 기관(orgId)입니다.")));
             }
@@ -148,7 +144,7 @@ public class AdminService {
         }
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
-                "user", user.getId(),
+                "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
                         "orgId", user.getOrgId() == null ? "null" : String.valueOf(user.getOrgId())), ip);
         return UserSummaryResponse.from(user);
@@ -156,10 +152,5 @@ public class AdminService {
 
     private static String normalize(String description) {
         return Texts.blankToNull(description);
-    }
-
-    private static ApiException orgSlugDuplicate(String slug) {
-        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.ORG_SLUG_DUPLICATE,
-                "이미 사용 중인 slug입니다", "'" + slug + "'은(는) 이미 다른 기관이 사용 중입니다.");
     }
 }

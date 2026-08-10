@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 
 /** Contract schema {@code SystemDashboardSummary} (SYS_ADMIN only). */
@@ -38,7 +39,7 @@ public record SystemDashboardSummaryResponse(
 
     /** Per-node allocation ratios (same aggregates as {@code GET /admin/nodes}). */
     public record NodeRatio(
-            Long id,
+            UUID id,
             String name,
             NodeStatus status,
             double cpuOvercommitRatio,
@@ -54,7 +55,7 @@ public record SystemDashboardSummaryResponse(
     }
 
     public record IpPoolUsage(
-            Long id,
+            UUID id,
             String name,
             String cidr,
             long allocatedCount,

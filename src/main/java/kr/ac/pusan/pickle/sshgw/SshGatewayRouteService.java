@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -211,8 +212,19 @@ public class SshGatewayRouteService {
     /** Denials carry a null actor even after identification (see class javadoc). */
     private void auditDenied(Context ctx, Long vmId, String reason) {
         auditService.record(null, AuditService.ACTOR_ROLE_SSHGW, AuditService.SSHGW_ROUTE_DENIED,
-                "vm", vmId, ctx.detail(reason), ctx.sourceIp());
+                "vm", vmPublicId(vmId), ctx.detail(reason), ctx.sourceIp());
     }
+
+    /**
+     * The VM's public identifier for the audit trail. The gateway contract
+     * itself stays on the internal id (a Go client decodes it as int64), so
+     * the translation happens here, at the audit boundary.
+     */
+    private UUID vmPublicId(Long vmId) {
+        return vmId == null ? null
+                : vmRepository.findById(vmId).map(Vm::getPublicId).orElse(null);
+    }
+
 
     /**
      * Splits the newline-joined stored host keys into one entry per type. Shared

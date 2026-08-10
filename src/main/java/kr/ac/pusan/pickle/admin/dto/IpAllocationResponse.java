@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.ipam.AllocationStatus;
 import kr.ac.pusan.pickle.ipam.IpAllocation;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -12,20 +13,21 @@ import org.jspecify.annotations.Nullable;
  * permanent, so RELEASED history rows normally still resolve them).
  */
 public record IpAllocationResponse(
-        Long id,
-        Long poolId,
+        UUID id,
+        UUID poolId,
         String poolName,
         String ip,
-        @Nullable Long vmId,
+        @Nullable UUID vmId,
         @Nullable String vmName,
         @Nullable String hostname,
         AllocationStatus status,
         Instant allocatedAt,
         @Nullable Instant releasedAt) {
 
-    public static IpAllocationResponse from(IpAllocation allocation, String poolName, Vm vm) {
-        return new IpAllocationResponse(allocation.getId(), allocation.getPoolId(), poolName,
-                allocation.getIp(), allocation.getVmId(),
+    public static IpAllocationResponse from(IpAllocation allocation, UUID poolId, String poolName,
+            UUID vmId, Vm vm) {
+        return new IpAllocationResponse(allocation.getPublicId(), poolId, poolName,
+                allocation.getIp(), vmId,
                 vm == null ? null : vm.getName(),
                 vm == null ? null : vm.getHostname(),
                 allocation.getStatus(), allocation.getAllocatedAt(), allocation.getReleasedAt());

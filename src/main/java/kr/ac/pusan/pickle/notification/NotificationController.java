@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.notification;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.notification.dto.NotificationView;
 import kr.ac.pusan.pickle.notification.dto.ReadAllResponse;
@@ -51,7 +52,7 @@ public class NotificationController {
     @PostMapping("/{notificationId}/read")
     public NotificationView markNotificationRead(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long notificationId) {
+            @PathVariable UUID notificationId) {
         return notificationService.markRead(principal.id(), notificationId);
     }
 

@@ -169,7 +169,7 @@ public class DomainVerifier {
         }
         notificationService.publish(notificationService.vmResponsibleIds(vm),
                 NotificationEvent.DOMAIN_CONNECT_FAILED,
-                Map.of("fqdn", domain.getFqdn(), "vmId", vm.getId(), "reason", error),
+                Map.of("fqdn", domain.getFqdn(), "vmId", vm.getPublicId(), "reason", error),
                 "domain_verify_failed:" + domain.getId());
     }
 

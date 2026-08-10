@@ -68,9 +68,9 @@ class AuditReadApiTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        otherOrg = orgRepository.findBySlug("aud-other").orElseGet(() ->
-                orgRepository.save(new Org("감사 타기관", "aud-other", null)));
+        org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
+        otherOrg = orgRepository.findFirstByNameOrderByIdAsc("감사 타기관").orElseGet(() ->
+                orgRepository.save(new Org("감사 타기관", null)));
         self = ensureRegularUser("aud.self@pusan.ac.kr", "감사본인");
         peer = ensureRegularUser("aud.peer@pusan.ac.kr", "감사동료");
         otherOrgUser = ensureRegularUser("aud.other@pusan.ac.kr", "감사타인");
@@ -155,10 +155,10 @@ class AuditReadApiTest {
                 .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
                 .andExpect(jsonPath("$.content[0].actorEmail").value((Object) null));
         // cross-org orgId → 404 mask; SYS_ADMIN may filter by org
-        mockMvc.perform(get("/api/v1/admin/audit?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/audit?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/admin/audit" + actionFilter + "&orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/audit" + actionFilter + "&orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceAccessAudit;
 import kr.ac.pusan.pickle.access.ResourceAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -40,6 +41,14 @@ public interface ResourceTypeAdapter {
     Optional<ResourceIdentity> identify(long resourceId);
 
     /**
+     * The same, reached by the identifier the resource wears outside the API
+     * boundary. This is the form every request-scoped lookup takes: an id that
+     * arrived over HTTP is resolved here once, and everything below works on
+     * the internal id the returned identity carries.
+     */
+    Optional<ResourceIdentity> identifyByPublicId(UUID publicId);
+
+    /**
      * What this type says when it refuses — the only part of the access rules
      * that is allowed to differ between types.
      */
@@ -74,5 +83,5 @@ public interface ResourceTypeAdapter {
      * requester holds no grant on comes back limited rather than omitted, so
      * they can see it exists and ask.
      */
-    Page<ResourceSummaryResponse> page(AuthenticatedUser actor, Long workspaceId, Pageable pageable);
+    Page<ResourceSummaryResponse> page(AuthenticatedUser actor, UUID workspaceId, Pageable pageable);
 }

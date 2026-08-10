@@ -727,7 +727,7 @@ public class ProvisionVmJob implements ProvisioningService {
                 return;
             }
             Map<String, Object> args = new LinkedHashMap<>();
-            args.put("vmId", vm.getId());
+            args.put("vmId", vm.getPublicId());
             args.put("hostname", vm.getHostname());
             if (ip != null) {
                 args.put("ip", ip);
@@ -753,7 +753,7 @@ public class ProvisionVmJob implements ProvisioningService {
                 return;
             }
             Map<String, Object> args = new LinkedHashMap<>();
-            args.put("vmId", vmId);
+            args.put("vmId", vm.getPublicId());
             args.put("hostname", vm.getHostname());
             args.put("reason", reason);
             notificationService.publish(notificationService.vmOwnerIds(vm),

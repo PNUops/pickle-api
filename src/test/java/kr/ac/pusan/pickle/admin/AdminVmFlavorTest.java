@@ -143,7 +143,7 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath("$.diskGb").value(80))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.notes").isNotEmpty())
-                .andExpect(jsonPath("$.id").isNumber());
+                .andExpect(jsonPath("$.id").isNotEmpty());
         long createdId = jdbcTemplate.queryForObject(
                 "select id from vm_flavors where name = ?", Long.class, name);
         assertThat(auditCount("flavor.create", createdId)).isEqualTo(1);
@@ -172,14 +172,14 @@ class AdminVmFlavorTest {
 
     @Test
     void patchIsSysAdminOnlyAndAuditsRealChangesOnly() throws Exception {
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysManagerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vcpu\": 4}"))
                 .andExpect(status().isForbidden());
 
         // partial edit of values and status in one call
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -197,7 +197,7 @@ class AdminVmFlavorTest {
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
 
         // re-applying the same values changes nothing → 200 without an audit row
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vcpu\": 4, \"status\": \"DISABLED\"}"))
@@ -207,7 +207,7 @@ class AdminVmFlavorTest {
         // notes are persisted blank-to-null, so a blank note against the
         // already-null column is a no-op too — no audit row (the javadoc's
         // idempotency promise held only for the typed fields before)
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"notes\": \"\"}"))
@@ -215,7 +215,7 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath("$.notes").value((Object) null));
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
 
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"notes\": \"   \"}"))
@@ -224,7 +224,7 @@ class AdminVmFlavorTest {
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(1);
 
         // a real note IS a change...
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"notes\": \"대형 배치 작업용입니다.\"}"))
@@ -234,7 +234,7 @@ class AdminVmFlavorTest {
 
         // ...but re-sending it with surrounding whitespace stores the same
         // stripped value, so it is a no-op as well
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"notes\": \"  대형 배치 작업용입니다.  \"}"))
@@ -243,14 +243,14 @@ class AdminVmFlavorTest {
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(2);
 
         // an empty body is a no-op request, not an edit → 422
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", flavorId)
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
-        mockMvc.perform(patch("/api/v1/admin/vm-flavors/999999")
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vcpu\": 2}"))
@@ -260,14 +260,14 @@ class AdminVmFlavorTest {
 
     // ── fixtures ───────────────────────────────────────────────────────────
 
-    private static String byId(long id) {
-        return "$[?(@.id == %d)]".formatted(id);
+    private String byId(long id) {
+        return "$[?(@.id == '%s')]".formatted(pub("vm_flavors", id));
     }
 
     private long auditCount(String action, long targetId) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, targetId);
+                Long.class, action, pub("vm_flavors", targetId).toString());
     }
 
     private User ensureUser(String email, UserRole role) {
@@ -278,5 +278,10 @@ class AdminVmFlavorTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

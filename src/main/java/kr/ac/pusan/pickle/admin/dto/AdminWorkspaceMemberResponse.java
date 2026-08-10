@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 
@@ -11,7 +12,7 @@ import kr.ac.pusan.pickle.user.UserStatus;
  * an admin audit needs to see — with {@code userStatus} carrying the state.
  */
 public record AdminWorkspaceMemberResponse(
-        long userId,
+        UUID userId,
         String name,
         String email,
         WorkspaceMemberRole workspaceRole,

@@ -14,13 +14,18 @@ import org.springframework.stereotype.Component;
 
 /**
  * Access token (JWT HS256, 15 min). Claims per contract securityScheme:
- * {@code sub}, {@code role}, {@code org_id}, {@code token_version}.
+ * {@code sub}, {@code role}, {@code token_version}.
+ *
+ * <p>{@code sub} is the account's public identifier. The token is readable by
+ * anyone holding it, so the internal key has no business in it — and neither
+ * did the organisation's, which is why {@code org_id} was dropped: it was
+ * written and never read, and it disclosed the org's sequential id to every
+ * client that decoded a token.
  */
 @Component
 public class JwtService {
 
     public static final String CLAIM_ROLE = "role";
-    public static final String CLAIM_ORG_ID = "org_id";
     public static final String CLAIM_TOKEN_VERSION = "token_version";
 
     private final SecretKey key;
@@ -43,16 +48,13 @@ public class JwtService {
 
     public String createAccessToken(User user) {
         Instant now = Instant.now();
-        var builder = Jwts.builder()
-                .subject(String.valueOf(user.getId()))
+        return Jwts.builder()
+                .subject(user.getPublicId().toString())
                 .claim(CLAIM_ROLE, user.getRole().name())
                 .claim(CLAIM_TOKEN_VERSION, user.getTokenVersion())
                 .issuedAt(Date.from(now))
-                .expiration(Date.from(now.plus(properties.accessTokenTtl())));
-        if (user.getOrgId() != null) {
-            builder.claim(CLAIM_ORG_ID, user.getOrgId());
-        }
-        return builder.signWith(key, Jwts.SIG.HS256).compact();
+                .expiration(Date.from(now.plus(properties.accessTokenTtl())))
+                .signWith(key, Jwts.SIG.HS256).compact();
     }
 
     /** @throws io.jsonwebtoken.JwtException when invalid/expired */

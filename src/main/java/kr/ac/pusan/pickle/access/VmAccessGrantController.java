@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.dto.AddResourceAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
@@ -47,7 +48,7 @@ public class VmAccessGrantController {
             description = "이 VM의 접근 권한 전체와, 그 목록이 어느 VM의 것인지 알려 주는 최소 정보입니다. VM 소유자와 워크스페이스 소유자만 볼 수 있습니다.")
     public ResourceAccessListResponse listVmAccessGrants(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId) {
+            @PathVariable UUID vmId) {
         return service.list(principal, ResourceType.VM, vmId);
     }
 
@@ -60,7 +61,7 @@ public class VmAccessGrantController {
                     + "참여자·열람자까지만 부여할 수 있습니다.")
     public ResourceAccessGrantView addVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             @Valid @RequestBody AddResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
         return service.add(principal, ResourceType.VM, vmId, request, clientIp(httpRequest));
@@ -71,8 +72,8 @@ public class VmAccessGrantController {
     @Operation(summary = "접근 권한 등급 변경")
     public ResourceAccessGrantView updateVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
-            @PathVariable long grantId,
+            @PathVariable UUID vmId,
+            @PathVariable UUID grantId,
             @Valid @RequestBody UpdateResourceAccessGrantRequest request,
             HttpServletRequest httpRequest) {
         return service.update(principal, ResourceType.VM, vmId, grantId, request,
@@ -87,8 +88,8 @@ public class VmAccessGrantController {
                     + "않습니다. 필요하면 비밀번호를 재생성해 주세요.")
     public void removeVmAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
-            @PathVariable long grantId,
+            @PathVariable UUID vmId,
+            @PathVariable UUID grantId,
             HttpServletRequest httpRequest) {
         service.remove(principal, ResourceType.VM, vmId, grantId, clientIp(httpRequest));
     }

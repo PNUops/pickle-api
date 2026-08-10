@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
@@ -65,18 +66,21 @@ public class CampusIpRequestService {
     private final VmRepository vmRepository;
     private final VmAccessService vmAccessService;
     private final UserRepository userRepository;
+    private final kr.ac.pusan.pickle.orgs.OrgRepository orgRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
     public CampusIpRequestService(CampusIpRequestRepository requestRepository,
             VmRepository vmRepository, VmAccessService vmAccessService,
-            UserRepository userRepository, NotificationService notificationService,
+            UserRepository userRepository, kr.ac.pusan.pickle.orgs.OrgRepository orgRepository,
+            NotificationService notificationService,
             AuditService auditService, ObjectMapper objectMapper) {
         this.requestRepository = requestRepository;
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
         this.userRepository = userRepository;
+        this.orgRepository = orgRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
@@ -86,16 +90,18 @@ public class CampusIpRequestService {
 
     /** Reads need membership only (VIEWER+); writes need OWNER/EDITOR. */
     @Transactional(readOnly = true)
-    public List<CampusIpRequestView> list(AuthenticatedUser actor, long vmId) {
-        requireVmMember(actor, vmId);
-        return requestRepository.findByVmIdOrderByIdDesc(vmId).stream()
-                .map(this::toView).toList();
+    public List<CampusIpRequestView> list(AuthenticatedUser actor, UUID publicVmId) {
+        Vm vm = requireVmMember(actor, publicVmId);
+        List<CampusIpRequest> requests = requestRepository.findByVmIdOrderByIdDesc(vm.getId());
+        Map<Long, UUID> userIds = userPublicIds(requests);
+        return requests.stream().map(request -> toView(request, vm.getPublicId(), userIds)).toList();
     }
 
     @Transactional
-    public CampusIpRequestView create(AuthenticatedUser actor, long vmId,
+    public CampusIpRequestView create(AuthenticatedUser actor, UUID publicVmId,
             CreateCampusIpRequest request, String ip) {
-        Vm vm = requireVmOwnerOrEditor(actor, vmId);
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        long vmId = vm.getId();
         String purpose = request.purpose().strip();
         List<Integer> ports = normalizePorts(request.ports());
         if (requestRepository.existsByVmIdAndStatusIn(vmId, LIVE_STATUSES)) {
@@ -112,13 +118,13 @@ public class CampusIpRequestService {
         }
         notificationService.publish(notificationService.sysAdminIds(),
                 NotificationEvent.CAMPUS_IP_REQUESTED,
-                Map.of("requestId", created.getId(), "vmId", vmId, "vmName", vm.getName(),
+                Map.of("requestId", created.getPublicId(), "vmId", vm.getPublicId(), "vmName", vm.getName(),
                         "purpose", purpose),
                 null);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.CAMPUS_IP_REQUEST, "campus_ip_request", created.getId(),
+                AuditService.CAMPUS_IP_REQUEST, "campus_ip_request", created.getPublicId(),
                 Map.of("vmId", vmId, "ports", ports), ip);
-        return toView(created);
+        return toView(created, vm.getPublicId(), Map.of(actor.id(), actor.publicId()));
     }
 
     /**
@@ -126,16 +132,18 @@ public class CampusIpRequestService {
      * only a still-unreviewed (REQUESTED) 신청.
      */
     @Transactional
-    public void cancel(AuthenticatedUser actor, long vmId, long requestId, String ip) {
-        requireVmOwnerOrEditor(actor, vmId);
-        CampusIpRequest request = requestRepository.findByIdAndVmId(requestId, vmId)
+    public void cancel(AuthenticatedUser actor, UUID publicVmId, UUID publicRequestId, String ip) {
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        long vmId = vm.getId();
+        CampusIpRequest request = requestRepository.findByPublicId(publicRequestId)
+                .filter(row -> row.getVmId() == vmId)
                 .orElseThrow(CampusIpRequestService::requestNotFound);
         if (request.getStatus() != CampusIpRequestStatus.REQUESTED) {
             throw invalidTransition("검토가 시작되기 전(REQUESTED)의 신청만 취소할 수 있습니다.");
         }
         requestRepository.delete(request);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.CAMPUS_IP_CANCEL, "campus_ip_request", requestId,
+                AuditService.CAMPUS_IP_CANCEL, "campus_ip_request", request.getPublicId(),
                 Map.of("vmId", vmId), ip);
     }
 
@@ -143,34 +151,39 @@ public class CampusIpRequestService {
 
     @Transactional(readOnly = true)
     public PageResponse<AdminCampusIpRequestView> adminList(CampusIpRequestStatus status,
-            Long vmId, int page, int size) {
+            UUID publicVmId, int page, int size) {
         Specification<CampusIpRequest> spec = (root, query, cb) -> cb.conjunction();
         if (status != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
         }
-        if (vmId != null) {
+        if (publicVmId != null) {
+            // An id no VM has filters to nothing, as a non-matching number did.
+            Long vmId = vmRepository.findByPublicId(publicVmId).map(Vm::getId).orElse(-1L);
             spec = spec.and((root, query, cb) -> cb.equal(root.get("vmId"), vmId));
         }
         Page<CampusIpRequest> result = requestRepository.findAll(spec,
                 PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id")));
+        Map<Long, UUID> userIds = userPublicIds(result.getContent());
         List<AdminCampusIpRequestView> views = result.getContent().stream().map(request -> {
             Vm vm = vmRepository.findById(request.getVmId()).orElse(null);
             User requester = userRepository.findById(request.getRequestedBy()).orElse(null);
-            return new AdminCampusIpRequestView(request.getId(), request.getVmId(),
-                    vm != null ? vm.getName() : null, vm != null ? vm.getOrgId() : null,
+            return new AdminCampusIpRequestView(request.getPublicId(),
+                    vm != null ? vm.getPublicId() : null,
+                    vm != null ? vm.getName() : null, orgPublicId(vm),
                     request.getPurpose(), parsePorts(request.getPorts()), request.getStatus(),
                     request.getGrantedAddress(), request.getAdminNote(),
-                    request.getRequestedBy(),
+                    userIds.get(request.getRequestedBy()),
                     requester != null ? requester.getEmail() : null,
-                    request.getProcessedBy(), request.getProcessedAt(), request.getCreatedAt());
+                    userIds.get(request.getProcessedBy()), request.getProcessedAt(),
+                    request.getCreatedAt());
         }).toList();
         return PageResponse.of(views, result);
     }
 
     @Transactional
-    public AdminCampusIpRequestView updateStatus(AuthenticatedUser actor, long requestId,
+    public AdminCampusIpRequestView updateStatus(AuthenticatedUser actor, UUID publicRequestId,
             UpdateCampusIpRequestStatusRequest body, String ip) {
-        CampusIpRequest request = requestRepository.findById(requestId)
+        CampusIpRequest request = requestRepository.findByPublicId(publicRequestId)
                 .orElseThrow(CampusIpRequestService::requestNotFound);
         CampusIpRequestStatus from = request.getStatus();
         CampusIpRequestStatus to = body.status();
@@ -202,14 +215,18 @@ public class CampusIpRequestService {
                 NotificationEvent.CAMPUS_IP_STATUS_CHANGED,
                 notificationArgs(request, vm), null);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.CAMPUS_IP_STATUS_UPDATE, "campus_ip_request", requestId,
+                AuditService.CAMPUS_IP_STATUS_UPDATE, "campus_ip_request", request.getPublicId(),
                 Map.of("vmId", request.getVmId(), "from", from.name(), "to", to.name()), ip);
         User requester = userRepository.findById(request.getRequestedBy()).orElse(null);
-        return new AdminCampusIpRequestView(request.getId(), request.getVmId(),
-                vm != null ? vm.getName() : null, vm != null ? vm.getOrgId() : null,
+        Map<Long, UUID> userIds = userPublicIds(List.of(request));
+        return new AdminCampusIpRequestView(request.getPublicId(),
+                vm != null ? vm.getPublicId() : null,
+                vm != null ? vm.getName() : null, orgPublicId(vm),
                 request.getPurpose(), parsePorts(request.getPorts()), request.getStatus(),
-                request.getGrantedAddress(), request.getAdminNote(), request.getRequestedBy(),
-                requester != null ? requester.getEmail() : null, request.getProcessedBy(),
+                request.getGrantedAddress(), request.getAdminNote(),
+                userIds.get(request.getRequestedBy()),
+                requester != null ? requester.getEmail() : null,
+                userIds.get(request.getProcessedBy()),
                 request.getProcessedAt(), request.getCreatedAt());
     }
 
@@ -227,8 +244,11 @@ public class CampusIpRequestService {
 
     private Map<String, Object> notificationArgs(CampusIpRequest request, Vm vm) {
         Map<String, Object> args = new java.util.LinkedHashMap<>();
-        args.put("requestId", request.getId());
-        args.put("vmId", request.getVmId());
+        // Public ids: these travel into the notification's link path, which the
+        // console resolves. The sibling publish at the create path already does
+        // this -- the two disagreed until 2026-08-11.
+        args.put("requestId", request.getPublicId());
+        args.put("vmId", vm != null ? vm.getPublicId() : null);
         args.put("vmName", vm != null ? vm.getName() : "");
         args.put("statusLabel", statusLabel(request.getStatus()));
         if (request.getGrantedAddress() != null
@@ -275,11 +295,28 @@ public class CampusIpRequestService {
         return List.copyOf(normalized);
     }
 
-    private CampusIpRequestView toView(CampusIpRequest request) {
-        return new CampusIpRequestView(request.getId(), request.getVmId(), request.getPurpose(),
+    private CampusIpRequestView toView(CampusIpRequest request, UUID vmId, Map<Long, UUID> userIds) {
+        return new CampusIpRequestView(request.getPublicId(), vmId, request.getPurpose(),
                 parsePorts(request.getPorts()), request.getStatus(), request.getGrantedAddress(),
-                request.getAdminNote(), request.getRequestedBy(), request.getProcessedAt(),
-                request.getCreatedAt());
+                request.getAdminNote(), userIds.get(request.getRequestedBy()),
+                request.getProcessedAt(), request.getCreatedAt());
+    }
+
+    /** Batch account join: both {@code requestedBy} and {@code processedBy} are public ids. */
+    private Map<Long, UUID> userPublicIds(List<CampusIpRequest> requests) {
+        List<Long> ids = java.util.stream.Stream.concat(
+                        requests.stream().map(CampusIpRequest::getRequestedBy),
+                        requests.stream().map(CampusIpRequest::getProcessedBy))
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        return ids.isEmpty() ? Map.of()
+                : userRepository.findAllById(ids).stream()
+                        .collect(java.util.stream.Collectors.toMap(User::getId, User::getPublicId));
+    }
+
+    private UUID orgPublicId(Vm vm) {
+        return vm == null || vm.getOrgId() == null ? null
+                : orgRepository.findById(vm.getOrgId()).map(kr.ac.pusan.pickle.orgs.Org::getPublicId)
+                        .orElse(null);
     }
 
     private List<Integer> parsePorts(String json) {
@@ -292,11 +329,11 @@ public class CampusIpRequestService {
     }
 
     /** Membership check (VIEWER+): non-members get the 404 existence mask. */
-    private Vm requireVmMember(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmMember(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireVisible();
     }
 
-    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmOwnerOrEditor(AuthenticatedUser actor, UUID vmId) {
         return vmAccessService.of(actor, vmId).requireAtLeast(ResourceRole.EDITOR,
                 "교내 IP를 신청할 권한이 없습니다",
                 "이 VM의 소유자 또는 편집자만 교내 IP를 신청할 수 있습니다.");

@@ -10,10 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -69,8 +71,8 @@ class AdminOrgUserTest {
 
     @BeforeEach
     void setUp() {
-        Org org = orgRepository.findBySlug("adm-org-base").orElseGet(
-                () -> orgRepository.save(new Org("관리 테스트 기관", "adm-org-base", null)));
+        Org org = orgRepository.findFirstByNameOrderByIdAsc("관리 테스트 기관").orElseGet(
+                () -> orgRepository.save(new Org("관리 테스트 기관", null)));
         sysAdmin = ensureUser("adm.sysadmin@pusan.ac.kr", "시스템관리자", UserRole.SYS_ADMIN, null);
         orgAdmin = ensureUser("adm.orgadmin@pusan.ac.kr", "기관관리자", UserRole.ORG_ADMIN, org.getId());
         regularUser = ensureUser("adm.user@pusan.ac.kr", "학생", UserRole.USER, null);
@@ -81,9 +83,9 @@ class AdminOrgUserTest {
 
     @Test
     void adminOrgListShowsEveryStatusToTheSysTier() throws Exception {
-        String disabledSlug = "adm-org-disabled";
-        Org disabled = orgRepository.findBySlug(disabledSlug).orElseGet(
-                () -> orgRepository.save(new Org("비활성 기관", disabledSlug, null)));
+        String disabledName = "관리 비활성 기관";
+        Org disabled = orgRepository.findFirstByNameOrderByIdAsc(disabledName).orElseGet(
+                () -> orgRepository.save(new Org(disabledName, null)));
         jdbcTemplate.update(
                 "update orgs set status = 'DISABLED'::org_status, hidden = true where id = ?",
                 disabled.getId());
@@ -110,13 +112,13 @@ class AdminOrgUserTest {
                 .andExpect(status().isForbidden());
     }
 
-    private static String byId(long orgId) {
-        return "$[?(@.id == %d)]".formatted(orgId);
+    private String byId(long orgId) {
+        return "$[?(@.id == '%s')]".formatted(pub("orgs", orgId));
     }
 
     @Test
     void adminEndpointsAreSysAdminOnly() throws Exception {
-        Map<String, ?> body = Map.of("name", "새 기관", "slug", "adm-gate-x1");
+        Map<String, ?> body = Map.of("name", "새 기관");
         // ORG_ADMIN and USER are rejected with 403 ACCESS_DENIED
         postJson("/api/v1/admin/orgs", orgAdminToken, body)
                 .andExpect(status().isForbidden())
@@ -125,7 +127,7 @@ class AdminOrgUserTest {
         postJson("/api/v1/admin/orgs", userToken, body)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchJson("/api/v1/admin/users/" + regularUser.getId(), orgAdminToken, Map.of("role", "SYS_ADMIN"))
+        patchJson("/api/v1/admin/users/" + regularUser.getPublicId(), orgAdminToken, Map.of("role", "SYS_ADMIN"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         mockMvc.perform(post("/api/v1/admin/orgs").contentType(MediaType.APPLICATION_JSON)
@@ -136,26 +138,22 @@ class AdminOrgUserTest {
     @Test
     void orgCreateAndUpdateLifecycle() throws Exception {
         postJson("/api/v1/admin/orgs", sysAdminToken,
-                Map.of("name", "정보컴퓨터공학부 실습지원센터", "slug", "adm-org-x1", "description", "실습 자원 제공"))
+                Map.of("name", "정보컴퓨터공학부 실습지원센터", "description", "실습 자원 제공"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("정보컴퓨터공학부 실습지원센터"))
-                .andExpect(jsonPath("$.slug").value("adm-org-x1"))
+                .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty());
-        long orgId = orgRepository.findBySlug("adm-org-x1").orElseThrow().getId();
+        long orgId = orgRepository.findFirstByNameOrderByIdAsc("정보컴퓨터공학부 실습지원센터").orElseThrow().getId();
 
-        // duplicate slug → 409 ORG_SLUG_DUPLICATE
-        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", "다른 기관", "slug", "adm-org-x1"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ORG_SLUG_DUPLICATE"));
-
-        // invalid slug → 422
-        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", "기관", "slug", "Bad_Slug!"))
+        // A blank name is still refused; there is no other uniqueness left to
+        // check, the slug having gone with the sequential ids (V78).
+        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", " "))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("slug"));
+                .andExpect(jsonPath("$.errors[0].field").value("name"));
 
         // patch name + status
-        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken,
+        patchJson("/api/v1/admin/orgs/" + pub("orgs", orgId), sysAdminToken,
                 Map.of("name", "실습지원센터(개편)", "status", "DISABLED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("실습지원센터(개편)"))
@@ -164,38 +162,38 @@ class AdminOrgUserTest {
         // DISABLED orgs disappear from the user-facing reference list
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
+                .andExpect(jsonPath("$[?(@.name == '실습지원센터(개편)')]").isEmpty());
 
         // hidden toggle (v0.15.0): back to ACTIVE but hidden — USER list still
         // filters it, manager tier sees it with hidden=true
-        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken,
+        patchJson("/api/v1/admin/orgs/" + pub("orgs", orgId), sysAdminToken,
                 Map.of("status", "ACTIVE", "hidden", true))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.hidden").value(true));
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')]").isEmpty());
+                .andExpect(jsonPath("$[?(@.name == '실습지원센터(개편)')]").isEmpty());
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'adm-org-x1')].hidden")
+                .andExpect(jsonPath("$[?(@.name == '실습지원센터(개편)')].hidden")
                         .value(org.hamcrest.Matchers.contains(true)));
-        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken, Map.of("hidden", false))
+        patchJson("/api/v1/admin/orgs/" + pub("orgs", orgId), sysAdminToken, Map.of("hidden", false))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hidden").value(false));
 
         // empty patch → 422, unknown org → 404
-        patchJson("/api/v1/admin/orgs/" + orgId, sysAdminToken, Map.of())
+        patchJson("/api/v1/admin/orgs/" + pub("orgs", orgId), sysAdminToken, Map.of())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        patchJson("/api/v1/admin/orgs/999999", sysAdminToken, Map.of("name", "유령 기관"))
+        patchJson("/api/v1/admin/orgs/" + SeedFixtures.UNKNOWN_ID, sysAdminToken, Map.of("name", "유령 기관"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         // org.create / org.update audit rows
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action in ('org.create', 'org.update') and target_id = ?",
-                Long.class, orgId);
+                Long.class, pub("orgs", orgId).toString());
         assertThat(audits).isGreaterThanOrEqualTo(2);
     }
 
@@ -204,38 +202,38 @@ class AdminOrgUserTest {
         User target = ensureUser("adm.promotee@pusan.ac.kr", "승격대상", UserRole.USER, null);
         String targetToken = jwtService.createAccessToken(target);
         int versionBefore = target.getTokenVersion();
-        Org org = orgRepository.findBySlug("adm-org-base").orElseThrow();
+        Org org = orgRepository.findFirstByNameOrderByIdAsc("관리 테스트 기관").orElseThrow();
 
         // ORG_ADMIN requires orgId → 422 with the field error
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken, Map.of("role", "ORG_ADMIN"))
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of("role", "ORG_ADMIN"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("orgId"));
 
         // unknown orgId → 422
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken,
-                Map.of("role", "ORG_ADMIN", "orgId", 999999))
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
+                Map.of("role", "ORG_ADMIN", "orgId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("orgId"));
 
         // USER/SYS_ADMIN must not carry an orgId → 422
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken,
-                Map.of("role", "USER", "orgId", org.getId()))
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
+                Map.of("role", "USER", "orgId", org.getPublicId()))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("orgId"));
 
         // empty patch → 422, unknown user → 404
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken, Map.of())
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of())
                 .andExpect(status().isUnprocessableContent());
-        patchJson("/api/v1/admin/users/999999", sysAdminToken, Map.of("role", "USER"))
+        patchJson("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID, sysAdminToken, Map.of("role", "USER"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         // promotion works and returns the contract UserSummary
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken,
-                Map.of("role", "ORG_ADMIN", "orgId", org.getId()))
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
+                Map.of("role", "ORG_ADMIN", "orgId", org.getPublicId()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(target.getId()))
+                .andExpect(jsonPath("$.id").value(target.getPublicId().toString()))
                 .andExpect(jsonPath("$.email").value(target.getEmail()))
                 .andExpect(jsonPath("$.role").value("ORG_ADMIN"));
 
@@ -248,10 +246,10 @@ class AdminOrgUserTest {
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
 
         // orgId-only change keeps the role and does NOT bump token_version
-        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", "이관 기관", "slug", "adm-org-x2"))
+        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", "이관 기관"))
                 .andExpect(status().isCreated());
-        long secondOrgId = orgRepository.findBySlug("adm-org-x2").orElseThrow().getId();
-        patchJson("/api/v1/admin/users/" + target.getId(), sysAdminToken, Map.of("orgId", secondOrgId))
+        long secondOrgId = orgRepository.findFirstByNameOrderByIdAsc("이관 기관").orElseThrow().getId();
+        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of("orgId", pub("orgs", secondOrgId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("ORG_ADMIN"));
         reloaded = userRepository.findById(target.getId()).orElseThrow();
@@ -261,7 +259,7 @@ class AdminOrgUserTest {
         // user.role_update audit rows
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'user.role_update' and target_id = ?",
-                Long.class, target.getId());
+                Long.class, target.getPublicId().toString());
         assertThat(audits).isGreaterThanOrEqualTo(2);
     }
 
@@ -288,5 +286,10 @@ class AdminOrgUserTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

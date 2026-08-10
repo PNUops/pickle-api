@@ -85,7 +85,7 @@ public class AdminNodeQueryService {
                 : round2((double) allocation.vcpu() / node.getCpuThreads());
         double memoryRatio = node.getMemoryMb() == 0 ? 0.0
                 : round2((double) allocation.memoryMb() / node.getMemoryMb());
-        return new NodeSummaryResponse(node.getId(), node.getName(), node.getStatus(),
+        return new NodeSummaryResponse(node.getPublicId(), node.getName(), node.getStatus(),
                 node.getCpuThreads(), node.getMemoryMb(), node.getVmBridge(), node.getStorage(),
                 node.getDiskCapacityGb(),
                 allocation.running(), allocation.vcpu(), allocation.memoryMb(),

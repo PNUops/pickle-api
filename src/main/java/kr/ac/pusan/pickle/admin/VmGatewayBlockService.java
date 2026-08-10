@@ -3,11 +3,13 @@ package kr.ac.pusan.pickle.admin;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.VmGatewayBlockUpdateRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -43,8 +45,9 @@ public class VmGatewayBlockService {
 
     @Transactional
     public kr.ac.pusan.pickle.vm.dto.VmDetailResponse updateBlock(AuthenticatedUser actor,
-            long vmId, VmGatewayBlockUpdateRequest request, String ip) {
-        vmRepository.findById(vmId).orElseThrow(VmGatewayBlockService::vmNotFound);
+            UUID publicVmId, VmGatewayBlockUpdateRequest request, String ip) {
+        Vm vm = vmRepository.findByPublicId(publicVmId).orElseThrow(VmGatewayBlockService::vmNotFound);
+        long vmId = vm.getId();
         boolean blocked = request.blocked();
         // The repo update is CAS-style (flips only when the value differs), so
         // the rowcount — not a pre-read — decides whether this call is the
@@ -65,7 +68,7 @@ public class VmGatewayBlockService {
             }
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     blocked ? AuditService.VM_GATEWAY_BLOCK : AuditService.VM_GATEWAY_UNBLOCK,
-                    "vm", vmId, auditDetail, ip);
+                    "vm", vm.getPublicId(), auditDetail, ip);
         }
         // Viewer is an admin, not a grantee → myResourceRole null (period-update precedent).
         return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);

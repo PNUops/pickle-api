@@ -53,7 +53,6 @@ public final class ErrorCodes {
      * that no longer exists.
      */
     public static final String WORKSPACE_DELETED = "WORKSPACE_DELETED";
-    public static final String ORG_SLUG_DUPLICATE = "ORG_SLUG_DUPLICATE";
     public static final String REQUEST_ALREADY_DECIDED = "REQUEST_ALREADY_DECIDED";
     public static final String REQUEST_REQUESTER_INELIGIBLE = "REQUEST_REQUESTER_INELIGIBLE";
     public static final String VM_INVALID_STATE = "VM_INVALID_STATE";

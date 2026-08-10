@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.vm.dto;
 
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmDeleteKind;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -16,12 +17,12 @@ public record VmDeletionResponse(
         VmDeleteKind kind,
         Instant scheduledFor,
         Instant requestedAt,
-        Long requestedById,
+        @Nullable UUID requestedById,
         @Nullable String reason,
         boolean cancelable) {
 
     /** Maps the {@code delete_*} columns; null when no deletion is pending. */
-    public static VmDeletionResponse from(Vm vm) {
+    public static VmDeletionResponse from(Vm vm, UUID requestedById) {
         if (vm.getDeleteKind() == null) {
             return null;
         }
@@ -30,7 +31,7 @@ public record VmDeletionResponse(
                 && vm.getDeleteScheduledFor() != null
                 && vm.getDeleteScheduledFor().isAfter(Instant.now());
         return new VmDeletionResponse(vm.getDeleteKind(), vm.getDeleteScheduledFor(),
-                vm.getDeleteRequestedAt(), vm.getDeleteRequestedBy(), vm.getDeleteReason(),
+                vm.getDeleteRequestedAt(), requestedById, vm.getDeleteReason(),
                 cancelable);
     }
 }

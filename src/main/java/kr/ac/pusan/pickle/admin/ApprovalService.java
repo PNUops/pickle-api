@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceAccessGrant;
@@ -27,6 +28,8 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestAssembler;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestSpecs;
 import kr.ac.pusan.pickle.request.RequestReview;
@@ -63,6 +66,7 @@ public class ApprovalService {
     private final WorkspaceRepository workspaceRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
+    private final OrgRepository orgRepository;
     private final AuditService auditService;
     private final NotificationService notificationService;
 
@@ -71,6 +75,7 @@ public class ApprovalService {
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
+            OrgRepository orgRepository,
             AuditService auditService, NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
@@ -81,16 +86,20 @@ public class ApprovalService {
         this.workspaceRepository = workspaceRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
+        this.orgRepository = orgRepository;
         this.auditService = auditService;
         this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
-            ResourceType type, Long orgId, int page, int size) {
+            ResourceType type, UUID orgId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         // Org tier is always pinned to their own org; orgId is sys-tier-only.
-        Long scopedOrgId = actor.role().isOrgTier() ? actor.orgId() : orgId;
+        // An id no org has filters to nothing, as a non-matching number did.
+        Long requestedOrgId = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
+        Long scopedOrgId = actor.role().isOrgTier() ? actor.orgId() : requestedOrgId;
         if (actor.role().isOrgTier() && scopedOrgId == null) {
             // Defensive: an org-tier actor without a managed org sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
@@ -111,12 +120,12 @@ public class ApprovalService {
     }
 
     @Transactional(readOnly = true)
-    public RequestDetailResponse get(AuthenticatedUser actor, long requestId) {
+    public RequestDetailResponse get(AuthenticatedUser actor, UUID requestId) {
         return assembler.toDetail(findScoped(actor, requestId));
     }
 
     @Transactional
-    public RequestDetailResponse approve(AuthenticatedUser actor, long requestId,
+    public RequestDetailResponse approve(AuthenticatedUser actor, UUID requestId,
             ApproveRequestRequest form, String ip) {
         Request request = findScopedWithLock(actor, requestId);
         requireSubmitted(request);
@@ -176,10 +185,10 @@ public class ApprovalService {
         auditArgs.put("type", request.getResourceType().name());
         auditArgs.putAll(created.auditArgs());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
-                "request", request.getId(), auditArgs, ip);
+                "request", request.getPublicId(), auditArgs, ip);
         // In-tx insert: the notice exists iff the approval committed.
         Map<String, Object> notifyArgs = new LinkedHashMap<>();
-        notifyArgs.put("requestId", request.getId());
+        notifyArgs.put("requestId", request.getPublicId());
         notifyArgs.put("type", request.getResourceType().name());
         notifyArgs.put("resourceName", created.resourceName());
         String reviewComment = Texts.blankToNull(form.comment());
@@ -192,27 +201,27 @@ public class ApprovalService {
     }
 
     @Transactional
-    public RequestDetailResponse reject(AuthenticatedUser actor, long requestId,
+    public RequestDetailResponse reject(AuthenticatedUser actor, UUID requestId,
             RejectRequestRequest form, String ip) {
         Request request = findScopedWithLock(actor, requestId);
         requireSubmitted(request);
         reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(RequestStatus.REJECTED);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
-                "request", request.getId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
+                "request", request.getPublicId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
-                Map.of("requestId", request.getId(), "comment", form.comment().strip(),
+                Map.of("requestId", request.getPublicId(), "comment", form.comment().strip(),
                         "type", request.getResourceType().name()), null);
         return assembler.toDetail(request);
     }
 
     /** Org-scoped lookup: unknown id and other-org requests both answer 404. */
-    Request findScoped(AuthenticatedUser actor, long requestId) {
-        return scoped(actor, requestRepository.findById(requestId).orElse(null));
+    Request findScoped(AuthenticatedUser actor, UUID requestId) {
+        return scoped(actor, requestRepository.findByPublicId(requestId).orElse(null));
     }
 
-    private Request findScopedWithLock(AuthenticatedUser actor, long requestId) {
-        return scoped(actor, requestRepository.findWithLockById(requestId).orElse(null));
+    private Request findScopedWithLock(AuthenticatedUser actor, UUID requestId) {
+        return scoped(actor, requestRepository.findWithLockByPublicId(requestId).orElse(null));
     }
 
     private Request scoped(AuthenticatedUser actor, Request request) {

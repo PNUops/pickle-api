@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.vm;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
@@ -78,11 +79,12 @@ public class VmPasswordService {
 
     /** Reveals the stored password; min role is per-VM {@code password_reveal_min_role}. */
     @Transactional
-    public VmPasswordResponse reveal(AuthenticatedUser actor, long vmId, String ip) {
+    public VmPasswordResponse reveal(AuthenticatedUser actor, UUID vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
+        long id = vm.getId();
         ResourceRole minRole =
-                vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
+                vmSettingsService.role(id, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE);
         if (!memberVm.role().atLeast(minRole)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "비밀번호를 열람할 권한이 없습니다",
@@ -101,9 +103,9 @@ public class VmPasswordService {
                     "저장된 비밀번호가 없습니다. 비밀번호 재생성으로 새 비밀번호를 만들 수 있습니다.");
         }
         String password = credentialCipher.decrypt(vm.getPasswordEnc());
-        vmRepository.recordPasswordViewed(vmId, Instant.now());
+        vmRepository.recordPasswordViewed(id, Instant.now());
         auditService.record(actor.id(), actor.role().name(), AuditService.VM_PASSWORD_REVEAL,
-                "vm", vmId, Map.of(), ip);
+                "vm", vm.getPublicId(), Map.of(), ip);
         return new VmPasswordResponse(password, vm.getSshUsername(), sshHost, sshPort);
     }
 
@@ -114,7 +116,7 @@ public class VmPasswordService {
      * the value; generation is always the platform's.
      */
     @Transactional
-    public VmPasswordResponse regenerate(AuthenticatedUser actor, long vmId, String ip) {
+    public VmPasswordResponse regenerate(AuthenticatedUser actor, UUID vmId, String ip) {
         MemberVm memberVm = requireMemberVm(actor, vmId);
         Vm vm = memberVm.vm();
         if (!memberVm.role().atLeast(ResourceRole.EDITOR)) {
@@ -135,10 +137,10 @@ public class VmPasswordService {
         if (!applied) {
             throw agentUnavailable();
         }
-        vmRepository.storeCredentials(vmId, credentialCipher.encrypt(password),
+        vmRepository.storeCredentials(vm.getId(), credentialCipher.encrypt(password),
                 passwordEncoder.encode(password), Instant.now());
         auditService.record(actor.id(), actor.role().name(), AuditService.VM_PASSWORD_REGENERATE,
-                "vm", vmId, Map.of(), ip);
+                "vm", vm.getPublicId(), Map.of(), ip);
         return new VmPasswordResponse(password, vm.getSshUsername(), sshHost, sshPort);
     }
 
@@ -146,7 +148,7 @@ public class VmPasswordService {
     }
 
     /** Non-member answers 404 (masking); returns the VM and the actor's role. */
-    private MemberVm requireMemberVm(AuthenticatedUser actor, long vmId) {
+    private MemberVm requireMemberVm(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
         return new MemberVm(access.requireVisible(), access.role());
     }

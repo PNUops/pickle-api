@@ -206,7 +206,7 @@ class VmAccessScopingTest {
             reauthOp("deleteVm", HttpMethod.DELETE, "/vms/{vmId}", ResourceRole.OWNER, null),
             op("listVmAccessGrants", HttpMethod.GET, "/vms/{vmId}/access", ResourceRole.OWNER),
             reauthOp("addVmAccessGrant", HttpMethod.POST, "/vms/{vmId}/access", ResourceRole.OWNER,
-                    "{\"granteeType\":\"USER\",\"userId\":{spareUserId},\"role\":\"VIEWER\"}"),
+                    "{\"granteeType\":\"USER\",\"userId\":\"{spareUserId}\",\"role\":\"VIEWER\"}"),
             reauthOp("updateVmAccessGrant", HttpMethod.PATCH, "/vms/{vmId}/access/{grantId}",
                     ResourceRole.OWNER, "{\"role\":\"VIEWER\"}"),
             reauthOp("removeVmAccessGrant", HttpMethod.DELETE, "/vms/{vmId}/access/{grantId}",
@@ -345,7 +345,7 @@ class VmAccessScopingTest {
 
         // The personal VIEWER grant alone is below the MEMBER rung startVm needs.
         MockHttpServletResponse viewerOnly = mockMvc.perform(
-                        MockMvcRequestBuilders.post("/api/v1/vms/" + vmId + "/start")
+                        MockMvcRequestBuilders.post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                                 .header("Authorization", "Bearer " + memberToken))
                 .andReturn().getResponse();
         assertThat(viewerOnly.getStatus()).isEqualTo(403);
@@ -355,7 +355,7 @@ class VmAccessScopingTest {
         // is still there and must not hold them down.
         grantVmToOwningWorkspace(jdbcTemplate, vmId, "MEMBER");
         MockHttpServletResponse combined = mockMvc.perform(
-                        MockMvcRequestBuilders.post("/api/v1/vms/" + vmId + "/start")
+                        MockMvcRequestBuilders.post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                                 .header("Authorization", "Bearer " + memberToken))
                 .andReturn().getResponse();
         assertThat(combined.getStatus()).as("the higher of the two grants decides (body: %s)",
@@ -422,13 +422,19 @@ class VmAccessScopingTest {
 
     /** Fills the fixture's ids into a path or body template. */
     private String resolve(String template, Fixture fixture) {
+        // The fixture builds its rows through SQL and holds their internal ids;
+        // every path placeholder is the public one, because that is the only
+        // thing the endpoints accept.
         return template
-                .replace("{vmId}", String.valueOf(fixture.vmId()))
-                .replace("{domainId}", String.valueOf(fixture.domainId()))
-                .replace("{portForwardingId}", String.valueOf(fixture.portForwardingId()))
-                .replace("{requestId}", String.valueOf(fixture.campusIpRequestId()))
-                .replace("{grantId}", String.valueOf(fixture.grantId()))
-                .replace("{spareUserId}", String.valueOf(spareBystander.getId()))
+                .replace("{vmId}", String.valueOf(pub("vms", fixture.vmId())))
+                .replace("{domainId}", String.valueOf(pub("domains", fixture.domainId())))
+                .replace("{portForwardingId}",
+                        String.valueOf(pub("port_mappings", fixture.portForwardingId())))
+                .replace("{requestId}",
+                        String.valueOf(pub("campus_ip_requests", fixture.campusIpRequestId())))
+                .replace("{grantId}",
+                        String.valueOf(pub("resource_access_grants", fixture.grantId())))
+                .replace("{spareUserId}", String.valueOf(spareBystander.getPublicId()))
                 .replace("{label}", fixture.label());
     }
 
@@ -549,5 +555,10 @@ class VmAccessScopingTest {
             user.setRole(UserRole.USER);
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

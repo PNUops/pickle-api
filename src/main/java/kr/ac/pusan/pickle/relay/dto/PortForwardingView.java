@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.relay.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.relay.PortForwardApplyState;
 import kr.ac.pusan.pickle.relay.PortMappingProto;
 import kr.ac.pusan.pickle.relay.PortMappingStatus;
@@ -9,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code PortForwardingView} — one VM port forwarding. */
 public record PortForwardingView(
-        Long id,
+        UUID id,
         @Schema(description = "프로토콜 (tcp | udp)")
         PortMappingProto proto,
         @Schema(description = "릴레이에서 열린 공개 포트")

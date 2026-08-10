@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -38,7 +39,7 @@ public class ResourceIndexService {
 
     @Transactional(readOnly = true)
     public PageResponse<ResourceSummaryResponse> list(AuthenticatedUser actor, ResourceType type,
-            Long workspaceId, int page, int size) {
+            UUID workspaceId, int page, int size) {
         // Newest first by creation time rather than by id: an id is an opaque
         // handle, and ordering by it would break the day one stops being a
         // number.

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.workspace.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
@@ -9,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code WorkspaceDetail} (workspace with members + my role in it). */
 public record WorkspaceDetailResponse(
-        Long id,
+        UUID id,
         WorkspaceKind kind,
         String name,
         @Nullable String description,
@@ -19,7 +20,7 @@ public record WorkspaceDetailResponse(
 
     public static WorkspaceDetailResponse from(Workspace workspace, WorkspaceMemberRole myRole,
             List<WorkspaceMemberResponse> members) {
-        return new WorkspaceDetailResponse(workspace.getId(), workspace.getKind(), workspace.getName(),
+        return new WorkspaceDetailResponse(workspace.getPublicId(), workspace.getKind(), workspace.getName(),
                 workspace.getDescription(), myRole, members, workspace.getCreatedAt());
     }
 }

@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.user.dto;
 
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.consent.dto.TermsVersionView;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
@@ -12,28 +13,29 @@ import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code UserProfile}. */
 public record UserProfileResponse(
-        Long id,
+        UUID id,
         String email,
         String name,
         UserRole role,
-        @Nullable Long orgId,
+        @Nullable UUID orgId,
         UserStatus status,
         List<Membership> memberships,
         boolean mfaEnabled,
         List<TermsVersionView> pendingConsents) {
 
-    public record Membership(Long workspaceId, String workspaceName, WorkspaceKind workspaceKind, WorkspaceMemberRole role) {
+    public record Membership(UUID workspaceId, String workspaceName, WorkspaceKind workspaceKind, WorkspaceMemberRole role) {
 
         public static Membership from(WorkspaceMember member) {
-            return new Membership(member.getWorkspace().getId(), member.getWorkspace().getName(),
+            return new Membership(member.getWorkspace().getPublicId(), member.getWorkspace().getName(),
                     member.getWorkspace().getKind(), member.getRole());
         }
     }
 
-    public static UserProfileResponse from(User user, List<WorkspaceMember> memberships,
+    public static UserProfileResponse from(User user, @Nullable UUID orgId,
+            List<WorkspaceMember> memberships,
             boolean mfaEnabled, List<TermsVersionView> pendingConsents) {
-        return new UserProfileResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
-                user.getOrgId(), user.getStatus(),
+        return new UserProfileResponse(user.getPublicId(), user.getEmail(), user.getName(),
+                user.getRole(), orgId, user.getStatus(),
                 memberships.stream().map(Membership::from).toList(), mfaEnabled, pendingConsents);
     }
 }

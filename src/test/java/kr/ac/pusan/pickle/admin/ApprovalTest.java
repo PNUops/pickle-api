@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
@@ -93,9 +94,9 @@ class ApprovalTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        otherOrg = orgRepository.findBySlug("appr-other").orElseGet(() ->
-                orgRepository.save(new Org("다른 기관", "appr-other", null)));
+        org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
+        otherOrg = orgRepository.findFirstByNameOrderByIdAsc("승인 타기관").orElseGet(() ->
+                orgRepository.save(new Org("승인 타기관", null)));
         regularUser = ensureUser("appr.user@pusan.ac.kr", "승인학생", UserRole.USER, null);
         User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
         User otherOrgAdmin = ensureUser("appr.other.admin@pusan.ac.kr", "타기관관리자",
@@ -118,7 +119,7 @@ class ApprovalTest {
         long workspaceId = createTeam(userToken, "appr-queue-x1");
         long submitted = submit(userToken, workspaceId);
         long canceled = submit(userToken, workspaceId);
-        postJson("/api/v1/requests/" + canceled + "/cancel", userToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", canceled) + "/cancel", userToken, Map.of())
                 .andExpect(status().isOk());
 
         // users have no admin queue → 403 ACCESS_DENIED
@@ -129,51 +130,51 @@ class ApprovalTest {
         // own-org admin: no status → ALL statuses (v0.2.3); explicit SUBMITTED filters
         mockMvc.perform(get("/api/v1/admin/requests").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).exists())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(canceled)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", canceled))).exists());
         mockMvc.perform(get("/api/v1/admin/requests?status=SUBMITTED")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).exists())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(canceled)).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", canceled))).doesNotExist());
 
         // other-org admin sees an empty queue and 404s on the request itself
         mockMvc.perform(get("/api/v1/admin/requests")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).doesNotExist());
-        mockMvc.perform(get("/api/v1/admin/requests/" + submitted)
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        mockMvc.perform(get("/api/v1/admin/requests/" + submitted + "/context")
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted) + "/context")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/admin/requests/" + submitted + "/approve", otherOrgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", submitted) + "/approve", otherOrgAdminToken,
                 approveBody())
                 .andExpect(status().isNotFound());
-        postJson("/api/v1/admin/requests/" + submitted + "/reject", otherOrgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", submitted) + "/reject", otherOrgAdminToken,
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
         // ORG_ADMIN cannot escape their org via the orgId filter (pinned)
-        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
 
         // SYS_ADMIN sees all orgs and may filter by orgId
         mockMvc.perform(get("/api/v1/admin/requests").header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).exists());
-        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getId())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
+        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(submitted)).doesNotExist());
-        mockMvc.perform(get("/api/v1/admin/requests/" + submitted)
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).doesNotExist());
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(submitted));
+                .andExpect(jsonPath("$.id").value(pub("requests", submitted).toString()));
     }
 
     @Test
@@ -182,23 +183,23 @@ class ApprovalTest {
         long requestId = submit(userToken, workspaceId);
 
         // granted form validation: unusable image / disk below minimum / unknown node → 422
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
-                with(approveBody(), "vm.grantedImageId", 999_999))
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
+                with(approveBody(), "vm.grantedImageId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedImageId"));
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedDiskGb"));
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
-                with(approveBody(), "vm.nodeId", 999_999))
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
+                with(approveBody(), "vm.nodeId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.nodeId"));
 
         long jobsBefore = jobRunrJobCount();
 
         // approve → review embedded in the detail, request APPROVED
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"))
@@ -232,24 +233,24 @@ class ApprovalTest {
         // approval is audit-logged
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'request.approve' and target_id = ?",
-                Long.class, requestId);
+                Long.class, pub("requests", requestId).toString());
         assertThat(audits).isEqualTo(1);
 
         // the requester sees the decision in the user detail view
-        mockMvc.perform(get("/api/v1/requests/" + requestId)
+        mockMvc.perform(get("/api/v1/requests/" + pub("requests", requestId).toString())
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.review.decision").value("APPROVE"));
 
         // double decisions → 409 REQUEST_ALREADY_DECIDED (approve/reject/cancel)
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
-        postJson("/api/v1/admin/requests/" + requestId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/reject", orgAdminToken,
                 Map.of("comment", "이미 승인된 신청"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
-        postJson("/api/v1/requests/" + requestId + "/cancel", userToken, Map.of())
+        postJson("/api/v1/requests/" + pub("requests", requestId) + "/cancel", userToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
 
@@ -268,8 +269,8 @@ class ApprovalTest {
             long workspaceId = createTeam(userToken, "appr-guest-account");
             long requestId = submit(userToken, workspaceId);
 
-            postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
-                    with(approveBody(), "vm.grantedImageId", debian.getId()))
+            postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
+                    with(approveBody(), "vm.grantedImageId", debian.getPublicId()))
                     .andExpect(status().isOk());
 
             Vm vm = vmRepository.findAll().stream()
@@ -291,11 +292,11 @@ class ApprovalTest {
         long requestId = submit(userToken, workspaceId);
 
         // malformed (bean validation) / reserved word (shared list) → 422 grantedSlug
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "-bad-"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedSlug"));
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "www"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedSlug"));
@@ -310,19 +311,19 @@ class ApprovalTest {
         jdbcTemplate.update(
                 "update vms set deleted_at = now(), status = 'DELETED'::vm_status where id = ?",
                 taken.getId());
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "appr-slug-taken"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value(
                         "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
-        mockMvc.perform(get("/api/v1/admin/requests/" + requestId)
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", requestId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
 
         // granted slug becomes vms.hostname verbatim
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "appr-slug-final"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"));
@@ -332,7 +333,7 @@ class ApprovalTest {
         assertThat(named.getHostname()).isEqualTo("appr-slug-final");
 
         // blank grantedSlug -> generated from the display name, or the workspace seed when there is none
-        postJson("/api/v1/admin/requests/" + otherRequestId + "/approve", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", otherRequestId) + "/approve", orgAdminToken,
                 with(approveBody(), "vm.grantedSlug", "  "))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"));
@@ -348,7 +349,7 @@ class ApprovalTest {
         long workspaceId = createTeam(userToken, "appr-seed-x1");
         long requestId = submit(userToken, workspaceId, org.getId(), "capstone api");
 
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk());
 
         Vm vm = vmRepository.findAll().stream()
@@ -368,7 +369,7 @@ class ApprovalTest {
         long workspaceId = createTeam(userToken, "appr-seed-x2");
         long requestId = submit(userToken, workspaceId, org.getId(), "zzsex 프로젝트");
 
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk());
 
         Vm vm = vmRepository.findAll().stream()
@@ -382,7 +383,7 @@ class ApprovalTest {
         long workspaceId = createTeam(userToken, "appr-dname-x1");
         long requestId = submit(userToken, workspaceId, org.getId(), "학과 세미나 서버");
 
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.displayName").value("학과 세미나 서버"));
@@ -401,14 +402,14 @@ class ApprovalTest {
         // carries the provenance instead.
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs where action = 'vm.setting_update' and target_id = ?
-                """, Long.class, vm.getId())).isEqualTo(0);
+                """, Long.class, vm.getPublicId().toString())).isEqualTo(0);
         assertThat(jdbcTemplate.queryForObject("""
                 select detail ->> 'displayName' from audit_logs
                  where action = 'request.approve' and target_id = ?
-                """, String.class, requestId)).isEqualTo("학과 세미나 서버");
+                """, String.class, pub("requests", requestId).toString().toString())).isEqualTo("학과 세미나 서버");
 
         // the seeded name surfaces on the VM detail
-        mockMvc.perform(get("/api/v1/vms/" + vm.getId())
+        mockMvc.perform(get("/api/v1/vms/" + vm.getPublicId())
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("학과 세미나 서버"));
@@ -427,7 +428,7 @@ class ApprovalTest {
         String zeroWidthOnly = new String(new int[] {0x200B, 0x200D, 0xFEFF}, 0, 3);
         long requestId = submit(userToken, workspaceId, org.getId(), zeroWidthOnly);
 
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"));
 
@@ -440,10 +441,10 @@ class ApprovalTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select detail ->> 'displayName' from audit_logs
                  where action = 'request.approve' and target_id = ?
-                """, String.class, requestId)).isNull();
+                """, String.class, pub("requests", requestId).toString())).isNull();
 
         // and the VM simply has no display name
-        mockMvc.perform(get("/api/v1/vms/" + vm.getId())
+        mockMvc.perform(get("/api/v1/vms/" + vm.getPublicId())
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value((Object) null));
@@ -462,18 +463,18 @@ class ApprovalTest {
                 """, Long.class, "appr-empty-" + java.util.UUID.randomUUID().toString().substring(0, 8));
 
         // forcing that node → 422 (the pipeline would clone-fail there otherwise)
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
-                with(approveBody(), "vm.nodeId", emptyNodeId))
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
+                with(approveBody(), "vm.nodeId", pub("nodes", emptyNodeId)))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.nodeId"));
 
         // the request is untouched — forcing the seeded pve1 (hosts the image) approves
         long pve1 = jdbcTemplate.queryForObject("select id from nodes where name = 'pve1'", Long.class);
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken,
-                with(approveBody(), "vm.nodeId", pve1))
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken,
+                with(approveBody(), "vm.nodeId", pub("nodes", pve1)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
-                .andExpect(jsonPath("$.vm.granted.nodeId").isNumber());
+                .andExpect(jsonPath("$.vm.granted.nodeId").isNotEmpty());
 
         // drop the extra ACTIVE node: capacity assertions elsewhere sum ACTIVE
         // nodes, and method order differs across environments
@@ -486,14 +487,14 @@ class ApprovalTest {
         long requestId = submit(userToken, workspaceId);
 
         // comment is mandatory → 422
-        postJson("/api/v1/admin/requests/" + requestId + "/reject", orgAdminToken, Map.of())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/reject", orgAdminToken, Map.of())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        postJson("/api/v1/admin/requests/" + requestId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/reject", orgAdminToken,
                 Map.of("comment", "  "))
                 .andExpect(status().isUnprocessableContent());
 
-        postJson("/api/v1/admin/requests/" + requestId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/reject", orgAdminToken,
                 Map.of("comment", "기관 자원 여유 부족으로 반려합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
@@ -507,9 +508,9 @@ class ApprovalTest {
         // rejection is audit-logged; second decision → 409
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'request.reject' and target_id = ?",
-                Long.class, requestId);
+                Long.class, pub("requests", requestId).toString());
         assertThat(audits).isEqualTo(1);
-        postJson("/api/v1/admin/requests/" + requestId + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId).toString() + "/reject", orgAdminToken,
                 Map.of("comment", "중복 반려"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
@@ -525,8 +526,8 @@ class ApprovalTest {
 
         // Dedicated org + applicant so counts/totals are isolated from the
         // other tests sharing this context's database.
-        Org ctxOrg = orgRepository.findBySlug("appr-ctx").orElseGet(() ->
-                orgRepository.save(new Org("컨텍스트 기관", "appr-ctx", null)));
+        Org ctxOrg = orgRepository.findFirstByNameOrderByIdAsc("컨텍스트 기관").orElseGet(() ->
+                orgRepository.save(new Org("컨텍스트 기관", null)));
         User ctxAdmin = ensureUser("appr.ctx.admin@pusan.ac.kr", "컨텍스트관리자",
                 UserRole.ORG_ADMIN, ctxOrg.getId());
         User ctxUser = ensureUser("appr.ctx.user@pusan.ac.kr", "컨텍스트학생",
@@ -539,11 +540,11 @@ class ApprovalTest {
 
         // history material: one rejected, one approved (creates an active VM)
         long rejected = submit(ctxUserToken, workspaceId, ctxOrg.getId());
-        postJson("/api/v1/admin/requests/" + rejected + "/reject", ctxAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", rejected) + "/reject", ctxAdminToken,
                 Map.of("comment", "테스트 반려 사유"))
                 .andExpect(status().isOk());
         long approved = submit(ctxUserToken, workspaceId, ctxOrg.getId());
-        postJson("/api/v1/admin/requests/" + approved + "/approve", ctxAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", approved) + "/approve", ctxAdminToken, approveBody())
                 .andExpect(status().isOk());
 
         long current = submit(ctxUserToken, workspaceId, ctxOrg.getId());
@@ -553,10 +554,10 @@ class ApprovalTest {
         double expectedVcpuRatio = Math.round(2.0 / 40 * 100.0) / 100.0;
         double expectedMemoryRatio = Math.round(2048.0 / 79872 * 100.0) / 100.0;
 
-        mockMvc.perform(get("/api/v1/admin/requests/" + current + "/context")
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", current) + "/context")
                         .header("Authorization", "Bearer " + ctxAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.applicant.id").value(ctxUser.getId()))
+                .andExpect(jsonPath("$.applicant.id").value(ctxUser.getPublicId().toString()))
                 .andExpect(jsonPath("$.applicant.email").value(ctxUser.getEmail()))
                 .andExpect(jsonPath("$.applicant.signupAt").isNotEmpty())
                 .andExpect(jsonPath("$.applicant.approvedCount").value(1))
@@ -564,21 +565,21 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.applicantResources.activeVms[?(@.vcpu == 2)]").exists())
                 .andExpect(jsonPath("$.applicantResources.totals.vcpu").value(2))
                 .andExpect(jsonPath("$.applicantResources.totals.memoryMb").value(2048))
-                .andExpect(jsonPath("$.workspace.id").value(workspaceId))
+                .andExpect(jsonPath("$.workspace.id").value(pub("workspaces", workspaceId).toString()))
                 .andExpect(jsonPath("$.workspace.kind").value("TEAM"))
                 .andExpect(jsonPath("$.workspace.members[?(@.role == 'OWNER')].name")
                         .value(Matchers.hasItem("컨텍스트학생")))
                 .andExpect(jsonPath("$.workspace.members.length()").value(2))
                 .andExpect(jsonPath("$.workspace.totals.diskGb").value(20))
-                .andExpect(jsonPath("$.history[?(@.requestId == %d)].decision".formatted(rejected))
+                .andExpect(jsonPath("$.history[?(@.requestId == \'%s\')].decision".formatted(pub("requests", rejected)))
                         .value(Matchers.hasItem("REJECT")))
-                .andExpect(jsonPath("$.history[?(@.requestId == %d)].comment".formatted(rejected))
+                .andExpect(jsonPath("$.history[?(@.requestId == \'%s\')].comment".formatted(pub("requests", rejected)))
                         .value(Matchers.hasItem("테스트 반려 사유")))
-                .andExpect(jsonPath("$.history[?(@.requestId == %d)].reviewerName".formatted(rejected))
+                .andExpect(jsonPath("$.history[?(@.requestId == \'%s\')].reviewerName".formatted(pub("requests", rejected)))
                         .value(Matchers.hasItem("컨텍스트관리자")))
-                .andExpect(jsonPath("$.history[?(@.requestId == %d)].decision".formatted(approved))
+                .andExpect(jsonPath("$.history[?(@.requestId == \'%s\')].decision".formatted(pub("requests", approved)))
                         .value(Matchers.hasItem("APPROVE")))
-                .andExpect(jsonPath("$.history[?(@.requestId == %d)]".formatted(current)).doesNotExist())
+                .andExpect(jsonPath("$.history[?(@.requestId == \'%s\')]".formatted(pub("requests", current))).doesNotExist())
                 .andExpect(jsonPath("$.orgHeadroom.allocated.vcpu").value(2))
                 .andExpect(jsonPath("$.orgHeadroom.allocated.memoryMb").value(2048))
                 .andExpect(jsonPath("$.orgHeadroom.allocated.diskGb").value(20))
@@ -592,14 +593,14 @@ class ApprovalTest {
         // lowering the settings thresholds flips warnings + guidance
         try {
             jdbcTemplate.update("update settings set value = '0.01'::jsonb where key = 'memory_usage_warn'");
-            mockMvc.perform(get("/api/v1/admin/requests/" + current + "/context")
+            mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", current) + "/context")
                             .header("Authorization", "Bearer " + ctxAdminToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.orgHeadroom.warnings.length()").value(1))
                     .andExpect(jsonPath("$.guidance").value(ApprovalContextService.GUIDANCE_MEMORY));
 
             jdbcTemplate.update("update settings set value = '0.01'::jsonb where key = 'vcpu_overcommit_warn'");
-            mockMvc.perform(get("/api/v1/admin/requests/" + current + "/context")
+            mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", current) + "/context")
                             .header("Authorization", "Bearer " + ctxAdminToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.orgHeadroom.warnings.length()").value(2))
@@ -625,13 +626,13 @@ class ApprovalTest {
         jdbcTemplate.update("update workspaces set deleted_at = now(), deleted_by = ? where id = ?",
                 regularUser.getId(), workspaceId);
 
-        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+        postJson("/api/v1/admin/requests/" + pub("requests", requestId) + "/approve", orgAdminToken, approveBody())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_DELETED"));
         assertThat(vmRepository.findAll().stream()
                 .filter(vm -> vm.getRequestId() == requestId)).isEmpty();
 
-        postJson("/api/v1/admin/requests/" + survivor + "/reject", orgAdminToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", survivor) + "/reject", orgAdminToken,
                 Map.of("comment", "워크스페이스가 삭제되어 반려합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"));
@@ -642,7 +643,7 @@ class ApprovalTest {
         vm.put("grantedVcpu", 2);
         vm.put("grantedMemoryMb", 2048);
         vm.put("grantedDiskGb", 20);
-        vm.put("grantedImageId", image.getId());
+        vm.put("grantedImageId", image.getPublicId());
         Map<String, Object> body = new HashMap<>();
         body.put("comment", "요청 사양 그대로 승인합니다.");
         body.put("vm", vm);
@@ -680,8 +681,8 @@ class ApprovalTest {
 
     private long submit(String token, long workspaceId, long orgId, String displayName) throws Exception {
         Map<String, Object> vm = new HashMap<>();
-        vm.put("imageId", image.getId());
-        vm.put("flavorId", flavor.getId());
+        vm.put("imageId", image.getPublicId());
+        vm.put("flavorId", flavor.getPublicId());
         vm.put("reqVcpu", flavor.getVcpu());
         vm.put("reqMemoryMb", flavor.getMemoryMb());
         vm.put("reqDiskGb", flavor.getDiskGb());
@@ -690,14 +691,14 @@ class ApprovalTest {
             body.put("displayName", displayName);
         }
         body.put("type", "VM");
-        body.put("workspaceId", workspaceId);
-        body.put("orgId", orgId);
+        body.put("workspaceId", pub("workspaces", workspaceId));
+        body.put("orgId", pub("orgs", orgId));
         body.put("purpose", "승인 흐름 테스트");
         body.put("vm", vm);
         String response = postJson("/api/v1/requests", token, body)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(response).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "requests", UUID.fromString(objectMapper.readTree(response).get("id").asString()));
     }
 
     private long createTeam(String token, String slug) throws Exception {
@@ -705,7 +706,7 @@ class ApprovalTest {
                 Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
@@ -714,7 +715,7 @@ class ApprovalTest {
     }
 
     private void addMember(String token, long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + token)
                         .header(ReauthTestSupport.HEADER, reauth(token))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -739,5 +740,10 @@ class ApprovalTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

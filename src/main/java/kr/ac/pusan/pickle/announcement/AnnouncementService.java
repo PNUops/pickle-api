@@ -10,8 +10,10 @@ import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -68,6 +70,13 @@ public class AnnouncementService {
         List<FieldValidationError> errors = new ArrayList<>();
         Long orgId = null;
         Long workspaceId = null;
+        // The scope target arrives as a public id; the row behind it is what the
+        // announcement stores, and an id no row has is a validation error below.
+        Long requestedOrgId = request.orgId() == null ? null
+                : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
+        Long requestedWorkspaceId = request.workspaceId() == null ? null
+                : workspaceRepository.findByPublicId(request.workspaceId())
+                        .map(Workspace::getId).orElse(null);
         switch (scope) {
             case ALL -> {
                 if (actor.role() != UserRole.SYS_ADMIN) {
@@ -90,7 +99,7 @@ public class AnnouncementService {
                         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                                 "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
                     }
-                    if (request.orgId() != null && !request.orgId().equals(actor.orgId())) {
+                    if (request.orgId() != null && !actor.orgId().equals(requestedOrgId)) {
                         errors.add(new FieldValidationError("orgId",
                                 "자기 기관에만 기관 공지를 발송할 수 있습니다."));
                     }
@@ -99,7 +108,7 @@ public class AnnouncementService {
                     if (request.orgId() == null) {
                         errors.add(new FieldValidationError("orgId", "기관 공지에는 대상 기관이 필요합니다."));
                     }
-                    orgId = request.orgId();
+                    orgId = requestedOrgId;
                 }
             }
             case WORKSPACE -> {
@@ -109,20 +118,20 @@ public class AnnouncementService {
                 if (request.workspaceId() == null) {
                     errors.add(new FieldValidationError("workspaceId", "워크스페이스 공지에는 대상 워크스페이스가 필요합니다."));
                 }
-                workspaceId = request.workspaceId();
+                workspaceId = requestedWorkspaceId;
             }
         }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
 
-        if (scope == AnnouncementScope.ORG && !orgRepository.existsById(orgId)) {
+        if (scope == AnnouncementScope.ORG && (orgId == null || !orgRepository.existsById(orgId))) {
             throw notFound("해당 기관이 존재하지 않습니다.");
         }
         if (scope == AnnouncementScope.WORKSPACE) {
             // Unknown workspace and (for ORG_ADMIN) a workspace without resources in
             // their org answer the same 404 — workspace existence stays private.
-            if (!workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
+            if (workspaceId == null || !workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
                     || (actor.role() == UserRole.ORG_ADMIN
                             && !workspaceLinkedToOrg(workspaceId, actor.orgId()))) {
                 throw notFound("해당 워크스페이스가 존재하지 않습니다.");
@@ -141,9 +150,17 @@ public class AnnouncementService {
         int recipients = fanOut(announcement);
         announcement.setRecipientCount(recipients);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getId(),
+                AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getPublicId(),
                 Map.of("scope", scope.name(), "recipientCount", recipients), ip);
-        return AnnouncementView.from(announcement);
+        // The scope target is what was stored, not what the body named: an
+        // ORG_ADMIN's org announcement takes its org from the actor.
+        return AnnouncementView.from(announcement,
+                announcement.getOrgId() == null ? null
+                        : orgRepository.findById(announcement.getOrgId()).map(Org::getPublicId)
+                                .orElse(null),
+                announcement.getWorkspaceId() == null ? null
+                        : workspaceRepository.findById(announcement.getWorkspaceId())
+                                .map(Workspace::getPublicId).orElse(null));
     }
 
     /**

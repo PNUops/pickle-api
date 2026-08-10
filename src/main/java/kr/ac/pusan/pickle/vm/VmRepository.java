@@ -3,6 +3,8 @@ package kr.ac.pusan.pickle.vm;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +15,9 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationExecutor<Vm> {
+
+    /** Resolution of the identifier this row wears outside the API boundary. */
+    Optional<Vm> findByPublicId(UUID publicId);
 
     boolean existsByHostname(String hostname);
 

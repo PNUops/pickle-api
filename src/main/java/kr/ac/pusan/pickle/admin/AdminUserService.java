@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RefreshTokenService;
@@ -58,17 +59,17 @@ public class AdminUserService {
      * 404 if the user is unknown, 409 if they are not enrolled.
      */
     @Transactional
-    public MessageResponse resetMfa(AuthenticatedUser actor, long userId, String ip) {
-        User target = userRepository.findById(userId).orElseThrow(AdminUserService::userNotFound);
+    public MessageResponse resetMfa(AuthenticatedUser actor, UUID userId, String ip) {
+        User target = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         mfaService.adminReset(actor.id(), actor.role().name(), target, ip);
         return new MessageResponse(
                 "2단계 인증을 초기화했습니다. 사용자는 비밀번호로 로그인한 뒤 다시 등록해야 합니다.");
     }
 
     @Transactional
-    public UserAdminDetailResponse disable(AuthenticatedUser actor, long userId, String reason, String ip) {
-        User user = userRepository.findById(userId).orElseThrow(AdminUserService::userNotFound);
-        if (actor.id().equals(userId)) {
+    public UserAdminDetailResponse disable(AuthenticatedUser actor, UUID userId, String reason, String ip) {
+        User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
+        if (actor.id().equals(user.getId())) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_SELF_DISABLE_FORBIDDEN,
                     "비활성화할 수 없는 계정입니다", "본인 계정은 비활성화할 수 없습니다.");
         }
@@ -92,7 +93,7 @@ public class AdminUserService {
                 UserStatus.DISABLED, actor.id(), reason));
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_DISABLE,
-                "user", user.getId(), Map.of("reason", reason, "fromStatus", fromStatus.name()), ip);
+                "user", user.getPublicId(), Map.of("reason", reason, "fromStatus", fromStatus.name()), ip);
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("userId", user.getId());
         args.put("userEmail", user.getEmail());
@@ -109,8 +110,8 @@ public class AdminUserService {
     }
 
     @Transactional
-    public UserAdminDetailResponse enable(AuthenticatedUser actor, long userId, String ip) {
-        User user = userRepository.findById(userId).orElseThrow(AdminUserService::userNotFound);
+    public UserAdminDetailResponse enable(AuthenticatedUser actor, UUID userId, String ip) {
+        User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
         if (user.getStatus() != UserStatus.DISABLED) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.ACCOUNT_NOT_DISABLED,
                     "활성화할 수 없는 계정입니다",
@@ -129,7 +130,7 @@ public class AdminUserService {
                 restored, actor.id(), null));
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ENABLE,
-                "user", user.getId(), Map.of("toStatus", restored.name()), ip);
+                "user", user.getPublicId(), Map.of("toStatus", restored.name()), ip);
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_ENABLED,
                 Map.of("userId", user.getId(), "userEmail", user.getEmail()),
                 "account_enabled:" + user.getId() + ":" + Instant.now().toEpochMilli());

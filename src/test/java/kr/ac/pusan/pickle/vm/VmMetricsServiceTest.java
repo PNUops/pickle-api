@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
@@ -47,7 +48,10 @@ import org.springframework.http.HttpStatus;
 class VmMetricsServiceTest {
 
     private static final AuthenticatedUser ACTOR =
-            new AuthenticatedUser(7L, "metrics@pusan.ac.kr", UserRole.USER, null);
+            new AuthenticatedUser(7L, UUID.fromString("00000000-0000-4000-8000-000000000007"),
+                    "metrics@pusan.ac.kr", UserRole.USER, null);
+
+    private static final UUID VM_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
 
     @Mock
     private VmAccessService vmAccessService;
@@ -62,7 +66,7 @@ class VmMetricsServiceTest {
         when(vm.getProxmoxVmid()).thenReturn(null);
         grantVisible(vm);
 
-        VmMetricsResponse response = service().metrics(ACTOR, 1L, RrdTimeframe.HOUR);
+        VmMetricsResponse response = service().metrics(ACTOR, VM_ID, RrdTimeframe.HOUR);
 
         assertThat(response.available()).isFalse();
         assertThat(response.unavailableReason()).isEqualTo("NOT_PROVISIONED");
@@ -78,7 +82,7 @@ class VmMetricsServiceTest {
         when(vm.getStatus()).thenReturn(VmStatus.DELETED);
         grantVisible(vm);
 
-        VmMetricsResponse response = service().metrics(ACTOR, 1L, RrdTimeframe.DAY);
+        VmMetricsResponse response = service().metrics(ACTOR, VM_ID, RrdTimeframe.DAY);
 
         assertThat(response.available()).isFalse();
         assertThat(response.unavailableReason()).isEqualTo("NOT_PROVISIONED");
@@ -99,7 +103,7 @@ class VmMetricsServiceTest {
                         new VmRrdSample(1_786_335_600L, null, 2.0, null, null, 4.0e9,
                                 null, null, null, null)));
 
-        VmMetricsResponse response = service().metrics(ACTOR, 1L, RrdTimeframe.HOUR);
+        VmMetricsResponse response = service().metrics(ACTOR, VM_ID, RrdTimeframe.HOUR);
 
         assertThat(response.available()).isTrue();
         assertThat(response.unavailableReason()).isNull();
@@ -129,7 +133,7 @@ class VmMetricsServiceTest {
         when(proxmoxClient.vmRrdData(anyString(), anyString(), anyInt(), any()))
                 .thenThrow(new ProxmoxApiException(596, "no such resource", "GET rrddata"));
 
-        assertThatThrownBy(() -> service().metrics(ACTOR, 1L, RrdTimeframe.HOUR))
+        assertThatThrownBy(() -> service().metrics(ACTOR, VM_ID, RrdTimeframe.HOUR))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                     assertThat(ex.getCode()).isEqualTo(ErrorCodes.METRICS_UNAVAILABLE);
@@ -147,7 +151,7 @@ class VmMetricsServiceTest {
         when(proxmoxClient.vmRrdData(anyString(), anyString(), anyInt(), any()))
                 .thenThrow(new IllegalStateException("Proxmox API token is not configured"));
 
-        assertThatThrownBy(() -> service().metrics(ACTOR, 1L, RrdTimeframe.HOUR))
+        assertThatThrownBy(() -> service().metrics(ACTOR, VM_ID, RrdTimeframe.HOUR))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                     assertThat(ex.getCode()).isEqualTo(ErrorCodes.METRICS_UNAVAILABLE);
@@ -167,7 +171,7 @@ class VmMetricsServiceTest {
                         new VmRrdSample(1_786_335_600L, 0.25, 2.0, 2.0e9, 2.0e9, 4.0e9,
                                 1.0, 2.0, 3.0, 4.0)));
 
-        VmMetricsResponse response = service().metrics(ACTOR, 1L, RrdTimeframe.HOUR);
+        VmMetricsResponse response = service().metrics(ACTOR, VM_ID, RrdTimeframe.HOUR);
 
         assertThat(response.points()).hasSize(1);
         assertThat(response.points().getFirst().time())
@@ -183,7 +187,7 @@ class VmMetricsServiceTest {
     }
 
     private void grantVisible(Vm vm) {
-        when(vmAccessService.of(ACTOR, 1L))
+        when(vmAccessService.of(ACTOR, VM_ID))
                 .thenReturn(new VmAccess(vm, ResourceRole.VIEWER, true, false));
     }
 

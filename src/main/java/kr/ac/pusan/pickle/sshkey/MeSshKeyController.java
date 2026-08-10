@@ -5,6 +5,7 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.sshkey.dto.SshKeyCreateRequest;
@@ -61,7 +62,7 @@ public class MeSshKeyController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequireReauth
     public void deleteKey(@AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long keyId, HttpServletRequest httpRequest) {
+            @PathVariable UUID keyId, HttpServletRequest httpRequest) {
         service.delete(principal, keyId, clientIp(httpRequest));
     }
 
@@ -69,7 +70,7 @@ public class MeSshKeyController {
     @GetMapping("/{keyId}/private-key")
     @RequireReauth
     public ResponseEntity<SshKeyPrivateKeyResponse> downloadPrivateKey(
-            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable long keyId,
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID keyId,
             HttpServletRequest httpRequest) {
         SshKeyPrivateKeyResponse response =
                 service.downloadPrivateKey(principal, keyId, clientIp(httpRequest));

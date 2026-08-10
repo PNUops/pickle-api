@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
@@ -42,6 +43,12 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class AdminUserQueryService {
+    /**
+     * The scope an id no org has resolves to: a filter value no row carries, so
+     * the page comes back empty exactly as a non-matching number made it.
+     */
+    private static final Long NO_SUCH_ORG = -1L;
+
 
     /** Whitelisted {@code sort} → SQL order-by. Default is latest signup ({@code -id}). */
     private static final Map<String, String> SORTS = Map.of(
@@ -73,7 +80,7 @@ public class AdminUserQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<UserAdminViewResponse> listUsers(AuthenticatedUser actor, String q,
-            UserStatus status, UserRole role, Long orgId, String sort, int page, int size) {
+            UserStatus status, UserRole role, UUID orgId, String sort, int page, int size) {
         Long scopedOrgId = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
@@ -110,27 +117,32 @@ public class AdminUserQueryService {
         List<Object> pageParams = new ArrayList<>(params);
         pageParams.add(size);
         pageParams.add((long) page * size);
-        List<UserAdminViewResponse> rows = jdbcTemplate.query("""
-                select u.id, u.email, u.name, u.role, u.org_id, u.status, u.created_at
-                """ + base + where + " order by " + resolveOrder(sort) + " limit ? offset ?",
-                (rs, rowNum) -> mapView(rs), pageParams.toArray());
+        // u.public_id and o.public_id are selected beside the internal keys: the
+        // response carries the public pair, and u.id is still what the 2FA
+        // set-membership query below joins on.
+        List<Row> rows = jdbcTemplate.query("""
+                select u.id, u.public_id, u.email, u.name, u.role, o.public_id as org_public_id,
+                       u.status, u.created_at
+                """ + base + " left join orgs o on o.id = u.org_id" + where
+                + " order by " + resolveOrder(sort) + " limit ? offset ?",
+                (rs, rowNum) -> mapRow(rs), pageParams.toArray());
         // Real 2FA state: one set-membership query over the page's user ids
         // (the console mfa-reset button keys off this).
         Set<Long> enrolled = rows.isEmpty() ? Set.of()
                 : Set.copyOf(userMfaRepository.findEnrolledUserIds(
-                        rows.stream().map(UserAdminViewResponse::id).toList()));
+                        rows.stream().map(Row::id).toList()));
         List<UserAdminViewResponse> content = rows.stream()
-                .map(v -> new UserAdminViewResponse(v.id(), v.email(), v.name(), v.role(), v.orgId(),
-                        v.status(), enrolled.contains(v.id()), v.createdAt()))
+                .map(v -> new UserAdminViewResponse(v.publicId(), v.email(), v.name(), v.role(),
+                        v.orgId(), v.status(), enrolled.contains(v.id()), v.createdAt()))
                 .toList();
         int totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
         return new PageResponse<>(content, page, size, totalElements, totalPages);
     }
 
     @Transactional(readOnly = true)
-    public UserAdminDetailResponse getUser(AuthenticatedUser actor, long userId) {
-        Long scopedOrgId = scopeOrgId(actor, orgIdIfOrgAdmin(actor));
-        User user = userRepository.findById(userId).filter(u -> inScope(u.getId(), scopedOrgId))
+    public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
+        Long scopedOrgId = orgIdIfOrgAdmin(actor);
+        User user = userRepository.findByPublicId(userId).filter(u -> inScope(u.getId(), scopedOrgId))
                 .orElseThrow(AdminUserQueryService::userNotFound);
 
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
@@ -146,8 +158,9 @@ public class AdminUserQueryService {
         List<UserStatusChangeResponse> statusChanges =
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
 
-        return new UserAdminDetailResponse(user.getId(), user.getEmail(), user.getName(), user.getRole(),
-                user.getOrgId(), user.getStatus(), userMfaRepository.isEnrolled(user.getId()),
+        return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
+                user.getRole(), orgPublicId(user.getOrgId()), user.getStatus(),
+                userMfaRepository.isEnrolled(user.getId()),
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
                 memberships, activeVmCount, statusChanges);
@@ -157,12 +170,15 @@ public class AdminUserQueryService {
     private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes) {
         List<Long> actorIds = changes.stream().map(UserStatusChange::getActorId)
                 .filter(id -> id != null).distinct().toList();
-        Map<Long, String> emails = userRepository.findAllById(actorIds).stream()
+        List<User> actors = userRepository.findAllById(actorIds);
+        Map<Long, String> emails = actors.stream()
                 .collect(Collectors.toMap(User::getId, User::getEmail));
+        Map<Long, UUID> publicIds = actors.stream()
+                .collect(Collectors.toMap(User::getId, User::getPublicId));
         return changes.stream()
                 .map(change -> new UserStatusChangeResponse(change.getFromStatus(), change.getToStatus(),
-                        change.getActorId(), emails.get(change.getActorId()), change.getReason(),
-                        change.getChangedAt()))
+                        publicIds.get(change.getActorId()), emails.get(change.getActorId()),
+                        change.getReason(), change.getChangedAt()))
                 .toList();
     }
 
@@ -178,11 +194,23 @@ public class AdminUserQueryService {
         return Boolean.TRUE.equals(visible);
     }
 
-    private static UserAdminViewResponse mapView(java.sql.ResultSet rs) throws java.sql.SQLException {
-        return new UserAdminViewResponse(rs.getLong("id"), rs.getString("email"), rs.getString("name"),
-                UserRole.valueOf(rs.getString("role")), rs.getObject("org_id", Long.class),
-                UserStatus.valueOf(rs.getString("status")), false,
+    /** One list row: the internal key the 2FA join needs, plus the public view. */
+    private record Row(long id, UUID publicId, String email, String name, UserRole role,
+            UUID orgId, UserStatus status, java.time.Instant createdAt) {
+    }
+
+    private static Row mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Row(rs.getLong("id"), rs.getObject("public_id", UUID.class),
+                rs.getString("email"), rs.getString("name"),
+                UserRole.valueOf(rs.getString("role")), rs.getObject("org_public_id", UUID.class),
+                UserStatus.valueOf(rs.getString("status")),
                 rs.getObject("created_at", OffsetDateTime.class).toInstant());
+    }
+
+    private UUID orgPublicId(Long orgId) {
+        return orgId == null ? null : jdbcTemplate.query(
+                "select public_id from orgs where id = ?",
+                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, orgId);
     }
 
     private static String resolveOrder(String sort) {
@@ -211,15 +239,22 @@ public class AdminUserQueryService {
     }
 
     /** Org tier pinned to their org; another org's id answers 404 (mask). */
-    private static Long scopeOrgId(AuthenticatedUser actor, Long orgId) {
+    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null : jdbcTemplate.query(
+                "select id from orgs where public_id = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
-            return orgId;
+            // An id no org has filters to nothing, as a non-matching number did.
+            if (orgId != null && requested == null) {
+                return NO_SUCH_ORG;
+            }
+            return requested;
         }
         if (actor.orgId() == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !orgId.equals(actor.orgId())) {
+        if (orgId != null && !actor.orgId().equals(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }

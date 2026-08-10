@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.access.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.resource.ResourceIdentity;
 import org.jspecify.annotations.Nullable;
@@ -29,22 +30,22 @@ public record ResourceAccessListResponse(
     /** Name, state and owning workspace — the same fields a restricted row shows. */
     @Schema(description = "접근 권한이 없는 사람에게도 보이는 범위의 리소스 정보")
     public record ResourceBrief(
-            Long id,
+            UUID id,
             ResourceType type,
             String name,
             @Schema(description = "표시명. 지정되지 않았으면 null입니다.")
             @Nullable String displayName,
             @Schema(description = "리소스 종류의 상태값. 종류마다 어휘가 다릅니다.")
             String status,
-            Long workspaceId,
+            UUID workspaceId,
             String workspaceName) {
     }
 
     public static ResourceAccessListResponse of(ResourceType type, ResourceIdentity resource,
-            String workspaceName, List<ResourceAccessGrantView> grants) {
+            UUID workspaceId, String workspaceName, List<ResourceAccessGrantView> grants) {
         return new ResourceAccessListResponse(
-                new ResourceBrief(resource.id(), type, resource.name(), resource.displayName(),
-                        resource.status(), resource.workspaceId(), workspaceName),
+                new ResourceBrief(resource.publicId(), type, resource.name(), resource.displayName(),
+                        resource.status(), workspaceId, workspaceName),
                 grants);
     }
 }

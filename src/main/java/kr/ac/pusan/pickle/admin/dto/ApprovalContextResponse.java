@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.request.ReviewDecision;
@@ -24,7 +25,7 @@ public record ApprovalContextResponse(
         String guidance) {
 
     public record Applicant(
-            Long id,
+            UUID id,
             String name,
             String email,
             Instant signupAt,
@@ -36,7 +37,7 @@ public record ApprovalContextResponse(
     }
 
     public record WorkspacePanel(
-            Long id,
+            UUID id,
             String name,
             WorkspaceKind kind,
             List<MemberBrief> members,
@@ -44,11 +45,11 @@ public record ApprovalContextResponse(
             ResourceTotalsResponse totals) {
     }
 
-    public record MemberBrief(Long userId, String name, WorkspaceMemberRole role) {
+    public record MemberBrief(UUID userId, String name, WorkspaceMemberRole role) {
     }
 
     public record HistoryEntry(
-            Long requestId,
+            UUID requestId,
             Instant submittedAt,
             RequestStatus status,
             @Nullable ReviewDecision decision,

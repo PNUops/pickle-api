@@ -85,9 +85,9 @@ class AnnouncementTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        otherOrg = orgRepository.findBySlug("ann-other").orElseGet(() ->
-                orgRepository.save(new Org("공지 타기관", "ann-other", null)));
+        org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
+        otherOrg = orgRepository.findFirstByNameOrderByIdAsc("공지 타기관").orElseGet(() ->
+                orgRepository.save(new Org("공지 타기관", null)));
         ownMember = ensureRegularUser("ann.own.member@pusan.ac.kr", "공지자기관원", UserStatus.ACTIVE);
         inactiveMember = ensureRegularUser("ann.pending@pusan.ac.kr", "공지비활성",
                 UserStatus.DISABLED);
@@ -128,23 +128,23 @@ class AnnouncementTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         // scope/target cross-field mismatches → 422
         create(sysAdminToken, Map.of("title", "t", "body", "b", "scope", "ALL",
-                "workspaceId", mixedWorkspaceId)).andExpect(status().isUnprocessableContent());
+                "workspaceId", pub("workspaces", mixedWorkspaceId))).andExpect(status().isUnprocessableContent());
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
-                "workspaceId", mixedWorkspaceId)).andExpect(status().isUnprocessableContent());
+                "workspaceId", pub("workspaces", mixedWorkspaceId))).andExpect(status().isUnprocessableContent());
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE"))
                 .andExpect(status().isUnprocessableContent());
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
-                "workspaceId", mixedWorkspaceId, "orgId", org.getId()))
+                "workspaceId", pub("workspaces", mixedWorkspaceId), "orgId", org.getPublicId()))
                 .andExpect(status().isUnprocessableContent());
         // ORG pinned: another org's id → 422
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
-                "orgId", otherOrg.getId())).andExpect(status().isUnprocessableContent());
+                "orgId", otherOrg.getPublicId())).andExpect(status().isUnprocessableContent());
         // WORKSPACE without resources in the caller's org → 404 (existence
         // masked), exactly like a workspace that does not exist at all
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
-                "workspaceId", foreignWorkspaceId)).andExpect(status().isNotFound());
+                "workspaceId", pub("workspaces", foreignWorkspaceId))).andExpect(status().isNotFound());
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
-                "workspaceId", 999999)).andExpect(status().isNotFound());
+                "workspaceId", SeedFixtures.UNKNOWN_ID)).andExpect(status().isNotFound());
     }
 
     @Test
@@ -169,7 +169,7 @@ class AnnouncementTest {
         ResultActions orgSend = create(orgAdminToken, Map.of(
                 "title", "기관 공지", "body", "본문", "scope", "ORG"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(org.getId()));
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
         long orgAnnId = createdId(orgSend);
         assertThat(recipientOf(orgAnnId, ownMember.getId())).isEqualTo(1);
         assertThat(recipientOf(orgAnnId, crossMember.getId())).isEqualTo(1);
@@ -186,7 +186,7 @@ class AnnouncementTest {
         // WORKSPACE by ORG_ADMIN: the gated workspace's ACTIVE members — all of them,
         // regardless of their own (non-)org
         long workspaceAnnId = createdId(create(orgAdminToken, Map.of(
-                "title", "워크스페이스 공지", "body", "본문", "scope", "WORKSPACE", "workspaceId", mixedWorkspaceId))
+                "title", "워크스페이스 공지", "body", "본문", "scope", "WORKSPACE", "workspaceId", pub("workspaces", mixedWorkspaceId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.recipientCount").value(2)));
         assertThat(recipientOf(workspaceAnnId, ownMember.getId())).isEqualTo(1);
@@ -196,7 +196,7 @@ class AnnouncementTest {
         // WORKSPACE by SYS_ADMIN: same member set (no gate)
         createdId(create(sysAdminToken, Map.of(
                 "title", "워크스페이스 공지(시스템)", "body", "본문", "scope", "WORKSPACE",
-                "workspaceId", foreignWorkspaceId))
+                "workspaceId", pub("workspaces", foreignWorkspaceId)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.recipientCount").value(1)));
 
@@ -204,7 +204,7 @@ class AnnouncementTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'announcement.create' and target_id = ?
-                """, Long.class, allId)).isEqualTo(1);
+                """, Long.class, pub("announcements", allId).toString())).isEqualTo(1);
     }
 
     @Test
@@ -223,14 +223,14 @@ class AnnouncementTest {
         mockMvc.perform(get("/api/v1/admin/announcements?size=100")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + allId + ")]").exists())
-                .andExpect(jsonPath("$.content[?(@.id==" + ownOrgId + ")]").exists())
-                .andExpect(jsonPath("$.content[?(@.id==" + otherOrgAnnId + ")]").doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", allId) + "\')]").exists())
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", ownOrgId) + "\')]").exists())
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", otherOrgAnnId) + "\')]").doesNotExist());
         // SYS_ADMIN: everything
         mockMvc.perform(get("/api/v1/admin/announcements?size=100")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + otherOrgAnnId + ")]").exists());
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", otherOrgAnnId) + "\')]").exists());
         // users → 403
         mockMvc.perform(get("/api/v1/admin/announcements")
                         .header("Authorization", "Bearer " + userToken))
@@ -254,7 +254,7 @@ class AnnouncementTest {
         create(bursterToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE"))
                 .andExpect(status().isUnprocessableContent());
         create(bursterToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
-                "workspaceId", foreignWorkspaceId)).andExpect(status().isNotFound());
+                "workspaceId", pub("workspaces", foreignWorkspaceId))).andExpect(status().isNotFound());
         for (int i = 1; i <= 10; i++) {
             create(bursterToken, Map.of("title", "공지 " + i, "body", "b", "scope", "ORG"))
                     .andExpect(status().isCreated());
@@ -272,26 +272,26 @@ class AnnouncementTest {
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + " && @.memberCount==2)]")
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\' && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + ")]").doesNotExist());
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").doesNotExist());
         // cross-org filter → 404 (existence stays private)
-        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
         // SYS_ADMIN: all workspaces without a filter; the org filter applies the gate
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + " && @.memberCount==2)]")
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\' && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + " && @.memberCount==1)]")
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\' && @.memberCount==1)]")
                         .exists());
-        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.id==" + foreignWorkspaceId + ")]").exists())
-                .andExpect(jsonPath("$[?(@.id==" + mixedWorkspaceId + ")]").doesNotExist());
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists())
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\')]").doesNotExist());
         // users → 403
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + userToken))
@@ -308,8 +308,10 @@ class AnnouncementTest {
     }
 
     private long createdId(ResultActions result) throws Exception {
-        return objectMapper.readTree(result.andReturn().getResponse().getContentAsString())
-                .get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "announcements",
+                UUID.fromString(objectMapper
+                        .readTree(result.andReturn().getResponse().getContentAsString())
+                        .get("id").asString()));
     }
 
     private long recipientRows(long announcementId) {
@@ -349,5 +351,10 @@ class AnnouncementTest {
         user.setOrgId(null);
         user.setStatus(status);
         return userRepository.save(user);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

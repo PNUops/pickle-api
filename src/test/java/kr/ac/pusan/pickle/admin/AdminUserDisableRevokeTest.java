@@ -66,7 +66,7 @@ class AdminUserDisableRevokeTest {
         assertThat(refreshTokenService.findByRawToken(issued.rawToken()).orElseThrow().isRevoked())
                 .isFalse();
 
-        mockMvc.perform(post("/api/v1/admin/users/" + target.getId() + "/disable")
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/disable")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("reason", "세션 무효화 확인"))))

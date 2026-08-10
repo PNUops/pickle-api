@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.support;
 
+import java.util.UUID;
 import kr.ac.pusan.pickle.seed.DevDataSeeder;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -12,13 +13,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 public final class SeedFixtures {
 
-    /** Seed org slug ({@link DevDataSeeder#ORG_SLUG}); the org is seeded hidden. */
     /** Proxmox template the seeded catalog row clones from. */
     public static final int TEMPLATE_VMID = DevDataSeeder.SEED_TEMPLATE_VMID;
 
-    public static final String ORG_SLUG = DevDataSeeder.ORG_SLUG;
-
-    /** Seed org display name ({@link DevDataSeeder#ORG_NAME}). */
+    /** Seed org display name ({@link DevDataSeeder#ORG_NAME}); the org is seeded hidden. */
     public static final String ORG_NAME = DevDataSeeder.ORG_NAME;
 
     /** Default {@code pickle.seed.orgadmin-email} (no env override in tests). */
@@ -27,13 +25,45 @@ public final class SeedFixtures {
     /** Default {@code pickle.seed.sysadmin-email} (no env override in tests). */
     public static final String SYSADMIN_EMAIL = "admin@pickle.local";
 
+    /**
+     * A well-formed identifier no row has, for the "does not exist" probes that
+     * used to pass a number like 999999. One shared value, so every such probe
+     * means the same thing wherever it appears.
+     */
+    public static final UUID UNKNOWN_ID = UUID.fromString("00000000-0000-4000-8000-0000deadbeef");
+
     private SeedFixtures() {
     }
 
     /** Id of the seeded org ({@code queryForObject} throws if the seed is missing). */
     public static long seedOrgId(JdbcTemplate jdbcTemplate) {
         return jdbcTemplate.queryForObject(
-                "select id from orgs where slug = '" + ORG_SLUG + "'", Long.class);
+                "select id from orgs where name = '" + ORG_NAME + "'", Long.class);
+    }
+
+    /** Public identifier of the seeded org. */
+    public static UUID seedOrgPublicId(JdbcTemplate jdbcTemplate) {
+        return publicId(jdbcTemplate, "orgs", seedOrgId(jdbcTemplate));
+    }
+
+    /**
+     * The public identifier of a row a fixture created through direct SQL and
+     * now has to name over the API — internal ids stay the setup's business,
+     * public ids are what the endpoints take. {@code table} is always a literal
+     * from the test, never anything a request supplied.
+     */
+    public static UUID publicId(JdbcTemplate jdbcTemplate, String table, long id) {
+        return jdbcTemplate.queryForObject(
+                "select public_id from " + table + " where id = ?", UUID.class, id);
+    }
+
+    /**
+     * The internal id behind a public one — for a fixture that created its row
+     * through the API and now has to set the rest up with direct SQL.
+     */
+    public static long internalId(JdbcTemplate jdbcTemplate, String table, UUID publicId) {
+        return jdbcTemplate.queryForObject(
+                "select id from " + table + " where public_id = ?", Long.class, publicId);
     }
 
     /** Id of the seeded ORG_ADMIN account. */

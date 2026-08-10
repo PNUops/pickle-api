@@ -16,9 +16,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class AnnouncementQueryService {
 
     private final AnnouncementRepository announcementRepository;
+    private final kr.ac.pusan.pickle.orgs.OrgRepository orgRepository;
+    private final kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaceRepository;
 
-    public AnnouncementQueryService(AnnouncementRepository announcementRepository) {
+    public AnnouncementQueryService(AnnouncementRepository announcementRepository,
+            kr.ac.pusan.pickle.orgs.OrgRepository orgRepository,
+            kr.ac.pusan.pickle.workspace.WorkspaceRepository workspaceRepository) {
         this.announcementRepository = announcementRepository;
+        this.orgRepository = orgRepository;
+        this.workspaceRepository = workspaceRepository;
     }
 
     @Transactional(readOnly = true)
@@ -34,7 +40,20 @@ public class AnnouncementQueryService {
             result = announcementRepository.findVisibleToOrgAdmin(AnnouncementScope.ALL,
                     actor.orgId(), PageRequest.of(page, size));
         }
-        return PageResponse.of(result.getContent().stream().map(AnnouncementView::from).toList(),
-                result);
+        return PageResponse.of(result.getContent().stream().map(this::toView).toList(), result);
+    }
+
+    /**
+     * An announcement names its scope target by public id, so the org or
+     * workspace row behind it is read here rather than in the view.
+     */
+    private AnnouncementView toView(Announcement announcement) {
+        return AnnouncementView.from(announcement,
+                announcement.getOrgId() == null ? null
+                        : orgRepository.findById(announcement.getOrgId())
+                                .map(kr.ac.pusan.pickle.orgs.Org::getPublicId).orElse(null),
+                announcement.getWorkspaceId() == null ? null
+                        : workspaceRepository.findById(announcement.getWorkspaceId())
+                                .map(kr.ac.pusan.pickle.workspace.Workspace::getPublicId).orElse(null));
     }
 }

@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.NodeMetricsResponse;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateNodeStatusRequest;
@@ -52,7 +53,7 @@ public class AdminNodeController {
 
     /** Live host usage series from the hypervisor (contract v0.35.0). */
     @GetMapping("/{nodeId}/metrics")
-    public NodeMetricsResponse getAdminNodeMetrics(@PathVariable long nodeId,
+    public NodeMetricsResponse getAdminNodeMetrics(@PathVariable UUID nodeId,
             @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
                     + "(해상도는 구간에 따라 거칠어짐)")
             @RequestParam(defaultValue = "HOUR") RrdTimeframe timeframe) {
@@ -63,7 +64,7 @@ public class AdminNodeController {
     @PreAuthorize("hasRole('SYS_ADMIN')")
     public NodeSummaryResponse updateAdminNode(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long nodeId,
+            @PathVariable UUID nodeId,
             @Valid @RequestBody UpdateNodeStatusRequest request,
             HttpServletRequest httpRequest) {
         return adminInventoryService.updateNodeStatus(principal, nodeId, request,

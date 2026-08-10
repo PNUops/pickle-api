@@ -70,9 +70,9 @@ class ManagerRoleScopingTest {
 
     @BeforeEach
     void setUp() {
-        Org orgA = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        orgB = orgRepository.findBySlug("mgr-org-b")
-                .orElseGet(() -> orgRepository.save(new Org("운영자 테스트 기관 B", "mgr-org-b", null)));
+        Org orgA = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
+        orgB = orgRepository.findFirstByNameOrderByIdAsc("운영자 테스트 기관 B")
+                .orElseGet(() -> orgRepository.save(new Org("운영자 테스트 기관 B", null)));
 
         User orgManagerA = ensureUser("mgr.orgmgr.a@pusan.ac.kr", "기관운영자A",
                 UserRole.ORG_MANAGER, orgA.getId());
@@ -94,41 +94,41 @@ class ManagerRoleScopingTest {
     @Test
     void orgManagerReadsOwnOrgAndMasksForeignOrgAs404() throws Exception {
         // own-org request is visible; the foreign-org request is masked
-        get("/api/v1/admin/requests/" + requestInOrgA, orgManagerAToken)
+        get("/api/v1/admin/requests/" + pub("requests", requestInOrgA), orgManagerAToken)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value((int) requestInOrgA));
-        get("/api/v1/admin/requests/" + requestInOrgB, orgManagerAToken)
+                .andExpect(jsonPath("$.id").value(pub("requests", requestInOrgA).toString()));
+        get("/api/v1/admin/requests/" + pub("requests", requestInOrgB), orgManagerAToken)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        get("/api/v1/admin/requests/" + requestInOrgB + "/context", orgManagerAToken)
+        get("/api/v1/admin/requests/" + pub("requests", requestInOrgB) + "/context", orgManagerAToken)
                 .andExpect(status().isNotFound());
 
         // deciding a foreign-org request is masked as 404, not 403 (existence privacy)
-        postJson("/api/v1/admin/requests/" + requestInOrgB + "/reject", orgManagerAToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestInOrgB) + "/reject", orgManagerAToken,
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
         // the admin VMs / users / audit surfaces reject a foreign orgId with 404
-        get("/api/v1/admin/vms?orgId=" + orgB.getId(), orgManagerAToken)
+        get("/api/v1/admin/vms?orgId=" + orgB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound());
-        get("/api/v1/admin/users/" + foreignAdminB.getId(), orgManagerAToken)
+        get("/api/v1/admin/users/" + foreignAdminB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        get("/api/v1/admin/audit?orgId=" + orgB.getId(), orgManagerAToken)
+        get("/api/v1/admin/audit?orgId=" + orgB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound());
 
         // and it can read its own org's dashboard + queue
         get("/api/v1/admin/summary", orgManagerAToken).andExpect(status().isOk());
         get("/api/v1/admin/requests", orgManagerAToken)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgA)).exists())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgB)).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgA))).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgB))).doesNotExist());
     }
 
     @Test
     void orgManagerMayDecideOwnOrgRequest() throws Exception {
         // §3.9 †15: approve/reject is the org tier's daily load, granted org-scoped
-        postJson("/api/v1/admin/requests/" + requestInOrgA + "/reject", orgManagerAToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestInOrgA) + "/reject", orgManagerAToken,
                 Map.of("comment", "기관 자원 여유 부족으로 반려합니다."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
@@ -147,8 +147,8 @@ class ManagerRoleScopingTest {
         // system-wide queue: sees both orgs' requests (no org pin)
         get("/api/v1/admin/requests", sysManagerToken)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgA)).exists())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(requestInOrgB)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgA))).exists())
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", requestInOrgB))).exists());
     }
 
     @Test
@@ -156,28 +156,28 @@ class ManagerRoleScopingTest {
         String future = Instant.now().plus(1, ChronoUnit.DAYS).toString();
         // org / role / account / credential mutations
         postJson("/api/v1/admin/orgs", sysManagerToken,
-                Map.of("name", "차단 기관", "slug", "sm-deny-" + slug())).andExpect(status().isForbidden());
-        patchJson("/api/v1/admin/orgs/1", sysManagerToken, Map.of("name", "x"))
+                Map.of("name", "차단 기관 " + slug())).andExpect(status().isForbidden());
+        patchJson("/api/v1/admin/orgs/" + SeedFixtures.UNKNOWN_ID, sysManagerToken, Map.of("name", "x"))
                 .andExpect(status().isForbidden());
-        patchJson("/api/v1/admin/users/1", sysManagerToken, Map.of("role", "USER"))
+        patchJson("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID, sysManagerToken, Map.of("role", "USER"))
                 .andExpect(status().isForbidden());
-        postJson("/api/v1/admin/users/1/disable", sysManagerToken, Map.of("reason", "차단"))
+        postJson("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID + "/disable", sysManagerToken, Map.of("reason", "차단"))
                 .andExpect(status().isForbidden());
-        post("/api/v1/admin/users/1/enable", sysManagerToken).andExpect(status().isForbidden());
-        post("/api/v1/admin/users/1/mfa-reset", sysManagerToken).andExpect(status().isForbidden());
+        post("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID + "/enable", sysManagerToken).andExpect(status().isForbidden());
+        post("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID + "/mfa-reset", sysManagerToken).andExpect(status().isForbidden());
         // settings kill switch + VM force-delete / deletion lifecycle
         putJson("/api/v1/admin/settings/ssh_gateway_enabled", sysManagerToken, Map.of("value", false))
                 .andExpect(status().isForbidden());
-        postJson("/api/v1/admin/vms/1/force-delete", sysManagerToken, Map.of("confirmName", "x"))
+        postJson("/api/v1/admin/vms/" + SeedFixtures.UNKNOWN_ID + "/force-delete", sysManagerToken, Map.of("confirmName", "x"))
                 .andExpect(status().isForbidden());
-        postJson("/api/v1/admin/vms/1/schedule-delete", sysManagerToken,
+        postJson("/api/v1/admin/vms/" + SeedFixtures.UNKNOWN_ID + "/schedule-delete", sysManagerToken,
                 Map.of("scheduledFor", future, "reason", "x")).andExpect(status().isForbidden());
-        post("/api/v1/admin/vms/1/cancel-scheduled-delete", sysManagerToken)
+        post("/api/v1/admin/vms/" + SeedFixtures.UNKNOWN_ID + "/cancel-scheduled-delete", sysManagerToken)
                 .andExpect(status().isForbidden());
         // broadcast + approval decisions
         postJson("/api/v1/admin/announcements", sysManagerToken,
                 Map.of("title", "x", "body", "y", "scope", "ALL")).andExpect(status().isForbidden());
-        postJson("/api/v1/admin/requests/" + requestInOrgA + "/reject", sysManagerToken,
+        postJson("/api/v1/admin/requests/" + pub("requests", requestInOrgA) + "/reject", sysManagerToken,
                 Map.of("comment", "차단")).andExpect(status().isForbidden());
     }
 
@@ -189,10 +189,10 @@ class ManagerRoleScopingTest {
         // closes an audit blind spot: the annotation matrix allows the call, and
         // only the service-layer OWNER check keeps them out.
         long vmInOrgB = insertActiveVmInOrg(orgB.getId());
-        delete("/api/v1/vms/" + vmInOrgB, orgManagerAToken)
+        delete("/api/v1/vms/" + pub("vms", vmInOrgB), orgManagerAToken)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        delete("/api/v1/vms/" + vmInOrgB, sysManagerToken)
+        delete("/api/v1/vms/" + pub("vms", vmInOrgB), sysManagerToken)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
@@ -279,5 +279,10 @@ class ManagerRoleScopingTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

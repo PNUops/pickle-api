@@ -237,37 +237,37 @@ class AdminDriftFindingsTest {
     void resolveIsCasAnsweres409WhenAlreadyResolvedAnd404WhenUnknown() throws Exception {
         long findingId = insertFinding("UNMANAGED_GUEST", "vmid:70011", "OPEN");
 
-        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", findingId)
+        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", pub("drift_findings", findingId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"note\": \"잔여 게스트를 수동 정리했습니다.\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(findingId))
+                .andExpect(jsonPath("$.id").value(pub("drift_findings", findingId).toString()))
                 .andExpect(jsonPath("$.status").value("RESOLVED"))
-                .andExpect(jsonPath("$.resolvedById").isNumber())
+                .andExpect(jsonPath("$.resolvedById").isNotEmpty())
                 .andExpect(jsonPath("$.resolvedByEmail").value(SeedFixtures.SYSADMIN_EMAIL))
                 .andExpect(jsonPath("$.resolutionNote").value("잔여 게스트를 수동 정리했습니다."));
 
         // manual resolve is audited
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'drift.resolve' and target_id = ?",
-                Long.class, findingId)).isEqualTo(1);
+                Long.class, pub("drift_findings", findingId).toString())).isEqualTo(1);
 
         // second resolve → CAS finds 0 rows → 409
-        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", findingId)
+        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", pub("drift_findings", findingId).toString())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DRIFT_FINDING_ALREADY_RESOLVED"));
 
         // unknown finding → 404
-        mockMvc.perform(post("/api/v1/admin/drift-findings/999999/resolve")
+        mockMvc.perform(post("/api/v1/admin/drift-findings/" + SeedFixtures.UNKNOWN_ID + "/resolve")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         // over-long note → 422 before any state change
         long another = insertFinding("UNMANAGED_GUEST", "vmid:70012", "OPEN");
-        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", another)
+        mockMvc.perform(post("/api/v1/admin/drift-findings/{id}/resolve", pub("drift_findings", another))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"note\": \"" + "가".repeat(2001) + "\"}"))
@@ -298,8 +298,8 @@ class AdminDriftFindingsTest {
                 .formatted(vmid, vmid, status, memoryMb * 1024 * 1024, maxcpu, tagsField);
     }
 
-    private static String byId(long findingId) {
-        return "$.content[?(@.id == %d)]".formatted(findingId);
+    private String byId(long findingId) {
+        return "$.content[?(@.id == '%s')]".formatted(pub("drift_findings", findingId));
     }
 
     /** Enum/jsonb columns cast to text so plain JDBC types come back. */
@@ -363,5 +363,10 @@ class AdminDriftFindingsTest {
                 returning id
                 """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vcpu, memoryMb, proxmoxVmid, status);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

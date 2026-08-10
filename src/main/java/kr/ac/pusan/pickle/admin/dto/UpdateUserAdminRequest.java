@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import kr.ac.pusan.pickle.user.UserRole;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -9,7 +10,7 @@ import org.jspecify.annotations.Nullable;
  * {@code orgId}; other roles require it to be null/absent — validated in the
  * service.
  */
-public record UpdateUserAdminRequest(UserRole role, @Nullable Long orgId) {
+public record UpdateUserAdminRequest(UserRole role, @Nullable UUID orgId) {
 
     @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.VmPeriodUpdateRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -59,9 +60,10 @@ public class VmPeriodService {
     }
 
     @Transactional
-    public VmDetailResponse updatePeriod(AuthenticatedUser actor, long vmId,
+    public VmDetailResponse updatePeriod(AuthenticatedUser actor, UUID publicVmId,
             VmPeriodUpdateRequest request, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireOrgScopedVm(actor, publicVmId);
+        long vmId = vm.getId();
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         validateDates(request.endDate(), newStart);
         requireNotDeletionBound(vm);
@@ -74,7 +76,7 @@ public class VmPeriodService {
                 "기간 변경: %s ~ %s → %s ~ %s".formatted(
                         vm.getStartDate(), vm.getEndDate(), newStart, request.endDate())));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_PERIOD_UPDATE, "vm", vmId,
+                AuditService.VM_PERIOD_UPDATE, "vm", vm.getPublicId(),
                 Map.of("old", Map.of("startDate", String.valueOf(vm.getStartDate()),
                                 "endDate", String.valueOf(vm.getEndDate())),
                         "new", Map.of("startDate", String.valueOf(newStart),

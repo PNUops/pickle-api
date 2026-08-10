@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendResponse;
 import kr.ac.pusan.pickle.admin.dto.OrgDashboardSummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.SystemDashboardSummaryResponse;
@@ -36,7 +37,7 @@ public class AdminSummaryController {
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
     public OrgDashboardSummaryResponse getAdminSummary(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) Long orgId) {
+            @RequestParam(required = false) UUID orgId) {
         return adminSummaryService.orgSummary(principal, orgId);
     }
 
@@ -46,7 +47,7 @@ public class AdminSummaryController {
     public CapacityTrendResponse getAdminCapacityTrend(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(defaultValue = "90") @Min(7) @Max(365) int days,
-            @RequestParam(required = false) Long orgId) {
+            @RequestParam(required = false) UUID orgId) {
         return capacityTrendService.trend(principal, days, orgId);
     }
 

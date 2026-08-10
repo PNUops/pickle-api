@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendPointResponse;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
@@ -79,7 +80,7 @@ public class CapacityTrendService {
     }
 
     @Transactional(readOnly = true)
-    public CapacityTrendResponse trend(AuthenticatedUser actor, int days, Long orgId) {
+    public CapacityTrendResponse trend(AuthenticatedUser actor, int days, UUID orgId) {
         Long scopedOrgId = adminSummaryService.resolveOrgId(actor, orgId);
         LocalDate to = ClockConfig.todayKst(clock);
         LocalDate from = to.minusDays(days - 1L);

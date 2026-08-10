@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.terminal;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.UUID;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.terminal.dto.TerminalTicketResponse;
 import org.springframework.http.CacheControl;
@@ -37,7 +38,7 @@ public class TerminalController {
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<TerminalTicketResponse> createTerminalSession(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @PathVariable long vmId,
+            @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
         TerminalTicketResponse ticket = terminalService.mint(principal, vmId, clientIp(httpRequest));
         return ResponseEntity.status(HttpStatus.CREATED)

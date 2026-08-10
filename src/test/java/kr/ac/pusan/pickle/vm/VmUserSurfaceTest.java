@@ -99,12 +99,12 @@ class VmUserSurfaceTest {
                 """, vmId, vmId, owner.getId());
 
         // anyone the access list names (VIEWER+) reads, newest first
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/events")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.content[0].type").value("START"))
-                .andExpect(jsonPath("$.content[0].actorId").value(owner.getId()))
+                .andExpect(jsonPath("$.content[0].actorId").value(owner.getPublicId().toString()))
                 .andExpect(jsonPath("$.content[0].detail").value((Object) null))
                 .andExpect(jsonPath("$.content[1].type").value("CREATE"))
                 .andExpect(jsonPath("$.content[1].actorId").value((Object) null))
@@ -112,7 +112,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.content[1].createdAt").isNotEmpty());
 
         // paging envelope
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/events?size=1")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events?size=1")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
@@ -120,16 +120,16 @@ class VmUserSurfaceTest {
 
         // non-member → 404 (existence masked, v0.3.2), unknown VM → 404,
         // unauthenticated → 401
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/events")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/vms/999999/events")
+        mockMvc.perform(get("/api/v1/vms/" + SeedFixtures.UNKNOWN_ID + "/events")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/events"))
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -153,7 +153,7 @@ class VmUserSurfaceTest {
                  where id = ?
                 """, owner.getId(), vmId);
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.workspaceName").value(workspaceName))
@@ -167,7 +167,7 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.provisioning.attempts").value(2))
                 .andExpect(jsonPath("$.provisioning.lastError").value("일시 오류"))
                 .andExpect(jsonPath("$.deletion.kind").value("SELF"))
-                .andExpect(jsonPath("$.deletion.requestedById").value(owner.getId()))
+                .andExpect(jsonPath("$.deletion.requestedById").value(owner.getPublicId().toString()))
                 .andExpect(jsonPath("$.deletion.cancelable").value(true))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty());
@@ -180,7 +180,7 @@ class VmUserSurfaceTest {
                                delete_requested_by = null
                  where id = ?
                 """, vmId);
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.provisioning").value((Object) null))
@@ -197,7 +197,7 @@ class VmUserSurfaceTest {
         long allocationId = allocateIp(otherVmId);
         jdbcTemplate.update("update vms set ip_allocation_id = ? where id = ?", allocationId, vmId);
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ipAddress").value((Object) null));
@@ -206,35 +206,36 @@ class VmUserSurfaceTest {
     @Test
     void vmListCarriesWorkspaceName() throws Exception {
         long vmId = createVm();
-        mockMvc.perform(get("/api/v1/vms?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/vms?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(vmId))
+                .andExpect(jsonPath("$.content[0].id").value(pub("vms", vmId).toString()))
                 .andExpect(jsonPath("$.content[0].workspaceName").value(workspaceName));
     }
 
     @Test
     void workspaceDetailExposesMyRoleAndOrgSummaryExposesStatus() throws Exception {
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("OWNER"));
         // myRole is the workspace ladder, which now has only the two rungs that
         // describe standing in a workspace — this member's read on the VM comes
         // from the access list and does not show up here.
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.myRole").value("MEMBER"));
 
         // USER tokens only see non-hidden ACTIVE orgs, so provide one
-        jdbcTemplate.update(
-                "insert into orgs (name, slug) values ('표면 공개 기관', 'vus-visible')"
-                        + " on conflict (slug) do nothing");
+        if (jdbcTemplate.queryForObject("select count(*) from orgs where name = ?",
+                Long.class, "표면 공개 기관") == 0) {
+            jdbcTemplate.update("insert into orgs (name) values ('표면 공개 기관')");
+        }
         mockMvc.perform(get("/api/v1/orgs")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == 'vus-visible')].status")
+                .andExpect(jsonPath("$[?(@.name == '표면 공개 기관')].status")
                         .value(org.hamcrest.Matchers.contains("ACTIVE")));
     }
 
@@ -281,7 +282,7 @@ class VmUserSurfaceTest {
                                 Map.of("kind", "TEAM", "name", name))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
@@ -290,7 +291,7 @@ class VmUserSurfaceTest {
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -305,5 +306,10 @@ class VmUserSurfaceTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

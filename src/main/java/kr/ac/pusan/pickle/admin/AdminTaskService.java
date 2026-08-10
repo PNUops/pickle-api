@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.AdminTaskResponse;
@@ -77,8 +78,11 @@ public class AdminTaskService {
      * filter (v0.9.0 — OR over the given statuses; empty/null = no status filter).
      */
     public PageResponse<AdminTaskResponse> list(List<ProvisioningTaskStatus> statuses,
-            ProvisioningTaskKind kind, Long vmId, int page, int size) {
+            ProvisioningTaskKind kind, UUID publicVmId, int page, int size) {
         Specification<ProvisioningTask> spec = (root, query, cb) -> cb.conjunction();
+        // An id no VM has filters to nothing, as a non-matching number did.
+        Long vmId = publicVmId == null ? null
+                : vmRepository.findByPublicId(publicVmId).map(Vm::getId).orElse(-1L);
         if (statuses != null && !statuses.isEmpty()) {
             spec = spec.and((root, query, cb) -> root.get("status").in(statuses));
         }
@@ -95,9 +99,9 @@ public class AdminTaskService {
         Map<Long, Vm> vms = vmRepository.findAllById(result.getContent().stream()
                         .map(ProvisioningTask::getVmId).distinct().toList()).stream()
                 .collect(Collectors.toMap(Vm::getId, Function.identity()));
-        Map<Long, String> orgNames = orgRepository.findAllById(vms.values().stream()
+        Map<Long, Org> orgs = orgRepository.findAllById(vms.values().stream()
                         .map(Vm::getOrgId).filter(Objects::nonNull).distinct().toList()).stream()
-                .collect(Collectors.toMap(Org::getId, Org::getName));
+                .collect(Collectors.toMap(Org::getId, Function.identity()));
         // History-preserving workspace-name join (v0.9.0): reads all workspaces since a
         // task's VM may reference a since-deleted workspace.
         Map<Long, String> workspaceNames = workspaceRepository.findAllById(vms.values().stream()
@@ -107,11 +111,13 @@ public class AdminTaskService {
         List<AdminTaskResponse> content = result.getContent().stream()
                 .map(task -> {
                     Vm vm = vms.get(task.getVmId());
-                    String orgName = vm == null || vm.getOrgId() == null ? null
-                            : orgNames.get(vm.getOrgId());
+                    Org org = vm == null || vm.getOrgId() == null ? null : orgs.get(vm.getOrgId());
                     String workspaceName = vm == null || vm.getWorkspaceId() == null ? null
                             : workspaceNames.get(vm.getWorkspaceId());
-                    return AdminTaskResponse.from(task, vm, orgName, workspaceName);
+                    return AdminTaskResponse.from(task, vm,
+                            vm == null ? null : vm.getPublicId(),
+                            org == null ? null : org.getPublicId(),
+                            org == null ? null : org.getName(), workspaceName);
                 })
                 .toList();
         return PageResponse.of(content, result);
@@ -119,12 +125,12 @@ public class AdminTaskService {
 
     /** NEEDS_ADMIN → RETRYING CAS + after-commit re-enqueue of the kind's job. */
     @Transactional
-    public MessageResponse retry(AuthenticatedUser actor, long taskId, String ip) {
-        ProvisioningTask task = taskRepository.findById(taskId)
+    public MessageResponse retry(AuthenticatedUser actor, UUID publicTaskId, String ip) {
+        ProvisioningTask task = taskRepository.findByPublicId(publicTaskId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
                         "작업을 찾을 수 없습니다."));
-        if (taskRepository.requeueForAdminRetry(taskId, Instant.now()) == 0) {
+        if (taskRepository.requeueForAdminRetry(task.getId(), Instant.now()) == 0) {
             throw notRetryable();
         }
         long vmId = task.getVmId();
@@ -142,7 +148,7 @@ public class AdminTaskService {
             }
         });
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.TASK_RETRY,
-                "provisioning_task", taskId,
+                "provisioning_task", task.getPublicId(),
                 Map.of("vmId", vmId, "kind", task.getKind().name()), ip);
         return new MessageResponse("작업 재시도를 접수했습니다. 잠시 후 작업 상태가 갱신됩니다.");
     }

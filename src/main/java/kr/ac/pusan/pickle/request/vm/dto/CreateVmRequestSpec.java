@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -13,10 +14,10 @@ import org.jspecify.annotations.Nullable;
  */
 public record CreateVmRequestSpec(
         @NotNull(message = "OS 이미지(imageId)를 지정해 주세요.")
-        Long imageId,
+        UUID imageId,
 
         @NotNull(message = "사양 프리셋(flavorId)을 지정해 주세요.")
-        Long flavorId,
+        UUID flavorId,
 
         @NotNull(message = "요청 vCPU 수를 입력해 주세요.")
         @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")

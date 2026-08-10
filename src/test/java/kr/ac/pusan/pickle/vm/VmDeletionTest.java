@@ -181,12 +181,12 @@ class VmDeletionTest {
         long vmId = createVm(VmStatus.RUNNING);
         Instant before = Instant.now();
 
-        String body = mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        String body = mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.kind").value("SELF"))
-                .andExpect(jsonPath("$.requestedById").value(owner.getId()))
+                .andExpect(jsonPath("$.requestedById").value(owner.getPublicId().toString()))
                 .andExpect(jsonPath("$.reason").value((Object) null))
                 .andExpect(jsonPath("$.cancelable").value(true))
                 .andReturn().getResponse().getContentAsString();
@@ -219,7 +219,7 @@ class VmDeletionTest {
                 .contains("삭제 취소는 관리자만 가능합니다");
 
         // stacking another deletion on top → 409
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
@@ -232,18 +232,18 @@ class VmDeletionTest {
         long vmId = createVm(VmStatus.RUNNING);
 
         // MEMBER → 403 (owner-only), non-member → 404 (masked)
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + outsiderToken)
                         .header(ReauthTestSupport.HEADER, reauth(outsiderToken)))
                 .andExpect(status().isNotFound());
 
         // ORG_ADMIN of another org → 404 (existence masked)
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken())
                         .header(ReauthTestSupport.HEADER, reauth(otherOrgAdminToken())))
                 .andExpect(status().isNotFound());
@@ -251,7 +251,7 @@ class VmDeletionTest {
         // state guards: CREATING / NEEDS_ADMIN / DELETED → 409
         for (VmStatus status : List.of(VmStatus.CREATING, VmStatus.NEEDS_ADMIN, VmStatus.DELETED)) {
             setStatus(vmId, status);
-            mockMvc.perform(delete("/api/v1/vms/" + vmId)
+            mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                             .header("Authorization", "Bearer " + ownerToken)
                             .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                     .andExpect(status().isConflict())
@@ -260,7 +260,7 @@ class VmDeletionTest {
 
         // ORG_ADMIN of the VM's org may delete
         setStatus(vmId, VmStatus.STOPPED);
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
                 .andExpect(status().isAccepted());
@@ -288,27 +288,27 @@ class VmDeletionTest {
         // rung, so what a workspace owner keeps without a grant is knowing the VM
         // exists (the listing's limited view), not anything it holds. The 403
         // rather than 404 is the difference from a stranger.
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId)
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // Everything inside it is refused. Shutdown is chosen over start so the
         // VM's state is valid for the op and only the access check can refuse.
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/shutdown")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/terminal-sessions")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/terminal-sessions")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId + "/password")
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + pub("vms", vmId) + "/password")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -324,43 +324,43 @@ class VmDeletionTest {
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessLimited")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessLimited")
                         .value(org.hamcrest.Matchers.contains(true)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessManageAllowed")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessManageAllowed")
                         .value(org.hamcrest.Matchers.contains(true)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].hostname")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].hostname")
                         .value(org.hamcrest.Matchers.contains((Object) null)))
                 // Blanking `hostname` alone still handed the slug over: `name`
                 // is the same string on an open row. This VM has no display
                 // name, so the restricted row falls back to its id.
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
-                        .value(org.hamcrest.Matchers.contains("VM #" + vmId)));
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
+                        .value(org.hamcrest.Matchers.contains("VM #" + pub("vms", vmId))));
 
         // And the recovery path itself is open: they may read the access list
         // and put someone on it, which is the whole point of keeping deletion
         // and list management outside the rungs.
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + vmId + "/access")
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + pub("vms", vmId) + "/access")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk());
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/access")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/access")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "granteeType", "USER",
-                                "userId", member.getId(),
+                                "userId", member.getPublicId(),
                                 "role", "VIEWER"))))
                 .andExpect(status().isCreated());
 
         // A member the list now names, but only as a viewer, still cannot destroy it.
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // The workspace owner, still named nowhere on the list, may.
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
@@ -371,7 +371,7 @@ class VmDeletionTest {
         long vmId = createVm(VmStatus.ERROR);
         long allocationId = allocateIp(vmId);
 
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted())
@@ -401,7 +401,7 @@ class VmDeletionTest {
 
         // past instant → 422 with errors[] (the only remaining date rule —
         // the minimum-notice floor was dropped 2026-07-27)
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -413,7 +413,7 @@ class VmDeletionTest {
         // within the recommended 7-day window is accepted now (warning is
         // console-side only)
         long shortNoticeVm = createVm(VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/admin/vms/" + shortNoticeVm + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", shortNoticeVm) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -423,7 +423,7 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.kind").value("ADMIN"));
 
         // blank reason → 422 (bean validation)
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -432,7 +432,7 @@ class VmDeletionTest {
                 .andExpect(status().isUnprocessableContent());
 
         Instant scheduledFor = Instant.now().plus(Duration.ofDays(8));
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -454,14 +454,14 @@ class VmDeletionTest {
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
 
         // double-schedule and regular-user access → 409 / 403
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "scheduledFor", scheduledFor.toString(), "reason", "중복"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -470,7 +470,7 @@ class VmDeletionTest {
 
         // self-delete grace in progress (DELETING) can not be re-scheduled
         long deletingVm = createVm(VmStatus.DELETING);
-        mockMvc.perform(post("/api/v1/admin/vms/" + deletingVm + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", deletingVm) + "/schedule-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -485,7 +485,7 @@ class VmDeletionTest {
         // SELF: pending grace → cancel returns the VM to STOPPED
         long selfVm = createVm(VmStatus.DELETING);
         markPendingDeletion(selfVm, "SELF", Instant.now().plus(Duration.ofDays(5)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + selfVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", selfVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("삭제가 취소되었습니다."));
@@ -499,7 +499,7 @@ class VmDeletionTest {
         // ADMIN: schedule only — the power state is preserved
         long adminVm = createVm(VmStatus.RUNNING);
         markPendingDeletion(adminVm, "ADMIN", Instant.now().plus(Duration.ofDays(8)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", adminVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(statusOf(adminVm)).isEqualTo("RUNNING");
@@ -508,26 +508,26 @@ class VmDeletionTest {
         // FORCE / no pending deletion / grace elapsed → 409
         long forceVm = createVm(VmStatus.DELETING);
         markPendingDeletion(forceVm, "FORCE", Instant.now());
-        mockMvc.perform(post("/api/v1/admin/vms/" + forceVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", forceVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         long plainVm = createVm(VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/admin/vms/" + plainVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", plainVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict());
         long elapsedVm = createVm(VmStatus.DELETING);
         markPendingDeletion(elapsedVm, "SELF", Instant.now().minus(Duration.ofMinutes(1)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + elapsedVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", elapsedVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict());
 
         // users cannot cancel (403 via method security), other org → 404
-        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", adminVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden());
         markPendingDeletion(adminVm, "ADMIN", Instant.now().plus(Duration.ofDays(8)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + adminVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", adminVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + otherOrgAdminToken()))
                 .andExpect(status().isNotFound());
     }
@@ -539,7 +539,7 @@ class VmDeletionTest {
         // alone must not strand an intact VM in an uncancelable state.
         long dueVm = createVm(VmStatus.RUNNING);
         markPendingDeletion(dueVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + dueVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", dueVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(statusOf(dueVm)).isEqualTo("RUNNING");
@@ -548,7 +548,7 @@ class VmDeletionTest {
         // Once the destroy pipeline claimed the VM (DELETING), cancel refuses.
         long claimedVm = createVm(VmStatus.DELETING);
         markPendingDeletion(claimedVm, "ADMIN", Instant.now().minus(Duration.ofMinutes(3)));
-        mockMvc.perform(post("/api/v1/admin/vms/" + claimedVm + "/cancel-scheduled-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", claimedVm) + "/cancel-scheduled-delete")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
@@ -585,21 +585,21 @@ class VmDeletionTest {
                 String.class, vmId);
 
         // ORG_ADMIN → 403 (SYS_ADMIN only)
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
                 .andExpect(status().isForbidden());
 
         // wrong confirm name → 409 VM_CONFIRM_NAME_MISMATCH
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", "wrong-name"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_CONFIRM_NAME_MISMATCH"));
 
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -612,7 +612,7 @@ class VmDeletionTest {
         assertThat(eventTypes(vmId)).contains("FORCE_DELETE");
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'vm.force_delete' and target_id = ?",
-                Long.class, vmId);
+                Long.class, pub("vms", vmId).toString());
         assertThat(audits).isEqualTo(1);
         Long enqueued = jdbcTemplate.queryForObject(
                 "select count(*) from jobrunr_jobs where jobsignature like '%DeleteVmJob.deleteVm(%'",
@@ -623,7 +623,7 @@ class VmDeletionTest {
 
         // already destroyed → 409
         setStatus(vmId, VmStatus.DELETED);
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -641,7 +641,7 @@ class VmDeletionTest {
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
 
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -863,7 +863,7 @@ class VmDeletionTest {
     private Long auditCount(String action, long vmId) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, vmId);
+                Long.class, action, pub("vms", vmId).toString());
     }
 
     private List<Object> taskState(long vmId) {
@@ -897,12 +897,11 @@ class VmDeletionTest {
     }
 
     private String otherOrgAdminToken() {
-        Long otherOrgId = jdbcTemplate.query("select id from orgs where slug = 'vmdel-other'",
+        Long otherOrgId = jdbcTemplate.query("select id from orgs where name = '삭제테스트 타기관'",
                 rs -> rs.next() ? rs.getLong(1) : null);
         if (otherOrgId == null) {
-            otherOrgId = jdbcTemplate.queryForObject("""
-                    insert into orgs (name, slug) values ('삭제테스트 타기관', 'vmdel-other') returning id
-                    """, Long.class);
+            otherOrgId = jdbcTemplate.queryForObject(
+                    "insert into orgs (name) values ('삭제테스트 타기관') returning id", Long.class);
         }
         User otherAdmin = ensureUser("vmdel.otheradmin@pusan.ac.kr", "타기관관리자");
         otherAdmin.setRole(UserRole.ORG_ADMIN);
@@ -1008,7 +1007,7 @@ class VmDeletionTest {
         // enqueued run would silently no-op and the VM would wedge.
         String vmName = jdbcTemplate.queryForObject("select name from vms where id = ?",
                 String.class, vmId);
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -1069,12 +1068,12 @@ class VmDeletionTest {
         setSetting(vmId, "deletion_protection", "true");
 
         // self-delete, admin schedule-delete, and force-delete are all refused
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/schedule-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -1082,7 +1081,7 @@ class VmDeletionTest {
                                 "reason", "정리"))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("confirmName", vmName))))
@@ -1092,7 +1091,7 @@ class VmDeletionTest {
         // Override force-delete persists deletion_protection=false in the same
         // tx (the destroy pipeline re-checks it — incl. a sweeper-recovered run
         // after a lost enqueue) and never touches PVE in the request thread.
-        mockMvc.perform(post("/api/v1/admin/vms/" + vmId + "/force-delete")
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/force-delete")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -1106,7 +1105,7 @@ class VmDeletionTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action='vm.force_delete' and target_id=? and detail::text like '%overrodeProtection%'
-                """, Long.class, vmId)).isEqualTo(1L);
+                """, Long.class, pub("vms", vmId).toString())).isEqualTo(1L);
     }
 
     @Test
@@ -1133,12 +1132,12 @@ class VmDeletionTest {
         long vmId = createVm(VmStatus.RUNNING);
         setSetting(vmId, "stop_protection", "true");
         // MEMBER is blocked from shutdown while stop protection is on
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/shutdown")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_STOP_PROTECTED"));
         // OWNER (>= EDITOR) is allowed
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/shutdown")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
     }
@@ -1164,7 +1163,7 @@ class VmDeletionTest {
     private org.springframework.test.web.servlet.ResultActions patchSetting(String token, long vmId,
             String key, Object value) throws Exception {
         return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                .patch("/api/v1/vms/" + vmId + "/settings")
+                .patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                 .header("Authorization", "Bearer " + token)
                 .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -1216,11 +1215,11 @@ class VmDeletionTest {
                                 Map.of("kind", "TEAM", "name", "삭제 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -1235,5 +1234,10 @@ class VmDeletionTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

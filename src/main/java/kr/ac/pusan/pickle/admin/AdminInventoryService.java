@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminOsImageResponse;
 import kr.ac.pusan.pickle.admin.dto.CreateVmFlavorRequest;
 import kr.ac.pusan.pickle.admin.dto.NodeSummaryResponse;
@@ -63,37 +64,49 @@ public class AdminInventoryService {
     /** Contract {@code listAdminOsImages}: every OS image, retired revisions included. */
     @Transactional(readOnly = true)
     public List<AdminOsImageResponse> listOsImages() {
-        return osImageRepository.findAllInDisplayOrder().stream()
-                .map(AdminOsImageResponse::from)
+        List<OsImage> images = osImageRepository.findAllInDisplayOrder();
+        // The image names its node by public id, so the node rows are batched.
+        Map<Long, UUID> nodeIds = nodePublicIds(images);
+        return images.stream()
+                .map(image -> AdminOsImageResponse.from(image, nodeIds.get(image.getNodeId())))
                 .toList();
     }
 
+    private Map<Long, UUID> nodePublicIds(List<OsImage> images) {
+        List<Long> ids = images.stream().map(OsImage::getNodeId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        return ids.isEmpty() ? Map.of()
+                : nodeRepository.findAllById(ids).stream()
+                        .collect(java.util.stream.Collectors.toMap(Node::getId, Node::getPublicId));
+    }
+
     @Transactional
-    public AdminOsImageResponse updateCatalogStatus(AuthenticatedUser actor, long imageId,
+    public AdminOsImageResponse updateCatalogStatus(AuthenticatedUser actor, UUID imageId,
             UpdateOsImageStatusRequest request, String ip) {
-        OsImage image = osImageRepository.findById(imageId)
+        OsImage image = osImageRepository.findByPublicId(imageId)
                 .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
         if (image.getStatus() != request.status()) {
             String fromStatus = image.getStatus().name();
             image.setStatus(request.status());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.OS_IMAGE_STATUS_UPDATE, "os_image", imageId,
+                    AuditService.OS_IMAGE_STATUS_UPDATE, "os_image", image.getPublicId(),
                     Map.of("name", image.getName(), "version", image.getVersion(),
                             "fromStatus", fromStatus, "toStatus", request.status().name()), ip);
         }
-        return AdminOsImageResponse.from(image);
+        return AdminOsImageResponse.from(image, nodePublicIds(List.of(image)).get(image.getNodeId()));
     }
 
     @Transactional
-    public NodeSummaryResponse updateNodeStatus(AuthenticatedUser actor, long nodeId,
+    public NodeSummaryResponse updateNodeStatus(AuthenticatedUser actor, UUID publicNodeId,
             UpdateNodeStatusRequest request, String ip) {
-        Node node = nodeRepository.findById(nodeId)
+        Node node = nodeRepository.findByPublicId(publicNodeId)
                 .orElseThrow(() -> notFound("해당 노드가 존재하지 않습니다."));
+        long nodeId = node.getId();
         if (node.getStatus() != request.status()) {
             String fromStatus = node.getStatus().name();
             node.setStatus(request.status());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.NODE_STATUS_UPDATE, "node", nodeId,
+                    AuditService.NODE_STATUS_UPDATE, "node", node.getPublicId(),
                     Map.of("name", node.getName(), "fromStatus", fromStatus,
                             "toStatus", request.status().name()), ip);
         }
@@ -127,7 +140,7 @@ public class AdminInventoryService {
             throw nameTaken();
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.FLAVOR_CREATE,
-                "vm_flavor", flavor.getId(),
+                "vm_flavor", flavor.getPublicId(),
                 Map.of("name", flavor.getName(), "vcpu", flavor.getVcpu(),
                         "memoryMb", flavor.getMemoryMb(), "diskGb", flavor.getDiskGb()), ip);
         return VmFlavorResponse.from(flavor);
@@ -138,9 +151,9 @@ public class AdminInventoryService {
      * idempotent re-application without an audit row, like the status toggles.
      */
     @Transactional
-    public VmFlavorResponse updateFlavor(AuthenticatedUser actor, long flavorId,
+    public VmFlavorResponse updateFlavor(AuthenticatedUser actor, UUID flavorId,
             UpdateVmFlavorRequest request, String ip) {
-        VmFlavor flavor = vmFlavorRepository.findById(flavorId)
+        VmFlavor flavor = vmFlavorRepository.findByPublicId(flavorId)
                 .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
         if (request.displayName() == null && request.vcpu() == null && request.memoryMb() == null
                 && request.diskGb() == null && request.notes() == null && request.status() == null) {
@@ -179,7 +192,7 @@ public class AdminInventoryService {
         if (!changes.isEmpty()) {
             changes.put("name", flavor.getName());
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.FLAVOR_UPDATE, "vm_flavor", flavorId, changes, ip);
+                    AuditService.FLAVOR_UPDATE, "vm_flavor", flavor.getPublicId(), changes, ip);
         }
         return VmFlavorResponse.from(flavor);
     }

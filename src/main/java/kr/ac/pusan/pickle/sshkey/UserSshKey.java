@@ -7,8 +7,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import kr.ac.pusan.pickle.common.crypto.SshKeyAlgorithm;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 /**
  * A user's registered SSH public key (V28). Either pasted (server holds only the
@@ -23,6 +26,14 @@ public class UserSshKey {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * The identifier this row wears outside the API boundary. Internal joins,
+     * sorts and foreign keys keep using {@link #id}.
+     */
+    @JdbcTypeCode(SqlTypes.UUID)
+    @Column(name = "public_id", nullable = false, updatable = false, unique = true)
+    private UUID publicId = UUID.randomUUID();
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
@@ -66,6 +77,10 @@ public class UserSshKey {
 
     public Long getId() {
         return id;
+    }
+
+    public UUID getPublicId() {
+        return publicId;
     }
 
     public Long getUserId() {

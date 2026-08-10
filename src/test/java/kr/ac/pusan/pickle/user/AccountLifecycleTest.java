@@ -124,7 +124,7 @@ class AccountLifecycleTest {
 
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'account.password_change' and target_id = ?",
-                Long.class, user.getId())).isGreaterThanOrEqualTo(1);
+                Long.class, user.getPublicId().toString())).isGreaterThanOrEqualTo(1);
     }
 
     @Test
@@ -255,8 +255,8 @@ class AccountLifecycleTest {
     }
 
     private Org ensureOrg() {
-        return orgRepository.findBySlug("acct-life-org")
-                .orElseGet(() -> orgRepository.save(new Org("계정수명 테스트 기관", "acct-life-org", null)));
+        return orgRepository.findFirstByNameOrderByIdAsc("계정수명 테스트 기관")
+                .orElseGet(() -> orgRepository.save(new Org("계정수명 테스트 기관", null)));
     }
 
     private long personalWorkspaceId(long userId) {

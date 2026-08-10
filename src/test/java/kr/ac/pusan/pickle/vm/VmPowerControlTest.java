@@ -163,7 +163,7 @@ class VmPowerControlTest {
         for (Map.Entry<String, List<VmStatus>> entry : allowed.entrySet()) {
             for (VmStatus status : VmStatus.values()) {
                 setStatus(vmId, status);
-                ResultActions result = mockMvc.perform(post("/api/v1/vms/" + vmId + "/" + entry.getKey())
+                ResultActions result = mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/" + entry.getKey())
                         .header("Authorization", "Bearer " + ownerToken));
                 if (entry.getValue().contains(status)) {
                     result.andExpect(status().isAccepted())
@@ -183,23 +183,23 @@ class VmPowerControlTest {
         long vmId = createVm(VmStatus.STOPPED);
 
         // non-member → 404 (existence masked), VIEWER grant → 403, MEMBER → 202
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isAccepted());
 
         // unknown VM → 404; unauthenticated → 401
-        mockMvc.perform(post("/api/v1/vms/999999/start")
+        mockMvc.perform(post("/api/v1/vms/" + SeedFixtures.UNKNOWN_ID + "/start")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start"))
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/start"))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -212,12 +212,12 @@ class VmPowerControlTest {
                 vmId, "stop_protection");
 
         // a MEMBER (below EDITOR) can still START …
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/start")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/start")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isAccepted());
         // … while the same MEMBER is refused a stop-class op by stop protection.
         setStatus(vmId, VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/shutdown")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/shutdown")
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_STOP_PROTECTED"));
@@ -226,7 +226,7 @@ class VmPowerControlTest {
     @Test
     void rebootAcceptRecordsIntentAndEnqueuesAfterCommit() throws Exception {
         long vmId = createVm(VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/reboot")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/reboot")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").value("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다."));
@@ -289,8 +289,9 @@ class VmPowerControlTest {
     @Test
     void concurrentDuplicateStartsClaimExactlyOnce() throws Exception {
         long vmId = createVm(VmStatus.STOPPED);
-        AuthenticatedUser actor = new AuthenticatedUser(owner.getId(), owner.getEmail(),
-                owner.getRole(), owner.getOrgId());
+        UUID vmPublicId = SeedFixtures.publicId(jdbcTemplate, "vms", vmId);
+        AuthenticatedUser actor = new AuthenticatedUser(owner.getId(), owner.getPublicId(),
+                owner.getEmail(), owner.getRole(), owner.getOrgId());
 
         int racers = 4;
         CountDownLatch start = new CountDownLatch(1);
@@ -299,7 +300,7 @@ class VmPowerControlTest {
             List<Future<MessageResponse>> futures = IntStream.range(0, racers)
                     .mapToObj(i -> pool.submit(() -> {
                         start.await();
-                        return vmLifecycleService.start(actor, vmId);
+                        return vmLifecycleService.start(actor, vmPublicId);
                     }))
                     .toList();
             start.countDown();
@@ -431,7 +432,7 @@ class VmPowerControlTest {
                                 Map.of("kind", "TEAM", "name", "전원 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
@@ -440,7 +441,7 @@ class VmPowerControlTest {
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -455,5 +456,10 @@ class VmPowerControlTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

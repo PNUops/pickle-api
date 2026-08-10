@@ -1,12 +1,13 @@
 package kr.ac.pusan.pickle.inventory.dto;
 
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code VmFlavor} — spec preset (v0.23.0 axis split). */
 public record VmFlavorResponse(
-        Long id,
+        UUID id,
         String name,
         String displayName,
         int vcpu,
@@ -16,7 +17,7 @@ public record VmFlavorResponse(
         @Nullable String notes) {
 
     public static VmFlavorResponse from(VmFlavor flavor) {
-        return new VmFlavorResponse(flavor.getId(), flavor.getName(), flavor.getDisplayName(),
+        return new VmFlavorResponse(flavor.getPublicId(), flavor.getName(), flavor.getDisplayName(),
                 flavor.getVcpu(), flavor.getMemoryMb(), flavor.getDiskGb(), flavor.getStatus(),
                 flavor.getNotes());
     }

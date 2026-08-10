@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -10,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * {@code AdminNodeQueryService}.
  */
 public record NodeSummaryResponse(
-        Long id,
+        UUID id,
         String name,
         NodeStatus status,
         int cpuThreads,
