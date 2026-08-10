@@ -244,8 +244,11 @@ public class CampusIpRequestService {
 
     private Map<String, Object> notificationArgs(CampusIpRequest request, Vm vm) {
         Map<String, Object> args = new java.util.LinkedHashMap<>();
-        args.put("requestId", request.getId());
-        args.put("vmId", request.getVmId());
+        // Public ids: these travel into the notification's link path, which the
+        // console resolves. The sibling publish at the create path already does
+        // this -- the two disagreed until 2026-08-11.
+        args.put("requestId", request.getPublicId());
+        args.put("vmId", vm != null ? vm.getPublicId() : null);
         args.put("vmName", vm != null ? vm.getName() : "");
         args.put("statusLabel", statusLabel(request.getStatus()));
         if (request.getGrantedAddress() != null

@@ -219,9 +219,20 @@ class CampusIpRequestTest {
         Long notified = jdbcTemplate.queryForObject("""
                 select count(*) from notifications
                  where user_id = ? and event = 'campus_ip.status_changed'
-                   and (payload ->> 'requestId')::bigint = ?
-                """, Long.class, owner.getId(), requestId);
+                   and payload ->> 'requestId' = ?
+                """, Long.class, owner.getId(), pub("campus_ip_requests", requestId).toString());
         assertThat(notified).isEqualTo(2);
+
+        // The link the notification carries has to be one the console can open.
+        // Nothing else in the suite asserts link_path, which is how a status
+        // change kept emitting an internal id after its sibling had stopped.
+        String linkPath = jdbcTemplate.queryForObject("""
+                select link_path from notifications
+                 where user_id = ? and event = 'campus_ip.status_changed'
+                   and payload ->> 'requestId' = ?
+                 order by id desc limit 1
+                """, String.class, owner.getId(), pub("campus_ip_requests", requestId).toString());
+        assertThat(linkPath).isEqualTo("/console/vms/" + pub("vms", vmId));
 
         transition(requestId, "REVOKED", null)
                 .andExpect(status().isOk())
