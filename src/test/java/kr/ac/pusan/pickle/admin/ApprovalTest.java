@@ -344,6 +344,40 @@ class ApprovalTest {
     }
 
     @Test
+    void asciiDisplayNameBecomesTheHostnameSeed() throws Exception {
+        long workspaceId = createTeam(userToken, "appr-seed-x1");
+        long requestId = submit(userToken, workspaceId, org.getId(), "capstone api");
+
+        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+                .andExpect(status().isOk());
+
+        Vm vm = vmRepository.findAll().stream()
+                .filter(v -> v.getRequestId() == requestId)
+                .findFirst().orElseThrow();
+        assertThat(vm.getHostname()).matches("capstone-api-[a-z0-9]{4}");
+    }
+
+    /**
+     * The profanity list matches on substrings, so a seed that trips it would
+     * fail every retry — the seed is replaced once instead of burning attempts.
+     */
+    @Test
+    void aDisplayNameTheSlugPolicyRefusesFallsBackInsteadOfFailing() throws Exception {
+        jdbcTemplate.update("update settings set value = ?::jsonb where key = 'profanity_subdomains'",
+                "[\"zzsex\"]");
+        long workspaceId = createTeam(userToken, "appr-seed-x2");
+        long requestId = submit(userToken, workspaceId, org.getId(), "zzsex 프로젝트");
+
+        postJson("/api/v1/admin/requests/" + requestId + "/approve", orgAdminToken, approveBody())
+                .andExpect(status().isOk());
+
+        Vm vm = vmRepository.findAll().stream()
+                .filter(v -> v.getRequestId() == requestId)
+                .findFirst().orElseThrow();
+        assertThat(vm.getHostname()).matches("vm" + workspaceId + "-[a-z0-9]{4}");
+    }
+
+    @Test
     void approveSeedsRequestedDisplayNameIntoVmSettings() throws Exception {
         long workspaceId = createTeam(userToken, "appr-dname-x1");
         long requestId = submit(userToken, workspaceId, org.getId(), "학과 세미나 서버");
