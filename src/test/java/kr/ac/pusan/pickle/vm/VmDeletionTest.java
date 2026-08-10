@@ -334,7 +334,7 @@ class VmDeletionTest {
                 // is the same string on an open row. This VM has no display
                 // name, so the restricted row falls back to its id.
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
-                        .value(org.hamcrest.Matchers.contains("VM #" + vmId)));
+                        .value(org.hamcrest.Matchers.contains("VM #" + pub("vms", vmId))));
 
         // And the recovery path itself is open: they may read the access list
         // and put someone on it, which is the whole point of keeping deletion

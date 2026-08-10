@@ -127,7 +127,7 @@ class WorkspaceDeleteTest {
                 .andExpect(status().isNotFound());
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action='workspace.delete' and target_id=?",
-                Long.class, workspaceId)).isEqualTo(1L);
+                Long.class, pub("workspaces", workspaceId).toString())).isEqualTo(1L);
         // Pinned to this workspace's notification: the owner is shared with the
         // other cases in this class, which delete workspaces of their own.
         assertThat(jdbcTemplate.queryForObject(
@@ -168,7 +168,7 @@ class WorkspaceDeleteTest {
                 String.class, requestId)).isEqualTo("CANCELED");
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs where action='request.cancel' and target_id=?
-                """, Long.class, requestId)).isEqualTo(1L);
+                """, Long.class, pub("requests", requestId).toString())).isEqualTo(1L);
 
         // approving the now-canceled request hits the existing SUBMITTED guard → 409
         mockMvc.perform(post("/api/v1/admin/requests/" + pub("requests", requestId).toString() + "/approve")

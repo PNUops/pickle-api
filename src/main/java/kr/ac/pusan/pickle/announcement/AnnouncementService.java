@@ -152,9 +152,15 @@ public class AnnouncementService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.ANNOUNCEMENT_CREATE, "announcement", announcement.getPublicId(),
                 Map.of("scope", scope.name(), "recipientCount", recipients), ip);
+        // The scope target is what was stored, not what the body named: an
+        // ORG_ADMIN's org announcement takes its org from the actor.
         return AnnouncementView.from(announcement,
-                request.orgId() == null ? null : request.orgId(),
-                request.workspaceId() == null ? null : request.workspaceId());
+                announcement.getOrgId() == null ? null
+                        : orgRepository.findById(announcement.getOrgId()).map(Org::getPublicId)
+                                .orElse(null),
+                announcement.getWorkspaceId() == null ? null
+                        : workspaceRepository.findById(announcement.getWorkspaceId())
+                                .map(Workspace::getPublicId).orElse(null));
     }
 
     /**

@@ -99,7 +99,7 @@ class SshGatewaySessionTest {
 
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
-        assertThat(((Number) row.get("target_id")).longValue()).isEqualTo(vmId);
+        assertThat(row.get("target_id")).isEqualTo(pub("vms", vmId).toString());
         assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
         assertThat((String) row.get("detail")).contains(FP_MEMBER).contains(FP_MEMBER2)
                 .contains("\"userId\"").doesNotContain("ambiguous");
@@ -268,5 +268,10 @@ class SshGatewaySessionTest {
 
     private static String uniqueSlug() {
         return "team-sess-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

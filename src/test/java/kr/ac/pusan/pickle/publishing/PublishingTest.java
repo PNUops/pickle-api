@@ -1193,14 +1193,14 @@ class PublishingTest {
         // Both rows are listed and both read ACTIVE — the reservation stamp is
         // the only thing telling an admin why the second name is still taken.
         Map<UUID, tools.jackson.databind.JsonNode> byId = listAdminDomains();
-        assertThat(byId.get(servingId).get("status").asString()).isEqualTo("ACTIVE");
-        assertThat(byId.get(servingId).get("releasedAt").isNull()).isTrue();
-        assertThat(byId.get(servingId).get("reservedUntil").isNull()).isTrue();
-        assertThat(byId.get(reservedId).get("status").asString()).isEqualTo("ACTIVE");
-        assertThat(byId.get(reservedId).get("releasedAt").isNull()).isFalse();
+        assertThat(byId.get(pub("domains", servingId)).get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(byId.get(pub("domains", servingId)).get("releasedAt").isNull()).isTrue();
+        assertThat(byId.get(pub("domains", servingId)).get("reservedUntil").isNull()).isTrue();
+        assertThat(byId.get(pub("domains", reservedId)).get("status").asString()).isEqualTo("ACTIVE");
+        assertThat(byId.get(pub("domains", reservedId)).get("releasedAt").isNull()).isFalse();
         // The reservation end is the server's own arithmetic (grace setting),
         // not something the console could derive from releasedAt.
-        assertThat(byId.get(reservedId).get("reservedUntil").isNull()).isFalse();
+        assertThat(byId.get(pub("domains", reservedId)).get("reservedUntil").isNull()).isFalse();
     }
 
     // ── transport-failure retry + recurring reconcile (hardening) ───────────
@@ -1864,10 +1864,7 @@ class PublishingTest {
         long domainId = domainIdForVm(vmId);
         long routeId = routeIdForVm(vmId);
 
-        long otherOrgId = jdbcTemplate.queryForObject("""
-                insert into orgs (name, slug) values ('개입 타기관', 'pub-other-org')
-                on conflict (slug) do update set name = excluded.name returning id
-                """, Long.class);
+        long otherOrgId = ensureOrg("개입 타기관");
         User otherOrgAdmin = ensureUser("pub.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrgId);
         String otherToken = jwtService.createAccessToken(otherOrgAdmin);
@@ -2235,5 +2232,13 @@ class PublishingTest {
     /** The public identifier of a row this test set up through direct SQL. */
     private UUID pub(String table, long id) {
         return SeedFixtures.publicId(jdbcTemplate, table, id);
+    }
+
+    /** An org row keyed by name, the slug having gone with the sequential ids. */
+    private long ensureOrg(String name) {
+        Long existing = jdbcTemplate.query("select id from orgs where name = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, name);
+        return existing != null ? existing : jdbcTemplate.queryForObject(
+                "insert into orgs (name) values (?) returning id", Long.class, name);
     }
 }

@@ -227,7 +227,8 @@ class ProvisioningEndToEndTest {
         long vmId = SeedFixtures.internalId(jdbcTemplate, "vms", UUID.fromString(vm.get("id").asString()));
         // No display name was sent, so the seed identifies the workspace.
         assertThat(vm.get("hostname").asString()).matches("vm" + workspaceId + "-[a-z0-9]{4}");
-        assertThat(vm.get("requestId").asLong()).isEqualTo(requestId);
+        assertThat(vm.get("requestId").asString())
+                .isEqualTo(pub("requests", requestId).toString());
         assertThat(vm.get("statusDetail").asString()).isEqualTo("프로비저닝 완료");
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + userToken))

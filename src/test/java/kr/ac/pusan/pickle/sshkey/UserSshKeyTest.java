@@ -263,7 +263,9 @@ class UserSshKeyTest {
                 .andReturn().getResponse().getContentAsString();
         long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
-        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId))
+        // read before the delete: the row it names is gone afterwards
+        String keyPublicId = pub("user_ssh_keys", keyId).toString();
+        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + keyPublicId)
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isNoContent());
@@ -272,7 +274,7 @@ class UserSshKeyTest {
                 .andExpect(jsonPath("$.length()").value(0));
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'user.ssh_key_delete' and target_id = ?",
-                Long.class, pub("user_ssh_keys", keyId).toString())).isEqualTo(1);
+                Long.class, keyPublicId)).isEqualTo(1);
     }
 
     private org.springframework.test.web.servlet.ResultActions registerKey(String token,

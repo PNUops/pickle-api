@@ -437,7 +437,7 @@ class ApprovalTest {
                 .findFirst().orElseThrow();
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from vm_settings where vm_id = ? and key = 'display_name'
-                """, Long.class, vm.getPublicId().toString())).isEqualTo(0);
+                """, Long.class, vm.getId())).isEqualTo(0);
         assertThat(jdbcTemplate.queryForObject("""
                 select detail ->> 'displayName' from audit_logs
                  where action = 'request.approve' and target_id = ?

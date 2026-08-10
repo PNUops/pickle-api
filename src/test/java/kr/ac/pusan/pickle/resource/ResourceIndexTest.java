@@ -160,7 +160,7 @@ class ResourceIndexTest {
                 // this caller may not reach. With no display name set it falls
                 // back to the id.
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
-                        .value(Matchers.contains("VM #" + vmId)));
+                        .value(Matchers.contains("VM #" + pub("vms", vmId))));
         // Asserted against the whole body, not one field: the slug must not
         // appear anywhere in the response, whichever field might carry it.
         String body = mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))

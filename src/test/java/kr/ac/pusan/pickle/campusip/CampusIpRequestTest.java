@@ -171,7 +171,7 @@ class CampusIpRequestTest {
     void cancelWorksOnlyBeforeReview() throws Exception {
         long vmId = vm();
         long requestId = created(vmId, "취소 테스트", List.of(80));
-        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + requestId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + pub("campus_ip_requests", requestId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
         assertThat(jdbcTemplate.queryForObject(
@@ -180,7 +180,7 @@ class CampusIpRequestTest {
 
         long second = created(vmId, "취소 불가 테스트", List.of(80));
         transition(second, "APPROVED", null).andExpect(status().isOk());
-        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + second)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + pub("campus_ip_requests", second))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CAMPUS_IP_INVALID_TRANSITION"));

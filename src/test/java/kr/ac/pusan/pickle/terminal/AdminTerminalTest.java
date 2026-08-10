@@ -180,15 +180,14 @@ class AdminTerminalTest {
         return sessionId;
     }
 
-    private long ensureOrg(String slug) {
-        Long existing = jdbcTemplate.query("select id from orgs where slug = ?",
-                rs -> rs.next() ? rs.getLong(1) : null, slug);
+    private long ensureOrg(String name) {
+        Long existing = jdbcTemplate.query("select id from orgs where name = ?",
+                rs -> rs.next() ? rs.getLong(1) : null, name);
         if (existing != null) {
             return existing;
         }
         return jdbcTemplate.queryForObject(
-                "insert into orgs (name, slug) values ('터미널관리자B기관', ?) returning id",
-                Long.class, slug);
+                "insert into orgs (name) values (?) returning id", Long.class, name);
     }
 
     private User ensureUser(String email, String name, UserRole role, Long orgId) {
