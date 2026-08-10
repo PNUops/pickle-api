@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.NodeMetricsResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -37,6 +38,10 @@ import org.springframework.http.HttpStatus;
 @ExtendWith(MockitoExtension.class)
 class AdminNodeMetricsServiceTest {
 
+    private static final UUID NODE_ID = UUID.fromString("00000000-0000-4000-8000-000000000003");
+    private static final UUID UNKNOWN_NODE_ID =
+            UUID.fromString("00000000-0000-4000-8000-000000000404");
+
     @Mock
     private NodeRepository nodeRepository;
     @Mock
@@ -45,7 +50,7 @@ class AdminNodeMetricsServiceTest {
     @Test
     void rrdRowsBecomePointsAndTheTimelessOnesAreDropped() {
         Node node = node();
-        when(nodeRepository.findById(3L)).thenReturn(Optional.of(node));
+        when(nodeRepository.findByPublicId(NODE_ID)).thenReturn(Optional.of(node));
         when(proxmoxClient.nodeRrdData(anyString(), anyString(), any()))
                 .thenReturn(List.of(
                         new NodeRrdSample(null, 0.5, 32.0, 0.01, 1.0, 1.0e10, 5.0e9, 4.0e9,
@@ -54,7 +59,7 @@ class AdminNodeMetricsServiceTest {
                                 4.0e9, 0.0, 0.0, 1.0e11, 2.0e10, 10.0, null)));
 
         NodeMetricsResponse response = new AdminNodeMetricsService(nodeRepository, proxmoxClient,
-                clock()).metrics(3L, RrdTimeframe.HOUR);
+                clock()).metrics(NODE_ID, RrdTimeframe.HOUR);
 
         assertThat(response.timeframe()).isEqualTo("HOUR");
         assertThat(response.points()).hasSize(1);
@@ -67,7 +72,7 @@ class AdminNodeMetricsServiceTest {
     @Test
     void aHypervisorThatRefusesIsA503() {
         Node node = node();
-        when(nodeRepository.findById(3L)).thenReturn(Optional.of(node));
+        when(nodeRepository.findByPublicId(NODE_ID)).thenReturn(Optional.of(node));
         when(proxmoxClient.nodeRrdData(anyString(), anyString(), any()))
                 .thenThrow(new ProxmoxApiException(596, "no such resource", "GET rrddata"));
 
@@ -77,7 +82,7 @@ class AdminNodeMetricsServiceTest {
     @Test
     void anUnconfiguredApiTokenIsTheSameOutageAsARefusal() {
         Node node = node();
-        when(nodeRepository.findById(3L)).thenReturn(Optional.of(node));
+        when(nodeRepository.findByPublicId(NODE_ID)).thenReturn(Optional.of(node));
         // The client refuses before the request leaves when the deployment
         // carries no PVE token — a state the configuration explicitly allows.
         when(proxmoxClient.nodeRrdData(anyString(), anyString(), any()))
@@ -88,9 +93,9 @@ class AdminNodeMetricsServiceTest {
 
     @Test
     void anUnknownNodeIsA404AndIsNeverAskedAbout() {
-        when(nodeRepository.findById(404L)).thenReturn(Optional.empty());
+        when(nodeRepository.findByPublicId(UNKNOWN_NODE_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().metrics(404L, RrdTimeframe.HOUR))
+        assertThatThrownBy(() -> service().metrics(UNKNOWN_NODE_ID, RrdTimeframe.HOUR))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.NOT_FOUND);
                     assertThat(ex.getCode()).isEqualTo(ErrorCodes.RESOURCE_NOT_FOUND);
@@ -98,7 +103,7 @@ class AdminNodeMetricsServiceTest {
     }
 
     private void assertMetricsUnavailable() {
-        assertThatThrownBy(() -> service().metrics(3L, RrdTimeframe.HOUR))
+        assertThatThrownBy(() -> service().metrics(NODE_ID, RrdTimeframe.HOUR))
                 .isInstanceOfSatisfying(ApiException.class, ex -> {
                     assertThat(ex.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
                     assertThat(ex.getCode()).isEqualTo(ErrorCodes.METRICS_UNAVAILABLE);

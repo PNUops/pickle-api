@@ -80,31 +80,31 @@ class AdminIpAllocationsTest {
                 .andExpect(jsonPath(byId(allocated)).exists())
                 .andExpect(jsonPath(byId(released)).exists())
                 .andExpect(jsonPath(byId(inOtherPool)).exists())
-                .andExpect(jsonPath(byId(allocated) + ".poolId").value((int) poolId))
+                .andExpect(jsonPath(byId(allocated) + ".poolId").value(pub("ip_pools", poolId).toString()))
                 .andExpect(jsonPath(byId(allocated) + ".poolName").value("guest-private"))
                 .andExpect(jsonPath(byId(allocated) + ".ip").isNotEmpty())
-                .andExpect(jsonPath(byId(allocated) + ".vmId").value((int) vmId))
+                .andExpect(jsonPath(byId(allocated) + ".vmId").value(pub("vms", vmId).toString()))
                 .andExpect(jsonPath(byId(allocated) + ".vmName").isNotEmpty())
                 .andExpect(jsonPath(byId(allocated) + ".hostname").isNotEmpty())
                 .andExpect(jsonPath(byId(allocated) + ".status").value("ALLOCATED"))
                 .andExpect(jsonPath(byId(allocated) + ".allocatedAt").isNotEmpty())
                 .andExpect(jsonPath(byId(released) + ".status").value("RELEASED"))
                 .andExpect(jsonPath(byId(released) + ".releasedAt").isNotEmpty())
-                .andExpect(jsonPath("$.content[?(@.id == %d && @.vmId == null)]"
-                        .formatted(inOtherPool)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s' && @.vmId == null)]"
+                        .formatted(pub("ip_allocations", inOtherPool))).exists());
     }
 
     @Test
     void filtersByPoolAndStatus() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/ip-allocations?poolId=" + otherPoolId)
+        mockMvc.perform(get("/api/v1/admin/ip-allocations?poolId=" + pub("ip_pools", otherPoolId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(inOtherPool)).exists())
                 .andExpect(jsonPath(byId(allocated)).doesNotExist())
                 .andExpect(jsonPath(byId(released)).doesNotExist());
 
-        mockMvc.perform(get("/api/v1/admin/ip-allocations?poolId=%d&status=RELEASED"
-                        .formatted(poolId))
+        mockMvc.perform(get("/api/v1/admin/ip-allocations?poolId=%s&status=RELEASED"
+                        .formatted(pub("ip_pools", poolId)))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(released)).exists())
@@ -117,8 +117,8 @@ class AdminIpAllocationsTest {
 
     // --- fixtures ---------------------------------------------------------------
 
-    private static String byId(long id) {
-        return "$.content[?(@.id == %d)]".formatted(id);
+    private String byId(long id) {
+        return "$.content[?(@.id == '%s')]".formatted(pub("ip_allocations", id));
     }
 
     private long createPool() {
@@ -162,5 +162,10 @@ class AdminIpAllocationsTest {
                 values (?, ?, ?, ?, ?, ?, ?, 2, 2048, 10, 'STOPPED'::vm_status)
                 returning id
                 """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

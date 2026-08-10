@@ -63,8 +63,11 @@ public final class ReauthTestSupport {
      */
     public static String seededReauthFor(JdbcTemplate jdbcTemplate, JwtService jwtService,
             String accessToken) {
-        return seededReauthHeader(jdbcTemplate,
-                Long.parseLong(jwtService.parse(accessToken).getSubject()));
+        // The token names its account by public id; the reverification row is
+        // keyed by the internal one.
+        return seededReauthHeader(jdbcTemplate, jdbcTemplate.queryForObject(
+                "select id from users where public_id = ?::uuid", Long.class,
+                jwtService.parse(accessToken).getSubject()));
     }
 
     /** Seeds a live token pinned to an explicit token_version. */

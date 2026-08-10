@@ -100,7 +100,7 @@ class VmSettingsTest {
     void readGateAndDefaults() throws Exception {
         long vmId = createVm();
         // EDITOR sees the two-key catalog with defaults
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + editorToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].key").value("ssh_password_enabled"))
@@ -112,11 +112,11 @@ class VmSettingsTest {
                 .andExpect(jsonPath("$[1].editable").value(false));
 
         // VIEWER 403, non-member 404
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
     }
@@ -136,7 +136,7 @@ class VmSettingsTest {
         // audited old→new, no secrets
         List<Map<String, Object>> audits = jdbcTemplate.queryForList(
                 "select detail::text as detail from audit_logs where action = 'vm.setting_update' "
-                        + "and target_id = ?", vmId);
+                        + "and target_id = ?", pub("vms", vmId).toString());
         assertThat(audits).hasSize(1);
         assertThat((String) audits.getFirst().get("detail"))
                 .contains("ssh_password_enabled").contains("false").contains("true");
@@ -186,7 +186,7 @@ class VmSettingsTest {
     @Test
     void settingsCatalogCarriesEachKeysRequiredRoleValueTypeAndDefault() throws Exception {
         long vmId = createVm();
-        mockMvc.perform(get("/api/v1/vms/" + vmId + "/settings")
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.key=='deletion_protection')].value")
@@ -209,7 +209,7 @@ class VmSettingsTest {
         assertThat(vmSettingsService.string(vmId, VmSettingsService.DISPLAY_NAME))
                 .isEqualTo("실습 서버 A");
         // VmDetail carries the displayName + orgName join (display fields)
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + editorToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("실습 서버 A"))
@@ -274,7 +274,7 @@ class VmSettingsTest {
 
     private org.springframework.test.web.servlet.ResultActions patchSettings(String token,
             long vmId, Map<String, Object> settings) throws Exception {
-        return mockMvc.perform(patch("/api/v1/vms/" + vmId + "/settings")
+        return mockMvc.perform(patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                 .header("Authorization", "Bearer " + token)
                 .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
@@ -306,11 +306,11 @@ class VmSettingsTest {
                                 Map.of("kind", "TEAM", "name", "설정 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -325,5 +325,10 @@ class VmSettingsTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

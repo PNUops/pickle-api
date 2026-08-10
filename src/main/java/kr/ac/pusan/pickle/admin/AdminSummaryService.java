@@ -117,14 +117,16 @@ public class AdminSummaryService {
                 headroom.guidance());
 
         List<TopWorkspace> topWorkspaces = jdbcTemplate.query("""
-                select v.workspace_id, g.name, count(*) as vm_count
+                select g.public_id as workspace_public_id, v.workspace_id, g.name,
+                       count(*) as vm_count
                   from vms v
                   join workspaces g on g.id = v.workspace_id
                  where (?::bigint is null or v.org_id = ?) and v.status <> 'DELETED'
-                 group by v.workspace_id, g.name
+                 group by g.public_id, v.workspace_id, g.name
                  order by vm_count desc, v.workspace_id
                  limit 10
-                """, (rs, rowNum) -> new TopWorkspace(rs.getLong("workspace_id"), rs.getString("name"),
+                """, (rs, rowNum) -> new TopWorkspace(
+                rs.getObject("workspace_public_id", UUID.class), rs.getString("name"),
                 rs.getLong("vm_count")), scopedOrgId, scopedOrgId);
 
         long published = count("""

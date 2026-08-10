@@ -185,7 +185,7 @@ class TerminalMintTest {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private ResultActions mint(String token, long vmId) throws Exception {
-        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/terminal-sessions")
+        return mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/terminal-sessions")
                 .header("Authorization", "Bearer " + token));
     }
 
@@ -236,5 +236,10 @@ class TerminalMintTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

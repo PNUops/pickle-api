@@ -408,21 +408,21 @@ class VmExpiryJobTest {
         return jdbcTemplate.queryForList("""
                 select distinct event from notifications
                  where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
-                """, String.class, String.valueOf(vmId));
+                """, String.class, pub("vms", vmId).toString());
     }
 
     private long noticeCount(long vmId) {
         return jdbcTemplate.queryForObject("""
                 select count(*) from notifications
                  where event like 'vm.expiry.%' and payload ->> 'vmId' = ?
-                """, Long.class, String.valueOf(vmId));
+                """, Long.class, pub("vms", vmId).toString());
     }
 
     private List<Long> recipientsOf(long vmId) {
         return jdbcTemplate.queryForList("""
                 select user_id from notifications
                  where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
-                """, Long.class, String.valueOf(vmId));
+                """, Long.class, pub("vms", vmId).toString());
     }
 
     private long totalNoticeRows() {
@@ -448,5 +448,10 @@ class VmExpiryJobTest {
     private Object column(long vmId, String column) {
         return jdbcTemplate.queryForObject(
                 "select " + column + " from vms where id = ?", Object.class, vmId);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

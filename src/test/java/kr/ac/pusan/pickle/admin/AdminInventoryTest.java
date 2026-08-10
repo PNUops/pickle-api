@@ -130,13 +130,13 @@ class AdminInventoryTest {
 
     @Test
     void osImageToggleIsSysAdminOnlyAndAuditsRealTransitionsOnly() throws Exception {
-        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", pub("os_images", imageId))
                         .header("Authorization", "Bearer " + sysManagerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", pub("os_images", imageId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
@@ -145,17 +145,17 @@ class AdminInventoryTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select status from os_images where id = ?", String.class, imageId))
                 .isEqualTo("DISABLED");
-        assertThat(auditCount("os_image.status_update", imageId)).isEqualTo(1);
+        assertThat(auditCount("os_image.status_update", "os_images", imageId)).isEqualTo(1);
 
         // idempotent re-application: 200, no extra audit row
-        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", imageId)
+        mockMvc.perform(patch("/api/v1/admin/os-images/{id}", pub("os_images", imageId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"DISABLED\"}"))
                 .andExpect(status().isOk());
-        assertThat(auditCount("os_image.status_update", imageId)).isEqualTo(1);
+        assertThat(auditCount("os_image.status_update", "os_images", imageId)).isEqualTo(1);
 
-        mockMvc.perform(patch("/api/v1/admin/os-images/999999")
+        mockMvc.perform(patch("/api/v1/admin/os-images/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\": \"ACTIVE\"}"))
@@ -182,11 +182,12 @@ class AdminInventoryTest {
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(requester))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"type": "VM", "workspaceId": %d, "orgId": %d,
+                                {"type": "VM", "workspaceId": "%s", "orgId": "%s",
                                  "purpose": "은퇴 OS 이미지 거부 확인",
-                                 "vm": {"imageId": %d, "flavorId": %d, "reqVcpu": 2,
+                                 "vm": {"imageId": "%s", "flavorId": "%s", "reqVcpu": 2,
                                         "reqMemoryMb": 2048, "reqDiskGb": 20}}
-                                """.formatted(workspaceId, orgId, imageId, flavorId)))
+                                """.formatted(pub("workspaces", workspaceId), pub("orgs", orgId),
+                                pub("os_images", imageId), pub("vm_flavors", flavorId))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));
     }
@@ -197,13 +198,13 @@ class AdminInventoryTest {
         String original = jdbcTemplate.queryForObject(
                 "select status from nodes where id = ?", String.class, nodeId);
         try {
-            mockMvc.perform(patch("/api/v1/admin/nodes/{id}", nodeId)
+            mockMvc.perform(patch("/api/v1/admin/nodes/{id}", pub("nodes", nodeId))
                             .header("Authorization", "Bearer " + sysManagerToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"status\": \"MAINTENANCE\"}"))
                     .andExpect(status().isForbidden());
 
-            mockMvc.perform(patch("/api/v1/admin/nodes/{id}", nodeId)
+            mockMvc.perform(patch("/api/v1/admin/nodes/{id}", pub("nodes", nodeId))
                             .header("Authorization", "Bearer " + sysAdminToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"status\": \"MAINTENANCE\"}"))
@@ -213,7 +214,7 @@ class AdminInventoryTest {
             assertThat(jdbcTemplate.queryForObject(
                     "select status from nodes where id = ?", String.class, nodeId))
                     .isEqualTo("MAINTENANCE");
-            assertThat(auditCount("node.status_update", nodeId)).isEqualTo(1);
+            assertThat(auditCount("node.status_update", "nodes", nodeId)).isEqualTo(1);
         } finally {
             // the node pool is shared across test classes — put the row back
             jdbcTemplate.update("update nodes set status = ?::node_status where id = ?",
@@ -223,8 +224,8 @@ class AdminInventoryTest {
 
     // ── fixtures ───────────────────────────────────────────────────────────
 
-    private static String byId(long id) {
-        return "$[?(@.id == %d)]".formatted(id);
+    private String byId(long id) {
+        return "$[?(@.id == '%s')]".formatted(pub("os_images", id));
     }
 
     private String insertImage(long nodeId, String family, String version, String status) {
@@ -237,10 +238,10 @@ class AdminInventoryTest {
         return name;
     }
 
-    private long auditCount(String action, long targetId) {
+    private long auditCount(String action, String table, long targetId) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, targetId);
+                Long.class, action, pub(table, targetId).toString());
     }
 
     private User ensureUser(String email, UserRole role) {
@@ -251,5 +252,10 @@ class AdminInventoryTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

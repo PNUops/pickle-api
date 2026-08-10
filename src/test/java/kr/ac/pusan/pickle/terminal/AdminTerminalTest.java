@@ -145,7 +145,8 @@ class AdminTerminalTest {
         bridge.verify(1, postRequestedFor(urlEqualTo("/control/terminate")));
         Long auditActor = jdbcTemplate.queryForObject(
                 "select actor_id from audit_logs where action = 'terminal.force_terminate' "
-                        + "and target_id = ? order by id desc limit 1", Long.class, vmId);
+                        + "and target_id = ? order by id desc limit 1", Long.class,
+                        pub("vms", vmId).toString());
         assertThat(auditActor).isEqualTo(sysAdmin.getId());
     }
 
@@ -199,5 +200,10 @@ class AdminTerminalTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

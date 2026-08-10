@@ -74,8 +74,8 @@ class AdminUsersTest {
 
     @BeforeEach
     void setUp() {
-        Org orgA = orgRepository.findBySlug("au-org-a")
-                .orElseGet(() -> orgRepository.save(new Org("사용자관리 기관 A", "au-org-a", null)));
+        Org orgA = orgRepository.findFirstByNameOrderByIdAsc("사용자관리 기관 A")
+                .orElseGet(() -> orgRepository.save(new Org("사용자관리 기관 A", null)));
         sysAdmin = ensureUser("au.sys@pusan.ac.kr", "시스템", UserRole.SYS_ADMIN, null, UserStatus.ACTIVE);
         orgAdminA = ensureUser("au.orga@pusan.ac.kr", "기관A관리자", UserRole.ORG_ADMIN, orgA.getId(),
                 UserStatus.ACTIVE);
@@ -125,13 +125,13 @@ class AdminUsersTest {
                 .andExpect(jsonPath("$.totalElements").value(0));
 
         // ORG_ADMIN detail: in-scope 200, out-of-scope masked as 404
-        mockMvc.perform(get("/api/v1/admin/users/" + memberA.getId())
+        mockMvc.perform(get("/api/v1/admin/users/" + memberA.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(memberA.getId()))
+                .andExpect(jsonPath("$.id").value(memberA.getPublicId().toString()))
                 .andExpect(jsonPath("$.activeVmCount").value(1))
                 .andExpect(jsonPath("$.statusChanges").isArray());
-        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getId())
+        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -149,18 +149,18 @@ class AdminUsersTest {
         String targetToken = jwtService.createAccessToken(target);
 
         // ORG_ADMIN cannot disable (SYS_ADMIN only)
-        postJson("/api/v1/admin/users/" + target.getId() + "/disable", orgAdminAToken,
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/disable", orgAdminAToken,
                 Map.of("reason", "시도"))
                 .andExpect(status().isForbidden());
 
         // self-disable is refused
-        postJson("/api/v1/admin/users/" + sysAdmin.getId() + "/disable", sysAdminToken,
+        postJson("/api/v1/admin/users/" + sysAdmin.getPublicId() + "/disable", sysAdminToken,
                 Map.of("reason", "본인"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_SELF_DISABLE_FORBIDDEN"));
 
         // disable → 200 DISABLED, target token dies immediately
-        postJson("/api/v1/admin/users/" + target.getId() + "/disable", sysAdminToken,
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/disable", sysAdminToken,
                 Map.of("reason", "자원 남용"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DISABLED"))
@@ -170,19 +170,19 @@ class AdminUsersTest {
                 .andExpect(status().isUnauthorized());
 
         // disabling an already-DISABLED account → 409
-        postJson("/api/v1/admin/users/" + target.getId() + "/disable", sysAdminToken,
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/disable", sysAdminToken,
                 Map.of("reason", "다시"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_INVALID_STATE"));
 
         // enable restores ACTIVE and clears the disable stamp
-        postJson("/api/v1/admin/users/" + target.getId() + "/enable", sysAdminToken, Map.of())
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/enable", sysAdminToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.disabledAt").value((Object) null));
 
         // enabling a non-DISABLED account → 409 ACCOUNT_NOT_DISABLED
-        postJson("/api/v1/admin/users/" + target.getId() + "/enable", sysAdminToken, Map.of())
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/enable", sysAdminToken, Map.of())
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_NOT_DISABLED"));
     }
@@ -192,11 +192,11 @@ class AdminUsersTest {
         User pending = ensureUser("au.pending@pusan.ac.kr", "미인증", UserRole.USER, null,
                 UserStatus.PENDING_VERIFICATION);
 
-        postJson("/api/v1/admin/users/" + pending.getId() + "/disable", sysAdminToken,
+        postJson("/api/v1/admin/users/" + pending.getPublicId() + "/disable", sysAdminToken,
                 Map.of("reason", "미인증 잠금"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DISABLED"));
-        postJson("/api/v1/admin/users/" + pending.getId() + "/enable", sysAdminToken, Map.of())
+        postJson("/api/v1/admin/users/" + pending.getPublicId() + "/enable", sysAdminToken, Map.of())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("PENDING_VERIFICATION"));
     }
@@ -217,13 +217,13 @@ class AdminUsersTest {
                 .andExpect(jsonPath("$.content[0].email").value("au.mfa@pusan.ac.kr"))
                 .andExpect(jsonPath("$.content[0].mfaEnabled").value(true));
         // … and so does the detail (drives the admin mfa-reset button)
-        mockMvc.perform(get("/api/v1/admin/users/" + enrolled.getId())
+        mockMvc.perform(get("/api/v1/admin/users/" + enrolled.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mfaEnabled").value(true));
 
         // an un-enrolled user stays false in the detail view
-        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getId())
+        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mfaEnabled").value(false));

@@ -22,12 +22,12 @@ public record ResourceAccessGrantView(
         Instant createdAt) {
 
     @Schema(description = "접근 권한을 가진 사용자")
-    public record Grantee(Long userId, String name, String email) {
+    public record Grantee(UUID userId, String name, String email) {
     }
 
     public static ResourceAccessGrantView of(ResourceAccessGrant grant, @Nullable User user) {
         Grantee grantee = user == null ? null
-                : new Grantee(user.getId(), user.getName(), user.getEmail());
+                : new Grantee(user.getPublicId(), user.getName(), user.getEmail());
         return new ResourceAccessGrantView(grant.getPublicId(), grant.getGranteeType(), grantee,
                 grant.getRole(), grant.getCreatedAt());
     }

@@ -11,9 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -95,7 +97,7 @@ class WorkspacesTest {
                 .andExpect(jsonPath("$.kind").value("PROJECT"))
                 .andExpect(jsonPath("$.name").value("캡스톤 3조"))
                 .andExpect(jsonPath("$.members.length()").value(1))
-                .andExpect(jsonPath("$.members[0].userId").value(owner.getId()))
+                .andExpect(jsonPath("$.members[0].userId").value(owner.getPublicId().toString()))
                 .andExpect(jsonPath("$.members[0].role").value("OWNER"))
                 .andExpect(jsonPath("$.createdAt").isNotEmpty());
 
@@ -143,7 +145,7 @@ class WorkspacesTest {
         // OWNER adds members: MEMBER is the only rung an addition may name
         addMember(ownerToken, workspaceId, peer.getEmail(), "MEMBER")
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.userId").value(peer.getId()))
+                .andExpect(jsonPath("$.userId").value(peer.getPublicId().toString()))
                 .andExpect(jsonPath("$.role").value("MEMBER"));
         addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
@@ -182,14 +184,14 @@ class WorkspacesTest {
                 .andExpect(jsonPath("$.errors[0].field").value("role"));
 
         // detail is member-only: member sees everyone, outsider gets 403
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId).header("Authorization", "Bearer " + memberToken))
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId)).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.members.length()").value(3))
                 .andExpect(jsonPath("$.members[0].email").value(owner.getEmail()));
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId).header("Authorization", "Bearer " + outsiderToken))
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId)).header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        mockMvc.perform(get("/api/v1/workspaces/999999").header("Authorization", "Bearer " + ownerToken))
+        mockMvc.perform(get("/api/v1/workspaces/" + SeedFixtures.UNKNOWN_ID).header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
@@ -201,27 +203,27 @@ class WorkspacesTest {
         addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
         // OWNER may edit name/description
-        patchJson("/api/v1/workspaces/" + workspaceId, ownerToken, Map.of("name", "새 이름"))
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), ownerToken, Map.of("name", "새 이름"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("새 이름"));
 
         // explicit null clears the description
         Map<String, Object> clearDescription = new HashMap<>();
         clearDescription.put("description", null);
-        patchJson("/api/v1/workspaces/" + workspaceId, ownerToken, clearDescription)
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), ownerToken, clearDescription)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.description").value((Object) null));
 
         // members / outsider → 403, empty patch → 422 (contract: OWNER only)
-        patchJson("/api/v1/workspaces/" + workspaceId, peerToken, Map.of("name", "몰래 수정"))
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), peerToken, Map.of("name", "몰래 수정"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchJson("/api/v1/workspaces/" + workspaceId, memberToken, Map.of("name", "몰래 수정"))
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), memberToken, Map.of("name", "몰래 수정"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchJson("/api/v1/workspaces/" + workspaceId, outsiderToken, Map.of("name", "몰래 수정"))
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), outsiderToken, Map.of("name", "몰래 수정"))
                 .andExpect(status().isForbidden());
-        patchJson("/api/v1/workspaces/" + workspaceId, ownerToken, Map.of())
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), ownerToken, Map.of())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
@@ -233,11 +235,11 @@ class WorkspacesTest {
         addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
 
         // plain members cannot change roles or remove others
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + member.getId(), peerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId(), peerToken,
                 Map.of("role", "MEMBER"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + peer.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + peer.getPublicId())
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isForbidden())
@@ -245,26 +247,26 @@ class WorkspacesTest {
 
         // the last owner can neither step down nor leave: the workspace would be
         // left with nobody who can add members or appoint a replacement
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + owner.getId(), ownerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId(), ownerToken,
                 Map.of("role", "MEMBER"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + owner.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
 
         // ownership is appointed, not handed over: both are OWNER afterwards
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + peer.getId(), ownerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + peer.getPublicId(), ownerToken,
                 Map.of("role", "OWNER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("OWNER"));
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId).header("Authorization", "Bearer " + peerToken))
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId)).header("Authorization", "Bearer " + peerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.members[?(@.userId == %d)].role".formatted(owner.getId()))
+                .andExpect(jsonPath("$.members[?(@.userId == \'%s\')].role".formatted(owner.getPublicId()))
                         .value(org.hamcrest.Matchers.contains("OWNER")))
-                .andExpect(jsonPath("$.members[?(@.userId == %d)].role".formatted(peer.getId()))
+                .andExpect(jsonPath("$.members[?(@.userId == \'%s\')].role".formatted(peer.getPublicId()))
                         .value(org.hamcrest.Matchers.contains("OWNER")));
 
         // appointing somebody costs the appointer nothing — they still manage
@@ -272,31 +274,31 @@ class WorkspacesTest {
                 .andExpect(status().isCreated());
 
         // with a second owner in place the first may now release ownership
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + owner.getId(), ownerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId(), ownerToken,
                 Map.of("role", "MEMBER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("MEMBER"));
 
         // and from then on manages nothing
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + member.getId(), ownerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId(), ownerToken,
                 Map.of("role", "OWNER"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
 
         // non-OWNER may leave on their own
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + member.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId())
                         .header("Authorization", "Bearer " + memberToken)
                         .header(ReauthTestSupport.HEADER, reauth(memberToken)))
                 .andExpect(status().isNoContent());
 
         // the remaining owner removes the one who released ownership
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId + "/members/" + owner.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
                         .header("Authorization", "Bearer " + peerToken)
                         .header(ReauthTestSupport.HEADER, reauth(peerToken)))
                 .andExpect(status().isNoContent());
 
         // role change for someone who is not a member → 404
-        patchJson("/api/v1/workspaces/" + workspaceId + "/members/" + member.getId(), peerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId(), peerToken,
                 Map.of("role", "MEMBER"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -306,7 +308,7 @@ class WorkspacesTest {
                 select count(*) from audit_logs
                  where action in ('workspace.member_add', 'workspace.member_update', 'workspace.member_remove')
                    and target_id = ?
-                """, Long.class, workspaceId);
+                """, Long.class, pub("workspaces", workspaceId).toString());
         assertThat(audits).isGreaterThanOrEqualTo(6);
     }
 
@@ -320,7 +322,7 @@ class WorkspacesTest {
         long personalWorkspaceId = -1;
         for (int i = 0; i < workspaces.size(); i++) {
             if ("PERSONAL".equals(workspaces.get(i).path("kind").asString())) {
-                personalWorkspaceId = workspaces.get(i).path("id").asLong();
+                personalWorkspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(workspaces.get(i).path("id").asString()));
                 break;
             }
         }
@@ -329,11 +331,11 @@ class WorkspacesTest {
         addMember(ownerToken, personalWorkspaceId, peer.getEmail(), "MEMBER")
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
-        patchJson("/api/v1/workspaces/" + personalWorkspaceId + "/members/" + owner.getId(), ownerToken,
+        patchJson("/api/v1/workspaces/" + pub("workspaces", personalWorkspaceId) + "/members/" + owner.getPublicId(), ownerToken,
                 Map.of("role", "MEMBER"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
-        mockMvc.perform(delete("/api/v1/workspaces/" + personalWorkspaceId + "/members/" + owner.getId())
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", personalWorkspaceId) + "/members/" + owner.getPublicId())
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isForbidden())
@@ -345,11 +347,11 @@ class WorkspacesTest {
                 Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private ResultActions addMember(String token, long workspaceId, String email, String role) throws Exception {
-        return postJson("/api/v1/workspaces/" + workspaceId + "/members", token, Map.of("email", email, "role", role));
+        return postJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members", token, Map.of("email", email, "role", role));
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
@@ -377,5 +379,10 @@ class WorkspacesTest {
             }
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

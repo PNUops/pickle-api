@@ -11,9 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -92,7 +94,7 @@ class UserSshKeyTest {
                         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICxx5YF5Rp4GZP4rlNsvzVqTXiVyRF/"
                                 + "cMyIC9ZMs5ssc"))
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
         assertThat(keyId).isPositive();
 
         mockMvc.perform(get("/api/v1/me/ssh-keys").header("Authorization", "Bearer " + ownerToken))
@@ -102,7 +104,7 @@ class UserSshKeyTest {
         // registration is audited without the key material (fact + fingerprint)
         List<Map<String, Object>> audits = jdbcTemplate.queryForList(
                 "select detail::text as detail from audit_logs where action = 'user.ssh_key_add' "
-                        + "and target_id = ?", keyId);
+                        + "and target_id = ?", pub("user_ssh_keys", keyId).toString());
         assertThat(audits).hasSize(1);
         assertThat((String) audits.getFirst().get("detail")).contains(ED25519_FP);
     }
@@ -149,7 +151,7 @@ class UserSshKeyTest {
                         .content(objectMapper.writeValueAsString(Map.of("name", "생성키 조회"))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
         String responseFp = objectMapper.readTree(body).get("fingerprint").asString();
         String responsePub = objectMapper.readTree(body).get("publicKey").asString();
         String dbFp = jdbcTemplate.queryForObject(
@@ -162,7 +164,7 @@ class UserSshKeyTest {
         // (2) the KEY the user actually uses = the downloaded private key. Its
         // public key (what sshpiperd fingerprints) must match what we stored.
         String pem = objectMapper.readTree(mockMvc.perform(
-                        get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
+                        get("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId) + "/private-key")
                                 .header("Authorization", "Bearer " + ownerToken)
                                 .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
@@ -208,10 +210,10 @@ class UserSshKeyTest {
                 .andExpect(jsonPath("$.algorithm").value("ED25519"))
                 .andExpect(jsonPath("$.privateKeyStored").value(true))
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
         for (int i = 0; i < 2; i++) {
-            mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
+            mockMvc.perform(get("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId) + "/private-key")
                             .header("Authorization", "Bearer " + ownerToken)
                             .header(ReauthTestSupport.HEADER, ownerReauth))
                     .andExpect(status().isOk())
@@ -223,7 +225,7 @@ class UserSshKeyTest {
         // every download audited; never the private key
         List<Map<String, Object>> downloads = jdbcTemplate.queryForList(
                 "select detail::text as detail from audit_logs where action = 'user.ssh_key_download' "
-                        + "and target_id = ?", keyId);
+                        + "and target_id = ?", pub("user_ssh_keys", keyId).toString());
         assertThat(downloads).hasSize(2);
         assertThat((String) downloads.getFirst().get("detail")).doesNotContain("PRIVATE KEY");
     }
@@ -232,8 +234,8 @@ class UserSshKeyTest {
     void pastedKeyHasNoDownloadablesPrivateKey() throws Exception {
         String body = registerKey(ownerToken, "붙여넣기", ED25519_PUB)
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
-        mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        mockMvc.perform(get("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId) + "/private-key")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isNotFound());
@@ -243,13 +245,13 @@ class UserSshKeyTest {
     void othersKeyIsMaskedAsNotFoundOnDownloadAndDelete() throws Exception {
         String body = registerKey(ownerToken, "내 키", ED25519_PUB)
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
-        mockMvc.perform(get("/api/v1/me/ssh-keys/" + keyId + "/private-key")
+        mockMvc.perform(get("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId) + "/private-key")
                         .header("Authorization", "Bearer " + otherToken)
                         .header(ReauthTestSupport.HEADER, otherReauth))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + keyId)
+        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId))
                         .header("Authorization", "Bearer " + otherToken)
                         .header(ReauthTestSupport.HEADER, otherReauth))
                 .andExpect(status().isNotFound());
@@ -259,9 +261,9 @@ class UserSshKeyTest {
     void deletesOwnKey() throws Exception {
         String body = registerKey(ownerToken, "삭제할 키", ED25519_PUB)
                 .andReturn().getResponse().getContentAsString();
-        long keyId = objectMapper.readTree(body).get("id").asLong();
+        long keyId = SeedFixtures.internalId(jdbcTemplate, "user_ssh_keys", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
-        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + keyId)
+        mockMvc.perform(delete("/api/v1/me/ssh-keys/" + pub("user_ssh_keys", keyId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isNoContent());
@@ -270,7 +272,7 @@ class UserSshKeyTest {
                 .andExpect(jsonPath("$.length()").value(0));
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'user.ssh_key_delete' and target_id = ?",
-                Long.class, keyId)).isEqualTo(1);
+                Long.class, pub("user_ssh_keys", keyId).toString())).isEqualTo(1);
     }
 
     private org.springframework.test.web.servlet.ResultActions registerKey(String token,
@@ -289,5 +291,10 @@ class UserSshKeyTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

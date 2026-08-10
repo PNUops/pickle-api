@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code OrgDashboardSummary} (ORG_ADMIN home / SYS_ADMIN org drill-in). */
@@ -31,7 +32,7 @@ public record OrgDashboardSummaryResponse(
             String guidance) {
     }
 
-    public record TopWorkspace(Long workspaceId, String name, long vmCount) {
+    public record TopWorkspace(UUID workspaceId, String name, long vmCount) {
     }
 
     public record Attention(long failedTaskCount, long needsAdminVmCount, long expiredVmCount) {

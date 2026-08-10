@@ -49,7 +49,7 @@ class MfaAdminResetTest {
         String adminToken = jwtService.createAccessToken(sysAdmin);
 
         // not enrolled yet → 409 MFA_NOT_ENROLLED
-        mockMvc.perform(post("/api/v1/admin/users/" + target.getId() + "/mfa-reset")
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/mfa-reset")
                 .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("MFA_NOT_ENROLLED"));
@@ -58,7 +58,7 @@ class MfaAdminResetTest {
         assertThat(mfaService.isEnrolled(target.getId())).isTrue();
 
         // reset → 200, enrollment gone
-        mockMvc.perform(post("/api/v1/admin/users/" + target.getId() + "/mfa-reset")
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/mfa-reset")
                 .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").isNotEmpty());
@@ -76,7 +76,7 @@ class MfaAdminResetTest {
         User target = createUser("mfa.reset.victim@pusan.ac.kr", UserRole.USER);
         enroll(target.getId());
 
-        mockMvc.perform(post("/api/v1/admin/users/" + target.getId() + "/mfa-reset")
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/mfa-reset")
                 .header("Authorization", "Bearer " + jwtService.createAccessToken(plainUser)))
                 .andExpect(status().isForbidden());
         assertThat(mfaService.isEnrolled(target.getId())).isTrue();

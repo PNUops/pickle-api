@@ -92,22 +92,22 @@ class ReferenceDataTest {
 
     @Test
     void listsOnlyActiveVisibleOrgsForUsers() throws Exception {
-        orgRepository.findBySlug("ref-disabled").orElseGet(() -> {
-            Org disabled = new Org("비활성 기관", "ref-disabled", null);
+        orgRepository.findFirstByNameOrderByIdAsc("참조 비활성 기관").orElseGet(() -> {
+            Org disabled = new Org("참조 비활성 기관", null);
             disabled.setStatus(OrgStatus.DISABLED);
             return orgRepository.save(disabled);
         });
-        orgRepository.findBySlug("ref-visible").orElseGet(() ->
-                orgRepository.save(new Org("공개 기관", "ref-visible", null)));
+        orgRepository.findFirstByNameOrderByIdAsc("공개 기관").orElseGet(() ->
+                orgRepository.save(new Org("공개 기관", null)));
 
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 // a plain ACTIVE org is listed as a plain array
-                .andExpect(jsonPath("$[?(@.slug == 'ref-visible')].name")
+                .andExpect(jsonPath("$[?(@.name == '공개 기관')].name")
                         .value(org.hamcrest.Matchers.contains("공개 기관")))
                 // the seed org is hidden: filtered for USER tokens
-                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')]").isEmpty())
-                .andExpect(jsonPath("$[?(@.slug == 'ref-disabled')]").isEmpty());
+                .andExpect(jsonPath("$[?(@.name == '" + SeedFixtures.ORG_NAME + "')]").isEmpty())
+                .andExpect(jsonPath("$[?(@.name == '참조 비활성 기관')]").isEmpty());
     }
 
     @Test
@@ -117,9 +117,9 @@ class ReferenceDataTest {
 
         mockMvc.perform(get("/api/v1/orgs").header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')].name")
+                .andExpect(jsonPath("$[?(@.name == '" + SeedFixtures.ORG_NAME + "')].name")
                         .value(org.hamcrest.Matchers.contains(SeedFixtures.ORG_NAME)))
-                .andExpect(jsonPath("$[?(@.slug == '" + SeedFixtures.ORG_SLUG + "')].hidden")
+                .andExpect(jsonPath("$[?(@.name == '" + SeedFixtures.ORG_NAME + "')].hidden")
                         .value(org.hamcrest.Matchers.contains(true)));
     }
 

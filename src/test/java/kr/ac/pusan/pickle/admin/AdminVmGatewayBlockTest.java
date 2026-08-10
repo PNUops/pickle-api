@@ -74,12 +74,12 @@ class AdminVmGatewayBlockTest {
     void blockAndUnblockPersistTheFlagAndRecordEventAndAuditOncePerTransition() throws Exception {
         long vmId = createVm("RUNNING");
 
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"blocked\": true, \"reason\": \"비정상 트래픽 신고 확인\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(vmId))
+                .andExpect(jsonPath("$.id").value(pub("vms", vmId).toString()))
                 .andExpect(jsonPath("$.sshGatewayBlocked").value(true));
 
         assertThat(jdbcTemplate.queryForObject(
@@ -91,7 +91,7 @@ class AdminVmGatewayBlockTest {
                 """, String.class, vmId)).contains("비정상 트래픽 신고 확인");
 
         // idempotent re-application: 200, no new event/audit rows
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"blocked\": true}"))
@@ -101,13 +101,13 @@ class AdminVmGatewayBlockTest {
         assertThat(auditCount(vmId, "vm.gateway_block")).isEqualTo(1);
 
         // the admin list exposes the flag
-        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)].sshGatewayBlocked".formatted(vmId))
+                .andExpect(jsonPath("$.content[?(@.id == '%s')].sshGatewayBlocked".formatted(pub("vms", vmId)))
                         .value(true));
 
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"blocked\": false}"))
@@ -124,24 +124,24 @@ class AdminVmGatewayBlockTest {
         long vmId = createVm("RUNNING");
         String body = "{\"blocked\": true}";
 
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
 
         User sysManager = ensureUser("agb.sysmanager@pusan.ac.kr", UserRole.SYS_MANAGER, null);
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(sysManager))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
 
         User plainUser = ensureUser("agb.user@pusan.ac.kr", UserRole.USER, null);
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(plainUser))
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
 
-        mockMvc.perform(patch("/api/v1/admin/vms/999999/gateway-block")
+        mockMvc.perform(patch("/api/v1/admin/vms/" + SeedFixtures.UNKNOWN_ID + "/gateway-block")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
@@ -154,7 +154,7 @@ class AdminVmGatewayBlockTest {
     @Test
     void missingBlockedFieldAnswers422() throws Exception {
         long vmId = createVm("RUNNING");
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/gateway-block", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\": \"사유만 있는 요청\"}"))
@@ -173,7 +173,7 @@ class AdminVmGatewayBlockTest {
     private long auditCount(long vmId, String action) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, vmId);
+                Long.class, action, pub("vms", vmId).toString());
     }
 
     private User ensureUser(String email, UserRole role, Long userOrgId) {
@@ -200,5 +200,10 @@ class AdminVmGatewayBlockTest {
                 returning id
                 """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, status);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

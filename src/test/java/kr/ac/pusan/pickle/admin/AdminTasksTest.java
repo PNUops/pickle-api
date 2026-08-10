@@ -84,15 +84,15 @@ class AdminTasksTest {
                 .andExpect(jsonPath(byTaskId(needsAdmin)).exists())
                 .andExpect(jsonPath(byTaskId(done)).exists());
 
-        mockMvc.perform(get("/api/v1/admin/tasks?status=NEEDS_ADMIN&vmId=" + vmA)
+        mockMvc.perform(get("/api/v1/admin/tasks?status=NEEDS_ADMIN&vmId=" + pub("vms", vmA))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
-                .andExpect(jsonPath("$.content[0].taskId").value(needsAdmin))
-                .andExpect(jsonPath("$.content[0].vmId").value(vmA))
+                .andExpect(jsonPath("$.content[0].taskId").value(pub("provisioning_tasks", needsAdmin).toString()))
+                .andExpect(jsonPath("$.content[0].vmId").value(pub("vms", vmA).toString()))
                 .andExpect(jsonPath("$.content[0].vmName").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].hostname").isNotEmpty())
-                .andExpect(jsonPath("$.content[0].orgId").value(orgId))
+                .andExpect(jsonPath("$.content[0].orgId").value(pub("orgs", orgId).toString()))
                 .andExpect(jsonPath("$.content[0].orgName").value(orgName))
                 .andExpect(jsonPath("$.content[0].workspaceName").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].kind").value("PROVISION"))
@@ -104,7 +104,7 @@ class AdminTasksTest {
                 .andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].updatedAt").isNotEmpty());
 
-        mockMvc.perform(get("/api/v1/admin/tasks?kind=DELETE&vmId=" + vmB)
+        mockMvc.perform(get("/api/v1/admin/tasks?kind=DELETE&vmId=" + pub("vms", vmB))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byTaskId(done)).exists())
@@ -123,7 +123,7 @@ class AdminTasksTest {
         long parked = createTask(vmA, "PROVISION", "NEEDS_ADMIN", 5, "IP 풀 고갈");
         long enqueuedBefore = provisionEnqueueCount();
 
-        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", parked)
+        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", pub("provisioning_tasks", parked))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
@@ -142,10 +142,10 @@ class AdminTasksTest {
 
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'task.retry' and target_id = ?",
-                Long.class, parked)).isEqualTo(1);
+                Long.class, pub("provisioning_tasks", parked).toString())).isEqualTo(1);
 
         // now RETRYING → a second retry answers 409 (idempotence by CAS)
-        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", parked)
+        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", pub("provisioning_tasks", parked).toString())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_NOT_RETRYABLE"));
@@ -155,25 +155,25 @@ class AdminTasksTest {
     void retryAnswers409ForFinishedTasks404ForUnknownAnd403ForOrgAdmin() throws Exception {
         long doneTask = createTask(vmB, "DELETE", "DONE", 0, null);
 
-        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", doneTask)
+        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", pub("provisioning_tasks", doneTask))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_NOT_RETRYABLE"));
 
-        mockMvc.perform(post("/api/v1/admin/tasks/999999/retry")
+        mockMvc.perform(post("/api/v1/admin/tasks/" + SeedFixtures.UNKNOWN_ID + "/retry")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", doneTask)
+        mockMvc.perform(post("/api/v1/admin/tasks/{id}/retry", pub("provisioning_tasks", doneTask))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isForbidden());
     }
 
     // --- fixtures ---------------------------------------------------------------
 
-    private static String byTaskId(long taskId) {
-        return "$.content[?(@.taskId == %d)]".formatted(taskId);
+    private String byTaskId(long taskId) {
+        return "$.content[?(@.taskId == '%s')]".formatted(pub("provisioning_tasks", taskId));
     }
 
     private long createWorkspace() {
@@ -212,5 +212,10 @@ class AdminTasksTest {
                 values (?, ?::provisioning_task_kind, ?, ?::provisioning_task_status, 3, ?)
                 returning id
                 """, Long.class, vmId, kind, currentStep, status, lastError);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

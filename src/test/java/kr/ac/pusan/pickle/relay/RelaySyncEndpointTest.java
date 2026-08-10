@@ -247,7 +247,7 @@ class RelaySyncEndpointTest {
         Long audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'relay.sync_violation' and target_id = ?
-                """, Long.class, relay.id());
+                """, Long.class, pub("relays", relay.id()).toString());
         assertThat(audits).isEqualTo(1);
     }
 
@@ -265,7 +265,7 @@ class RelaySyncEndpointTest {
         Long audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'relay.sync_violation' and target_id = ?
-                """, Long.class, relay.id());
+                """, Long.class, pub("relays", relay.id()).toString());
         assertThat(audits).isEqualTo(1);
     }
 
@@ -287,7 +287,7 @@ class RelaySyncEndpointTest {
         Long audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'relay.sync_violation' and target_id = ?
-                """, Long.class, relay.id());
+                """, Long.class, pub("relays", relay.id()).toString());
         assertThat(audits).isZero();
     }
 
@@ -386,7 +386,7 @@ class RelaySyncEndpointTest {
                 select count(*) from audit_logs
                  where action = 'relay.sync_violation' and target_id = ?
                    and detail ->> 'kind' = 'counter_sanity'
-                """, Long.class, relay.id());
+                """, Long.class, pub("relays", relay.id()).toString());
         assertThat(audits).isEqualTo(1);
         // a sane follow-up reading baselines normally
         syncCounters(relay, mappingId, 10, 100, 100);
@@ -602,5 +602,10 @@ class RelaySyncEndpointTest {
             request.setRemoteAddr(ip);
             return request;
         };
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

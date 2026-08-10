@@ -71,7 +71,7 @@ class AdminSummariesTest {
     @BeforeEach
     void setUp() {
         String slug = "ads-" + UUID.randomUUID().toString().substring(0, 8);
-        org = orgRepository.save(new Org("요약 테스트 기관 " + slug, slug, null));
+        org = orgRepository.save(new Org("요약 테스트 기관 " + slug, null));
         User orgAdmin = createUser("ads.admin." + slug + "@pusan.ac.kr", UserRole.ORG_ADMIN,
                 org.getId());
         User regularUser = createUser("ads.user." + slug + "@pusan.ac.kr", UserRole.USER, null);
@@ -126,9 +126,9 @@ class AdminSummariesTest {
                 .andExpect(jsonPath("$.resource.allocatedMemoryMb").value(6144))
                 .andExpect(jsonPath("$.resource.allocatedDiskGb").value(30))
                 .andExpect(jsonPath("$.resource.guidance").isNotEmpty())
-                .andExpect(jsonPath("$.topWorkspacesByVmCount[0].workspaceId").value(workspaceBig))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[0].workspaceId").value(pub("workspaces", workspaceBig).toString()))
                 .andExpect(jsonPath("$.topWorkspacesByVmCount[0].vmCount").value(2))
-                .andExpect(jsonPath("$.topWorkspacesByVmCount[1].workspaceId").value(workspaceSmall))
+                .andExpect(jsonPath("$.topWorkspacesByVmCount[1].workspaceId").value(pub("workspaces", workspaceSmall).toString()))
                 .andExpect(jsonPath("$.topWorkspacesByVmCount[1].vmCount").value(1))
                 .andExpect(jsonPath("$.publishedServiceCount").value(1))
                 .andExpect(jsonPath("$.expiringVmCount30d").value(1))
@@ -146,19 +146,19 @@ class AdminSummariesTest {
                 .andExpect(status().isForbidden());
 
         // ORG_ADMIN: own org implicitly or explicitly, other org → 404
-        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getId())
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + otherOrgId)
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + pub("orgs", otherOrgId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         // SYS_ADMIN drills into a named org; an unknown org → 404
-        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getId())
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/v1/admin/summary?orgId=999999")
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
@@ -265,5 +265,10 @@ class AdminSummariesTest {
                 returning id
                 """, Long.class, nodeId, workspaceId, org.getId(), requestId, hostname, hostname,
                 imageId, status, endDate);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

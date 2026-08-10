@@ -69,9 +69,9 @@ class AdminVmsTest {
 
     @BeforeEach
     void setUp() {
-        org = orgRepository.findBySlug(SeedFixtures.ORG_SLUG).orElseThrow();
-        otherOrg = orgRepository.findBySlug("advm-other").orElseGet(() ->
-                orgRepository.save(new Org("다른 기관", "advm-other", null)));
+        org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
+        otherOrg = orgRepository.findFirstByNameOrderByIdAsc("VM 목록 타기관").orElseGet(() ->
+                orgRepository.save(new Org("VM 목록 타기관", null)));
         User regularUser = ensureUser("advm.user@pusan.ac.kr", "목록학생", UserRole.USER, null);
         User otherOrgAdmin = ensureUser("advm.other.admin@pusan.ac.kr", "타기관관리자",
                 UserRole.ORG_ADMIN, otherOrg.getId());
@@ -102,13 +102,13 @@ class AdminVmsTest {
                 .andExpect(jsonPath(byId(vmRunningA1)).exists())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
                 .andExpect(jsonPath(byId(vmRunningB)).doesNotExist());
-        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + org.getId())
+        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningA1)).exists());
 
         // another org in the filter → 404, never 403 (existence stays private)
-        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -127,18 +127,18 @@ class AdminVmsTest {
                 .andExpect(jsonPath(byId(vmRunningA1)).exists())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
                 .andExpect(jsonPath(byId(vmRunningB)).exists());
-        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getId())
+        mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningB)).exists())
                 .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist());
-        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceA2)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + pub("workspaces", workspaceA2))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
                 .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist())
                 .andExpect(jsonPath("$.content.length()").value(1));
-        mockMvc.perform(get("/api/v1/admin/vms?orgId=%d&status=STOPPED".formatted(org.getId()))
+        mockMvc.perform(get("/api/v1/admin/vms?orgId=%s&status=STOPPED".formatted(org.getPublicId()))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
@@ -147,18 +147,18 @@ class AdminVmsTest {
 
     @Test
     void returnsTheVmSummaryShapeAndPages() throws Exception {
-        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + workspaceA1)
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + pub("workspaces", workspaceA1))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(vmRunningA1))
+                .andExpect(jsonPath("$.content[0].id").value(pub("vms", vmRunningA1).toString()))
                 .andExpect(jsonPath("$.content[0].name").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].hostname").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].status").value("RUNNING"))
                 .andExpect(jsonPath("$.content[0].vcpu").value(2))
                 .andExpect(jsonPath("$.content[0].memoryMb").value(2048))
                 .andExpect(jsonPath("$.content[0].diskGb").value(10))
-                .andExpect(jsonPath("$.content[0].workspaceId").value(workspaceA1))
-                .andExpect(jsonPath("$.content[0].requestId").isNumber())
+                .andExpect(jsonPath("$.content[0].workspaceId").value(pub("workspaces", workspaceA1).toString()))
+                .andExpect(jsonPath("$.content[0].requestId").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
@@ -166,7 +166,7 @@ class AdminVmsTest {
                 .andExpect(jsonPath("$.totalPages").value(1));
 
         // paging: size=1 over the two org-A workspaces → 2 pages, newest first
-        mockMvc.perform(get("/api/v1/admin/vms?orgId=%d&size=1".formatted(org.getId()))
+        mockMvc.perform(get("/api/v1/admin/vms?orgId=%s&size=1".formatted(org.getPublicId()))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
@@ -194,7 +194,7 @@ class AdminVmsTest {
 
         // hostname is searched too — alpha's custom name doesn't contain the
         // seeded hostname prefix, so this hit proves the hostname column
-        mockMvc.perform(get("/api/v1/admin/vms?q=advm-vm-&workspaceId=" + workspaceA1)
+        mockMvc.perform(get("/api/v1/admin/vms?q=advm-vm-&workspaceId=" + pub("workspaces", workspaceA1))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(alpha)).exists());
@@ -215,20 +215,20 @@ class AdminVmsTest {
         mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch&sort=name")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(alpha))
-                .andExpect(jsonPath("$.content[1].id").value(bravo));
+                .andExpect(jsonPath("$.content[0].id").value(pub("vms", alpha).toString()))
+                .andExpect(jsonPath("$.content[1].id").value(pub("vms", bravo).toString()));
 
         mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch&sort=-name")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(bravo))
-                .andExpect(jsonPath("$.content[1].id").value(alpha));
+                .andExpect(jsonPath("$.content[0].id").value(pub("vms", bravo).toString()))
+                .andExpect(jsonPath("$.content[1].id").value(pub("vms", alpha).toString()));
 
         // default stays newest-first when sort is omitted
         mockMvc.perform(get("/api/v1/admin/vms?q=sortsearch")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].id").value(bravo));
+                .andExpect(jsonPath("$.content[0].id").value(pub("vms", bravo).toString()));
 
         // arbitrary property names never reach the ORM
         mockMvc.perform(get("/api/v1/admin/vms?sort=initialPassword")
@@ -238,8 +238,8 @@ class AdminVmsTest {
                 .andExpect(jsonPath("$.errors[0].field").value("sort"));
     }
 
-    private static String byId(long vmId) {
-        return "$.content[?(@.id == %d)]".formatted(vmId);
+    private String byId(long vmId) {
+        return "$.content[?(@.id == '%s')]".formatted(pub("vms", vmId));
     }
 
     private long createWorkspace() {
@@ -278,5 +278,10 @@ class AdminVmsTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

@@ -113,7 +113,7 @@ class VmPasswordRegenerateTest {
                 .willReturn(aResponse().withStatus(200)
                         .withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
 
-        String body = mockMvc.perform(post("/api/v1/vms/" + vmId + "/password/regenerate")
+        String body = mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/password/regenerate")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isOk())
@@ -138,7 +138,7 @@ class VmPasswordRegenerateTest {
         String detail = jdbcTemplate.queryForObject(
                 "select coalesce(detail::text, '') from audit_logs "
                         + "where action = 'vm.password_regenerate' and target_id = ?",
-                String.class, vmId);
+                String.class, pub("vms", vmId).toString());
         assertThat(detail).doesNotContain(newPassword);
     }
 
@@ -153,7 +153,7 @@ class VmPasswordRegenerateTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"data\":null,\"message\":\"QEMU guest agent is not running\"}")));
 
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/password/regenerate")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/password/regenerate")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth))
                 .andExpect(status().isConflict())
@@ -193,7 +193,7 @@ class VmPasswordRegenerateTest {
                                 java.util.Map.of("kind", "TEAM", "name", "재생성 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private User ensureUser(String email, String name) {
@@ -203,5 +203,10 @@ class VmPasswordRegenerateTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

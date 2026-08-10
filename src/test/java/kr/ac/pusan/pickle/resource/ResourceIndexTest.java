@@ -98,26 +98,26 @@ class ResourceIndexTest {
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "VIEWER");
         String hostname = hostnameOf(vmId);
 
-        mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].type")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].type")
                         .value(Matchers.contains("VM")))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains(hostname)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].status")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].status")
                         .value(Matchers.contains("RUNNING")))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].workspaceName")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].workspaceName")
                         .value(Matchers.contains(workspaceName)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessLimited")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessLimited")
                         .value(Matchers.contains(false)));
 
         // The untyped listing answers the same while VM is the only type, and
         // an explicit type filter narrows to it rather than changing the rows.
-        mockMvc.perform(get("/api/v1/resources?type=VM&workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?type=VM&workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains(hostname)));
     }
 
@@ -128,14 +128,14 @@ class ResourceIndexTest {
         // No 403: the contract gives the listing no forbidden response, so a
         // workspace filter outside the caller's memberships simply matches
         // nothing — which also keeps the workspace's existence private.
-        mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(0))
                 .andExpect(jsonPath("$.totalElements").value(0));
 
         // And an id no workspace has answers the same way.
-        mockMvc.perform(get("/api/v1/resources?workspaceId=999999")
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
@@ -148,22 +148,22 @@ class ResourceIndexTest {
         long vmId = createVm();
         String hostname = hostnameOf(vmId);
 
-        mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessLimited")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessLimited")
                         .value(Matchers.contains(true)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].ownerNames[0]")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].ownerNames[0]")
                         .value(Matchers.contains(owner.getName())))
                 // The whole point: the name a restricted row carries must not be
                 // the slug, which would hand over the SSH address of a machine
                 // this caller may not reach. With no display name set it falls
                 // back to the id.
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains("VM #" + vmId)));
         // Asserted against the whole body, not one field: the slug must not
         // appear anywhere in the response, whichever field might carry it.
-        String body = mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        String body = mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andReturn().getResponse().getContentAsString();
         assertThat(body).doesNotContain(hostname);
@@ -171,22 +171,22 @@ class ResourceIndexTest {
         // A display name is what the row shows when there is one — it is the
         // label the workspace chose, and it is not an address.
         setDisplayName(vmId, "연구용 서버");
-        mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains("연구용 서버")));
 
         // Granted, the same row opens and the slug comes back with it.
         grantVmToUser(jdbcTemplate, vmId, member.getId(), "VIEWER");
-        mockMvc.perform(get("/api/v1/resources?workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].accessLimited")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessLimited")
                         .value(Matchers.contains(false)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].name")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains(hostname)))
-                .andExpect(jsonPath("$.content[?(@.id==" + vmId + ")].displayName")
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].displayName")
                         .value(Matchers.contains("연구용 서버")));
     }
 
@@ -237,11 +237,11 @@ class ResourceIndexTest {
                                 Map.of("kind", "TEAM", "name", name))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ReauthTestSupport.seededReauthFor(
                                 jdbcTemplate, jwtService, ownerToken))
@@ -258,5 +258,10 @@ class ResourceIndexTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

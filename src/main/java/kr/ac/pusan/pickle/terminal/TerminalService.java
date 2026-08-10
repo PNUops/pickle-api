@@ -306,18 +306,23 @@ public class TerminalService {
         Map<Long, String> workspaceNames = workspaceRepository.findAllById(
                         vms.values().stream().map(Vm::getWorkspaceId).distinct().toList())
                 .stream().collect(Collectors.toMap(Workspace::getId, Workspace::getName));
-        Map<Long, String> orgNames = orgRepository.findAllById(
+        Map<Long, Org> orgs = orgRepository.findAllById(
                         sessions.stream().map(MirrorSession::orgId).distinct().toList())
-                .stream().collect(Collectors.toMap(Org::getId, Org::getName));
+                .stream().collect(Collectors.toMap(Org::getId, o -> o));
         List<TerminalSessionView> views = new ArrayList<>(sessions.size());
         for (MirrorSession s : sessions) {
+            // The mirror holds the internal ids the gateway contract speaks; the
+            // admin view reports the same rows by their public identifiers.
             Vm vm = vms.get(s.vmId());
             User user = users.get(s.userId());
+            Org org = orgs.get(s.orgId());
             views.add(new TerminalSessionView(
-                    s.sessionId(), s.vmId(), vm != null ? vm.getName() : "", s.orgId(),
-                    orgNames.getOrDefault(s.orgId(), ""),
+                    s.sessionId(), vm != null ? vm.getPublicId() : null,
+                    vm != null ? vm.getName() : "", org != null ? org.getPublicId() : null,
+                    org != null ? org.getName() : "",
                     vm != null ? workspaceNames.getOrDefault(vm.getWorkspaceId(), "") : "",
-                    s.userId(), user != null ? user.getEmail() : "",
+                    user != null ? user.getPublicId() : null,
+                    user != null ? user.getEmail() : "",
                     user != null ? user.getName() : "", s.clientIp(), s.startedAt()));
         }
         return views;

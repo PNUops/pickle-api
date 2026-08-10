@@ -222,19 +222,19 @@ class PublishingTest {
         String body = "{\"port\":8080,\"subdomain\":\"team-alpha\"}";
 
         // outside the owning workspace → 404 (existence masked)
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + outsiderToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // granted VIEWER on the VM → sees it, may not configure it
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + viewerToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // granted EDITOR on the VM → 202
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + editorToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isAccepted())
@@ -249,7 +249,7 @@ class PublishingTest {
     @Test
     void publishRejectsWhenBodyNamesNoSubdomain() throws Exception {
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -267,7 +267,7 @@ class PublishingTest {
                 update vm_request_details set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
                  where request_id = (select request_id from vms where id = ?)
                 """, vmId);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":80}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -323,7 +323,7 @@ class PublishingTest {
 
         // Release: the route goes down but the row stays, holding the name.
         long domainId = domainIdForVm(first);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
@@ -331,7 +331,7 @@ class PublishingTest {
                 Instant.class, domainId)).isNotNull();
         assertThat(routeStatus(routeIdForVm(first))).isEqualTo("REMOVED");
         // A released domain has no port to edit — PATCH answers 404.
-        mockMvc.perform(patch("/api/v1/domains/" + domainId)
+        mockMvc.perform(patch("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":81}"))
                 .andExpect(status().isNotFound());
@@ -343,7 +343,7 @@ class PublishingTest {
         // DELETE on the reserved (non-serving) row returns the name NOW — and
         // the release stamp goes with the claim: a REMOVED row reserves
         // nothing, so it must stop reading as "reserved".
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
@@ -359,7 +359,7 @@ class PublishingTest {
         long vmId = publishableVm("team-revive", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
 
@@ -367,7 +367,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":8081,\"subdomain\":\"team-revive\"}")
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.fqdn").value("team-revive.pusan.dev"))
-                .andExpect(jsonPath("$.domain.id").value(domainId))
+                .andExpect(jsonPath("$.domain.id").value(pub("domains", domainId).toString()))
                 .andExpect(jsonPath("$.route.targetPort").value(8081));
         assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
                 Instant.class, domainId)).isNull();
@@ -384,10 +384,10 @@ class PublishingTest {
         publish(vmId, "{\"port\":80,\"subdomain\":\"team-ulist-gone\"}")
                 .andExpect(status().isAccepted());
         long goneId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", goneId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
-        mockMvc.perform(delete("/api/v1/domains/" + goneId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", goneId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(goneId)).isEqualTo("REMOVED");
@@ -397,32 +397,32 @@ class PublishingTest {
 
         // Default listing: own workspaces only, REMOVED hidden — a removed domain
         // is gone from its owner's view, not a row lingering as "reserved".
-        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
-        assertThat(defaults).containsKey(liveId);
-        assertThat(defaults).doesNotContainKey(goneId);
-        assertThat(defaults).doesNotContainKey(foreignId);
+        Map<UUID, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(pub("domains", liveId));
+        assertThat(defaults).doesNotContainKey(pub("domains", goneId));
+        assertThat(defaults).doesNotContainKey(pub("domains", foreignId));
 
         // Explicit status=REMOVED opts in (same convention as the admin
         // listing) — still scoped, and the row carries no release stamp.
-        Map<Long, tools.jackson.databind.JsonNode> removed =
+        Map<UUID, tools.jackson.databind.JsonNode> removed =
                 listDomains(ownerToken, "&status=REMOVED");
-        assertThat(removed).containsKey(goneId);
-        assertThat(removed).doesNotContainKey(liveId);
-        assertThat(removed).doesNotContainKey(foreignId);
-        assertThat(removed.get(goneId).get("releasedAt").isNull()).isTrue();
+        assertThat(removed).containsKey(pub("domains", goneId));
+        assertThat(removed).doesNotContainKey(pub("domains", liveId));
+        assertThat(removed).doesNotContainKey(pub("domains", foreignId));
+        assertThat(removed.get(pub("domains", goneId)).get("releasedAt").isNull()).isTrue();
 
         // The foreign workspace's member sees their own row, never this workspace's.
-        Map<Long, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
-        assertThat(outsider).containsKey(foreignId);
-        assertThat(outsider).doesNotContainKey(liveId);
+        Map<UUID, tools.jackson.databind.JsonNode> outsider = listDomains(outsiderToken, "");
+        assertThat(outsider).containsKey(pub("domains", foreignId));
+        assertThat(outsider).doesNotContainKey(pub("domains", liveId));
 
         // Belonging to the owning workspace is no longer enough to see what its
         // VMs publish: the listing is scoped to the VMs the caller can actually
         // reach, and reaching one means being named on its access list. The
         // contrast pins the rule down — same workspace, same VM, and the only
         // difference is a grant, of which the lowest rung already suffices.
-        assertThat(listDomains(bystanderToken, "")).doesNotContainKey(liveId);
-        assertThat(listDomains(viewerToken, "")).containsKey(liveId);
+        assertThat(listDomains(bystanderToken, "")).doesNotContainKey(pub("domains", liveId));
+        assertThat(listDomains(viewerToken, "")).containsKey(pub("domains", liveId));
     }
 
     @Test
@@ -430,16 +430,16 @@ class PublishingTest {
         long vmId = publishableVm("team-ulist-res", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
 
         // Released, not removed: the row stays listed by default and carries
         // the stamp + computed reservation end the console renders.
-        Map<Long, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
-        assertThat(defaults).containsKey(domainId);
-        assertThat(defaults.get(domainId).get("releasedAt").isNull()).isFalse();
-        assertThat(defaults.get(domainId).get("reservedUntil").isNull()).isFalse();
+        Map<UUID, tools.jackson.databind.JsonNode> defaults = listDomains(ownerToken, "");
+        assertThat(defaults).containsKey(pub("domains", domainId));
+        assertThat(defaults.get(pub("domains", domainId)).get("releasedAt").isNull()).isFalse();
+        assertThat(defaults.get(pub("domains", domainId)).get("reservedUntil").isNull()).isFalse();
     }
 
     @Test
@@ -447,7 +447,7 @@ class PublishingTest {
         long vmId = publishableVm("team-rrace", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted()); // reserved now
 
@@ -515,7 +515,7 @@ class PublishingTest {
         long vmId = publishableVm("team-revcheck", "revive-root.example", VmStatus.RUNNING);
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED"); // reserved
@@ -542,7 +542,7 @@ class PublishingTest {
     @Test
     void publishRejectsPort22() throws Exception {
         long vmId = publishableVm("team-ssh", "pusan.dev", VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":22}"))
                 .andExpect(status().isUnprocessableEntity())
@@ -553,7 +553,7 @@ class PublishingTest {
     @Test
     void publishRejectsCustomDomainUnderPlatformZone() throws Exception {
         long vmId = publishableVm("team-custom", "pusan.dev", VmStatus.RUNNING);
-        mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"port\":80,\"customDomain\":\"squat.pusan.dev\"}"))
@@ -574,7 +574,7 @@ class PublishingTest {
                 .andExpect(status().isAccepted());
 
         // VmDetail lists every serving domain, id ascending, each with its port.
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.publications.length()").value(3))
@@ -587,7 +587,7 @@ class PublishingTest {
         // A port edit targets ONE domain and leaves the siblings alone.
         long firstDomain = jdbcTemplate.queryForObject(
                 "select id from domains where fqdn = 'team-multi-a.pusan.dev'", Long.class);
-        mockMvc.perform(patch("/api/v1/domains/" + firstDomain)
+        mockMvc.perform(patch("/api/v1/domains/" + pub("domains", firstDomain))
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":9090}"))
                 .andExpect(status().isAccepted())
@@ -598,14 +598,14 @@ class PublishingTest {
                 """, Integer.class)).isEqualTo(8081);
 
         // Deleting one domain leaves the other routes untouched.
-        mockMvc.perform(delete("/api/v1/domains/" + firstDomain)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", firstDomain))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(jdbcTemplate.queryForObject("""
                 select r.status from routes r join domains d on d.id = r.domain_id
                  where d.fqdn = 'team-multi-b.pusan.dev'
                 """, String.class)).isEqualTo("PENDING");
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.publications.length()").value(2));
@@ -637,7 +637,7 @@ class PublishingTest {
             // the replacement.
             long released = jdbcTemplate.queryForObject(
                     "select id from domains where fqdn = 'team-cap-a.pusan.dev'", Long.class);
-            mockMvc.perform(delete("/api/v1/domains/" + released)
+            mockMvc.perform(delete("/api/v1/domains/" + pub("domains", released))
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isAccepted());
             publish(vmId, "{\"port\":80,\"subdomain\":\"team-cap-c\"}")
@@ -783,7 +783,7 @@ class PublishingTest {
 
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
 
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.publications[0].fqdn")
@@ -906,21 +906,21 @@ class PublishingTest {
         long enqueued = verifyJobCount();
 
         try {
-            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+            mockMvc.perform(post("/api/v1/domains/" + pub("domains", domainId) + "/verify")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isAccepted());
-            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+            mockMvc.perform(post("/api/v1/domains/" + pub("domains", domainId) + "/verify")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isAccepted());
             assertThat(verifyJobCount()).isEqualTo(enqueued);
 
             // per-user sliding window (10/min): the 11th trigger is rejected
             for (int i = 0; i < 8; i++) {
-                mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+                mockMvc.perform(post("/api/v1/domains/" + pub("domains", domainId) + "/verify")
                                 .header("Authorization", "Bearer " + ownerToken))
                         .andExpect(status().isAccepted());
             }
-            mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+            mockMvc.perform(post("/api/v1/domains/" + pub("domains", domainId) + "/verify")
                             .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isTooManyRequests())
                     .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
@@ -937,7 +937,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
@@ -946,7 +946,7 @@ class PublishingTest {
         // A removed row answers the same 404 the other mutating ops give — it
         // must not accept a verify (202), enqueue a DNS job, or burn the
         // caller's rate-limit budget.
-        mockMvc.perform(post("/api/v1/domains/" + domainId + "/verify")
+        mockMvc.perform(post("/api/v1/domains/" + pub("domains", domainId) + "/verify")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -1054,13 +1054,13 @@ class PublishingTest {
         // ORG_ADMIN of the seed org sees the route; a regular user cannot reach the admin list.
         mockMvc.perform(get("/api/v1/admin/routes").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.vmId == %d)]".formatted(vmId)).exists());
+                .andExpect(jsonPath("$.content[?(@.vmId == \'%s\')]".formatted(pub("vms", vmId))).exists());
         mockMvc.perform(get("/api/v1/admin/routes").header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden());
         // Admin domains + certificates render (wildcard cert is visible to all admins).
         mockMvc.perform(get("/api/v1/admin/domains").header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.vmId == %d)]".formatted(vmId)).exists());
+                .andExpect(jsonPath("$.content[?(@.vmId == \'%s\')]".formatted(pub("vms", vmId))).exists());
         mockMvc.perform(get("/api/v1/admin/certificates")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
@@ -1113,7 +1113,7 @@ class PublishingTest {
         // row starts its reservation grace.
         MID_CALL_HOOK.set(() -> {
             try {
-                mockMvc.perform(delete("/api/v1/domains/" + domainId)
+                mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                                 .header("Authorization", "Bearer " + ownerToken))
                         .andExpect(status().isAccepted());
             } catch (Exception e) {
@@ -1142,7 +1142,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":80,\"customDomain\":\"" + fqdn + "\"}")
                 .andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
@@ -1151,11 +1151,11 @@ class PublishingTest {
         mockMvc.perform(get("/api/v1/admin/domains?status=REMOVED")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(domainId)).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("domains", domainId))).exists());
         mockMvc.perform(get("/api/v1/admin/domains")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == %d)]".formatted(domainId)).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("domains", domainId))).doesNotExist());
 
         // a FAILED cert reports no expiry countdown even with a stale notAfter
         long certId = jdbcTemplate.queryForObject("""
@@ -1166,9 +1166,10 @@ class PublishingTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
+        UUID certPublicId = pub("certificates", certId);
         tools.jackson.databind.JsonNode cert = null;
         for (tools.jackson.databind.JsonNode node : objectMapper.readTree(body).get("content")) {
-            if (node.get("id").asLong() == certId) {
+            if (certPublicId.toString().equals(node.get("id").asString())) {
                 cert = node;
             }
         }
@@ -1185,13 +1186,13 @@ class PublishingTest {
         publish(vmId, "{\"port\":80,\"subdomain\":\"team-admres-gone\"}")
                 .andExpect(status().isAccepted());
         long reservedId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + reservedId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", reservedId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted()); // released → reserved
 
         // Both rows are listed and both read ACTIVE — the reservation stamp is
         // the only thing telling an admin why the second name is still taken.
-        Map<Long, tools.jackson.databind.JsonNode> byId = listAdminDomains();
+        Map<UUID, tools.jackson.databind.JsonNode> byId = listAdminDomains();
         assertThat(byId.get(servingId).get("status").asString()).isEqualTo("ACTIVE");
         assertThat(byId.get(servingId).get("releasedAt").isNull()).isTrue();
         assertThat(byId.get(servingId).get("reservedUntil").isNull()).isTrue();
@@ -1230,7 +1231,7 @@ class PublishingTest {
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
-        mockMvc.perform(delete("/api/v1/domains/" + domainIdForVm(vmId))
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainIdForVm(vmId)))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
@@ -1344,7 +1345,7 @@ class PublishingTest {
         // Release the domain, then push the removal into a 409 carrying the
         // SAME generation — the agent's refusal when its applied generation
         // already equals ours (a duplicate whose earlier response was lost).
-        mockMvc.perform(delete("/api/v1/domains/" + domainIdForVm(vmId))
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainIdForVm(vmId)))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         long removedGen = routeGeneration(routeId);
@@ -1410,7 +1411,7 @@ class PublishingTest {
         agent.resetAll();
         agent.stubFor(com.github.tomakehurst.wiremock.client.WireMock.post(urlPathEqualTo(APPLY_PATH))
                 .willReturn(aResponse().withFault(Fault.CONNECTION_RESET_BY_PEER)));
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThatThrownBy(() -> routeApplyJob.apply(routeId))
@@ -1501,7 +1502,7 @@ class PublishingTest {
         long vmId = publishableVm("team-delnet", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
@@ -1527,14 +1528,14 @@ class PublishingTest {
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long routeId = routeIdForVm(vmId);
         long domainId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
         // The platform row survives, reserving the name through the grace; the
         // detail view exposes the reservation window the server computed.
         assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
-        mockMvc.perform(get("/api/v1/domains/" + domainId)
+        mockMvc.perform(get("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.releasedAt").isNotEmpty())
@@ -1586,7 +1587,7 @@ class PublishingTest {
                 .andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
 
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         assertThat(domainStatus(domainId)).isEqualTo("REMOVED");
@@ -1594,12 +1595,12 @@ class PublishingTest {
                 select count(*) from certificates where domain_id = ? and status <> 'REVOKED'
                 """, Long.class, domainId)).isZero();
         // The VM is no longer published for this name.
-        mockMvc.perform(get("/api/v1/vms/" + vmId)
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.publications.length()").value(0));
         // A second DELETE answers 404 (already removed).
-        mockMvc.perform(delete("/api/v1/domains/" + domainId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", domainId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
 
@@ -1618,7 +1619,7 @@ class PublishingTest {
         long routeId = routeIdForVm(vmId);
         long genBefore = jdbcTemplate.queryForObject("select generation from routes where id = ?",
                 Long.class, routeId);
-        mockMvc.perform(patch("/api/v1/domains/" + domainIdForVm(vmId))
+        mockMvc.perform(patch("/api/v1/domains/" + pub("domains", domainIdForVm(vmId)))
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":3000}"))
                 .andExpect(status().isAccepted())
@@ -1648,7 +1649,7 @@ class PublishingTest {
         // Self-delete accepted, then run the destroy pipeline directly. The vmid
         // is nulled so the (unstubbed) Proxmox destroy step skips, and the
         // grace deadline is fast-forwarded — the pipeline refuses undue intents.
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
@@ -1734,7 +1735,7 @@ class PublishingTest {
         long vmId = publishableVm("team-delfail", "pusan.dev", VmStatus.RUNNING);
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
@@ -1785,7 +1786,7 @@ class PublishingTest {
         // user's own release gets: the row goes at once. Were it merely reserved,
         // the owner could re-add the same name and revive the very row the admin
         // just took down.
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
@@ -1795,7 +1796,7 @@ class PublishingTest {
         // keep telling the owner it is reserved until some future date.
         assertThat(jdbcTemplate.queryForObject("select released_at from domains where id = ?",
                 Instant.class, domainId)).isNull();
-        assertThat(auditCount("domain.force_release", domainId)).isEqualTo(1);
+        assertThat(auditCount("domain.force_release", "domains", domainId)).isEqualTo(1);
 
         // Re-adding the same name builds a new row rather than reviving the old
         // one — the takedown stands in the audit trail.
@@ -1803,7 +1804,7 @@ class PublishingTest {
         assertThat(domainIdForVm(vmId)).isNotEqualTo(domainId);
 
         // an already-REMOVED domain answers the same 404 as an unknown id
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
     }
@@ -1814,7 +1815,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":80}").andExpect(status().isAccepted());
         long servingId = domainIdForVm(vmId);
 
-        mockMvc.perform(post("/api/v1/admin/domains/" + servingId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", servingId) + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         // The owning workspace is told, same channel as an admin mapping delete:
@@ -1835,10 +1836,10 @@ class PublishingTest {
         publish(vmId, "{\"port\":80,\"subdomain\":\"team-fnote2\"}")
                 .andExpect(status().isAccepted());
         long reservedId = domainIdForVm(vmId);
-        mockMvc.perform(delete("/api/v1/domains/" + reservedId)
+        mockMvc.perform(delete("/api/v1/domains/" + pub("domains", reservedId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted()); // released → reserved
-        mockMvc.perform(post("/api/v1/admin/domains/" + reservedId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", reservedId) + "/force-release")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         assertThat(adminReleaseNoticeCount("team-fnote2.pusan.dev")).isEqualTo(1);
@@ -1871,16 +1872,16 @@ class PublishingTest {
                 UserRole.ORG_ADMIN, otherOrgId);
         String otherToken = jwtService.createAccessToken(otherOrgAdmin);
 
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
                         .header("Authorization", "Bearer " + otherToken))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+        mockMvc.perform(post("/api/v1/admin/routes/" + pub("routes", routeId) + "/apply")
                         .header("Authorization", "Bearer " + otherToken))
                 .andExpect(status().isNotFound());
         assertThat(domainStatus(domainId)).isNotEqualTo("REMOVED");
 
         // a plain user is refused by the role gate
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden());
     }
@@ -1893,10 +1894,10 @@ class PublishingTest {
                 .andExpect(status().isAccepted());
         long domainId = domainIdForVm(vmId);
 
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/verify")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/verify")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isAccepted());
-        assertThat(auditCount("domain.admin_verify", domainId)).isEqualTo(1);
+        assertThat(auditCount("domain.admin_verify", "domains", domainId)).isEqualTo(1);
         // no per-user rate-limit row is consumed by the admin trigger
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from auth_rate_limits where scope = 'domain_verify'
@@ -1904,7 +1905,7 @@ class PublishingTest {
 
         long platformVm = publishableVm("team-avplat", "pusan.dev", VmStatus.RUNNING);
         publish(platformVm, "{\"port\":80}").andExpect(status().isAccepted());
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainIdForVm(platformVm) + "/verify")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainIdForVm(platformVm)) + "/verify")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOMAIN_NOT_CUSTOM"));
@@ -1922,13 +1923,13 @@ class PublishingTest {
         long routeId = routeIdForVm(vmId);
         long generationBefore = routeGeneration(routeId);
 
-        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+        mockMvc.perform(post("/api/v1/admin/routes/" + pub("routes", routeId) + "/apply")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DOMAIN_NOT_ACTIVE"));
         // untouched: no generation bump, no audit, route stays PENDING
         assertThat(routeGeneration(routeId)).isEqualTo(generationBefore);
-        assertThat(auditCount("route.apply", routeId)).isZero();
+        assertThat(auditCount("route.apply", "routes", routeId)).isZero();
         assertThat(routeStatus(routeId)).isEqualTo("PENDING");
     }
 
@@ -1940,19 +1941,19 @@ class PublishingTest {
         long domainId = domainIdForVm(vmId);
         long generationBefore = routeGeneration(routeId);
 
-        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+        mockMvc.perform(post("/api/v1/admin/routes/" + pub("routes", routeId) + "/apply")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted());
         assertThat(routeGeneration(routeId)).isGreaterThan(generationBefore);
         assertThat(routeStatus(routeId)).isEqualTo("PENDING");
-        assertThat(auditCount("route.apply", routeId)).isEqualTo(1);
+        assertThat(auditCount("route.apply", "routes", routeId)).isEqualTo(1);
 
         // a REMOVED route re-pushes its removal (desired state), status stays REMOVED
-        mockMvc.perform(post("/api/v1/admin/domains/" + domainId + "/force-release")
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
         long generationAfterRelease = routeGeneration(routeId);
-        mockMvc.perform(post("/api/v1/admin/routes/" + routeId + "/apply")
+        mockMvc.perform(post("/api/v1/admin/routes/" + pub("routes", routeId) + "/apply")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted());
         assertThat(routeStatus(routeId)).isEqualTo("REMOVED");
@@ -1964,10 +1965,10 @@ class PublishingTest {
                 Long.class, routeId);
     }
 
-    private long auditCount(String action, long targetId) {
+    private long auditCount(String action, String table, long targetId) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = ? and target_id = ?",
-                Long.class, action, targetId);
+                Long.class, action, pub(table, targetId).toString());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -1985,7 +1986,7 @@ class PublishingTest {
                 body = body.substring(0, body.length() - 1) + extra + "}";
             }
         }
-        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/domains")
+        return mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                 .header("Authorization", "Bearer " + ownerToken)
                 .contentType(MediaType.APPLICATION_JSON).content(body));
     }
@@ -2003,27 +2004,27 @@ class PublishingTest {
     }
 
     /** GET /admin/domains as SYS_ADMIN; rows of the page keyed by domain id. */
-    private Map<Long, tools.jackson.databind.JsonNode> listAdminDomains() throws Exception {
+    private Map<UUID, tools.jackson.databind.JsonNode> listAdminDomains() throws Exception {
         String body = mockMvc.perform(get("/api/v1/admin/domains?size=100")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        Map<Long, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
+        Map<UUID, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
         objectMapper.readTree(body).get("content")
-                .forEach(node -> byId.put(node.get("id").asLong(), node));
+                .forEach(node -> byId.put(UUID.fromString(node.get("id").asString()), node));
         return byId;
     }
 
     /** GET /domains as the given caller; rows of the page keyed by domain id. */
-    private Map<Long, tools.jackson.databind.JsonNode> listDomains(String token, String extraQuery)
+    private Map<UUID, tools.jackson.databind.JsonNode> listDomains(String token, String extraQuery)
             throws Exception {
         String body = mockMvc.perform(get("/api/v1/domains?size=100" + extraQuery)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
-        Map<Long, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
+        Map<UUID, tools.jackson.databind.JsonNode> byId = new java.util.HashMap<>();
         objectMapper.readTree(body).get("content")
-                .forEach(node -> byId.put(node.get("id").asLong(), node));
+                .forEach(node -> byId.put(UUID.fromString(node.get("id").asString()), node));
         return byId;
     }
 
@@ -2158,7 +2159,7 @@ class PublishingTest {
                                 Map.of("kind", "TEAM", "name", "공개 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
@@ -2167,7 +2168,7 @@ class PublishingTest {
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -2229,5 +2230,10 @@ class PublishingTest {
         StubDnsResolver stubDnsResolver() {
             return new StubDnsResolver();
         }
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

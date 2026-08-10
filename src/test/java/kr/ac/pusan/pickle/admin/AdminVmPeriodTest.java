@@ -97,7 +97,7 @@ class AdminVmPeriodTest {
         long deletedExpired = createVm(orgId, workspaceId, "DELETED", today.minusDays(3));
         long undated = createVm(orgId, workspaceId, "RUNNING", null);
 
-        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(expiring)).exists())
@@ -107,7 +107,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath(byId(expiring) + ".endDate")
                         .value(today.plusDays(5).toString()));
 
-        mockMvc.perform(get("/api/v1/admin/vms?expired=true&workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/admin/vms?expired=true&workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(expired)).exists())
@@ -116,7 +116,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath(byId(undated)).doesNotExist());
 
         // both filters AND to an empty page by design
-        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&expired=true&workspaceId=" + workspaceId)
+        mockMvc.perform(get("/api/v1/admin/vms?expiringInDays=7&expired=true&workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isEmpty());
@@ -136,18 +136,18 @@ class AdminVmPeriodTest {
         jdbcTemplate.update("update vms set expiry_stopped_at = now(),"
                 + " last_expiry_notice_stage = 1 where id = ?", vmId);
 
-        mockMvc.perform(post("/api/v1/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/vms/{id}/start", pub("vms", vmId))
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_EXPIRED"));
 
         // the admin extends the period → markers clear in the same update
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"endDate\": \"%s\"}".formatted(today.plusDays(30))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(vmId))
+                .andExpect(jsonPath("$.id").value(pub("vms", vmId).toString()))
                 .andExpect(jsonPath("$.endDate").value(today.plusDays(30).toString()))
                 .andExpect(jsonPath("$.expiryStoppedAt").isEmpty())
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty());
@@ -163,10 +163,10 @@ class AdminVmPeriodTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'vm.period_update' and target_id = ?
-                """, Long.class, vmId)).isEqualTo(1);
+                """, Long.class, pub("vms", vmId).toString())).isEqualTo(1);
 
         // guard lifted → start is accepted again
-        mockMvc.perform(post("/api/v1/vms/{id}/start", vmId)
+        mockMvc.perform(post("/api/v1/vms/{id}/start", pub("vms", vmId).toString())
                         .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isAccepted());
     }
@@ -177,7 +177,7 @@ class AdminVmPeriodTest {
         jdbcTemplate.update("update vms set start_date = ? where id = ?", today.minusDays(30), vmId);
 
         // endDate in the past → 422 with the field error
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"endDate\": \"%s\"}".formatted(today.minusDays(1))))
@@ -186,7 +186,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath("$.errors[0].field").value("endDate"));
 
         // endDate before startDate → 422
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"endDate\": \"%s\", \"startDate\": \"%s\"}".formatted(
@@ -196,7 +196,7 @@ class AdminVmPeriodTest {
         // deletion-bound VM → 409 VM_INVALID_STATE
         long scheduled = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
         jdbcTemplate.update("update vms set delete_scheduled_for = now() where id = ?", scheduled);
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", scheduled)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", scheduled))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"endDate\": \"%s\"}".formatted(today.plusDays(30))))
@@ -204,7 +204,7 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
 
         long deleting = createVm(orgId, workspaceId, "DELETING", today.plusDays(10));
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", deleting)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", deleting))
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"endDate\": \"%s\"}".formatted(today.plusDays(30))))
@@ -214,26 +214,26 @@ class AdminVmPeriodTest {
 
     @Test
     void orgAdminIsMaskedFromOtherOrgsVmsAndUsersAreForbidden() throws Exception {
-        Org otherOrg = orgRepository.findBySlug("avp-other").orElseGet(() ->
-                orgRepository.save(new Org("기간 테스트 타기관", "avp-other", null)));
+        Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("기간 테스트 타기관").orElseGet(() ->
+                orgRepository.save(new Org("기간 테스트 타기관", null)));
         User otherOrgAdmin = ensureUser("avp.other.admin@pusan.ac.kr", UserRole.ORG_ADMIN,
                 otherOrg.getId());
         String otherOrgAdminToken = jwtService.createAccessToken(otherOrgAdmin);
         long vmId = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
         String body = "{\"endDate\": \"%s\"}".formatted(today.plusDays(30));
 
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        mockMvc.perform(patch("/api/v1/admin/vms/999999/period")
+        mockMvc.perform(patch("/api/v1/admin/vms/" + SeedFixtures.UNKNOWN_ID + "/period")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isNotFound());
 
-        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", vmId)
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
                         .header("Authorization", "Bearer " + memberToken)
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isForbidden());
@@ -241,8 +241,8 @@ class AdminVmPeriodTest {
 
     // ── fixtures ───────────────────────────────────────────────────────────
 
-    private static String byId(long vmId) {
-        return "$.content[?(@.id == %d)]".formatted(vmId);
+    private String byId(long vmId) {
+        return "$.content[?(@.id == '%s')]".formatted(pub("vms", vmId));
     }
 
     private User ensureUser(String email, UserRole role, Long userOrgId) {
@@ -269,5 +269,10 @@ class AdminVmPeriodTest {
                 returning id
                 """, Long.class, nodeId, vmWorkspaceId, vmOrgId, requestId, hostname, hostname,
                 imageId, status, endDate);
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

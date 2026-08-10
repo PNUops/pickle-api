@@ -289,7 +289,7 @@ class PortForwardingTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.applyState").value("PENDING"))
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
         // agent confirms the generation -> ACTIVE
         jdbcTemplate.update(
@@ -311,8 +311,8 @@ class PortForwardingTest {
         String body = create(vmId, ownerToken, "UDP", 5000)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/port-forwardings/" + mappingId)
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings/" + mappingId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         Long rows = jdbcTemplate.queryForObject(
@@ -332,12 +332,12 @@ class PortForwardingTest {
                 """, Long.class, "token-" + UUID.randomUUID().toString().substring(0, 8),
                 sourceIp);
 
-        mockMvc.perform(post("/api/v1/admin/relays/" + relayId + "/token")
+        mockMvc.perform(post("/api/v1/admin/relays/" + pub("relays", relayId) + "/token")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
 
-        String body = mockMvc.perform(post("/api/v1/admin/relays/" + relayId + "/token")
+        String body = mockMvc.perform(post("/api/v1/admin/relays/" + pub("relays", relayId) + "/token")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .header(ReauthTestSupport.HEADER, reauth(sysAdminToken)))
                 .andExpect(status().isOk())
@@ -363,7 +363,7 @@ class PortForwardingTest {
         Long audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action = 'relay.token_issue' and target_id = ?
-                """, Long.class, relayId);
+                """, Long.class, pub("relays", relayId).toString());
         assertThat(audits).isEqualTo(1);
     }
 
@@ -375,9 +375,9 @@ class PortForwardingTest {
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
-        mockMvc.perform(post("/api/v1/admin/port-mappings/" + mappingId + "/suspend")
+        mockMvc.perform(post("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/suspend")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"약관 위반 신고 확인 중\"}"))
@@ -397,13 +397,13 @@ class PortForwardingTest {
         assertThat(ownerNotified).isEqualTo(1);
 
         // suspending again is a state conflict
-        mockMvc.perform(post("/api/v1/admin/port-mappings/" + mappingId + "/suspend")
+        mockMvc.perform(post("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/suspend")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reason\":\"중복\"}"))
                 .andExpect(status().isConflict());
 
-        mockMvc.perform(post("/api/v1/admin/port-mappings/" + mappingId + "/unsuspend")
+        mockMvc.perform(post("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/unsuspend")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
@@ -419,9 +419,9 @@ class PortForwardingTest {
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
-        mockMvc.perform(delete("/api/v1/admin/port-mappings/" + mappingId)
+        mockMvc.perform(delete("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isAccepted());
 
@@ -436,7 +436,7 @@ class PortForwardingTest {
                 select count(*) from notifications
                  where user_id = ? and event = 'port_mapping.deleted'
                    and payload ->> 'vmId' = ?
-                """, Long.class, owner.getId(), String.valueOf(vmId))).isEqualTo(1);
+                """, Long.class, owner.getId(), pub("vms", vmId).toString())).isEqualTo(1);
     }
 
     @Test
@@ -445,10 +445,10 @@ class PortForwardingTest {
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
 
         // set two guards (0 = disable is a legal stored value)
-        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/guards")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"ctMax\":256,\"newConnRate\":0}"))
@@ -458,7 +458,7 @@ class PortForwardingTest {
         assertThat(mappingGeneration(relayId)).isEqualTo(2);
 
         // omitted field keeps its value; explicit null clears to default
-        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/guards")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"ctMax\":null}"))
@@ -468,12 +468,12 @@ class PortForwardingTest {
         assertThat(mappingGeneration(relayId)).isEqualTo(3);
 
         // negative values and empty bodies are refused
-        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/guards")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"perSourceRate\":-1}"))
                 .andExpect(status().isUnprocessableEntity());
-        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+        mockMvc.perform(patch("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/guards")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
@@ -486,7 +486,7 @@ class PortForwardingTest {
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
         long generationBefore = mappingGeneration(relayId);
 
         // A value the relay's packet filter cannot render fails the whole
@@ -519,7 +519,7 @@ class PortForwardingTest {
         long vmId = runningVm();
         String body = create(vmId, ownerToken, "TCP", 8080)
                 .andReturn().getResponse().getContentAsString();
-        long mappingId = objectMapper.readTree(body).get("id").asLong();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
         long generationBefore = mappingGeneration(relayId);
 
         // A burst without a positive matching rate would make every agent
@@ -555,7 +555,7 @@ class PortForwardingTest {
     }
 
     private ResultActions guardPatch(long mappingId, String body) throws Exception {
-        return mockMvc.perform(patch("/api/v1/admin/port-mappings/" + mappingId + "/guards")
+        return mockMvc.perform(patch("/api/v1/admin/port-mappings/" + pub("port_mappings", mappingId) + "/guards")
                 .header("Authorization", "Bearer " + sysAdminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
@@ -571,7 +571,7 @@ class PortForwardingTest {
         long generationBefore = mappingGeneration(relayId);
         jdbcTemplate.update("update vms set status = 'ERROR'::vm_status where id = ?", vmId);
 
-        mockMvc.perform(delete("/api/v1/vms/" + vmId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
                 .andExpect(status().isAccepted());
@@ -608,14 +608,14 @@ class PortForwardingTest {
 
     private ResultActions create(long vmId, String token, String proto, int targetPort)
             throws Exception {
-        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/port-forwardings")
+        return mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"proto\":\"" + proto + "\",\"targetPort\":" + targetPort + "}"));
     }
 
     private ResultActions list(long vmId, String token) throws Exception {
-        return mockMvc.perform(get("/api/v1/vms/" + vmId + "/port-forwardings")
+        return mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings")
                 .header("Authorization", "Bearer " + token));
     }
 
@@ -678,11 +678,11 @@ class PortForwardingTest {
                                         "slug", slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -703,5 +703,10 @@ class PortForwardingTest {
             user.setRole(UserRole.USER);
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

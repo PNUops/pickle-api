@@ -85,12 +85,12 @@ class WorkspaceDeleteTest {
         addMember(workspaceId, plainMember.getEmail(), "MEMBER");
 
         // non-member → 404 (existence masked)
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         // member below OWNER → 403
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + plainMemberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
@@ -102,7 +102,7 @@ class WorkspaceDeleteTest {
         // a live VM in behind the count. A refused delete must therefore leave
         // those requests exactly as it found them.
         long pendingRequestId = insertSubmittedRequest(workspaceId);
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
@@ -110,19 +110,19 @@ class WorkspaceDeleteTest {
                 String.class, pendingRequestId)).isEqualTo("SUBMITTED");
         // even a DELETING VM still blocks
         jdbcTemplate.update("update vms set status = 'DELETING' where id = ?", vmId);
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_HAS_ACTIVE_VMS"));
         // once destroyed (DELETED), deletion is allowed
         jdbcTemplate.update("update vms set status = 'DELETED' where id = ?", vmId);
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
 
         // gone from list and detail (404), audit + member notification recorded
-        mockMvc.perform(get("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNotFound());
         assertThat(jdbcTemplate.queryForObject(
@@ -146,7 +146,7 @@ class WorkspaceDeleteTest {
                 select g.id from workspaces g join workspace_members gm on gm.workspace_id = g.id
                  where gm.user_id = ? and g.kind = 'PERSONAL'
                 """, Long.class, owner.getId());
-        mockMvc.perform(delete("/api/v1/workspaces/" + personalId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", personalId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_PERSONAL_UNDELETABLE"));
@@ -159,7 +159,7 @@ class WorkspaceDeleteTest {
         String sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
 
-        mockMvc.perform(delete("/api/v1/workspaces/" + workspaceId)
+        mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
 
@@ -171,12 +171,12 @@ class WorkspaceDeleteTest {
                 """, Long.class, requestId)).isEqualTo(1L);
 
         // approving the now-canceled request hits the existing SUBMITTED guard → 409
-        mockMvc.perform(post("/api/v1/admin/requests/" + requestId + "/approve")
+        mockMvc.perform(post("/api/v1/admin/requests/" + pub("requests", requestId).toString() + "/approve")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "grantedVcpu", 1, "grantedMemoryMb", 1024, "grantedDiskGb", 10,
-                                "grantedImageId", imageId))))
+                                "grantedImageId", pub("os_images", imageId)))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("REQUEST_ALREADY_DECIDED"));
     }
@@ -205,11 +205,11 @@ class WorkspaceDeleteTest {
                                 Map.of("kind", "TEAM", "name", "삭제 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -224,5 +224,10 @@ class WorkspaceDeleteTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

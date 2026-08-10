@@ -71,7 +71,7 @@ class CapacityTrendTest {
     @BeforeEach
     void setUp() {
         String slug = "cap-" + UUID.randomUUID().toString().substring(0, 8);
-        org = orgRepository.save(new Org("추이 테스트 기관 " + slug, slug, null));
+        org = orgRepository.save(new Org("추이 테스트 기관 " + slug, null));
         User orgAdmin = createUser("cap.admin." + slug + "@pusan.ac.kr", UserRole.ORG_ADMIN,
                 org.getId());
         User regularUser = createUser("cap.user." + slug + "@pusan.ac.kr", UserRole.USER, null);
@@ -98,7 +98,7 @@ class CapacityTrendTest {
         createVm(SeedFixtures.seedOrgId(jdbcTemplate), midnight(today.minusDays(10)), null,
                 "RUNNING");
 
-        mockMvc.perform(get("/api/v1/admin/capacity-trend?days=7&orgId=" + org.getId())
+        mockMvc.perform(get("/api/v1/admin/capacity-trend?days=7&orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.from").value(today.minusDays(6).toString()))
@@ -146,7 +146,7 @@ class CapacityTrendTest {
                 .andExpect(status().isForbidden());
 
         // An org-tier caller is pinned to their own org; another org is masked.
-        mockMvc.perform(get("/api/v1/admin/capacity-trend?orgId=" + otherOrgId)
+        mockMvc.perform(get("/api/v1/admin/capacity-trend?orgId=" + pub("orgs", otherOrgId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
@@ -198,5 +198,10 @@ class CapacityTrendTest {
                 """, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId, status,
                 java.sql.Timestamp.from(createdAt),
                 deletedAt == null ? null : java.sql.Timestamp.from(deletedAt));
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }

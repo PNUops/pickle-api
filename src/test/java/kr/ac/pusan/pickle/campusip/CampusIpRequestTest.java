@@ -120,7 +120,7 @@ class CampusIpRequestTest {
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // reads need only a place on the list: a VIEWER grantee may list
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .get("/api/v1/vms/" + vmId + "/campus-ip-requests")
+                        .get("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests")
                         .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isOk());
     }
@@ -171,7 +171,7 @@ class CampusIpRequestTest {
     void cancelWorksOnlyBeforeReview() throws Exception {
         long vmId = vm();
         long requestId = created(vmId, "취소 테스트", List.of(80));
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/campus-ip-requests/" + requestId)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + requestId)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isNoContent());
         assertThat(jdbcTemplate.queryForObject(
@@ -180,7 +180,7 @@ class CampusIpRequestTest {
 
         long second = created(vmId, "취소 불가 테스트", List.of(80));
         transition(second, "APPROVED", null).andExpect(status().isOk());
-        mockMvc.perform(delete("/api/v1/vms/" + vmId + "/campus-ip-requests/" + second)
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests/" + second)
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CAMPUS_IP_INVALID_TRANSITION"));
@@ -248,7 +248,7 @@ class CampusIpRequestTest {
 
     private ResultActions request(long vmId, String token, String purpose, List<Integer> ports)
             throws Exception {
-        return mockMvc.perform(post("/api/v1/vms/" + vmId + "/campus-ip-requests")
+        return mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/campus-ip-requests")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
@@ -259,7 +259,7 @@ class CampusIpRequestTest {
         String body = request(vmId, ownerToken, purpose, ports)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "campus_ip_requests", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private ResultActions transition(long requestId, String status, String grantedAddress)
@@ -267,7 +267,7 @@ class CampusIpRequestTest {
         Map<String, Object> body = grantedAddress == null
                 ? Map.of("status", status)
                 : Map.of("status", status, "grantedAddress", grantedAddress);
-        return mockMvc.perform(post("/api/v1/admin/campus-ip-requests/" + requestId + "/status")
+        return mockMvc.perform(post("/api/v1/admin/campus-ip-requests/" + pub("campus_ip_requests", requestId) + "/status")
                 .header("Authorization", "Bearer " + sysAdminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
@@ -309,11 +309,11 @@ class CampusIpRequestTest {
                                         "slug", slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
+        return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + workspaceId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
                         .header(ReauthTestSupport.HEADER,
                                 ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService,
@@ -335,5 +335,10 @@ class CampusIpRequestTest {
             }
             return userRepository.save(user);
         });
+    }
+
+    /** The public identifier of a row this test set up through direct SQL. */
+    private UUID pub(String table, long id) {
+        return SeedFixtures.publicId(jdbcTemplate, table, id);
     }
 }
