@@ -119,9 +119,9 @@ alter table vm_request_details
     check ((granted_vcpu is null or granted_vcpu > 0)
         and (granted_memory_mb is null or granted_memory_mb > 0)
         and (granted_disk_gb is null or granted_disk_gb > 0));
--- An approved VM request carries a full granted specification. The rule reads
--- across the two tables, so it lives where the values are and looks up the
--- decision rather than the other way round.
+-- A granted specification is all-or-nothing. The stronger rule V11 had -- an
+-- APPROVE decision must carry one -- reads across two tables now and a CHECK
+-- cannot, so V74 restores it as a deferred constraint trigger.
 alter table vm_request_details
     add constraint chk_vm_request_details_approved_granted
     check ((granted_vcpu is not null and granted_memory_mb is not null

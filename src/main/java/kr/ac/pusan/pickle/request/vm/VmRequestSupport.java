@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.request.vm;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -171,7 +172,8 @@ public class VmRequestSupport implements RequestTypeHandler {
         Long nodeId = spec.nodeId() != null ? spec.nodeId() : image.getNodeId();
         String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
-                : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName()));
+                : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName(),
+                        request.getWorkspaceId()));
         // The guest admin account comes from the granted image (each
         // distribution ships its own), never from a platform-wide constant.
         Vm vm = vmRepository.save(new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
@@ -272,6 +274,11 @@ public class VmRequestSupport implements RequestTypeHandler {
      * Unique hostname: a sanitized seed plus a short random suffix (the DB
      * unique constraint is the backstop). The seed used to be the workspace
      * slug, which no longer exists.
+     *
+     * <p>The generated name goes through the same policy a user-chosen one
+     * does. It is derived from free text, so it can land on a reserved word or
+     * a profanity by accident, and a hostname is an SSH name and a subdomain
+     * default -- exactly what that list exists to protect.
      */
     private String generateHostname(String seed) {
         for (int attempt = 0; attempt < HOSTNAME_MAX_ATTEMPTS; attempt++) {
@@ -280,7 +287,9 @@ public class VmRequestSupport implements RequestTypeHandler {
                 suffix.append(HOSTNAME_SUFFIX_ALPHABET[random.nextInt(HOSTNAME_SUFFIX_ALPHABET.length)]);
             }
             String hostname = seed + "-" + suffix;
-            if (!vmRepository.existsByHostname(hostname)) {
+            List<FieldValidationError> rejected = new ArrayList<>();
+            slugPolicy.validateSlug(hostname, "hostname", rejected);
+            if (rejected.isEmpty() && !vmRepository.existsByHostname(hostname)) {
                 return hostname;
             }
         }

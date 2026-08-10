@@ -59,16 +59,19 @@ public final class RequestFixtures {
             Long imageId, int vcpu, int memoryMb, int diskGb) {
         Long resolvedImageId = imageId != null ? imageId
                 : jdbc.queryForObject("select min(id) from os_images", Long.class);
-        jdbc.update("""
-                insert into request_reviews (request_id, reviewer_id, decision)
-                values (?, ?, 'APPROVE'::review_decision)
-                """, requestId, reviewerId);
+        // The granted specification goes in first: each statement here commits on
+        // its own, and the deferred trigger that guards "approved implies granted"
+        // fires at the end of whichever one writes the review.
         jdbc.update("""
                 update vm_request_details
                    set granted_vcpu = ?, granted_memory_mb = ?, granted_disk_gb = ?,
                        granted_image_id = ?
                  where request_id = ?
                 """, vcpu, memoryMb, diskGb, resolvedImageId, requestId);
+        jdbc.update("""
+                insert into request_reviews (request_id, reviewer_id, decision)
+                values (?, ?, 'APPROVE'::review_decision)
+                """, requestId, reviewerId);
     }
 
     /** The same, with the platform's usual small specification. */
