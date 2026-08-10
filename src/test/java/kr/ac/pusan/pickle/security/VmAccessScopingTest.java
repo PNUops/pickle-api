@@ -117,6 +117,17 @@ class VmAccessScopingTest {
             "addVmAccessGrant", "updateVmAccessGrant", "removeVmAccessGrant");
 
     /**
+     * Ops whose fixture must carry no hypervisor guest. The usage read is the
+     * one op here that reaches past the database once authorization passes, and
+     * no Proxmox host exists in a test run, so an authorized call would answer
+     * 503 — indistinguishable, to the allowed-case assertion, from a real
+     * failure. Cleared of its vmid the same call answers 200 with
+     * {@code available: false}, which is still the proof that the rung was
+     * consulted and nothing else about the op is asserted here.
+     */
+    private static final Set<String> UNPROVISIONED_FIXTURE_OPS = Set.of("getVmMetrics");
+
+    /**
      * One resource-scoped operation as the permission matrix declares it.
      *
      * @param id       the contract operation id
@@ -149,13 +160,14 @@ class VmAccessScopingTest {
     }
 
     /**
-     * The 27 resource-scoped operations, transcribed from
+     * The 28 resource-scoped operations, transcribed from
      * {@code permission-matrix.yaml}. Adding an op to the product means adding
      * one row here.
      */
     private static final List<ScopedOp> OPS = List.of(
             op("getVm", HttpMethod.GET, "/vms/{vmId}", ResourceRole.VIEWER),
             op("listVmEvents", HttpMethod.GET, "/vms/{vmId}/events", ResourceRole.VIEWER),
+            op("getVmMetrics", HttpMethod.GET, "/vms/{vmId}/metrics", ResourceRole.VIEWER),
             op("listVmPortForwardings", HttpMethod.GET, "/vms/{vmId}/port-forwardings",
                     ResourceRole.VIEWER),
             op("listVmCampusIpRequests", HttpMethod.GET, "/vms/{vmId}/campus-ip-requests",
@@ -288,6 +300,9 @@ class VmAccessScopingTest {
     void resourceScopedOpHonoursItsDeclaredRung(ScopedOp scopedOp, Scenario scenario)
             throws Exception {
         Fixture fixture = newFixture();
+        if (UNPROVISIONED_FIXTURE_OPS.contains(scopedOp.id())) {
+            jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", fixture.vmId());
+        }
         Requester requester = standingFor(scopedOp, scenario, fixture);
 
         MockHttpServletResponse response = call(scopedOp, fixture, requester);

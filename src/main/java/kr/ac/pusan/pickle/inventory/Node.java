@@ -56,6 +56,10 @@ public class Node {
     @Column(name = "ip_pool_id")
     private Long ipPoolId;
 
+    /** Thin-pool size in GB, measured by the infra inventory script; null until measured (V76). */
+    @Column(name = "disk_capacity_gb")
+    private Long diskCapacityGb;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -110,5 +114,14 @@ public class Node {
 
     public Long getIpPoolId() {
         return ipPoolId;
+    }
+
+    /**
+     * Physical size of the thin pool guest disks are carved out of. Null on a
+     * node nobody has measured yet, and advisory even when set: the pool is
+     * over-provisioned, so allocation may exceed it legitimately.
+     */
+    public Long getDiskCapacityGb() {
+        return diskCapacityGb;
     }
 }

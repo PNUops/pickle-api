@@ -13,7 +13,8 @@ public record SystemDashboardSummaryResponse(
         long certExpiring30dCount,
         long openDriftFindingCount,
         long sshPasswordEnabledVmCount,
-        List<IpPoolUsage> ipPools) {
+        List<IpPoolUsage> ipPools,
+        List<NodeLiveResponse> nodesLive) {
 
     /** Per-node allocation ratios (same aggregates as {@code GET /admin/nodes}). */
     public record NodeRatio(

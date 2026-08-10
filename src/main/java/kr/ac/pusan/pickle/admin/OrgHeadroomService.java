@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
@@ -51,12 +52,14 @@ public class OrgHeadroomService {
     public HeadroomResult headroom(Long orgId) {
         List<Vm> orgVms = vmRepository.findActiveByOrgId(orgId, VmStatus.DELETED);
         ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
-        List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
-        long cpuThreads = nodes.stream().mapToLong(Node::getCpuThreads).sum();
-        long memoryMb = nodes.stream().mapToLong(Node::getMemoryMb).sum();
+        PlatformCapacity capacity = capacity();
+        long cpuThreads = capacity.cpuThreads();
+        long memoryMb = capacity.memoryMb();
 
         double vcpuRatio = cpuThreads == 0 ? 0.0 : round2((double) allocated.vcpu() / cpuThreads);
         double memoryRatio = memoryMb == 0 ? 0.0 : round2((double) allocated.memoryMb() / memoryMb);
+        Double diskRatio = capacity.diskGb() == null || capacity.diskGb() == 0 ? null
+                : round2((double) allocated.diskGb() / capacity.diskGb());
         double vcpuWarn = settingsService.decimal(SettingsService.VCPU_OVERCOMMIT_WARN,
                 DEFAULT_VCPU_OVERCOMMIT_WARN);
         double memoryWarn = settingsService.decimal(SettingsService.MEMORY_USAGE_WARN,
@@ -71,8 +74,28 @@ public class OrgHeadroomService {
             warnings.add("메모리 할당 비율이 경고 임계값을 초과했습니다 (%.2f ≥ %.2f)."
                     .formatted(memoryRatio, memoryWarn));
         }
-        return new HeadroomResult(allocated, cpuThreads, memoryMb, vcpuRatio, memoryRatio,
-                List.copyOf(warnings), guidance(vcpuRatio >= vcpuWarn, memoryRatio >= memoryWarn));
+        return new HeadroomResult(allocated, cpuThreads, memoryMb, capacity.diskGb(), vcpuRatio,
+                memoryRatio, diskRatio, List.copyOf(warnings),
+                guidance(vcpuRatio >= vcpuWarn, memoryRatio >= memoryWarn));
+    }
+
+    /**
+     * What the platform physically has right now: ACTIVE nodes only, so a node
+     * in maintenance stops counting the moment it stops taking guests.
+     *
+     * <p>Disk is the odd one out. It is measured per node rather than declared
+     * with the node, so one unmeasured ACTIVE node makes the sum a number
+     * smaller than the truth — which would read as less headroom than there is.
+     * The whole figure goes null in that case instead.
+     */
+    public PlatformCapacity capacity() {
+        List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
+        boolean everyNodeMeasured = !nodes.isEmpty()
+                && nodes.stream().allMatch(node -> node.getDiskCapacityGb() != null);
+        return new PlatformCapacity(
+                nodes.stream().mapToLong(Node::getCpuThreads).sum(),
+                nodes.stream().mapToLong(Node::getMemoryMb).sum(),
+                everyNodeMeasured ? nodes.stream().mapToLong(Node::getDiskCapacityGb).sum() : null);
     }
 
     private static String guidance(boolean vcpu, boolean memory) {
@@ -92,14 +115,25 @@ public class OrgHeadroomService {
         return Math.round(value * 100.0) / 100.0;
     }
 
-    /** One org's headroom snapshot (capacity = platform ACTIVE nodes). */
+    /**
+     * One org's headroom snapshot (capacity = platform ACTIVE nodes). Disk
+     * capacity and its ratio are null while any ACTIVE node is unmeasured, and
+     * are advisory even when present: the thin pool is over-provisioned, so no
+     * warning threshold hangs off them.
+     */
     public record HeadroomResult(
             ResourceTotalsResponse allocated,
             long capacityVcpu,
             long capacityMemoryMb,
+            @Nullable Long capacityDiskGb,
             double vcpuRatio,
             double memoryRatio,
+            @Nullable Double diskRatio,
             List<String> warnings,
             String guidance) {
+    }
+
+    /** Physical capacity of the ACTIVE nodes, as of now. */
+    public record PlatformCapacity(long cpuThreads, long memoryMb, @Nullable Long diskGb) {
     }
 }

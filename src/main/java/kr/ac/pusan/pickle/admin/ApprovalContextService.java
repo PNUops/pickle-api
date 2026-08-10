@@ -92,8 +92,10 @@ public class ApprovalContextService {
                 workspacePanel(workspace),
                 history(request),
                 new OrgHeadroom(headroom.allocated(),
-                        new Capacity(headroom.capacityVcpu(), headroom.capacityMemoryMb()),
-                        headroom.vcpuRatio(), headroom.memoryRatio(), headroom.warnings()),
+                        new Capacity(headroom.capacityVcpu(), headroom.capacityMemoryMb(),
+                                headroom.capacityDiskGb()),
+                        headroom.vcpuRatio(), headroom.memoryRatio(), headroom.diskRatio(),
+                        headroom.warnings()),
                 headroom.guidance());
     }
 

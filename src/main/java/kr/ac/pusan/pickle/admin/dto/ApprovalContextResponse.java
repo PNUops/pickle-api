@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
@@ -60,9 +61,16 @@ public record ApprovalContextResponse(
             Capacity capacity,
             double vcpuOvercommitRatio,
             double memoryUsageRatio,
+            @Schema(description = "할당 디스크 / thin pool 용량 — 용량 미등록 노드가 있으면 null. "
+                    + "오버프로비저닝 전제라 1을 넘을 수 있고 경고 임계값은 없습니다.")
+            @Nullable Double diskUsageRatio,
             List<String> warnings) {
     }
 
-    public record Capacity(long cpuThreads, long memoryMb) {
+    public record Capacity(
+            long cpuThreads,
+            long memoryMb,
+            @Schema(description = "ACTIVE 노드의 thin pool 용량 합(GB) — 용량 미등록 노드가 있으면 null")
+            @Nullable Long diskGb) {
     }
 }
