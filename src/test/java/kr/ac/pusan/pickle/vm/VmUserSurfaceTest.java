@@ -228,9 +228,10 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.myRole").value("MEMBER"));
 
         // USER tokens only see non-hidden ACTIVE orgs, so provide one
-        jdbcTemplate.update(
-                "insert into orgs (name, slug) values ('표면 공개 기관', 'vus-visible')"
-                        + " on conflict (slug) do nothing");
+        if (jdbcTemplate.queryForObject("select count(*) from orgs where name = ?",
+                Long.class, "표면 공개 기관") == 0) {
+            jdbcTemplate.update("insert into orgs (name) values ('표면 공개 기관')");
+        }
         mockMvc.perform(get("/api/v1/orgs")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())

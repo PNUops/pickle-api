@@ -897,12 +897,11 @@ class VmDeletionTest {
     }
 
     private String otherOrgAdminToken() {
-        Long otherOrgId = jdbcTemplate.query("select id from orgs where slug = 'vmdel-other'",
+        Long otherOrgId = jdbcTemplate.query("select id from orgs where name = '삭제테스트 타기관'",
                 rs -> rs.next() ? rs.getLong(1) : null);
         if (otherOrgId == null) {
-            otherOrgId = jdbcTemplate.queryForObject("""
-                    insert into orgs (name, slug) values ('삭제테스트 타기관', 'vmdel-other') returning id
-                    """, Long.class);
+            otherOrgId = jdbcTemplate.queryForObject(
+                    "insert into orgs (name) values ('삭제테스트 타기관') returning id", Long.class);
         }
         User otherAdmin = ensureUser("vmdel.otheradmin@pusan.ac.kr", "타기관관리자");
         otherAdmin.setRole(UserRole.ORG_ADMIN);
@@ -1106,7 +1105,7 @@ class VmDeletionTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs
                  where action='vm.force_delete' and target_id=? and detail::text like '%overrodeProtection%'
-                """, Long.class, vmId)).isEqualTo(1L);
+                """, Long.class, pub("vms", vmId).toString())).isEqualTo(1L);
     }
 
     @Test

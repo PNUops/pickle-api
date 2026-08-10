@@ -198,11 +198,11 @@ class VmExpiryJobTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
                  where event = 'vm.expiry.d1' and payload ->> 'vmId' = ?
-                """, String.class, String.valueOf(vm1))).isEqualTo("HIGH");
+                """, String.class, pub("vms", vm1).toString())).isEqualTo("HIGH");
         assertThat(jdbcTemplate.queryForObject("""
                 select distinct importance from notifications
                  where event = 'vm.expiry.d14' and payload ->> 'vmId' = ?
-                """, String.class, String.valueOf(vm14))).isEqualTo("NORMAL");
+                """, String.class, pub("vms", vm14).toString())).isEqualTo("NORMAL");
 
         // hourly re-run: the stage CAS + dedup key make it a complete no-op
         long before = totalNoticeRows();
@@ -222,7 +222,7 @@ class VmExpiryJobTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(distinct payload ->> 'endDate') from notifications
                  where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
-                """, Long.class, String.valueOf(vm1))).isEqualTo(2);
+                """, Long.class, pub("vms", vm1).toString())).isEqualTo(2);
     }
 
     // ── auto-stop ──────────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ class VmExpiryJobTest {
         assertThat(jdbcTemplate.queryForList("""
                 select user_id from notifications
                  where event = 'vm.expiry.stopped' and payload ->> 'vmId' = ?
-                """, Long.class, String.valueOf(vmExpired)))
+                """, Long.class, pub("vms", vmExpired).toString()))
                 .contains(ownerId, editorId, requesterId)
                 .doesNotContain(memberId);
         wm.server().verify(postRequestedFor(urlPathEqualTo(qemuPath(vmid, "status/shutdown"))));

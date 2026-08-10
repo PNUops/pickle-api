@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -65,7 +66,7 @@ class MfaAdminResetTest {
         assertThat(mfaService.isEnrolled(target.getId())).isFalse();
 
         // unknown user → 404
-        mockMvc.perform(post("/api/v1/admin/users/99999/mfa-reset")
+        mockMvc.perform(post("/api/v1/admin/users/" + SeedFixtures.UNKNOWN_ID + "/mfa-reset")
                 .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }

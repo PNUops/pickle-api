@@ -138,15 +138,14 @@ class AdminTerminalTest {
     @Test
     void terminateRelaysToBridgeAndAuditsWhenKnown() throws Exception {
         String sessionId = startedSession(orgA);
-        long vmId = sessionRegistry.get(sessionId).orElseThrow().vmId();
-
         terminate(sysAdminToken, sessionId).andExpect(status().isNoContent());
 
         bridge.verify(1, postRequestedFor(urlEqualTo("/control/terminate")));
+        // The mirror's VM id belongs to no row here, so the session is what
+        // identifies this audit entry — which is what the detail carries.
         Long auditActor = jdbcTemplate.queryForObject(
                 "select actor_id from audit_logs where action = 'terminal.force_terminate' "
-                        + "and target_id = ? order by id desc limit 1", Long.class,
-                        pub("vms", vmId).toString());
+                        + "and detail ->> 'sessionId' = ?", Long.class, sessionId);
         assertThat(auditActor).isEqualTo(sysAdmin.getId());
     }
 

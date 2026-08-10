@@ -169,7 +169,7 @@ class AnnouncementTest {
         ResultActions orgSend = create(orgAdminToken, Map.of(
                 "title", "기관 공지", "body", "본문", "scope", "ORG"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(org.getId()));
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
         long orgAnnId = createdId(orgSend);
         assertThat(recipientOf(orgAnnId, ownMember.getId())).isEqualTo(1);
         assertThat(recipientOf(orgAnnId, crossMember.getId())).isEqualTo(1);
