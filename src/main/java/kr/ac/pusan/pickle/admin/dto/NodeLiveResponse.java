@@ -9,6 +9,15 @@ import org.jspecify.annotations.Nullable;
  * right now, beside the allocation ratios the database already knows. Every
  * measurement is nullable because the answer to "the host is not answering" is
  * this row with {@code reachable} false — not a missing row and not an error.
+ *
+ * <p>{@code reachable} false also covers a node the platform chose not to ask:
+ * an OFFLINE node is skipped rather than waited on, and the answer is the same
+ * one either way — no live measurement is known. Why it is unknown is on the
+ * panel already, in the node's own status beside these numbers.
+ *
+ * <p>The measurements come from two independent hypervisor calls, so a
+ * reachable node can still carry null storage: the storage half needs a right
+ * the status half does not.
  */
 public record NodeLiveResponse(
         long nodeId,

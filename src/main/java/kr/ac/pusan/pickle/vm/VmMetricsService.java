@@ -17,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Usage time series of one VM (contract op {@code getVmMetrics}), read live
@@ -31,6 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
  * The one case that is genuinely not an error is a VM with no guest behind it
  * yet (or a deleted one): there is nothing to ask about, so it answers 200 with
  * {@code available: false} and never touches Proxmox.
+ *
+ * <p>Deliberately not {@code @Transactional}: the hypervisor read can sit for
+ * the whole client read timeout, and holding a pooled connection across it lets
+ * a stalled PVE plus a polling chart drain the pool out from under unrelated
+ * endpoints. Both database reads below carry their own transaction (the access
+ * lookup and the repository call), and only basic columns of the entities they
+ * return are touched afterwards, so nothing lazy is left outside one.
  */
 @Service
 public class VmMetricsService {
@@ -53,7 +59,6 @@ public class VmMetricsService {
         this.clock = clock;
     }
 
-    @Transactional(readOnly = true)
     public VmMetricsResponse metrics(AuthenticatedUser actor, long vmId, RrdTimeframe timeframe) {
         Vm vm = vmAccessService.of(actor, vmId).requireVisible();
         if (vm.getProxmoxVmid() == null || vm.getStatus() == VmStatus.DELETED) {
@@ -67,10 +72,14 @@ public class VmMetricsService {
             points = proxmoxClient
                     .vmRrdData(node.getApiHost(), node.getName(), vm.getProxmoxVmid(), timeframe)
                     .stream()
+                    // A row with no timestamp has no place on the axis.
+                    .filter(sample -> sample.time() != null)
                     .map(VmMetricPointResponse::from)
                     .toList();
-        } catch (ProxmoxApiException e) {
+        } catch (ProxmoxApiException | IllegalStateException e) {
             // The message carries the PVE reason and never the token (client layer).
+            // An unconfigured token refuses the same way from the caller's side:
+            // PVE cannot be asked, so the answer is the outage, not a 500.
             log.warn("VM {} usage read failed on node {}: {}", vmId, node.getName(),
                     e.getMessage());
             throw metricsUnavailable();
