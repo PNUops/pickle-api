@@ -24,8 +24,8 @@ components:
           type: "string"
         detail: {}
         id:
-          format: "int64"
-          type: "integer"
+          description: "활동 행 식별자. 목록 렌더링용 키이며 어떤 조회 파라미터도 아닙니다."
+          type: "string"
         ip:
           type:
           - "string"
@@ -54,9 +54,9 @@ components:
         userId:
           description: "대상 사용자 id. granteeType이 USER일 때만 보내며, 소유 워크스페이스의 구성원이어야 합니\
             다."
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
       required:
       - "granteeType"
@@ -89,12 +89,12 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         ports:
           description: "사용할 포트 번호 목록"
@@ -108,16 +108,16 @@ components:
           - "string"
           - "null"
         processedBy:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         purpose:
           description: "신청 목적"
           type: "string"
         requestedBy:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         requesterEmail:
           description: "신청자 이메일"
           type:
@@ -128,8 +128,8 @@ components:
           description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
             \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type:
           - "string"
@@ -151,13 +151,13 @@ components:
           - "integer"
           - "null"
         domainId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/CertificateKind"
         lastError:
@@ -191,13 +191,13 @@ components:
         fqdn:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/DomainKind"
         orgId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgName:
           type: "string"
         releasedAt:
@@ -231,13 +231,13 @@ components:
           - "string"
           - "null"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type: "string"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         workspaceName:
           type: "string"
       required:
@@ -268,8 +268,8 @@ components:
         event:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         importance:
           $ref: "#/components/schemas/NotificationImportance"
         lastError:
@@ -297,8 +297,8 @@ components:
         userEmail:
           type: "string"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "attempts"
       - "body"
@@ -317,16 +317,16 @@ components:
         displayName:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         minDiskGb:
           format: "int32"
           type: "integer"
         name:
           type: "string"
         nodeId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         notes:
           type:
           - "string"
@@ -366,8 +366,10 @@ components:
           format: "date-time"
           type: "string"
         createdBy:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         ctMax:
           description: "동시 연결 상한 오버라이드 (null = 에이전트 기본, 0 = 해제)"
           format: "int32"
@@ -375,8 +377,8 @@ components:
           - "integer"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         newConnBurst:
           description: "신규 연결 버스트 오버라이드"
           format: "int32"
@@ -407,17 +409,17 @@ components:
           format: "int32"
           type: "integer"
         relayId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         relayName:
           type: "string"
         status:
           $ref: "#/components/schemas/PortMappingStatus"
         suspendedBy:
           description: "정지한 관리자 id (자동 정지면 null)"
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         suspendedReason:
           description: "정지 사유 (SUSPENDED일 때)"
@@ -428,8 +430,8 @@ components:
           format: "int32"
           type: "integer"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type:
           - "string"
@@ -437,7 +439,6 @@ components:
       required:
       - "applyState"
       - "createdAt"
-      - "createdBy"
       - "id"
       - "proto"
       - "publicPort"
@@ -475,8 +476,8 @@ components:
         enabled:
           type: "boolean"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         lastContactAt:
           format: "date-time"
           type:
@@ -531,22 +532,22 @@ components:
           - "integer"
           - "null"
         domainId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         domainKind:
           $ref: "#/components/schemas/DomainKind"
         fqdn:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         lastError:
           type:
           - "string"
           - "null"
         orgId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgName:
           type: "string"
         protocol:
@@ -562,13 +563,13 @@ components:
           - "string"
           - "null"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type: "string"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         workspaceName:
           type: "string"
       required:
@@ -612,9 +613,9 @@ components:
           - "string"
           - "null"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         orgName:
           type:
@@ -625,8 +626,8 @@ components:
         stepLabel:
           type: "string"
         taskId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         totalSteps:
           format: "int32"
           type: "integer"
@@ -634,8 +635,8 @@ components:
           format: "date-time"
           type: "string"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type:
           - "string"
@@ -666,8 +667,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/WorkspaceKind"
         memberCount:
@@ -701,8 +702,8 @@ components:
         name:
           type: "string"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         userStatus:
           $ref: "#/components/schemas/UserStatus"
         workspaceRole:
@@ -721,8 +722,8 @@ components:
           format: "date-time"
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/WorkspaceKind"
         memberCount:
@@ -749,9 +750,9 @@ components:
           minLength: 0
           type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         scope:
           $ref: "#/components/schemas/AnnouncementScope"
@@ -760,9 +761,9 @@ components:
           minLength: 0
           type: "string"
         workspaceId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
       required:
       - "body"
@@ -781,12 +782,12 @@ components:
           format: "date-time"
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         recipientCount:
           format: "int32"
@@ -796,9 +797,9 @@ components:
         title:
           type: "string"
         workspaceId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
       required:
       - "createdAt"
@@ -815,8 +816,8 @@ components:
         email:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
         rejectedCount:
@@ -887,8 +888,8 @@ components:
           minimum: 1
           type: "integer"
         grantedImageId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         grantedMemoryMb:
           format: "int32"
           minimum: 256
@@ -903,9 +904,9 @@ components:
           minimum: 1
           type: "integer"
         nodeId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
       required:
       - "grantedDiskGb"
@@ -938,9 +939,9 @@ components:
           - "string"
           - "null"
         actorId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         actorName:
           type:
@@ -955,8 +956,8 @@ components:
           type: "string"
         detail: {}
         id:
-          format: "int64"
-          type: "integer"
+          description: "감사 로그 행 식별자. 목록 렌더링용 키이며 어떤 조회 파라미터도 아닙니다."
+          type: "string"
         ip:
           type:
           - "string"
@@ -1020,8 +1021,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         ports:
           description: "사용할 포트 번호 목록 (중복 제거·오름차순 정규화)"
           items:
@@ -1037,15 +1038,15 @@ components:
           description: "신청 목적"
           type: "string"
         requestedBy:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         status:
           $ref: "#/components/schemas/CampusIpRequestStatus"
           description: "신청 상태 (REQUESTED = 신청, APPROVED = 관리자 승인, GRANTED = 교내 IP\
             \ 연결 완료, REJECTED = 반려, REVOKED = 회수)"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "createdAt"
       - "id"
@@ -1246,13 +1247,8 @@ components:
           maxLength: 100
           minLength: 0
           type: "string"
-        slug:
-          minLength: 1
-          pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$"
-          type: "string"
       required:
       - "name"
-      - "slug"
       type: "object"
     CreatePortForwardingRequest:
       properties:
@@ -1290,8 +1286,8 @@ components:
           - "string"
           - "null"
         orgId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         purpose:
           maxLength: 2000
           minLength: 0
@@ -1313,8 +1309,8 @@ components:
           - $ref: "#/components/schemas/CreateVmRequestSpec"
           - type: "null"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "orgId"
       - "purpose"
@@ -1382,11 +1378,11 @@ components:
           - "string"
           - "null"
         flavorId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         imageId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         reqDiskGb:
           format: "int32"
           minimum: 1
@@ -1464,8 +1460,8 @@ components:
         fqdn:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/DomainKind"
         releasedAt:
@@ -1494,8 +1490,8 @@ components:
           - "string"
           - "null"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "createdAt"
       - "fqdn"
@@ -1526,8 +1522,8 @@ components:
         fqdn:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/DomainKind"
         releasedAt:
@@ -1552,8 +1548,8 @@ components:
           - "string"
           - "null"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "createdAt"
       - "fqdn"
@@ -1602,8 +1598,8 @@ components:
           format: "date-time"
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/DriftFindingKind"
         lastSeenAt:
@@ -1632,18 +1628,18 @@ components:
           - "string"
           - "null"
         resolvedById:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         status:
           $ref: "#/components/schemas/DriftFindingStatus"
         summary:
           type: "string"
         vmId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         vmName:
           type:
@@ -1693,8 +1689,8 @@ components:
         name:
           type: "string"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "email"
       - "name"
@@ -1711,8 +1707,8 @@ components:
           - $ref: "#/components/schemas/ReviewDecision"
           - type: "null"
         requestId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         reviewerName:
           type:
           - "string"
@@ -1737,13 +1733,13 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         ip:
           type: "string"
         poolId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         poolName:
           type: "string"
         releasedAt:
@@ -1754,9 +1750,9 @@ components:
         status:
           $ref: "#/components/schemas/AllocationStatus"
         vmId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         vmName:
           type:
@@ -1781,8 +1777,8 @@ components:
           format: "int64"
           type: "integer"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
       required:
@@ -1803,8 +1799,8 @@ components:
           format: "int64"
           type: "integer"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
       required:
@@ -1852,8 +1848,8 @@ components:
         role:
           $ref: "#/components/schemas/WorkspaceMemberRole"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "name"
       - "role"
@@ -1950,8 +1946,8 @@ components:
         name:
           type: "string"
         nodeId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         reachable:
           description: "true = 이 노드가 상태 조회에 응답함. false = 응답하지 않음이며 나머지 필드는 모두 null.\
             \ true여도 스토리지 조회는 별도 권한이라 storage* 필드는 null일 수 있음"
@@ -2058,8 +2054,8 @@ components:
           format: "double"
           type: "number"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memoryAllocRatio:
           format: "double"
           type: "number"
@@ -2107,8 +2103,8 @@ components:
           - "integer"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         ipPool:
           $ref: "#/components/schemas/IpPoolSummaryResponse"
         memoryAllocRatio:
@@ -2174,8 +2170,8 @@ components:
         event:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         importance:
           $ref: "#/components/schemas/NotificationImportance"
         linkPath:
@@ -2245,11 +2241,9 @@ components:
         hidden:
           type: "boolean"
         id:
-          format: "int64"
-          type: "integer"
-        name:
+          format: "uuid"
           type: "string"
-        slug:
+        name:
           type: "string"
         status:
           $ref: "#/components/schemas/OrgStatus"
@@ -2258,7 +2252,6 @@ components:
       - "hidden"
       - "id"
       - "name"
-      - "slug"
       - "status"
       type: "object"
     OrgHeadroom:
@@ -2305,11 +2298,9 @@ components:
         hidden:
           type: "boolean"
         id:
-          format: "int64"
-          type: "integer"
-        name:
+          format: "uuid"
           type: "string"
-        slug:
+        name:
           type: "string"
         status:
           $ref: "#/components/schemas/OrgStatus"
@@ -2317,7 +2308,6 @@ components:
       - "hidden"
       - "id"
       - "name"
-      - "slug"
       - "status"
       type: "object"
     OsImageResponse:
@@ -2325,8 +2315,8 @@ components:
         displayName:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         minDiskGb:
           format: "int32"
           type: "integer"
@@ -2870,8 +2860,8 @@ components:
           format: "date-time"
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         proto:
           $ref: "#/components/schemas/PortMappingProto"
           description: "프로토콜 (tcp | udp)"
@@ -3054,8 +3044,8 @@ components:
     RelayTokenResponse:
       properties:
         relayId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         token:
           description: "새 동기화 토큰(64자 hex). 이 응답에서만 확인 가능하며 저장되지 않습니다"
           type: "string"
@@ -3081,11 +3071,14 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgId:
-          format: "int64"
-          type: "integer"
+          description: "신청 대상 기관. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         orgName:
           type: "string"
         purpose:
@@ -3101,8 +3094,11 @@ components:
           - "string"
           - "null"
         requesterId:
-          format: "int64"
-          type: "integer"
+          description: "신청자. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         requesterName:
           type: "string"
         review:
@@ -3121,22 +3117,22 @@ components:
           - $ref: "#/components/schemas/VmRequestSpecResponse"
           - type: "null"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          description: "신청 대상 워크스페이스. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         workspaceName:
           type: "string"
       required:
       - "createdAt"
       - "id"
-      - "orgId"
       - "orgName"
       - "purpose"
-      - "requesterId"
       - "requesterName"
       - "status"
       - "type"
       - "updatedAt"
-      - "workspaceId"
       - "workspaceName"
       type: "object"
     RequestOptionsResponse:
@@ -3178,14 +3174,16 @@ components:
           - "string"
           - "null"
         reviewerId:
-          format: "int64"
-          type: "integer"
+          description: "결재자. 계정 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         reviewerName:
           type: "string"
       required:
       - "decidedAt"
       - "decision"
-      - "reviewerId"
       - "reviewerName"
       type: "object"
     RequestStatus:
@@ -3269,8 +3267,8 @@ components:
           $ref: "#/components/schemas/AccessGranteeType"
           description: "대상 종류 — USER는 지정된 사용자, WORKSPACE은 소유 워크스페이스 전체"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         role:
           $ref: "#/components/schemas/ResourceRole"
           description: "이 대상이 이 VM에서 갖는 등급"
@@ -3309,8 +3307,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
         status:
@@ -3319,8 +3317,8 @@ components:
         type:
           $ref: "#/components/schemas/ResourceType"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         workspaceName:
           type: "string"
       required:
@@ -3352,8 +3350,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
         ownerNames:
@@ -3365,8 +3363,8 @@ components:
         type:
           $ref: "#/components/schemas/ResourceType"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         workspaceName:
           type: "string"
       required:
@@ -3597,8 +3595,8 @@ components:
         fingerprint:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         lastUsedAt:
           format: "date-time"
           type:
@@ -3720,8 +3718,8 @@ components:
         clientIp:
           type: "string"
         orgId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         orgName:
           type: "string"
         sessionId:
@@ -3732,13 +3730,13 @@ components:
         userEmail:
           type: "string"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         userName:
           type: "string"
         vmId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         vmName:
           type: "string"
         workspaceName:
@@ -3828,8 +3826,8 @@ components:
           format: "int64"
           type: "integer"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "name"
       - "vmCount"
@@ -3950,9 +3948,9 @@ components:
     UpdateUserAdminRequest:
       properties:
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         role:
           $ref: "#/components/schemas/UserRole"
@@ -4035,8 +4033,8 @@ components:
         email:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memberships:
           items:
             $ref: "#/components/schemas/Membership"
@@ -4046,9 +4044,9 @@ components:
         name:
           type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         role:
           $ref: "#/components/schemas/UserRole"
@@ -4083,16 +4081,16 @@ components:
         email:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         mfaEnabled:
           type: "boolean"
         name:
           type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         role:
           $ref: "#/components/schemas/UserRole"
@@ -4112,8 +4110,8 @@ components:
         email:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memberships:
           items:
             $ref: "#/components/schemas/Membership"
@@ -4123,9 +4121,9 @@ components:
         name:
           type: "string"
         orgId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         pendingConsents:
           items:
@@ -4167,9 +4165,9 @@ components:
           - "string"
           - "null"
         actorId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         changedAt:
           format: "date-time"
@@ -4192,8 +4190,8 @@ components:
         email:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         name:
           type: "string"
         role:
@@ -4223,8 +4221,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memoryMb:
           format: "int32"
           type: "integer"
@@ -4263,8 +4261,10 @@ components:
           format: "date-time"
           type: "string"
         requestedById:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         scheduledFor:
           format: "date-time"
           type: "string"
@@ -4272,7 +4272,6 @@ components:
       - "cancelable"
       - "kind"
       - "requestedAt"
-      - "requestedById"
       - "scheduledFor"
       type: "object"
     VmDetailResponse:
@@ -4313,11 +4312,14 @@ components:
         hostname:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         imageId:
-          format: "int64"
-          type: "integer"
+          description: "생성에 쓰인 OS 이미지. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         ipAddress:
           type:
           - "string"
@@ -4332,8 +4334,11 @@ components:
         name:
           type: "string"
         orgId:
-          format: "int64"
-          type: "integer"
+          description: "소속 기관. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         orgName:
           type:
           - "string"
@@ -4354,8 +4359,11 @@ components:
             $ref: "#/components/schemas/PublicationView"
           type: "array"
         requestId:
-          format: "int64"
-          type: "integer"
+          description: "이 VM을 만든 신청. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         settingsEditAllowed:
           description: "VM 설정을 볼·바꿀 수 있는지"
           type: "boolean"
@@ -4383,8 +4391,11 @@ components:
           format: "int32"
           type: "integer"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          description: "소유 워크스페이스. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         workspaceName:
           type: "string"
       required:
@@ -4395,15 +4406,12 @@ components:
       - "diskGb"
       - "hostname"
       - "id"
-      - "imageId"
       - "memoryMb"
       - "name"
-      - "orgId"
       - "passwordAvailable"
       - "passwordRevealAllowed"
       - "powerControlAllowed"
       - "publications"
-      - "requestId"
       - "settingsEditAllowed"
       - "sshGatewayBlocked"
       - "sshHost"
@@ -4411,15 +4419,14 @@ components:
       - "status"
       - "updatedAt"
       - "vcpu"
-      - "workspaceId"
       - "workspaceName"
       type: "object"
     VmEventResponse:
       properties:
         actorId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         createdAt:
           format: "date-time"
@@ -4429,8 +4436,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         type:
           $ref: "#/components/schemas/VmEventType"
       required:
@@ -4468,8 +4475,8 @@ components:
         displayName:
           type: "string"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memoryMb:
           format: "int32"
           type: "integer"
@@ -4514,8 +4521,8 @@ components:
           format: "int32"
           type: "integer"
         grantedImageId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         grantedMemoryMb:
           format: "int32"
           type: "integer"
@@ -4523,9 +4530,9 @@ components:
           format: "int32"
           type: "integer"
         nodeId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
       required:
       - "grantedDiskGb"
@@ -4648,17 +4655,17 @@ components:
           - "string"
           - "null"
         flavorId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         granted:
           anyOf:
           - $ref: "#/components/schemas/VmGrantedSpecResponse"
           - type: "null"
         imageId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         reqDiskGb:
           format: "int32"
           type: "integer"
@@ -4786,8 +4793,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         memoryMb:
           description: "메모리(MiB). 접근 권한이 없으면 생략됩니다."
           format: "int32"
@@ -4807,9 +4814,9 @@ components:
             type: "string"
           type: "array"
         requestId:
-          format: "int64"
+          format: "uuid"
           type:
-          - "integer"
+          - "string"
           - "null"
         sshGatewayBlocked:
           type:
@@ -4828,8 +4835,11 @@ components:
           - "integer"
           - "null"
         workspaceId:
-          format: "int64"
-          type: "integer"
+          description: "소유 워크스페이스. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         workspaceName:
           type: "string"
       required:
@@ -4840,7 +4850,6 @@ components:
       - "name"
       - "ownerNames"
       - "status"
-      - "workspaceId"
       - "workspaceName"
       type: "object"
     WithdrawRequest:
@@ -4866,8 +4875,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/WorkspaceKind"
         members:
@@ -4901,8 +4910,8 @@ components:
         role:
           $ref: "#/components/schemas/WorkspaceMemberRole"
         userId:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       required:
       - "email"
       - "name"
@@ -4921,8 +4930,8 @@ components:
             $ref: "#/components/schemas/VmBriefResponse"
           type: "array"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/WorkspaceKind"
         members:
@@ -4948,8 +4957,8 @@ components:
           - "string"
           - "null"
         id:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
         kind:
           $ref: "#/components/schemas/WorkspaceKind"
         memberCount:
@@ -4969,7 +4978,7 @@ components:
   securitySchemes:
     bearerAuth:
       bearerFormat: "JWT"
-      description: "액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub, role, org_id, token_version.\
+      description: "액세스 토큰 (JWT HS256, 15분 만료). 클레임: sub(계정 공개 식별자 UUID), role, token_version.\
         \ 비밀번호 변경·계정 비활성화 시 token_version이 올라가 기존 토큰이 즉시 무효화됩니다. 리프레시 토큰은 보안 스킴이 아\
         니라 __Host-pickle_refresh httpOnly 쿠키로만 오갑니다."
       scheme: "bearer"
@@ -4978,7 +4987,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.37.0"
+  version: "0.38.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -5080,8 +5089,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -5127,8 +5136,8 @@ paths:
         name: "vmId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -5169,8 +5178,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5209,8 +5218,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -5234,8 +5243,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -5288,8 +5297,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "kind"
         required: false
@@ -5340,8 +5349,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -5365,8 +5374,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -5436,8 +5445,8 @@ paths:
         name: "findingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5466,8 +5475,8 @@ paths:
         name: "poolId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -5533,8 +5542,8 @@ paths:
         name: "nodeId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5564,8 +5573,8 @@ paths:
         name: "nodeId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR (해상도는 구간에 따라 거칠어짐)"
         in: "query"
         name: "timeframe"
@@ -5647,8 +5656,8 @@ paths:
         name: "notificationId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -5715,8 +5724,8 @@ paths:
         name: "orgId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5766,8 +5775,8 @@ paths:
         name: "imageId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5797,14 +5806,14 @@ paths:
         name: "relayId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "vmId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -5850,8 +5859,8 @@ paths:
         name: "mappingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -5875,8 +5884,8 @@ paths:
         name: "mappingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5906,8 +5915,8 @@ paths:
         name: "mappingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -5937,8 +5946,8 @@ paths:
         name: "mappingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -5982,8 +5991,8 @@ paths:
         name: "relayId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -6030,8 +6039,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -6072,8 +6081,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6097,8 +6106,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6128,8 +6137,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6153,8 +6162,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6184,8 +6193,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -6249,8 +6258,8 @@ paths:
         name: "routeId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -6324,8 +6333,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6379,8 +6388,8 @@ paths:
         name: "vmId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -6421,8 +6430,8 @@ paths:
         name: "taskId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -6503,8 +6512,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "sort"
         required: false
@@ -6557,8 +6566,8 @@ paths:
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6581,8 +6590,8 @@ paths:
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6612,8 +6621,8 @@ paths:
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6643,8 +6652,8 @@ paths:
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6668,8 +6677,8 @@ paths:
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6736,8 +6745,8 @@ paths:
         name: "flavorId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6767,14 +6776,14 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "workspaceId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -6851,8 +6860,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6876,8 +6885,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -6901,8 +6910,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -6943,8 +6952,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -6974,8 +6983,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -6999,8 +7008,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -7030,8 +7039,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -7061,8 +7070,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -7086,8 +7095,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -7117,8 +7126,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -7142,8 +7151,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -7167,8 +7176,8 @@ paths:
         name: "orgId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -7194,8 +7203,8 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -7478,8 +7487,8 @@ paths:
         name: "vmId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "status"
         required: false
@@ -7525,8 +7534,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -7549,8 +7558,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -7573,8 +7582,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -7604,8 +7613,8 @@ paths:
         name: "domainId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -7960,8 +7969,8 @@ paths:
         name: "keyId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -7994,8 +8003,8 @@ paths:
         name: "keyId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8217,8 +8226,8 @@ paths:
         name: "notificationId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8292,8 +8301,8 @@ paths:
         name: "workspaceId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -8357,8 +8366,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8382,8 +8391,8 @@ paths:
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8412,8 +8421,8 @@ paths:
         name: "workspaceId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -8474,8 +8483,8 @@ paths:
         name: "workspaceId"
         required: false
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -8516,8 +8525,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8553,8 +8562,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8580,8 +8589,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8607,8 +8616,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8654,14 +8663,14 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "grantId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8694,14 +8703,14 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "grantId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8745,8 +8754,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -8771,8 +8780,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -8802,14 +8811,14 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "requestId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "204":
           description: "No Content"
@@ -8829,8 +8838,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -8859,8 +8868,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "query"
         name: "page"
         required: false
@@ -8901,8 +8910,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -8926,8 +8935,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR (해상도는 구간에 따라 거칠어짐)"
         in: "query"
         name: "timeframe"
@@ -8958,8 +8967,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -8996,8 +9005,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -9034,8 +9043,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -9060,8 +9069,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -9091,14 +9100,14 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "portForwardingId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -9122,8 +9131,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -9147,8 +9156,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -9173,8 +9182,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -9219,8 +9228,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -9244,8 +9253,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "202":
           content:
@@ -9269,8 +9278,8 @@ paths:
         name: "vmId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "201":
           content:
@@ -9337,8 +9346,8 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "204":
           description: "No Content"
@@ -9357,8 +9366,8 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       responses:
         "200":
           content:
@@ -9381,8 +9390,8 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       requestBody:
         content:
           application/json:
@@ -9412,8 +9421,8 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -9456,14 +9465,14 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
@@ -9495,14 +9504,14 @@ paths:
         name: "workspaceId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - in: "path"
         name: "userId"
         required: true
         schema:
-          format: "int64"
-          type: "integer"
+          format: "uuid"
+          type: "string"
       - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
           거나 만료·무효면 403 REAUTH_REQUIRED."
         in: "header"
