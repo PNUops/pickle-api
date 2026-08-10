@@ -89,7 +89,7 @@ public class UserSshKeyService {
     public SshKeyPrivateKeyResponse downloadPrivateKey(AuthenticatedUser actor, UUID keyId,
             String ip) {
         UserSshKey key = repository.findByPublicId(keyId)
-                .filter(row -> row.getUserId() == actor.id())
+                .filter(row -> actor.id().equals(row.getUserId()))
                 .orElseThrow(UserSshKeyService::keyNotFound);
         if (key.getPrivateKeyEnc() == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
@@ -106,7 +106,7 @@ public class UserSshKeyService {
     @Transactional
     public void delete(AuthenticatedUser actor, UUID keyId, String ip) {
         UserSshKey key = repository.findByPublicId(keyId)
-                .filter(row -> row.getUserId() == actor.id())
+                .filter(row -> actor.id().equals(row.getUserId()))
                 .orElseThrow(UserSshKeyService::keyNotFound);
         repository.delete(key);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
