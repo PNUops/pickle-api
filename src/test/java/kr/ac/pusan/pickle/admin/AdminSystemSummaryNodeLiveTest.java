@@ -2,9 +2,9 @@ package kr.ac.pusan.pickle.admin;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
@@ -29,9 +30,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -42,10 +45,11 @@ import org.springframework.test.web.servlet.MockMvc;
  * same thing by accident and stop asserting it the day that changes.
  *
  * <p>The other cases the live block has to keep apart: a node that answered its
- * status but not its storage is reachable with the storage half missing, a
- * status reply carrying no payload is not an answer at all, and a node the
- * operator marked OFFLINE is not asked in the first place while still holding
- * its row on the panel.
+ * status but not its storage is reachable with the storage half missing and
+ * says so in the coverage counts, a status reply carrying no payload is not an
+ * answer at all, a storage entry PVE sent without a name is not a crash, and a
+ * node the operator marked OFFLINE is asked like any other because its guests
+ * are still running on it.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -73,6 +77,9 @@ class AdminSystemSummaryNodeLiveTest {
 
     @MockitoBean
     private ProxmoxClient proxmoxClient;
+
+    @MockitoSpyBean
+    private NodeRepository nodeRepository;
 
     private String sysAdminToken;
 
@@ -126,6 +133,33 @@ class AdminSystemSummaryNodeLiveTest {
                 .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].storageTotalBytes",
                         contains(nullValue())))
                 .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].storageUsedBytes",
+                        contains(nullValue())))
+                // The node stays on the panel, but the platform storage sum is
+                // now over fewer nodes than the platform has, and a client that
+                // sums has to be able to see that.
+                .andExpect(jsonPath("$.liveCoverage.nodeCount").value(1))
+                .andExpect(jsonPath("$.liveCoverage.memoryMeasuredNodeCount").value(1))
+                .andExpect(jsonPath("$.liveCoverage.storageMeasuredNodeCount").value(0));
+    }
+
+    /**
+     * The storage list comes back as whatever the PVE envelope held, so an
+     * entry can arrive without the name the match is made on. The node column
+     * is NOT NULL and the PVE side is not, so the comparison runs from the
+     * column — otherwise one nameless entry takes the whole dashboard down.
+     */
+    @Test
+    void aStorageEntryWithoutANameDoesNotFailThePanel() throws Exception {
+        when(proxmoxClient.nodeStatus(anyString(), anyString())).thenReturn(STATUS);
+        when(proxmoxClient.nodeStorage(anyString(), anyString())).thenReturn(List.of(
+                new NodeStorageStatus(null, "dir", 1, 1, 2_000_000_000_000L,
+                        500_000_000_000L, 1_500_000_000_000L, 0.25)));
+
+        mockMvc.perform(get("/api/v1/admin/system-summary")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].reachable").value(true))
+                .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].storageTotalBytes",
                         contains(nullValue())));
     }
 
@@ -146,12 +180,13 @@ class AdminSystemSummaryNodeLiveTest {
     }
 
     /**
-     * A node the operator marked OFFLINE is known to be down, so probing it only
-     * buys a timeout per dashboard load. It keeps its row so the node count
-     * stays whole.
+     * OFFLINE keeps a node out of new placements and leaves the guests it
+     * already has running, so its memory is still spoken for. Asking it is the
+     * only way the platform memory tile can count that usage, and a node that
+     * really is down still degrades on its own without taking the panel.
      */
     @Test
-    void anOfflineNodeIsNotProbedButStillHoldsItsRow() throws Exception {
+    void anOfflineNodeIsStillProbedBecauseItsGuestsKeepRunning() throws Exception {
         String name = "assnl-offline-" + UUID.randomUUID().toString().substring(0, 8);
         createOfflineNode(name);
         when(proxmoxClient.nodeStatus(anyString(), anyString())).thenReturn(STATUS);
@@ -162,15 +197,34 @@ class AdminSystemSummaryNodeLiveTest {
         mockMvc.perform(get("/api/v1/admin/system-summary")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.nodesLive[?(@.name == '" + name + "')].nodeId").exists())
                 .andExpect(jsonPath("$.nodesLive[?(@.name == '" + name + "')].reachable")
-                        .value(false))
-                // The nodes that are not OFFLINE still answer, so the skip is a
-                // filter on that one node and not the block giving up.
-                .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].reachable").value(true));
+                        .value(true))
+                .andExpect(jsonPath("$.nodesLive[?(@.name == '" + name + "')].memUsedBytes")
+                        .value(24_000_000_000L))
+                .andExpect(jsonPath("$.nodesLive[?(@.name == 'pve1')].reachable").value(true))
+                .andExpect(jsonPath("$.liveCoverage.nodeCount").value(2))
+                .andExpect(jsonPath("$.liveCoverage.memoryMeasuredNodeCount").value(2));
 
-        verify(proxmoxClient, never()).nodeStatus(anyString(), eq(name));
-        verify(proxmoxClient, never()).nodeStorage(anyString(), eq(name));
+        verify(proxmoxClient).nodeStatus(anyString(), eq(name));
+        verify(proxmoxClient).nodeStorage(anyString(), eq(name));
+    }
+
+    /**
+     * The ratio list and the live list are two halves of one panel. Read from
+     * two separate queries they can straddle a status change and describe
+     * different rows, and the console reads a node that is ACTIVE in one half
+     * and unreachable in the other as an outage nobody caused. One read of the
+     * node table is what keeps them consistent.
+     */
+    @Test
+    void bothHalvesOfThePanelAreBuiltFromOneReadOfTheNodeTable() throws Exception {
+        when(proxmoxClient.nodeStatus(anyString(), anyString())).thenReturn(STATUS);
+
+        mockMvc.perform(get("/api/v1/admin/system-summary")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk());
+
+        verify(nodeRepository).findAll(any(Sort.class));
     }
 
     private void createOfflineNode(String name) {
