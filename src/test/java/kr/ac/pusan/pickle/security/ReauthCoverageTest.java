@@ -43,6 +43,11 @@ class ReauthCoverageTest {
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
             "POST /admin/relays/{relayId}/token",
+            // Minting or replacing a key's secret hands somebody a working
+            // credential, and revoking takes one away; both step up the way
+            // reading a VM password does.
+            "POST /llm-keys/{keyId}/token",
+            "POST /llm-keys/{keyId}/revoke",
             "DELETE /vms/{vmId}",
             "GET /vms/{vmId}/password",
             "POST /vms/{vmId}/password/regenerate",
@@ -59,7 +64,12 @@ class ReauthCoverageTest {
             // Reading the list does not.
             "POST /vms/{vmId}/access",
             "PATCH /vms/{vmId}/access/{grantId}",
-            "DELETE /vms/{vmId}/access/{grantId}"));
+            "DELETE /vms/{vmId}/access/{grantId}",
+            // The LLM API key's access list steps up for the same reason the
+            // VM's does: an edit decides who reaches the key at all.
+            "POST /llm-keys/{keyId}/access",
+            "PATCH /llm-keys/{keyId}/access/{grantId}",
+            "DELETE /llm-keys/{keyId}/access/{grantId}"));
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

@@ -22,6 +22,9 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import kr.ac.pusan.pickle.request.dto.RequestReviewResponse;
+import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
+import kr.ac.pusan.pickle.llm.LlmKeyRequestDetailRepository;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
 import kr.ac.pusan.pickle.request.vm.dto.VmRequestSpecResponse;
@@ -37,6 +40,7 @@ public class RequestAssembler {
 
     private final RequestReviewRepository reviewRepository;
     private final VmRequestDetailRepository vmDetailRepository;
+    private final LlmKeyRequestDetailRepository llmKeyDetailRepository;
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
     private final UserRepository userRepository;
@@ -45,12 +49,15 @@ public class RequestAssembler {
     private final NodeRepository nodeRepository;
 
     public RequestAssembler(RequestReviewRepository reviewRepository,
-            VmRequestDetailRepository vmDetailRepository, WorkspaceRepository workspaceRepository,
+            VmRequestDetailRepository vmDetailRepository,
+            LlmKeyRequestDetailRepository llmKeyDetailRepository,
+            WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, UserRepository userRepository,
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository) {
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
+        this.llmKeyDetailRepository = llmKeyDetailRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
@@ -84,6 +91,9 @@ public class RequestAssembler {
         Map<Long, VmRequestDetail> vmDetails = vmDetailRepository
                 .findByRequestIdIn(idsOfType(requests, ResourceType.VM)).stream()
                 .collect(Collectors.toMap(VmRequestDetail::getRequestId, Function.identity()));
+        Map<Long, LlmKeyRequestDetail> llmKeyDetails = llmKeyDetailRepository
+                .findByRequestIdIn(idsOfType(requests, ResourceType.LLM_API_KEY)).stream()
+                .collect(Collectors.toMap(LlmKeyRequestDetail::getRequestId, Function.identity()));
 
         // The per-type spec reports each catalog reference by public id AND by
         // name, so the rows behind them are batched here beside the display-name
@@ -106,6 +116,7 @@ public class RequestAssembler {
             Org org = orgs.get(request.getOrgId());
             User requester = users.get(request.getRequesterId());
             VmRequestDetail vmDetail = vmDetails.get(request.getId());
+            LlmKeyRequestDetail llmKeyDetail = llmKeyDetails.get(request.getId());
             details.add(new RequestDetailResponse(
                     request.getPublicId(),
                     request.getResourceType(),
@@ -125,6 +136,7 @@ public class RequestAssembler {
                             flavors.get(vmDetail.getFlavorId()),
                             images.get(vmDetail.getGrantedImageId()),
                             nodes.get(vmDetail.getNodeId())) : null,
+                    llmKeyDetail != null ? LlmKeyRequestSpecResponse.from(llmKeyDetail) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;

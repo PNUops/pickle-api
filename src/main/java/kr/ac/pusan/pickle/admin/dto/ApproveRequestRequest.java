@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import jakarta.validation.Valid;
+import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import org.jspecify.annotations.Nullable;
@@ -19,5 +20,12 @@ public record ApproveRequestRequest(
         @Nullable String comment,
 
         /** Required when approving a VM request, ignored otherwise. */
-        @Valid @Nullable ApproveVmRequestSpec vm) {
+        @Valid @Nullable ApproveVmRequestSpec vm,
+
+        /**
+         * Required when approving an LLM API key request, ignored otherwise.
+         * May be empty: every limit on it is optional, and granting none is
+         * granting the service defaults, which is the ordinary decision.
+         */
+        @Valid @Nullable ApproveLlmKeyRequestSpec llmKey) {
 }

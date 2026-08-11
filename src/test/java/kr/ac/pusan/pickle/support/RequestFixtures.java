@@ -83,4 +83,25 @@ public final class RequestFixtures {
             long requesterId, String purpose, Long imageId) {
         return insertVmRequest(jdbc, workspaceId, orgId, requesterId, purpose, imageId, 2, 2048, 10);
     }
+
+    /**
+     * A submitted LLM API key request, for tests whose subject is the key that
+     * an approval would create rather than the request flow. The detail row is
+     * written alongside because a request of this type always carries one; the
+     * granted columns stay null, which is what "not yet reviewed" looks like.
+     */
+    public static long insertLlmKeyRequest(JdbcTemplate jdbc, long workspaceId, long orgId,
+            long requesterId, String purpose) {
+        long requestId = jdbc.queryForObject("""
+                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose,
+                                      display_name)
+                values ('LLM_API_KEY', ?, ?, ?, ?, left(?, 100))
+                returning id
+                """, Long.class, workspaceId, orgId, requesterId, purpose, purpose);
+        jdbc.update("""
+                insert into llm_key_request_details (request_id, req_purpose)
+                values (?, ?)
+                """, requestId, purpose);
+        return requestId;
+    }
 }

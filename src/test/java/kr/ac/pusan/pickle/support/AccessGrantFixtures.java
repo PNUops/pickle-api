@@ -47,4 +47,30 @@ public final class AccessGrantFixtures {
                 "delete from resource_access_grants where resource_type = 'VM' and resource_id = ?",
                 vmId);
     }
+
+    /** Names one person on one LLM API key at {@code role} (re-granting moves the rung). */
+    public static void grantLlmKeyToUser(JdbcTemplate jdbcTemplate, long keyId, long userId,
+            String role) {
+        jdbcTemplate.update("""
+                insert into resource_access_grants
+                       (resource_type, resource_id, grantee_type, user_id, role)
+                values ('LLM_API_KEY', ?, 'USER', ?, ?::resource_role)
+                on conflict (resource_type, resource_id, user_id)
+                    where grantee_type = 'USER'
+                    do update set role = excluded.role
+                """, keyId, userId, role);
+    }
+
+    /** Grants the whole owning workspace one LLM API key at {@code role} (MEMBER or VIEWER). */
+    public static void grantLlmKeyToOwningWorkspace(JdbcTemplate jdbcTemplate, long keyId,
+            String role) {
+        jdbcTemplate.update("""
+                insert into resource_access_grants
+                       (resource_type, resource_id, grantee_type, user_id, role)
+                values ('LLM_API_KEY', ?, 'WORKSPACE', null, ?::resource_role)
+                on conflict (resource_type, resource_id)
+                    where grantee_type = 'WORKSPACE'
+                    do update set role = excluded.role
+                """, keyId, role);
+    }
 }

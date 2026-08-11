@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.request.vm.dto.CreateVmRequestSpec;
 import org.jspecify.annotations.Nullable;
 
@@ -51,5 +52,8 @@ public record CreateRequestRequest(
         String displayName,
 
         /** Required when {@code type} is VM, ignored otherwise. */
-        @Valid @Nullable CreateVmRequestSpec vm) {
+        @Valid @Nullable CreateVmRequestSpec vm,
+
+        /** Required when {@code type} is LLM_API_KEY, ignored otherwise. */
+        @Valid @Nullable CreateLlmKeyRequestSpec llmKey) {
 }

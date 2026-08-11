@@ -1,0 +1,87 @@
+package kr.ac.pusan.pickle.llm.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import java.time.Instant;
+import java.util.List;
+
+/**
+ * api → gateway sync answer, in exactly two shapes — the split is structural
+ * on purpose:
+ *
+ * <ul>
+ *   <li>{@link Unchanged} is the whole "you are current" answer:
+ *       {@code {"generation": N}} and nothing else.</li>
+ *   <li>{@link Document} always carries {@code models} AND {@code keys}
+ *       together. A response with exactly one of them is a contract violation
+ *       the gateway refuses: omission is how "unchanged" is expressed, so
+ *       {@code models} alone would revoke every key and {@code keys} alone
+ *       would remove every model. Two record shapes make the invalid state
+ *       inexpressible — no {@code @JsonInclude(NON_NULL)} on the collections,
+ *       no null to drop out by accident.</li>
+ * </ul>
+ *
+ * <p>{@code generation} and {@code serviceEnabled} are primitives, never
+ * boxed: a null {@code serviceEnabled} would vanish from the JSON, and the
+ * gateway refuses a document without it rather than reading absence as
+ * {@code false} — the api must not be able to express that document at
+ * all.</p>
+ *
+ * <p>An <b>empty</b> {@code keys} array is a real state ("no keys at all")
+ * that the gateway applies, distinct from the member being absent
+ * ("unchanged"); the same holds for {@code models}.</p>
+ */
+public sealed interface LlmSyncResponse {
+
+    /** The caller is current: generation only, no document members at all. */
+    record Unchanged(long generation) implements LlmSyncResponse {
+    }
+
+    /** The full authorization document, from one MVCC snapshot. */
+    record Document(
+            int formatVersion,
+            long generation,
+            boolean serviceEnabled,
+            List<ModelEntry> models,
+            List<KeyEntry> keys) implements LlmSyncResponse {
+    }
+
+    /**
+     * One servable model. No rows exist yet — the model catalogue arrives
+     * with the DGX round — but the entry shape is pinned here so the wire
+     * format is settled before the first row is.
+     */
+    record ModelEntry(
+            String publicName,
+            String upstreamRef,
+            String upstreamModel,
+            String fallbackRef,
+            String visibility,
+            int maxInputTokens,
+            int maxOutputTokens) {
+    }
+
+    /**
+     * One issued key as the gateway needs it: the sha256 of the bearer (never
+     * plaintext), a status the gateway's vocabulary accepts (exactly ACTIVE |
+     * SUSPENDED | REVOKED — an entry outside it is dropped gateway-side and
+     * its owner loses service, so mapping down happens before serving), and
+     * the limits the gateway enforces. {@code expiresAt} and {@code limits}
+     * are omitted when absent (gateway defaults apply).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record KeyEntry(
+            String keyId,
+            String tokenHash,
+            String status,
+            Instant expiresAt,
+            List<String> allowedModels,
+            KeyLimits limits,
+            boolean quotaExhausted,
+            boolean recordBodies) {
+    }
+
+    /** Short-window limits enforced in the gateway; null members omitted. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record KeyLimits(Integer rpm, Integer tpm, Integer concurrency) {
+    }
+}
