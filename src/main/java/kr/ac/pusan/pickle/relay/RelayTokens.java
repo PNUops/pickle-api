@@ -1,10 +1,8 @@
 package kr.ac.pusan.pickle.relay;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.HexFormat;
+import kr.ac.pusan.pickle.common.text.Secrets;
 
 /**
  * Per-relay sync tokens: 32 random bytes as 64 lowercase hex chars (hex only —
@@ -26,11 +24,6 @@ final class RelayTokens {
     }
 
     static String sha256Hex(String value) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
+        return Secrets.sha256Hex(value);
     }
 }
