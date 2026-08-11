@@ -140,6 +140,28 @@ pickle:
     # Peers confined to the relay sync surface: a relay's tunnel address must
     # reach only /internal/relays/** (403 everywhere else, actuator included).
     restricted-source-ips: ${PICKLE_RELAY_RESTRICTED_SOURCE_IPS:10.100.100.1}
+  llm-gateway:
+    # LLM gateway link (/internal/llm/**, own filter chain + static bearer).
+    # No token default outside dev/test: when blank the chain fails closed
+    # (rejects every request) instead of trusting an empty bearer.
+    # previous-token accepts the outgoing secret during a rotation so no
+    # coordinated restart is needed; clear it once the gateway is switched.
+    token: ${PICKLE_LLM_GATEWAY_TOKEN:}
+    previous-token: ${PICKLE_LLM_GATEWAY_PREVIOUS_TOKEN:}
+    allowed-source-ip: ${PICKLE_LLM_GATEWAY_SOURCE_IP:172.30.1.40}
+    # One bucket per sub-path: sync polls every 5 s, bodies flush every 2 s,
+    # usage bursts when a backlog drains. A single shared bucket would let the
+    # loud channels 429 the poll that carries authorization.
+    sync-rate-limit-per-minute: ${PICKLE_LLM_SYNC_RATE_LIMIT:60}
+    usage-rate-limit-per-minute: ${PICKLE_LLM_USAGE_RATE_LIMIT:120}
+    bodies-rate-limit-per-minute: ${PICKLE_LLM_BODIES_RATE_LIMIT:120}
+    # Body caps per sub-path (sync is a handful of gauges; usage is sized for
+    # a 500-event batch; bodies for the gateway's own 4 MiB batch plus JSON
+    # overhead). A refused bodies batch is NOT retried by the gateway, so a
+    # cap below what it sends silently discards captured text.
+    max-sync-body-bytes: ${PICKLE_LLM_MAX_SYNC_BODY_BYTES:65536}
+    max-usage-body-bytes: ${PICKLE_LLM_MAX_USAGE_BODY_BYTES:4194304}
+    max-bodies-body-bytes: ${PICKLE_LLM_MAX_BODIES_BODY_BYTES:8388608}
   proxy-agent:
     # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.
