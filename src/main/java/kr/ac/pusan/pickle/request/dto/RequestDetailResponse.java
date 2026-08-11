@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.request.RequestStatus;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.dto.VmRequestSpecResponse;
 import org.jspecify.annotations.Nullable;
 
@@ -35,6 +36,9 @@ public record RequestDetailResponse(
         RequestStatus status,
         @Nullable RequestReviewResponse review,
         @Nullable VmRequestSpecResponse vm,
+
+        /** Present when {@code type} is LLM_API_KEY, null otherwise. */
+        @Nullable LlmKeyRequestSpecResponse llmKey,
         Instant createdAt,
         Instant updatedAt) {
 }

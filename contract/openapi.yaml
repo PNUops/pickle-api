@@ -2032,6 +2032,56 @@ components:
       - "status"
       - "workspaceName"
       type: "object"
+    LlmKeyRequestSpecResponse:
+      properties:
+        grantedConcurrency:
+          description: "부여 동시 요청 수. 비어 있으면 서비스 기본값입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        grantedDailyTokens:
+          description: "부여 일일 토큰 수. 비어 있으면 서비스 기본값입니다."
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        grantedRpm:
+          description: "부여 분당 요청 수. 비어 있으면 서비스 기본값입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        grantedTpm:
+          description: "부여 분당 토큰 수. 비어 있으면 서비스 기본값입니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        reqDailyTokens:
+          description: "희망 일일 토큰 수"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        reqRpm:
+          description: "희망 분당 요청 수"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        reqTpm:
+          description: "희망 분당 토큰 수"
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        usagePlan:
+          description: "사용 계획"
+          type:
+          - "string"
+          - "null"
+      type: "object"
     LlmKeySummaryResponse:
       properties:
         accessLimited:
@@ -3387,6 +3437,10 @@ components:
         id:
           format: "uuid"
           type: "string"
+        llmKey:
+          anyOf:
+          - $ref: "#/components/schemas/LlmKeyRequestSpecResponse"
+          - type: "null"
         orgId:
           description: "신청 대상 기관. 행이 사라진 경우에만 null입니다."
           format: "uuid"
