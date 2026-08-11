@@ -85,10 +85,11 @@ public class AuditQueryService {
         params.add(size);
         params.add((long) page * size);
         List<ActivityEntryResponse> content = jdbcTemplate.query("""
-                select a.id, a.action, a.target_type, a.target_id, a.detail, a.ip, a.created_at
+                select a.public_id, a.action, a.target_type, a.target_id, a.detail, a.ip,
+                       a.created_at
                   from audit_logs a"""
                 + where + " order by a.created_at desc, a.id desc limit ? offset ?",
-                (rs, rowNum) -> new ActivityEntryResponse(String.valueOf(rs.getLong("id")),
+                (rs, rowNum) -> new ActivityEntryResponse(rs.getObject("public_id", UUID.class),
                         rs.getString("action"), rs.getString("target_type"),
                         rs.getString("target_id"),
                         detailOf(rs.getString("detail")), rs.getString("ip"),
@@ -135,14 +136,15 @@ public class AuditQueryService {
         params.add((long) page * size);
         // u.public_id, not a.actor_id: the actor is reported by the identifier
         // the API names accounts with. actor_id itself stays the internal key
-        // the join runs on.
-        List<AuditLogViewResponse> content = jdbcTemplate.query("select a.id, u.public_id "
-                + "as actor_public_id, "
+        // the join runs on. Same for a.public_id — a.id orders the page and
+        // never leaves the server.
+        List<AuditLogViewResponse> content = jdbcTemplate.query("select a.public_id, "
+                + "u.public_id as actor_public_id, "
                 + "a.actor_role, a.action, a.target_type, a.target_id, a.detail, a.ip, "
                 + "a.created_at, u.email as actor_email, u.name as actor_name, "
                 + ACTOR_ORG_NAME + " as org_name"
                 + base + where + " order by a.created_at desc, a.id desc limit ? offset ?",
-                (rs, rowNum) -> new AuditLogViewResponse(String.valueOf(rs.getLong("id")),
+                (rs, rowNum) -> new AuditLogViewResponse(rs.getObject("public_id", UUID.class),
                         rs.getObject("actor_public_id", UUID.class), rs.getString("actor_email"),
                         rs.getString("actor_name"), rs.getString("actor_role"),
                         rs.getString("action"), rs.getString("target_type"),
