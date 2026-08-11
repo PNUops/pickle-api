@@ -21,17 +21,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * rate limit); everything it lets through is already authorized, so the chain
  * itself permits all.
  *
- * <p>Ordered one behind the relay chain ({@link RelaySecurityConfig}), which
- * carves {@code /internal/relays/**} out with its own per-relay auth. The
- * broad {@code /internal/**} matcher here is kept on purpose: any internal
- * path no more-specific chain claims still lands in this filter and fails
- * closed instead of falling through to the public chain.</p>
+ * <p>Ordered behind the relay chain ({@link RelaySecurityConfig}) and the LLM
+ * gateway chain ({@link LlmGatewaySecurityConfig}), which carve
+ * {@code /internal/relays/**} and {@code /internal/llm/**} out with their own
+ * auth. The broad {@code /internal/**} matcher here is kept on purpose: any
+ * internal path no more-specific chain claims still lands in this filter and
+ * fails closed instead of falling through to the public chain.</p>
  */
 @Configuration
 public class InternalSecurityConfig {
 
     @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE + 1)
+    @Order(Ordered.HIGHEST_PRECEDENCE + 2)
     SecurityFilterChain internalSecurityFilterChain(HttpSecurity http,
             SshGatewayProperties sshGatewayProperties, RateLimitService rateLimitService,
             ProblemJsonWriter problemJsonWriter) throws Exception {

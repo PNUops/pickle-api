@@ -130,6 +130,16 @@ public class AuditService {
     public static final String PORT_MAPPING_UNSUSPEND = "port_mapping.unsuspend";
     public static final String PORT_MAPPING_DELETE = "port_mapping.delete";
     public static final String PORT_MAPPING_GUARDS_UPDATE = "port_mapping.guards_update";
+    // LLM gateway link (internal contract). The 5-second sync poll is never
+    // audited (it would flood the log); the one auditable event the poll can
+    // cause is the restored-backup counter raise below.
+    /**
+     * The gateway reported a generation above ours: this side's counter went
+     * backwards (restored backup) while the gateway's persisted high-water
+     * mark did not, so the counter was raised above the reported value and
+     * the full document served. Actor null.
+     */
+    public static final String LLM_GATEWAY_GENERATION_RAISE = "llm_gateway.generation_raise";
     // 교내 IP requests (contract v0.27.0).
     public static final String CAMPUS_IP_REQUEST = "campus_ip.request";
     public static final String CAMPUS_IP_CANCEL = "campus_ip.cancel";
@@ -156,6 +166,8 @@ public class AuditService {
     public static final String ACTOR_ROLE_SSHGW = "SSHGW";
     /** Actor role stamped on relay-originated audits (sync violations, auto-suspend). */
     public static final String ACTOR_ROLE_RELAY = "RELAY";
+    /** Actor role stamped on LLM-gateway-originated audits (no user identity). */
+    public static final String ACTOR_ROLE_LLM_GATEWAY = "LLM_GATEWAY";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
