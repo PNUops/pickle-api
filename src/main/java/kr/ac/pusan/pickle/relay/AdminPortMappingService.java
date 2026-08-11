@@ -135,13 +135,15 @@ public class AdminPortMappingService {
                     mapping.getPublicPort(), mapping.getTargetPort(), mapping.getStatus(),
                     mapping.getSuspendedReason(),
                     publicIdOf(actors.get(mapping.getSuspendedBy())),
+                    nameOf(actors.get(mapping.getSuspendedBy())),
                     relay == null ? PortForwardApplyState.PENDING
                             : PortForwardingService.applyState(mapping,
                                     relay.getAppliedGeneration(),
                                     failedByRelay.getOrDefault(relay.getId(), Set.of())),
                     mapping.getCtMax(), mapping.getNewConnRate(), mapping.getNewConnBurst(),
                     mapping.getPerSourceRate(), mapping.getPerSourceBurst(),
-                    publicIdOf(actors.get(mapping.getCreatedBy())), mapping.getCreatedAt());
+                    publicIdOf(actors.get(mapping.getCreatedBy())),
+                    nameOf(actors.get(mapping.getCreatedBy())), mapping.getCreatedAt());
         }).toList();
         return PageResponse.of(views, result);
     }
@@ -314,11 +316,13 @@ public class AdminPortMappingService {
                 mapping.getPublicPort(), mapping.getTargetPort(), mapping.getStatus(),
                 mapping.getSuspendedReason(),
                 publicIdOf(actors.get(mapping.getSuspendedBy())),
+                nameOf(actors.get(mapping.getSuspendedBy())),
                 PortForwardingService.applyState(mapping, relay.getAppliedGeneration(),
                         portForwardingService.failedIds(relay)),
                 mapping.getCtMax(), mapping.getNewConnRate(), mapping.getNewConnBurst(),
                 mapping.getPerSourceRate(), mapping.getPerSourceBurst(),
-                publicIdOf(actors.get(mapping.getCreatedBy())), mapping.getCreatedAt());
+                publicIdOf(actors.get(mapping.getCreatedBy())),
+                nameOf(actors.get(mapping.getCreatedBy())), mapping.getCreatedAt());
     }
 
     /** Batch account join for {@code createdBy}/{@code suspendedBy}. */
@@ -340,6 +344,9 @@ public class AdminPortMappingService {
         return user == null ? null : user.getPublicId();
     }
 
+    private static @Nullable String nameOf(@Nullable User user) {
+        return user == null ? null : user.getName();
+    }
 
     private PortMapping requireMapping(UUID mappingId) {
         return portMappingRepository.findByPublicId(mappingId)

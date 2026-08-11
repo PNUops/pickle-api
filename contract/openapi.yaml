@@ -371,6 +371,11 @@ components:
           type:
           - "string"
           - "null"
+        createdByName:
+          description: "매핑을 만든 관리자 이름"
+          type:
+          - "string"
+          - "null"
         ctMax:
           description: "동시 연결 상한 오버라이드 (null = 에이전트 기본, 0 = 해제)"
           format: "int32"
@@ -419,6 +424,11 @@ components:
         suspendedBy:
           description: "정지한 관리자 id (자동 정지면 null)"
           format: "uuid"
+          type:
+          - "string"
+          - "null"
+        suspendedByName:
+          description: "정지한 관리자 이름 (자동 정지면 null)"
           type:
           - "string"
           - "null"
@@ -4171,6 +4181,10 @@ components:
           type:
           - "string"
           - "null"
+        actorName:
+          type:
+          - "string"
+          - "null"
         changedAt:
           format: "date-time"
           type: "string"
@@ -4525,6 +4539,9 @@ components:
         grantedImageId:
           format: "uuid"
           type: "string"
+        grantedImageName:
+          description: "승인된 OS 이미지의 표시 이름. 카탈로그에서 내려간 이미지도 이름이 남습니다."
+          type: "string"
         grantedMemoryMb:
           format: "int32"
           type: "integer"
@@ -4536,9 +4553,15 @@ components:
           type:
           - "string"
           - "null"
+        nodeName:
+          description: "배치된 노드의 이름. nodeId가 있을 때 함께 있습니다."
+          type:
+          - "string"
+          - "null"
       required:
       - "grantedDiskGb"
       - "grantedImageId"
+      - "grantedImageName"
       - "grantedMemoryMb"
       - "grantedVcpu"
       type: "object"
@@ -4661,12 +4684,20 @@ components:
           type:
           - "string"
           - "null"
+        flavorName:
+          description: "요청한 사양 프리셋의 표시 이름. flavorId가 있을 때 함께 있습니다."
+          type:
+          - "string"
+          - "null"
         granted:
           anyOf:
           - $ref: "#/components/schemas/VmGrantedSpecResponse"
           - type: "null"
         imageId:
           format: "uuid"
+          type: "string"
+        imageName:
+          description: "요청한 OS 이미지의 표시 이름. 카탈로그에서 내려간 이미지도 이름이 남습니다."
           type: "string"
         reqDiskGb:
           format: "int32"
@@ -4687,6 +4718,7 @@ components:
           - "null"
       required:
       - "imageId"
+      - "imageName"
       - "reqDiskGb"
       - "reqMemoryMb"
       - "reqVcpu"

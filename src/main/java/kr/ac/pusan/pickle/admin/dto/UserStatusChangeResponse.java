@@ -11,6 +11,7 @@ public record UserStatusChangeResponse(
         UserStatus toStatus,
         @Nullable UUID actorId,
         @Nullable String actorEmail,
+        @Nullable String actorName,
         @Nullable String reason,
         Instant changedAt) {
 }

@@ -7,7 +7,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
@@ -86,18 +85,19 @@ public class RequestAssembler {
                 .findByRequestIdIn(idsOfType(requests, ResourceType.VM)).stream()
                 .collect(Collectors.toMap(VmRequestDetail::getRequestId, Function.identity()));
 
-        // The per-type spec reports its catalog references by public id, so the
-        // rows behind them are batched here beside the display-name joins.
-        Map<Long, UUID> imageIds = publicIds(osImageRepository.findAllById(ids(Stream.concat(
+        // The per-type spec reports each catalog reference by public id AND by
+        // name, so the rows behind them are batched here beside the display-name
+        // joins — the same rows either way, kept whole rather than reduced to an
+        // id, because the name has to come from somewhere and this is already
+        // the query that has it.
+        Map<Long, OsImage> images = byId(osImageRepository.findAllById(ids(Stream.concat(
                 vmDetails.values().stream().map(VmRequestDetail::getImageId),
                 vmDetails.values().stream().map(VmRequestDetail::getGrantedImageId)))),
-                OsImage::getId, OsImage::getPublicId);
-        Map<Long, UUID> flavorIds = publicIds(vmFlavorRepository.findAllById(ids(
-                vmDetails.values().stream().map(VmRequestDetail::getFlavorId))),
-                VmFlavor::getId, VmFlavor::getPublicId);
-        Map<Long, UUID> nodeIds = publicIds(nodeRepository.findAllById(ids(
-                vmDetails.values().stream().map(VmRequestDetail::getNodeId))),
-                Node::getId, Node::getPublicId);
+                OsImage::getId);
+        Map<Long, VmFlavor> flavors = byId(vmFlavorRepository.findAllById(ids(
+                vmDetails.values().stream().map(VmRequestDetail::getFlavorId))), VmFlavor::getId);
+        Map<Long, Node> nodes = byId(nodeRepository.findAllById(ids(
+                vmDetails.values().stream().map(VmRequestDetail::getNodeId))), Node::getId);
 
         List<RequestDetailResponse> details = new ArrayList<>(requests.size());
         for (Request request : requests) {
@@ -121,10 +121,10 @@ public class RequestAssembler {
                             ? RequestReviewResponse.from(review, users.get(review.getReviewerId()))
                             : null,
                     vmDetail != null ? VmRequestSpecResponse.from(vmDetail,
-                            imageIds.get(vmDetail.getImageId()),
-                            flavorIds.get(vmDetail.getFlavorId()),
-                            imageIds.get(vmDetail.getGrantedImageId()),
-                            nodeIds.get(vmDetail.getNodeId())) : null,
+                            images.get(vmDetail.getImageId()),
+                            flavors.get(vmDetail.getFlavorId()),
+                            images.get(vmDetail.getGrantedImageId()),
+                            nodes.get(vmDetail.getNodeId())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;
@@ -135,11 +135,6 @@ public class RequestAssembler {
                 .filter(request -> request.getResourceType() == type)
                 .map(Request::getId)
                 .toList();
-    }
-
-    private static <T> Map<Long, UUID> publicIds(List<T> rows, Function<T, Long> idOf,
-            Function<T, UUID> publicIdOf) {
-        return rows.stream().collect(Collectors.toMap(idOf, publicIdOf));
     }
 
     private static Set<Long> ids(Stream<Long> stream) {
