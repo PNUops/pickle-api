@@ -570,12 +570,42 @@ public class ProvisionVmJob implements ProvisioningService {
             String ip = Optional.ofNullable(vm.getIpAllocationId())
                     .flatMap(allocationRepository::findById)
                     .map(a -> hostAddress(a.getIp())).orElse(null);
+            String imageName = imageRepository.findById(vm.getImageId())
+                    .map(OsImage::getDisplayName).orElse(null);
             vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.CREATE, null,
-                    "프로비저닝 완료 (vmid " + vm.getProxmoxVmid() + ", ip " + ip + ")"));
+                    completedDetail(imageName, ip)));
             publishCreated(vm, ip);
         }
         taskRepository.complete(task.getId(), now);
         log.info("provision vm {} finished (vmid {})", vm.getId(), vm.getProxmoxVmid());
+    }
+
+    /**
+     * The owner's timeline entry for a finished provision: the OS the VM runs
+     * and the address it answers on, which are the two facts an owner
+     * recognises their own machine by.
+     *
+     * <p>The Proxmox vmid stood where the image name does now. It is a
+     * hypervisor number — nothing the owner can look up, ask about or act on —
+     * and it counts up from 100000 across the whole cluster, so every completed
+     * provision quietly told its owner how many the platform had ever done. The
+     * IP stays: it is the VM's own address, the owner sees it from inside the
+     * guest anyway, and it is what they identify the machine by in a log.</p>
+     *
+     * <p>A clause whose value is missing is left out rather than printed empty —
+     * an image row that is gone, or a VM that ended up with no allocation,
+     * should shorten the sentence, not put {@code null} in front of a user.</p>
+     */
+    private static String completedDetail(String imageName, String ip) {
+        List<String> parts = new ArrayList<>(2);
+        if (imageName != null && !imageName.isBlank()) {
+            parts.add("이미지 " + imageName);
+        }
+        if (ip != null && !ip.isBlank()) {
+            parts.add("ip " + ip);
+        }
+        return parts.isEmpty() ? COMPLETED_DETAIL
+                : COMPLETED_DETAIL + " (" + String.join(", ", parts) + ")";
     }
 
     // --- failure handling (retry & compensation) -----------------

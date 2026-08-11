@@ -249,6 +249,18 @@ class ProvisioningEndToEndTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from vm_events where vm_id = ? and type = 'CREATE'",
                 Long.class, vmId)).isEqualTo(1);
+        // The owner reads this entry on their VM's timeline, so it names the OS
+        // the machine runs and the address it answers on — never the Proxmox
+        // vmid, which the owner cannot act on and which counts up across the
+        // cluster, telling them how many the platform had ever provisioned.
+        String createDetail = jdbcTemplate.queryForObject(
+                "select detail from vm_events where vm_id = ? and type = 'CREATE'",
+                String.class, vmId);
+        assertThat(createDetail)
+                .contains(jdbcTemplate.queryForObject(
+                        "select display_name from os_images where id = ?", String.class, imageId))
+                .contains(EXPECTED_IP)
+                .doesNotContain(String.valueOf(VMID));
         // creation notice is a notifications row; the dispatcher emails it
         // (running it directly — the 1-minute recurring schedule is too slow
         // for the test, and the CAS claim makes the direct call race-safe)
