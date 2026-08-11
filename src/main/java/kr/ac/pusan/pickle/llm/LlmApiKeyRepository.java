@@ -13,6 +13,8 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long> {
 
     Page<LlmApiKey> findByWorkspaceId(long workspaceId, Pageable pageable);
 
+    Page<LlmApiKey> findByWorkspaceIdIn(List<Long> workspaceIds, Pageable pageable);
+
     List<LlmApiKey> findByWorkspaceId(long workspaceId);
 
     /**
