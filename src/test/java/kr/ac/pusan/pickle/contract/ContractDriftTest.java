@@ -233,7 +233,14 @@ class ContractDriftTest {
             // Usage monitoring, read live from the hypervisor (contract v0.35.0).
             "GET /vms/{vmId}/metrics",
             "GET /admin/nodes/{nodeId}/metrics",
-            "GET /admin/capacity-trend");
+            "GET /admin/capacity-trend",
+            // LLM API keys: the read surface and the access list.
+            "GET /llm-keys",
+            "GET /llm-keys/{keyId}",
+            "GET /llm-keys/{keyId}/access",
+            "POST /llm-keys/{keyId}/access",
+            "PATCH /llm-keys/{keyId}/access/{grantId}",
+            "DELETE /llm-keys/{keyId}/access/{grantId}");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

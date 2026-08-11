@@ -59,7 +59,12 @@ class ReauthCoverageTest {
             // Reading the list does not.
             "POST /vms/{vmId}/access",
             "PATCH /vms/{vmId}/access/{grantId}",
-            "DELETE /vms/{vmId}/access/{grantId}"));
+            "DELETE /vms/{vmId}/access/{grantId}",
+            // The LLM API key's access list steps up for the same reason the
+            // VM's does: an edit decides who reaches the key at all.
+            "POST /llm-keys/{keyId}/access",
+            "PATCH /llm-keys/{keyId}/access/{grantId}",
+            "DELETE /llm-keys/{keyId}/access/{grantId}"));
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

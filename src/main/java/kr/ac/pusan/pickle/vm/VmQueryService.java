@@ -5,9 +5,7 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import kr.ac.pusan.pickle.access.AccessGranteeType;
-import kr.ac.pusan.pickle.access.ResourceAccessGrant;
-import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.access.VmAccess;
@@ -70,7 +68,7 @@ public class VmQueryService {
     private final VmRepository vmRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
-    private final ResourceAccessGrantRepository grantRepository;
+    private final ResourceAccessResolver resourceAccessResolver;
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
@@ -86,7 +84,7 @@ public class VmQueryService {
 
     public VmQueryService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
-            ResourceAccessGrantRepository grantRepository,
+            ResourceAccessResolver resourceAccessResolver,
             UserRepository userRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             OsImageRepository osImageRepository, RequestRepository requestRepository,
@@ -99,7 +97,7 @@ public class VmQueryService {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
-        this.grantRepository = grantRepository;
+        this.resourceAccessResolver = resourceAccessResolver;
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -155,7 +153,8 @@ public class VmQueryService {
                 .filter(m -> m.getRole() == WorkspaceMemberRole.OWNER)
                 .map(m -> m.getWorkspace().getId())
                 .collect(Collectors.toSet());
-        VmListAccess access = listAccess(actor.id(), vms);
+        ResourceAccessResolver.ListAccess access = resourceAccessResolver.listAccess(
+                ResourceType.VM, vms.stream().map(Vm::getId).toList(), actor.id());
         return new PageImpl<>(vms.stream()
                 .map(vm -> {
                     Workspace workspace = workspaces.get(vm.getWorkspaceId());
@@ -176,37 +175,6 @@ public class VmQueryService {
                             ownedWorkspaceIds.contains(vm.getWorkspaceId()));
                 })
                 .toList(), pageable, result.getTotalElements());
-    }
-
-    /** Which of these VMs the requester may see in full, and who to ask about the rest. */
-    private record VmListAccess(Set<Long> reachable, Map<Long, List<String>> ownerNames) {
-    }
-
-    private VmListAccess listAccess(long userId, List<Vm> vms) {
-        if (vms.isEmpty()) {
-            return new VmListAccess(Set.of(), Map.of());
-        }
-        List<ResourceAccessGrant> grants = grantRepository.findByResourceTypeAndResourceIdIn(
-                ResourceType.VM, vms.stream().map(Vm::getId).toList());
-        Set<Long> reachable = new java.util.HashSet<>();
-        Map<Long, List<Long>> ownerIds = new java.util.LinkedHashMap<>();
-        for (ResourceAccessGrant grant : grants) {
-            if (grant.getGranteeType() == AccessGranteeType.WORKSPACE
-                    || Long.valueOf(userId).equals(grant.getUserId())) {
-                reachable.add(grant.getResourceId());
-            }
-            if (grant.getRole() == ResourceRole.OWNER && grant.getUserId() != null) {
-                ownerIds.computeIfAbsent(grant.getResourceId(), key -> new java.util.ArrayList<>())
-                        .add(grant.getUserId());
-            }
-        }
-        Map<Long, String> names = userRepository.findAllById(ownerIds.values().stream()
-                        .flatMap(List::stream).distinct().toList()).stream()
-                .collect(Collectors.toMap(User::getId, User::getName));
-        Map<Long, List<String>> ownerNames = new java.util.LinkedHashMap<>();
-        ownerIds.forEach((vmId, ids) -> ownerNames.put(vmId, ids.stream()
-                .map(names::get).filter(java.util.Objects::nonNull).toList()));
-        return new VmListAccess(reachable, ownerNames);
     }
 
     /**
