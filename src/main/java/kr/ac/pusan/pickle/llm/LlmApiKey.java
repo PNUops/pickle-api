@@ -89,6 +89,24 @@ public class LlmApiKey {
     @Column
     private @Nullable Integer concurrency;
 
+    /**
+     * The daily token allowance an approval granted, null for none. Enforced
+     * by the api, not the gateway: the gateway observes one request at a time
+     * and has no place to keep a day's running total, while the api receives
+     * every usage event anyway.
+     */
+    @Column(name = "daily_tokens")
+    private @Nullable Long dailyTokens;
+
+    /**
+     * Whether today's usage has reached {@link #dailyTokens}. Derived, but
+     * stored: the gateway is only handed a new document when the generation
+     * moves, and the generation moves on writes. A flag computed at read time
+     * would be correct in the database and invisible to the gateway forever.
+     */
+    @Column(name = "quota_exhausted", nullable = false)
+    private boolean quotaExhausted;
+
     @Column(name = "record_bodies", nullable = false)
     private boolean recordBodies;
 
@@ -110,7 +128,8 @@ public class LlmApiKey {
     /** A key an approval created. The secret is minted later, by its owner. */
     public LlmApiKey(long workspaceId, long orgId, long requestId, String name,
             @Nullable String purpose, @Nullable Instant expiresAt, @Nullable Integer rpm,
-            @Nullable Integer tpm, @Nullable Integer concurrency, long createdBy) {
+            @Nullable Integer tpm, @Nullable Integer concurrency,
+            @Nullable Long dailyTokens, long createdBy) {
         this.publicId = UUID.randomUUID();
         this.workspaceId = workspaceId;
         this.orgId = orgId;
@@ -121,6 +140,7 @@ public class LlmApiKey {
         this.rpm = rpm;
         this.tpm = tpm;
         this.concurrency = concurrency;
+        this.dailyTokens = dailyTokens;
         this.createdBy = createdBy;
     }
 
@@ -226,6 +246,14 @@ public class LlmApiKey {
 
     public @Nullable Integer getConcurrency() {
         return concurrency;
+    }
+
+    public @Nullable Long getDailyTokens() {
+        return dailyTokens;
+    }
+
+    public boolean isQuotaExhausted() {
+        return quotaExhausted;
     }
 
     public boolean isRecordBodies() {
