@@ -93,7 +93,7 @@ public class LlmSyncService {
                               'maxOutputTokens', m.max_output_tokens)), '[]'::json)
                       from llm_models m where m.enabled) as models,
                    k.public_id, k.token_hash, k.status::text as status, k.expires_at,
-                   k.rpm, k.tpm, k.concurrency, k.record_bodies
+                   k.rpm, k.tpm, k.concurrency, k.quota_exhausted, k.record_bodies
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -260,10 +260,12 @@ public class LlmSyncService {
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),
                                 rs.getObject("concurrency", Integer.class)),
-                        // Long-window quota accounting is a later round; until
-                        // it exists the api has decided nothing, and absent
-                        // accounting must not lock keys out.
-                        false,
+                        // The api's decision, not the gateway's: a day's
+                        // running total needs durable state the gateway was
+                        // built not to have. Kept as a column so that flipping
+                        // it is a write, and a write is what moves the
+                        // generation the gateway polls on.
+                        rs.getBoolean("quota_exhausted"),
                         rs.getBoolean("record_bodies")));
             }
             // models is an EMPTY ARRAY, not an omission: "no models" is this

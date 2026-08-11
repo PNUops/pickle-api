@@ -117,7 +117,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                         : form.grantedEndDate().plusDays(1).atStartOfDay(
                                 java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                 spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
-                request.getRequesterId()));
+                spec.grantedDailyTokens(), request.getRequesterId()));
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());

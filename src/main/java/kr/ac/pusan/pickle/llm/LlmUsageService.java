@@ -50,9 +50,11 @@ public class LlmUsageService {
     private static final Logger log = LoggerFactory.getLogger(LlmUsageService.class);
 
     private final JdbcTemplate jdbcTemplate;
+    private final LlmQuotaService quotaService;
 
-    public LlmUsageService(JdbcTemplate jdbcTemplate) {
+    public LlmUsageService(JdbcTemplate jdbcTemplate, LlmQuotaService quotaService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.quotaService = quotaService;
     }
 
     @Transactional
@@ -93,6 +95,12 @@ public class LlmUsageService {
             }
         }
         stampLastUsed(lastUsed);
+        // In this transaction, so the events and the quota state they imply
+        // become visible together: a poll must never see the tokens without
+        // the refusal they earned. The periodic sweep is what releases a key
+        // again — this call only ever locks one, because nothing here reduces
+        // a day's total.
+        quotaService.refresh();
         if (rejected > 0) {
             log.warn("LLM usage batch: accepted {}, duplicates {}, rejected {}",
                     accepted, duplicates, rejected);
