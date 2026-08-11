@@ -237,6 +237,7 @@ class ContractDriftTest {
             // LLM API keys: the read surface and the access list.
             "GET /llm-keys",
             "GET /llm-keys/{keyId}",
+            "GET /llm-keys/{keyId}/usage",
             "PATCH /llm-keys/{keyId}",
             "POST /llm-keys/{keyId}/token",
             "POST /llm-keys/{keyId}/revoke",

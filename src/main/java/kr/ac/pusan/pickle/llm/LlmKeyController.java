@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.llm;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -11,6 +12,7 @@ import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyDetailResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeySummaryResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -34,10 +36,13 @@ public class LlmKeyController {
 
     private final LlmApiKeyQueryService queryService;
     private final LlmApiKeyService keyService;
+    private final LlmKeyUsageService usageService;
 
-    public LlmKeyController(LlmApiKeyQueryService queryService, LlmApiKeyService keyService) {
+    public LlmKeyController(LlmApiKeyQueryService queryService, LlmApiKeyService keyService,
+            LlmKeyUsageService usageService) {
         this.queryService = queryService;
         this.keyService = keyService;
+        this.usageService = usageService;
     }
 
     @GetMapping
@@ -59,6 +64,19 @@ public class LlmKeyController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
         return queryService.get(principal, keyId);
+    }
+
+    @GetMapping("/{keyId}/usage")
+    @Operation(summary = "LLM API 키 사용량",
+            description = "이 키의 일별 사용량입니다. 하루는 한국 시간 기준이고, 호출이 없던 날도 "
+                    + "0으로 채워집니다. 게이트웨이가 배치로 보고하므로 오늘 자 값은 아직 "
+                    + "채워지는 중입니다.")
+    public LlmKeyUsageTrendResponse getLlmKeyUsage(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId,
+            @Parameter(description = "오늘을 포함해 거슬러 올라갈 일수")
+            @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days) {
+        return usageService.trend(principal, keyId, days);
     }
 
     @PostMapping("/{keyId}/token")

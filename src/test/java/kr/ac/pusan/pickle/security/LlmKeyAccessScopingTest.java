@@ -137,6 +137,10 @@ class LlmKeyAccessScopingTest {
      */
     private static final List<ScopedOp> OPS = List.of(
             op("getLlmKey", HttpMethod.GET, "/llm-keys/{keyId}", ResourceRole.VIEWER),
+            // Usage is content, not standing: what a key was used for sits on
+            // the same side of the line as its detail, so a workspace owner
+            // without a grant is refused here too.
+            op("getLlmKeyUsage", HttpMethod.GET, "/llm-keys/{keyId}/usage", ResourceRole.VIEWER),
 
             bodyOp("updateLlmKey", HttpMethod.PATCH, "/llm-keys/{keyId}", ResourceRole.EDITOR,
                     "{\"name\":\"스코프\"}"),

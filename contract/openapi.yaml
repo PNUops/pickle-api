@@ -2170,6 +2170,75 @@ components:
       - "status"
       - "workspaceName"
       type: "object"
+    LlmKeyUsagePointResponse:
+      properties:
+        day:
+          format: "date"
+          type: "string"
+        estimatedRequests:
+          description: "토큰 수가 실측이 아니라 추정인 요청 수. 스트리밍 응답에서 업스트림이 사용량을 주지 않으면 게이트웨이가\
+            \ 추정하므로, 이 값이 크면 위 토큰 합도 그만큼 추정입니다."
+          format: "int64"
+          type: "integer"
+        failed:
+          description: "그 밖의 사유로 실패한 요청 수 (업스트림 오류, 시간 초과, 잘못된 요청 등)"
+          format: "int64"
+          type: "integer"
+        inputTokens:
+          description: "입력 토큰 합"
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          description: "출력 토큰 합"
+          format: "int64"
+          type: "integer"
+        rateLimited:
+          description: "한도에 걸려 거부된 요청 수. 계속 0이 아니면 한도 상향을 신청할 때입니다."
+          format: "int64"
+          type: "integer"
+        requests:
+          description: "이 날 이 Key로 들어온 요청 수 — 거부된 것과 실패한 것을 포함합니다."
+          format: "int64"
+          type: "integer"
+        succeeded:
+          description: "정상 응답한 요청 수"
+          format: "int64"
+          type: "integer"
+      required:
+      - "day"
+      - "estimatedRequests"
+      - "failed"
+      - "inputTokens"
+      - "outputTokens"
+      - "rateLimited"
+      - "requests"
+      - "succeeded"
+      type: "object"
+    LlmKeyUsageTrendResponse:
+      properties:
+        from:
+          format: "date"
+          type: "string"
+        points:
+          description: "하루 한 점, 오래된 날부터"
+          items:
+            $ref: "#/components/schemas/LlmKeyUsagePointResponse"
+          type: "array"
+        reportedUntil:
+          description: "게이트웨이가 이 Key의 사용량을 마지막으로 보고한 시각. 전송은 배치라 몇 분 늦을 수 있고, 오늘 자\
+            \ 값은 아직 채워지는 중입니다. 보고가 한 번도 없었으면 null입니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        to:
+          format: "date"
+          type: "string"
+      required:
+      - "from"
+      - "points"
+      - "to"
+      type: "object"
     LoginRequest:
       properties:
         email:
@@ -5402,7 +5471,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.40.0"
+  version: "0.41.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -8387,6 +8456,44 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "LLM API 키 발급"
+      tags:
+      - "llm-keys"
+  /llm-keys/{keyId}/usage:
+    get:
+      description: "이 키의 일별 사용량입니다. 하루는 한국 시간 기준이고, 호출이 없던 날도 0으로 채워집니다. 게이트웨이가 배치\
+        로 보고하므로 오늘 자 값은 아직 채워지는 중입니다."
+      operationId: "getLlmKeyUsage"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "오늘을 포함해 거슬러 올라갈 일수"
+        in: "query"
+        name: "days"
+        required: false
+        schema:
+          default: 30
+          format: "int32"
+          maximum: 90
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LlmKeyUsageTrendResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 사용량"
       tags:
       - "llm-keys"
   /me:
