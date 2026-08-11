@@ -2,8 +2,8 @@ package kr.ac.pusan.pickle.resource;
 
 import java.util.List;
 import java.util.Optional;
-import kr.ac.pusan.pickle.vm.Vm;
 import java.util.UUID;
+import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.access.ResourceAccessAudit;
 import kr.ac.pusan.pickle.access.ResourceAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -16,9 +16,8 @@ import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmSummaryResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 /** The VM's answers to {@link ResourceTypeAdapter}. */
@@ -102,14 +101,22 @@ public class VmResourceAdapter implements ResourceTypeAdapter {
     }
 
     @Override
-    public Page<ResourceSummaryResponse> page(AuthenticatedUser actor, UUID workspaceId,
-            Pageable pageable) {
+    public InventoryHead inventoryHead(AuthenticatedUser actor, UUID workspaceId, int limit) {
         // Reuses the VM list rather than re-deriving visibility: the masking
         // rules live in one place, so the inventory cannot drift into showing
-        // more than the VM list does.
-        var page = vmQueryService.listPage(actor, workspaceId, pageable);
-        return new PageImpl<>(page.getContent().stream().map(VmResourceAdapter::toSummary).toList(),
-                pageable, page.getTotalElements());
+        // more than the VM list does. The count rides the same call for the
+        // same reason.
+        //
+        // The sort keys are named here and nowhere else. The inventory asks for
+        // "newest first, ties in this type's own order" and this is where that
+        // meaning becomes `createdAt` and `id` — property names of the Vm
+        // entity, which no other type should have to adopt.
+        var page = vmQueryService.listPage(actor, workspaceId,
+                PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "createdAt")
+                        .and(Sort.by(Sort.Direction.DESC, "id"))));
+        return new InventoryHead(
+                page.getContent().stream().map(VmResourceAdapter::toSummary).toList(),
+                page.getTotalElements());
     }
 
     private static ResourceSummaryResponse toSummary(VmSummaryResponse vm) {

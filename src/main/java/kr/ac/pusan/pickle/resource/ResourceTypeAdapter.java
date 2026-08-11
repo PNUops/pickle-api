@@ -8,8 +8,6 @@ import kr.ac.pusan.pickle.access.ResourceAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.resource.dto.ResourceSummaryResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 /**
  * What the resource-generic machinery needs to know about one kind of resource.
@@ -78,10 +76,37 @@ public interface ResourceTypeAdapter {
     long countLiveInWorkspace(long workspaceId);
 
     /**
-     * This type's contribution to the inventory the requester may see, with the
-     * same visibility rules the type's own list endpoint applies: a row the
-     * requester holds no grant on comes back limited rather than omitted, so
-     * they can see it exists and ask.
+     * The first {@code limit} rows of this type's contribution to the
+     * inventory, plus how many rows the requester may see in total.
+     *
+     * <p>Visibility is the type's own: a row the requester holds no grant on
+     * comes back limited rather than omitted, so they can see it exists and
+     * ask. Count and rows must come from the same query, or a page can promise
+     * more rows than the masking rules would ever produce.
+     *
+     * <p><b>Ordering is stated here as meaning, not as a sort key.</b> Newest
+     * first by creation time; rows created in the same instant follow this
+     * type's own stable order, descending by whatever it uses internally. The
+     * caller merges several types by creation time alone and relies on a stable
+     * sort to leave each type's own order intact, so the within-type tiebreak
+     * never has to cross into Java — which is what lets an implementation order
+     * by an internal id, or by a column named something else entirely.
+     *
+     * <p>The limit is a plain count rather than a {@code Pageable} on purpose:
+     * a {@code Pageable} carries a sort expressed in the caller's vocabulary,
+     * which would make every type name its columns the way the first one did.
      */
-    Page<ResourceSummaryResponse> page(AuthenticatedUser actor, UUID workspaceId, Pageable pageable);
+    InventoryHead inventoryHead(AuthenticatedUser actor, UUID workspaceId, int limit);
+
+    /**
+     * One type's answer to {@link #inventoryHead}: the head of its ordered
+     * rows, and the total it was taken from.
+     */
+    record InventoryHead(List<ResourceSummaryResponse> rows, long totalElements) {
+
+        /** Nothing of this type is visible to the requester. */
+        public static InventoryHead empty() {
+            return new InventoryHead(List.of(), 0);
+        }
+    }
 }
