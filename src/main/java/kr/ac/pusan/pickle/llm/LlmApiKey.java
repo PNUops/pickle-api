@@ -157,8 +157,12 @@ public class LlmApiKey {
         return tokenHash != null;
     }
 
-    public void rename(String name, @Nullable String purpose, Instant when) {
+    public void rename(String name, Instant when) {
         this.name = name;
+        this.updatedAt = when;
+    }
+
+    public void setPurpose(@Nullable String purpose, Instant when) {
         this.purpose = purpose;
         this.updatedAt = when;
     }

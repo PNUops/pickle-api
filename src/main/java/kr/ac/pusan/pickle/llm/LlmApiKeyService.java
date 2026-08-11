@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,6 +65,18 @@ public class LlmApiKeyService {
         boolean rotation = key.isIssued();
         String token = LlmApiKeyTokens.newToken();
         generations.bump();
+        // Re-read after the lock. The status check above ran against a snapshot
+        // taken before this transaction serialized on the counter, so a revoke
+        // that committed in between would otherwise be overwritten here — the
+        // key would come back ACTIVE with a fresh secret and no revoked_at,
+        // which is the one outcome "폐기된 키는 다시 발급할 수 없습니다" promises
+        // cannot happen.
+        if (keyRepository.findById(key.getId())
+                .map(LlmApiKey::getStatus)
+                .orElse(LlmApiKeyStatus.REVOKED) == LlmApiKeyStatus.REVOKED) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_REVOKED,
+                    "폐기된 키입니다", "폐기된 키는 다시 발급할 수 없습니다. 새로 신청해 주세요.");
+        }
         key.issue(LlmApiKeyTokens.hash(token), LlmApiKeyTokens.visiblePrefix(token), Instant.now());
 
         Map<String, Object> args = new LinkedHashMap<>();
@@ -81,7 +94,7 @@ public class LlmApiKeyService {
      */
     @Transactional
     public void revoke(AuthenticatedUser actor, UUID keyId) {
-        LlmApiKey key = writable(actor, keyId, ResourceRole.OWNER);
+        LlmApiKey key = revocable(actor, keyId);
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
             return; // idempotent: a retried click must not move revoked_at
         }
@@ -89,6 +102,38 @@ public class LlmApiKeyService {
         key.revoke(Instant.now());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.LLM_KEY_REVOKE,
                 "llm_key", key.getPublicId(), Map.of(), null);
+    }
+
+    /**
+     * The key, if this caller may revoke it.
+     *
+     * <p>Revoking is a standing right, not a granted one: a workspace owner may
+     * always take a resource of their workspace away, and a platform or
+     * organisation administrator may too. Requiring a grant here would mean
+     * that during a leaked-key incident the only people who can stop it are the
+     * ones already on its access list — and a workspace owner whose key owner
+     * has left would have to grant themselves content access first, recording a
+     * break-glass entry for what the model already gives them.
+     */
+    private LlmApiKey revocable(AuthenticatedUser actor, UUID keyId) {
+        LlmApiKey key = keyRepository.findByPublicId(keyId)
+                .orElseThrow(() -> LlmKeyResourceAdapter.MESSAGES.notFound());
+        if (actor.role() == UserRole.SYS_ADMIN) {
+            return key;
+        }
+        if (actor.role() == UserRole.ORG_ADMIN) {
+            if (!key.getOrgId().equals(actor.orgId())) {
+                throw LlmKeyResourceAdapter.MESSAGES.notFound();
+            }
+            return key;
+        }
+        ResourceStanding standing = resourceAccessResolver.standing(ResourceType.LLM_API_KEY,
+                key.getId(), key.getWorkspaceId(), actor.id());
+        if (!standing.manages()) {
+            standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
+            throw LlmKeyResourceAdapter.MESSAGES.noGrant();
+        }
+        return key;
     }
 
     /** Renames the key or turns body recording on or off. */
@@ -101,9 +146,17 @@ public class LlmApiKeyService {
         // moved: a rule with an exception is the rule somebody later copies
         // the exception from.
         generations.bump();
+        // Each member is independent: absent means "leave it alone", which is
+        // what the contract promises. Folding purpose into the rename would
+        // erase a purpose whenever somebody renamed without resending it.
         if (form.name() != null) {
-            key.rename(form.name().trim(), Texts.blankToNull(form.purpose()), Instant.now());
+            key.rename(form.name().trim(), Instant.now());
             args.put("name", key.getName());
+        }
+        if (form.purpose() != null) {
+            // Blank is how a purpose is cleared; absent is how it is kept.
+            key.setPurpose(Texts.blankToNull(form.purpose()), Instant.now());
+            args.put("purpose", key.getPurpose());
         }
         if (form.recordBodies() != null) {
             key.setRecordBodies(form.recordBodies(), Instant.now());
