@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import kr.ac.pusan.pickle.access.LlmKeyAccessMessages;
 import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceStanding;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -128,10 +127,10 @@ public class LlmApiKeyQueryService {
     @Transactional(readOnly = true)
     public LlmKeyDetailResponse get(AuthenticatedUser actor, UUID keyId) {
         LlmApiKey key = keyRepository.findByPublicId(keyId)
-                .orElseThrow(() -> LlmKeyAccessMessages.MESSAGES.notFound());
+                .orElseThrow(() -> LlmKeyResourceAdapter.MESSAGES.notFound());
         ResourceStanding standing = resourceAccessResolver.standing(ResourceType.LLM_API_KEY,
                 key.getId(), key.getWorkspaceId(), actor.id());
-        standing.requireVisible(LlmKeyAccessMessages.MESSAGES);
+        standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
         Workspace workspace = workspaceRepository.findById(key.getWorkspaceId()).orElse(null);
         return LlmKeyDetailResponse.from(key,
                 workspace == null ? null : workspace.getPublicId(),

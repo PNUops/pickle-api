@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>The rules are {@link ResourceAccessGrantService}'s and know nothing about
  * keys; this class is the key's path into them, the same pass-through the VM
  * has in {@link VmAccessGrantController}. What the type contributes — its
- * refusal sentences and audit names — lives in {@link LlmKeyAccessMessages}
+ * refusal sentences and audit names — lives in {@link kr.ac.pusan.pickle.llm.LlmKeyResourceAdapter}
  * until the key's resource adapter carries them.
  */
 @Tag(name = "llm-key-access",
