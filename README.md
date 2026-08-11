@@ -240,7 +240,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 
 ## 전체 아키텍처
 
-<!-- arch:begin — 레포지토리 공통 블록입니다. 손으로 고치지 마세요. -->
+<!-- arch:begin -->
 ```mermaid
 flowchart LR
     subgraph ext [외부]
@@ -248,6 +248,7 @@ flowchart LR
         V[VM 도메인 접속]
         S[VM SSH 접속]
         PC[VM 포트 접속]
+        L[LLM API 호출]
     end
 
     subgraph relay [오프캠퍼스 릴레이]
@@ -268,12 +269,15 @@ flowchart LR
         PVE[Proxmox VE]
         VM[사용자 VM]
         IB[pickle-image-builder]
+        LG[pickle-llm-gateway]
+        UP[업스트림 모델 서버]
     end
 
     B --> PN
     V --> VN
     S --> HA
     PC --> NFT
+    L --> PN
 
     HA -->|WireGuard| G
     NFT -->|WireGuard| VM
@@ -283,8 +287,11 @@ flowchart LR
     PN -->|/| C
     PN -->|/api| A
     PN -->|/terminal| G
+    PN -->|llm.pcl.kr| LG
 
     G -->|인가 질의| A
+    LG -->|키·모델 동기화| A
+    LG --> UP
     G --> VM
     VN --> VM
 
@@ -304,6 +311,7 @@ flowchart LR
 | [pickle-sshgw](https://github.com/PNUops/pickle-sshgw) | SSH 게이트웨이와 웹 터미널 브리지 (sshpiperd, Go) |
 | [pickle-proxy-agent](https://github.com/PNUops/pickle-proxy-agent) | nginx 리버스 프록시 제어 에이전트 (Go) |
 | [pickle-relay-agent](https://github.com/PNUops/pickle-relay-agent) | 오프캠퍼스 릴레이의 nftables DNAT 에이전트 (Go) |
+| [pickle-llm-gateway](https://github.com/PNUops/pickle-llm-gateway) | 교내 LLM API 게이트웨이 (Go) |
 | [pickle-image-builder](https://github.com/PNUops/pickle-image-builder) | 사용자 VM OS 이미지 빌드 레시피 (shell, virt-customize) |
 | [pickle-infra](https://github.com/PNUops/pickle-infra) (비공개) | 인프라 프로비저닝 스크립트와 운영 런북 (shell) |
 | [pickle-infra-example](https://github.com/PNUops/pickle-infra-example) | 프로비저닝·배포 스크립트와 런북 샘플 |
