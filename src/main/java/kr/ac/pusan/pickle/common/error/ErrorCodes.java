@@ -58,6 +58,7 @@ public final class ErrorCodes {
     public static final String VM_INVALID_STATE = "VM_INVALID_STATE";
     public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";
     public static final String VM_ACCESS_GRANT_EXISTS = "VM_ACCESS_GRANT_EXISTS";
+    public static final String LLM_KEY_ACCESS_GRANT_EXISTS = "LLM_KEY_ACCESS_GRANT_EXISTS";
     // VM protection settings (contract v0.9.0).
     public static final String VM_DELETION_PROTECTED = "VM_DELETION_PROTECTED";
     public static final String VM_STOP_PROTECTED = "VM_STOP_PROTECTED";

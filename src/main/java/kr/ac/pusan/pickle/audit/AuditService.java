@@ -61,6 +61,14 @@ public class AuditService {
     public static final String VM_ACCESS_GRANT_REMOVE = "vm.access_grant_remove";
     /** A workspace owner giving themselves a way inside — recorded apart from the ordinary grant. */
     public static final String VM_ACCESS_BREAK_GLASS = "vm.access_break_glass";
+
+    public static final String LLM_KEY_ACCESS_GRANT_ADD = "llm_key.access_grant_add";
+    public static final String LLM_KEY_ACCESS_GRANT_UPDATE = "llm_key.access_grant_update";
+    public static final String LLM_KEY_ACCESS_GRANT_REMOVE = "llm_key.access_grant_remove";
+    public static final String LLM_KEY_ACCESS_BREAK_GLASS = "llm_key.access_break_glass";
+    public static final String LLM_KEY_ISSUE = "llm_key.issue";
+    public static final String LLM_KEY_REVOKE = "llm_key.revoke";
+    public static final String LLM_KEY_UPDATE = "llm_key.update";
     // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";
     public static final String DOMAIN_UPDATE = "domain.update";
