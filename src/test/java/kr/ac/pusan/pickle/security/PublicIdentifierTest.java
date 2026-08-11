@@ -190,8 +190,9 @@ class PublicIdentifierTest {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose)
-                values ('VM', ?, ?, ?, '공개 식별자 확인')
+                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose,
+                                      display_name)
+                values ('VM', ?, ?, ?, '공개 식별자 확인', '공개 식별자 확인')
                 returning id
                 """, Long.class, owningWorkspaceId, orgId, owner.getId());
         String unique = hostname + "-" + Instant.now().toEpochMilli();
