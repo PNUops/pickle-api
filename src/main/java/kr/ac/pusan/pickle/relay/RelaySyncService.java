@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
@@ -84,16 +85,18 @@ public class RelaySyncService {
     private final SettingsService settingsService;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final ObjectMapper objectMapper;
 
     public RelaySyncService(JdbcTemplate jdbcTemplate, RelayGenerations relayGenerations,
             SettingsService settingsService, NotificationService notificationService,
-            AuditService auditService, ObjectMapper objectMapper) {
+            AuditService auditService, AuditIds auditIds, ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
         this.relayGenerations = relayGenerations;
         this.settingsService = settingsService;
         this.notificationService = notificationService;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.objectMapper = objectMapper;
     }
 
@@ -199,7 +202,7 @@ public class RelaySyncService {
                 // bigint totals against a lying or corrupted agent.
                 auditService.record(null, AuditService.ACTOR_ROLE_RELAY,
                         AuditService.RELAY_SYNC_VIOLATION, "relay", relayPublicId(relayId),
-                        Map.of("kind", "counter_sanity", "mappingId", mappingId,
+                        Map.of("kind", "counter_sanity", "mappingId", auditIds.portMapping(mappingId),
                                 "maxReported", String.valueOf(raw.max())), null);
                 log.warn("relay {} reported an insane counter for mapping {} (max {})",
                         relayId, mappingId, raw.max());
@@ -293,7 +296,7 @@ public class RelaySyncService {
         notificationService.publish(notificationService.sysAdminIds(),
                 NotificationEvent.PORT_MAPPING_SUSPENDED, args, "pm_auto_suspend:" + mappingId);
         auditService.recordAfterCommit(null, AuditService.ACTOR_ROLE_RELAY, AuditService.PORT_MAPPING_SUSPEND,
-                "port_mapping", mappingPublicId, Map.of("auto", true, "relayId", relayId,
+                "port_mapping", mappingPublicId, Map.of("auto", true, "relayId", relayPublicId(relayId),
                         "connsPerMin", connsPerMin, "mbytesPerMin", mbytesPerMin,
                         "connsLimit", connsLimit, "mbytesLimit", mbytesLimit), null);
         log.warn("port mapping {} auto-suspended (conns/min {} vs {}, MB/min {} vs {})",

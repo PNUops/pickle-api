@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.access.dto.AddResourceAccessGrantRequest;
 import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
 import kr.ac.pusan.pickle.access.dto.ResourceAccessListResponse;
 import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -60,12 +61,13 @@ public class ResourceAccessGrantService {
     private final WorkspaceRepository workspaceRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
 
     public ResourceAccessGrantService(List<ResourceTypeAdapter> adapters,
             ResourceAccessResolver resolver, ResourceAccessGrantRepository grantRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository, UserRepository userRepository,
-            AuditService auditService) {
+            AuditService auditService, AuditIds auditIds) {
         this.adapters = adapters.stream()
                 .collect(Collectors.toMap(ResourceTypeAdapter::type, Function.identity()));
         this.resolver = resolver;
@@ -74,6 +76,7 @@ public class ResourceAccessGrantService {
         this.workspaceRepository = workspaceRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
     }
 
     @Transactional(readOnly = true)
@@ -203,10 +206,10 @@ public class ResourceAccessGrantService {
             ResourceAccessGrant grant, ResourceRole previousRole, String ip) {
         ResourceAccessAudit names = managed.adapter().accessAudit();
         Map<String, Object> detail = new LinkedHashMap<>();
-        detail.put("grantId", grant.getId());
+        detail.put("grantId", grant.getPublicId());
         detail.put("granteeType", grant.getGranteeType().name());
         if (grant.getUserId() != null) {
-            detail.put("granteeUserId", grant.getUserId());
+            detail.put("granteeUserId", auditIds.user(grant.getUserId()));
         }
         detail.put("role", grant.getRole().name());
         if (previousRole != null) {

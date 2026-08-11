@@ -379,9 +379,13 @@ class VmAccessGrantApiTest {
                 userGrant(workspaceOwner.getId(), "MEMBER"));
         assertThat(auditCount(AuditService.VM_ACCESS_GRANT_ADD, vmId)).isEqualTo(1);
         assertThat(auditCount(AuditService.VM_ACCESS_BREAK_GLASS, vmId)).isEqualTo(1);
-        // the marker carries the same detail as the change it shadows
+        // the marker carries the same detail as the change it shadows. Both ids
+        // in it are public ones: this detail reaches its subject through their
+        // own activity feed, so an internal row number here is a leak.
         assertThat(auditDetail(AuditService.VM_ACCESS_BREAK_GLASS, vmId, "grantId"))
-                .isEqualTo(String.valueOf(selfGrantId));
+                .isEqualTo(pub("resource_access_grants", selfGrantId).toString());
+        assertThat(auditDetail(AuditService.VM_ACCESS_BREAK_GLASS, vmId, "granteeUserId"))
+                .isEqualTo(workspaceOwner.getPublicId().toString());
         assertThat(auditDetail(AuditService.VM_ACCESS_BREAK_GLASS, vmId, "role"))
                 .isEqualTo("MEMBER");
 
@@ -717,6 +721,7 @@ class VmAccessGrantApiTest {
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", pub("orgs", orgId));
         body.put("purpose", "접근 권한 테스트용 신청");
+        body.put("displayName", "접근 권한 테스트 서버");
         body.put("vm", vm);
         String response = mockMvc.perform(post("/api/v1/requests")
                         .header("Authorization", "Bearer " + token)

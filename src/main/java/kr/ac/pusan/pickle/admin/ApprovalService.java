@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.admin.dto.RejectRequestRequest;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -68,6 +69,7 @@ public class ApprovalService {
     private final UserRepository userRepository;
     private final OrgRepository orgRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final NotificationService notificationService;
 
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
@@ -76,7 +78,7 @@ public class ApprovalService {
             WorkspaceRepository workspaceRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             OrgRepository orgRepository,
-            AuditService auditService, NotificationService notificationService) {
+            AuditService auditService, AuditIds auditIds, NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.assembler = assembler;
@@ -88,6 +90,7 @@ public class ApprovalService {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.notificationService = notificationService;
     }
 
@@ -208,7 +211,8 @@ public class ApprovalService {
         reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(RequestStatus.REJECTED);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
-                "request", request.getPublicId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
+                "request", request.getPublicId(),
+                Map.of("workspaceId", auditIds.workspace(request.getWorkspaceId())), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
                 Map.of("requestId", request.getPublicId(), "comment", form.comment().strip(),
                         "type", request.getResourceType().name()), null);

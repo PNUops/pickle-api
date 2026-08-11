@@ -165,10 +165,16 @@ public class AuditService {
 
     /**
      * {@code targetId} is the target row's <b>public</b> identifier: the column
-     * is text and holds a UUID string. Targets that have no public identity
-     * (a refresh token, a settings key) pass null and put whatever identifies
-     * them in {@code detail}. Rows written before V78 hold the internal number
-     * of the day as text and mean what they always meant.
+     * is text and holds a UUID string. Targets that have no public identity (a
+     * refresh token, a settings key) pass null; a settings key names itself in
+     * {@code detail}, while a refresh token puts nothing there at all — its row
+     * number identified it to nobody, and the actor and action already say whose
+     * session did what. Rows written before V78 hold the internal number of the
+     * day as text and mean what they always meant.
+     *
+     * <p>{@code detail} reaches ordinary users through {@code /me/activity}, so
+     * an id in it is a public id or it is not written: {@link AuditIds} resolves
+     * one where the call site holds only an internal key.</p>
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(Long actorId, String actorRole, String action, String targetType, UUID targetId,

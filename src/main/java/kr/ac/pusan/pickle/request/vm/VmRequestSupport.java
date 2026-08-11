@@ -114,7 +114,9 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public Map<String, Object> submitAuditArgs(Request request) {
         VmRequestDetail detail = detail(request);
-        return Map.of("imageId", detail.getImageId(), "reqVcpu", detail.getReqVcpu(),
+        return Map.of("imageId", imageRepository.findById(detail.getImageId())
+                        .map(OsImage::getPublicId).orElse(null),
+                "reqVcpu", detail.getReqVcpu(),
                 "reqMemoryMb", detail.getReqMemoryMb(), "reqDiskGb", detail.getReqDiskGb());
     }
 
@@ -199,12 +201,13 @@ public class VmRequestSupport implements RequestTypeHandler {
 
         long vmId = vm.getId();
         Map<String, Object> auditArgs = new LinkedHashMap<>();
-        auditArgs.put("vmId", vmId);
+        auditArgs.put("vmId", vm.getPublicId());
         auditArgs.put("hostname", hostname);
         auditArgs.put("grantedVcpu", spec.grantedVcpu());
         auditArgs.put("grantedMemoryMb", spec.grantedMemoryMb());
         auditArgs.put("grantedDiskGb", spec.grantedDiskGb());
-        auditArgs.put("nodeId", nodeId);
+        auditArgs.put("nodeId", nodeRepository.findById(nodeId)
+                .map(kr.ac.pusan.pickle.inventory.Node::getPublicId).orElse(null));
         if (storedDisplayName != null) {
             // Records the seeded display name's provenance (initializeDisplayName
             // itself does not audit — this entry is the audit trail). The stored

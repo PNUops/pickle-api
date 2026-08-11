@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -51,12 +52,13 @@ public class RequestService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final OrgRepository orgRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final NotificationService notificationService;
 
     public RequestService(RequestRepository requestRepository, RequestAssembler assembler,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
-            AuditService auditService, NotificationService notificationService) {
+            AuditService auditService, AuditIds auditIds, NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.handlers = handlers.stream()
@@ -65,6 +67,7 @@ public class RequestService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.orgRepository = orgRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.notificationService = notificationService;
     }
 
@@ -112,8 +115,8 @@ public class RequestService {
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", form.type().name());
-        auditArgs.put("workspaceId", workspace.getId());
-        auditArgs.put("orgId", org.getId());
+        auditArgs.put("workspaceId", workspace.getPublicId());
+        auditArgs.put("orgId", org.getPublicId());
         auditArgs.putAll(handler.submitAuditArgs(saved));
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "request", saved.getPublicId(), auditArgs, ip);
@@ -191,7 +194,8 @@ public class RequestService {
         }
         request.setStatus(RequestStatus.CANCELED);
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CANCEL,
-                "request", request.getPublicId(), Map.of("workspaceId", request.getWorkspaceId()), ip);
+                "request", request.getPublicId(),
+                Map.of("workspaceId", auditIds.workspace(request.getWorkspaceId())), ip);
         return assembler.toDetail(request);
     }
 

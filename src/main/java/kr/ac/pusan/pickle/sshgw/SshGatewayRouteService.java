@@ -242,7 +242,7 @@ public class SshGatewayRouteService {
     private static final class Context {
         private final RouteRequest request;
         private final String gatewayPeer;
-        private Long identifiedKeyId;
+        private java.util.UUID identifiedKeyPublicId;
 
         Context(RouteRequest request, String gatewayPeer) {
             this.request = request;
@@ -266,7 +266,7 @@ public class SshGatewayRouteService {
         }
 
         void identify(UserSshKey key) {
-            this.identifiedKeyId = key.getId();
+            this.identifiedKeyPublicId = key.getPublicId();
         }
 
         Map<String, Object> detail(String reason) {
@@ -280,8 +280,8 @@ public class SshGatewayRouteService {
             if (request.publicKeyFingerprint() != null && !request.publicKeyFingerprint().isBlank()) {
                 detail.put("fingerprint", request.publicKeyFingerprint());
             }
-            if (identifiedKeyId != null) {
-                detail.put("keyId", identifiedKeyId);
+            if (identifiedKeyPublicId != null) {
+                detail.put("keyId", identifiedKeyPublicId);
             }
             if (request.connectionId() != null && !request.connectionId().isBlank()) {
                 detail.put("connectionId", request.connectionId());

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.sshgw.dto.SessionRequest;
 import kr.ac.pusan.pickle.sshkey.UserSshKey;
@@ -61,12 +62,15 @@ public class SshGatewaySessionService {
     private final VmRepository vmRepository;
     private final UserSshKeyRepository sshKeyRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
 
     public SshGatewaySessionService(VmRepository vmRepository,
-            UserSshKeyRepository sshKeyRepository, AuditService auditService) {
+            UserSshKeyRepository sshKeyRepository, AuditService auditService,
+            AuditIds auditIds) {
         this.vmRepository = vmRepository;
         this.sshKeyRepository = sshKeyRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
     }
 
     /**
@@ -94,15 +98,15 @@ public class SshGatewaySessionService {
                 if (owners.size() == 1) {
                     // Sound attribution: the signer is one of these keys, all one owner.
                     actorId = owners.iterator().next();
-                    detail.put("userId", actorId);
+                    detail.put("userId", auditIds.user(actorId));
                     detail.put("fingerprints", fingerprintsOf(resolved));
-                    detail.put("keyIds", keyIdsOf(resolved));
+                    detail.put("keyIds", auditIds.sshKeys(keyIdsOf(resolved)));
                     bumpLastUsed(resolved);
                 } else if (owners.size() >= 2) {
                     // Framing vector: candidates span owners; the plugin can't prove the
                     // signer, so attribute to no one.
                     detail.put("ambiguous", true);
-                    detail.put("candidateUserIds", new ArrayList<>(owners));
+                    detail.put("candidateUserIds", auditIds.users(owners));
                     detail.put("fingerprints", fingerprintsOf(resolved));
                 } else {
                     // Zero resolve — all keys revoked mid-connection. Best-effort miss.

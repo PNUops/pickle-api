@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -72,6 +73,7 @@ public class PortForwardingService {
     private final IpAddressResolver ipAddressResolver;
     private final VmEventRepository vmEventRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -82,7 +84,7 @@ public class PortForwardingService {
             PortMappingRepository portMappingRepository, RelayGenerations relayGenerations,
             SettingsService settingsService, RateLimitService rateLimitService,
             IpAddressResolver ipAddressResolver, VmEventRepository vmEventRepository,
-            AuditService auditService, NotificationService notificationService,
+            AuditService auditService, AuditIds auditIds, NotificationService notificationService,
             JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
@@ -94,6 +96,7 @@ public class PortForwardingService {
         this.ipAddressResolver = ipAddressResolver;
         this.vmEventRepository = vmEventRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.notificationService = notificationService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -150,7 +153,7 @@ public class PortForwardingService {
                 request.proto() + " 공개 포트 할당 → 대상 포트 " + request.targetPort()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_PORT_FORWARD_CREATE, "vm", vm.getPublicId(),
-                Map.of("mappingId", mappingId, "relayId", relay.getId(),
+                Map.of("mappingId", auditIds.portMapping(mappingId), "relayId", relay.getPublicId(),
                         "proto", request.proto().name(), "targetPort", request.targetPort()), ip);
         return toView(portMappingRepository.findById(mappingId).orElseThrow());
     }
@@ -171,7 +174,7 @@ public class PortForwardingService {
                 mapping.getProto() + " " + mapping.getPublicPort() + " 공개 해제"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_PORT_FORWARD_DELETE, "vm", vm.getPublicId(),
-                Map.of("mappingId", mapping.getId(), "relayId", mapping.getRelayId(),
+                Map.of("mappingId", mapping.getPublicId(), "relayId", auditIds.relay(mapping.getRelayId()),
                         "proto", mapping.getProto().name(),
                         "publicPort", mapping.getPublicPort()), ip);
         return new MessageResponse("포트 포워딩 삭제를 접수했습니다. 잠시 후 릴레이에서 제거됩니다.");
