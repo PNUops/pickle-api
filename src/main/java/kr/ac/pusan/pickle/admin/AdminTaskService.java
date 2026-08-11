@@ -8,6 +8,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.AdminTaskResponse;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -58,11 +59,13 @@ public class AdminTaskService {
     private final DeleteVmJob deleteVmJob;
     private final JobScheduler jobScheduler;
     private final AuditService auditService;
+    private final AuditIds auditIds;
 
     public AdminTaskService(ProvisioningTaskRepository taskRepository, VmRepository vmRepository,
             OrgRepository orgRepository, WorkspaceRepository workspaceRepository,
             ProvisioningService provisioningService,
-            DeleteVmJob deleteVmJob, JobScheduler jobScheduler, AuditService auditService) {
+            DeleteVmJob deleteVmJob, JobScheduler jobScheduler, AuditService auditService,
+            AuditIds auditIds) {
         this.taskRepository = taskRepository;
         this.vmRepository = vmRepository;
         this.orgRepository = orgRepository;
@@ -71,6 +74,7 @@ public class AdminTaskService {
         this.deleteVmJob = deleteVmJob;
         this.jobScheduler = jobScheduler;
         this.auditService = auditService;
+        this.auditIds = auditIds;
     }
 
     /**
@@ -149,7 +153,7 @@ public class AdminTaskService {
         });
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.TASK_RETRY,
                 "provisioning_task", task.getPublicId(),
-                Map.of("vmId", vmId, "kind", task.getKind().name()), ip);
+                Map.of("vmId", auditIds.vm(vmId), "kind", task.getKind().name()), ip);
         return new MessageResponse("작업 재시도를 접수했습니다. 잠시 후 작업 상태가 갱신됩니다.");
     }
 

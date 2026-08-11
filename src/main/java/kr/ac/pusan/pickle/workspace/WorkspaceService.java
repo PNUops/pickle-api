@@ -6,6 +6,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.AccessGranteeType;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -50,12 +51,13 @@ public class WorkspaceService {
     private final UserRepository userRepository;
     private final RequestRepository requestRepository;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final List<ResourceTypeAdapter> resourceAdapters;
 
     public WorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
-            RequestRepository requestRepository, AuditService auditService,
+            RequestRepository requestRepository, AuditService auditService, AuditIds auditIds,
             NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters) {
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -63,6 +65,7 @@ public class WorkspaceService {
         this.userRepository = userRepository;
         this.requestRepository = requestRepository;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.notificationService = notificationService;
         this.resourceAdapters = resourceAdapters;
     }
@@ -166,7 +169,8 @@ public class WorkspaceService {
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_ADD,
                 "workspace", workspace.getPublicId(),
-                Map.of("userId", target.getId(), "email", target.getEmail(), "role", member.getRole().name()), ip);
+                Map.of("userId", target.getPublicId(), "email", target.getEmail(),
+                        "role", member.getRole().name()), ip);
         return WorkspaceMemberResponse.from(member, target);
     }
 
@@ -202,7 +206,7 @@ public class WorkspaceService {
         User targetUser = userRepository.findById(targetUserId).orElseThrow(WorkspaceService::memberNotFound);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_UPDATE,
                 "workspace", workspace.getPublicId(),
-                Map.of("userId", targetUserId, "previousRole", previousRole.name(),
+                Map.of("userId", targetUser.getPublicId(), "previousRole", previousRole.name(),
                         "role", target.getRole().name()), ip);
         return WorkspaceMemberResponse.from(target, targetUser);
     }
@@ -238,7 +242,7 @@ public class WorkspaceService {
         int revokedGrants = revokeGrantsOnWorkspaceResources(workspaceId, targetUserId);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_REMOVE,
                 "workspace", workspace.getPublicId(),
-                Map.of("userId", targetUserId, "previousRole", target.getRole().name(),
+                Map.of("userId", auditIds.user(targetUserId), "previousRole", target.getRole().name(),
                         "selfLeave", selfLeave, "revokedGrants", revokedGrants), ip);
     }
 
@@ -301,7 +305,7 @@ public class WorkspaceService {
             locked.setStatus(RequestStatus.CANCELED);
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.REQUEST_CANCEL, "request", locked.getPublicId(),
-                    Map.of("workspaceId", workspaceId, "reason", "workspace_deleted"), ip);
+                    Map.of("workspaceId", workspace.getPublicId(), "reason", "workspace_deleted"), ip);
         }
 
         // Counted after the request rows are locked, not before: an approval

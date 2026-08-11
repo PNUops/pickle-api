@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.audit;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.UUID;
@@ -128,6 +129,39 @@ class AuditReadApiTest {
                 .andExpect(jsonPath("$.totalElements").value(0));
         // 401 unauthenticated
         mockMvc.perform(get("/api/v1/me/activity")).andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * The row's own number never leaves the server. Both audit responses type
+     * {@code id} as an opaque rendering key, which is exactly why nothing
+     * objected while it carried the sequential {@code audit_logs.id} — and a
+     * user reading their own activity twice could read the platform's total
+     * audit volume and its growth rate off it.
+     */
+    @Test
+    void auditRowsAreIdentifiedByTheirPublicIdNotTheRowNumber() throws Exception {
+        String action = "test." + runTag + ".vmdel";
+        Long rowNumber = jdbcTemplate.queryForObject(
+                "select id from audit_logs where action = ? and actor_id = ?",
+                Long.class, action, self.getId());
+        UUID publicId = jdbcTemplate.queryForObject(
+                "select public_id from audit_logs where id = ?", UUID.class, rowNumber);
+
+        // the user's own history
+        mockMvc.perform(get("/api/v1/me/activity?action=" + action)
+                        .header("Authorization", "Bearer " + selfToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(publicId.toString()))
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(not(String.valueOf(rowNumber))));
+        // and the same row through the admin view
+        mockMvc.perform(get("/api/v1/admin/audit?action=" + action
+                        + "&actorEmail=aud.self@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(publicId.toString()))
+                .andExpect(jsonPath("$.content[0].id")
+                        .value(not(String.valueOf(rowNumber))));
     }
 
     @Test

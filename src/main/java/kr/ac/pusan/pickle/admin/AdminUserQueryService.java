@@ -166,19 +166,21 @@ public class AdminUserQueryService {
                 memberships, activeVmCount, statusChanges);
     }
 
-    /** Resolves each transition's actor email in one batch. */
+    /** Resolves each transition's actor in one batch: id, email and name. */
     private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes) {
         List<Long> actorIds = changes.stream().map(UserStatusChange::getActorId)
                 .filter(id -> id != null).distinct().toList();
-        List<User> actors = userRepository.findAllById(actorIds);
-        Map<Long, String> emails = actors.stream()
-                .collect(Collectors.toMap(User::getId, User::getEmail));
-        Map<Long, UUID> publicIds = actors.stream()
-                .collect(Collectors.toMap(User::getId, User::getPublicId));
+        Map<Long, User> actors = userRepository.findAllById(actorIds).stream()
+                .collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
         return changes.stream()
-                .map(change -> new UserStatusChangeResponse(change.getFromStatus(), change.getToStatus(),
-                        publicIds.get(change.getActorId()), emails.get(change.getActorId()),
-                        change.getReason(), change.getChangedAt()))
+                .map(change -> {
+                    User actor = actors.get(change.getActorId());
+                    return new UserStatusChangeResponse(change.getFromStatus(), change.getToStatus(),
+                            actor == null ? null : actor.getPublicId(),
+                            actor == null ? null : actor.getEmail(),
+                            actor == null ? null : actor.getName(),
+                            change.getReason(), change.getChangedAt());
+                })
                 .toList();
     }
 

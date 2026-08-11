@@ -25,6 +25,9 @@ public record AdminPortMappingResponse(
         @Nullable
         @Schema(description = "정지한 관리자 id (자동 정지면 null)")
         UUID suspendedBy,
+        @Nullable
+        @Schema(description = "정지한 관리자 이름 (자동 정지면 null)")
+        String suspendedByName,
         PortForwardApplyState applyState,
         @Nullable
         @Schema(description = "동시 연결 상한 오버라이드 (null = 에이전트 기본, 0 = 해제)")
@@ -42,5 +45,8 @@ public record AdminPortMappingResponse(
         @Schema(description = "출발지별 버스트 오버라이드")
         Integer perSourceBurst,
         @Nullable UUID createdBy,
+        @Nullable
+        @Schema(description = "매핑을 만든 관리자 이름")
+        String createdByName,
         Instant createdAt) {
 }

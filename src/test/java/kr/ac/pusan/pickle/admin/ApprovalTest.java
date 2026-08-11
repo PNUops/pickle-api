@@ -687,13 +687,13 @@ class ApprovalTest {
         vm.put("reqMemoryMb", flavor.getMemoryMb());
         vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
-        if (displayName != null) {
-            body.put("displayName", displayName);
-        }
         body.put("type", "VM");
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", pub("orgs", orgId));
         body.put("purpose", "승인 흐름 테스트");
+        // Every request carries a name. Callers whose subject is the name pass
+        // their own; the rest take this one so the body is valid.
+        body.put("displayName", displayName != null ? displayName : "승인 테스트 서버");
         body.put("vm", vm);
         String response = postJson("/api/v1/requests", token, body)
                 .andExpect(status().isCreated())

@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.VmAccessService;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.campusip.dto.AdminCampusIpRequestView;
 import kr.ac.pusan.pickle.campusip.dto.CampusIpRequestView;
@@ -69,13 +70,14 @@ public class CampusIpRequestService {
     private final kr.ac.pusan.pickle.orgs.OrgRepository orgRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final ObjectMapper objectMapper;
 
     public CampusIpRequestService(CampusIpRequestRepository requestRepository,
             VmRepository vmRepository, VmAccessService vmAccessService,
             UserRepository userRepository, kr.ac.pusan.pickle.orgs.OrgRepository orgRepository,
             NotificationService notificationService,
-            AuditService auditService, ObjectMapper objectMapper) {
+            AuditService auditService, AuditIds auditIds, ObjectMapper objectMapper) {
         this.requestRepository = requestRepository;
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
@@ -83,6 +85,7 @@ public class CampusIpRequestService {
         this.orgRepository = orgRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.objectMapper = objectMapper;
     }
 
@@ -123,7 +126,7 @@ public class CampusIpRequestService {
                 null);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.CAMPUS_IP_REQUEST, "campus_ip_request", created.getPublicId(),
-                Map.of("vmId", vmId, "ports", ports), ip);
+                Map.of("vmId", vm.getPublicId(), "ports", ports), ip);
         return toView(created, vm.getPublicId(), Map.of(actor.id(), actor.publicId()));
     }
 
@@ -144,7 +147,7 @@ public class CampusIpRequestService {
         requestRepository.delete(request);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.CAMPUS_IP_CANCEL, "campus_ip_request", request.getPublicId(),
-                Map.of("vmId", vmId), ip);
+                Map.of("vmId", vm.getPublicId()), ip);
     }
 
     // ── admin ops ────────────────────────────────────────────────────────────
@@ -216,7 +219,7 @@ public class CampusIpRequestService {
                 notificationArgs(request, vm), null);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.CAMPUS_IP_STATUS_UPDATE, "campus_ip_request", request.getPublicId(),
-                Map.of("vmId", request.getVmId(), "from", from.name(), "to", to.name()), ip);
+                Map.of("vmId", auditIds.vm(request.getVmId()), "from", from.name(), "to", to.name()), ip);
         User requester = userRepository.findById(request.getRequestedBy()).orElse(null);
         Map<Long, UUID> userIds = userPublicIds(List.of(request));
         return new AdminCampusIpRequestView(request.getPublicId(),

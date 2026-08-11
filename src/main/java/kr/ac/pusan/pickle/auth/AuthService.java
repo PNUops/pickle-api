@@ -316,7 +316,7 @@ public class AuthService {
             // Theft signal: reuse of a rotated token revokes the whole chain.
             refreshTokenService.revokeChainFrom(current.getId());
             auditService.record(current.getUserId(), null, AuditService.AUTH_REFRESH_REUSE_DETECTED,
-                    "refresh_token", null, Map.of("refreshTokenId", current.getId()), ip);
+                    "refresh_token", null, Map.of(), ip);
             throw refreshTokenInvalid();
         }
         if (current.isExpired(Instant.now())) {
@@ -337,7 +337,7 @@ public class AuthService {
                     // Lost a race with another rotation of the same token: reuse.
                     refreshTokenService.revokeChainFrom(current.getId());
                     auditService.record(current.getUserId(), null, AuditService.AUTH_REFRESH_REUSE_DETECTED,
-                            "refresh_token", null, Map.of("refreshTokenId", current.getId()), ip);
+                            "refresh_token", null, Map.of(), ip);
                     return refreshTokenInvalid();
                 });
         return new AuthResult(
@@ -353,7 +353,7 @@ public class AuthService {
         refreshTokenService.findByRawToken(rawToken).ifPresent(token -> {
             refreshTokenService.revoke(token.getId());
             auditService.record(token.getUserId(), null, AuditService.AUTH_LOGOUT,
-                    "refresh_token", null, Map.of("refreshTokenId", token.getId()), ip);
+                    "refresh_token", null, Map.of(), ip);
         });
     }
 

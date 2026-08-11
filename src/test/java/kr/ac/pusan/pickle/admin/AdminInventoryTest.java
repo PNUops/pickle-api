@@ -184,6 +184,7 @@ class AdminInventoryTest {
                         .content("""
                                 {"type": "VM", "workspaceId": "%s", "orgId": "%s",
                                  "purpose": "은퇴 OS 이미지 거부 확인",
+                                 "displayName": "은퇴 이미지 확인",
                                  "vm": {"imageId": "%s", "flavorId": "%s", "reqVcpu": 2,
                                         "reqMemoryMb": 2048, "reqDiskGb": 20}}
                                 """.formatted(pub("workspaces", workspaceId), pub("orgs", orgId),

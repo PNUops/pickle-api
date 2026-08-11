@@ -44,9 +44,11 @@ public record CreateRequestRequest(
 
         @Nullable LocalDate reqEndDate,
 
-        // 선택 입력 — 리소스 표시명을 신청 단계에서 지정.
-        @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
-        @Nullable String displayName,
+        // 신청하는 리소스의 이름. 종류를 가리지 않고 필수이며, 이 신청을 가리키는
+        // 응답은 어디서나 식별자 옆에 이 이름을 함께 싣는다.
+        @NotBlank(message = "리소스 이름을 입력해 주세요.")
+        @Size(max = 100, message = "리소스 이름은 100자 이하여야 합니다.")
+        String displayName,
 
         /** Required when {@code type} is VM, ignored otherwise. */
         @Valid @Nullable CreateVmRequestSpec vm) {

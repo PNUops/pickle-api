@@ -146,8 +146,19 @@ public class AdminService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
-                        "orgId", user.getOrgId() == null ? "null" : String.valueOf(user.getOrgId())), ip);
+                        "orgId", orgPublicIdOrNull(user.getOrgId())), ip);
         return UserSummaryResponse.from(user);
+    }
+
+    /**
+     * The organisation the account now belongs to, named publicly. Map.of
+     * refuses a null value, so an account under no organisation keeps the
+     * literal {@code "null"} this field has always carried there.
+     */
+    private String orgPublicIdOrNull(Long orgId) {
+        return orgId == null ? "null"
+                : orgRepository.findById(orgId).map(org -> org.getPublicId().toString())
+                        .orElse("null");
     }
 
     private static String normalize(String description) {

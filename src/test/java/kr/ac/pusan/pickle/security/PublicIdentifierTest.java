@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -98,6 +101,48 @@ class PublicIdentifierTest {
                         .header("Authorization", "Bearer " + ownerToken))
                 .andReturn().getResponse().getContentAsString();
         assertThat(body).doesNotContain("\"id\":" + vmId);
+    }
+
+    /**
+     * The audit {@code detail} is free-form jsonb, so nothing about it is typed
+     * and no compiler notices when a call site puts a row number in one. It is
+     * also the one payload an ordinary user reads about themselves, through
+     * {@code /me/activity}. This walks every audit row the suite has written and
+     * asserts the property directly: under a key that names an identifier, the
+     * value is never a number.
+     */
+    @Test
+    void noAuditDetailNamesSomethingByItsRowNumber() throws Exception {
+        // an audited action whose detail carries an id-shaped key, so the sweep
+        // below can never pass by having nothing to look at
+        mockMvc.perform(post("/api/v1/workspaces/"
+                        + SeedFixtures.publicId(jdbcTemplate, "workspaces", workspaceId) + "/members")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .header("X-Reauth-Token", ReauthTestSupport.seededReauthFor(
+                                jdbcTemplate, jwtService, ownerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\": \"" + outsider.getEmail() + "\", \"role\": \"MEMBER\"}"))
+                .andExpect(status().isCreated());
+
+        Long inspected = jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs a, lateral jsonb_each(a.detail) kv
+                 where a.detail is not null and (kv.key like '%Id' or kv.key like '%Ids')
+                """, Long.class);
+        assertThat(inspected).isPositive();
+
+        List<String> numeric = jdbcTemplate.queryForList("""
+                select a.action || '.' || kv.key || ' = ' || kv.value::text
+                  from audit_logs a, lateral jsonb_each(a.detail) kv
+                 where a.detail is not null
+                   and (kv.key like '%Id' or kv.key like '%Ids')
+                   and (jsonb_typeof(kv.value) = 'number'
+                        or (jsonb_typeof(kv.value) = 'array'
+                            and exists (select 1 from jsonb_array_elements(kv.value) e
+                                         where jsonb_typeof(e) = 'number')))
+                """, String.class);
+        assertThat(numeric)
+                .as("audit detail entries naming something by its row number")
+                .isEmpty();
     }
 
     @Test
@@ -190,8 +235,9 @@ class PublicIdentifierTest {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long requestId = jdbcTemplate.queryForObject("""
-                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose)
-                values ('VM', ?, ?, ?, '공개 식별자 확인')
+                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose,
+                                      display_name)
+                values ('VM', ?, ?, ?, '공개 식별자 확인', '공개 식별자 확인')
                 returning id
                 """, Long.class, owningWorkspaceId, orgId, owner.getId());
         String unique = hostname + "-" + Instant.now().toEpochMilli();

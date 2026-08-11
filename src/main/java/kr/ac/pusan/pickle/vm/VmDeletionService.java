@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.access.VmAccess;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.admin.dto.ForceDeleteVmRequest;
 import kr.ac.pusan.pickle.admin.dto.ScheduleVmDeletionRequest;
+import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -86,6 +87,7 @@ public class VmDeletionService {
     private final JobScheduler jobScheduler;
     private final DeleteVmJob deleteVmJob;
     private final AuditService auditService;
+    private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
@@ -95,7 +97,7 @@ public class VmDeletionService {
     public VmDeletionService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository, VmAccessService vmAccessService,
             UserRepository userRepository, VmEventRepository vmEventRepository,
             SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
-            DeleteVmJob deleteVmJob, AuditService auditService,
+            DeleteVmJob deleteVmJob, AuditService auditService, AuditIds auditIds,
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
             PublishingTeardownService publishingTeardown,
@@ -110,6 +112,7 @@ public class VmDeletionService {
         this.jobScheduler = jobScheduler;
         this.deleteVmJob = deleteVmJob;
         this.auditService = auditService;
+        this.auditIds = auditIds;
         this.notificationService = notificationService;
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
@@ -141,8 +144,8 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
-                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "workspaceId", vm.getWorkspaceId(), "scheduledFor", scheduledFor.toString()), ip);
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
+                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "scheduledFor", scheduledFor.toString()), ip);
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
@@ -178,8 +181,8 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
                 "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
-                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "workspaceId", vm.getWorkspaceId(), "immediate", true), ip);
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
+                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "immediate", true), ip);
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.publicId(), null, false);
     }
 
@@ -211,8 +214,8 @@ public class VmDeletionService {
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
                 "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
-                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "workspaceId", vm.getWorkspaceId(),
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
+                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_SCHEDULED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "reason", reason,
@@ -256,8 +259,8 @@ public class VmDeletionService {
                         : "관리자 삭제 취소"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vm.getPublicId(),
-                Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "workspaceId", vm.getWorkspaceId(), "canceledKind", vm.getDeleteKind().name()), ip);
+                Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
+                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "canceledKind", vm.getDeleteKind().name()), ip);
         notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
         return new MessageResponse("삭제가 취소되었습니다.");
@@ -303,8 +306,8 @@ public class VmDeletionService {
                 overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
-                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", vm.getOrgId(),
-                        "workspaceId", vm.getWorkspaceId(), "overrodeProtection", overrodeProtection), ip);
+                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
+                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
         notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);

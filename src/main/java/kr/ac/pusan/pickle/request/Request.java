@@ -69,8 +69,13 @@ public class Request {
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;
 
-    /** Requester-chosen name for the resource; seeds its settings at approval. */
-    @Column(name = "display_name")
+    /**
+     * Requester-chosen name for the resource; seeds its settings at approval.
+     * Required on every request, whatever the resource type — a reference to
+     * this request is reported by name as well as by public id, and a UUID on
+     * its own cannot be read, remembered or spoken.
+     */
+    @Column(name = "display_name", nullable = false)
     private String displayName;
 
     @Enumerated(EnumType.STRING)

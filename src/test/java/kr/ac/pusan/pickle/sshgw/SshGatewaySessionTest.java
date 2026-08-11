@@ -120,8 +120,11 @@ class SshGatewaySessionTest {
 
         Map<String, Object> row = latestSession();
         assertThat(row.get("actor_id")).isNull();
+        // the candidates are named publicly: this detail is readable by the very
+        // people it accuses, so it carries their public ids and not row numbers
         assertThat((String) row.get("detail")).contains("ambiguous")
-                .contains(String.valueOf(memberId)).contains(String.valueOf(otherId));
+                .contains(pub("users", memberId).toString())
+                .contains(pub("users", otherId).toString());
         // framing prevention: no last_used_at bump on an ambiguous session
         assertThat(lastUsed(FP_MEMBER)).isNull();
         assertThat(lastUsed(FP_OTHER)).isNull();

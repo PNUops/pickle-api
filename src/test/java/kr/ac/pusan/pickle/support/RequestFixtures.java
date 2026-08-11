@@ -20,11 +20,15 @@ public final class RequestFixtures {
             long requesterId, String purpose, Long imageId, int vcpu, int memoryMb, int diskGb) {
         Long resolvedImageId = imageId != null ? imageId
                 : jdbc.queryForObject("select min(id) from os_images", Long.class);
+        // display_name is mandatory on a request. The purpose stands in for it
+        // here for the same reason the backfill used it: it is what the fixture
+        // already says the request is for, so no test has to invent a name.
         long requestId = jdbc.queryForObject("""
-                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose)
-                values ('VM', ?, ?, ?, ?)
+                insert into requests (resource_type, workspace_id, org_id, requester_id, purpose,
+                                      display_name)
+                values ('VM', ?, ?, ?, ?, left(?, 100))
                 returning id
-                """, Long.class, workspaceId, orgId, requesterId, purpose);
+                """, Long.class, workspaceId, orgId, requesterId, purpose, purpose);
         jdbc.update("""
                 insert into vm_request_details (request_id, image_id, req_vcpu, req_memory_mb, req_disk_gb)
                 values (?, ?, ?, ?, ?)

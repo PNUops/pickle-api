@@ -114,7 +114,9 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public Map<String, Object> submitAuditArgs(Request request) {
         VmRequestDetail detail = detail(request);
-        return Map.of("imageId", detail.getImageId(), "reqVcpu", detail.getReqVcpu(),
+        return Map.of("imageId", imageRepository.findById(detail.getImageId())
+                        .map(OsImage::getPublicId).orElse(null),
+                "reqVcpu", detail.getReqVcpu(),
                 "reqMemoryMb", detail.getReqMemoryMb(), "reqDiskGb", detail.getReqDiskGb());
     }
 
@@ -192,19 +194,20 @@ public class VmRequestSupport implements RequestTypeHandler {
         // vm_settings row; audited via the request.approve entry. The seeder
         // sanitizes, so it returns what was actually stored (null when the name
         // collapsed to nothing and no row was written).
-        String storedDisplayName = request.getDisplayName() != null
-                ? vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
-                        request.getRequesterId())
-                : null;
+        // Every request carries a name, so there is always one to seed; the
+        // seeder still answers null when sanitizing leaves nothing behind.
+        String storedDisplayName = vmSettingsService.initializeDisplayName(vm.getId(),
+                request.getDisplayName(), request.getRequesterId());
 
         long vmId = vm.getId();
         Map<String, Object> auditArgs = new LinkedHashMap<>();
-        auditArgs.put("vmId", vmId);
+        auditArgs.put("vmId", vm.getPublicId());
         auditArgs.put("hostname", hostname);
         auditArgs.put("grantedVcpu", spec.grantedVcpu());
         auditArgs.put("grantedMemoryMb", spec.grantedMemoryMb());
         auditArgs.put("grantedDiskGb", spec.grantedDiskGb());
-        auditArgs.put("nodeId", nodeId);
+        auditArgs.put("nodeId", nodeRepository.findById(nodeId)
+                .map(kr.ac.pusan.pickle.inventory.Node::getPublicId).orElse(null));
         if (storedDisplayName != null) {
             // Records the seeded display name's provenance (initializeDisplayName
             // itself does not audit — this entry is the audit trail). The stored

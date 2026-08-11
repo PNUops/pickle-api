@@ -229,7 +229,7 @@ public class TerminalService {
         // detail carries lifecycle metadata ONLY — never frame/keystroke content.
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("sessionId", sessionId);
-        detail.put("vmId", s.vmId());
+        detail.put("vmId", vmPublicId(s.vmId()));
         detail.put("clientIp", clientIp);
         auditService.record(s.userId(), roleName(s.userRole()), AuditService.TERMINAL_SESSION_START,
                 "vm", vmPublicId(s.vmId()), detail, clientIp);
@@ -250,7 +250,7 @@ public class TerminalService {
         // detail carries counts/reasons ONLY — never frame/keystroke content.
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("sessionId", request.sessionId());
-        detail.put("vmId", s.vmId());
+        detail.put("vmId", vmPublicId(s.vmId()));
         detail.put("reason", request.reason());
         detail.put("durationSeconds", request.durationSeconds());
         detail.put("bytesIn", request.bytesIn());
@@ -341,7 +341,7 @@ public class TerminalService {
         if (known.isPresent()) {
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("sessionId", sessionId);
-            detail.put("vmId", known.get().vmId());
+            detail.put("vmId", vmPublicId(known.get().vmId()));
             auditService.record(actor.id(), actor.role().name(),
                     AuditService.TERMINAL_FORCE_TERMINATE, "vm", vmPublicId(known.get().vmId()),
                     detail, ip);
