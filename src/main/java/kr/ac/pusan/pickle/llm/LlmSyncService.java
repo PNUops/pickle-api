@@ -83,6 +83,15 @@ public class LlmSyncService {
      */
     private static final String DOCUMENT_SQL = """
             select s.generation, s.service_enabled,
+                   (select coalesce(json_agg(json_build_object(
+                              'publicName', m.public_name,
+                              'upstreamRef', m.upstream_ref,
+                              'upstreamModel', m.upstream_model,
+                              'fallbackRef', m.fallback_ref,
+                              'visibility', m.visibility,
+                              'maxInputTokens', m.max_input_tokens,
+                              'maxOutputTokens', m.max_output_tokens)), '[]'::json)
+                      from llm_models m where m.enabled) as models,
                    k.public_id, k.token_hash, k.status::text as status, k.expires_at,
                    k.rpm, k.tpm, k.concurrency, k.record_bodies
               from llm_gateway_state s
@@ -214,10 +223,19 @@ public class LlmSyncService {
         return jdbcTemplate.query(DOCUMENT_SQL, rs -> {
             long generation = 0;
             boolean serviceEnabled = true;
+            List<LlmSyncResponse.ModelEntry> models = List.of();
             List<LlmSyncResponse.KeyEntry> keys = new ArrayList<>();
             while (rs.next()) {
                 generation = rs.getLong("generation");
                 serviceEnabled = rs.getBoolean("service_enabled");
+                // Aggregated in the same statement rather than read separately:
+                // the whole point of one statement is that the generation and
+                // everything the document says cannot come from two different
+                // moments. Identical on every row of the key join, so it is
+                // parsed once.
+                if (models.isEmpty()) {
+                    models = parseModels(rs.getString("models"));
+                }
                 UUID publicId = rs.getObject("public_id", UUID.class);
                 if (publicId == null) {
                     continue; // left-join row of a state with no servable key
@@ -254,8 +272,26 @@ public class LlmSyncService {
             // "unchanged"). Serving it alongside keys keeps the
             // both-or-neither rule intact.
             return new LlmSyncResponse.Document(DOCUMENT_FORMAT, generation, serviceEnabled,
-                    List.of(), List.copyOf(keys));
+                    models, List.copyOf(keys));
         });
+    }
+
+    /**
+     * The aggregated model rows. An empty array is a real state the gateway
+     * applies ("this deployment serves nothing"), distinct from the member
+     * being absent, which means unchanged — so a parse failure must not
+     * silently become one: it throws, the poll fails, and the gateway keeps
+     * its last good document rather than being told everything is gone.
+     */
+    private List<LlmSyncResponse.ModelEntry> parseModels(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return List.of(objectMapper.readValue(json, LlmSyncResponse.ModelEntry[].class));
+        } catch (Exception e) {
+            throw new IllegalStateException("unreadable model catalogue", e);
+        }
     }
 
     private static LlmSyncResponse.KeyLimits limits(Integer rpm, Integer tpm,
