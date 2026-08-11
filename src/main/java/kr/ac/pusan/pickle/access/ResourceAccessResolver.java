@@ -1,6 +1,15 @@
 package kr.ac.pusan.pickle.access;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
@@ -24,11 +33,13 @@ public class ResourceAccessResolver {
 
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
+    private final UserRepository userRepository;
 
     public ResourceAccessResolver(WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository) {
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository) {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
+        this.userRepository = userRepository;
     }
 
     /** Standing of one user on one resource of the workspace that owns it. */
@@ -41,6 +52,56 @@ public class ResourceAccessResolver {
                 .orElse(null);
         return new ResourceStanding(grantedRole(type, resourceId, userId, membership != null),
                 membership != null, membership == WorkspaceMemberRole.OWNER);
+    }
+
+    /**
+     * Which of these resources the requester may see in full, and who to ask
+     * about the rest — one list view's worth of masking decisions.
+     *
+     * @param reachable  the resources some grant opens for them
+     * @param ownerNames per resource, the names of its owners: who a member
+     *                   without a grant asks for one
+     */
+    public record ListAccess(Set<Long> reachable, Map<Long, List<String>> ownerNames) {
+    }
+
+    /**
+     * The batch form of {@link #standing} that list views run on: one grant
+     * query for a whole page instead of one per row, reduced to the only two
+     * answers a list needs. It lives here for the same reason {@code standing}
+     * does — reachability is the access rule, and a second copy of it per
+     * resource type would be a second policy within a release or two.
+     *
+     * <p>Membership of the owning workspace is deliberately not re-checked per
+     * row: every caller builds its page from the requester's own workspace
+     * memberships, so each row already is a resource of a workspace they are in.
+     */
+    @Transactional(readOnly = true)
+    public ListAccess listAccess(ResourceType type, List<Long> resourceIds, long userId) {
+        if (resourceIds.isEmpty()) {
+            return new ListAccess(Set.of(), Map.of());
+        }
+        List<ResourceAccessGrant> grants =
+                grantRepository.findByResourceTypeAndResourceIdIn(type, resourceIds);
+        Set<Long> reachable = new HashSet<>();
+        Map<Long, List<Long>> ownerIds = new LinkedHashMap<>();
+        for (ResourceAccessGrant grant : grants) {
+            if (grant.getGranteeType() == AccessGranteeType.WORKSPACE
+                    || Long.valueOf(userId).equals(grant.getUserId())) {
+                reachable.add(grant.getResourceId());
+            }
+            if (grant.getRole() == ResourceRole.OWNER && grant.getUserId() != null) {
+                ownerIds.computeIfAbsent(grant.getResourceId(), key -> new ArrayList<>())
+                        .add(grant.getUserId());
+            }
+        }
+        Map<Long, String> names = userRepository.findAllById(ownerIds.values().stream()
+                        .flatMap(List::stream).distinct().toList()).stream()
+                .collect(Collectors.toMap(User::getId, User::getName));
+        Map<Long, List<String>> ownerNames = new LinkedHashMap<>();
+        ownerIds.forEach((resourceId, ids) -> ownerNames.put(resourceId, ids.stream()
+                .map(names::get).filter(Objects::nonNull).toList()));
+        return new ListAccess(reachable, ownerNames);
     }
 
     /**
