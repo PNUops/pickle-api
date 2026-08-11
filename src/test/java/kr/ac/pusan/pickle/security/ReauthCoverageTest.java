@@ -43,6 +43,11 @@ class ReauthCoverageTest {
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
             "POST /admin/relays/{relayId}/token",
+            // Minting or replacing a key's secret hands somebody a working
+            // credential, and revoking takes one away; both step up the way
+            // reading a VM password does.
+            "POST /llm-keys/{keyId}/token",
+            "POST /llm-keys/{keyId}/revoke",
             "DELETE /vms/{vmId}",
             "GET /vms/{vmId}/password",
             "POST /vms/{vmId}/password/regenerate",

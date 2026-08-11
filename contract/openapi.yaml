@@ -869,6 +869,39 @@ components:
       - "orgHeadroom"
       - "workspace"
       type: "object"
+    ApproveLlmKeyRequestSpec:
+      properties:
+        grantedConcurrency:
+          description: "부여 동시 요청 수. 비우면 서비스 기본값이 적용됩니다."
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        grantedDailyTokens:
+          description: "부여 일일 토큰 수. 비우면 서비스 기본값이 적용됩니다."
+          format: "int64"
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        grantedRpm:
+          description: "부여 분당 요청 수. 비우면 서비스 기본값이 적용됩니다."
+          format: "int32"
+          maximum: 10000
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        grantedTpm:
+          description: "부여 분당 토큰 수. 비우면 서비스 기본값이 적용됩니다."
+          format: "int32"
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+      type: "object"
     ApproveRequestRequest:
       properties:
         comment:
@@ -887,6 +920,10 @@ components:
           type:
           - "string"
           - "null"
+        llmKey:
+          anyOf:
+          - $ref: "#/components/schemas/ApproveLlmKeyRequestSpec"
+          - type: "null"
         vm:
           anyOf:
           - $ref: "#/components/schemas/ApproveVmRequestSpec"
@@ -1247,6 +1284,38 @@ components:
       - "ports"
       - "purpose"
       type: "object"
+    CreateLlmKeyRequestSpec:
+      properties:
+        reqDailyTokens:
+          description: "희망 일일 토큰 수. 비우면 서비스 기본값을 받습니다."
+          format: "int64"
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        reqRpm:
+          description: "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다."
+          format: "int32"
+          maximum: 10000
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        reqTpm:
+          description: "희망 분당 토큰 수. 비우면 서비스 기본값을 받습니다."
+          format: "int32"
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        usagePlan:
+          description: "이 Key를 어디에 쓸지. 기본 한도로 충분하면 비워 두어도 됩니다."
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      type: "object"
     CreateOrgRequest:
       properties:
         description:
@@ -1295,6 +1364,10 @@ components:
           type:
           - "string"
           - "null"
+        llmKey:
+          anyOf:
+          - $ref: "#/components/schemas/CreateLlmKeyRequestSpec"
+          - type: "null"
         orgId:
           format: "uuid"
           type: "string"
@@ -1821,6 +1894,30 @@ components:
       - "id"
       - "name"
       type: "object"
+    IssuedLlmKeyResponse:
+      properties:
+        expiresAt:
+          description: "만료 시각. 없으면 만료되지 않습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          description: "키 식별자"
+          format: "uuid"
+          type: "string"
+        name:
+          description: "키 이름"
+          type: "string"
+        token:
+          description: "발급된 API Key 평문. **이 응답에서만 볼 수 있습니다** — 서버에는 해시만 저장되며 다시 조회\
+            할 수 없습니다. 분실하면 재발급해야 합니다."
+          type: "string"
+      required:
+      - "id"
+      - "name"
+      - "token"
+      type: "object"
     LiveCoverage:
       properties:
         memoryMeasuredNodeCount:
@@ -1839,6 +1936,189 @@ components:
       - "memoryMeasuredNodeCount"
       - "nodeCount"
       - "storageMeasuredNodeCount"
+      type: "object"
+    LlmApiKeyStatus:
+      enum:
+      - "PENDING"
+      - "ACTIVE"
+      - "SUSPENDED"
+      - "REVOKED"
+      - "EXPIRED"
+      type: "string"
+    LlmKeyDetailResponse:
+      properties:
+        accessManageAllowed:
+          description: "접근 권한 목록을 관리할 수 있는지"
+          type: "boolean"
+        concurrency:
+          description: "동시 요청 한도. null이면 게이트웨이 기본값을 따릅니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        expiresAt:
+          description: "만료 시각. null이면 만료가 없습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        lastUsedAt:
+          description: "마지막 사용 시각. 게이트웨이가 배치로 보고하므로 지연될 수 있습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        myResourceRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+          description: "요청자가 이 키의 접근 목록에서 받은 등급"
+        name:
+          description: "키 이름"
+          type: "string"
+        purpose:
+          description: "용도"
+          type:
+          - "string"
+          - "null"
+        recordBodies:
+          description: "프롬프트·응답 본문 기록 여부"
+          type: "boolean"
+        revokedAt:
+          description: "회수된 시각. 회수되지 않았으면 null입니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        rpm:
+          description: "분당 요청 한도. null이면 게이트웨이 기본값을 따릅니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        tokenPrefix:
+          description: "평문 앞부분 — 두 키를 구별하기 위한 값입니다. 아직 발급 전이면 null입니다."
+          type:
+          - "string"
+          - "null"
+        tpm:
+          description: "분당 토큰 한도. null이면 게이트웨이 기본값을 따릅니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        workspaceId:
+          description: "소유 워크스페이스. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type: "string"
+      required:
+      - "accessManageAllowed"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "recordBodies"
+      - "status"
+      - "workspaceName"
+      type: "object"
+    LlmKeySummaryResponse:
+      properties:
+        accessLimited:
+          description: "true면 이 키의 접근 권한이 없어 이름·상태·소유자만 표시됩니다."
+          type: "boolean"
+        accessManageAllowed:
+          description: "접근 권한이 없어도 접근 권한 목록을 관리할 수 있는지. 워크스페이스 소유자가 참입니다."
+          type: "boolean"
+        concurrency:
+          description: "동시 요청 한도. null이면 게이트웨이 기본값을 따릅니다. 접근 권한이 없으면 생략됩니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        expiresAt:
+          description: "만료 시각. null이면 만료가 없습니다. 접근 권한이 없으면 생략됩니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        lastUsedAt:
+          description: "마지막 사용 시각. 게이트웨이가 배치로 보고하므로 지연될 수 있습니다. 접근 권한이 없으면 생략됩니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        name:
+          description: "키 이름"
+          type: "string"
+        ownerNames:
+          description: "이 키의 소유자 이름. 접근을 요청할 상대입니다."
+          items:
+            type: "string"
+          type: "array"
+        purpose:
+          description: "용도. 접근 권한이 없으면 생략됩니다."
+          type:
+          - "string"
+          - "null"
+        recordBodies:
+          description: "프롬프트·응답 본문 기록 여부. 접근 권한이 없으면 생략됩니다."
+          type:
+          - "boolean"
+          - "null"
+        rpm:
+          description: "분당 요청 한도. null이면 게이트웨이 기본값을 따릅니다. 접근 권한이 없으면 생략됩니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        tokenPrefix:
+          description: "평문 앞부분 — 목록에서 두 키를 구별하기 위한 값입니다. 접근 권한이 없거나 아직 발급 전이면 생략됩니\
+            다."
+          type:
+          - "string"
+          - "null"
+        tpm:
+          description: "분당 토큰 한도. null이면 게이트웨이 기본값을 따릅니다. 접근 권한이 없으면 생략됩니다."
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        workspaceId:
+          description: "소유 워크스페이스. 행이 사라진 경우에만 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type: "string"
+      required:
+      - "accessLimited"
+      - "accessManageAllowed"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "ownerNames"
+      - "status"
+      - "workspaceName"
       type: "object"
     LoginRequest:
       properties:
@@ -2664,6 +2944,31 @@ components:
         content:
           items:
             $ref: "#/components/schemas/IpAllocationResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseLlmKeySummaryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/LlmKeySummaryResponse"
           type: "array"
         page:
           format: "int32"
@@ -3880,6 +4185,29 @@ components:
         port:
           format: "int32"
           type: "integer"
+      type: "object"
+    UpdateLlmKeyRequest:
+      properties:
+        name:
+          description: "키 이름. 생략하면 그대로 둡니다."
+          maxLength: 100
+          minLength: 1
+          type:
+          - "string"
+          - "null"
+        purpose:
+          description: "사용 목적. 생략하면 그대로 둡니다."
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        recordBodies:
+          description: "요청·응답 본문 기록 여부. 기본값은 꺼짐이며, 켜면 이 키로 보낸 프롬프트와 응답이 수집됩니다. 생략하\
+            면 그대로 둡니다."
+          type:
+          - "boolean"
+          - "null"
       type: "object"
     UpdateNodeStatusRequest:
       properties:
@@ -7663,6 +7991,350 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
+  /llm-keys:
+    get:
+      description: "내가 속한 워크스페이스의 키를 보여 줍니다. 접근 권한이 없는 키는 이름·상태·소유자만 담긴 제한된 행으로 표시\
+        됩니다."
+      operationId: "listLlmKeys"
+      parameters:
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseLlmKeySummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 목록"
+      tags:
+      - "llm-keys"
+  /llm-keys/{keyId}:
+    get:
+      description: "접근 권한이 있는 키의 상세입니다. 키 평문과 그 해시는 어떤 응답에도 담기지 않습니다."
+      operationId: "getLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LlmKeyDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 상세"
+      tags:
+      - "llm-keys"
+    patch:
+      description: "키 이름과 사용 목적, 본문 기록 여부를 바꿉니다. 생략한 항목은 그대로 둡니다."
+      operationId: "updateLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLlmKeyRequest"
+        required: true
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 수정"
+      tags:
+      - "llm-keys"
+  /llm-keys/{keyId}/access:
+    get:
+      description: "이 키의 접근 권한 전체와, 그 목록이 어느 키의 것인지 알려 주는 최소 정보입니다. 키 소유자와 워크스페이스\
+        \ 소유자만 볼 수 있습니다."
+      operationId: "listLlmKeyAccessGrants"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessListResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 목록"
+      tags:
+      - "llm-key-access"
+    post:
+      description: "지정한 사용자 또는 소유 워크스페이스 전체에 이 키의 접근 권한을 부여합니다. 사용자는 이 키를 소유한 워크스페\
+        이스의 구성원이어야 하고, 워크스페이스 전체에는 참여자·열람자까지만 부여할 수 있습니다."
+      operationId: "addLlmKeyAccessGrant"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddResourceAccessGrantRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 부여"
+      tags:
+      - "llm-key-access"
+  /llm-keys/{keyId}/access/{grantId}:
+    delete:
+      description: "회수해도 발급 시 이미 확인한 키 평문은 회수되지 않습니다. 필요하면 키를 재발급해 주세요."
+      operationId: "removeLlmKeyAccessGrant"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 회수"
+      tags:
+      - "llm-key-access"
+    patch:
+      operationId: "updateLlmKeyAccessGrant"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResourceAccessGrantRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 등급 변경"
+      tags:
+      - "llm-key-access"
+  /llm-keys/{keyId}/revoke:
+    post:
+      description: "이 키를 폐기합니다. 게이트웨이에는 폴링 주기 안에 반영되고, 이후 이 키로 보낸 요청은 '폐기된 키'로 거부됩\
+        니다. 사용 기록은 남습니다."
+      operationId: "revokeLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 폐기"
+      tags:
+      - "llm-keys"
+  /llm-keys/{keyId}/token:
+    post:
+      description: "이 키의 평문을 만들어 **한 번만** 돌려줍니다. 서버에는 해시만 남으므로 다시 조회할 수 없고, 분실하면 이\
+        \ 호출을 다시 해서 재발급해야 합니다. 재발급하면 이전 값은 곧바로 쓸 수 없게 됩니다."
+      operationId: "issueLlmKeyToken"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/IssuedLlmKeyResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "LLM API 키 발급"
+      tags:
+      - "llm-keys"
   /me:
     get:
       operationId: "me"
@@ -9586,3 +10258,8 @@ servers:
 tags:
 - description: "VM 접근 권한 — 이 VM에 누가 접근할 수 있는지를 정합니다."
   name: "vm-access"
+- description: "LLM API 키 접근 권한 — 이 키에 누가 접근할 수 있는지를 정합니다."
+  name: "llm-key-access"
+- description: "LLM API 키 — 워크스페이스가 보유한 키의 목록과 상세입니다. 키 평문은 발급 시 한 번만 표시되며 여기서는 다시\
+    \ 볼 수 없습니다."
+  name: "llm-keys"
