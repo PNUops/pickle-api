@@ -170,6 +170,7 @@ class ProvisioningEndToEndTest {
                 "workspaceId", pub("workspaces", workspaceId),
                 "orgId", pub("orgs", orgId),
                 "purpose", "종단 검증용 서버",
+                "displayName", "종단 검증 서버",
                 "vm", Map.of(
                         "imageId", pub("os_images", imageId),
                         "flavorId", pub("vm_flavors", flavorId),

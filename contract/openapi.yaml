@@ -1288,9 +1288,7 @@ components:
         displayName:
           maxLength: 100
           minLength: 0
-          type:
-          - "string"
-          - "null"
+          type: "string"
         extraNote:
           maxLength: 2000
           minLength: 0
@@ -1324,6 +1322,7 @@ components:
           format: "uuid"
           type: "string"
       required:
+      - "displayName"
       - "orgId"
       - "purpose"
       - "type"
@@ -3075,9 +3074,7 @@ components:
           format: "date-time"
           type: "string"
         displayName:
-          type:
-          - "string"
-          - "null"
+          type: "string"
         extraNote:
           type:
           - "string"
@@ -3138,6 +3135,7 @@ components:
           type: "string"
       required:
       - "createdAt"
+      - "displayName"
       - "id"
       - "orgName"
       - "purpose"

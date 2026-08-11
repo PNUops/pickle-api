@@ -110,7 +110,7 @@ public class RequestService {
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(), org.getId(),
                 actor.id(), form.purpose().strip(), Texts.blankToNull(form.courseOrProject()),
                 Texts.blankToNull(form.extraNote()), form.reqStartDate(), form.reqEndDate(),
-                Texts.blankToNull(form.displayName())));
+                form.displayName().strip()));
         handler.saveDetail(saved, form);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();

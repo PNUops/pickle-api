@@ -31,7 +31,7 @@ public record RequestDetailResponse(
         @Nullable String extraNote,
         @Nullable LocalDate reqStartDate,
         @Nullable LocalDate reqEndDate,
-        @Nullable String displayName,
+        String displayName,
         RequestStatus status,
         @Nullable RequestReviewResponse review,
         @Nullable VmRequestSpecResponse vm,

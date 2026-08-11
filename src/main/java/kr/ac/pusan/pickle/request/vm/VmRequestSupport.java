@@ -194,10 +194,10 @@ public class VmRequestSupport implements RequestTypeHandler {
         // vm_settings row; audited via the request.approve entry. The seeder
         // sanitizes, so it returns what was actually stored (null when the name
         // collapsed to nothing and no row was written).
-        String storedDisplayName = request.getDisplayName() != null
-                ? vmSettingsService.initializeDisplayName(vm.getId(), request.getDisplayName(),
-                        request.getRequesterId())
-                : null;
+        // Every request carries a name, so there is always one to seed; the
+        // seeder still answers null when sanitizing leaves nothing behind.
+        String storedDisplayName = vmSettingsService.initializeDisplayName(vm.getId(),
+                request.getDisplayName(), request.getRequesterId());
 
         long vmId = vm.getId();
         Map<String, Object> auditArgs = new LinkedHashMap<>();

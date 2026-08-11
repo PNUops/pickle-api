@@ -356,7 +356,7 @@ class RequestTest {
     }
 
     @Test
-    void displayNameIsLengthCappedAndEchoed() throws Exception {
+    void resourceNameIsRequiredLengthCappedAndEchoed() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-dname-x1");
 
         // over 100 chars → 422 (bean validation)
@@ -366,7 +366,7 @@ class RequestTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("displayName"));
 
-        // echoed in the detail; omitted → null
+        // echoed in the detail
         String response = postJson("/api/v1/requests", requesterToken,
                 with(validBody(workspaceId), "displayName", "데이터분석 실습 서버"))
                 .andExpect(status().isCreated())
@@ -378,9 +378,19 @@ class RequestTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("데이터분석 실습 서버"));
 
-        postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.displayName").value((Object) null));
+        // the name is what the resource will be called, so a request cannot be
+        // filed without one — omitted and blank are the same field error
+        Map<String, Object> nameless = validBody(workspaceId);
+        nameless.remove("displayName");
+        postJson("/api/v1/requests", requesterToken, nameless)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("displayName"));
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "displayName", "   "))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("displayName"));
     }
 
     @Test
@@ -562,6 +572,7 @@ class RequestTest {
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", org.getPublicId());
         body.put("purpose", "수업 실습용 서버");
+        body.put("displayName", "실습 서버");
         body.put("vm", vm);
         return body;
     }
