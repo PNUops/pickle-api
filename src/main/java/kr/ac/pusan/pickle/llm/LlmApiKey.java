@@ -53,16 +53,25 @@ public class LlmApiKey {
     @Column
     private @Nullable String purpose;
 
-    @Column(name = "token_hash", nullable = false)
-    private String tokenHash;
+    /**
+     * Null until the owner issues; see {@link LlmApiKeyStatus#PENDING}.
+     *
+     * <p>The column is {@code char(64)}, and Hibernate validates the schema at
+     * startup: without the explicit CHAR mapping it expects varchar, the
+     * mismatch fails validation, and the whole application context refuses to
+     * build. {@code Relay.tokenHash} carries the same pair for the same reason.
+     */
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "token_hash", length = 64)
+    private @Nullable String tokenHash;
 
-    @Column(name = "token_prefix", nullable = false)
-    private String tokenPrefix;
+    @Column(name = "token_prefix")
+    private @Nullable String tokenPrefix;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false)
-    private LlmApiKeyStatus status = LlmApiKeyStatus.ACTIVE;
+    private LlmApiKeyStatus status = LlmApiKeyStatus.PENDING;
 
     @Column(name = "expires_at")
     private @Nullable Instant expiresAt;
@@ -98,18 +107,16 @@ public class LlmApiKey {
     protected LlmApiKey() {
     }
 
+    /** A key an approval created. The secret is minted later, by its owner. */
     public LlmApiKey(long workspaceId, long orgId, long requestId, String name,
-            @Nullable String purpose, String tokenHash, String tokenPrefix,
-            @Nullable Instant expiresAt, @Nullable Integer rpm, @Nullable Integer tpm,
-            @Nullable Integer concurrency, long createdBy) {
+            @Nullable String purpose, @Nullable Instant expiresAt, @Nullable Integer rpm,
+            @Nullable Integer tpm, @Nullable Integer concurrency, long createdBy) {
         this.publicId = UUID.randomUUID();
         this.workspaceId = workspaceId;
         this.orgId = orgId;
         this.requestId = requestId;
         this.name = name;
         this.purpose = purpose;
-        this.tokenHash = tokenHash;
-        this.tokenPrefix = tokenPrefix;
         this.expiresAt = expiresAt;
         this.rpm = rpm;
         this.tpm = tpm;
@@ -129,6 +136,25 @@ public class LlmApiKey {
         this.status = LlmApiKeyStatus.REVOKED;
         this.revokedAt = when;
         this.updatedAt = when;
+    }
+
+    /**
+     * Mints or replaces the secret. Rotation is the same operation as the first
+     * issue: the old hash is gone the moment this returns, which is what makes
+     * "the old value stops working immediately" true rather than aspirational.
+     */
+    public void issue(String tokenHash, String tokenPrefix, Instant when) {
+        this.tokenHash = tokenHash;
+        this.tokenPrefix = tokenPrefix;
+        if (status == LlmApiKeyStatus.PENDING) {
+            this.status = LlmApiKeyStatus.ACTIVE;
+        }
+        this.updatedAt = when;
+    }
+
+    /** Whether a secret exists for this key at all. */
+    public boolean isIssued() {
+        return tokenHash != null;
     }
 
     public void rename(String name, @Nullable String purpose, Instant when) {
@@ -170,7 +196,7 @@ public class LlmApiKey {
         return purpose;
     }
 
-    public String getTokenPrefix() {
+    public @Nullable String getTokenPrefix() {
         return tokenPrefix;
     }
 

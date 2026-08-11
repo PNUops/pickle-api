@@ -4,7 +4,11 @@
 -- Schema only. Which models the service offers is state an operator maintains,
 -- so the catalogue rows are seeded by the ops tooling and never from here.
 
-create type llm_api_key_status as enum ('ACTIVE', 'SUSPENDED', 'REVOKED', 'EXPIRED');
+-- PENDING is the state between approval and issue. The approver decides that
+-- somebody may have a key; only its owner may ever see the secret, and the
+-- approver is not in the room when they do. So approval creates the key and its
+-- access list, and the owner mints the plaintext themselves -- once.
+create type llm_api_key_status as enum ('PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED', 'EXPIRED');
 
 -- What this kind of request asks for, and what the reviewer granted of it. The
 -- granted period stays on request_reviews: every resource type has one.
@@ -34,11 +38,15 @@ create table llm_api_keys (
     -- The plaintext is shown once at issue and stored nowhere: this is the hex
     -- sha256 of the whole bearer token, which is also what the gateway computes
     -- from what a student presents. Losing it means reissuing, by design.
-    token_hash    char(64) not null,
+    --
+    -- Null until the owner issues. A key with no hash authenticates nothing, so
+    -- it is simply absent from the document the gateway polls -- there is no
+    -- state to publish about a secret that does not exist yet.
+    token_hash    char(64),
     -- The first characters of the plaintext, so a list can tell two keys apart
     -- without holding anything that authenticates.
-    token_prefix  text   not null,
-    status        llm_api_key_status not null default 'ACTIVE',
+    token_prefix  text,
+    status        llm_api_key_status not null default 'PENDING',
     expires_at    timestamptz,
     -- Reported by the gateway with the usage it ships, so it lags by a batch.
     last_used_at  timestamptz,
@@ -58,13 +66,15 @@ create table llm_api_keys (
 
 create unique index llm_api_keys_public_id_key on llm_api_keys (public_id);
 -- The lookup the gateway's document is built from, and the guard against
--- issuing the same secret twice.
-create unique index llm_api_keys_token_hash_key on llm_api_keys (token_hash);
+-- issuing the same secret twice. Partial: keys awaiting issue have no hash,
+-- and several of them at once is the ordinary state.
+create unique index llm_api_keys_token_hash_key on llm_api_keys (token_hash)
+    where token_hash is not null;
 create index llm_api_keys_workspace_idx on llm_api_keys (workspace_id, status);
 create index llm_api_keys_org_idx on llm_api_keys (org_id);
 
 comment on column llm_api_keys.token_hash is
-    '평문의 hex sha256. 평문은 발급 시 한 번만 표시하고 저장하지 않는다.';
+    '평문의 hex sha256. 평문은 발급 시 한 번만 표시하고 저장하지 않는다. 발급 전에는 null.';
 
 -- One usage record per request the gateway served.
 --
