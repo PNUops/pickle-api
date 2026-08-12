@@ -39,25 +39,25 @@ operations:
   - { id: reverify,            method: POST,   path: "/auth/reverify",               roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: requestPasswordReset, method: POST,   path: "/auth/password-reset",                roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: confirmPasswordReset, method: POST,   path: "/auth/password-reset/confirm",        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
-  - { id: completeMfaLogin,     method: POST,   path: "/auth/mfa",                           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
-  - { id: getSystemStatus,      method: GET,    path: "/meta/status",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
-  - { id: listTermsVersions,    method: GET,    path: "/meta/terms",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
-  - { id: getTermsDocument,     method: GET,    path: "/meta/terms/{docType}",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: completeMfa,     method: POST,   path: "/auth/mfa",                           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: systemStatus,      method: GET,    path: "/meta/status",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: listTerms,    method: GET,    path: "/meta/terms",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: getTerms,     method: GET,    path: "/meta/terms/{docType}",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
 
   # ── 3.2 Me / self (any authenticated) ─────────────────────────────────────
-  - { id: getMe,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: me,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: listMySshKeys,               method: GET,    path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: registerMySshKey,            method: POST,   path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: generateMySshKey,            method: POST,   path: "/me/ssh-keys/generate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: deleteMySshKey,              method: DELETE, path: "/me/ssh-keys/{keyId}",         roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: downloadMySshKeyPrivateKey,  method: GET,    path: "/me/ssh-keys/{keyId}/private-key", roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: changeMyPassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: withdrawMyAccount,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: beginMfaTotpSetup,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: activateMfaTotp,             method: POST,   path: "/me/mfa/totp/activate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: disableMyMfa,                method: POST,   path: "/me/mfa/disable",              roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: regenerateMfaRecoveryCodes,  method: POST,   path: "/me/mfa/recovery-codes",       roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listKeys,               method: GET,    path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: registerKey,            method: POST,   path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: generateKey,            method: POST,   path: "/me/ssh-keys/generate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: deleteKey,              method: DELETE, path: "/me/ssh-keys/{keyId}",         roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: downloadPrivateKey,  method: GET,    path: "/me/ssh-keys/{keyId}/private-key", roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: changePassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: withdraw,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: begin,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: activate,             method: POST,   path: "/me/mfa/totp/activate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: disable,                method: POST,   path: "/me/mfa/disable",              roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: regenerateRecoveryCodes,  method: POST,   path: "/me/mfa/recovery-codes",       roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyConsents,              method: GET,    path: "/me/consents",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: acceptConsents,              method: POST,   path: "/me/consents",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
@@ -65,7 +65,7 @@ operations:
   - { id: listOrgs,             method: GET,    path: "/orgs",                        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listOsImages,        method: GET,    path: "/os-images",                   roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listVmFlavors,        method: GET,    path: "/vm-flavors",                  roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getRequestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: requestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.4 Workspaces (workspace-role-scoped, service level) ─────────────────────────
   - { id: listWorkspaces,           method: GET,    path: "/workspaces",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
@@ -153,9 +153,9 @@ operations:
   - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createOrg,            method: POST,   path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateOrg,            method: PATCH,  path: "/admin/orgs/{orgId}",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
-  - { id: updateUserRole,       method: PATCH,  path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
-  - { id: listAdminUsers,       method: GET,    path: "/admin/users",                      roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: getAdminUser,         method: GET,    path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateUser,       method: PATCH,  path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listUsers,       method: GET,    path: "/admin/users",                      roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getUser,         method: GET,    path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: disableUser,          method: POST,   path: "/admin/users/{userId}/disable",     roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: enableUser,           method: POST,   path: "/admin/users/{userId}/enable",      roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: resetUserMfa,         method: POST,   path: "/admin/users/{userId}/mfa-reset",   roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

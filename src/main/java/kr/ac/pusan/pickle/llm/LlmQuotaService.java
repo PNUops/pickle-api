@@ -13,8 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Daily token quotas (internal contract Link 5): <b>the api decides, the
- * gateway refuses.</b>
+ * Daily token quotas: <b>this service decides, the gateway refuses.</b>
  *
  * <p>Short-window limits — rpm, tpm, concurrency — belong to the gateway,
  * which observes the start and end of every request. A day's running total
