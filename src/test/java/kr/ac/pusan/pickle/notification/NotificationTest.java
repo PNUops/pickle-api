@@ -75,6 +75,14 @@ class NotificationTest {
         // isolate the inbox assertions from rows other tests fan out
         jdbcTemplate.update("delete from notifications where user_id in (?, ?)",
                 alice.getId(), bob.getId());
+        // ...and clear the queue ahead of them. The dispatcher takes the hundred
+        // oldest due rows, so once other classes have left that many pending,
+        // this class's own row never gets claimed and the dispatch assertions
+        // fail for a reason that has nothing to do with dispatching. Retiring
+        // them is safe: no test asserts on another class's pending rows.
+        jdbcTemplate.update(
+                "update notifications set status = 'SENT', sent_at = now()"
+                        + " where status = 'PENDING'");
     }
 
     @Test

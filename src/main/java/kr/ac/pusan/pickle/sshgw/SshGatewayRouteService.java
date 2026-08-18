@@ -16,8 +16,8 @@ import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.sshgw.dto.RouteRequest;
 import kr.ac.pusan.pickle.sshgw.dto.RouteResponse;
-import kr.ac.pusan.pickle.sshkey.UserSshKey;
-import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
+import kr.ac.pusan.pickle.sshkey.VmSshKey;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -70,7 +70,7 @@ public class SshGatewayRouteService {
     private final AuditService auditService;
     private final RateLimitService rateLimitService;
     private final SshGatewayProperties properties;
-    private final UserSshKeyRepository sshKeyRepository;
+    private final VmSshKeyRepository sshKeyRepository;
     private final UserRepository userRepository;
     private final VmAccessService vmAccessService;
     private final VmSettingsService vmSettingsService;
@@ -78,7 +78,7 @@ public class SshGatewayRouteService {
     public SshGatewayRouteService(VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             SettingsService settingsService, AuditService auditService,
             RateLimitService rateLimitService, SshGatewayProperties properties,
-            UserSshKeyRepository sshKeyRepository, UserRepository userRepository,
+            VmSshKeyRepository sshKeyRepository, UserRepository userRepository,
             VmAccessService vmAccessService, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.ipAddressResolver = ipAddressResolver;
@@ -154,13 +154,20 @@ public class SshGatewayRouteService {
         // 5) Identity: publickey (fingerprint → key → member) or password opt-in.
         //    Identification fills detail's keyId but never an audit actor here.
         if (RouteRequest.AUTH_PUBLICKEY.equals(ctx.authMethod())) {
-            Optional<UserSshKey> key = ctx.fingerprint() == null || ctx.fingerprint().isBlank()
+            Optional<VmSshKey> key = ctx.fingerprint() == null || ctx.fingerprint().isBlank()
                     ? Optional.empty()
                     : sshKeyRepository.findByFingerprintSha256(ctx.fingerprint());
             if (key.isEmpty()) {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
             ctx.identify(key.get());
+            // A key issued for another VM must be indistinguishable from a key
+            // nobody holds. Giving it its own code would turn this endpoint into
+            // a cross-VM probe: offer a stolen public key at every slug and the
+            // one that answers differently names the VM it belongs to.
+            if (!vm.getId().equals(key.get().getVmId())) {
+                return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
+            }
             // The owner must still be ACTIVE (a disabled/withdrawn account loses
             // gateway access immediately). Reuse the least-leaky "unknown key"
             // code so a suspended owner is indistinguishable from an unregistered
@@ -171,6 +178,8 @@ public class SshGatewayRouteService {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_UNKNOWN));
             }
             // VIEWER and non-members are denied identically (one code, no oracle).
+            // Reaching this line already means the key was issued for this VM, so
+            // the code now only says "the grant that key was issued under is gone".
             if (!vmAccessService.of(vm, key.get().getUserId()).atLeast(ResourceRole.MEMBER)) {
                 return deny(ctx, vm.getId(), RouteOutcome.forbidden(ErrorCodes.SSHGW_KEY_NOT_MEMBER));
             }
@@ -265,7 +274,7 @@ public class SshGatewayRouteService {
             return request.publicKeyFingerprint();
         }
 
-        void identify(UserSshKey key) {
+        void identify(VmSshKey key) {
             this.identifiedKeyPublicId = key.getPublicId();
         }
 

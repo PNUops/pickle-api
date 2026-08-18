@@ -9,6 +9,7 @@ import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -182,6 +183,15 @@ class VmAccessScopingTest {
                     ResourceRole.MEMBER),
             reauthOp("revealVmPassword", HttpMethod.GET, "/vms/{vmId}/password",
                     ResourceRole.MEMBER, null),
+            op("getVmSshKey", HttpMethod.GET, "/vms/{vmId}/ssh-key", ResourceRole.MEMBER),
+            reauthOp("issueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key",
+                    ResourceRole.MEMBER, null),
+            reauthOp("reissueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key/reissue",
+                    ResourceRole.MEMBER, null),
+            reauthOp("downloadVmSshKey", HttpMethod.GET, "/vms/{vmId}/ssh-key/private-key",
+                    ResourceRole.MEMBER, null),
+            reauthOp("deleteVmSshKey", HttpMethod.DELETE, "/vms/{vmId}/ssh-key",
+                    ResourceRole.MEMBER, null),
 
             op("getVmSettings", HttpMethod.GET, "/vms/{vmId}/settings", ResourceRole.EDITOR),
             reauthOp("updateVmSettings", HttpMethod.PATCH, "/vms/{vmId}/settings",
@@ -251,6 +261,8 @@ class VmAccessScopingTest {
     private UserRepository userRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private CredentialCipher credentialCipher;
 
     private User workspaceOwner;
     private User member;
@@ -403,8 +415,20 @@ class VmAccessScopingTest {
         return rungs[role.ordinal() + 1];
     }
 
+    /**
+     * The key operations that need one already issued to the caller. Without it
+     * they answer 404 for a reason of their own, and this harness reads 404 as
+     * "the VM was masked from you" — the same shape the fixture's domain and
+     * port-mapping rows exist to avoid.
+     */
+    private static final Set<String> NEEDS_ISSUED_KEY_OPS =
+            Set.of("reissueVmSshKey", "downloadVmSshKey", "deleteVmSshKey");
+
     private MockHttpServletResponse call(ScopedOp scopedOp, Fixture fixture, Requester requester)
             throws Exception {
+        if (NEEDS_ISSUED_KEY_OPS.contains(scopedOp.id())) {
+            issueKeyFor(fixture.vmId(), requester.userId());
+        }
         URI uri = URI.create("/api/v1" + resolve(scopedOp.path(), fixture));
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders
                 .request(scopedOp.method(), uri)
@@ -418,6 +442,24 @@ class VmAccessScopingTest {
                     .content(resolve(scopedOp.body(), fixture));
         }
         return mockMvc.perform(request).andReturn().getResponse();
+    }
+
+    /**
+     * Issues the caller's key straight through SQL. The stored value is real
+     * ciphertext rather than a placeholder because the download op decrypts it,
+     * and a value it cannot open turns an authorization test into a 500.
+     */
+    private void issueKeyFor(long vmId, long userId) {
+        jdbcTemplate.update("""
+                insert into vm_ssh_keys (vm_id, user_id, public_key, fingerprint_sha256,
+                                         private_key_enc)
+                values (?, ?, 'ssh-ed25519 AAAA', ?, ?)
+                on conflict (vm_id, user_id) do nothing
+                """, vmId, userId, "SHA256:scope-" + UUID.randomUUID(),
+                // Encrypted so the download op has something it can open. The
+                // plaintext is not PEM-shaped because nothing here parses it and
+                // the commit hook blocks a stored key envelope outright.
+                credentialCipher.encrypt("scope-fixture-private-key"));
     }
 
     /** Fills the fixture's ids into a path or body template. */

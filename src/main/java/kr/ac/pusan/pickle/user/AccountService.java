@@ -18,7 +18,7 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
-import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.springframework.http.HttpStatus;
@@ -40,7 +40,7 @@ public class AccountService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final VmRepository vmRepository;
-    private final UserSshKeyRepository userSshKeyRepository;
+    private final VmSshKeyRepository vmSshKeyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final RateLimitService rateLimitService;
@@ -51,7 +51,7 @@ public class AccountService {
     public AccountService(UserRepository userRepository, PasswordEncoder passwordEncoder,
             WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, VmRepository vmRepository,
-            UserSshKeyRepository userSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
+            VmSshKeyRepository vmSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             RateLimitService rateLimitService, AuditService auditService,
             NotificationService notificationService, MfaService mfaService) {
@@ -60,7 +60,7 @@ public class AccountService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.vmRepository = vmRepository;
-        this.userSshKeyRepository = userSshKeyRepository;
+        this.vmSshKeyRepository = vmSshKeyRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.rateLimitService = rateLimitService;
@@ -111,7 +111,7 @@ public class AccountService {
         user.bumpTokenVersion();
 
         refreshTokenRepository.deleteByUserId(user.getId());
-        userSshKeyRepository.deleteByUserId(user.getId());
+        vmSshKeyRepository.deleteByUserId(user.getId());
         personalWorkspace(liveMemberships).ifPresent(workspace -> workspace.softDelete(user.getId(), now));
         workspaceMemberRepository.deleteByUserId(user.getId());
         // Grants only ever name a member of the owning workspace, so they go

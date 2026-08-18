@@ -30,6 +30,7 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
 import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
 import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.User;
@@ -92,6 +93,7 @@ public class VmDeletionService {
     private final ProvisioningTaskRepository provisioningTaskRepository;
     private final PublishingTeardownService publishingTeardown;
     private final PortMappingTeardownService portMappingTeardown;
+    private final VmSshKeyRepository vmSshKeyRepository;
     private final VmSettingsService vmSettingsService;
 
     public VmDeletionService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository, VmAccessService vmAccessService,
@@ -101,7 +103,8 @@ public class VmDeletionService {
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
             PublishingTeardownService publishingTeardown,
-            PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService) {
+            PortMappingTeardownService portMappingTeardown,
+            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -117,6 +120,7 @@ public class VmDeletionService {
         this.provisioningTaskRepository = provisioningTaskRepository;
         this.publishingTeardown = publishingTeardown;
         this.portMappingTeardown = portMappingTeardown;
+        this.vmSshKeyRepository = vmSshKeyRepository;
         this.vmSettingsService = vmSettingsService;
     }
 
@@ -172,6 +176,7 @@ public class VmDeletionService {
         // quarantine, and a leftover DNAT would deliver public traffic to the
         // next tenant's VM).
         portMappingTeardown.deleteMappingsForVm(vmId);
+        vmSshKeyRepository.deleteByVmId(vmId);
         if (vm.getIpAllocationId() != null
                 && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
             vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);

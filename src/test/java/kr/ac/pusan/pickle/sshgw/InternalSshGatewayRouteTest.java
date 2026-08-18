@@ -97,8 +97,6 @@ class InternalSshGatewayRouteTest {
         strangerId = ensureUser("sshgw.stranger@pusan.ac.kr", "비구성원");
         workspaceId = createWorkspace();
         addMember(workspaceId, memberId, "MEMBER");
-        registerKey(memberId, FP_MEMBER);
-        registerKey(strangerId, FP_STRANGER);
     }
 
     @Test
@@ -120,7 +118,7 @@ class InternalSshGatewayRouteTest {
                 "select count(*) from audit_logs where action = 'sshgw.route' and target_id = ?",
                 Long.class, pub("vms", vmId).toString())).isZero();
         assertThat(jdbcTemplate.queryForObject(
-                "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
+                "select last_used_at from vm_ssh_keys where fingerprint_sha256 = ?",
                 Instant.class, FP_MEMBER)).isNull();
     }
 
@@ -173,6 +171,77 @@ class InternalSshGatewayRouteTest {
         assertThat((String) row.get("detail")).contains(FP_STRANGER);
     }
 
+    /**
+     * A key issued for another VM must be refused exactly like a key nobody
+     * holds. Answering differently would turn this endpoint into a cross-VM
+     * probe: offer a stolen public key at every slug and the one that answers
+     * differently names the VM the key belongs to.
+     */
+    @Test
+    void keyIssuedForAnotherVmIsRefusedAsUnknown() throws Exception {
+        String otherSlug = uniqueSlug();
+        long otherVmId = createVm(otherSlug, VmStatus.RUNNING, "172.29.4.70", false, HOST_KEY);
+        String otherVmKey = "SHA256:keyThatBelongsToAnotherVmForRouteTestsDD";
+        // One key per person per VM, so the standing fixture key has to give up
+        // its slot before this VM can hold a differently-named one.
+        jdbcTemplate.update("delete from vm_ssh_keys where vm_id = ? and user_id = ?",
+                otherVmId, memberId);
+        registerKey(otherVmId, memberId, otherVmKey);
+
+        String slug = uniqueSlug();
+        createVm(slug, VmStatus.RUNNING, "172.29.4.71", false, HOST_KEY);
+
+        // Same owner, same workspace, MEMBER on both — only the VM differs.
+        publickey(slug, CLIENT_IP, SSHGW_IP, otherVmKey)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_UNKNOWN"));
+
+        Map<String, Object> row = latestDenied();
+        assertThat(row.get("actor_id")).isNull();
+
+        // ...and it still works where it was issued.
+        publickey(otherSlug, OTHER_CLIENT_IP, SSHGW_IP, otherVmKey).andExpect(status().isOk());
+    }
+
+    /**
+     * The VM-membership check compares two boxed ids, and a boxed comparison
+     * that happens to work is the kind that works only for small numbers: Long
+     * caches -128..127 and hands back the same instance, so a reference
+     * comparison succeeds there and nowhere else. A fresh test database starts
+     * its ids at 1, which is exactly the range that hides the fault, so this
+     * pushes the VM sequence past the cache first.
+     *
+     * <p>The load-bearing half is the <b>accept</b>: a reference comparison
+     * above the cache refuses a key at the very VM it was issued for, which
+     * reads as "unknown key" and locks every member out. The refusal at the
+     * other VM is asserted alongside so the case cannot pass by denying
+     * everything.</p>
+     */
+    @Test
+    void vmMembershipCheckHoldsForVmIdsAboveTheBoxedCache() throws Exception {
+        // Idempotent: never rewinds the sequence behind rows this class already
+        // inserted, so it cannot collide with an earlier case's VM.
+        jdbcTemplate.queryForObject("""
+                select setval(pg_get_serial_sequence('vms', 'id'),
+                              greatest((select coalesce(max(id), 0) from vms), 5000))
+                """, Long.class);
+
+        String slug = uniqueSlug();
+        long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.80", false, HOST_KEY);
+        assertThat(vmId).isGreaterThan(127L);
+
+        String otherSlug = uniqueSlug();
+        long otherVmId = createVm(otherSlug, VmStatus.RUNNING, "172.29.4.81", false, HOST_KEY);
+        assertThat(otherVmId).isGreaterThan(127L);
+
+        // createVm re-points FP_MEMBER at the VM it just made, so the key under
+        // test is the one issued for otherVmId — offered at both slugs.
+        publickey(otherSlug, CLIENT_IP, SSHGW_IP, FP_MEMBER).andExpect(status().isOk());
+        publickey(slug, OTHER_CLIENT_IP, SSHGW_IP, FP_MEMBER)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.reason").value("SSHGW_KEY_UNKNOWN"));
+    }
+
     @Test
     void suspendedOwnerDeniedAsUnknownKey() throws Exception {
         // A registered key whose owner is a MEMBER but whose account is no longer
@@ -180,9 +249,9 @@ class InternalSshGatewayRouteTest {
         long ownerId = ensureUser("sshgw.suspended@pusan.ac.kr", "정지된소유자");
         addMember(workspaceId, ownerId, "MEMBER");
         String fingerprint = "SHA256:suspendedOwnerFingerprintForRouteTestsCCC";
-        registerKey(ownerId, fingerprint);
         String slug = uniqueSlug();
-        createVm(slug, VmStatus.RUNNING, "172.29.4.60", false, HOST_KEY);
+        long vmId = createVm(slug, VmStatus.RUNNING, "172.29.4.60", false, HOST_KEY);
+        registerKey(vmId, ownerId, fingerprint);
 
         // ACTIVE owner resolves normally
         setUserStatus(ownerId, UserStatus.ACTIVE);
@@ -398,12 +467,23 @@ class InternalSshGatewayRouteTest {
                 status.name(), userId);
     }
 
-    private void registerKey(long userId, String fingerprint) {
+    /**
+     * Issues a key for one VM. The ciphertext is a placeholder: nothing on the
+     * route path decrypts a private key, and the column is NOT NULL now that
+     * every key here is platform-issued.
+     *
+     * <p>Fingerprints are globally unique, so a fixture fingerprint can name only
+     * one VM at a time — the upsert re-points it at the VM under test rather than
+     * failing on the second case that uses it.</p>
+     */
+    private void registerKey(long vmId, long userId, String fingerprint) {
         jdbcTemplate.update("""
-                insert into user_ssh_keys (user_id, name, algorithm, public_key, fingerprint_sha256)
-                values (?, 'route-test', 'ssh-ed25519', 'ssh-ed25519 AAAA', ?)
-                on conflict (fingerprint_sha256) do nothing
-                """, userId, fingerprint);
+                insert into vm_ssh_keys (vm_id, user_id, public_key, fingerprint_sha256,
+                                         private_key_enc)
+                values (?, ?, 'ssh-ed25519 AAAA', ?, 'v1:placeholder:placeholder')
+                on conflict (fingerprint_sha256)
+                    do update set vm_id = excluded.vm_id, user_id = excluded.user_id
+                """, vmId, userId, fingerprint);
     }
 
     private long ensureNode() {
@@ -463,6 +543,10 @@ class InternalSshGatewayRouteTest {
         // owning workspace at MEMBER: every member's key resolves, an outsider's does
         // not — the same split the identity gate used to read off the workspace rung.
         grantVmToOwningWorkspace(jdbcTemplate, vmId, "MEMBER");
+        // Keys belong to a (user, VM) pair now, so the standing fixtures are
+        // issued here rather than once in setUp.
+        registerKey(vmId, memberId, FP_MEMBER);
+        registerKey(vmId, strangerId, FP_STRANGER);
         return vmId;
     }
 

@@ -11,8 +11,8 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.sshgw.dto.SessionRequest;
-import kr.ac.pusan.pickle.sshkey.UserSshKey;
-import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
+import kr.ac.pusan.pickle.sshkey.VmSshKey;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import org.slf4j.Logger;
@@ -60,12 +60,12 @@ public class SshGatewaySessionService {
     private static final String AUTH_PUBLICKEY = "publickey";
 
     private final VmRepository vmRepository;
-    private final UserSshKeyRepository sshKeyRepository;
+    private final VmSshKeyRepository sshKeyRepository;
     private final AuditService auditService;
     private final AuditIds auditIds;
 
     public SshGatewaySessionService(VmRepository vmRepository,
-            UserSshKeyRepository sshKeyRepository, AuditService auditService,
+            VmSshKeyRepository sshKeyRepository, AuditService auditService,
             AuditIds auditIds) {
         this.vmRepository = vmRepository;
         this.sshKeyRepository = sshKeyRepository;
@@ -90,9 +90,16 @@ public class SshGatewaySessionService {
             // password-fallback session is always keyless (actor=null), even if a
             // (victim's) public key was offered earlier on the connection.
             if (AUTH_PUBLICKEY.equals(request.authMethod())) {
-                List<UserSshKey> resolved = resolveCandidates(request.candidateFingerprints());
+                List<VmSshKey> resolved =
+                        resolveCandidates(request.candidateFingerprints(), vmId);
+                if (vmId == null) {
+                    // The VM filter could not run, so an attribution here rests on
+                    // the gateway's word alone. Mark it rather than let it read
+                    // like the checked kind.
+                    detail.put("vmUnresolved", true);
+                }
                 Set<Long> owners = new LinkedHashSet<>();
-                for (UserSshKey key : resolved) {
+                for (VmSshKey key : resolved) {
                     owners.add(key.getUserId());
                 }
                 if (owners.size() == 1) {
@@ -125,8 +132,24 @@ public class SshGatewaySessionService {
         }
     }
 
-    private List<UserSshKey> resolveCandidates(List<String> candidateFingerprints) {
-        List<UserSshKey> resolved = new ArrayList<>();
+    /**
+     * The candidate fingerprints that resolve to a key issued for this VM.
+     *
+     * <p>The gateway only forwards keys the route call accepted, so the VM filter
+     * should be redundant — it is here because this side should not have to trust
+     * that. Narrowing the set does not weaken the distinct-owner rule below: a VM
+     * still holds one key per member, so candidates can still span owners and the
+     * framing vector the rule exists for is untouched.</p>
+     *
+     * <p>When the slug no longer resolves to a VM the filter cannot be evaluated,
+     * so it is skipped rather than dropping every candidate. Otherwise a VM
+     * destroyed mid-connection would cost the session its attribution, which is
+     * exactly the record worth keeping. That one case does trust the gateway,
+     * and it is the easier one to forge a name into, so the audit says so with
+     * {@code vmUnresolved} rather than leaving the reader to notice.</p>
+     */
+    private List<VmSshKey> resolveCandidates(List<String> candidateFingerprints, Long vmId) {
+        List<VmSshKey> resolved = new ArrayList<>();
         if (candidateFingerprints == null) {
             return resolved;
         }
@@ -135,13 +158,15 @@ public class SshGatewaySessionService {
             if (fingerprint == null || fingerprint.isBlank() || !seen.add(fingerprint)) {
                 continue;
             }
-            sshKeyRepository.findByFingerprintSha256(fingerprint).ifPresent(resolved::add);
+            sshKeyRepository.findByFingerprintSha256(fingerprint)
+                    .filter(key -> vmId == null || vmId.equals(key.getVmId()))
+                    .ifPresent(resolved::add);
         }
         return resolved;
     }
 
-    private void bumpLastUsed(List<UserSshKey> keys) {
-        for (UserSshKey key : keys) {
+    private void bumpLastUsed(List<VmSshKey> keys) {
+        for (VmSshKey key : keys) {
             try {
                 sshKeyRepository.touchLastUsedAt(key.getId(), Instant.now());
             } catch (RuntimeException e) {
@@ -163,17 +188,17 @@ public class SshGatewaySessionService {
         return detail;
     }
 
-    private static List<String> fingerprintsOf(List<UserSshKey> keys) {
+    private static List<String> fingerprintsOf(List<VmSshKey> keys) {
         List<String> out = new ArrayList<>(keys.size());
-        for (UserSshKey key : keys) {
+        for (VmSshKey key : keys) {
             out.add(key.getFingerprintSha256());
         }
         return out;
     }
 
-    private static List<Long> keyIdsOf(List<UserSshKey> keys) {
+    private static List<Long> keyIdsOf(List<VmSshKey> keys) {
         List<Long> out = new ArrayList<>(keys.size());
-        for (UserSshKey key : keys) {
+        for (VmSshKey key : keys) {
             out.add(key.getId());
         }
         return out;

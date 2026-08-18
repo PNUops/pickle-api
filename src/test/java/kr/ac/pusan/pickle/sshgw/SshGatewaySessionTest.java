@@ -48,7 +48,6 @@ class SshGatewaySessionTest {
     private static final String HOST_KEY =
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKeyFixtureForSessionTestsAAAAAA";
     private static final String FP_MEMBER = "SHA256:sessionMemberFingerprintAAAAAAAAAAAAAAAAAAA";
-    private static final String FP_MEMBER2 = "SHA256:sessionMemberSecondKeyBBBBBBBBBBBBBBBBBBB";
     private static final String FP_OTHER = "SHA256:sessionOtherOwnerFingerprintCCCCCCCCCCCCC";
 
     @Autowired
@@ -81,31 +80,57 @@ class SshGatewaySessionTest {
         memberId = ensureUser("sshgw.session.member@pusan.ac.kr", "세션멤버");
         otherId = ensureUser("sshgw.session.other@pusan.ac.kr", "다른소유자");
         // Fresh keys each test so a prior test's last_used_at bump does not bleed in.
-        jdbcTemplate.update("delete from user_ssh_keys where user_id in (?, ?)", memberId, otherId);
+        jdbcTemplate.update("delete from vm_ssh_keys where user_id in (?, ?)", memberId, otherId);
         workspaceId = createWorkspace();
         addMember(workspaceId, memberId, "MEMBER");
-        registerKey(memberId, FP_MEMBER);
-        registerKey(memberId, FP_MEMBER2);
-        registerKey(otherId, FP_OTHER);
     }
 
     @Test
-    void oneOwnerAcrossCandidatesGivesVerifiedAttributionAndBumpsAllKeys() throws Exception {
+    void oneOwnerAcrossCandidatesGivesVerifiedAttribution() throws Exception {
         String slug = uniqueSlug();
         long vmId = createVm(slug, "172.29.4.41");
 
-        session(slug, CLIENT_IP, "publickey", List.of(FP_MEMBER, FP_MEMBER2))
+        session(slug, CLIENT_IP, "publickey", List.of(FP_MEMBER))
                 .andExpect(status().isNoContent());
 
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
         assertThat(row.get("target_id")).isEqualTo(pub("vms", vmId).toString());
         assertThat(row.get("ip")).isEqualTo(CLIENT_IP);
-        assertThat((String) row.get("detail")).contains(FP_MEMBER).contains(FP_MEMBER2)
+        assertThat((String) row.get("detail")).contains(FP_MEMBER)
                 .contains("\"userId\"").doesNotContain("ambiguous");
-        // both of that owner's candidate keys are bumped
         assertThat(lastUsed(FP_MEMBER)).isNotNull();
-        assertThat(lastUsed(FP_MEMBER2)).isNotNull();
+    }
+
+    /**
+     * A key issued for another VM never counts as a candidate here, even though
+     * the gateway should not have forwarded it: this side does not take the
+     * gateway's word for which keys the route accepted. Narrowing the set does
+     * not soften the distinct-owner rule below — a VM still holds one key per
+     * member, so candidates can still span owners.
+     */
+    @Test
+    void candidateIssuedForAnotherVmIsIgnored() throws Exception {
+        String otherSlug = uniqueSlug();
+        long otherVmId = createVm(otherSlug, "172.29.4.46");
+        String foreign = "SHA256:sessionForeignVmFingerprintAAAAAAAAAAAAAA";
+        // One key per person per VM, so the standing fixture key gives up its slot.
+        jdbcTemplate.update("delete from vm_ssh_keys where vm_id = ? and user_id = ?",
+                otherVmId, otherId);
+        registerKey(otherVmId, otherId, foreign);
+
+        String slug = uniqueSlug();
+        createVm(slug, "172.29.4.47");
+
+        // Two owners on paper, but the foreign key does not belong to this VM,
+        // so attribution stays sound rather than collapsing to ambiguous.
+        session(slug, CLIENT_IP, "publickey", List.of(FP_MEMBER, foreign))
+                .andExpect(status().isNoContent());
+
+        Map<String, Object> row = latestSession();
+        assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
+        assertThat((String) row.get("detail")).doesNotContain("ambiguous").doesNotContain(foreign);
+        assertThat(lastUsed(foreign)).isNull();
     }
 
     @Test
@@ -175,12 +200,20 @@ class SshGatewaySessionTest {
 
     @Test
     void unknownSlugStillRecordsTheVerifiedUser() throws Exception {
+        // The key has to exist somewhere for this to say anything; the point is
+        // that attribution survives the slug lookup missing, not that a key can
+        // be attributed out of thin air.
+        createVm(uniqueSlug(), "172.29.4.48");
+
         // slug→vm misses (VM gone), but a single-owner candidate set still attributes
         session("no-such-vm-" + UUID.randomUUID(), CLIENT_IP, "publickey", List.of(FP_MEMBER))
                 .andExpect(status().isNoContent());
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
         assertThat(row.get("target_id")).isNull();
+        // The VM filter could not run here, so the record says so rather than
+        // reading like an attribution that was checked against the VM.
+        assertThat((String) row.get("detail")).contains("vmUnresolved");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -214,16 +247,24 @@ class SshGatewaySessionTest {
 
     private Instant lastUsed(String fingerprint) {
         return jdbcTemplate.queryForObject(
-                "select last_used_at from user_ssh_keys where fingerprint_sha256 = ?",
+                "select last_used_at from vm_ssh_keys where fingerprint_sha256 = ?",
                 Instant.class, fingerprint);
     }
 
-    private void registerKey(long userId, String fingerprint) {
+    /**
+     * Issues a key for one VM. The ciphertext is a placeholder — nothing on the
+     * session path decrypts a private key, and the column is NOT NULL now that
+     * every key is platform-issued. Fingerprints are globally unique, so the
+     * upsert re-points a fixture fingerprint at the VM under test.
+     */
+    private void registerKey(long vmId, long userId, String fingerprint) {
         jdbcTemplate.update("""
-                insert into user_ssh_keys (user_id, name, algorithm, public_key, fingerprint_sha256)
-                values (?, 'session-test', 'ssh-ed25519', 'ssh-ed25519 AAAA', ?)
-                on conflict (fingerprint_sha256) do nothing
-                """, userId, fingerprint);
+                insert into vm_ssh_keys (vm_id, user_id, public_key, fingerprint_sha256,
+                                         private_key_enc)
+                values (?, ?, 'ssh-ed25519 AAAA', ?, 'v1:placeholder:placeholder')
+                on conflict (fingerprint_sha256)
+                    do update set vm_id = excluded.vm_id, user_id = excluded.user_id
+                """, vmId, userId, fingerprint);
     }
 
     private long ensureUser(String email, String name) {
@@ -266,6 +307,9 @@ class SshGatewaySessionTest {
                 """, Long.class, nodeId, workspaceId, orgId, requestId, slug, slug, imageId,
                 VmStatus.RUNNING.name(), allocationId, HOST_KEY);
         jdbcTemplate.update("update ip_allocations set vm_id = ? where id = ?", vmId, allocationId);
+        // Keys hang off a (user, VM) pair now, so each VM issues its own.
+        registerKey(vmId, memberId, FP_MEMBER);
+        registerKey(vmId, otherId, FP_OTHER);
         return vmId;
     }
 
