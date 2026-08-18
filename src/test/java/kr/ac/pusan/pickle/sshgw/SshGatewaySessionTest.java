@@ -211,6 +211,9 @@ class SshGatewaySessionTest {
         Map<String, Object> row = latestSession();
         assertThat(((Number) row.get("actor_id")).longValue()).isEqualTo(memberId);
         assertThat(row.get("target_id")).isNull();
+        // The VM filter could not run here, so the record says so rather than
+        // reading like an attribution that was checked against the VM.
+        assertThat((String) row.get("detail")).contains("vmUnresolved");
     }
 
     // ── helpers ──────────────────────────────────────────────────────────

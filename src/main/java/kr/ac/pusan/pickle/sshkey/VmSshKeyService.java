@@ -115,8 +115,18 @@ public class VmSshKeyService {
                 .orElseThrow(VmSshKeyService::keyNotIssued);
         String previousFingerprint = previous.getFingerprintSha256();
         repository.delete(previous);
+        // Load-bearing: without it Hibernate orders the insert before the delete
+        // and the (vm_id, user_id) index rejects the replacement.
         repository.flush();
-        return created(actor, vm, ip, AuditService.VM_SSH_KEY_REISSUE, previousFingerprint);
+        try {
+            return created(actor, vm, ip, AuditService.VM_SSH_KEY_REISSUE, previousFingerprint);
+        } catch (DataIntegrityViolationException e) {
+            // Two re-issues racing: one of them replaced the row first, so this
+            // one is asking to replace a row that is no longer there.
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
+                    "이미 발급된 키가 있습니다",
+                    "다른 요청이 먼저 키를 재발급했습니다. 화면을 새로 고친 뒤 다시 시도해 주세요.");
+        }
     }
 
     /** Returns the stored private key again, auditing every download. */

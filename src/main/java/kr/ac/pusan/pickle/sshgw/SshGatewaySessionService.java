@@ -92,6 +92,12 @@ public class SshGatewaySessionService {
             if (AUTH_PUBLICKEY.equals(request.authMethod())) {
                 List<VmSshKey> resolved =
                         resolveCandidates(request.candidateFingerprints(), vmId);
+                if (vmId == null) {
+                    // The VM filter could not run, so an attribution here rests on
+                    // the gateway's word alone. Mark it rather than let it read
+                    // like the checked kind.
+                    detail.put("vmUnresolved", true);
+                }
                 Set<Long> owners = new LinkedHashSet<>();
                 for (VmSshKey key : resolved) {
                     owners.add(key.getUserId());
@@ -138,7 +144,9 @@ public class SshGatewaySessionService {
      * <p>When the slug no longer resolves to a VM the filter cannot be evaluated,
      * so it is skipped rather than dropping every candidate. Otherwise a VM
      * destroyed mid-connection would cost the session its attribution, which is
-     * exactly the record worth keeping.</p>
+     * exactly the record worth keeping. That one case does trust the gateway,
+     * and it is the easier one to forge a name into, so the audit says so with
+     * {@code vmUnresolved} rather than leaving the reader to notice.</p>
      */
     private List<VmSshKey> resolveCandidates(List<String> candidateFingerprints, Long vmId) {
         List<VmSshKey> resolved = new ArrayList<>();
