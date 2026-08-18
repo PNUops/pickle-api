@@ -18,6 +18,8 @@ import kr.ac.pusan.pickle.sshkey.dto.VmSshKeyIssueResponse;
 import kr.ac.pusan.pickle.sshkey.dto.VmSshKeyStatus;
 import kr.ac.pusan.pickle.sshkey.dto.VmSshKeyView;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,12 +82,22 @@ public class VmSshKeyService {
     @Transactional
     public VmSshKeyIssueResponse issue(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = requireMember(actor, vmId);
+        requireAlive(vm);
         if (repository.findByVmIdAndUserId(vm.getId(), actor.id()).isPresent()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
                     "이미 발급된 키가 있습니다",
                     "이 VM의 SSH 키는 이미 발급되어 있습니다. 개인키를 다시 내려받거나, 키를 재발급해 주세요.");
         }
-        return created(actor, vm, ip, AuditService.VM_SSH_KEY_ISSUE, null);
+        try {
+            return created(actor, vm, ip, AuditService.VM_SSH_KEY_ISSUE, null);
+        } catch (DataIntegrityViolationException e) {
+            // Two clicks racing past the check above land on the (vm_id, user_id)
+            // index. That is the same "you already have one" the check reports,
+            // so it answers the same way rather than a 500.
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.SSH_KEY_ALREADY_ISSUED,
+                    "이미 발급된 키가 있습니다",
+                    "이 VM의 SSH 키는 이미 발급되어 있습니다. 개인키를 다시 내려받거나, 키를 재발급해 주세요.");
+        }
     }
 
     /**
@@ -98,6 +110,7 @@ public class VmSshKeyService {
     @Transactional
     public VmSshKeyIssueResponse reissue(AuthenticatedUser actor, UUID vmId, String ip) {
         Vm vm = requireMember(actor, vmId);
+        requireAlive(vm);
         VmSshKey previous = repository.findByVmIdAndUserId(vm.getId(), actor.id())
                 .orElseThrow(VmSshKeyService::keyNotIssued);
         String previousFingerprint = previous.getFingerprintSha256();
@@ -166,6 +179,21 @@ public class VmSshKeyService {
         VmAccess access = vmAccessService.of(actor, vmId);
         return access.requireAtLeast(ResourceRole.MEMBER, "SSH 키를 사용할 권한이 없습니다",
                 "이 VM의 참여자(MEMBER) 이상만 SSH 키를 발급받을 수 있습니다.");
+    }
+
+    /**
+     * Destroying a VM deletes its keys, and a soft-deleted row keeps its access
+     * list, so without this a member could mint a fresh private key for a machine
+     * that no longer exists — putting back exactly the ciphertext the destroy
+     * pipeline removed. Downloading and deleting stay open so somebody can still
+     * clean up what they hold.
+     */
+    private static void requireAlive(Vm vm) {
+        if (vm.getStatus() == VmStatus.DELETED || vm.getStatus() == VmStatus.DELETING) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "현재 상태에서는 수행할 수 없는 작업입니다",
+                    "파기된 VM에는 SSH 키를 발급할 수 없습니다.");
+        }
     }
 
     private static ApiException keyNotIssued() {

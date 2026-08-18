@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.sshkey.VmSshKey;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /** The non-secret facts about a VM's issued key. */
 @Schema(description = "VM에 발급된 SSH 키 정보 (개인키는 포함하지 않는다)")

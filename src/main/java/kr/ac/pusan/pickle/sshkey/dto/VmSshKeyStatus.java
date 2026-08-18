@@ -1,7 +1,7 @@
 package kr.ac.pusan.pickle.sshkey.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import org.springframework.lang.Nullable;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Whether this VM has a key issued to the caller.

@@ -5181,10 +5181,10 @@ components:
       description: "이 VM에 대한 내 SSH 키 발급 여부"
       properties:
         key:
-          $ref: "#/components/schemas/VmSshKeyView"
+          anyOf:
+          - $ref: "#/components/schemas/VmSshKeyView"
+          - type: "null"
           description: "발급된 키. 아직 발급받지 않았으면 null"
-      required:
-      - "key"
       type: "object"
     VmSshKeyView:
       description: "VM에 발급된 SSH 키 정보 (개인키는 포함하지 않는다)"
@@ -5216,7 +5216,6 @@ components:
       - "fileName"
       - "fingerprint"
       - "id"
-      - "lastUsedAt"
       type: "object"
     VmStatus:
       enum:

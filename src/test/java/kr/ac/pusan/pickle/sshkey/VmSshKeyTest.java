@@ -257,6 +257,19 @@ class VmSshKeyTest {
         issue(memberToken, memberReauth).andExpect(status().isCreated());
     }
 
+    @Test
+    void destroyedVmRefusesANewKey() throws Exception {
+        // The destroy pipeline deletes this VM's keys; letting a member mint a
+        // fresh one afterwards would put the ciphertext straight back.
+        jdbcTemplate.update("update vms set status = 'DELETED'::vm_status where id = ?", vmId);
+        issue(memberToken, memberReauth)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
+        // Cleaning up what you already hold stays open.
+        mockMvc.perform(get(base()).header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk());
+    }
+
     // ── authorization ──────────────────────────────────────────────────────
 
     /** A non-member is not told the VM exists, on any of the five operations. */
