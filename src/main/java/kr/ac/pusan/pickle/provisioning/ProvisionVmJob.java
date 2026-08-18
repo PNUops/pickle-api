@@ -32,6 +32,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -122,6 +123,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ObjectMapper objectMapper;
     private final SshPlatformProperties sshPlatformProperties;
     private final PortMappingTeardownService portMappingTeardown;
+    private final VmSshKeyRepository vmSshKeyRepository;
     private final TransactionTemplate transactionTemplate;
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
@@ -134,6 +136,7 @@ public class ProvisionVmJob implements ProvisioningService {
             NotificationService notificationService, ObjectMapper objectMapper,
             SshPlatformProperties sshPlatformProperties,
             PortMappingTeardownService portMappingTeardown,
+            VmSshKeyRepository vmSshKeyRepository,
             TransactionTemplate transactionTemplate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
@@ -155,6 +158,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.objectMapper = objectMapper;
         this.sshPlatformProperties = sshPlatformProperties;
         this.portMappingTeardown = portMappingTeardown;
+        this.vmSshKeyRepository = vmSshKeyRepository;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -732,6 +736,7 @@ public class ProvisionVmJob implements ProvisioningService {
         // invariant must hold on every release path.
         transactionTemplate.executeWithoutResult(tx -> {
             portMappingTeardown.deleteMappingsForVm(vmId);
+            vmSshKeyRepository.deleteByVmId(vmId);
             if (allocationId != null && ipamService.release(allocationId, vmId)) {
                 vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
             }

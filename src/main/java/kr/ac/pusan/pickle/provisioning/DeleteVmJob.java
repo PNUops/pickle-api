@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
 import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
+import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -92,6 +93,7 @@ public class DeleteVmJob {
     private final NotificationService notificationService;
     private final PublishingTeardownService publishingTeardown;
     private final PortMappingTeardownService portMappingTeardown;
+    private final VmSshKeyRepository vmSshKeyRepository;
     private final VmSettingsService vmSettingsService;
     private final TransactionTemplate transactionTemplate;
 
@@ -100,7 +102,8 @@ public class DeleteVmJob {
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
             UserRepository userRepository, NotificationService notificationService,
             PublishingTeardownService publishingTeardown,
-            PortMappingTeardownService portMappingTeardown, VmSettingsService vmSettingsService,
+            PortMappingTeardownService portMappingTeardown,
+            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService,
             TransactionTemplate transactionTemplate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
@@ -113,6 +116,7 @@ public class DeleteVmJob {
         this.notificationService = notificationService;
         this.publishingTeardown = publishingTeardown;
         this.portMappingTeardown = portMappingTeardown;
+        this.vmSshKeyRepository = vmSshKeyRepository;
         this.vmSettingsService = vmSettingsService;
         this.transactionTemplate = transactionTemplate;
     }
@@ -211,6 +215,10 @@ public class DeleteVmJob {
             Long allocationId = vm.getIpAllocationId();
             transactionTemplate.executeWithoutResult(tx -> {
                 portMappingTeardown.deleteMappingsForVm(vmId);
+                // The gateway would refuse these keys anyway (a destroyed VM is
+                // not RUNNING); dropping them is about not keeping private-key
+                // ciphertext for a machine that no longer exists.
+                vmSshKeyRepository.deleteByVmId(vmId);
                 if (allocationId != null && ipamService.release(allocationId, vmId)) {
                     vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());
                 }

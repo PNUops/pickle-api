@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.user;
 
 import kr.ac.pusan.pickle.support.RequestFixtures;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -29,7 +30,6 @@ import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
-import kr.ac.pusan.pickle.sshkey.UserSshKeyRepository;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,8 +72,6 @@ class AccountLifecycleTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private WorkspaceMemberRepository workspaceMemberRepository;
-    @Autowired
-    private UserSshKeyRepository userSshKeyRepository;
     @Autowired
     private PersonalWorkspaceService personalWorkspaceService;
     @Autowired
@@ -220,7 +218,9 @@ class AccountLifecycleTest {
         // memberships gone, PERSONAL workspace soft-deleted, SSH keys + sessions gone
         assertThat(workspaceMemberRepository.findWithWorkspaceByUserId(user.getId())).isEmpty();
         assertThat(workspaceRepository.findById(personalWorkspaceId).orElseThrow().getDeletedAt()).isNotNull();
-        assertThat(userSshKeyRepository.countByUserId(user.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from vm_ssh_keys where user_id = ?", Long.class,
+                user.getId())).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from refresh_tokens where user_id = ?", Long.class, user.getId())).isZero();
         // status-change history records the self-withdrawal
@@ -266,11 +266,37 @@ class AccountLifecycleTest {
                 .findFirst().orElseThrow();
     }
 
+    /**
+     * Keys hang off a VM now, so this needs one to point at. It is inserted
+     * DELETED and in a throwaway workspace on purpose: the withdrawal guard
+     * counts the account's live VMs, and a live one here would turn the happy
+     * path into the "has active VMs" refusal.
+     *
+     * The ciphertext is a placeholder — nothing in this test decrypts it, and the
+     * column is NOT NULL now that every key is platform-issued.
+     */
     private void insertSshKey(long userId) {
+        long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
+        long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                returning id
+                """, Long.class, "탈퇴 키 정리 " + UUID.randomUUID().toString().substring(0, 8));
+        long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, userId,
+                "탈퇴 키 정리", imageId);
+        String hostname = "wd-key-" + UUID.randomUUID().toString().substring(0, 12);
+        long vmId = jdbcTemplate.queryForObject("""
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
+                                 image_id, vcpu, memory_mb, disk_gb, status)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10, 'DELETED'::vm_status)
+                returning id
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
         jdbcTemplate.update("""
-                insert into user_ssh_keys (user_id, name, algorithm, public_key, fingerprint_sha256)
-                values (?, 'wd-key', 'ssh-ed25519', 'ssh-ed25519 AAAA', ?)
-                """, userId, "SHA256:" + UUID.randomUUID());
+                insert into vm_ssh_keys (vm_id, user_id, public_key, fingerprint_sha256,
+                                         private_key_enc)
+                values (?, ?, 'ssh-ed25519 AAAA', ?, 'v1:placeholder:placeholder')
+                """, vmId, userId, "SHA256:" + UUID.randomUUID());
     }
 
     private void insertRefreshToken(long userId) {

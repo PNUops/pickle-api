@@ -8,20 +8,29 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import kr.ac.pusan.pickle.common.crypto.SshKeyAlgorithm;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A user's registered SSH public key (V28). Either pasted (server holds only the
- * public key) or server-generated ({@code privateKeyEnc} holds the AES-GCM
- * ciphertext of the private PEM for re-download). The {@code fingerprintSha256}
- * is globally unique and is the SSH gateway's identity lookup key.
+ * The ed25519 keypair the platform issued to one person for one VM (V85).
+ *
+ * <p>The key never reaches the guest: {@code authorized_keys} holds only the
+ * platform keys, and the SSH gateway identifies the user by looking the offered
+ * fingerprint up here before re-authenticating to the VM itself. That is why
+ * scoping a key to a VM is a matter of this column rather than of provisioning,
+ * and why {@code fingerprintSha256} must stay globally unique: it has to resolve
+ * to exactly one owner.</p>
+ *
+ * <p>{@code privateKeyEnc} is the AES-GCM ciphertext of the private PEM, kept so
+ * the owner can download it again. It never reaches a log or an audit detail.</p>
  */
 @Entity
-@Table(name = "user_ssh_keys")
-public class UserSshKey {
+@Table(name = "vm_ssh_keys")
+public class VmSshKey {
+
+    /** Every issued key is ed25519; the column exists to record that, not to vary. */
+    public static final String ALGORITHM = "ssh-ed25519";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -35,15 +44,14 @@ public class UserSshKey {
     @Column(name = "public_id", nullable = false, updatable = false, unique = true)
     private UUID publicId = UUID.randomUUID();
 
+    @Column(name = "vm_id", nullable = false)
+    private Long vmId;
+
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Column(nullable = false)
-    private String name;
-
-    /** OpenSSH key-type token ({@code ssh-ed25519}/{@code ssh-rsa}). */
-    @Column(nullable = false)
-    private String algorithm;
+    private String algorithm = ALGORITHM;
 
     @Column(name = "public_key", nullable = false)
     private String publicKey;
@@ -51,8 +59,7 @@ public class UserSshKey {
     @Column(name = "fingerprint_sha256", nullable = false)
     private String fingerprintSha256;
 
-    /** AES-GCM ciphertext of the private PEM; null for pasted keys. */
-    @Column(name = "private_key_enc")
+    @Column(name = "private_key_enc", nullable = false)
     private String privateKeyEnc;
 
     @CreationTimestamp
@@ -62,14 +69,13 @@ public class UserSshKey {
     @Column(name = "last_used_at")
     private Instant lastUsedAt;
 
-    protected UserSshKey() {
+    protected VmSshKey() {
     }
 
-    public UserSshKey(Long userId, String name, String algorithm, String publicKey,
-            String fingerprintSha256, String privateKeyEnc) {
+    public VmSshKey(Long vmId, Long userId, String publicKey, String fingerprintSha256,
+            String privateKeyEnc) {
+        this.vmId = vmId;
         this.userId = userId;
-        this.name = name;
-        this.algorithm = algorithm;
         this.publicKey = publicKey;
         this.fingerprintSha256 = fingerprintSha256;
         this.privateKeyEnc = privateKeyEnc;
@@ -83,21 +89,16 @@ public class UserSshKey {
         return publicId;
     }
 
+    public Long getVmId() {
+        return vmId;
+    }
+
     public Long getUserId() {
         return userId;
     }
 
-    public String getName() {
-        return name;
-    }
-
     public String getAlgorithm() {
         return algorithm;
-    }
-
-    /** The console-facing algorithm enum, mapped from the stored wire token. */
-    public SshKeyAlgorithm algorithmEnum() {
-        return SshKeyAlgorithm.fromWireType(algorithm);
     }
 
     public String getPublicKey() {
@@ -110,10 +111,6 @@ public class UserSshKey {
 
     public String getPrivateKeyEnc() {
         return privateKeyEnc;
-    }
-
-    public boolean isPrivateKeyStored() {
-        return privateKeyEnc != null;
     }
 
     public Instant getCreatedAt() {

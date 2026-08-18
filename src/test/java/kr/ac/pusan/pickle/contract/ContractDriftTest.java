@@ -172,12 +172,12 @@ class ContractDriftTest {
             "POST /admin/vms/{vmId}/force-stop",
             "GET /admin/notifications",
             "POST /admin/notifications/{notificationId}/resend",
-            // Per-user SSH keys and VM settings (contract v0.8.0).
-            "GET /me/ssh-keys",
-            "POST /me/ssh-keys",
-            "POST /me/ssh-keys/generate",
-            "DELETE /me/ssh-keys/{keyId}",
-            "GET /me/ssh-keys/{keyId}/private-key",
+            // Per-VM SSH keys (contract v0.42.0) and VM settings.
+            "GET /vms/{vmId}/ssh-key",
+            "POST /vms/{vmId}/ssh-key",
+            "POST /vms/{vmId}/ssh-key/reissue",
+            "GET /vms/{vmId}/ssh-key/private-key",
+            "DELETE /vms/{vmId}/ssh-key",
             "GET /vms/{vmId}/settings",
             "PATCH /vms/{vmId}/settings",
             "POST /vms/{vmId}/password/regenerate",

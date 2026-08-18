@@ -74,9 +74,8 @@ public final class ErrorCodes {
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
     public static final String DRIFT_FINDING_ALREADY_RESOLVED = "DRIFT_FINDING_ALREADY_RESOLVED";
     public static final String NOTIFICATION_NOT_RESENDABLE = "NOTIFICATION_NOT_RESENDABLE";
-    // SSH keys (contract tag me, v0.8.0).
-    public static final String SSH_KEY_DUPLICATE = "SSH_KEY_DUPLICATE";
-    public static final String SSH_KEY_LIMIT_EXCEEDED = "SSH_KEY_LIMIT_EXCEEDED";
+    // SSH keys (per-VM issue since v0.42.0).
+    public static final String SSH_KEY_ALREADY_ISSUED = "SSH_KEY_ALREADY_ISSUED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";
     public static final String RATE_LIMITED = "RATE_LIMITED";
     // Web terminal (contract v0.10.0). Ticket mint refusals surfaced to the

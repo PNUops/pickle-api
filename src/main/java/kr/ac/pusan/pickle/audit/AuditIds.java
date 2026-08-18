@@ -69,7 +69,7 @@ public class AuditIds {
     }
 
     public @Nullable UUID sshKey(@Nullable Long id) {
-        return one("select public_id from user_ssh_keys where id = ?", id);
+        return one("select public_id from vm_ssh_keys where id = ?", id);
     }
 
     /** Same order as the input, so a list stays aligned with its siblings. */
@@ -79,7 +79,7 @@ public class AuditIds {
 
     /** Same order as the input, so a list stays aligned with its siblings. */
     public List<UUID> sshKeys(Collection<Long> ids) {
-        return many("select id, public_id from user_ssh_keys where id in ", ids);
+        return many("select id, public_id from vm_ssh_keys where id in ", ids);
     }
 
     // ── internals ──────────────────────────────────────────────────────────

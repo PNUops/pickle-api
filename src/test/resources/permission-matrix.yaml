@@ -47,11 +47,6 @@ operations:
   # ── 3.2 Me / self (any authenticated) ─────────────────────────────────────
   - { id: me,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: listKeys,               method: GET,    path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: registerKey,            method: POST,   path: "/me/ssh-keys",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: generateKey,            method: POST,   path: "/me/ssh-keys/generate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: deleteKey,              method: DELETE, path: "/me/ssh-keys/{keyId}",         roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: downloadPrivateKey,  method: GET,    path: "/me/ssh-keys/{keyId}/private-key", roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: changePassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: withdraw,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: begin,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
@@ -104,6 +99,13 @@ operations:
   - { id: createVmDomain,       method: POST,   path: "/vms/{vmId}/domains",              roles: { USER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
   # createTerminalSession: workspace MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
+  # Per-VM SSH keys (v0.42.0): resource MEMBER+ throughout, non-member 404 mask
+  # (service-layer, no @PreAuthorize). The four writes are re-authentication ops.
+  - { id: getVmSshKey,         method: GET,    path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
+  - { id: issueVmSshKey,       method: POST,   path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
+  - { id: reissueVmSshKey,     method: POST,   path: "/vms/{vmId}/ssh-key/reissue",     roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
+  - { id: downloadVmSshKey,    method: GET,    path: "/vms/{vmId}/ssh-key/private-key", roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
+  - { id: deleteVmSshKey,      method: DELETE, path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
 
   # ── 3.6a VM access list (resource OWNER; a workspace owner manages it too) ─────
   # The three writes are re-authentication (sudo-mode) operations, same as the

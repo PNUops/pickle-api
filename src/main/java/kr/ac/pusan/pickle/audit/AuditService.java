@@ -154,12 +154,13 @@ public class AuditService {
     public static final String TERMINAL_SESSION_START = "terminal.session_start";
     public static final String TERMINAL_SESSION_END = "terminal.session_end";
     public static final String TERMINAL_FORCE_TERMINATE = "terminal.force_terminate";
-    // SSH keys / VM settings / password (contract v0.8.0). Never the key
-    // material — only the fact and non-secret metadata (fingerprint/keyId).
-    public static final String USER_SSH_KEY_ADD = "user.ssh_key_add";
-    public static final String USER_SSH_KEY_GENERATE = "user.ssh_key_generate";
-    public static final String USER_SSH_KEY_DOWNLOAD = "user.ssh_key_download";
-    public static final String USER_SSH_KEY_DELETE = "user.ssh_key_delete";
+    // SSH keys / VM settings / password. Never the key material — only the fact
+    // and non-secret metadata (fingerprint/keyId). Scoped to the VM since
+    // v0.42.0, so the target is the VM rather than a standalone key row.
+    public static final String VM_SSH_KEY_ISSUE = "vm.ssh_key_issue";
+    public static final String VM_SSH_KEY_REISSUE = "vm.ssh_key_reissue";
+    public static final String VM_SSH_KEY_DOWNLOAD = "vm.ssh_key_download";
+    public static final String VM_SSH_KEY_DELETE = "vm.ssh_key_delete";
     public static final String VM_SETTING_UPDATE = "vm.setting_update";
     public static final String VM_PASSWORD_REGENERATE = "vm.password_regenerate";
     /** Actor role stamped on gateway route audits (no user identity in v1). */
