@@ -277,7 +277,7 @@ flowchart LR
     V --> VN
     S --> HA
     PC --> NFT
-    L --> PN
+    L --> LG
 
     HA -->|WireGuard| G
     NFT -->|WireGuard| VM
@@ -287,7 +287,6 @@ flowchart LR
     PN -->|/| C
     PN -->|/api| A
     PN -->|/terminal| G
-    PN -->|llm.pcl.kr| LG
 
     G -->|인가 질의| A
     LG -->|키·모델 동기화| A
