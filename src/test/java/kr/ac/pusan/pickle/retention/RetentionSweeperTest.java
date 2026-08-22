@@ -70,6 +70,27 @@ class RetentionSweeperTest {
     }
 
     @Test
+    void authTokenSweepSurvivesAnExpiredParentWithALiveChild() {
+        // Rotation leaves the parent pointing nowhere useful once it expires, but
+        // the child outlives it. Before V86 the parent's delete raised a foreign-key
+        // violation, and because sweep() runs four tables in one method with no
+        // exception handling, the three that follow were skipped as well.
+        long expiredParent = insertRefreshToken("- interval '1 day'");
+        long liveChild = insertRotatedRefreshToken("+ interval '10 days'", expiredParent);
+        long expiredVerification = insertVerification("- interval '1 day'", false);
+
+        authTokenSweeper.sweep();
+
+        assertThat(exists("refresh_tokens", expiredParent)).isFalse();
+        assertThat(exists("refresh_tokens", liveChild)).isTrue();
+        // the link is gone, not the row
+        assertThat(jdbcTemplate.queryForObject(
+                "select rotated_from from refresh_tokens where id = ?", Long.class, liveChild)).isNull();
+        // the tables swept after refresh_tokens still ran
+        assertThat(exists("email_verifications", expiredVerification)).isFalse();
+    }
+
+    @Test
     void authTokenSweepDeletesExpiredAndUsedKeepsLive() {
         long expiredToken = insertRefreshToken("- interval '1 day'");
         long liveToken = insertRefreshToken("+ interval '10 days'");
@@ -111,6 +132,13 @@ class RetentionSweeperTest {
                 insert into refresh_tokens (user_id, token_hash, expires_at)
                 values (?, ?, now() %s) returning id
                 """.formatted(expiryExpr), Long.class, userId, UUID.randomUUID().toString());
+    }
+
+    private long insertRotatedRefreshToken(String expiryExpr, long parentId) {
+        return jdbcTemplate.queryForObject("""
+                insert into refresh_tokens (user_id, token_hash, expires_at, rotated_from)
+                values (?, ?, now() %s, ?) returning id
+                """.formatted(expiryExpr), Long.class, userId, UUID.randomUUID().toString(), parentId);
     }
 
     private long insertVerification(String expiryExpr, boolean used) {
