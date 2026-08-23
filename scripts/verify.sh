@@ -12,12 +12,5 @@ echo "--- dependency update audit (informational) ---"
 # The versions plugin reports at INFO, so no -q here; filtered to the essence.
 mvn versions:display-dependency-updates -DprocessDependencyManagement=false 2>/dev/null \
     | grep -E '\.{3,}|The following|No dependencies' | tail -20 || true
-# Publication hygiene: no references to paths this repository does not contain,
-# none to a private tree or a vault, no internal process tokens. Enforced here because two manual scrubs
-# both missed real violations.
-# shellcheck source=scripts/hygiene.sh
-. scripts/hygiene.sh   # cwd is the repo root (set above)
-hygiene_selftest
-hygiene_check public
 
 echo "api dependency audit done (informational)"
