@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enforces the basic commit-message convention on every commit message.
+# Enforces the basic commit-message rules on every commit message.
 # Hard failures: missing/unknown type prefix, subject > 72 chars, trailing period.
 # Warnings (non-blocking): enumeration patterns, em dash, Korean in the subject.
 set -euo pipefail
@@ -39,7 +39,18 @@ fi
 if printf '%s' "$subject" | grep -qE ',[^,]*,'; then
   warn "multiple commas in subject; avoid 'A, B, and C' enumerations"
 fi
-if printf '%s' "$subject" | grep -qP '[\x{AC00}-\x{D7A3}]'; then
+# Hangul syllables U+AC00-U+D7A3, spelled as their UTF-8 bytes under LC_ALL=C.
+# The obvious spellings are each wrong on half the machines that run this hook,
+# and both fail silently. `grep -qP` is a GNU extension: BSD grep exits 2 with
+# "invalid option", the `if` reads false, and the warning never fired on a
+# developer's machine at all. `grep -qE '[가-힣]'` looks portable and is not --
+# a glibc range expression follows collation order, so under en_US.UTF-8 on the
+# platform host it matches nothing, while under LC_ALL=C it degenerates to bytes
+# and flags an em dash, CJK, or an accented Latin letter. Byte ranges in the C
+# locale mean the same thing to both greps. Standalone jamo are out of the block
+# here exactly as they were before.
+hangul=$'\xea[\xb0-\xbf][\x80-\xbf]|[\xeb\xec][\x80-\xbf][\x80-\xbf]|\xed[\x80-\x9d][\x80-\xbf]|\xed\x9e[\x80-\xa3]'
+if printf '%s' "$subject" | LC_ALL=C grep -qE "$hangul"; then
   warn "Korean in subject; English is the default"
 fi
 exit 0
