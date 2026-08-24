@@ -123,6 +123,24 @@ class OpenRouterReconcilerTest {
     }
 
     @Test
+    void aFindingSaysWhatHappenedNotWhatWasAttempted() {
+        // The finding is the record of an intervention: if the remote call
+        // failed, an operator reading it must not be told it succeeded.
+        insertKey("REVOKED", "hash-stubborn");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-stubborn", "s", false, null, null)));
+        org.mockito.Mockito.doThrow(new OpenRouterException(500, "nope"))
+                .when(client).setDisabled("hash-stubborn", true);
+
+        reconciler.reconcile();
+
+        String summary = jdbcTemplate.queryForObject(
+                "select summary from drift_findings where dedup_key = 'hash-stubborn'",
+                String.class);
+        assertThat(summary).contains("비활성화하지 못했습니다");
+    }
+
+    @Test
     void aFailedListingKeepsExistingFindings() {
         insertKey("REVOKED", "hash-kept");
         when(client.listKeys()).thenReturn(List.of(
