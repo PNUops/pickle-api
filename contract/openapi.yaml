@@ -1691,6 +1691,8 @@ components:
       - "MISSING_IN_PROXMOX"
       - "UNMANAGED_GUEST"
       - "SPEC_MISMATCH"
+      - "OPENROUTER_ORPHAN"
+      - "OPENROUTER_STALE"
       type: "string"
     DriftFindingResponse:
       properties:
