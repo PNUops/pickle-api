@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.provisioning;
 
 import java.time.Instant;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -248,14 +249,29 @@ public class DriftReconciler {
     }
 
     /**
+     * The kinds THIS reconciler produces, and therefore the only ones it may
+     * auto-resolve. Iterating {@code values()} here was a live defect the day
+     * a second producer's kinds joined the enum: this cycle never observes an
+     * OpenRouter key, so its seen-set for those kinds is forever empty and
+     * every finding the other reconciler raised was resolved as "no longer
+     * observed" ten minutes later. Auto-resolve authority follows production,
+     * kind by kind.
+     */
+    private static final Set<DriftFindingKind> OWNED_KINDS = EnumSet.of(
+            DriftFindingKind.MISSING_IN_PROXMOX,
+            DriftFindingKind.UNMANAGED_GUEST,
+            DriftFindingKind.SPEC_MISMATCH);
+
+    /**
      * End of cycle: auto-resolve OPEN findings whose condition was no longer
-     * observed. Per-VM kinds are always safe (unobserved VMs were marked seen);
+     * observed — of this reconciler's own kinds only (see {@link #OWNED_KINDS}).
+     * Per-VM kinds are always safe (unobserved VMs were marked seen);
      * UNMANAGED_GUEST only auto-resolves when every node was listed, because a
      * guest of an unlisted node cannot be told apart from a vanished one.
      */
     private void autoResolve(Cycle cycle) {
         Instant now = Instant.now();
-        for (DriftFindingKind kind : DriftFindingKind.values()) {
+        for (DriftFindingKind kind : OWNED_KINDS) {
             if (kind == DriftFindingKind.UNMANAGED_GUEST && !cycle.allNodesObserved) {
                 log.info("drift cycle incomplete (node offline or listing failure)"
                         + " — skipping UNMANAGED_GUEST auto-resolve");
