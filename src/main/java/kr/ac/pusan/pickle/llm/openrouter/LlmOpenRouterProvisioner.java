@@ -5,6 +5,7 @@ import java.util.List;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
+import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
@@ -93,12 +94,25 @@ public class LlmOpenRouterProvisioner {
                     key.getPublicId().toString(), key.getCreditLimit(),
                     key.getCreditLimitReset(), key.getExpiresAt());
             String enc = credentialCipher.encrypt(created.plaintext());
+            boolean[] stranded = {false};
             tx.executeWithoutResult(status -> {
                 LlmApiKey fresh = keyRepository.findById(keyId).orElse(null);
                 if (fresh == null || fresh.getOpenrouterKeyHash() != null) {
                     // Raced with another writer: the created key is now an
                     // orphan on the OpenRouter side, which the reconciler
                     // reports — the recoverable direction.
+                    stranded[0] = true;
+                    return;
+                }
+                if (fresh.getStatus() == LlmApiKeyStatus.REVOKED
+                        || fresh.getCreditLimit().signum() <= 0) {
+                    // The key was revoked (or its money budget withdrawn)
+                    // while the remote create was in flight. Recording the
+                    // hash here would attach a live OpenRouter key to a dead
+                    // pickle key, and the revoke path already ran its
+                    // deletion against a hash that did not exist yet — so
+                    // this side drops it and deletes the remote half below.
+                    stranded[0] = true;
                     return;
                 }
                 // Bump before the write it describes, in this transaction:
@@ -107,6 +121,15 @@ public class LlmOpenRouterProvisioner {
                 generations.bump();
                 fresh.recordOpenrouterKey(created.hash(), enc, Instant.now());
             });
+            if (stranded[0]) {
+                // Nothing recorded it, so nothing else will ever clean it up:
+                // delete it now, and leave the reconciler as the backstop if
+                // this call fails too.
+                log.warn("the llm key settled while its OpenRouter key was being created; "
+                        + "deleting the stranded remote key");
+                deleteAfterRevoke(created.hash());
+                return;
+            }
             log.info("provisioned an OpenRouter key for llm key {}", key.getPublicId());
         } catch (OpenRouterException e) {
             tx.executeWithoutResult(status -> keyRepository.findById(keyId)
