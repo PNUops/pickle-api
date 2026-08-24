@@ -225,6 +225,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_GATEWAY_SOURCE_IP` | `/internal/llm` 허용 출발지 | `172.30.1.40` |
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
+| `PICKLE_OPENROUTER_MGMT_KEY` | OpenRouter 키 관리(management) 키. 비면 금액 축 프로비저닝과 대사가 조용히 쉬고, 금액 한도가 부여된 키는 미연결 상태로 남는다(토큰 축 서비스는 무영향) | 없음 |
+| `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
 
 ### 시드 계정 (dev/test 전용, 멱등)
 

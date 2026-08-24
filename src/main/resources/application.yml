@@ -162,6 +162,15 @@ pickle:
     max-sync-body-bytes: ${PICKLE_LLM_MAX_SYNC_BODY_BYTES:65536}
     max-usage-body-bytes: ${PICKLE_LLM_MAX_USAGE_BODY_BYTES:4194304}
     max-bodies-body-bytes: ${PICKLE_LLM_MAX_BODIES_BODY_BYTES:8388608}
+  openrouter:
+    # OpenRouter key-management link. A management key can only administer
+    # runtime keys (it cannot call completions); with it blank the client
+    # fails closed and every funded key simply stays unconnected on the money
+    # axis, which is the decided failure shape — token-axis service continues.
+    base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.ai/api/v1}
+    management-key: ${PICKLE_OPENROUTER_MGMT_KEY:}
+    connect-timeout: 5s
+    read-timeout: 30s
   proxy-agent:
     # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.
