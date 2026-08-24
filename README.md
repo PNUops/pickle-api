@@ -152,7 +152,7 @@ export PICKLE_SEED_SYSADMIN_PASSWORD=...
 export PICKLE_SEED_ORGADMIN_PASSWORD=...
 
 mvn spring-boot:run -Dspring-boot.run.profiles=dev   # :8080
-scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성 감사 + 공개 위생 검사
+scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성 감사
 ```
 
 알아두면 좋은 것들:
