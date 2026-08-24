@@ -96,30 +96,31 @@ public class LlmOpenRouterProvisioner {
             String enc = credentialCipher.encrypt(created.plaintext());
             boolean[] stranded = {false};
             tx.executeWithoutResult(status -> {
-                LlmApiKey fresh = keyRepository.findById(keyId).orElse(null);
-                if (fresh == null || fresh.getOpenrouterKeyHash() != null) {
-                    // Raced with another writer: the created key is now an
-                    // orphan on the OpenRouter side, which the reconciler
-                    // reports — the recoverable direction.
-                    stranded[0] = true;
-                    return;
-                }
-                if (fresh.getStatus() == LlmApiKeyStatus.REVOKED
-                        || fresh.getCreditLimit().signum() <= 0) {
-                    // The key was revoked (or its money budget withdrawn)
-                    // while the remote create was in flight. Recording the
-                    // hash here would attach a live OpenRouter key to a dead
-                    // pickle key, and the revoke path already ran its
-                    // deletion against a hash that did not exist yet — so
-                    // this side drops it and deletes the remote half below.
-                    stranded[0] = true;
-                    return;
-                }
-                // Bump before the write it describes, in this transaction:
-                // the credential changes the sync document the moment the key
-                // is ACTIVE, and the discipline has no exceptions.
+                // Bump FIRST, then read. The counter is the serialization
+                // point, so a read taken before it sees a snapshot from
+                // before this transaction got in line — and a revoke that
+                // commits in that gap would be silently overwritten by the
+                // full-column flush below, bringing the key back ACTIVE with
+                // a live money credential and no drift finding to show for
+                // it. LlmApiKeyService.issue() guards the same hazard the
+                // same way; this is not a place to be clever.
                 generations.bump();
-                fresh.recordOpenrouterKey(created.hash(), enc, Instant.now());
+                LlmApiKey fresh = keyRepository.findById(keyId).orElse(null);
+                if (fresh == null || fresh.getOpenrouterKeyHash() != null
+                        || fresh.getStatus() == LlmApiKeyStatus.REVOKED
+                        || fresh.getCreditLimit().signum() <= 0) {
+                    // Settled while the remote create was in flight — another
+                    // writer got there first, or the key was revoked, or its
+                    // money budget was withdrawn. Recording the hash now would
+                    // attach a live OpenRouter key to a key that must not have
+                    // one, and the revoke path already ran its deletion
+                    // against a hash that did not exist yet. So this side
+                    // drops it and deletes the remote half below.
+                    stranded[0] = true;
+                }
+                if (!stranded[0]) {
+                    fresh.recordOpenrouterKey(created.hash(), enc, Instant.now());
+                }
             });
             if (stranded[0]) {
                 // Nothing recorded it, so nothing else will ever clean it up:

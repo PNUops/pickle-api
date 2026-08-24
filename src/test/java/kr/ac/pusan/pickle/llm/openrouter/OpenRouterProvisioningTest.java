@@ -3,12 +3,15 @@ package kr.ac.pusan.pickle.llm.openrouter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKeyService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -16,6 +19,7 @@ import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,6 +65,9 @@ class OpenRouterProvisioningTest {
     @Test
     void aFundedKeyGetsItsOpenrouterHalfAndTheDocumentMoves() {
         long keyId = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        Instant expiresAt = Instant.parse("2026-12-31T00:00:00Z");
+        jdbcTemplate.update("update llm_api_keys set credit_limit_reset = 'MONTHLY', "
+                + "expires_at = ? where id = ?", java.sql.Timestamp.from(expiresAt), keyId);
         when(client.createKey(anyString(), any(), any(), any()))
                 .thenReturn(new OpenRouterClient.CreatedKey("hash-1", "sk-or-plain"));
         long before = generation();
@@ -76,6 +83,16 @@ class OpenRouterProvisioningTest {
         assertThat(generation())
                 .as("the credential changes the sync document, so the write must bump")
                 .isGreaterThan(before);
+        // What was asked of OpenRouter, not just that something was: the
+        // granted amount and window, and the pickle key's own expiry — that
+        // last one is what stops an expired key from spending money on the
+        // remote side after our document has stopped serving its credential.
+        ArgumentCaptor<BigDecimal> limit = ArgumentCaptor.forClass(BigDecimal.class);
+        ArgumentCaptor<Instant> expiry = ArgumentCaptor.forClass(Instant.class);
+        verify(client).createKey(eq(publicIdOf(keyId).toString()), limit.capture(),
+                eq(CreditLimitReset.MONTHLY), expiry.capture());
+        assertThat(limit.getValue()).isEqualByComparingTo("5.00");
+        assertThat(expiry.getValue()).isEqualTo(expiresAt);
     }
 
     @Test
@@ -148,6 +165,11 @@ class OpenRouterProvisioningTest {
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "key-" + unique,
                 String.format("%064x", requestId), status, creditLimit, ownerId);
+    }
+
+    private UUID publicIdOf(long keyId) {
+        return jdbcTemplate.queryForObject(
+                "select public_id from llm_api_keys where id = ?", UUID.class, keyId);
     }
 
     private long generation() {
