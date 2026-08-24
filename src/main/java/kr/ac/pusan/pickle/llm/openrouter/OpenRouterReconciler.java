@@ -115,16 +115,24 @@ public class OpenRouterReconciler {
                 // from what we granted is a real spend ceiling nobody chose.
                 // Push ours back and report it: silent correction would hide
                 // whoever edited it in the OpenRouter console.
+                // A finding is the record of an intervention, so it says what
+                // actually happened rather than what was attempted — an
+                // operator reading "다시 적용했습니다" must be able to believe it.
+                boolean reapplied = true;
                 try {
                     client.updateLimit(managed.hash(), local.getCreditLimit(),
                             local.getCreditLimitReset());
                 } catch (OpenRouterException e) {
+                    reapplied = false;
                     log.warn("re-applying a diverged money limit failed: HTTP {} {}",
                             e.status(), e.getMessage());
                 }
                 staleKeys.add(managed.hash());
                 findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
-                        "OpenRouter 금액 한도가 부여값과 달라 다시 적용했습니다: " + local.getPublicId(),
+                        (reapplied
+                                ? "OpenRouter 금액 한도가 부여값과 달라 다시 적용했습니다: "
+                                : "OpenRouter 금액 한도가 부여값과 다른데 다시 적용하지 못했습니다: ")
+                                + local.getPublicId(),
                         "{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"granted\":\"%s\",\"remote\":\"%s\"}"
                                 .formatted(managed.hash(), local.getPublicId(),
                                         local.getCreditLimit(), managed.limit()),
@@ -135,15 +143,19 @@ public class OpenRouterReconciler {
                 // The pickle side is over but the money side still works.
                 // Disable it now (reversible), report it, and leave deletion
                 // to a person.
+                boolean disabled = true;
                 try {
                     client.setDisabled(managed.hash(), true);
                 } catch (OpenRouterException e) {
+                    disabled = false;
                     log.warn("disabling a stale OpenRouter key failed: HTTP {} {}",
                             e.status(), e.getMessage());
                 }
                 staleKeys.add(managed.hash());
                 findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
-                        "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다: "
+                        (disabled
+                                ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다: "
+                                : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다: ")
                                 + local.getPublicId(),
                         "{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"status\":\"%s\"}"
                                 .formatted(managed.hash(), local.getPublicId(),
