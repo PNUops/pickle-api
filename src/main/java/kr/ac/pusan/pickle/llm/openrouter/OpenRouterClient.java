@@ -42,6 +42,9 @@ public class OpenRouterClient {
     private static final Logger log = LoggerFactory.getLogger(OpenRouterClient.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
+    /** Pagination backstop for {@link #listKeys()} — see the loop's comment. */
+    private static final int MAX_KEY_PAGES = 200;
+
     private final OpenRouterProperties properties;
     private final RestClient restClient;
 
@@ -131,7 +134,12 @@ public class OpenRouterClient {
     public List<ManagedKey> listKeys() {
         List<ManagedKey> keys = new ArrayList<>();
         int offset = 0;
-        while (true) {
+        // Bounded: an upstream that ignores `offset` (or keeps answering with
+        // a full page) would otherwise loop forever inside a job worker,
+        // growing the list until the process dies. The cap is far above any
+        // real key count; hitting it is a malfunction, and it is reported as
+        // one rather than silently truncating the reconciler's view.
+        for (int page = 0; page < MAX_KEY_PAGES; page++) {
             JsonNode node = exchange(HttpMethod.GET, "/keys?include_disabled=true&offset=" + offset,
                     null, 200);
             JsonNode data = node.path("data");
@@ -151,6 +159,8 @@ public class OpenRouterClient {
             }
             offset += data.size();
         }
+        throw new OpenRouterException(0, "key listing did not end within "
+                + MAX_KEY_PAGES + " pages; refusing a partial view");
     }
 
     private JsonNode exchange(HttpMethod method, String path, @Nullable Object body,

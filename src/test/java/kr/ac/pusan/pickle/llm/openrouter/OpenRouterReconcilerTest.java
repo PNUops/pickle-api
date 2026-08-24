@@ -1,6 +1,8 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +91,34 @@ class OpenRouterReconcilerTest {
                 new OpenRouterClient.ManagedKey("hash-z", "z", true, null, null)));
         reconciler.reconcile();
 
+        assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
+    }
+
+    @Test
+    void aDivergedMoneyLimitIsReappliedAndReported() {
+        // The ceiling is enforced there, so a limit that no longer matches
+        // what we granted is a spend allowance nobody chose — push ours back
+        // and say so.
+        insertKey("ACTIVE", "hash-drifted");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-drifted", "d", false, new BigDecimal("99"), null)));
+
+        reconciler.reconcile();
+
+        verify(client).updateLimit("hash-drifted", new BigDecimal("5.00"), null);
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-drifted");
+    }
+
+    @Test
+    void aMatchingLimitIsLeftAlone() {
+        // Same amount written differently ($5 vs 5.00) is the same limit.
+        insertKey("ACTIVE", "hash-ok");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-ok", "ok", false, new BigDecimal("5"), null)));
+
+        reconciler.reconcile();
+
+        verify(client, never()).updateLimit(anyString(), any(), any());
         assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
     }
 

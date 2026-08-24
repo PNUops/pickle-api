@@ -53,6 +53,24 @@ public class OpenRouterReconciler {
         this.findings = findings;
     }
 
+    /**
+     * Whether OpenRouter's ceiling for this key differs from what we granted.
+     * Compared by value, not by object: {@code 1} and {@code 1.00} are the
+     * same limit. A null remote limit means unlimited over there, which never
+     * matches a granted amount.
+     */
+    private static boolean limitDiverged(LlmApiKey local, OpenRouterClient.ManagedKey managed) {
+        if (managed.limit() == null) {
+            return true;
+        }
+        if (managed.limit().compareTo(local.getCreditLimit()) != 0) {
+            return true;
+        }
+        String granted = local.getCreditLimitReset() == null ? null
+                : local.getCreditLimitReset().wireValue();
+        return !java.util.Objects.equals(granted, managed.limitReset());
+    }
+
     @Recurring(id = JOB_ID, interval = "PT30M")
     @Job(name = JOB_ID, retries = 0)
     public void reconcile() {
@@ -92,6 +110,27 @@ public class OpenRouterReconciler {
             }
             boolean over = local.getStatus() == LlmApiKeyStatus.REVOKED
                     || (local.getExpiresAt() != null && local.getExpiresAt().isBefore(now));
+            if (!over && limitDiverged(local, managed)) {
+                // The money limit is enforced THERE, so a limit that drifted
+                // from what we granted is a real spend ceiling nobody chose.
+                // Push ours back and report it: silent correction would hide
+                // whoever edited it in the OpenRouter console.
+                try {
+                    client.updateLimit(managed.hash(), local.getCreditLimit(),
+                            local.getCreditLimitReset());
+                } catch (OpenRouterException e) {
+                    log.warn("re-applying a diverged money limit failed: HTTP {} {}",
+                            e.status(), e.getMessage());
+                }
+                staleKeys.add(managed.hash());
+                findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
+                        "OpenRouter 금액 한도가 부여값과 달라 다시 적용했습니다: " + local.getPublicId(),
+                        "{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"granted\":\"%s\",\"remote\":\"%s\"}"
+                                .formatted(managed.hash(), local.getPublicId(),
+                                        local.getCreditLimit(), managed.limit()),
+                        managed.hash(), now);
+                continue;
+            }
             if (over && !managed.disabled()) {
                 // The pickle side is over but the money side still works.
                 // Disable it now (reversible), report it, and leave deletion
