@@ -94,13 +94,21 @@ public class LlmUsageService {
                 lastUsed.merge(keyId, requestedAt, (a, b) -> a.isAfter(b) ? a : b);
             }
         }
-        stampLastUsed(lastUsed);
         // In this transaction, so the events and the quota state they imply
         // become visible together: a poll must never see the tokens without
         // the refusal they earned. The periodic sweep is what releases a key
         // again — this call only ever locks one, because nothing here reduces
         // a day's total.
+        //
+        // Before stampLastUsed, and that order is load-bearing. Every other
+        // writer in this tree takes the generation counter first and key rows
+        // second; stamping first would make ingest the one path that goes
+        // key rows → counter → key rows, and a revoke or a sweep holding the
+        // counter while waiting on the same key row deadlocks against it.
+        // Both orderings are correct in isolation; being the odd one out is
+        // what costs a transaction.
         quotaService.refresh();
+        stampLastUsed(lastUsed);
         if (rejected > 0) {
             log.warn("LLM usage batch: accepted {}, duplicates {}, rejected {}",
                     accepted, duplicates, rejected);
