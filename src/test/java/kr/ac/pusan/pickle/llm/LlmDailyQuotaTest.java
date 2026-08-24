@@ -84,6 +84,14 @@ class LlmDailyQuotaTest {
         ((MutableClock) clock).set(NOON_KST);
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_api_keys");
+        jdbcTemplate.update("delete from llm_models");
+        // The allowance counts only TOKEN-axis models' events, so the fixture
+        // carries one model per axis and every metered event names one.
+        jdbcTemplate.update("""
+                insert into llm_models (public_name, upstream_ref, upstream_model, budget_axis)
+                values ('pnu-test', 'openai', 'test-model', 'TOKEN'),
+                       ('vendor-test', 'openrouter', 'vendor-test', 'CREDIT')
+                """);
         keyId = insertKeyWithDailyLimit(1_000L);
         jdbcTemplate.update("""
                 insert into llm_gateway_state (id, generation, service_enabled)
@@ -163,6 +171,37 @@ class LlmDailyQuotaTest {
         assertThat(exhausted(unlimited)).isFalse();
     }
 
+    @Test
+    void creditAxisUsageNeverDrainsTheTokenAllowance() {
+        // Commercial usage answers to the key's money limit; summing it here
+        // would let paid traffic exhaust the self-serve budget — the exact
+        // contamination the model-side axis exists to prevent. A passthrough
+        // model name (absent from llm_models) is CREDIT by construction and
+        // must stay outside the sum the same way.
+        recordUsage(keyId, "vendor-test", 500_000, 500_000, NOON_KST);
+        recordUsage(keyId, "vendor/passthrough-model", 500_000, 500_000, NOON_KST);
+
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(exhausted(keyId)).isFalse();
+
+        // Token-axis usage on top still counts, on the same key.
+        recordUsage(keyId, 600, 500, NOON_KST);
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isTrue();
+    }
+
+    @Test
+    void aZeroAllowanceClosesTheTokenAxisWithoutAnyUsage() {
+        // 0 means "the token axis is unusable" (distinct from null = no daily
+        // limit), so the flag must flip on the very first sweep, before any
+        // event exists for the key.
+        long closed = insertKeyWithDailyLimit(0L);
+
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(closed)).isTrue();
+        assertThat(exhausted(keyId)).isFalse();
+    }
+
     private long insertKeyWithDailyLimit(Long dailyTokens) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
@@ -187,11 +226,16 @@ class LlmDailyQuotaTest {
     }
 
     private void recordUsage(Long forKeyId, int input, int output, Instant when) {
+        recordUsage(forKeyId, "pnu-test", input, output, when);
+    }
+
+    private void recordUsage(Long forKeyId, String modelName, int input, int output,
+            Instant when) {
         jdbcTemplate.update("""
-                insert into llm_usage_events (event_id, key_id, status, input_tokens,
-                                              output_tokens, requested_at)
-                values (?, ?, 'OK', ?, ?, ?)
-                """, UUID.randomUUID().toString(), forKeyId, input, output,
+                insert into llm_usage_events (event_id, key_id, public_model_name, status,
+                                              input_tokens, output_tokens, requested_at)
+                values (?, ?, ?, 'OK', ?, ?, ?)
+                """, UUID.randomUUID().toString(), forKeyId, modelName, input, output,
                 java.time.OffsetDateTime.ofInstant(when, ZoneId.of("Asia/Seoul")));
     }
 

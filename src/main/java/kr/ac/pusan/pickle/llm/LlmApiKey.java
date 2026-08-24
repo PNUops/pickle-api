@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -110,6 +111,34 @@ public class LlmApiKey {
     @Column(name = "record_bodies", nullable = false)
     private boolean recordBodies;
 
+    /**
+     * The money-axis limit in USD credits. Never null: 0 means the commercial
+     * axis is unusable — deliberately unlike {@link #dailyTokens}, whose null
+     * means unlimited. Money has no unlimited; every usable state is a number
+     * a reviewer granted.
+     */
+    @Column(name = "credit_limit", nullable = false)
+    private BigDecimal creditLimit = BigDecimal.ZERO;
+
+    /** How the money limit renews on OpenRouter; null = total cap (default). */
+    @Column(name = "credit_limit_reset")
+    @Enumerated(EnumType.STRING)
+    private @Nullable CreditLimitReset creditLimitReset;
+
+    /** OpenRouter's identifier for this key's own OpenRouter key. */
+    @Column(name = "openrouter_key_hash")
+    private @Nullable String openrouterKeyHash;
+
+    /** CredentialCipher ciphertext of that key's runtime secret. */
+    @Column(name = "openrouter_key_enc")
+    private @Nullable String openrouterKeyEnc;
+
+    @Column(name = "openrouter_provisioned_at")
+    private @Nullable Instant openrouterProvisionedAt;
+
+    @Column(name = "openrouter_last_error")
+    private @Nullable String openrouterLastError;
+
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
@@ -129,7 +158,8 @@ public class LlmApiKey {
     public LlmApiKey(long workspaceId, long orgId, long requestId, String name,
             @Nullable String purpose, @Nullable Instant expiresAt, @Nullable Integer rpm,
             @Nullable Integer tpm, @Nullable Integer concurrency,
-            @Nullable Long dailyTokens, long createdBy) {
+            @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset, long createdBy) {
         this.publicId = UUID.randomUUID();
         this.workspaceId = workspaceId;
         this.orgId = orgId;
@@ -141,7 +171,38 @@ public class LlmApiKey {
         this.tpm = tpm;
         this.concurrency = concurrency;
         this.dailyTokens = dailyTokens;
+        this.creditLimit = creditLimit == null ? BigDecimal.ZERO : creditLimit;
+        this.creditLimitReset = creditLimitReset;
         this.createdBy = createdBy;
+    }
+
+    /**
+     * Records the OpenRouter key provisioned for this key. Clearing the error
+     * here is what lets the provisioning sweep read "hash present, error null"
+     * as done.
+     */
+    public void recordOpenrouterKey(String keyHash, String keyEnc, Instant when) {
+        this.openrouterKeyHash = keyHash;
+        this.openrouterKeyEnc = keyEnc;
+        this.openrouterProvisionedAt = when;
+        this.openrouterLastError = null;
+        this.updatedAt = when;
+    }
+
+    /** A provisioning attempt failed; the key stays usable on the token axis. */
+    public void recordOpenrouterFailure(String error, Instant when) {
+        this.openrouterLastError = error;
+        this.updatedAt = when;
+    }
+
+    /**
+     * Whether the commercial axis actually works for this key right now: a
+     * positive limit granted and an OpenRouter key provisioned. The sync
+     * document includes the credential exactly when this is true (and the key
+     * is ACTIVE), so this is also what the console shows as 연결 상태.
+     */
+    public boolean isCreditAxisConnected() {
+        return creditLimit.signum() > 0 && openrouterKeyHash != null;
     }
 
     /**
@@ -254,6 +315,30 @@ public class LlmApiKey {
 
     public boolean isQuotaExhausted() {
         return quotaExhausted;
+    }
+
+    public BigDecimal getCreditLimit() {
+        return creditLimit;
+    }
+
+    public @Nullable CreditLimitReset getCreditLimitReset() {
+        return creditLimitReset;
+    }
+
+    public @Nullable String getOpenrouterKeyHash() {
+        return openrouterKeyHash;
+    }
+
+    public @Nullable String getOpenrouterKeyEnc() {
+        return openrouterKeyEnc;
+    }
+
+    public @Nullable Instant getOpenrouterProvisionedAt() {
+        return openrouterProvisionedAt;
+    }
+
+    public @Nullable String getOpenrouterLastError() {
+        return openrouterLastError;
     }
 
     public boolean isRecordBodies() {
