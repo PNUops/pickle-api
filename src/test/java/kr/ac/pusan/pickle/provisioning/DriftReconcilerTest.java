@@ -260,4 +260,33 @@ class DriftReconcilerTest {
                 """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname,
                 imageId, vcpu, memoryMb, proxmoxVmid, status);
     }
+
+    @Test
+    void anotherProducersFindingSurvivesThisReconcilersCycle() {
+        // Auto-resolve authority follows production: this reconciler never
+        // observes an OpenRouter key, so a foreign-kind finding must not be
+        // "no longer observed" to it. Live defect on 2026-08-24 — every
+        // OPENROUTER_ORPHAN the other reconciler raised was silently resolved
+        // within ten minutes.
+        long nodeId = createNode(wm.apiHost());
+        stubClusterResources(wm);
+        jdbcTemplate.update("""
+                insert into drift_findings (kind, summary, detail, dedup_key,
+                                            first_seen_at, last_seen_at)
+                values ('OPENROUTER_ORPHAN', 'foreign finding', '{}', 'foreign-hash',
+                        now(), now())
+                """);
+        assertThat(nodeId).isPositive();
+
+        reconciler.reconcile();
+
+        Long open = jdbcTemplate.queryForObject("""
+                select count(*) from drift_findings
+                 where kind = 'OPENROUTER_ORPHAN' and dedup_key = 'foreign-hash'
+                   and status = 'OPEN'
+                """, Long.class);
+        assertThat(open).isEqualTo(1L);
+        jdbcTemplate.update(
+                "delete from drift_findings where dedup_key = 'foreign-hash'");
+    }
 }
