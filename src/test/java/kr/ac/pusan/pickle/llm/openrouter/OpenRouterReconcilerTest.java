@@ -1,0 +1,143 @@
+package kr.ac.pusan.pickle.llm.openrouter;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.SeedFixtures;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
+/**
+ * The OpenRouter reconciliation: an orphan (theirs, unexplained) and a zombie
+ * (ours over, theirs alive) land as drift findings; the zombie is disabled;
+ * a healthy pairing is untouched; and a resolved mismatch auto-resolves on
+ * the next cycle.
+ */
+@SpringBootTest
+@ActiveProfiles("test")
+@Import(EmbeddedPostgresConfig.class)
+class OpenRouterReconcilerTest {
+
+    @Autowired
+    private OpenRouterReconciler reconciler;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+    @MockitoBean
+    private OpenRouterClient client;
+
+    @BeforeEach
+    void setUp() {
+        jdbcTemplate.update("delete from drift_findings where kind in "
+                + "('OPENROUTER_ORPHAN'::drift_finding_kind, 'OPENROUTER_STALE'::drift_finding_kind)");
+        jdbcTemplate.update("delete from llm_usage_events");
+        jdbcTemplate.update("delete from llm_api_keys");
+        when(client.configured()).thenReturn(true);
+    }
+
+    @Test
+    void orphansAndZombiesLandAsFindingsAndTheZombieIsDisabled() {
+        long healthy = insertKey("ACTIVE", "hash-live");
+        insertKey("REVOKED", "hash-zombie");
+        when(client.listKeys()).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("hash-live", "live", false,
+                        new BigDecimal("5"), null),
+                new OpenRouterClient.ManagedKey("hash-zombie", "zombie", false, null, null),
+                new OpenRouterClient.ManagedKey("hash-orphan", "who-is-this", false, null, null)));
+
+        reconciler.reconcile();
+
+        assertThat(openFindings("OPENROUTER_ORPHAN")).containsExactly("hash-orphan");
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-zombie");
+        verify(client).setDisabled("hash-zombie", true);
+        verify(client, never()).setDisabled("hash-live", true);
+        assertThat(healthy).isPositive();
+    }
+
+    @Test
+    void aLiveKeyWhoseRemoteHalfVanishedIsReportedNotResolvedAway() {
+        insertKey("ACTIVE", "hash-vanished");
+        when(client.listKeys()).thenReturn(List.of());
+
+        reconciler.reconcile();
+
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-vanished");
+    }
+
+    @Test
+    void aRepairedMismatchAutoResolvesOnTheNextCycle() {
+        insertKey("REVOKED", "hash-z");
+        when(client.listKeys()).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("hash-z", "z", false, null, null)));
+        reconciler.reconcile();
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-z");
+
+        // Now OpenRouter reports it disabled: the drift no longer holds.
+        when(client.listKeys()).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("hash-z", "z", true, null, null)));
+        reconciler.reconcile();
+
+        assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
+    }
+
+    @Test
+    void aFailedListingKeepsExistingFindings() {
+        insertKey("REVOKED", "hash-kept");
+        when(client.listKeys()).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("hash-kept", "kept", false, null, null)));
+        reconciler.reconcile();
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");
+
+        when(client.listKeys()).thenThrow(new OpenRouterException(503, "down"));
+        reconciler.reconcile();
+
+        // A failed read must not resolve anything for free.
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");
+    }
+
+    private List<String> openFindings(String kind) {
+        return jdbcTemplate.queryForList("""
+                select dedup_key from drift_findings
+                 where kind = ?::drift_finding_kind and status = 'OPEN'
+                 order by dedup_key
+                """, String.class, kind);
+    }
+
+    private long insertKey(String status, String openrouterHash) {
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
+        long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
+        String unique = UUID.randomUUID().toString().substring(0, 8);
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                returning id
+                """, Long.class, "대사 시험 " + unique);
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into requests (resource_type, workspace_id, org_id, requester_id,
+                                      purpose, display_name)
+                values ('LLM_API_KEY', ?, ?, ?, ?, ?)
+                returning id
+                """, Long.class, workspaceId, orgId, ownerId, "대사 시험", "rc-" + unique);
+        java.sql.Timestamp revokedAt = "REVOKED".equals(status)
+                ? java.sql.Timestamp.from(Instant.now()) : null;
+        return jdbcTemplate.queryForObject("""
+                insert into llm_api_keys (workspace_id, org_id, request_id, name, token_hash,
+                                          token_prefix, status, credit_limit,
+                                          openrouter_key_hash, revoked_at, created_by)
+                values (?, ?, ?, ?, ?, 'pickle-aa', ?::llm_api_key_status, 5, ?, ?, ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requestId, "key-" + unique,
+                String.format("%064x", requestId), status, openrouterHash, revokedAt, ownerId);
+    }
+}

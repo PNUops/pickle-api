@@ -95,6 +95,14 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("llmKey.grantedTpm",
                     "분당 토큰 수는 분당 요청 수보다 작을 수 없습니다."));
         }
+        // A reset window without a positive limit renews nothing; the reviewer
+        // almost certainly forgot the amount, so say it rather than store it.
+        if (spec.grantedCreditLimitReset() != null
+                && (spec.grantedCreditLimit() == null
+                        || spec.grantedCreditLimit().signum() <= 0)) {
+            errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
+                    "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다."));
+        }
     }
 
     @Override
@@ -103,7 +111,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         ApproveLlmKeyRequestSpec spec = form.llmKey();
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
-                spec.grantedDailyTokens());
+                spec.grantedDailyTokens(), spec.grantedCreditLimit(),
+                spec.grantedCreditLimitReset());
 
         // Bump before the write, in this transaction: the row lock is what makes
         // commit order and generation order agree. The key lands PENDING, so
@@ -117,7 +126,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                         : form.grantedEndDate().plusDays(1).atStartOfDay(
                                 java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                 spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
-                spec.grantedDailyTokens(), request.getRequesterId()));
+                spec.grantedDailyTokens(), spec.grantedCreditLimit(),
+                spec.grantedCreditLimitReset(), request.getRequesterId()));
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());
@@ -125,6 +135,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedTpm", spec.grantedTpm());
         auditArgs.put("grantedConcurrency", spec.grantedConcurrency());
         auditArgs.put("grantedDailyTokens", spec.grantedDailyTokens());
+        auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
+        auditArgs.put("grantedCreditLimitReset", spec.grantedCreditLimitReset());
         return new Materialized(key.getId(), key.getName(), auditArgs, () -> {
         });
     }

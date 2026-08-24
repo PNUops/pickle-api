@@ -59,14 +59,17 @@ class LlmGatewayEndpointTest {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private kr.ac.pusan.pickle.common.crypto.CredentialCipher credentialCipher;
 
     @BeforeEach
     void resetGatewayState() {
-        // The counter is a single shared row and the usage/key tables are this
-        // suite's own; all start empty so each test sees exactly the state it
-        // arranges. (audit_logs is append-only and stays.)
+        // The counter is a single shared row and the usage/key/model tables
+        // are this suite's own; all start empty so each test sees exactly the
+        // state it arranges. (audit_logs is append-only and stays.)
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_api_keys");
+        jdbcTemplate.update("delete from llm_models");
         jdbcTemplate.update("delete from llm_gateway_state");
     }
 
@@ -210,6 +213,74 @@ class LlmGatewayEndpointTest {
                 .andExpect(jsonPath("$.keys[0].limits.tpm").value(20000))
                 .andExpect(jsonPath("$.keys[0].limits.concurrency").doesNotExist())
                 .andExpect(jsonPath("$.keys[0].expiresAt").exists());
+    }
+
+    @Test
+    void passthroughRefAndBudgetAxisTravelOnTheDocument() throws Exception {
+        // passthroughRef derives from the llm_upstreams registry row flagged
+        // as the passthrough target (the V87 seed), and every model row says
+        // which budget axis governs it.
+        jdbcTemplate.update("""
+                insert into llm_models (public_name, upstream_ref, upstream_model, budget_axis)
+                values ('pnu-doc-test', 'openai', 'x', 'TOKEN')
+                """);
+        syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passthroughRef").value("openrouter"))
+                .andExpect(jsonPath("$.models[0].publicName").value("pnu-doc-test"))
+                .andExpect(jsonPath("$.models[0].budgetAxis").value("TOKEN"));
+    }
+
+    @Test
+    void disabledPassthroughRowDropsTheMember() throws Exception {
+        // Absence is a real state ("no passthrough"), so a disabled registry
+        // row must remove the member entirely rather than send null.
+        jdbcTemplate.update("update llm_upstreams set enabled = false where passthrough");
+        try {
+            String body = syncFrom(SOURCE, TOKEN, poll(0))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(body).doesNotContain("passthroughRef");
+        } finally {
+            jdbcTemplate.update("update llm_upstreams set enabled = true where passthrough");
+        }
+    }
+
+    @Test
+    void upstreamCredentialTravelsOnlyForActiveFundedProvisionedKeys() throws Exception {
+        // The one usable secret in the document: present exactly when the key
+        // is ACTIVE, its money budget positive, and its OpenRouter key
+        // provisioned. Every other state omits the member, and omission is
+        // what closes the commercial axis for the key.
+        KeyFixture funded = newKey("funded");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_key_enc = ? where id = ?",
+                credentialCipher.encrypt("sk-or-funded"), funded.id());
+        KeyFixture unfunded = newKey("unfunded");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 0, "
+                + "openrouter_key_enc = ? where id = ?",
+                credentialCipher.encrypt("sk-or-unfunded"), unfunded.id());
+        KeyFixture unprovisioned = newKey("unprovisioned");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00 where id = ?",
+                unprovisioned.id());
+        KeyFixture revoked = newKey("revoked-funded");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_key_enc = ?, status = 'REVOKED', revoked_at = now() "
+                + "where id = ?", credentialCipher.encrypt("sk-or-revoked"), revoked.id());
+
+        String body = syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(
+                        "$.keys[?(@.keyId=='%s')].upstreamCredentials.openrouter"
+                                .formatted(funded.publicId()))
+                        .value("sk-or-funded"))
+                .andReturn().getResponse().getContentAsString();
+        // The funded key's secret is the only one anywhere in the document —
+        // decrypted, keyed by the upstream ref, and never a ciphertext.
+        assertThat(body).contains("sk-or-funded");
+        assertThat(body).doesNotContain("sk-or-unfunded").doesNotContain("sk-or-revoked");
+        assertThat(body).doesNotContain("v1:"); // no ciphertext leaks either
+        assertThat(body.split("upstreamCredentials", -1)).hasSize(2);
     }
 
     @Test

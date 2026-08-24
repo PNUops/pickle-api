@@ -1,9 +1,11 @@
 package kr.ac.pusan.pickle.llm.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import org.jspecify.annotations.Nullable;
@@ -39,6 +41,12 @@ public record LlmKeyDetailResponse(
         @Nullable Integer concurrency,
         @Schema(description = "프롬프트·응답 본문 기록 여부")
         boolean recordBodies,
+        @Schema(description = "상용(금액) 축 한도, USD 크레딧. 0이면 상용 모델을 쓸 수 없습니다.")
+        BigDecimal creditLimit,
+        @Schema(description = "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다. 창은 UTC 자정 기준입니다.")
+        @Nullable CreditLimitReset creditLimitReset,
+        @Schema(description = "상용 축 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
+        boolean creditAxisConnected,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,
         String workspaceName,
@@ -55,6 +63,7 @@ public record LlmKeyDetailResponse(
         return new LlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.getStatus(), key.getTokenPrefix(), key.getExpiresAt(), key.getLastUsedAt(),
                 key.getRpm(), key.getTpm(), key.getConcurrency(), key.isRecordBodies(),
+                key.getCreditLimit(), key.getCreditLimitReset(), key.isCreditAxisConnected(),
                 workspaceId, workspaceName, key.getCreatedAt(), key.getRevokedAt(),
                 myResourceRole, accessManageAllowed);
     }

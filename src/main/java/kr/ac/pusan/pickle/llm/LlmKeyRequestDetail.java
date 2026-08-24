@@ -2,8 +2,11 @@ package kr.ac.pusan.pickle.llm;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.math.BigDecimal;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -47,6 +50,13 @@ public class LlmKeyRequestDetail {
     @Column(name = "granted_daily_tokens")
     private @Nullable Long grantedDailyTokens;
 
+    @Column(name = "granted_credit_limit")
+    private @Nullable BigDecimal grantedCreditLimit;
+
+    @Column(name = "granted_credit_limit_reset")
+    @Enumerated(EnumType.STRING)
+    private @Nullable CreditLimitReset grantedCreditLimitReset;
+
     protected LlmKeyRequestDetail() {
     }
 
@@ -59,13 +69,20 @@ public class LlmKeyRequestDetail {
         this.reqDailyTokens = reqDailyTokens;
     }
 
-    /** Records what the reviewer granted. Nulls mean the service defaults. */
+    /**
+     * Records what the reviewer granted. Nulls mean the service defaults —
+     * except the credit limit, whose absence means 0: the money axis is
+     * closed unless a reviewer deliberately opened it.
+     */
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
-            @Nullable Long dailyTokens) {
+            @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset) {
         this.grantedRpm = rpm;
         this.grantedTpm = tpm;
         this.grantedConcurrency = concurrency;
         this.grantedDailyTokens = dailyTokens;
+        this.grantedCreditLimit = creditLimit;
+        this.grantedCreditLimitReset = creditLimitReset;
     }
 
     public Long getRequestId() {
@@ -102,5 +119,13 @@ public class LlmKeyRequestDetail {
 
     public @Nullable Long getGrantedDailyTokens() {
         return grantedDailyTokens;
+    }
+
+    public @Nullable BigDecimal getGrantedCreditLimit() {
+        return grantedCreditLimit;
+    }
+
+    public @Nullable CreditLimitReset getGrantedCreditLimitReset() {
+        return grantedCreditLimitReset;
     }
 }

@@ -1,6 +1,8 @@
 package kr.ac.pusan.pickle.llm.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.math.BigDecimal;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import org.jspecify.annotations.Nullable;
 
@@ -35,13 +37,20 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "부여 동시 요청 수. 비어 있으면 서비스 기본값입니다.")
         @Nullable Integer grantedConcurrency,
 
-        @Schema(description = "부여 일일 토큰 수. 비어 있으면 서비스 기본값입니다.")
-        @Nullable Long grantedDailyTokens) {
+        @Schema(description = "부여 일일 토큰 수. 비어 있으면 일일 한도가 없습니다. 0이면 자체 서빙(토큰) 축을 쓸 수 없습니다.")
+        @Nullable Long grantedDailyTokens,
+
+        @Schema(description = "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 상용(금액) 축을 쓸 수 없습니다.")
+        @Nullable BigDecimal grantedCreditLimit,
+
+        @Schema(description = "금액 한도 리셋 창. 비어 있으면 리셋 없는 총액 상한입니다.")
+        @Nullable CreditLimitReset grantedCreditLimitReset) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail) {
         return new LlmKeyRequestSpecResponse(detail.getReqPurpose(), detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
-                detail.getGrantedDailyTokens());
+                detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
+                detail.getGrantedCreditLimitReset());
     }
 }

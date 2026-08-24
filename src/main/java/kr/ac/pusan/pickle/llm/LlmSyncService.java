@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -7,9 +8,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -89,11 +92,15 @@ public class LlmSyncService {
                               'upstreamModel', m.upstream_model,
                               'fallbackRef', m.fallback_ref,
                               'visibility', m.visibility,
+                              'budgetAxis', m.budget_axis,
                               'maxInputTokens', m.max_input_tokens,
                               'maxOutputTokens', m.max_output_tokens)), '[]'::json)
                       from llm_models m where m.enabled) as models,
+                   (select u.ref from llm_upstreams u
+                     where u.passthrough and u.enabled) as passthrough_ref,
                    k.public_id, k.token_hash, k.status::text as status, k.expires_at,
-                   k.rpm, k.tpm, k.concurrency, k.quota_exhausted, k.record_bodies
+                   k.rpm, k.tpm, k.concurrency, k.quota_exhausted, k.record_bodies,
+                   k.credit_limit, k.openrouter_key_enc
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -105,17 +112,27 @@ public class LlmSyncService {
              where s.id
             """;
 
+    /**
+     * The upstream ref the per-key OpenRouter credential is keyed by in the
+     * document. Matches the {@code llm_upstreams} seed row and the gateway's
+     * env block name; lowercase, as the gateway normalizes refs.
+     */
+    static final String OPENROUTER_REF = "openrouter";
+
     private final JdbcTemplate jdbcTemplate;
     private final LlmGatewayGenerations llmGatewayGenerations;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final CredentialCipher credentialCipher;
 
     public LlmSyncService(JdbcTemplate jdbcTemplate, LlmGatewayGenerations llmGatewayGenerations,
-            AuditService auditService, ObjectMapper objectMapper) {
+            AuditService auditService, ObjectMapper objectMapper,
+            CredentialCipher credentialCipher) {
         this.jdbcTemplate = jdbcTemplate;
         this.llmGatewayGenerations = llmGatewayGenerations;
         this.auditService = auditService;
         this.objectMapper = objectMapper;
+        this.credentialCipher = credentialCipher;
     }
 
     @Transactional
@@ -223,11 +240,13 @@ public class LlmSyncService {
         return jdbcTemplate.query(DOCUMENT_SQL, rs -> {
             long generation = 0;
             boolean serviceEnabled = true;
+            String passthroughRef = null;
             List<LlmSyncResponse.ModelEntry> models = List.of();
             List<LlmSyncResponse.KeyEntry> keys = new ArrayList<>();
             while (rs.next()) {
                 generation = rs.getLong("generation");
                 serviceEnabled = rs.getBoolean("service_enabled");
+                passthroughRef = rs.getString("passthrough_ref");
                 // Aggregated in the same statement rather than read separately:
                 // the whole point of one statement is that the generation and
                 // everything the document says cannot come from two different
@@ -266,7 +285,10 @@ public class LlmSyncService {
                         // it is a write, and a write is what moves the
                         // generation the gateway polls on.
                         rs.getBoolean("quota_exhausted"),
-                        rs.getBoolean("record_bodies")));
+                        rs.getBoolean("record_bodies"),
+                        credentialsFor(publicId.toString(), status,
+                                rs.getBigDecimal("credit_limit"),
+                                rs.getString("openrouter_key_enc"))));
             }
             // models is an EMPTY ARRAY, not an omission: "no models" is this
             // deployment's real state until the catalogue lands with the DGX
@@ -274,8 +296,37 @@ public class LlmSyncService {
             // "unchanged"). Serving it alongside keys keeps the
             // both-or-neither rule intact.
             return new LlmSyncResponse.Document(DOCUMENT_FORMAT, generation, serviceEnabled,
-                    models, List.copyOf(keys));
+                    passthroughRef, models, List.copyOf(keys));
         });
+    }
+
+    /**
+     * The per-key upstream credential map, or null (the member drops out and
+     * the commercial axis is closed for the key). Included for an ACTIVE row
+     * with a positive limit and a provisioned secret. Note what the status
+     * check does NOT do: a key expired by timestamp still has status ACTIVE
+     * (nothing flips the column), so its credential keeps being served
+     * through the grace window — safe because the gateway refuses expired
+     * keys before any upstream call, and bounded because the OpenRouter key
+     * is created with the same expiry and dies on its own clock.
+     *
+     * <p>A ciphertext that will not decrypt costs that key its credential, not
+     * the whole document: revocations must keep flowing even when one row is
+     * corrupt, and the loss is visible on the key's own commercial axis.</p>
+     */
+    private @Nullable Map<String, String> credentialsFor(String keyId, String status,
+            @Nullable BigDecimal creditLimit, @Nullable String keyEnc) {
+        if (!"ACTIVE".equals(status) || keyEnc == null
+                || creditLimit == null || creditLimit.signum() <= 0) {
+            return null;
+        }
+        try {
+            return Map.of(OPENROUTER_REF, credentialCipher.decrypt(keyEnc));
+        } catch (RuntimeException e) {
+            log.error("stored OpenRouter credential for key {} failed to decrypt; "
+                    + "serving the key without it", keyId, e);
+            return null;
+        }
     }
 
     /**

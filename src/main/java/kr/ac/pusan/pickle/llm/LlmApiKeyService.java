@@ -14,11 +14,14 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
+import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * The writes on an LLM API key: minting its secret, replacing it, revoking it,
@@ -37,13 +40,16 @@ public class LlmApiKeyService {
     private final LlmGatewayGenerations generations;
     private final ResourceAccessResolver resourceAccessResolver;
     private final AuditService auditService;
+    private final LlmOpenRouterProvisioner provisioner;
 
     public LlmApiKeyService(LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
-            ResourceAccessResolver resourceAccessResolver, AuditService auditService) {
+            ResourceAccessResolver resourceAccessResolver, AuditService auditService,
+            LlmOpenRouterProvisioner provisioner) {
         this.keyRepository = keyRepository;
         this.generations = generations;
         this.resourceAccessResolver = resourceAccessResolver;
         this.auditService = auditService;
+        this.provisioner = provisioner;
     }
 
     /**
@@ -102,6 +108,21 @@ public class LlmApiKeyService {
         key.revoke(Instant.now());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.LLM_KEY_REVOKE,
                 "llm_key", key.getPublicId(), Map.of(), null);
+        // The money axis must die with the key, and it must not wait for the
+        // gateway's next poll: OpenRouter refusing directly is what closes the
+        // propagation window on a credential with money behind it. After
+        // commit so a rolled-back revoke never deletes a live key; failures
+        // are the reconciler's to catch.
+        String openrouterKeyHash = key.getOpenrouterKeyHash();
+        if (openrouterKeyHash != null) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            provisioner.deleteAfterRevoke(openrouterKeyHash);
+                        }
+                    });
+        }
     }
 
     /**
