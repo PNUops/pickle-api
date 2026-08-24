@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.llm.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * api → gateway sync answer, in exactly two shapes — the split is structural
@@ -36,19 +37,29 @@ public sealed interface LlmSyncResponse {
     record Unchanged(long generation) implements LlmSyncResponse {
     }
 
-    /** The full authorization document, from one MVCC snapshot. */
+    /**
+     * The full authorization document, from one MVCC snapshot.
+     *
+     * <p>{@code passthroughRef} names the upstream serving public model names
+     * the catalogue does not list (the commercial passthrough); null drops the
+     * member and disables passthrough. It is the one document member allowed
+     * to be conditionally absent, because absence is a real state ("no
+     * passthrough"), not "unchanged" — unlike {@code models}/{@code keys}.</p>
+     */
     record Document(
             int formatVersion,
             long generation,
             boolean serviceEnabled,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String passthroughRef,
             List<ModelEntry> models,
             List<KeyEntry> keys) implements LlmSyncResponse {
     }
 
     /**
-     * One servable model. No rows exist yet — the model catalogue arrives
-     * with the DGX round — but the entry shape is pinned here so the wire
-     * format is settled before the first row is.
+     * One servable model. {@code budgetAxis} is TOKEN or CREDIT — which of a
+     * key's two budgets this model's usage counts against; the gateway reads
+     * an absent value as TOKEN, so it is always sent explicitly here to keep
+     * the wire self-describing.
      */
     record ModelEntry(
             String publicName,
@@ -56,6 +67,7 @@ public sealed interface LlmSyncResponse {
             String upstreamModel,
             String fallbackRef,
             String visibility,
+            String budgetAxis,
             int maxInputTokens,
             int maxOutputTokens) {
     }
@@ -77,7 +89,13 @@ public sealed interface LlmSyncResponse {
             List<String> allowedModels,
             KeyLimits limits,
             boolean quotaExhausted,
-            boolean recordBodies) {
+            boolean recordBodies,
+            // The one usable secret in the document: upstream ref (lowercase)
+            // to the bearer this key presents there, decrypted at serve time.
+            // Included only while the key is truly ACTIVE with a positive
+            // credit limit and a provisioned OpenRouter key; omission is what
+            // closes the commercial axis for the key.
+            Map<String, String> upstreamCredentials) {
     }
 
     /** Short-window limits enforced in the gateway; null members omitted. */
