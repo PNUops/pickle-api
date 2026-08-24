@@ -286,7 +286,8 @@ public class LlmSyncService {
                         // generation the gateway polls on.
                         rs.getBoolean("quota_exhausted"),
                         rs.getBoolean("record_bodies"),
-                        credentialsFor(status, rs.getBigDecimal("credit_limit"),
+                        credentialsFor(publicId.toString(), status,
+                                rs.getBigDecimal("credit_limit"),
                                 rs.getString("openrouter_key_enc"))));
             }
             // models is an EMPTY ARRAY, not an omission: "no models" is this
@@ -301,16 +302,19 @@ public class LlmSyncService {
 
     /**
      * The per-key upstream credential map, or null (the member drops out and
-     * the commercial axis is closed for the key). Included only for a truly
-     * ACTIVE row — an EXPIRED one is served as ACTIVE for status vocabulary
-     * reasons, but there is no reason to hand out its money credential — with
-     * a positive limit and a provisioned secret.
+     * the commercial axis is closed for the key). Included for an ACTIVE row
+     * with a positive limit and a provisioned secret. Note what the status
+     * check does NOT do: a key expired by timestamp still has status ACTIVE
+     * (nothing flips the column), so its credential keeps being served
+     * through the grace window — safe because the gateway refuses expired
+     * keys before any upstream call, and bounded because the OpenRouter key
+     * is created with the same expiry and dies on its own clock.
      *
      * <p>A ciphertext that will not decrypt costs that key its credential, not
      * the whole document: revocations must keep flowing even when one row is
      * corrupt, and the loss is visible on the key's own commercial axis.</p>
      */
-    private @Nullable Map<String, String> credentialsFor(String status,
+    private @Nullable Map<String, String> credentialsFor(String keyId, String status,
             @Nullable BigDecimal creditLimit, @Nullable String keyEnc) {
         if (!"ACTIVE".equals(status) || keyEnc == null
                 || creditLimit == null || creditLimit.signum() <= 0) {
@@ -319,7 +323,8 @@ public class LlmSyncService {
         try {
             return Map.of(OPENROUTER_REF, credentialCipher.decrypt(keyEnc));
         } catch (RuntimeException e) {
-            log.error("stored OpenRouter credential failed to decrypt; serving the key without it", e);
+            log.error("stored OpenRouter credential for key {} failed to decrypt; "
+                    + "serving the key without it", keyId, e);
             return null;
         }
     }

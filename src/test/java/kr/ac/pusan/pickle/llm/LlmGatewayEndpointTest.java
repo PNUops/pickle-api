@@ -232,6 +232,21 @@ class LlmGatewayEndpointTest {
     }
 
     @Test
+    void disabledPassthroughRowDropsTheMember() throws Exception {
+        // Absence is a real state ("no passthrough"), so a disabled registry
+        // row must remove the member entirely rather than send null.
+        jdbcTemplate.update("update llm_upstreams set enabled = false where passthrough");
+        try {
+            String body = syncFrom(SOURCE, TOKEN, poll(0))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(body).doesNotContain("passthroughRef");
+        } finally {
+            jdbcTemplate.update("update llm_upstreams set enabled = true where passthrough");
+        }
+    }
+
+    @Test
     void upstreamCredentialTravelsOnlyForActiveFundedProvisionedKeys() throws Exception {
         // The one usable secret in the document: present exactly when the key
         // is ACTIVE, its money budget positive, and its OpenRouter key

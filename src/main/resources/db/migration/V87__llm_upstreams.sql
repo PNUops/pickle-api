@@ -46,7 +46,7 @@ create unique index llm_upstreams_single_passthrough on llm_upstreams (passthrou
     where passthrough;
 
 comment on table llm_upstreams is
-    'LLM 용량 공급원 등록부(온프렘 서빙·외부 유료 API). 소유·정책·표시의 기록이며 접속 정보는 게이트웨이 호스트 env가 정본이다.';
+    'LLM 용량 공급원 등록부(온프렘 서빙·외부 유료 API). 소유·정책·표시의 기록이며 접속 정보는 게이트웨이 호스트 env가 정본이다. enabled·passthrough는 게이트웨이 동기화 문서에 실리므로 이 행을 고치는 쓰기는 반드시 같은 트랜잭션에서 문서 세대를 먼저 올려야 한다(운영 스크립트 경로가 그 규율을 안다 — 손 SQL 편집 금지).';
 comment on column llm_upstreams.passthrough is
     '카탈로그에 없는 모델명을 이 업스트림으로 그대로 전달할지. 최대 한 행만 가질 수 있다.';
 
