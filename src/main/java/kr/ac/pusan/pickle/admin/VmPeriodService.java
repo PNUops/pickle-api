@@ -62,7 +62,7 @@ public class VmPeriodService {
     @Transactional
     public VmDetailResponse updatePeriod(AuthenticatedUser actor, UUID publicVmId,
             VmPeriodUpdateRequest request, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
         long vmId = vm.getId();
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         validateDates(request.endDate(), newStart);

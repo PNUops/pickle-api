@@ -79,7 +79,7 @@ public class ApprovalContextService {
 
     @Transactional(readOnly = true)
     public ApprovalContextResponse context(AuthenticatedUser actor, UUID requestId) {
-        Request request = approvalService.findScoped(actor, requestId);
+        Request request = approvalService.findReadable(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
         // (WITHDRAWN + later anonymization keep the row), so
         // applicant.signupAt/email are always non-null per contract.

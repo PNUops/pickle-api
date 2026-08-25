@@ -87,7 +87,7 @@ public class AdminVmQueryService {
      */
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
         return vmQueryService.detailOf(vm, null);
     }
 
@@ -95,7 +95,7 @@ public class AdminVmQueryService {
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
-        return vmQueryService.eventsOf(adminVmAccess.requireOrgScopedVm(actor, vmId).getId(),
+        return vmQueryService.eventsOf(adminVmAccess.requireReadableVm(actor, vmId).getId(),
                 page, size);
     }
 

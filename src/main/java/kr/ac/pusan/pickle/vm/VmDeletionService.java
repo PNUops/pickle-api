@@ -81,6 +81,7 @@ public class VmDeletionService {
     private final VmRepository vmRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
+    private final AdminVmAccess adminVmAccess;
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
     private final SettingsService settingsService;
@@ -104,7 +105,8 @@ public class VmDeletionService {
             ProvisioningTaskRepository provisioningTaskRepository,
             PublishingTeardownService publishingTeardown,
             PortMappingTeardownService portMappingTeardown,
-            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService) {
+            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService,
+            AdminVmAccess adminVmAccess) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -122,6 +124,7 @@ public class VmDeletionService {
         this.portMappingTeardown = portMappingTeardown;
         this.vmSshKeyRepository = vmSshKeyRepository;
         this.vmSettingsService = vmSettingsService;
+        this.adminVmAccess = adminVmAccess;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -196,7 +199,7 @@ public class VmDeletionService {
     @Transactional
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
-        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
         long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         // CREATING is deliberately accepted (unlike self-delete): the schedule
@@ -233,7 +236,7 @@ public class VmDeletionService {
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
-        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
         long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {
@@ -389,15 +392,6 @@ public class VmDeletionService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "VM을 삭제할 권한이 없습니다",
                     "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
-        }
-        return vm;
-    }
-
-    /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
-    private Vm requireOrgScopedVm(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
-        if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
-            throw VmAccessService.vmNotFound();
         }
         return vm;
     }

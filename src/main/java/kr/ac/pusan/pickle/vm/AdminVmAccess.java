@@ -2,16 +2,20 @@ package kr.ac.pusan.pickle.vm;
 
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.resource.VmResourceAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * Org-scope resolution shared by the admin surfaces that act on a single VM
- * (period update, gateway block, detail/events, power intervention): the org
- * tier sees only its own org's VMs, and cross-org targets answer the same 404
- * as unknown ids so the existence of other orgs' VMs stays private.
+ * Org-scope resolution for the admin surfaces that act on a single VM. The two
+ * entry points are split by what the caller does with the VM, because the read
+ * side and the write side answer to different rules: a cross-org target is a
+ * 404 for both today, and only the read side is meant to widen. Keeping one
+ * method for both is how widening a read would silently widen power control.
+ *
+ * <p>The 404 (rather than 403) is deliberate on both sides: a cross-org target
+ * answers exactly as an unknown id does, so the existence of other orgs' VMs
+ * stays private.
  */
 @Component
 public class AdminVmAccess {
@@ -22,16 +26,37 @@ public class AdminVmAccess {
         this.vmRepository = vmRepository;
     }
 
-    public Vm requireOrgScopedVm(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound);
-        if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
-            throw vmNotFound();
-        }
+    /**
+     * Read surfaces: admin VM detail and its event history.
+     */
+    public Vm requireReadableVm(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = findOrNotFound(vmId);
+        requireSameOrg(actor, vm);
         return vm;
     }
 
+    /**
+     * Write surfaces: period update and the four power interventions (start,
+     * shutdown, reboot, force stop), plus the scheduled-deletion pair.
+     */
+    public Vm requireWritableVm(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = findOrNotFound(vmId);
+        requireSameOrg(actor, vm);
+        return vm;
+    }
+
+    private Vm findOrNotFound(UUID vmId) {
+        return vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound);
+    }
+
+    private static void requireSameOrg(AuthenticatedUser actor, Vm vm) {
+        if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
+            throw vmNotFound();
+        }
+    }
+
+    /** The one wording for an unreachable VM, shared with the access machinery. */
     private static ApiException vmNotFound() {
-        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                "리소스를 찾을 수 없습니다", "해당 VM이 존재하지 않습니다.");
+        return VmResourceAdapter.MESSAGES.notFound();
     }
 }
