@@ -1,5 +1,10 @@
 package kr.ac.pusan.pickle.user;
 
+import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
+import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -41,12 +46,14 @@ public class MeController {
     private final UserIdentityRepository userIdentityRepository;
     private final ProfileOptionsService profileOptionsService;
     private final ProfileValidator profileValidator;
+    private final AuditService auditService;
 
     public MeController(UserRepository userRepository, OrgRepository orgRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             MfaService mfaService, TermsService termsService,
             UserIdentityRepository userIdentityRepository,
-            ProfileOptionsService profileOptionsService, ProfileValidator profileValidator) {
+            ProfileOptionsService profileOptionsService, ProfileValidator profileValidator,
+            AuditService auditService) {
         this.userRepository = userRepository;
         this.orgRepository = orgRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -55,6 +62,7 @@ public class MeController {
         this.userIdentityRepository = userIdentityRepository;
         this.profileOptionsService = profileOptionsService;
         this.profileValidator = profileValidator;
+        this.auditService = auditService;
     }
 
     @GetMapping
@@ -73,12 +81,25 @@ public class MeController {
     @PutMapping("/profile")
     @Transactional
     public UserProfileResponse updateProfile(@AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody UpdateProfileRequest request) {
+            @Valid @RequestBody UpdateProfileRequest request, HttpServletRequest httpRequest) {
         User user = loadUser(principal);
         profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());
+        String previousStudentNo = user.getStudentNo();
+        UserPosition previousPosition = user.getPosition();
         user.setProfile(request.position(),
                 ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
                 request.departmentCode());
+        // Audited like every other self-service write on /me. 학번 is a personal
+        // identifier the holder can rewrite at will, so "who changed this and
+        // when" has to have an answer; the before-values are recorded because
+        // the after-values are already readable on the row.
+        auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_PROFILE_UPDATE,
+                "user", user.getPublicId(),
+                Map.of("position", String.valueOf(request.position()),
+                        "departmentCode", request.departmentCode(),
+                        "previousPosition", String.valueOf(previousPosition),
+                        "previousStudentNoSet", String.valueOf(previousStudentNo != null)),
+                clientIp(httpRequest));
         return profileOf(userRepository.save(user));
     }
 

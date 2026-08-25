@@ -44,11 +44,18 @@ public class ProfileValidator {
         List<FieldValidationError> errors = new ArrayList<>();
         String trimmed = studentNo == null ? null : studentNo.strip();
 
-        if (position != null && position.requiresStudentNo() && (trimmed == null || trimmed.isEmpty())) {
-            errors.add(new FieldValidationError("studentNo", "학번을 입력해 주세요."));
-        } else if (trimmed != null && !trimmed.isEmpty() && !STUDENT_NO.matcher(trimmed).matches()) {
-            errors.add(new FieldValidationError("studentNo",
-                    "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+        // Both branches are gated on the position needing a 학번 at all. Checking
+        // the format for a position that discards the value produces an error on
+        // a field the console has hidden: someone who typed a partial number as
+        // a 학부생 and then switched to 교수 would get a 422 they cannot clear,
+        // for a value normalizeStudentNo is about to throw away regardless.
+        if (position != null && position.requiresStudentNo()) {
+            if (trimmed == null || trimmed.isEmpty()) {
+                errors.add(new FieldValidationError("studentNo", "학번을 입력해 주세요."));
+            } else if (!STUDENT_NO.matcher(trimmed).matches()) {
+                errors.add(new FieldValidationError("studentNo",
+                        "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
+            }
         }
         if (departmentCode != null && !options.isKnownDepartment(departmentCode)) {
             errors.add(new FieldValidationError("departmentCode", "소속을 다시 선택해 주세요."));

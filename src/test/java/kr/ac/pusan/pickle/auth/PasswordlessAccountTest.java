@@ -28,11 +28,14 @@ import tools.jackson.databind.ObjectMapper;
  * the behaviours that stop a null from leaking either an exception or an
  * answer.
  *
- * <p>The login case is the one that matters. Before the guard, a null hash
- * reached the encoder and answered 500, and that 500 told an anonymous caller
- * which addresses are passwordless — the exact question the uniform 401 exists
- * to refuse. Everything else here is a dead end the account holder has to be
- * able to read, so those answer 409 by name.
+ * <p>The login case is the one that matters, and not because a null hash would
+ * throw — the encoder returns false for one without running BCrypt at all.
+ * That is the problem: the refusal would come back measurably faster than a
+ * wrong password on an ordinary account, which is the oracle the timing
+ * equaliser exists to close. This test can only pin the status and code;
+ * the timing property is held by the equaliser in the code path, so do not
+ * take a green run here as licence to remove it. Everything else is a dead end
+ * the account holder has to be able to read, so those answer 409 by name.
  */
 @SpringBootTest
 @AutoConfigureMockMvc

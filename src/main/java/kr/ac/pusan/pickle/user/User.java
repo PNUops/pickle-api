@@ -37,10 +37,11 @@ public class User {
 
     /**
      * Null for an account that has only ever signed in through an external
-     * identity. Every comparison against it must handle that; in particular
-     * {@code AuthService.login} keeps answering a uniform 401 rather than
-     * letting a null reach the encoder, because a 500 there would tell an
-     * anonymous caller which addresses are Google-only accounts.
+     * identity. Every comparison against it must handle that. The encoder does
+     * not throw on a null hash — it returns false without running BCrypt — so
+     * the hazard is a fast answer rather than an error: {@code
+     * AuthService.login} burns its timing equaliser instead, or a passwordless
+     * account would be identifiable by how quickly it is refused.
      */
     @Column(name = "password_hash")
     private @Nullable String passwordHash;

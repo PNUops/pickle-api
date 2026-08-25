@@ -5,11 +5,12 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.RequireReauth;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -39,10 +40,10 @@ public class IdentityController {
      * that could quietly unlink the real owner's provider would lock them out.
      */
     @DeleteMapping("/{provider}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequireReauth
-    public ResponseEntity<Void> unlinkIdentity(@AuthenticationPrincipal AuthenticatedUser principal,
+    public void unlinkIdentity(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable IdentityProvider provider, HttpServletRequest httpRequest) {
         identityService.unlink(principal, provider, clientIp(httpRequest));
-        return ResponseEntity.noContent().build();
     }
 }
