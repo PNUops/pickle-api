@@ -163,10 +163,21 @@ public class LlmKeyUsageService {
      * points are the minimum a rate can be drawn from, and taking the oldest
      * inside a bounded window rather than the oldest ever keeps a burst last
      * week from flattening this week's slope.
+     *
+     * <p>The amounts are the ones belonging to those two <b>times</b>, not the
+     * smallest and largest amounts. Those differ whenever the reported total
+     * goes down, which is not hypothetical: a key with a daily, weekly or
+     * monthly window has its reported usage reset by OpenRouter, and pairing
+     * min-with-earliest across such a reset measures a spend that never
+     * happened. Read this way, a reset shows up as a negative difference and
+     * the caller declines to forecast — which is the honest answer, since the
+     * readings on either side of it are not comparable.
      */
     private static final String SPEND_WINDOW_SQL = """
-            select min(captured_at) as first_at, max(captured_at) as last_at,
-                   min(usage_amount) as first_usage, max(usage_amount) as last_usage
+            select min(captured_at) as first_at,
+                   max(captured_at) as last_at,
+                   (array_agg(usage_amount order by captured_at))[1] as first_usage,
+                   (array_agg(usage_amount order by captured_at desc))[1] as last_usage
               from llm_credit_usage_snapshots
              where key_id = ? and captured_at >= ?
             """;

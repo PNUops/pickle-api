@@ -191,6 +191,25 @@ class LlmKeyUsageStatsTest {
     }
 
     @Test
+    void aWindowResetBetweenReadingsForecastsNothingRatherThanAPhantomSpend() throws Exception {
+        // OpenRouter resets a key's reported usage at its limit window, so the
+        // figure is not monotone. Reading the smallest and largest amounts
+        // instead of the earliest and latest ones would measure a spend across
+        // the reset that nobody made, and would inflate the slope.
+        jdbcTemplate.update("""
+                update llm_api_keys set credit_limit = 10, openrouter_usage = 1,
+                       openrouter_usage_at = now() where id = ?
+                """, keyId);
+        Instant base = Instant.now();
+        snapshot(base.minusSeconds(4 * 86_400L), "8");
+        snapshot(base, "1");
+
+        mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.budget.creditDepletionForecast").doesNotExist());
+    }
+
+    @Test
     void tooShortASpanForecastsNothingRatherThanExtrapolatingAnHour() throws Exception {
         // An hour of unusual traffic projected as the standing rate would tell
         // a student their budget dies tomorrow when it does not.
