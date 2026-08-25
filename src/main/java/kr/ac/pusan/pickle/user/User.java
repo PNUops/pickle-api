@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -34,8 +35,15 @@ public class User {
     @Column(nullable = false, unique = true, columnDefinition = "citext")
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    /**
+     * Null for an account that has only ever signed in through an external
+     * identity. Every comparison against it must handle that; in particular
+     * {@code AuthService.login} keeps answering a uniform 401 rather than
+     * letting a null reach the encoder, because a 500 there would tell an
+     * anonymous caller which addresses are Google-only accounts.
+     */
+    @Column(name = "password_hash")
+    private @Nullable String passwordHash;
 
     @Column(nullable = false)
     private String name;
@@ -47,6 +55,20 @@ public class User {
 
     @Column(name = "org_id")
     private Long orgId;
+
+    /** 직책. Null until the account fills its profile in (V89 adds no backfill). */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(columnDefinition = "user_position")
+    private @Nullable UserPosition position;
+
+    /** 학번. Required by {@code chk_users_student_no} only for student positions. */
+    @Column(name = "student_no")
+    private @Nullable String studentNo;
+
+    /** 소속 학과 코드. Resolved against the catalogue resource, no FK. */
+    @Column(name = "department_code")
+    private @Nullable String departmentCode;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -97,7 +119,8 @@ public class User {
         return email;
     }
 
-    public String getPasswordHash() {
+    /** Null for an account that has never had a password; see {@link #hasPassword()}. */
+    public @Nullable String getPasswordHash() {
         return passwordHash;
     }
 
@@ -183,5 +206,39 @@ public class User {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public @Nullable UserPosition getPosition() {
+        return position;
+    }
+
+    public @Nullable String getStudentNo() {
+        return studentNo;
+    }
+
+    public @Nullable String getDepartmentCode() {
+        return departmentCode;
+    }
+
+    /**
+     * Sets the whole profile at once. It travels as a unit — the student-number
+     * rule spans two of the three fields, so a setter per field would let a
+     * caller land a state the CHECK rejects and only find out at flush.
+     */
+    public void setProfile(UserPosition position, @Nullable String studentNo, String departmentCode) {
+        this.position = position;
+        this.studentNo = studentNo;
+        this.departmentCode = departmentCode;
+    }
+
+    /** Whether the account has filled in 직책·소속 (and 학번 where required). */
+    public boolean isProfileComplete() {
+        return position != null && departmentCode != null
+                && (!position.requiresStudentNo() || studentNo != null);
+    }
+
+    /** Whether a password has ever been set — false for a Google-only account. */
+    public boolean hasPassword() {
+        return passwordHash != null;
     }
 }
