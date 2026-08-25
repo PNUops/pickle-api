@@ -1839,6 +1839,10 @@ components:
       - "status"
       - "submittedAt"
       type: "object"
+    IdentityProvider:
+      enum:
+      - "GOOGLE"
+      type: "string"
     IpAllocationResponse:
       properties:
         allocatedAt:
@@ -1949,6 +1953,20 @@ components:
       - "id"
       - "name"
       - "token"
+      type: "object"
+    LinkedIdentity:
+      properties:
+        email:
+          type: "string"
+        linkedAt:
+          format: "date-time"
+          type: "string"
+        provider:
+          $ref: "#/components/schemas/IdentityProvider"
+      required:
+      - "email"
+      - "linkedAt"
+      - "provider"
       type: "object"
     LiveCoverage:
       properties:
@@ -4425,6 +4443,24 @@ components:
           - "integer"
           - "null"
       type: "object"
+    UpdateProfileRequest:
+      properties:
+        departmentCode:
+          maxLength: 32
+          minLength: 0
+          type: "string"
+        position:
+          $ref: "#/components/schemas/UserPosition"
+        studentNo:
+          maxLength: 20
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      required:
+      - "departmentCode"
+      - "position"
+      type: "object"
     UpdateResourceAccessGrantRequest:
       properties:
         role:
@@ -4604,11 +4640,25 @@ components:
       type: "string"
     UserProfileResponse:
       properties:
+        departmentCode:
+          type:
+          - "string"
+          - "null"
+        departmentName:
+          type:
+          - "string"
+          - "null"
         email:
           type: "string"
+        hasPassword:
+          type: "boolean"
         id:
           format: "uuid"
           type: "string"
+        identities:
+          items:
+            $ref: "#/components/schemas/LinkedIdentity"
+          type: "array"
         memberships:
           items:
             $ref: "#/components/schemas/Membership"
@@ -4626,17 +4676,30 @@ components:
           items:
             $ref: "#/components/schemas/TermsVersionView"
           type: "array"
+        position:
+          anyOf:
+          - $ref: "#/components/schemas/UserPosition"
+          - type: "null"
+        profileComplete:
+          type: "boolean"
         role:
           $ref: "#/components/schemas/UserRole"
         status:
           $ref: "#/components/schemas/UserStatus"
+        studentNo:
+          type:
+          - "string"
+          - "null"
       required:
       - "email"
+      - "hasPassword"
       - "id"
+      - "identities"
       - "memberships"
       - "mfaEnabled"
       - "name"
       - "pendingConsents"
+      - "profileComplete"
       - "role"
       - "status"
       type: "object"
@@ -8705,6 +8768,39 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "consent-controller"
+  /me/identities/{provider}:
+    delete:
+      operationId: "unlinkIdentity"
+      parameters:
+      - in: "path"
+        name: "provider"
+        required: true
+        schema:
+          $ref: "#/components/schemas/IdentityProvider"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "200":
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "identity-controller"
   /me/mfa/disable:
     post:
       operationId: "disable"
@@ -8825,6 +8921,30 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "account-controller"
+  /me/profile:
+    put:
+      operationId: "updateProfile"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "me-controller"
   /me/withdraw:
     post:
       operationId: "withdraw"

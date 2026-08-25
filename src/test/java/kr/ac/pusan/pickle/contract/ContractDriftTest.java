@@ -81,6 +81,8 @@ class ContractDriftTest {
             "POST /auth/logout",
             "POST /auth/reverify",
             "GET /me",
+            "PUT /me/profile",
+            "DELETE /me/identities/{provider}",
             "GET /orgs",
             "GET /os-images",
             "GET /meta/request-options",
