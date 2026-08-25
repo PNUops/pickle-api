@@ -61,6 +61,20 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!--
+			ID-token verification only. Google signs with RS256 over a rotating
+			JWKS, which the jjwt stack above (HS256, one static key) does not
+			read; NimbusJwtDecoder gives key rollover, kid selection and the
+			exp/iat checks for a JwtDecoder bean and nothing else. It brings no
+			filter and no oauth2Login() - the authorization-code exchange is our
+			own, because oauth2Login() would put an HttpSession behind a
+			deliberately stateless chain and place its endpoints outside the
+			generated contract. Version managed by the Boot parent.
+		-->
+		<dependency>
+			<groupId>org.springframework.security</groupId>
+			<artifactId>spring-security-oauth2-jose</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>

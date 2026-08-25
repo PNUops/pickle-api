@@ -201,14 +201,41 @@ public class AuthService {
 
         User user = userRepository.findById(verification.getUserId())
                 .orElseThrow(AuthService::verificationTokenGone);
-        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
-            user.setStatus(UserStatus.ACTIVE);
-            user.setEmailVerifiedAt(now);
-        }
-        personalWorkspaceService.ensurePersonalWorkspace(user);
+        activateAccount(user, now);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_VERIFY,
                 "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
         return new MessageResponse("이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.");
+    }
+
+    /**
+     * Turns a PENDING_VERIFICATION account into a usable one: ACTIVE, stamped
+     * as verified, and holding the personal workspace.
+     *
+     * <p>Extracted because three paths reach this state — mail verification,
+     * Google registration, and a Google sign-in that finds a still-pending
+     * account. {@code ensurePersonalWorkspace} is idempotent, but idempotence
+     * does not help a path that forgets to call it: that account simply has no
+     * workspace, and nothing notices until the user tries to use one.
+     */
+    public void activateAccount(User user, Instant when) {
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            user.setStatus(UserStatus.ACTIVE);
+            user.setEmailVerifiedAt(when);
+        }
+        personalWorkspaceService.ensurePersonalWorkspace(user);
+    }
+
+    /**
+     * Expires the account's unspent signup verification links.
+     *
+     * <p>Called when a Google sign-in activates a still-pending account. Whoever
+     * created that account received a verification link by mail; if that was not
+     * the account holder, the link must stop working the moment the real holder
+     * proves the address is theirs. Activating without this leaves the earlier
+     * link live against a now-ACTIVE account.
+     */
+    public void invalidateOpenSignupVerifications(long userId) {
+        emailVerificationRepository.invalidateOpen(userId, VerificationPurpose.SIGNUP, Instant.now());
     }
 
     @Transactional
@@ -233,11 +260,15 @@ public class AuthService {
 
         Optional<User> found = userRepository.findByEmail(email);
         // filter(Objects::nonNull) is the whole of what keeps a Google-only
-        // account out of the response. Its hash is null; letting that reach the
-        // encoder is a 500, and a 500 here answers "does this address have a
-        // password?" to an anonymous caller — the one question the uniform 401
-        // below exists to refuse. Burning the equaliser instead makes a
-        // passwordless account indistinguishable from a wrong password.
+        // account out of the response, and the reason is timing, not an
+        // exception: AbstractValidatingPasswordEncoder.matches returns false
+        // immediately for a null hash, without running BCrypt at all. A
+        // passwordless account would therefore answer measurably faster than a
+        // wrong password on an ordinary account, which is exactly the oracle
+        // the equaliser hash exists to close. Burning the equaliser instead
+        // makes the two indistinguishable. (Checked against
+        // spring-security-crypto 7.1.0; do not remove this on the belief that
+        // the encoder would have thrown.)
         String passwordHash = found.map(User::getPasswordHash)
                 .filter(Objects::nonNull)
                 .orElse(TIMING_EQUALIZER_HASH);
@@ -276,9 +307,23 @@ public class AuthService {
         }
 
         rateLimitService.clearLoginFailures(email, ip);
+        return issueSession(user, ip, userAgent, Map.of("email", email));
+    }
+
+    /**
+     * Mints the token pair that IS a session here: the access token, the user
+     * summary, and the rotating refresh token the controller turns into a
+     * cookie.
+     *
+     * <p>Shared with the Google sign-in path rather than copied, so that what
+     * counts as a session — and what a successful login writes to the audit
+     * log — has one definition. The caller decides whether the account was
+     * entitled to it; this only issues.
+     */
+    public AuthResult issueSession(User user, String ip, String userAgent, Map<String, Object> auditMetadata) {
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
-                "user", user.getPublicId(), Map.of("email", email), ip);
+                "user", user.getPublicId(), auditMetadata, ip);
         return new AuthResult(
                 new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
                 issued.rawToken());

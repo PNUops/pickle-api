@@ -87,6 +87,31 @@ pickle:
     verification-base-url: ${PICKLE_VERIFICATION_BASE_URL:https://pickle.pusan.ac.kr/verify-email}
     # Console URL the password-reset mail links to; token is appended as ?token=
     password-reset-base-url: ${PICKLE_PASSWORD_RESET_BASE_URL:https://pickle.pusan.ac.kr/reset-password}
+  oauth:
+    google:
+      # Google sign-in. Deliberately no startup fail-fast, for the same reason
+      # the Proxmox block below has none: dev and test have no Google client and
+      # must still boot. Unset, the OAuth endpoints answer 503
+      # AUTH_OAUTH_NOT_CONFIGURED and nothing else changes.
+      client-id: ${PICKLE_GOOGLE_CLIENT_ID:}
+      client-secret: ${PICKLE_GOOGLE_CLIENT_SECRET:}
+      # The CONSOLE page Google redirects to. Must equal the value registered in
+      # the Google console byte for byte. The API issues no redirect itself: the
+      # console reads the code off its own URL and posts it back same-origin, so
+      # the token response rides an ordinary same-site request and needs no
+      # exception to the __Host- / SameSite=Strict cookie policy.
+      redirect-uri: ${PICKLE_GOOGLE_REDIRECT_URI:https://pickle.pusan.ac.kr/auth/google/callback}
+      # Workspace domain accounts must belong to. Checked on the verified id
+      # token; the same value is also sent as the `hd` authorization parameter,
+      # which is a UX hint only and is not a control.
+      hosted-domain: ${PICKLE_GOOGLE_HOSTED_DOMAIN:pusan.ac.kr}
+      authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+      token-uri: https://oauth2.googleapis.com/token
+      jwk-set-uri: https://www.googleapis.com/oauth2/v3/certs
+      # Google publishes both spellings; either is a valid issuer.
+      issuers:
+        - https://accounts.google.com
+        - accounts.google.com
   proxmox:
     # PVE API token. Deliberately no startup fail-fast: dev/test
     # profiles that never touch Proxmox may leave these unset — ProxmoxClient

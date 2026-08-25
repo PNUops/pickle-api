@@ -60,9 +60,10 @@ comment on column users.department_code is
 
 -- An account may now exist without a password: one created through Google
 -- sign-in has never had one. Everything that compares a supplied password
--- against this column has to handle null, and AuthService.login in particular
--- must keep answering a uniform 401 rather than a 500 — a 500 there would tell
--- an anonymous caller that the address is a Google-only account.
+-- against this column has to handle null. The encoder returns false for a null
+-- hash without running BCrypt, so the hazard is timing rather than an error:
+-- AuthService.login burns its equaliser hash so that a passwordless account is
+-- not identifiable by how fast it is refused.
 alter table users alter column password_hash drop not null;
 
 -- Linked external identities. Keyed on the provider's subject rather than the
@@ -92,3 +93,59 @@ comment on table user_identities is
 -- sets status = WITHDRAWN. AccountService.withdraw therefore deletes these rows
 -- explicitly — without that, a withdrawn address keeps a live `sub` and the
 -- next Google login walks straight back into the withdrawn account.
+
+-- In-flight authorization-code exchanges. The console never holds these values:
+-- it carries only the opaque `state` back from Google and posts it, so the
+-- nonce and the PKCE verifier stay server-side and there is no cookie to make
+-- SameSite=Strict refuse to send across the Google redirect.
+--
+-- Same shape as email_verifications and mfa_login_tokens: the token is stored
+-- hashed and consumed by a conditional UPDATE, so exactly one concurrent caller
+-- wins and a replay answers 410 rather than a second login.
+create table oauth_flows (
+    id                  bigserial primary key,
+    state_hash          varchar(64)  not null unique,
+    nonce               varchar(64)  not null,
+    code_verifier       varchar(128) not null,
+    purpose             varchar(20)  not null,
+    -- Set for the purposes that act on an existing session (REVERIFY, LINK).
+    -- The callback refuses a flow whose initiator is not the account the
+    -- verified subject resolves to, so a flow cannot be finished by anyone else.
+    initiating_user_id  bigint       references users (id) on delete cascade,
+    -- Echoed back to the console so it can return the user where they were.
+    -- Validated as an internal path before use; never used to build a redirect
+    -- server-side, because this API issues none.
+    redirect_to         varchar(512),
+    created_at          timestamptz  not null default now(),
+    expires_at          timestamptz  not null,
+    consumed_at         timestamptz,
+    constraint chk_oauth_flows_purpose check (purpose in ('LOGIN', 'REVERIFY', 'LINK'))
+);
+
+create index idx_oauth_flows_expires on oauth_flows (expires_at);
+
+-- A verified Google identity with no account yet. Deliberately not an account:
+-- creating the user here would leave a row that has agreed to nothing, and the
+-- signup transaction's rule is that an incomplete consent set rolls the user
+-- back. The console redeems this for the onboarding form and posts consents
+-- with it, so the same invariant holds on the social path.
+create table oauth_registrations (
+    id             bigserial primary key,
+    token_hash     varchar(64)  not null unique,
+    provider       varchar(20)  not null,
+    subject        varchar(255) not null,
+    email          citext       not null,
+    name           varchar(100),
+    hosted_domain  varchar(255),
+    created_at     timestamptz  not null default now(),
+    expires_at     timestamptz  not null,
+    consumed_at    timestamptz,
+    constraint chk_oauth_registrations_provider check (provider in ('GOOGLE'))
+);
+
+create index idx_oauth_registrations_expires on oauth_registrations (expires_at);
+
+comment on table oauth_flows is
+    '진행 중인 OAuth 인가 교환. state 는 해시로만 저장하고 단회 소비한다.';
+comment on table oauth_registrations is
+    '검증된 외부 신원 중 아직 계정이 없는 것. 온보딩 폼이 이 토큰으로 약관 동의와 함께 계정을 만든다.';

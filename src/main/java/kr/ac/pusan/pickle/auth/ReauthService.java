@@ -71,6 +71,27 @@ public class ReauthService {
     }
 
     /**
+     * Issues the same sudo token for a proof made somewhere other than a
+     * password — today, a Google reauthentication with {@code prompt=login}.
+     *
+     * <p>Token creation is not duplicated for the new path: an account with no
+     * password would otherwise be locked out of deleting its own VM, and two
+     * implementations of "what a sudo grant is" would drift. The caller is
+     * responsible for having actually verified the holder; this only mints.
+     */
+    @Transactional
+    public ReverifyResponse issueVerified(User user, String ip) {
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
+        String rawToken = TokenHasher.newToken();
+        Instant expiresAt = Instant.now().plus(TTL);
+        repository.save(new AuthReverification(user.getId(), TokenHasher.sha256Hex(rawToken),
+                user.getTokenVersion(), expiresAt, ip));
+        auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_REVERIFY,
+                "user", user.getPublicId(), Map.of("result", "success", "method", "google"), ip);
+        return new ReverifyResponse(rawToken, expiresAt);
+    }
+
+    /**
      * True when the raw token belongs to {@code userId} (cross-user replay is
      * never valid), is unexpired, and was issued under the user's CURRENT
      * token_version.

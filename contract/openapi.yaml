@@ -2676,6 +2676,107 @@ components:
       - "importance"
       - "title"
       type: "object"
+    OauthCallbackRequest:
+      properties:
+        code:
+          maxLength: 2048
+          minLength: 0
+          type: "string"
+        state:
+          maxLength: 128
+          minLength: 0
+          type: "string"
+      required:
+      - "code"
+      - "state"
+      type: "object"
+    OauthCompleteRequest:
+      properties:
+        consents:
+          items:
+            $ref: "#/components/schemas/ConsentInput"
+          minItems: 1
+          type: "array"
+        departmentCode:
+          maxLength: 32
+          minLength: 0
+          type: "string"
+        name:
+          maxLength: 50
+          minLength: 0
+          type: "string"
+        position:
+          $ref: "#/components/schemas/UserPosition"
+        registrationToken:
+          maxLength: 128
+          minLength: 0
+          type: "string"
+        studentNo:
+          maxLength: 20
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      required:
+      - "consents"
+      - "departmentCode"
+      - "name"
+      - "position"
+      - "registrationToken"
+      type: "object"
+    OauthPurpose:
+      enum:
+      - "LOGIN"
+      - "REVERIFY"
+      - "LINK"
+      type: "string"
+    OauthRegistrationResponse:
+      properties:
+        email:
+          type: "string"
+        expiresAt:
+          format: "date-time"
+          type: "string"
+        kind:
+          type: "string"
+        name:
+          type: "string"
+        registrationToken:
+          type: "string"
+      required:
+      - "email"
+      - "expiresAt"
+      - "kind"
+      - "name"
+      - "registrationToken"
+      type: "object"
+    OauthStartRequest:
+      properties:
+        purpose:
+          anyOf:
+          - $ref: "#/components/schemas/OauthPurpose"
+          - type: "null"
+        redirectTo:
+          maxLength: 512
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      type: "object"
+    OauthStartResponse:
+      properties:
+        authorizationUrl:
+          type: "string"
+        expiresAt:
+          format: "date-time"
+          type: "string"
+        state:
+          type: "string"
+      required:
+      - "authorizationUrl"
+      - "expiresAt"
+      - "state"
+      type: "object"
     OrgDashboardSummaryResponse:
       properties:
         attention:
@@ -7939,6 +8040,85 @@ paths:
       security: []
       tags:
       - "auth-controller"
+  /auth/oauth/google/callback:
+    post:
+      operationId: "completeGoogleOauthCallback"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OauthCallbackRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                oneOf:
+                - $ref: "#/components/schemas/AuthTokenResponse"
+                - $ref: "#/components/schemas/MfaChallengeResponse"
+                - $ref: "#/components/schemas/OauthRegistrationResponse"
+                - $ref: "#/components/schemas/ReverifyResponse"
+          description: "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "google-oauth-controller"
+  /auth/oauth/google/complete:
+    post:
+      operationId: "completeGoogleOauthRegistration"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OauthCompleteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: "object"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "google-oauth-controller"
+  /auth/oauth/google/start:
+    post:
+      operationId: "startGoogleOauth"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OauthStartRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OauthStartResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "google-oauth-controller"
   /auth/password-reset:
     post:
       operationId: "requestPasswordReset"
@@ -8785,8 +8965,8 @@ paths:
         schema:
           type: "string"
       responses:
-        "200":
-          description: "OK"
+        "204":
+          description: "No Content"
         "403":
           content:
             application/problem+json:

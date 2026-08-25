@@ -227,6 +227,14 @@ public class NotificationComposer {
                     본인이 변경한 것이 아니라면 즉시 비밀번호를 재설정하고
                     관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
+            case ACCOUNT_IDENTITY_LINKED -> new Composed(event.id(), "구글 계정 연동 안내",
+                    """
+                    이 계정에 구글 계정이 연동되었습니다. 앞으로 구글 계정으로도
+                    로그인할 수 있습니다.
+
+                    본인이 연동한 것이 아니라면 계정 설정에서 연동을 해제하고
+                    관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
             case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
                     """
                     관리자에 의해 계정이 비활성화되어 로그인과 SSH 접속이
