@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.llm.LlmUsageRetentionPolicy;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.dto.SettingView;
 import org.springframework.http.HttpStatus;
@@ -50,6 +51,8 @@ public class SettingsService {
     // V16 seeds the first two; vm_expiry_autostop_enabled arrives with V18.
     public static final String VM_EXPIRY_NOTICE_DAYS = "vm_expiry_notice_days";
     public static final String NOTIFICATION_RETENTION_DAYS = "notification_retention_days";
+    /** LLM 원본 사용량 이벤트 보관 기간(일). 0=무기한, 그 외는 90일 이상. */
+    public static final String LLM_USAGE_RETENTION_DAYS = "llm_usage_retention_days";
     public static final String VM_EXPIRY_AUTOSTOP_ENABLED = "vm_expiry_autostop_enabled";
     // 점검 모드·공지 배너·문의처 (V43, GET /meta/status).
     public static final String MAINTENANCE_MODE = "maintenance_mode";
@@ -290,6 +293,8 @@ public class SettingsService {
         map.put(VM_EXPIRY_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages()));
         map.put(NOTIFICATION_RETENTION_DAYS, new Editable(SettingValueType.INTEGER,
                 intInRange(30, 3650)));
+        map.put(LLM_USAGE_RETENTION_DAYS, new Editable(SettingValueType.INTEGER,
+                zeroOrIntInRange(LlmUsageRetentionPolicy.MINIMUM_RETENTION_DAYS, 3650)));
         map.put(MAINTENANCE_MODE, new Editable(SettingValueType.BOOLEAN, bool()));
         map.put(MAINTENANCE_MESSAGE, new Editable(SettingValueType.STRING,
                 stringMaxLength(MAX_MESSAGE_LENGTH)));
@@ -346,6 +351,27 @@ public class SettingsService {
                         min + " 이상 " + max + " 이하의 정수여야 합니다."));
             }
             return List.of();
+        };
+    }
+
+    /**
+     * Zero, or an integer in range. For a retention that is off by default and
+     * has a floor when it is on: a plain range would make turning it back off
+     * impossible, and a range starting at zero would allow the values between
+     * zero and the floor, which are the dangerous ones.
+     */
+    private static Function<JsonNode, List<FieldValidationError>> zeroOrIntInRange(int min,
+            int max) {
+        return value -> {
+            if (!value.isIntegralNumber() || !value.canConvertToInt()) {
+                return List.of(new FieldValidationError("value", "정수여야 합니다."));
+            }
+            int v = value.asInt();
+            if (v == 0 || (v >= min && v <= max)) {
+                return List.of();
+            }
+            return List.of(new FieldValidationError("value",
+                    "0(무기한) 또는 " + min + " 이상 " + max + " 이하의 정수여야 합니다."));
         };
     }
 
