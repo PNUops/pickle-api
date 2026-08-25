@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.auth.dto.MfaChallengeResponse;
 import kr.ac.pusan.pickle.auth.dto.ReverifyResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthCallbackRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthCompleteRequest;
+import kr.ac.pusan.pickle.oauth.dto.OauthLinkedResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthRegistrationResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartResponse;
@@ -55,6 +56,7 @@ public class GoogleOauthController {
      * (and bound into the flow) for the purposes that act on a live session.
      * Accepts no e-mail address of any kind.
      */
+    @ApiResponse(responseCode = "200", description = "인가 URL 발급")
     @PostMapping("/start")
     public OauthStartResponse startGoogleOauth(@Valid @RequestBody OauthStartRequest request,
             @Parameter(hidden = true) @AuthenticationPrincipal @Nullable AuthenticatedUser principal,
@@ -63,16 +65,23 @@ public class GoogleOauthController {
     }
 
     /**
-     * Redeems the authorization code. Four outcomes, discriminated by
-     * {@code kind} rather than by which fields are present: the login response
-     * is already a two-way union that the console narrows by field probing, and
-     * a four-way union built the same way would be guesswork.
+     * Redeems the authorization code. Five outcomes, one per purpose the flow
+     * can carry, and every one of them is listed below: a shape the service can
+     * return but the {@code oneOf} omits is a response no generated client can
+     * represent. {@code LINKED} was exactly that until v0.45.0.
+     *
+     * <p>Two of the five carry a {@code kind} discriminator and three do not —
+     * {@code AuthTokenResponse}, {@code MfaChallengeResponse} and
+     * {@code ReverifyResponse} predate this endpoint and are shared with the
+     * password login, so the console narrows those by field probing. Adding
+     * {@code kind} to them would change three published schemas to tidy one
+     * client branch.
      */
     @ApiResponse(responseCode = "200",
-            description = "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰",
+            description = "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰 / 연동 완료",
             content = @Content(schema = @Schema(oneOf = {AuthTokenResponse.class,
                     MfaChallengeResponse.class, OauthRegistrationResponse.class,
-                    ReverifyResponse.class})))
+                    ReverifyResponse.class, OauthLinkedResponse.class})))
     @PostMapping("/callback")
     public ResponseEntity<Object> completeGoogleOauthCallback(
             @Valid @RequestBody OauthCallbackRequest request,
@@ -94,9 +103,10 @@ public class GoogleOauthController {
      * onboarding form's submit. Consents travel with it so the account and its
      * consent rows are written in one transaction, as they are at signup.
      */
-    // ResponseEntity<Object> 라 springdoc 이 형태를 추론하지 못한다. 선언하지 않으면
-    // 생성 명세의 200 이 빈 객체가 되고, 콘솔 생성 타입도 그대로 비어 계약이 말하는
-    // 것과 클라이언트가 받는 것이 갈린다. 콜백의 4-way union 과 같은 이유다.
+    // ResponseEntity<Object> gives springdoc nothing to infer from, so without
+    // this the generated 200 is an empty object and the console's generated type
+    // is empty with it -- the contract and what the client receives come apart.
+    // Same reason the callback beside it declares its union explicitly.
     @ApiResponse(responseCode = "200", description = "계정 생성과 토큰 발급",
             content = @Content(schema = @Schema(implementation = AuthTokenResponse.class)))
     @PostMapping("/complete")
