@@ -17,10 +17,7 @@ import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
 import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
-import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
-import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
@@ -431,11 +428,7 @@ public class DeleteVmJob {
 
     /** Contract: the final destruction is notified to the org's admins. */
     private void notifyOrgAdmins(Vm vm) {
-        List<Long> admins = userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId())
-                .stream()
-                .filter(admin -> admin.getStatus() == UserStatus.ACTIVE)
-                .map(User::getId)
-                .toList();
+        List<Long> admins = notificationService.orgAdminIds(vm.getOrgId());
         notificationService.publish(admins, NotificationEvent.VM_DELETE_COMPLETED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()),
                 "vm_delete_completed:" + vm.getId());

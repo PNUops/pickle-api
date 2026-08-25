@@ -7,6 +7,7 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.settings.SettingsService;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -49,8 +50,9 @@ public class OrgHeadroomService {
      * org — or platform-wide (all orgs) when {@code orgId} is null (SYS_ADMIN
      * dashboard without a drill-in).
      */
-    public HeadroomResult headroom(Long orgId) {
-        List<Vm> orgVms = vmRepository.findActiveByOrgId(orgId, VmStatus.DELETED);
+    public HeadroomResult headroom(OrgScope scope) {
+        List<Vm> orgVms = vmRepository.findActiveByOrgIds(
+                scope.isUnrestricted() ? null : scope.orgIds(), VmStatus.DELETED);
         ResourceTotalsResponse allocated = ResourceTotalsResponse.of(orgVms);
         PlatformCapacity capacity = capacity();
         long cpuThreads = capacity.cpuThreads();

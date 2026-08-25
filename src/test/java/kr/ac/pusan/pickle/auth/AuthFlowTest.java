@@ -160,7 +160,7 @@ class AuthFlowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value(EMAIL))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.orgId").value((Object) null))
+                .andExpect(jsonPath("$.managedOrgs").isEmpty())
                 .andExpect(jsonPath("$.memberships[0].workspaceKind").value("PERSONAL"))
                 .andExpect(jsonPath("$.memberships[0].role").value("OWNER"))
                 .andExpect(jsonPath("$.memberships[0].workspaceName").value("홍길동"))

@@ -180,10 +180,11 @@ class AdminVmGatewayBlockTest {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", "차단테스트");
             user.setRole(role);
-            user.setOrgId(userOrgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), userOrgId, role);
+            return saved;
         });
     }
 

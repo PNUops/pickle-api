@@ -291,7 +291,7 @@ class VmPowerControlTest {
         long vmId = createVm(VmStatus.STOPPED);
         UUID vmPublicId = SeedFixtures.publicId(jdbcTemplate, "vms", vmId);
         AuthenticatedUser actor = new AuthenticatedUser(owner.getId(), owner.getPublicId(),
-                owner.getEmail(), owner.getRole(), owner.getOrgId());
+                owner.getEmail(), owner.getRole(), java.util.Map.of());
 
         int racers = 4;
         CountDownLatch start = new CountDownLatch(1);

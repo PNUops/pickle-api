@@ -33,10 +33,8 @@ import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
-import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
-import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
@@ -381,7 +379,9 @@ public class VmDeletionService {
             return vm;
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
-            if (!vm.getOrgId().equals(actor.orgId())) {
+            // The admin override belongs to the org this VM is in, not to the
+            // account's highest role somewhere else.
+            if (!actor.administers(vm.getOrgId())) {
                 throw VmAccessService.vmNotFound();
             }
             return vm;
@@ -446,10 +446,7 @@ public class VmDeletionService {
     private List<Long> recipients(Vm vm, boolean includeOrgAdmins) {
         Set<Long> userIds = new LinkedHashSet<>(notificationService.vmAudienceIds(vm));
         if (includeOrgAdmins) {
-            userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId()).stream()
-                    .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                    .map(User::getId)
-                    .forEach(userIds::add);
+            userIds.addAll(notificationService.orgAdminIds(vm.getOrgId()));
         }
         return List.copyOf(userIds);
     }

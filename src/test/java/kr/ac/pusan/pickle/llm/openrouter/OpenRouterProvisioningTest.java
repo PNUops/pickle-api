@@ -135,7 +135,7 @@ class OpenRouterProvisioningTest {
         UUID publicId = jdbcTemplate.queryForObject(
                 "select public_id from llm_api_keys where id = ?", UUID.class, keyId);
         AuthenticatedUser admin = new AuthenticatedUser(SeedFixtures.orgadminId(jdbcTemplate),
-                UUID.randomUUID(), "admin@test", UserRole.SYS_ADMIN, null);
+                UUID.randomUUID(), "admin@test", UserRole.SYS_ADMIN, java.util.Map.of());
 
         keyService.revoke(admin, publicId);
 

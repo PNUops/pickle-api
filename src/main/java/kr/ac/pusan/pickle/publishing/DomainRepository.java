@@ -101,12 +101,12 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     // REMOVED rows are hidden by default but visible via status=REMOVED.
     @Query("""
             select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgId is null or v.orgId = :orgId)
+            where (:orgIds is null or v.orgId in :orgIds)
               and (:kind is null or cast(d.kind as string) = :kind)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
             order by d.id desc
             """)
-    Page<Domain> findAdmin(@Param("orgId") Long orgId, @Param("kind") String kind,
+    Page<Domain> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("kind") String kind,
             @Param("status") String status, Pageable pageable);
 }

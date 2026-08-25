@@ -1,8 +1,12 @@
 package kr.ac.pusan.pickle.announcement;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementCreateRequest;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementView;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -16,6 +20,7 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
@@ -95,15 +100,31 @@ public class AnnouncementService {
                     errors.add(new FieldValidationError("workspaceId", "기관 공지에는 워크스페이스를 지정할 수 없습니다."));
                 }
                 if (actor.role() == UserRole.ORG_ADMIN) {
-                    if (actor.orgId() == null) {
+                    // The one place the actor's own organisation becomes a
+                    // stored row, so it is the one place that has to ask which
+                    // one when the account administers several. Naming it is
+                    // required from the second organisation onwards; an account
+                    // that administers exactly one still need not.
+                    Set<Long> administered = actor.orgRoles().entrySet().stream()
+                            .filter(entry -> entry.getValue() == UserRole.ORG_ADMIN)
+                            .map(Map.Entry::getKey)
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+                    if (administered.isEmpty()) {
                         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                                 "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
                     }
-                    if (request.orgId() != null && !actor.orgId().equals(requestedOrgId)) {
+                    if (request.orgId() != null) {
+                        if (!administered.contains(requestedOrgId)) {
+                            errors.add(new FieldValidationError("orgId",
+                                    "자기 기관에만 기관 공지를 발송할 수 있습니다."));
+                        }
+                        orgId = requestedOrgId;
+                    } else if (administered.size() == 1) {
+                        orgId = administered.iterator().next();
+                    } else {
                         errors.add(new FieldValidationError("orgId",
-                                "자기 기관에만 기관 공지를 발송할 수 있습니다."));
+                                "기관 공지에는 대상 기관이 필요합니다."));
                     }
-                    orgId = actor.orgId();
                 } else {
                     if (request.orgId() == null) {
                         errors.add(new FieldValidationError("orgId", "기관 공지에는 대상 기관이 필요합니다."));
@@ -133,7 +154,7 @@ public class AnnouncementService {
             // their org answer the same 404 — workspace existence stays private.
             if (workspaceId == null || !workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
                     || (actor.role() == UserRole.ORG_ADMIN
-                            && !workspaceLinkedToOrg(workspaceId, actor.orgId()))) {
+                            && !workspaceLinkedToOrg(workspaceId, actor.managedOrgIds()))) {
                 throw notFound("해당 워크스페이스가 존재하지 않습니다.");
             }
         }
@@ -184,12 +205,20 @@ public class AnnouncementService {
             case ALL -> jdbcTemplate.update(base + " where u.status = 'ACTIVE'",
                     event, announcement.getTitle(), announcement.getBody(), importance,
                     announcement.getId());
-            case ORG -> jdbcTemplate.update(
-                    base + " where u.status = 'ACTIVE' and (u.org_id = ? or "
-                            + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id") + ")",
-                    event, announcement.getTitle(), announcement.getBody(), importance,
-                    announcement.getId(),
-                    announcement.getOrgId(), announcement.getOrgId(), announcement.getOrgId());
+            case ORG -> {
+                OrgScope scope = OrgScope.of(announcement.getOrgId());
+                List<Object> params = new ArrayList<>(List.of(event, announcement.getTitle(),
+                        announcement.getBody(), importance, announcement.getId()));
+                params.addAll(scope.orgIds());
+                params.addAll(scope.orgIds());
+                params.addAll(scope.orgIds());
+                yield jdbcTemplate.update(
+                        base + " where u.status = 'ACTIVE' and (exists (select 1"
+                                + " from user_org_roles uor where uor.user_id = u.id and "
+                                + scope.inList("uor.org_id") + ") or "
+                                + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope) + ")",
+                        params.toArray());
+            }
             case WORKSPACE -> jdbcTemplate.update(base + """
                           join workspace_members gm on gm.user_id = u.id
                          where gm.workspace_id = ? and u.status = 'ACTIVE'
@@ -199,11 +228,17 @@ public class AnnouncementService {
         };
     }
 
-    /** The WORKSPACE-scope gate: the workspace has resources in the caller's org. */
-    private boolean workspaceLinkedToOrg(long workspaceId, Long orgId) {
+    /** The WORKSPACE-scope gate: the workspace has resources in a managed org. */
+    private boolean workspaceLinkedToOrg(long workspaceId, Collection<Long> orgIds) {
+        OrgScope scope = OrgScope.of(orgIds);
+        List<Object> params = new ArrayList<>();
+        params.add(workspaceId);
+        params.addAll(scope.orgIds());
+        params.add(workspaceId);
+        params.addAll(scope.orgIds());
         Boolean linked = jdbcTemplate.queryForObject(
-                "select " + OrgMembershipSql.workspaceLinkedToOrg("?"),
-                Boolean.class, workspaceId, orgId, workspaceId, orgId);
+                "select " + OrgMembershipSql.workspaceLinkedToOrg("?", scope),
+                Boolean.class, params.toArray());
         return Boolean.TRUE.equals(linked);
     }
 

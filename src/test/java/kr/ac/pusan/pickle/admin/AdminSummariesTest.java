@@ -218,10 +218,11 @@ class AdminSummariesTest {
     private User createUser(String email, UserRole role, Long orgId) {
         User user = new User(email, "{test-no-login}", "요약테스트");
         user.setRole(role);
-        user.setOrgId(orgId);
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerifiedAt(Instant.now());
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+        return saved;
     }
 
     private long createWorkspace() {

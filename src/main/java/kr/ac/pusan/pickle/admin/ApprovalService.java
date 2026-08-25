@@ -24,6 +24,7 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -98,10 +99,10 @@ public class ApprovalService {
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
             ResourceType type, UUID orgId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        Long scopedOrgId = listScopeOrgId(actor, orgId);
+        OrgScope scope = listScopeOrgId(actor, orgId);
         Specification<Request> spec = Specification.unrestricted();
-        if (scopedOrgId != null) {
-            spec = spec.and(RequestSpecs.org(scopedOrgId));
+        if (!scope.isUnrestricted()) {
+            spec = spec.and(RequestSpecs.orgIn(scope.orgIds()));
         }
         if (status != null) {
             spec = spec.and(RequestSpecs.status(status));
@@ -218,18 +219,18 @@ public class ApprovalService {
      * <p>Named rather than inline because the queue is a read and the pinning
      * rule it applies has to be visible next to the ones approve and reject use.
      */
-    private Long listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
         if (!actor.role().isOrgTier()) {
-            return requestedOrgId;
+            return OrgScope.of(requestedOrgId);
         }
-        if (actor.orgId() == null) {
-            // Defensive: an org-tier actor without a managed org sees nothing.
+        if (actor.managedOrgIds().isEmpty()) {
+            // Defensive: an org-tier actor managing nothing sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        return actor.orgId();
+        return OrgScope.of(actor.managedOrgIds());
     }
 
     /**
@@ -255,7 +256,7 @@ public class ApprovalService {
 
     private static void requireSameOrg(AuthenticatedUser actor, Request request) {
         if (request == null
-                || (actor.role().isOrgTier() && !request.getOrgId().equals(actor.orgId()))) {
+                || (actor.role().isOrgTier() && !actor.manages(request.getOrgId()))) {
             throw requestNotFound();
         }
     }

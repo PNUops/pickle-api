@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import java.util.Collection;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -22,6 +23,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
 import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmEvent;
@@ -93,8 +95,8 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminRouteView> listRoutes(AuthenticatedUser actor, UUID orgId,
             RouteStatus status, int page, int size) {
-        Long scopedOrgId = scopedOrgId(actor, orgId);
-        Page<Route> routes = routeRepository.findAdmin(scopedOrgId, name(status), page(page, size));
+        OrgScope scope = scopedOrgId(actor, orgId);
+        Page<Route> routes = routeRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
         Context ctx = context(routes.getContent().stream()
                 .map(r -> domainRepository.findById(r.getDomainId()).orElse(null))
                 .filter(d -> d != null).toList());
@@ -125,8 +127,8 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminDomainView> listDomains(AuthenticatedUser actor, UUID orgId,
             DomainKind kind, DomainStatus status, int page, int size) {
-        Long scopedOrgId = scopedOrgId(actor, orgId);
-        Page<Domain> domains = domainRepository.findAdmin(scopedOrgId, name(kind), name(status),
+        OrgScope scope = scopedOrgId(actor, orgId);
+        Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), name(kind), name(status),
                 page(page, size));
         Context ctx = context(domains.getContent());
         List<AdminDomainView> content = domains.getContent().stream().map(domain -> {
@@ -150,12 +152,12 @@ public class AdminPublishingService {
     @Transactional(readOnly = true)
     public PageResponse<AdminCertificateView> listCertificates(AuthenticatedUser actor, UUID orgId,
             CertificateStatus status, Integer expiringInDays, int page, int size) {
-        Long scopedOrgId = scopedOrgId(actor, orgId);
+        OrgScope scope = scopedOrgId(actor, orgId);
         Instant now = Instant.now();
         Page<Certificate> certs = expiringInDays != null
-                ? certificateRepository.findAdminExpiring(scopedOrgId, name(status),
+                ? certificateRepository.findAdminExpiring(orgFilter(scope), name(status),
                         now.plus(expiringInDays, ChronoUnit.DAYS), page(page, size))
-                : certificateRepository.findAdmin(scopedOrgId, name(status), page(page, size));
+                : certificateRepository.findAdmin(orgFilter(scope), name(status), page(page, size));
         // The certificate names its domain by public id, and unlike its sibling
         // listings this one had no domain load at all — hence the batch.
         Map<Long, UUID> domainIds = domainRepository.findAllById(certs.getContent().stream()
@@ -303,7 +305,7 @@ public class AdminPublishingService {
             return;
         }
         Long vmOrgId = vmRepository.findById(domain.getVmId()).map(Vm::getOrgId).orElse(null);
-        if (vmOrgId == null || !vmOrgId.equals(actor.orgId())) {
+        if (!actor.manages(vmOrgId)) {
             throw domainNotFound();
         }
     }
@@ -329,17 +331,22 @@ public class AdminPublishingService {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
-    private Long scopedOrgId(AuthenticatedUser actor, UUID orgId) {
+    private OrgScope scopedOrgId(AuthenticatedUser actor, UUID orgId) {
         if (actor.role().isOrgTier()) {
-            if (actor.orgId() == null) {
+            if (actor.managedOrgIds().isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
             }
-            return actor.orgId();
+            return OrgScope.of(actor.managedOrgIds());
         }
         // An id no org has filters to nothing, as a non-matching number did.
-        return orgId == null ? null
-                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
+        return orgId == null ? OrgScope.unrestricted()
+                : OrgScope.of(orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L));
+    }
+
+    /** Null for an unrestricted scope, which is what the repositories expect. */
+    private static Collection<Long> orgFilter(OrgScope scope) {
+        return scope.isUnrestricted() ? null : scope.orgIds();
     }
 
     private static Pageable page(int page, int size) {

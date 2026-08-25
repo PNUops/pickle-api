@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -103,14 +104,15 @@ public class AdminVmQueryService {
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, UUID orgId, UUID workspaceId,
             VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
             int page, int size) {
-        Long scopedOrgId = scopeOrgId(actor, orgId);
+        OrgScope scope = scopeOrgId(actor, orgId);
         Pageable pageable = PageRequest.of(page, size,
                 resolveSort(sort).and(Sort.by(Sort.Direction.DESC, "id")));
         // An id no org or workspace has filters to nothing, as a non-matching
         // numeric id did — it is a filter, not an addressed resource.
         Long scopedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
-        if ((orgId != null && scopedOrgId == null) || (workspaceId != null && scopedWorkspaceId == null)) {
+        if (scope.orgIds().isEmpty() && !scope.isUnrestricted()
+                || (workspaceId != null && scopedWorkspaceId == null)) {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
         Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
@@ -120,8 +122,8 @@ public class AdminVmQueryService {
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
                     cb.like(cb.lower(root.get("hostname")), pattern, '\\')));
         }
-        if (scopedOrgId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
+        if (!scope.isUnrestricted()) {
+            spec = spec.and((root, query, cb) -> root.get("orgId").in(scope.orgIds()));
         }
         if (scopedWorkspaceId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("workspaceId"), scopedWorkspaceId));
@@ -187,21 +189,21 @@ public class AdminVmQueryService {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
         if (!actor.role().isOrgTier()) {
-            return requested;
+            return OrgScope.of(requested);
         }
-        if (actor.orgId() == null) {
-            // Defensive: an org-tier actor without a managed org sees nothing.
+        if (actor.managedOrgIds().isEmpty()) {
+            // Defensive: an org-tier actor managing nothing sees nothing.
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !actor.orgId().equals(requested)) {
+        if (orgId != null && !actor.manages(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }
-        return actor.orgId();
+        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
     }
 }

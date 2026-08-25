@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -86,7 +87,7 @@ public class ApprovalContextService {
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
-        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(request.getOrgId());
+        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(OrgScope.of(request.getOrgId()));
         return new ApprovalContextResponse(
                 applicantPanel(request, applicant),
                 applicantResources(request.getRequesterId()),

@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.security;
 
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.user.UserRole;
 
@@ -10,6 +12,39 @@ import kr.ac.pusan.pickle.user.UserRole;
  * the same account as the API names it, carried here so a response that has to
  * report who acted does not need a second read of the row the filter already
  * loaded.
+ *
+ * <p>{@code role} is the <b>effective</b> role: the highest one the account
+ * holds anywhere, which is what the {@code @PreAuthorize} gates ask about.
+ * {@code orgRoles} is the per-organisation detail behind it (V90) and is empty
+ * for everyone but the org tier — a sys-tier account is not scoped to any org,
+ * and a regular user's organisation is derived from its workspaces rather than
+ * held here. Ask {@link #administers} rather than {@code role} whenever the
+ * question is what this account may do in one particular organisation.
  */
-public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole role, Long orgId) {
+public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole role,
+        Map<Long, UserRole> orgRoles) {
+
+    public AuthenticatedUser {
+        orgRoles = orgRoles == null ? Map.of() : Map.copyOf(orgRoles);
+    }
+
+    /** The organisations this account administers or operates. */
+    public Set<Long> managedOrgIds() {
+        return orgRoles.keySet();
+    }
+
+    /** Holds some org-tier role in {@code orgId}. */
+    public boolean manages(Long orgId) {
+        return orgId != null && orgRoles.containsKey(orgId);
+    }
+
+    /**
+     * Holds {@code ORG_ADMIN} in {@code orgId} specifically. The operations
+     * where ORG_ADMIN and ORG_MANAGER differ ask this, not {@link #role}:
+     * administering one organisation must not confer an admin's rights in
+     * another the account merely operates.
+     */
+    public boolean administers(Long orgId) {
+        return orgId != null && orgRoles.get(orgId) == UserRole.ORG_ADMIN;
+    }
 }

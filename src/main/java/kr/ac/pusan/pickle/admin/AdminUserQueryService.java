@@ -17,7 +17,10 @@ import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.mfa.UserMfaRepository;
+import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
+import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -47,8 +50,6 @@ public class AdminUserQueryService {
      * The scope an id no org has resolves to: a filter value no row carries, so
      * the page comes back empty exactly as a non-matching number made it.
      */
-    private static final Long NO_SUCH_ORG = -1L;
-
 
     /** Whitelisted {@code sort} → SQL order-by. Default is latest signup ({@code -id}). */
     private static final Map<String, String> SORTS = Map.of(
@@ -65,34 +66,40 @@ public class AdminUserQueryService {
     private final VmRepository vmRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final UserMfaRepository userMfaRepository;
+    private final ManagedOrgQueryService managedOrgQueryService;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
             WorkspaceMemberRepository workspaceMemberRepository, VmRepository vmRepository,
             UserStatusChangeRepository userStatusChangeRepository,
-            UserMfaRepository userMfaRepository) {
+            UserMfaRepository userMfaRepository,
+            ManagedOrgQueryService managedOrgQueryService) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmRepository = vmRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.userMfaRepository = userMfaRepository;
+        this.managedOrgQueryService = managedOrgQueryService;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<UserAdminViewResponse> listUsers(AuthenticatedUser actor, String q,
             UserStatus status, UserRole role, UUID orgId, String sort, int page, int size) {
-        Long scopedOrgId = scopeOrgId(actor, orgId);
+        OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
-        if (scopedOrgId != null) {
-            // Derived-org scoping in SQL: the org's ORG_ADMINs plus ACTIVE
-            // members of a workspace linked to the org (derived org membership rule).
-            where.append(" and (u.org_id = ? or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id"))
+        if (!scope.isUnrestricted()) {
+            // Derived-org scoping in SQL: the org's own administrators plus
+            // ACTIVE members of a workspace linked to it (derived membership).
+            where.append(" and (exists (select 1 from user_org_roles uor")
+                    .append(" where uor.user_id = u.id and ")
+                    .append(scope.inList("uor.org_id"))
+                    .append(") or (u.status = 'ACTIVE' and ")
+                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope))
                     .append("))");
-            params.add(scopedOrgId);
-            params.add(scopedOrgId);
-            params.add(scopedOrgId);
+            params.addAll(scope.orgIds());
+            params.addAll(scope.orgIds());
+            params.addAll(scope.orgIds());
         }
         if (q != null && !q.isBlank()) {
             String pattern = "%" + escapeLike(q.strip()) + "%";
@@ -121,19 +128,22 @@ public class AdminUserQueryService {
         // response carries the public pair, and u.id is still what the 2FA
         // set-membership query below joins on.
         List<Row> rows = jdbcTemplate.query("""
-                select u.id, u.public_id, u.email, u.name, u.role, o.public_id as org_public_id,
-                       u.status, u.created_at
-                """ + base + " left join orgs o on o.id = u.org_id" + where
+                select u.id, u.public_id, u.email, u.name, u.role, u.status, u.created_at
+                """ + base + where
                 + " order by " + resolveOrder(sort) + " limit ? offset ?",
                 (rs, rowNum) -> mapRow(rs), pageParams.toArray());
+        List<Long> pageUserIds = rows.stream().map(Row::id).toList();
         // Real 2FA state: one set-membership query over the page's user ids
         // (the console mfa-reset button keys off this).
         Set<Long> enrolled = rows.isEmpty() ? Set.of()
-                : Set.copyOf(userMfaRepository.findEnrolledUserIds(
-                        rows.stream().map(Row::id).toList()));
+                : Set.copyOf(userMfaRepository.findEnrolledUserIds(pageUserIds));
+        // One query for the whole page rather than one per row.
+        Map<Long, List<ManagedOrgResponse>> managedOrgs =
+                managedOrgQueryService.byUser(pageUserIds);
         List<UserAdminViewResponse> content = rows.stream()
                 .map(v -> new UserAdminViewResponse(v.publicId(), v.email(), v.name(), v.role(),
-                        v.orgId(), v.status(), enrolled.contains(v.id()), v.createdAt()))
+                        managedOrgs.getOrDefault(v.id(), List.of()), v.status(),
+                        enrolled.contains(v.id()), v.createdAt()))
                 .toList();
         int totalPages = size > 0 ? (int) Math.ceil((double) totalElements / size) : 0;
         return new PageResponse<>(content, page, size, totalElements, totalPages);
@@ -141,8 +151,8 @@ public class AdminUserQueryService {
 
     @Transactional(readOnly = true)
     public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
-        Long scopedOrgId = orgIdIfOrgAdmin(actor);
-        User user = userRepository.findByPublicId(userId).filter(u -> inScope(u.getId(), scopedOrgId))
+        OrgScope scope = orgScopeIfOrgTier(actor);
+        User user = userRepository.findByPublicId(userId).filter(u -> inScope(u.getId(), scope))
                 .orElseThrow(AdminUserQueryService::userNotFound);
 
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
@@ -159,7 +169,7 @@ public class AdminUserQueryService {
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
-                user.getRole(), orgPublicId(user.getOrgId()), user.getStatus(),
+                user.getRole(), managedOrgQueryService.of(user.getId()), user.getStatus(),
                 userMfaRepository.isEnrolled(user.getId()),
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
@@ -184,35 +194,37 @@ public class AdminUserQueryService {
                 .toList();
     }
 
-    private boolean inScope(long userId, Long scopedOrgId) {
-        if (scopedOrgId == null) {
+    private boolean inScope(long userId, OrgScope scope) {
+        if (scope.isUnrestricted()) {
             return true;
         }
+        List<Object> params = new ArrayList<>();
+        params.add(userId);
+        params.addAll(scope.orgIds());
+        params.addAll(scope.orgIds());
+        params.addAll(scope.orgIds());
         Boolean visible = jdbcTemplate.queryForObject(
-                "select exists (select 1 from users u where u.id = ? and (u.org_id = ?"
-                        + " or (u.status = 'ACTIVE' and " + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id")
+                "select exists (select 1 from users u where u.id = ?"
+                        + " and (exists (select 1 from user_org_roles uor"
+                        + " where uor.user_id = u.id and " + scope.inList("uor.org_id") + ")"
+                        + " or (u.status = 'ACTIVE' and "
+                        + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope)
                         + ")))",
-                Boolean.class, userId, scopedOrgId, scopedOrgId, scopedOrgId);
+                Boolean.class, params.toArray());
         return Boolean.TRUE.equals(visible);
     }
 
     /** One list row: the internal key the 2FA join needs, plus the public view. */
     private record Row(long id, UUID publicId, String email, String name, UserRole role,
-            UUID orgId, UserStatus status, java.time.Instant createdAt) {
+            UserStatus status, java.time.Instant createdAt) {
     }
 
     private static Row mapRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Row(rs.getLong("id"), rs.getObject("public_id", UUID.class),
                 rs.getString("email"), rs.getString("name"),
-                UserRole.valueOf(rs.getString("role")), rs.getObject("org_public_id", UUID.class),
+                UserRole.valueOf(rs.getString("role")),
                 UserStatus.valueOf(rs.getString("status")),
                 rs.getObject("created_at", OffsetDateTime.class).toInstant());
-    }
-
-    private UUID orgPublicId(Long orgId) {
-        return orgId == null ? null : jdbcTemplate.query(
-                "select public_id from orgs where id = ?",
-                rs -> rs.next() ? rs.getObject(1, UUID.class) : null, orgId);
     }
 
     private static String resolveOrder(String sort) {
@@ -227,8 +239,10 @@ public class AdminUserQueryService {
         return order + ", u.id desc";
     }
 
-    private static Long orgIdIfOrgAdmin(AuthenticatedUser actor) {
-        return actor.role().isOrgTier() ? actor.orgId() : null;
+    private static OrgScope orgScopeIfOrgTier(AuthenticatedUser actor) {
+        return actor.role().isOrgTier()
+                ? OrgScope.of(actor.managedOrgIds())
+                : OrgScope.unrestricted();
     }
 
     private static String escapeLike(String value) {
@@ -240,26 +254,26 @@ public class AdminUserQueryService {
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
     }
 
-    /** Org tier pinned to their org; another org's id answers 404 (mask). */
-    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    /** Org tier pinned to the orgs it manages; another org's id answers 404 (mask). */
+    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
         if (!actor.role().isOrgTier()) {
             // An id no org has filters to nothing, as a non-matching number did.
             if (orgId != null && requested == null) {
-                return NO_SUCH_ORG;
+                return OrgScope.nothing();
             }
-            return requested;
+            return OrgScope.of(requested);
         }
-        if (actor.orgId() == null) {
+        if (actor.managedOrgIds().isEmpty()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !actor.orgId().equals(requested)) {
+        if (orgId != null && !actor.manages(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }
-        return actor.orgId();
+        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
     }
 }

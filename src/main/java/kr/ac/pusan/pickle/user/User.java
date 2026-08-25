@@ -54,9 +54,6 @@ public class User {
     @Column(nullable = false, columnDefinition = "user_role")
     private UserRole role = UserRole.USER;
 
-    @Column(name = "org_id")
-    private Long orgId;
-
     /** 직책. Null until the account fills its profile in (V89 adds no backfill). */
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -143,14 +140,6 @@ public class User {
 
     public void setRole(UserRole role) {
         this.role = role;
-    }
-
-    public Long getOrgId() {
-        return orgId;
-    }
-
-    public void setOrgId(Long orgId) {
-        this.orgId = orgId;
     }
 
     public UserStatus getStatus() {

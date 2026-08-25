@@ -33,12 +33,12 @@ public class AnnouncementQueryService {
         if (actor.role().isSysTier()) {
             result = announcementRepository.findAllByOrderByIdDesc(PageRequest.of(page, size));
         } else {
-            if (actor.orgId() == null) {
+            if (actor.managedOrgIds().isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
             }
             result = announcementRepository.findVisibleToOrgAdmin(AnnouncementScope.ALL,
-                    actor.orgId(), PageRequest.of(page, size));
+                    actor.managedOrgIds(), PageRequest.of(page, size));
         }
         return PageResponse.of(result.getContent().stream().map(this::toView).toList(), result);
     }

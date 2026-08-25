@@ -8,6 +8,7 @@ import kr.ac.pusan.pickle.identity.IdentityProvider;
 import kr.ac.pusan.pickle.identity.UserIdentity;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserPosition;
+import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
@@ -21,7 +22,7 @@ public record UserProfileResponse(
         String email,
         String name,
         UserRole role,
-        @Nullable UUID orgId,
+        List<ManagedOrgResponse> managedOrgs,
         UserStatus status,
         List<Membership> memberships,
         boolean mfaEnabled,
@@ -67,12 +68,12 @@ public record UserProfileResponse(
         }
     }
 
-    public static UserProfileResponse from(User user, @Nullable UUID orgId,
+    public static UserProfileResponse from(User user, List<ManagedOrgResponse> managedOrgs,
             List<WorkspaceMember> memberships,
             boolean mfaEnabled, List<TermsVersionView> pendingConsents,
             @Nullable String departmentName, List<UserIdentity> identities) {
         return new UserProfileResponse(user.getPublicId(), user.getEmail(), user.getName(),
-                user.getRole(), orgId, user.getStatus(),
+                user.getRole(), managedOrgs, user.getStatus(),
                 memberships.stream().map(Membership::from).toList(), mfaEnabled, pendingConsents,
                 user.getPosition(), user.getStudentNo(), user.getDepartmentCode(), departmentName,
                 user.isProfileComplete(), user.hasPassword(),

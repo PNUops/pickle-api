@@ -177,10 +177,11 @@ class CapacityTrendTest {
     private User createUser(String email, UserRole role, Long orgId) {
         User user = new User(email, "{test-no-login}", "추이테스트");
         user.setRole(role);
-        user.setOrgId(orgId);
         user.setStatus(UserStatus.ACTIVE);
         user.setEmailVerifiedAt(Instant.now());
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+        return saved;
     }
 
     /** 2 vCPU / 2048 MiB / 10 GiB VM whose lifetime is written explicitly. */

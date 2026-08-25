@@ -291,8 +291,7 @@ public class TerminalService {
         sessionRegistry.prune();
         List<MirrorSession> sessions = sessionRegistry.started();
         if (actor.role().isOrgTier()) {
-            Long orgId = actor.orgId();
-            sessions = sessions.stream().filter(s -> orgId != null && s.orgId() == orgId).toList();
+            sessions = sessions.stream().filter(s -> actor.manages(s.orgId())).toList();
         }
         if (sessions.isEmpty()) {
             return List.of();

@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserOrgRoleService;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
@@ -31,13 +32,15 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminService {
 
     private final OrgRepository orgRepository;
+    private final UserOrgRoleService userOrgRoleService;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public AdminService(OrgRepository orgRepository, UserRepository userRepository,
-            AuditService auditService) {
+            UserOrgRoleService userOrgRoleService, AuditService auditService) {
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
+        this.userOrgRoleService = userOrgRoleService;
         this.auditService = auditService;
     }
 
@@ -116,11 +119,15 @@ public class AdminService {
 
         UserRole previousRole = user.getRole();
         UserRole targetRole = request.role() != null ? request.role() : user.getRole();
+        List<Long> previousOrgIds = userOrgRoleService.scopeOf(user.getId()).orgIds();
         if (targetRole.isOrgTier()) {
-            // ORG_ADMIN and ORG_MANAGER both manage one org (per the permission matrix).
+            // This screen assigns one org at a time. An account that already
+            // administers several keeps them only if none is named here; naming
+            // one replaces the lot, which is the wholesale edit the sys tier has
+            // always had. The per-org grant endpoints are the additive path.
             Long orgId = request.orgId() != null
                     ? orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null)
-                    : user.getOrgId();
+                    : previousOrgIds.stream().findFirst().orElse(null);
             if (request.orgId() == null && orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "ORG_ADMIN·ORG_MANAGER 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
@@ -129,13 +136,13 @@ public class AdminService {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "존재하지 않는 기관(orgId)입니다.")));
             }
-            user.setOrgId(orgId);
+            userOrgRoleService.replaceWithSingle(user, orgId, targetRole);
         } else {
             if (request.orgId() != null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "이 역할에는 orgId를 지정할 수 없습니다.")));
             }
-            user.setOrgId(null);
+            userOrgRoleService.clear(user);
         }
 
         if (request.role() != null && request.role() != previousRole) {
@@ -146,19 +153,25 @@ public class AdminService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
-                        "orgId", orgPublicIdOrNull(user.getOrgId())), ip);
+                        "orgId", orgPublicIdsOrNone(
+                                userOrgRoleService.scopeOf(user.getId()).orgIds())), ip);
         return UserSummaryResponse.from(user);
     }
 
     /**
-     * The organisation the account now belongs to, named publicly. Map.of
-     * refuses a null value, so an account under no organisation keeps the
-     * literal {@code "null"} this field has always carried there.
+     * The organisations the account administers after the edit, named publicly
+     * and comma-joined. Map.of refuses a null value, so an account under no
+     * organisation keeps the literal {@code "null"} this field has always
+     * carried there.
      */
-    private String orgPublicIdOrNull(Long orgId) {
-        return orgId == null ? "null"
-                : orgRepository.findById(orgId).map(org -> org.getPublicId().toString())
-                        .orElse("null");
+    private String orgPublicIdsOrNone(List<Long> orgIds) {
+        if (orgIds.isEmpty()) {
+            return "null";
+        }
+        return orgIds.stream()
+                .map(id -> orgRepository.findById(id).map(org -> org.getPublicId().toString())
+                        .orElse("null"))
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static String normalize(String description) {

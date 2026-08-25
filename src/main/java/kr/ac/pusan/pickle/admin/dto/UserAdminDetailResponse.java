@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
@@ -17,7 +18,7 @@ public record UserAdminDetailResponse(
         String email,
         String name,
         UserRole role,
-        @Nullable UUID orgId,
+        List<ManagedOrgResponse> managedOrgs,
         UserStatus status,
         boolean mfaEnabled,
         Instant createdAt,

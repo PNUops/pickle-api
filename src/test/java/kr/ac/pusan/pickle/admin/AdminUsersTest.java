@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
@@ -245,12 +246,13 @@ class AdminUsersTest {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", name);
             user.setRole(role);
-            user.setOrgId(orgId);
             user.setStatus(status);
             if (status == UserStatus.ACTIVE) {
                 user.setEmailVerifiedAt(Instant.now());
             }
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+            return saved;
         });
     }
 

@@ -50,7 +50,7 @@ public class AdminVmAccess {
     }
 
     private static void requireSameOrg(AuthenticatedUser actor, Vm vm) {
-        if (actor.role().isOrgTier() && !vm.getOrgId().equals(actor.orgId())) {
+        if (actor.role().isOrgTier() && !actor.manages(vm.getOrgId())) {
             throw vmNotFound();
         }
     }
