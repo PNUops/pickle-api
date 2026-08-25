@@ -71,6 +71,9 @@ class GoogleOauthFlowTest {
     @Autowired
     private UserIdentityRepository identityRepository;
 
+    @Autowired
+    private kr.ac.pusan.pickle.security.JwtService jwtService;
+
     /**
      * Its own client address per case. Every OAuth endpoint is rate limited per
      * IP at 10/min and this class runs fifteen round trips, so sharing one
@@ -315,6 +318,62 @@ class GoogleOauthFlowTest {
                 .isEmpty();
     }
 
+    // ---------------------------------------------------------------- link
+
+    @Test
+    void aSignedInAccountCanAttachAGoogleIdentity() throws Exception {
+        User user = save("linker@pusan.ac.kr", UserStatus.ACTIVE);
+        Flow flow = startAs(user, "LINK");
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims("sub-manual-link", "linker@pusan.ac.kr",
+                flow.nonce()));
+
+        // No token comes back. The round trip proved possession of the Google
+        // account, not of this one, and the caller was already signed in.
+        callback(flow.state())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("LINKED"))
+                .andExpect(jsonPath("$.accessToken").doesNotExist());
+
+        assertThat(identityRepository.findByUserIdOrderByLinkedAtAsc(user.getId()))
+                .singleElement()
+                .satisfies(identity -> assertThat(identity.getSubject()).isEqualTo("sub-manual-link"));
+    }
+
+    @Test
+    void aGoogleAccountAlreadyOnSomebodyElseIsRefused() throws Exception {
+        User owner = save("owner@pusan.ac.kr", UserStatus.ACTIVE);
+        Flow ownerFlow = start();
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims("sub-taken", "owner@pusan.ac.kr",
+                ownerFlow.nonce()));
+        callback(ownerFlow.state()).andExpect(status().isOk());
+        assertThat(identityRepository.findByUserIdOrderByLinkedAtAsc(owner.getId())).isNotEmpty();
+
+        // A second account reaching for the same Google identity would otherwise
+        // give one person two doors into two accounts.
+        User other = save("other@pusan.ac.kr", UserStatus.ACTIVE);
+        Flow flow = startAs(other, "LINK");
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims("sub-taken", "owner@pusan.ac.kr",
+                flow.nonce()));
+
+        callback(flow.state())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("AUTH_OAUTH_ALREADY_LINKED"));
+        assertThat(identityRepository.findByUserIdOrderByLinkedAtAsc(other.getId())).isEmpty();
+    }
+
+    @Test
+    void aLinkFlowCannotBeStartedWithoutASession() throws Exception {
+        // The account is fixed when the flow row is written, never by whoever
+        // comes back from Google. Refusing at the start is stronger than
+        // refusing at the callback: no row is written, so there is nothing for
+        // a later request to arrive at holding a valid state.
+        mockMvc.perform(post("/api/v1/auth/oauth/google/start")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"purpose\":\"LINK\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ------------------------------------------------------------- helpers
 
     private record Flow(String state, String nonce) {
@@ -326,12 +385,24 @@ class GoogleOauthFlowTest {
      * can learn what the stub has to echo.
      */
     private Flow start() throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/v1/auth/oauth/google/start")
-                        .with(fromThisCase())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isOk())
-                .andReturn();
+        return readFlow(mockMvc.perform(post("/api/v1/auth/oauth/google/start")
+                .with(fromThisCase())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")));
+    }
+
+    /** Starts a flow that acts on a live session, so the account is bound to it. */
+    private Flow startAs(User user, String purpose) throws Exception {
+        return readFlow(mockMvc.perform(post("/api/v1/auth/oauth/google/start")
+                .with(fromThisCase())
+                .header("Authorization", "Bearer " + jwtService.createAccessToken(user))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"purpose\":\"" + purpose + "\"}")));
+    }
+
+    private Flow readFlow(org.springframework.test.web.servlet.ResultActions actions)
+            throws Exception {
+        MvcResult result = actions.andExpect(status().isOk()).andReturn();
         var body = objectMapper.readTree(result.getResponse().getContentAsString());
         String url = body.get("authorizationUrl").asString();
         String nonce = java.net.URLDecoder.decode(

@@ -2727,6 +2727,8 @@ components:
     OauthLinkedResponse:
       properties:
         kind:
+          enum:
+          - "LINKED"
           type: "string"
       required:
       - "kind"
@@ -2745,6 +2747,8 @@ components:
           format: "date-time"
           type: "string"
         kind:
+          enum:
+          - "REGISTRATION_REQUIRED"
           type: "string"
         name:
           type: "string"
