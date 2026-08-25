@@ -53,6 +53,7 @@ public class ReauthService {
         rateLimitService.hit("reverify:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("reverify:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(user.getEmail(), ip);
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,

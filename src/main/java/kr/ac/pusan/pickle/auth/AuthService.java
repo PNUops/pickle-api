@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
@@ -224,7 +225,15 @@ public class AuthService {
         rateLimitService.checkLoginLock(email, ip);
 
         Optional<User> found = userRepository.findByEmail(email);
-        String passwordHash = found.map(User::getPasswordHash).orElse(TIMING_EQUALIZER_HASH);
+        // filter(Objects::nonNull) is the whole of what keeps a Google-only
+        // account out of the response. Its hash is null; letting that reach the
+        // encoder is a 500, and a 500 here answers "does this address have a
+        // password?" to an anonymous caller — the one question the uniform 401
+        // below exists to refuse. Burning the equaliser instead makes a
+        // passwordless account indistinguishable from a wrong password.
+        String passwordHash = found.map(User::getPasswordHash)
+                .filter(Objects::nonNull)
+                .orElse(TIMING_EQUALIZER_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
 
         if (found.isEmpty() || !passwordMatches) {
@@ -373,6 +382,7 @@ public class AuthService {
         // attacker hammering login must not be able to block that from an
         // already-valid session. The sliding window above still bounds the rate.
 
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             // Same counter as login and the other re-verification points, so a
             // hijacked session cannot switch endpoints to keep guessing.

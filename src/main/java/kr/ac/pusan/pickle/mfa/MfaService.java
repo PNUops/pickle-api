@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import kr.ac.pusan.pickle.auth.PasswordCredential;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
@@ -95,6 +96,7 @@ public class MfaService {
     public MfaSetupResponse begin(long userId, String password, String ip) {
         User user = loadUser(userId);
         guardPasswordAttempt(SCOPE_BEGIN, user.getEmail(), ip);
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw passwordMismatch();
@@ -153,6 +155,7 @@ public class MfaService {
         // The password is checked first and on its own, so a wrong code never
         // burns a recovery code and never feeds the login lockout. The response
         // stays the same either way, so which factor failed is not disclosed.
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
@@ -178,6 +181,7 @@ public class MfaService {
         guardPasswordAttempt(SCOPE_RECOVERY, user.getEmail(), ip);
         rateLimitService.checkCodeLock(user.getEmail(), ip);
         UserMfa mfa = enrolledOrThrow(userId);
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             throw codeInvalid("비밀번호와 인증 코드를 다시 확인해 주세요.");
