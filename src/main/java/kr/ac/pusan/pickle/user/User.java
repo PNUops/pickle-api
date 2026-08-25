@@ -242,4 +242,16 @@ public class User {
     public boolean hasPassword() {
         return passwordHash != null;
     }
+
+    /**
+     * Drops the stored password.
+     *
+     * <p>For the one case where a password exists but nobody has ever proved
+     * they own the mailbox it was set from: an account that is still
+     * PENDING_VERIFICATION when its real owner arrives by another route. The
+     * holder can set a new one through the reset mail, which is a proof.
+     */
+    public void clearPassword() {
+        this.passwordHash = null;
+    }
 }

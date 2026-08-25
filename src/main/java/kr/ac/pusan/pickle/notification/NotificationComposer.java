@@ -233,7 +233,14 @@ public class NotificationComposer {
                     로그인할 수 있습니다.
 
                     본인이 연동한 것이 아니라면 계정 설정에서 연동을 해제하고
-                    관리자에게 문의해 주세요.""",
+                    관리자에게 문의해 주세요."""
+                    + (Boolean.TRUE.equals(args.get("passwordCleared")) ? """
+
+
+                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼
+                    있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다.
+                    비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해
+                    주세요.""" : ""),
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
                     """

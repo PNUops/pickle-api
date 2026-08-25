@@ -189,15 +189,20 @@ public class GoogleOauthService {
 
         User user = byEmail.get();
         requireSignInAllowed(user);
-        // Automatic link. Both credentials are anchored to the same mailbox: the
-        // local account proved control of it with the signup token, and Google
-        // has just authenticated the holder of the very same address against the
-        // domain's own IdP. The pre-hijacking shape does not reach here — an
-        // account an attacker created is PENDING_VERIFICATION and issues no
-        // tokens by any path, and activating it below invalidates the
-        // verification links they were holding.
+        // Automatic link. For an ACTIVE account both credentials are anchored to
+        // the same mailbox: the local account proved control of it by consuming
+        // the signup token, and Google has just authenticated the holder of that
+        // same address against the domain's own IdP.
+        //
+        // A PENDING_VERIFICATION account has proved no such thing, and that is
+        // the pre-hijacking case: anyone can sign an address up with a password
+        // of their choosing, and the account sits there holding it. Activating
+        // it here without dropping that password hands the account over — the
+        // attacker never needed the verification link they could not read, only
+        // the password they set. See the PENDING branch below.
         identityRepository.save(new UserIdentity(user.getId(), IdentityProvider.GOOGLE,
                 identity.subject(), email, identity.hostedDomain(), Instant.now()));
+        boolean clearedPassword = false;
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
             // Order and the explicit save both matter here.
             // invalidateOpenSignupVerifications runs a @Modifying query with
@@ -209,14 +214,25 @@ public class GoogleOauthService {
             // instance back with save().
             authService.invalidateOpenSignupVerifications(user.getId());
             authService.activateAccount(user, Instant.now());
+            // The password on a pending account came from whoever filled the
+            // signup form, and that is not necessarily the person standing here
+            // now — the mailbox was never proved. Activating without dropping it
+            // is a complete account takeover: the attacker signs the victim's
+            // address up with a password they know, waits for the victim's own
+            // Google sign-in to activate it, and logs in.
+            clearedPassword = user.hasPassword();
+            user.clearPassword();
+            user.bumpTokenVersion();
             user = userRepository.save(user);
         }
         auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_IDENTITY_LINKED,
-                "user", user.getPublicId(), Map.of("provider", "GOOGLE", "reason", "auto_link"), ip);
+                "user", user.getPublicId(), Map.of("provider", "GOOGLE", "reason", "auto_link",
+                        "passwordCleared", String.valueOf(clearedPassword)), ip);
         // The holder is told, because "an account was linked to yours" is
         // exactly the event someone needs to see if it was not them.
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_IDENTITY_LINKED,
-                Map.of("userId", user.getId(), "userEmail", user.getEmail(), "provider", "GOOGLE"),
+                Map.of("userId", user.getId(), "userEmail", user.getEmail(), "provider", "GOOGLE",
+                        "passwordCleared", clearedPassword),
                 "identity_linked:" + user.getId() + ":GOOGLE");
         return sessionFor(user, email, ip, userAgent);
     }
@@ -237,7 +253,11 @@ public class GoogleOauthService {
         String token = TokenHasher.newToken();
         Instant expiresAt = Instant.now().plus(REGISTRATION_TTL);
         registrationRepository.save(new OauthRegistration(TokenHasher.sha256Hex(token),
-                IdentityProvider.GOOGLE, identity.subject(), email, identity.name(),
+                IdentityProvider.GOOGLE, identity.subject(), email,
+                // Truncated to the column: this value is only the form's prefill
+                // and the form revalidates it at 50 anyway, so a long Google
+                // display name should not turn the callback into a 500.
+                truncate(identity.name(), 100),
                 identity.hostedDomain(), expiresAt));
         return OauthRegistrationResponse.of(token, email,
                 identity.name() == null ? "" : identity.name(), expiresAt);
@@ -373,6 +393,10 @@ public class GoogleOauthService {
         String candidate = redirectTo.strip();
         boolean internal = candidate.startsWith("/") && !candidate.startsWith("//");
         return internal ? candidate : null;
+    }
+
+    private static @Nullable String truncate(@Nullable String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
     }
 
     private static String pkceChallenge(String codeVerifier) {

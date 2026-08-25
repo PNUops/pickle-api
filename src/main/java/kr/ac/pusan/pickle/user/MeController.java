@@ -80,7 +80,7 @@ public class MeController {
      */
     @PutMapping("/profile")
     @Transactional
-    public UserProfileResponse updateProfile(@AuthenticationPrincipal AuthenticatedUser principal,
+    public UserProfileResponse updateMyProfile(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody UpdateProfileRequest request, HttpServletRequest httpRequest) {
         User user = loadUser(principal);
         profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());

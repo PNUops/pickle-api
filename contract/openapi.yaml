@@ -9103,7 +9103,7 @@ paths:
       - "account-controller"
   /me/profile:
     put:
-      operationId: "updateProfile"
+      operationId: "updateMyProfile"
       requestBody:
         content:
           application/json:
