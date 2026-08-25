@@ -44,6 +44,22 @@ public class LlmUsageRetentionSweeper {
                            order by id limit ?)
             """;
 
+    /**
+     * Records how far the sweep has actually reached, so the rollup knows which
+     * days it can no longer rebuild. **Only ever forward** — shortening or
+     * disabling retention does not put deleted events back, and a mark that
+     * moved backwards would un-freeze days whose raw rows are gone.
+     */
+    private static final String MARK_SWEPT_SQL = """
+            insert into llm_usage_rollup_state (id, swept_before, updated_at)
+            values (true, ?, now())
+            on conflict (id) do update
+                    set swept_before = greatest(
+                            coalesce(llm_usage_rollup_state.swept_before, excluded.swept_before),
+                            excluded.swept_before),
+                        updated_at = excluded.updated_at
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final LlmUsageRetentionPolicy retentionPolicy;
     private final LlmUsageRollupService rollupService;
@@ -59,7 +75,7 @@ public class LlmUsageRetentionSweeper {
     @Recurring(id = JOB_ID, cron = "40 4 * * *", zoneId = "Asia/Seoul")
     @Job(name = JOB_ID, retries = 0)
     public void sweep() {
-        LocalDate cutoff = retentionPolicy.sweptBefore();
+        LocalDate cutoff = retentionPolicy.cutoff();
         if (cutoff == null) {
             return;
         }
@@ -70,6 +86,10 @@ public class LlmUsageRetentionSweeper {
             affected = jdbcTemplate.update(DELETE_SQL, cutoff, watermark, BATCH_SIZE);
             deleted += affected;
         } while (affected == BATCH_SIZE);
+        // Marked whether or not anything was deleted: a day past the cutoff with
+        // no rows left is equally unrebuildable, and marking only on a non-empty
+        // delete would leave those days thawed for the next re-send to repaint.
+        jdbcTemplate.update(MARK_SWEPT_SQL, cutoff);
         if (deleted > 0) {
             log.info("llm usage retention sweep deleted {} event(s) before {}", deleted, cutoff);
         }

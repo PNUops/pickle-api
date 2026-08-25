@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.settings.SettingsService;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -60,11 +61,15 @@ public class LlmUsageRetentionPolicy {
     }
 
     /**
-     * The first KST day whose events are still kept, or {@code null} when
-     * retention is unlimited. Days before it are swept and their rollup rows
-     * are frozen.
+     * The first KST day whose events the sweep keeps, or {@code null} when
+     * retention is unlimited and nothing is swept at all.
+     *
+     * <p>This is what the sweep <b>will</b> do from now on, and deliberately not
+     * the same question as what it <b>has</b> done — that answer is recorded on
+     * the rollup's state row, because turning retention off cannot bring
+     * deleted events back.
      */
-    public LocalDate sweptBefore() {
+    public @Nullable LocalDate cutoff() {
         int days = retentionDays();
         return days == UNLIMITED ? null : ClockConfig.todayKst(clock).minusDays(days);
     }

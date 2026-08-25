@@ -50,12 +50,15 @@ comment on column llm_usage_daily.latency_ms_sum is
 create table llm_usage_rollup_state (
     id            boolean primary key default true,
     last_event_id bigint      not null default 0,
+    swept_before  date,
     updated_at    timestamptz not null default now(),
     constraint llm_usage_rollup_state_single_row check (id)
 );
 
 comment on table llm_usage_rollup_state is
     '롤업 갱신이 어디까지 반영했는지. 행이 없으면 워터마크 0이고 첫 갱신이 곧 백필이다. 보존 스위퍼는 이 값 이하의 이벤트만 지운다.';
+comment on column llm_usage_rollup_state.swept_before is
+    '보존 스위퍼가 실제로 지운 경계. 이 날짜 이전 일자는 원본이 없으므로 롤업 행이 유일한 기록이고 갱신 잡이 재계산하지 않는다. 설정에서 유도하지 않고 실제로 지운 시점을 적는 이유는, 보존을 껐다 켜도 이미 지워진 사실이 사라지지 않기 때문이다. 앞으로만 움직인다.';
 
 -- What OpenRouter says this key has spent. The money axis is enforced there,
 -- so their cumulative figure is the truthful one and ours would always lag a

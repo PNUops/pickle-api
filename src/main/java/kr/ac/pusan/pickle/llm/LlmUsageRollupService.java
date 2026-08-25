@@ -1,8 +1,14 @@
 package kr.ac.pusan.pickle.llm;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import javax.sql.DataSource;
 import org.jobrunr.jobs.annotations.Job;
+import org.jspecify.annotations.Nullable;
 import org.jobrunr.jobs.annotations.Recurring;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,10 +50,12 @@ public class LlmUsageRollupService {
     static final String JOB_ID = "llm-usage-rollup";
 
     /**
-     * Arbitrary but fixed: advisory locks are namespaced only by this number,
-     * so it must not collide with another advisory lock in this application.
+     * Arbitrary but stable key namespacing this lock (ASCII "PKUR" ~ pickle
+     * usage rollup). Advisory locks share one namespace per database, so it
+     * must differ from every other one here — the web terminal's guard holds
+     * "PKTM".
      */
-    private static final long ADVISORY_LOCK_KEY = 91_0001L;
+    private static final long ADVISORY_LOCK_KEY = 0x50_4B_55_52L;
 
     /**
      * The KST days carrying at least one event the rollup has not seen. Bounded
@@ -103,13 +111,13 @@ public class LlmUsageRollupService {
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
-    private final LlmUsageRetentionPolicy retentionPolicy;
+    private final DataSource dataSource;
 
     public LlmUsageRollupService(JdbcTemplate jdbcTemplate, TransactionTemplate transactionTemplate,
-            LlmUsageRetentionPolicy retentionPolicy) {
+            DataSource dataSource) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
-        this.retentionPolicy = retentionPolicy;
+        this.dataSource = dataSource;
     }
 
     /** One refresh. Public and argument-free for JobRunr; tests call it directly. */
@@ -123,19 +131,47 @@ public class LlmUsageRollupService {
      * @return how many day buckets were rebuilt; zero when nothing new arrived.
      */
     public int refresh() {
-        Boolean acquired = jdbcTemplate.queryForObject(
-                "select pg_try_advisory_lock(?)", Boolean.class, ADVISORY_LOCK_KEY);
-        if (!Boolean.TRUE.equals(acquired)) {
-            // A refresh is already running — very likely a backfill. Returning
-            // is right: the running one will cover these events too.
-            log.info("usage rollup refresh already in progress, skipping this run");
-            return 0;
+        // The lock is taken on a connection this method holds open for its whole
+        // duration, NOT through the pooled template. A session-level advisory
+        // lock belongs to the connection that took it, so acquiring one through
+        // a pooled call and releasing it through another pooled call is a
+        // coin flip: the release can land on a different connection, silently
+        // fail, and leave the lock held by an idle connection until the pool
+        // retires it — after which every run for the next half hour reports
+        // contention that does not exist. The web terminal's single-instance
+        // guard documents the same trap.
+        try (Connection connection = dataSource.getConnection()) {
+            if (!tryLock(connection)) {
+                // A refresh is already running — very likely a backfill.
+                // Returning is right: the running one covers these events too.
+                log.info("usage rollup refresh already in progress, skipping this run");
+                return 0;
+            }
+            try {
+                return rebuildAffectedDays();
+            } finally {
+                unlock(connection);
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("usage rollup could not hold its advisory lock", e);
         }
-        try {
-            return rebuildAffectedDays();
-        } finally {
-            jdbcTemplate.queryForObject(
-                    "select pg_advisory_unlock(?)", Boolean.class, ADVISORY_LOCK_KEY);
+    }
+
+    private boolean tryLock(Connection connection) throws SQLException {
+        try (PreparedStatement statement =
+                connection.prepareStatement("select pg_try_advisory_lock(?)")) {
+            statement.setLong(1, ADVISORY_LOCK_KEY);
+            try (ResultSet rs = statement.executeQuery()) {
+                return rs.next() && rs.getBoolean(1);
+            }
+        }
+    }
+
+    private void unlock(Connection connection) throws SQLException {
+        try (PreparedStatement statement =
+                connection.prepareStatement("select pg_advisory_unlock(?)")) {
+            statement.setLong(1, ADVISORY_LOCK_KEY);
+            statement.execute();
         }
     }
 
@@ -148,7 +184,7 @@ public class LlmUsageRollupService {
         }
         List<LocalDate> days = jdbcTemplate.queryForList(
                 AFFECTED_DAYS_SQL, LocalDate.class, watermark, highest);
-        LocalDate frozenBefore = retentionPolicy.sweptBefore();
+        LocalDate frozenBefore = sweptBefore();
         int rebuilt = 0;
         for (LocalDate day : days) {
             if (frozenBefore != null && day.isBefore(frozenBefore)) {
@@ -186,5 +222,23 @@ public class LlmUsageRollupService {
         Long stored = jdbcTemplate.queryForObject(
                 "select coalesce(max(last_event_id), 0) from llm_usage_rollup_state", Long.class);
         return stored == null ? 0L : stored;
+    }
+
+    /**
+     * The boundary the sweep actually reached, or null when it has never
+     * deleted anything.
+     *
+     * <p>Read from the stored mark rather than derived from the retention
+     * setting, because the two answer different questions. The setting says
+     * what <i>would</i> be swept from now on; only the mark says what
+     * <i>has</i> been. Turning retention off, or lengthening it, does not put
+     * deleted events back — and a freeze computed from the setting would
+     * un-freeze those days, at which point one re-sent event would rebuild a
+     * complete day from the fragment that came back.
+     */
+    @Nullable
+    LocalDate sweptBefore() {
+        return jdbcTemplate.queryForObject(
+                "select max(swept_before) from llm_usage_rollup_state", LocalDate.class);
     }
 }

@@ -174,6 +174,30 @@ class LlmUsageRollupTest {
         assertThat(onlyBucket().get("requests")).isEqualTo(2L);
     }
 
+    @Test
+    void turningRetentionOffDoesNotThawADayWhoseEventsAreAlreadyGone() {
+        // The freeze follows what the sweep actually did, not what the setting
+        // now says. Deleted events do not come back when retention is switched
+        // off, so a day thawed by that switch would be rebuilt from whatever
+        // fragment a re-send brought — replacing a complete bucket.
+        insertEvent("2020-01-01T03:00:00Z", "pickle-general", "OK", 100, 100, 100);
+        insertEvent("2020-01-01T04:00:00Z", "pickle-general", "OK", 100, 100, 100);
+        rollupService.refresh();
+        jdbcTemplate.update("""
+                insert into settings (key, value) values (?, '90'::jsonb)
+                on conflict (key) do update set value = excluded.value
+                """, SettingsService.LLM_USAGE_RETENTION_DAYS);
+        retentionSweeper.sweep();
+
+        // Retention goes back off, and a lost checkpoint re-sends one event.
+        jdbcTemplate.update("delete from settings where key = ?",
+                SettingsService.LLM_USAGE_RETENTION_DAYS);
+        insertEvent("2020-01-01T03:00:00Z", "pickle-general", "OK", 100, 100, 100);
+        rollupService.refresh();
+
+        assertThat(onlyBucket().get("requests")).isEqualTo(2L);
+    }
+
     private Map<String, Object> onlyBucket() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("select * from llm_usage_daily");
         assertThat(rows).hasSize(1);
