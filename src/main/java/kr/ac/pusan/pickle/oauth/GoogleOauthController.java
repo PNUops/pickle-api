@@ -94,6 +94,11 @@ public class GoogleOauthController {
      * onboarding form's submit. Consents travel with it so the account and its
      * consent rows are written in one transaction, as they are at signup.
      */
+    // ResponseEntity<Object> 라 springdoc 이 형태를 추론하지 못한다. 선언하지 않으면
+    // 생성 명세의 200 이 빈 객체가 되고, 콘솔 생성 타입도 그대로 비어 계약이 말하는
+    // 것과 클라이언트가 받는 것이 갈린다. 콜백의 4-way union 과 같은 이유다.
+    @ApiResponse(responseCode = "200", description = "계정 생성과 토큰 발급",
+            content = @Content(schema = @Schema(implementation = AuthTokenResponse.class)))
     @PostMapping("/complete")
     public ResponseEntity<Object> completeGoogleOauthRegistration(
             @Valid @RequestBody OauthCompleteRequest request,
