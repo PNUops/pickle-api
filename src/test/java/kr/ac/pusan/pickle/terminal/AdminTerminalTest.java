@@ -99,16 +99,18 @@ class AdminTerminalTest {
     }
 
     @Test
-    void listIsOrgScopedForOrgTierAndFullForSysTier() throws Exception {
+    void listIsFullForEveryAdminTier() throws Exception {
         String sessionA = startedSession(orgA);
         String sessionB = startedSession(orgB);
 
-        // ORG_ADMIN of orgA sees only orgA's session.
+        // ORG_ADMIN of orgA sees both: every admin tier reads every org
+        // (2026-08-25). Ending a session is still an org-scoped write.
         mockMvc.perform(get("/api/v1/admin/terminal-sessions")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(1))
-                .andExpect(jsonPath("$[0].sessionId").value(sessionA));
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.sessionId=='" + sessionA + "')]").exists())
+                .andExpect(jsonPath("$[?(@.sessionId=='" + sessionB + "')]").exists());
 
         // SYS_ADMIN sees both.
         mockMvc.perform(get("/api/v1/admin/terminal-sessions")

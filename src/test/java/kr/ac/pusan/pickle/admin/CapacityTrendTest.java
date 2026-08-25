@@ -128,7 +128,9 @@ class CapacityTrendTest {
     void anEmptyOrgStillGetsOnePointPerDay() throws Exception {
         LocalDate today = LocalDate.now(KST);
 
-        mockMvc.perform(get("/api/v1/admin/capacity-trend?days=30")
+        // Named explicitly: an unfiltered org-tier read is platform-wide now,
+        // and the point of this case is the org that has nothing in it.
+        mockMvc.perform(get("/api/v1/admin/capacity-trend?days=30&orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.from").value(today.minusDays(29).toString()))
@@ -145,8 +147,11 @@ class CapacityTrendTest {
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
 
-        // An org-tier caller is pinned to their own org; another org is masked.
+        // An org-tier caller reads any org; the filter narrows rather than refuses.
         mockMvc.perform(get("/api/v1/admin/capacity-trend?orgId=" + pub("orgs", otherOrgId))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/capacity-trend?orgId=" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));

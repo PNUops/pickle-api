@@ -332,13 +332,9 @@ public class AdminPublishingService {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private OrgScope scopedOrgId(AuthenticatedUser actor, UUID orgId) {
-        if (actor.role().isOrgTier()) {
-            if (actor.managedOrgIds().isEmpty()) {
-                throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                        "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-            }
-            return OrgScope.of(actor.managedOrgIds());
-        }
+        // Every admin tier reads every organisation (operator decision,
+        // 2026-08-25). The orgId parameter is a filter for all of them now, not
+        // a pin for some; writes stay scoped to the managed orgs.
         // An id no org has filters to nothing, as a non-matching number did.
         return orgId == null ? OrgScope.unrestricted()
                 : OrgScope.of(orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L));

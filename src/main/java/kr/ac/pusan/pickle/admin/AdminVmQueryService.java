@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -31,7 +30,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -192,18 +190,12 @@ public class AdminVmQueryService {
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        if (!actor.role().isOrgTier()) {
-            return OrgScope.of(requested);
+        // Every admin tier reads every organisation (operator decision,
+        // 2026-08-25). The orgId parameter is a filter for all of them now, not
+        // a pin for some; writes stay scoped to the managed orgs.
+        if (orgId != null && requested == null) {
+            return OrgScope.nothing();
         }
-        if (actor.managedOrgIds().isEmpty()) {
-            // Defensive: an org-tier actor managing nothing sees nothing.
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.manages(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
+        return OrgScope.of(requested);
     }
 }

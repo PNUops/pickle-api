@@ -115,7 +115,7 @@ class ApprovalTest {
     }
 
     @Test
-    void queueIsOrgScopedAndStatusFilterable() throws Exception {
+    void queueIsReadableAcrossOrgsWhileDecisionsStayScoped() throws Exception {
         long workspaceId = createTeam(userToken, "appr-queue-x1");
         long submitted = submit(userToken, workspaceId);
         long canceled = submit(userToken, workspaceId);
@@ -138,18 +138,19 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists())
                 .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", canceled))).doesNotExist());
 
-        // other-org admin sees an empty queue and 404s on the request itself
+        // The other org's admin READS the queue and the request (2026-08-25) —
+        // and still cannot approve or reject it. These two 404s are the evidence
+        // that widening the read did not widen the decision.
         mockMvc.perform(get("/api/v1/admin/requests")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", submitted) + "/context")
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         postJson("/api/v1/admin/requests/" + pub("requests", submitted) + "/approve", otherOrgAdminToken,
                 approveBody())
                 .andExpect(status().isNotFound());
@@ -157,11 +158,11 @@ class ApprovalTest {
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
-        // ORG_ADMIN cannot escape their org via the orgId filter (pinned)
+        // the orgId filter narrows for the org tier rather than pinning it
         mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
+                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).doesNotExist());
 
         // SYS_ADMIN sees all orgs and may filter by orgId
         mockMvc.perform(get("/api/v1/admin/requests").header("Authorization", "Bearer " + sysAdminToken))

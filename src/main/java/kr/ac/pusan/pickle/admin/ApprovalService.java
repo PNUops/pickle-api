@@ -211,39 +211,28 @@ public class ApprovalService {
         return assembler.toDetail(request);
     }
 
-    /**
-     * Read scope for the request queue. The org tier is pinned to its own org
-     * and the {@code orgId} filter is sys-tier-only; an id no org has filters to
-     * nothing, as a non-matching number did.
-     *
-     * <p>Named rather than inline because the queue is a read and the pinning
-     * rule it applies has to be visible next to the ones approve and reject use.
-     */
+    /** Read scope for the request queue. */
     private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
-        Long requestedOrgId = orgId == null ? null
-                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
-        if (!actor.role().isOrgTier()) {
-            return OrgScope.of(requestedOrgId);
-        }
-        if (actor.managedOrgIds().isEmpty()) {
-            // Defensive: an org-tier actor managing nothing sees nothing.
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        return OrgScope.of(actor.managedOrgIds());
+        // Every admin tier reads every organisation's queue (operator decision,
+        // 2026-08-25). Approve and reject stay scoped; see findWritableWithLock.
+        // An id no org has filters to nothing, as a non-matching number did.
+        return orgId == null ? OrgScope.unrestricted()
+                : OrgScope.of(orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L));
     }
 
     /**
-     * Read lookup (request detail, approval context): unknown id and other-org
-     * requests both answer 404.
+     * Read lookup (request detail, approval context). Every admin tier reads
+     * every organisation's requests (operator decision, 2026-08-25), so only an
+     * unknown id answers 404 here.
      *
-     * <p>Split from {@link #findWritableWithLock} because the two answer to
-     * different rules: only the read side is meant to widen. One method serving
-     * both is how widening a read would silently widen approve and reject.
+     * <p>Split from {@link #findWritableWithLock} exactly so this could widen
+     * without approve and reject widening with it.
      */
     Request findReadable(AuthenticatedUser actor, UUID requestId) {
         Request request = requestRepository.findByPublicId(requestId).orElse(null);
-        requireSameOrg(actor, request);
+        if (request == null) {
+            throw requestNotFound();
+        }
         return request;
     }
 

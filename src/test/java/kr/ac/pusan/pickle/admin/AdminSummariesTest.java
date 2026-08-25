@@ -112,7 +112,9 @@ class AdminSummariesTest {
                 values (?, 8080, 'HTTP', 'APPLIED', 1)
                 """, domainId);
 
-        mockMvc.perform(get("/api/v1/admin/summary")
+        // The org tier reads every org now, so the exact per-org aggregate is
+        // the one behind an explicit orgId rather than the unfiltered call.
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pendingRequestCount").value(1))
@@ -138,18 +140,22 @@ class AdminSummariesTest {
     }
 
     @Test
-    void orgSummaryScopingFollowsThe404MaskConvention() throws Exception {
+    void summaryOrgFilterNarrowsForEveryAdminTier() throws Exception {
         long otherOrgId = SeedFixtures.seedOrgId(jdbcTemplate);
 
         mockMvc.perform(get("/api/v1/admin/summary")
                         .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden());
 
-        // ORG_ADMIN: own org implicitly or explicitly, other org → 404
+        // ORG_ADMIN: any org, named or not — the filter narrows, it never refuses
         mockMvc.perform(get("/api/v1/admin/summary?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/summary?orgId=" + pub("orgs", otherOrgId))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        // an org no row has is still a 404 for every tier
+        mockMvc.perform(get("/api/v1/admin/summary?orgId=" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));

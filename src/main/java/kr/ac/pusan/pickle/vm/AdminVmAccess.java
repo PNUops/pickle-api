@@ -27,12 +27,13 @@ public class AdminVmAccess {
     }
 
     /**
-     * Read surfaces: admin VM detail and its event history.
+     * Read surfaces: admin VM detail and its event history. Every admin tier
+     * reads every organisation's VMs (operator decision, 2026-08-25), so this
+     * is a lookup and nothing else. {@link #requireWritableVm} is where the org
+     * boundary still stands.
      */
     public Vm requireReadableVm(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = findOrNotFound(vmId);
-        requireSameOrg(actor, vm);
-        return vm;
+        return findOrNotFound(vmId);
     }
 
     /**

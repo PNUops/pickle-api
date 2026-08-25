@@ -109,7 +109,7 @@ class AdminWorkspacesTest {
     }
 
     @Test
-    void unknownDeletedAndCrossOrgWorkspacesAnswerTheSame404() throws Exception {
+    void unknownAndDeletedWorkspacesAnswerTheSame404() throws Exception {
         mockMvc.perform(get("/api/v1/admin/workspaces/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
@@ -124,18 +124,21 @@ class AdminWorkspacesTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
-        // a workspace with no request/VM in the admin's org → 404 for the org tier
+        // a workspace with no request/VM in the admin's org is readable by every
+        // admin tier now (2026-08-25); only unknown and deleted answer 404.
         String foreignSlug = "agr-for-" + UUID.randomUUID().toString().substring(0, 8);
         long unlinked = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
                 Long.class, foreignSlug);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
-        // ...but the sys tier still sees it
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", deleted))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isNotFound());
 
         // a plain user is refused by the role gate
         String userToken = jwtService.createAccessToken(

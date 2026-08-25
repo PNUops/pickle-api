@@ -97,7 +97,7 @@ class AdminUsersTest {
     }
 
     @Test
-    void listAndDetailAreScopedForOrgAdmin() throws Exception {
+    void listAndDetailReachEveryOrgForTheOrgTier() throws Exception {
         // plain USER cannot use the admin surface
         mockMvc.perform(get("/api/v1/admin/users").header("Authorization", "Bearer " + memberAToken))
                 .andExpect(status().isForbidden())
@@ -113,7 +113,9 @@ class AdminUsersTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1));
 
-        // ORG_ADMIN sees the derived member but not the out-of-scope user
+        // ORG_ADMIN reads every org (2026-08-25): the account that has never
+        // requested a resource, and so belongs to no derived org, is exactly the
+        // one this widening exists for.
         mockMvc.perform(get("/api/v1/admin/users?q=au.member@pusan.ac.kr")
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
@@ -123,9 +125,10 @@ class AdminUsersTest {
         mockMvc.perform(get("/api/v1/admin/users?q=au.foreign@pusan.ac.kr")
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(0));
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].email").value("au.foreign@pusan.ac.kr"));
 
-        // ORG_ADMIN detail: in-scope 200, out-of-scope masked as 404
+        // Detail follows the list: both answer 200 for the org tier now.
         mockMvc.perform(get("/api/v1/admin/users/" + memberA.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
@@ -134,8 +137,8 @@ class AdminUsersTest {
                 .andExpect(jsonPath("$.statusChanges").isArray());
         mockMvc.perform(get("/api/v1/admin/users/" + foreign.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(foreign.getPublicId().toString()));
 
         // invalid sort → 422
         mockMvc.perform(get("/api/v1/admin/users?sort=bogus")

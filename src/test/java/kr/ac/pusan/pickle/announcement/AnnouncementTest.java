@@ -209,7 +209,7 @@ class AnnouncementTest {
     }
 
     @Test
-    void listVisibilityFollowsTheSenderOrg() throws Exception {
+    void listShowsEveryAnnouncementToEveryAdminTier() throws Exception {
         long allId = createdId(create(sysAdminToken,
                 Map.of("title", "전체", "body", "b", "scope", "ALL"))
                 .andExpect(status().isCreated()));
@@ -220,13 +220,14 @@ class AnnouncementTest {
                 Map.of("title", "타기관", "body", "b", "scope", "ORG"))
                 .andExpect(status().isCreated()));
 
-        // ORG_ADMIN: own-org authors + ALL, never the other org's send
+        // ORG_ADMIN reads every announcement (2026-08-25). Who may send one to
+        // which org is unchanged — scopeRulesGateAllOrgAndWorkspaceSends.
         mockMvc.perform(get("/api/v1/admin/announcements?size=100")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", allId) + "\')]").exists())
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", ownOrgId) + "\')]").exists())
-                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", otherOrgAnnId) + "\')]").doesNotExist());
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("announcements", otherOrgAnnId) + "\')]").exists());
         // SYS_ADMIN: everything
         mockMvc.perform(get("/api/v1/admin/announcements?size=100")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -269,18 +270,19 @@ class AnnouncementTest {
 
     @Test
     void adminWorkspacePickerFollowsTheWorkspaceGate() throws Exception {
-        // ORG_ADMIN: org-linked workspaces only. memberCount counts ACTIVE members
-        // (the fan-out basis) — the DISABLED member is not part of it
+        // ORG_ADMIN sees every workspace now. memberCount still counts ACTIVE
+        // members (the fan-out basis) — the DISABLED member is not part of it
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\' && @.memberCount==2)]")
                         .exists())
-                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").doesNotExist());
-        // cross-org filter → 404 (existence stays private)
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists());
+        // the org filter narrows to that org's linked workspaces
         mockMvc.perform(get("/api/v1/admin/workspaces?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists());
         // SYS_ADMIN: all workspaces without a filter; the org filter applies the gate
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))

@@ -83,7 +83,7 @@ class AdminVmInterventionTest {
     }
 
     @Test
-    void adminDetailAndEventsAreOrgScopedWithThe404Mask() throws Exception {
+    void adminDetailAndEventsReachEveryOrg() throws Exception {
         long vmId = createVm("RUNNING", null);
         jdbcTemplate.update("""
                 insert into vm_events (vm_id, type, detail) values (?, 'CREATE', '생성')
@@ -106,18 +106,24 @@ class AdminVmInterventionTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].type").value("CREATE"));
 
-        // cross-org admin: same 404 as an unknown id
+        // cross-org admin reads it too (2026-08-25). The power interventions on
+        // the same VM stay 404 for this account — crossOrgPowerIntentIsMaskedAs404.
         Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관").orElseGet(() ->
                 orgRepository.save(new Org("개입 테스트 타기관", null)));
         String otherOrgAdminToken = jwtService.createAccessToken(
                 ensureUser("avi.other.admin@pusan.ac.kr", UserRole.ORG_ADMIN, otherOrg.getId()));
         mockMvc.perform(get("/api/v1/admin/vms/{id}", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(pub("vms", vmId).toString()));
         mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
                         .header("Authorization", "Bearer " + otherOrgAdminToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
+        // an id no VM has is still 404
+        mockMvc.perform(get("/api/v1/admin/vms/{id}", SeedFixtures.UNKNOWN_ID)
+                        .header("Authorization", "Bearer " + otherOrgAdminToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
         // a plain user is refused by the role gate
         String userToken = jwtService.createAccessToken(

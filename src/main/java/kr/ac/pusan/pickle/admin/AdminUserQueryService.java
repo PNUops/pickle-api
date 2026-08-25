@@ -151,8 +151,7 @@ public class AdminUserQueryService {
 
     @Transactional(readOnly = true)
     public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
-        OrgScope scope = orgScopeIfOrgTier(actor);
-        User user = userRepository.findByPublicId(userId).filter(u -> inScope(u.getId(), scope))
+        User user = userRepository.findByPublicId(userId)
                 .orElseThrow(AdminUserQueryService::userNotFound);
 
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
@@ -194,26 +193,6 @@ public class AdminUserQueryService {
                 .toList();
     }
 
-    private boolean inScope(long userId, OrgScope scope) {
-        if (scope.isUnrestricted()) {
-            return true;
-        }
-        List<Object> params = new ArrayList<>();
-        params.add(userId);
-        params.addAll(scope.orgIds());
-        params.addAll(scope.orgIds());
-        params.addAll(scope.orgIds());
-        Boolean visible = jdbcTemplate.queryForObject(
-                "select exists (select 1 from users u where u.id = ?"
-                        + " and (exists (select 1 from user_org_roles uor"
-                        + " where uor.user_id = u.id and " + scope.inList("uor.org_id") + ")"
-                        + " or (u.status = 'ACTIVE' and "
-                        + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope)
-                        + ")))",
-                Boolean.class, params.toArray());
-        return Boolean.TRUE.equals(visible);
-    }
-
     /** One list row: the internal key the 2FA join needs, plus the public view. */
     private record Row(long id, UUID publicId, String email, String name, UserRole role,
             UserStatus status, java.time.Instant createdAt) {
@@ -239,12 +218,6 @@ public class AdminUserQueryService {
         return order + ", u.id desc";
     }
 
-    private static OrgScope orgScopeIfOrgTier(AuthenticatedUser actor) {
-        return actor.role().isOrgTier()
-                ? OrgScope.of(actor.managedOrgIds())
-                : OrgScope.unrestricted();
-    }
-
     private static String escapeLike(String value) {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
@@ -254,26 +227,20 @@ public class AdminUserQueryService {
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
     }
 
-    /** Org tier pinned to the orgs it manages; another org's id answers 404 (mask). */
+    /** The org filter, for every admin tier alike. */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        if (!actor.role().isOrgTier()) {
-            // An id no org has filters to nothing, as a non-matching number did.
-            if (orgId != null && requested == null) {
-                return OrgScope.nothing();
-            }
-            return OrgScope.of(requested);
+        // Every admin tier reads every organisation (operator decision,
+        // 2026-08-25): an account that has never requested a resource used to be
+        // invisible to every org admin, because org membership is derived from
+        // the resources a workspace holds. The orgId parameter is a filter for
+        // all admin tiers now, not a pin for some. Writes stay scoped.
+        // An id no org has filters to nothing, as a non-matching number did.
+        if (orgId != null && requested == null) {
+            return OrgScope.nothing();
         }
-        if (actor.managedOrgIds().isEmpty()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.manages(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
+        return OrgScope.of(requested);
     }
 }

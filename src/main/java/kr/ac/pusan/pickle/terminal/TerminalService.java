@@ -289,10 +289,9 @@ public class TerminalService {
     @Transactional(readOnly = true)
     public List<TerminalSessionView> list(AuthenticatedUser actor) {
         sessionRegistry.prune();
+        // Every admin tier sees every organisation's sessions (operator
+        // decision, 2026-08-25); ending one is still an org-scoped write.
         List<MirrorSession> sessions = sessionRegistry.started();
-        if (actor.role().isOrgTier()) {
-            sessions = sessions.stream().filter(s -> actor.manages(s.orgId())).toList();
-        }
         if (sessions.isEmpty()) {
             return List.of();
         }

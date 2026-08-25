@@ -371,18 +371,11 @@ public class AdminSummaryService {
     OrgScope resolveOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        if (actor.role().isOrgTier()) {
-            if (actor.managedOrgIds().isEmpty()) {
-                throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                        "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-            }
-            if (orgId != null && !actor.manages(requested)) {
-                throw orgNotFound();
-            }
-            return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
-        }
+        // Every admin tier reads every organisation (operator decision,
+        // 2026-08-25). The orgId parameter is a filter for all of them now, not
+        // a pin for some; writes stay scoped to the managed orgs.
         if (orgId == null) {
-            return OrgScope.unrestricted(); // sys tier without drill-in → platform-wide
+            return OrgScope.unrestricted(); // no drill-in → platform-wide
         }
         if (requested == null) {
             throw orgNotFound();
