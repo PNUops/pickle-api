@@ -33,6 +33,20 @@ public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole r
         return orgRoles.keySet();
     }
 
+    /**
+     * The subset it administers. Every operation ORG_MANAGER is denied has to
+     * ask for this rather than {@link #managedOrgIds()}: administering one
+     * organisation raises the effective role, and the effective role is what
+     * the {@code @PreAuthorize} gate sees, so a gate that admits only
+     * ORG_ADMIN admits this account everywhere it holds any role at all.
+     */
+    public Set<Long> administeredOrgIds() {
+        return orgRoles.entrySet().stream()
+                .filter(entry -> entry.getValue() == UserRole.ORG_ADMIN)
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     /** Holds some org-tier role in {@code orgId}. */
     public boolean manages(Long orgId) {
         return orgId != null && orgRoles.containsKey(orgId);

@@ -197,7 +197,7 @@ public class VmDeletionService {
     @Transactional
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         // CREATING is deliberately accepted (unlike self-delete): the schedule
@@ -234,7 +234,7 @@ public class VmDeletionService {
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {

@@ -1797,6 +1797,14 @@ components:
       required:
       - "confirmName"
       type: "object"
+    GrantOrgRoleRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+          description: "이 기관에서 부여할 역할 (ORG_ADMIN 또는 ORG_MANAGER)"
+      required:
+      - "role"
+      type: "object"
     Grantee:
       description: "접근 권한을 가진 사용자"
       properties:
@@ -7482,6 +7490,73 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
+  /admin/users/{userId}/org-roles/{orgId}:
+    delete:
+      operationId: "revokeOrgRole"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "orgId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-controller"
+    put:
+      operationId: "grantOrgRole"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "orgId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantOrgRoleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-controller"
   /admin/vm-flavors:
     get:
       operationId: "listAdminVmFlavors"

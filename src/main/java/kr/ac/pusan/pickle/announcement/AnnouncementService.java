@@ -2,11 +2,9 @@ package kr.ac.pusan.pickle.announcement;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementCreateRequest;
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementView;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -105,10 +103,7 @@ public class AnnouncementService {
                     // one when the account administers several. Naming it is
                     // required from the second organisation onwards; an account
                     // that administers exactly one still need not.
-                    Set<Long> administered = actor.orgRoles().entrySet().stream()
-                            .filter(entry -> entry.getValue() == UserRole.ORG_ADMIN)
-                            .map(Map.Entry::getKey)
-                            .collect(Collectors.toCollection(LinkedHashSet::new));
+                    Set<Long> administered = actor.administeredOrgIds();
                     if (administered.isEmpty()) {
                         throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                                 "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
@@ -154,7 +149,7 @@ public class AnnouncementService {
             // their org answer the same 404 — workspace existence stays private.
             if (workspaceId == null || !workspaceRepository.existsByIdAndDeletedAtIsNull(workspaceId)
                     || (actor.role() == UserRole.ORG_ADMIN
-                            && !workspaceLinkedToOrg(workspaceId, actor.managedOrgIds()))) {
+                            && !workspaceLinkedToOrg(workspaceId, actor.administeredOrgIds()))) {
                 throw notFound("해당 워크스페이스가 존재하지 않습니다.");
             }
         }

@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.41.0, 158 ops × 5 roles),
+# Operator-confirmed permission matrix (contract v0.46.0, 166 ops × 5 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -163,6 +163,8 @@ operations:
   - { id: createOrg,            method: POST,   path: "/admin/orgs",                       roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateOrg,            method: PATCH,  path: "/admin/orgs/{orgId}",               roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateUser,       method: PATCH,  path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: grantOrgRole,     method: PUT,    path: "/admin/users/{userId}/org-roles/{orgId}",    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: revokeOrgRole,    method: DELETE, path: "/admin/users/{userId}/org-roles/{orgId}",    roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listUsers,       method: GET,    path: "/admin/users",                      roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getUser,         method: GET,    path: "/admin/users/{userId}",             roles: { USER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: disableUser,          method: POST,   path: "/admin/users/{userId}/disable",     roles: { USER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

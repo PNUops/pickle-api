@@ -46,7 +46,7 @@ public class AuditQueryService {
 
     /**
      * Representative derived-org name for the audit row's actor (v0.9.0 display
-     * field): the actor's managed org (ORG_ADMIN {@code users.org_id}) if any,
+     * field): the actor's managed org (ORG_ADMIN {@code the actor's administered orgs}) if any,
      * else the smallest org id derived from the actor's workspace resources
      * (requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
      * Null for system rows and actors with no derived org. Correlated on

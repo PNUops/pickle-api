@@ -7,8 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserOrgRoleRepository
         extends JpaRepository<UserOrgRole, UserOrgRole.Key> {
 
-    /** Everything one account administers. Empty for a non-admin. */
-    List<UserOrgRole> findByUserId(Long userId);
+    /** Everything one account administers, in a stable order. Empty for a non-admin. */
+    List<UserOrgRole> findByUserIdOrderByOrgIdAsc(Long userId);
 
     Optional<UserOrgRole> findByUserIdAndOrgId(Long userId, Long orgId);
 

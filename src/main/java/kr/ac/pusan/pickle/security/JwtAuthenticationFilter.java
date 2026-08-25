@@ -100,7 +100,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (!user.getRole().isOrgTier()) {
             return Map.of();
         }
-        return userOrgRoleRepository.findByUserId(user.getId()).stream()
+        return userOrgRoleRepository.findByUserIdOrderByOrgIdAsc(user.getId()).stream()
                 .collect(Collectors.toMap(UserOrgRole::getOrgId, UserOrgRole::getRole,
                         (first, second) -> first));
     }

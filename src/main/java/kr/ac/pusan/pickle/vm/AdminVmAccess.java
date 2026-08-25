@@ -37,23 +37,34 @@ public class AdminVmAccess {
     }
 
     /**
-     * Write surfaces: period update and the four power interventions (start,
-     * shutdown, reboot, force stop), plus the scheduled-deletion pair.
+     * Write surfaces the org tier shares: period update and the four power
+     * interventions (start, shutdown, reboot, force stop). ORG_MANAGER holds
+     * these, so any role in the VM's organisation is enough.
      */
     public Vm requireWritableVm(AuthenticatedUser actor, UUID vmId) {
         Vm vm = findOrNotFound(vmId);
-        requireSameOrg(actor, vm);
+        if (actor.role().isOrgTier() && !actor.manages(vm.getOrgId())) {
+            throw vmNotFound();
+        }
+        return vm;
+    }
+
+    /**
+     * Write surfaces reserved to ORG_ADMIN: the scheduled-deletion pair. The
+     * controller gate cannot make this distinction — it sees the effective
+     * role, which an account that administers some other organisation already
+     * has — so the organisation-level role is checked here.
+     */
+    public Vm requireAdministeredVm(AuthenticatedUser actor, UUID vmId) {
+        Vm vm = findOrNotFound(vmId);
+        if (actor.role().isOrgTier() && !actor.administers(vm.getOrgId())) {
+            throw vmNotFound();
+        }
         return vm;
     }
 
     private Vm findOrNotFound(UUID vmId) {
         return vmRepository.findByPublicId(vmId).orElseThrow(AdminVmAccess::vmNotFound);
-    }
-
-    private static void requireSameOrg(AuthenticatedUser actor, Vm vm) {
-        if (actor.role().isOrgTier() && !actor.manages(vm.getOrgId())) {
-            throw vmNotFound();
-        }
     }
 
     /** The one wording for an unreachable VM, shared with the access machinery. */
