@@ -4050,6 +4050,10 @@ components:
             $ref: "#/components/schemas/ConsentInput"
           minItems: 1
           type: "array"
+        departmentCode:
+          maxLength: 32
+          minLength: 0
+          type: "string"
         email:
           minLength: 1
           pattern: "^[A-Za-z0-9._%+-]+@(pusan\\.ac\\.kr|pnuops\\.com)$"
@@ -4062,11 +4066,21 @@ components:
           maxLength: 72
           minLength: 8
           type: "string"
+        position:
+          $ref: "#/components/schemas/UserPosition"
+        studentNo:
+          maxLength: 20
+          minLength: 0
+          type:
+          - "string"
+          - "null"
       required:
       - "consents"
+      - "departmentCode"
       - "email"
       - "name"
       - "password"
+      - "position"
       type: "object"
     SuspendPortMappingRequest:
       properties:
@@ -4579,6 +4593,15 @@ components:
       - "role"
       - "status"
       type: "object"
+    UserPosition:
+      enum:
+      - "STUDENT_UNDERGRAD"
+      - "STUDENT_GRADUATE"
+      - "RESEARCHER"
+      - "PROFESSOR"
+      - "STAFF"
+      - "OTHER"
+      type: "string"
     UserProfileResponse:
       properties:
         email:

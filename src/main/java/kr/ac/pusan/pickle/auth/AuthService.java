@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.LoginRequest;
@@ -72,6 +73,7 @@ public class AuthService {
     private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
+    private final ProfileValidator profileValidator;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
@@ -88,7 +90,7 @@ public class AuthService {
             RefreshTokenService refreshTokenService,
             PersonalWorkspaceService personalWorkspaceService,
             PasswordEncoder passwordEncoder,
-            PasswordPolicy passwordPolicy,
+            PasswordPolicy passwordPolicy, ProfileValidator profileValidator,
             RateLimitService rateLimitService,
             AuditService auditService,
             NotificationService notificationService,
@@ -105,6 +107,7 @@ public class AuthService {
         this.personalWorkspaceService = personalWorkspaceService;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
+        this.profileValidator = profileValidator;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -138,6 +141,7 @@ public class AuthService {
         // looked at, or the validation order becomes the enumeration oracle the
         // uniform 202 below is meant to remove.
         passwordPolicy.validate(request.password());
+        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());
         termsService.validateSignupConsents(request.consents());
 
         if (userRepository.existsByEmail(email)) {
@@ -161,8 +165,11 @@ public class AuthService {
     }
 
     private void createAccount(SignupRequest request, String email, String ip) {
-        User user = userRepository.save(
-                new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
+        User user = new User(email, passwordEncoder.encode(request.password()), request.name().strip());
+        user.setProfile(request.position(),
+                ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
+                request.departmentCode());
+        user = userRepository.save(user);
         // Consent completeness is validated here (422 rolls the whole tx back, so
         // no verification mail is sent for an incomplete signup).
         termsService.recordSignupConsents(user.getId(), request.consents());

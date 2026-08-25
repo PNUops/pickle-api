@@ -49,6 +49,12 @@ class AuthFlowTest {
             Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
             Map.of("docType", "PRIVACY_POLICY", "version", 1));
 
+    /** Profile fields every signup needs; a case names only what it is about. */
+    private static final Map<String, Object> SIGNUP_DEFAULTS = Map.of(
+            "position", "STUDENT_UNDERGRAD",
+            "studentNo", "202012345",
+            "departmentCode", "COMPUTER_SCIENCE");
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -64,8 +70,7 @@ class AuthFlowTest {
     @Test
     void fullAuthLifecycle() throws Exception {
         // signup → 202 and a verification mail
-        postJson("/api/v1/auth/signup",
-                Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
+        postSignupHere(Map.of("email", EMAIL, "password", PASSWORD, "name", "홍길동", "consents", FULL_CONSENTS))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
 
@@ -244,21 +249,21 @@ class AuthFlowTest {
         Map<String, ?> partial = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
                 "name", "동의자",
                 "consents", List.of(Map.of("docType", "TERMS_OF_SERVICE", "version", 1)));
-        postJson("/api/v1/auth/signup", partial)
+        postSignupHere(partial)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
         // both documents → 202
         Map<String, ?> full = Map.of("email", "consent.tester@pusan.ac.kr", "password", PASSWORD,
                 "name", "동의자", "consents", FULL_CONSENTS);
-        postJson("/api/v1/auth/signup", full)
+        postSignupHere(full)
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
     @Test
     void signupRejectsNonPusanEmail() throws Exception {
-        postJson("/api/v1/auth/signup",
+        postSignupHere(
                 Map.of("email", "someone@gmail.com", "password", PASSWORD, "name", "외부인",
                         "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
@@ -271,7 +276,7 @@ class AuthFlowTest {
         // long enough but structurally weak → server-side policy rejects.
         // A breach-corpus password like "qwerty1234" no longer belongs here:
         // the list comparison is gone and only structure is checked.
-        postJson("/api/v1/auth/signup",
+        postSignupHere(
                 Map.of("email", "weak.password@pusan.ac.kr", "password", "aaaaaaaaaa", "name", "약한비번",
                         "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
@@ -279,7 +284,7 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.errors[0].field").value("password"));
 
         // too short → bean validation
-        postJson("/api/v1/auth/signup",
+        postSignupHere(
                 Map.of("email", "weak.password@pusan.ac.kr", "password", "short1!", "name", "약한비번",
                         "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
@@ -335,6 +340,23 @@ class AuthFlowTest {
         return postSignupFrom("10.96.0.1", body);
     }
 
+    /**
+     * Fills in whatever the case did not name. Signup keeps growing required
+     * fields, and a case that is about the password should not have to restate
+     * a valid 소속 to stay compilable — nor go quietly 422 when a field is added.
+     */
+    private static Map<String, Object> withSignupDefaults(Map<String, ?> body) {
+        Map<String, Object> merged = new java.util.LinkedHashMap<>(SIGNUP_DEFAULTS);
+        merged.putAll(body);
+        return merged;
+    }
+
+    /** Signup from the default client address, with the profile defaults filled in. */
+    private org.springframework.test.web.servlet.ResultActions postSignupHere(Map<String, ?> body)
+            throws Exception {
+        return postJson("/api/v1/auth/signup", withSignupDefaults(body));
+    }
+
     /** Signup from an explicit client IP (each case gets its own rate-limit window). */
     private org.springframework.test.web.servlet.ResultActions postSignupFrom(String ip,
             Map<String, ?> body) throws Exception {
@@ -344,6 +366,6 @@ class AuthFlowTest {
                     return request;
                 })
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(body)));
+                .content(objectMapper.writeValueAsString(withSignupDefaults(body))));
     }
 }
