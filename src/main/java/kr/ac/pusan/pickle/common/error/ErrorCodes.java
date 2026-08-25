@@ -11,6 +11,23 @@ public final class ErrorCodes {
     public static final String AUTH_CSRF_INVALID = "AUTH_CSRF_INVALID";
     // Account lifecycle (contract tag me/auth/admin, v0.9.0).
     public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
+    /** The account has never had a password, so it cannot supply one (409). */
+    public static final String AUTH_PASSWORD_NOT_SET = "AUTH_PASSWORD_NOT_SET";
+    /** Unlinking would leave the account with no way to sign in (409). */
+    public static final String IDENTITY_LAST_METHOD = "IDENTITY_LAST_METHOD";
+
+    /** Google sign-in is not configured in this environment (503). */
+    public static final String AUTH_OAUTH_NOT_CONFIGURED = "AUTH_OAUTH_NOT_CONFIGURED";
+    /** The authorization state is unknown, expired or already spent (410). */
+    public static final String AUTH_OAUTH_STATE_INVALID = "AUTH_OAUTH_STATE_INVALID";
+    /** The code exchange or the id-token verification failed (502). */
+    public static final String AUTH_OAUTH_EXCHANGE_FAILED = "AUTH_OAUTH_EXCHANGE_FAILED";
+    /** The verified account is outside the allowed Workspace domain (403). */
+    public static final String AUTH_OAUTH_DOMAIN_NOT_ALLOWED = "AUTH_OAUTH_DOMAIN_NOT_ALLOWED";
+    /** The onboarding token is expired or already spent (410). */
+    public static final String AUTH_OAUTH_REGISTRATION_EXPIRED = "AUTH_OAUTH_REGISTRATION_EXPIRED";
+    /** That Google account is already attached to a different user (409). */
+    public static final String AUTH_OAUTH_ALREADY_LINKED = "AUTH_OAUTH_ALREADY_LINKED";
     /** Sudo-mode (v0.24.0): the endpoint demands a valid X-Reauth-Token. */
     public static final String REAUTH_REQUIRED = "REAUTH_REQUIRED";
     public static final String AUTH_RESET_TOKEN_EXPIRED = "AUTH_RESET_TOKEN_EXPIRED";

@@ -114,10 +114,12 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
         }
         // Same weak-password bar every self-service account clears: a long but
         // structurally weak bootstrap password (e.g. all-same-char) must not slip
-        // through the length floor + blacklist. PasswordPolicy throws 422 on a
-        // weak value; wrap it so startup fails fast with the ops-facing message.
+        // through the length floor. PasswordPolicy throws 422 on a weak value;
+        // wrap it so startup fails fast with the ops-facing message. The named
+        // defaults above are this path's own guard and are unrelated to the
+        // breach blocklist PasswordPolicy used to carry.
         try {
-            passwordPolicy.validate(password, email);
+            passwordPolicy.validate(password);
         } catch (RuntimeException weak) {
             throw new IllegalStateException(PASSWORD_ENV
                     + " 비밀번호가 보안 정책을 통과하지 못했습니다. 더 강력한 비밀번호로 다시 시작하세요.", weak);

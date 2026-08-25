@@ -121,9 +121,9 @@ class ProdBootstrapSeederTest {
 
     @Test
     void refusesWeakButLongPassword() {
-        // Long enough to clear the length floor and not in the exact blacklist,
-        // but structurally weak — PasswordPolicy must still reject it so a
-        // guessable admin never bootstraps.
+        // Long enough to clear the length floor and not one of this path's own
+        // named defaults, but structurally weak — PasswordPolicy must still
+        // reject it so a guessable admin never bootstraps.
         MockEnvironment env = new MockEnvironment()
                 .withProperty(ProdBootstrapSeeder.EMAIL_ENV, "root-admin@pickle.local")
                 .withProperty(ProdBootstrapSeeder.PASSWORD_ENV, "aaaaaaaaaaaa");

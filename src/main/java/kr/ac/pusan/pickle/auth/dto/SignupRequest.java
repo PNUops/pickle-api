@@ -3,10 +3,13 @@ package kr.ac.pusan.pickle.auth.dto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import kr.ac.pusan.pickle.consent.dto.ConsentInput;
+import kr.ac.pusan.pickle.user.UserPosition;
+import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code SignupRequest}. */
 public record SignupRequest(
@@ -27,6 +30,21 @@ public record SignupRequest(
         @NotBlank(message = "이름을 입력해 주세요.")
         @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
         String name,
+
+        // 직책·소속 come from GET /meta/profile-options. Whether 학번 is required
+        // depends on the position, so that rule and the department lookup are
+        // ProfileValidator's — and they run before the address is looked at, or
+        // the validation order becomes the enumeration oracle the uniform 202 is
+        // meant to remove.
+        @NotNull(message = "직책을 선택해 주세요.")
+        UserPosition position,
+
+        @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
+        @Nullable String studentNo,
+
+        @NotBlank(message = "소속을 선택해 주세요.")
+        @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
+        String departmentCode,
 
         // Consent completeness (every current document) is validated server-side.
         @NotEmpty(message = "약관 동의가 필요합니다.")

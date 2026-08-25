@@ -44,6 +44,10 @@ public class AuditService {
     public static final String ACCOUNT_PASSWORD_CHANGE = "account.password_change";
     public static final String ACCOUNT_PASSWORD_RESET = "account.password_reset";
     public static final String ACCOUNT_WITHDRAW = "account.withdraw";
+    public static final String ACCOUNT_PROFILE_UPDATE = "account.profile_update";
+    /** An external login was attached to an account (including an automatic link at first sign-in). */
+    public static final String ACCOUNT_IDENTITY_LINKED = "account.identity_linked";
+    public static final String ACCOUNT_IDENTITY_UNLINKED = "account.identity_unlinked";
     // 2FA (contract v0.9.0). Secrets/codes are never recorded, only the event.
     public static final String ACCOUNT_MFA_ENROLL = "account.mfa_enroll";
     public static final String ACCOUNT_MFA_DISABLE = "account.mfa_disable";

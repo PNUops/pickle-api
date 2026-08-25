@@ -63,9 +63,24 @@ public class AuthTokenRetentionSweeper {
                  where id in (select id from auth_reverifications
                                where expires_at < ? order by id limit ?)
                 """, now);
+        // Spent or expired OAuth round trips. Same lifetime shape as the MFA
+        // step-up tokens above, so they ride the same sweep rather than growing
+        // a scheduler of their own.
+        int oauthFlows = deleteBatched("""
+                delete from oauth_flows
+                 where id in (select id from oauth_flows
+                               where consumed_at is not null or expires_at < ? order by id limit ?)
+                """, now);
+        int oauthRegistrations = deleteBatched("""
+                delete from oauth_registrations
+                 where id in (select id from oauth_registrations
+                               where consumed_at is not null or expires_at < ? order by id limit ?)
+                """, now);
         log.info("auth-token retention sweep deleted {} refresh token(s), {} email verification(s), "
-                + "{} mfa login token(s), {} reverification(s)",
-                tokens, verifications, mfaLoginTokens, reverifications);
+                + "{} mfa login token(s), {} reverification(s), {} oauth flow(s), "
+                + "{} oauth registration(s)",
+                tokens, verifications, mfaLoginTokens, reverifications, oauthFlows,
+                oauthRegistrations);
     }
 
     private int deleteBatched(String sql, Timestamp bound) {

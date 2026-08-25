@@ -5,6 +5,8 @@ import kr.ac.pusan.pickle.consent.TermsDocType;
 import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.consent.dto.TermsDocumentView;
 import kr.ac.pusan.pickle.consent.dto.TermsVersionView;
+import kr.ac.pusan.pickle.profile.ProfileOptionsService;
+import kr.ac.pusan.pickle.profile.dto.ProfileOptionsResponse;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,16 +27,18 @@ public class MetaController {
     private final SettingsService settingsService;
     private final TermsService termsService;
     private final SystemStatusService systemStatusService;
+    private final ProfileOptionsService profileOptionsService;
 
     /** SSH gateway host advertised in the request form's slug preview (v0.12.0, config-driven). */
     private final String sshHost;
 
     public MetaController(SettingsService settingsService, TermsService termsService,
-            SystemStatusService systemStatusService,
+            SystemStatusService systemStatusService, ProfileOptionsService profileOptionsService,
             @Value("${pickle.ssh.advertised-host:ssh.pcl.kr}") String sshHost) {
         this.settingsService = settingsService;
         this.termsService = termsService;
         this.systemStatusService = systemStatusService;
+        this.profileOptionsService = profileOptionsService;
         this.sshHost = sshHost == null || sshHost.isBlank() ? "ssh.pcl.kr" : sshHost;
     }
 
@@ -44,6 +48,16 @@ public class MetaController {
                 settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS),
                 settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS),
                 sshHost);
+    }
+
+    /**
+     * Public: the 직책·소속 catalogues the signup form renders. Public for the
+     * same reason the terms endpoints are — both are read before an account
+     * exists.
+     */
+    @GetMapping("/profile-options")
+    public ProfileOptionsResponse profileOptions() {
+        return profileOptionsService.options();
     }
 
     /** Public: current version metadata of every consent document. */

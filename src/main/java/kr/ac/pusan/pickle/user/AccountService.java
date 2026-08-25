@@ -3,6 +3,8 @@ package kr.ac.pusan.pickle.user;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import kr.ac.pusan.pickle.identity.UserIdentityRepository;
+import kr.ac.pusan.pickle.auth.PasswordCredential;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
@@ -42,6 +44,7 @@ public class AccountService {
     private final VmRepository vmRepository;
     private final VmSshKeyRepository vmSshKeyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserIdentityRepository userIdentityRepository;
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
@@ -52,6 +55,7 @@ public class AccountService {
             WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, VmRepository vmRepository,
             VmSshKeyRepository vmSshKeyRepository, RefreshTokenRepository refreshTokenRepository,
+            UserIdentityRepository userIdentityRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             RateLimitService rateLimitService, AuditService auditService,
             NotificationService notificationService, MfaService mfaService) {
@@ -62,6 +66,7 @@ public class AccountService {
         this.vmRepository = vmRepository;
         this.vmSshKeyRepository = vmSshKeyRepository;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.userIdentityRepository = userIdentityRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
@@ -79,6 +84,7 @@ public class AccountService {
         rateLimitService.hit("withdraw:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(user.getEmail(), ip);
         rateLimitService.checkCodeLock(user.getEmail(), ip);
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_WITHDRAW,
@@ -112,6 +118,11 @@ public class AccountService {
 
         refreshTokenRepository.deleteByUserId(user.getId());
         vmSshKeyRepository.deleteByUserId(user.getId());
+        // The FK's `on delete cascade` never fires here: withdrawal sets a status
+        // and deletes no user row. Left behind, the withdrawn address keeps a live
+        // provider subject and the next Google login matches it straight back into
+        // the withdrawn account.
+        userIdentityRepository.deleteByUserId(user.getId());
         personalWorkspace(liveMemberships).ifPresent(workspace -> workspace.softDelete(user.getId(), now));
         workspaceMemberRepository.deleteByUserId(user.getId());
         // Grants only ever name a member of the owning workspace, so they go

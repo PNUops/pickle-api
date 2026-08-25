@@ -37,15 +37,21 @@ operations:
   - { id: refresh,              method: POST,   path: "/auth/refresh",                       roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: logout,               method: POST,   path: "/auth/logout",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: reverify,            method: POST,   path: "/auth/reverify",               roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: startGoogleOauth,                 method: POST,   path: "/auth/oauth/google/start",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: completeGoogleOauthCallback,      method: POST,   path: "/auth/oauth/google/callback",            roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: completeGoogleOauthRegistration,  method: POST,   path: "/auth/oauth/google/complete",            roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: requestPasswordReset, method: POST,   path: "/auth/password-reset",                roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: confirmPasswordReset, method: POST,   path: "/auth/password-reset/confirm",        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: completeMfa,     method: POST,   path: "/auth/mfa",                           roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: systemStatus,      method: GET,    path: "/meta/status",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: listTerms,    method: GET,    path: "/meta/terms",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getTerms,     method: GET,    path: "/meta/terms/{docType}",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: profileOptions, method: GET,  path: "/meta/profile-options",              roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
 
   # ── 3.2 Me / self (any authenticated) ─────────────────────────────────────
   - { id: me,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateMyProfile,          method: PUT,    path: "/me/profile",                  roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: unlinkIdentity,           method: DELETE, path: "/me/identities/{provider}",    roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: changePassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: withdraw,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

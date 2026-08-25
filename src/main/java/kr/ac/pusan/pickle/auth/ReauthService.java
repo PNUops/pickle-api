@@ -53,6 +53,7 @@ public class ReauthService {
         rateLimitService.hit("reverify:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.hit("reverify:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(user.getEmail(), ip);
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,
@@ -66,6 +67,27 @@ public class ReauthService {
                 user.getTokenVersion(), expiresAt, ip));
         auditService.record(actor.id(), actor.role().name(), AuditService.AUTH_REVERIFY,
                 "user", user.getPublicId(), Map.of("result", "success"), ip);
+        return new ReverifyResponse(rawToken, expiresAt);
+    }
+
+    /**
+     * Issues the same sudo token for a proof made somewhere other than a
+     * password — today, a Google reauthentication with {@code prompt=login}.
+     *
+     * <p>Token creation is not duplicated for the new path: an account with no
+     * password would otherwise be locked out of deleting its own VM, and two
+     * implementations of "what a sudo grant is" would drift. The caller is
+     * responsible for having actually verified the holder; this only mints.
+     */
+    @Transactional
+    public ReverifyResponse issueVerified(User user, String ip) {
+        rateLimitService.clearLoginFailures(user.getEmail(), ip);
+        String rawToken = TokenHasher.newToken();
+        Instant expiresAt = Instant.now().plus(TTL);
+        repository.save(new AuthReverification(user.getId(), TokenHasher.sha256Hex(rawToken),
+                user.getTokenVersion(), expiresAt, ip));
+        auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_REVERIFY,
+                "user", user.getPublicId(), Map.of("result", "success", "method", "google"), ip);
         return new ReverifyResponse(rawToken, expiresAt);
     }
 

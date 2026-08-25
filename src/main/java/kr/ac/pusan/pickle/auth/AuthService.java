@@ -4,7 +4,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.LoginRequest;
@@ -71,6 +73,7 @@ public class AuthService {
     private final PersonalWorkspaceService personalWorkspaceService;
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
+    private final ProfileValidator profileValidator;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
@@ -87,7 +90,7 @@ public class AuthService {
             RefreshTokenService refreshTokenService,
             PersonalWorkspaceService personalWorkspaceService,
             PasswordEncoder passwordEncoder,
-            PasswordPolicy passwordPolicy,
+            PasswordPolicy passwordPolicy, ProfileValidator profileValidator,
             RateLimitService rateLimitService,
             AuditService auditService,
             NotificationService notificationService,
@@ -104,6 +107,7 @@ public class AuthService {
         this.personalWorkspaceService = personalWorkspaceService;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
+        this.profileValidator = profileValidator;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -136,7 +140,8 @@ public class AuthService {
         // Every request-shape rejection has to happen before the address is
         // looked at, or the validation order becomes the enumeration oracle the
         // uniform 202 below is meant to remove.
-        passwordPolicy.validate(request.password(), email);
+        passwordPolicy.validate(request.password());
+        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());
         termsService.validateSignupConsents(request.consents());
 
         if (userRepository.existsByEmail(email)) {
@@ -160,8 +165,11 @@ public class AuthService {
     }
 
     private void createAccount(SignupRequest request, String email, String ip) {
-        User user = userRepository.save(
-                new User(email, passwordEncoder.encode(request.password()), request.name().strip()));
+        User user = new User(email, passwordEncoder.encode(request.password()), request.name().strip());
+        user.setProfile(request.position(),
+                ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
+                request.departmentCode());
+        user = userRepository.save(user);
         // Consent completeness is validated here (422 rolls the whole tx back, so
         // no verification mail is sent for an incomplete signup).
         termsService.recordSignupConsents(user.getId(), request.consents());
@@ -193,14 +201,41 @@ public class AuthService {
 
         User user = userRepository.findById(verification.getUserId())
                 .orElseThrow(AuthService::verificationTokenGone);
-        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
-            user.setStatus(UserStatus.ACTIVE);
-            user.setEmailVerifiedAt(now);
-        }
-        personalWorkspaceService.ensurePersonalWorkspace(user);
+        activateAccount(user, now);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_VERIFY,
                 "user", user.getPublicId(), Map.of("email", user.getEmail()), ip);
         return new MessageResponse("이메일 인증이 완료되었습니다. 이제 로그인할 수 있습니다.");
+    }
+
+    /**
+     * Turns a PENDING_VERIFICATION account into a usable one: ACTIVE, stamped
+     * as verified, and holding the personal workspace.
+     *
+     * <p>Extracted because three paths reach this state — mail verification,
+     * Google registration, and a Google sign-in that finds a still-pending
+     * account. {@code ensurePersonalWorkspace} is idempotent, but idempotence
+     * does not help a path that forgets to call it: that account simply has no
+     * workspace, and nothing notices until the user tries to use one.
+     */
+    public void activateAccount(User user, Instant when) {
+        if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
+            user.setStatus(UserStatus.ACTIVE);
+            user.setEmailVerifiedAt(when);
+        }
+        personalWorkspaceService.ensurePersonalWorkspace(user);
+    }
+
+    /**
+     * Expires the account's unspent signup verification links.
+     *
+     * <p>Called when a Google sign-in activates a still-pending account. Whoever
+     * created that account received a verification link by mail; if that was not
+     * the account holder, the link must stop working the moment the real holder
+     * proves the address is theirs. Activating without this leaves the earlier
+     * link live against a now-ACTIVE account.
+     */
+    public void invalidateOpenSignupVerifications(long userId) {
+        emailVerificationRepository.invalidateOpen(userId, VerificationPurpose.SIGNUP, Instant.now());
     }
 
     @Transactional
@@ -224,7 +259,19 @@ public class AuthService {
         rateLimitService.checkLoginLock(email, ip);
 
         Optional<User> found = userRepository.findByEmail(email);
-        String passwordHash = found.map(User::getPasswordHash).orElse(TIMING_EQUALIZER_HASH);
+        // filter(Objects::nonNull) is the whole of what keeps a Google-only
+        // account out of the response, and the reason is timing, not an
+        // exception: AbstractValidatingPasswordEncoder.matches returns false
+        // immediately for a null hash, without running BCrypt at all. A
+        // passwordless account would therefore answer measurably faster than a
+        // wrong password on an ordinary account, which is exactly the oracle
+        // the equaliser hash exists to close. Burning the equaliser instead
+        // makes the two indistinguishable. (Checked against
+        // spring-security-crypto 7.1.0; do not remove this on the belief that
+        // the encoder would have thrown.)
+        String passwordHash = found.map(User::getPasswordHash)
+                .filter(Objects::nonNull)
+                .orElse(TIMING_EQUALIZER_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
 
         if (found.isEmpty() || !passwordMatches) {
@@ -260,9 +307,23 @@ public class AuthService {
         }
 
         rateLimitService.clearLoginFailures(email, ip);
+        return issueSession(user, ip, userAgent, Map.of("email", email));
+    }
+
+    /**
+     * Mints the token pair that IS a session here: the access token, the user
+     * summary, and the rotating refresh token the controller turns into a
+     * cookie.
+     *
+     * <p>Shared with the Google sign-in path rather than copied, so that what
+     * counts as a session — and what a successful login writes to the audit
+     * log — has one definition. The caller decides whether the account was
+     * entitled to it; this only issues.
+     */
+    public AuthResult issueSession(User user, String ip, String userAgent, Map<String, Object> auditMetadata) {
         var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null, userAgent, ip);
         auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN,
-                "user", user.getPublicId(), Map.of("email", email), ip);
+                "user", user.getPublicId(), auditMetadata, ip);
         return new AuthResult(
                 new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
                 issued.rawToken());
@@ -373,6 +434,7 @@ public class AuthService {
         // attacker hammering login must not be able to block that from an
         // already-valid session. The sliding window above still bounds the rate.
 
+        PasswordCredential.require(user);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             // Same counter as login and the other re-verification points, so a
             // hijacked session cannot switch endpoints to keep guessing.
@@ -382,7 +444,7 @@ public class AuthService {
             throw passwordMismatch();
         }
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
-        passwordPolicy.validate(newPassword, user.getEmail());
+        passwordPolicy.validate(newPassword);
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.bumpTokenVersion();
@@ -435,7 +497,7 @@ public class AuthService {
         }
         User user = userRepository.findById(verification.getUserId())
                 .orElseThrow(AuthService::resetTokenGone);
-        passwordPolicy.validate(newPassword, user.getEmail());
+        passwordPolicy.validate(newPassword);
         // Single-use guard: a concurrent/repeated confirm loses the UPDATE → 410.
         if (emailVerificationRepository.consume(verification.getId(), now) == 0) {
             throw resetTokenGone();

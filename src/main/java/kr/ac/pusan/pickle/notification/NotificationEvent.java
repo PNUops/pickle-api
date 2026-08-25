@@ -45,6 +45,9 @@ public enum NotificationEvent {
     ACCOUNT_MFA_ENROLLED("account.mfa.enrolled", NotificationImportance.HIGH),
     ACCOUNT_MFA_DISABLED("account.mfa.disabled", NotificationImportance.HIGH),
     ACCOUNT_MFA_RESET("account.mfa.reset", NotificationImportance.HIGH),
+    // HIGH: "a login method was attached to your account" is exactly the
+    // event someone has to see if it was not them who attached it.
+    ACCOUNT_IDENTITY_LINKED("account.identity.linked", NotificationImportance.HIGH),
     WORKSPACE_DELETED("workspace.deleted", NotificationImportance.NORMAL),
 
     // Relay port forwarding + 교내 IP (contract v0.27.0).
