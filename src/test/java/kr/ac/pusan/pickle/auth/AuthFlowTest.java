@@ -268,9 +268,11 @@ class AuthFlowTest {
 
     @Test
     void signupRejectsWeakPassword() throws Exception {
-        // long enough but a well-known password → server-side policy rejects
+        // long enough but structurally weak → server-side policy rejects.
+        // A breach-corpus password like "qwerty1234" no longer belongs here:
+        // the list comparison is gone and only structure is checked.
         postJson("/api/v1/auth/signup",
-                Map.of("email", "weak.password@pusan.ac.kr", "password", "qwerty1234", "name", "약한비번",
+                Map.of("email", "weak.password@pusan.ac.kr", "password", "aaaaaaaaaa", "name", "약한비번",
                         "consents", FULL_CONSENTS))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))

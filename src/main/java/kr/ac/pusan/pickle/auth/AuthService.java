@@ -136,7 +136,7 @@ public class AuthService {
         // Every request-shape rejection has to happen before the address is
         // looked at, or the validation order becomes the enumeration oracle the
         // uniform 202 below is meant to remove.
-        passwordPolicy.validate(request.password(), email);
+        passwordPolicy.validate(request.password());
         termsService.validateSignupConsents(request.consents());
 
         if (userRepository.existsByEmail(email)) {
@@ -382,7 +382,7 @@ public class AuthService {
             throw passwordMismatch();
         }
         rateLimitService.clearLoginFailures(user.getEmail(), ip);
-        passwordPolicy.validate(newPassword, user.getEmail());
+        passwordPolicy.validate(newPassword);
 
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.bumpTokenVersion();
@@ -435,7 +435,7 @@ public class AuthService {
         }
         User user = userRepository.findById(verification.getUserId())
                 .orElseThrow(AuthService::resetTokenGone);
-        passwordPolicy.validate(newPassword, user.getEmail());
+        passwordPolicy.validate(newPassword);
         // Single-use guard: a concurrent/repeated confirm loses the UPDATE → 410.
         if (emailVerificationRepository.consume(verification.getId(), now) == 0) {
             throw resetTokenGone();
