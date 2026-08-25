@@ -45,6 +45,7 @@ class OpenRouterReconcilerTest {
         jdbcTemplate.update("delete from drift_findings where kind in "
                 + "('OPENROUTER_ORPHAN'::drift_finding_kind, 'OPENROUTER_STALE'::drift_finding_kind)");
         jdbcTemplate.update("delete from llm_usage_events");
+        jdbcTemplate.update("delete from llm_credit_usage_snapshots");
         jdbcTemplate.update("delete from llm_api_keys");
         when(client.configured()).thenReturn(true);
     }
@@ -55,9 +56,9 @@ class OpenRouterReconcilerTest {
         insertKey("REVOKED", "hash-zombie");
         when(client.listKeys()).thenReturn(List.of(
                 new OpenRouterClient.ManagedKey("hash-live", "live", false,
-                        new BigDecimal("5"), null),
-                new OpenRouterClient.ManagedKey("hash-zombie", "zombie", false, null, null),
-                new OpenRouterClient.ManagedKey("hash-orphan", "who-is-this", false, null, null)));
+                        new BigDecimal("5"), null, null),
+                new OpenRouterClient.ManagedKey("hash-zombie", "zombie", false, null, null, null),
+                new OpenRouterClient.ManagedKey("hash-orphan", "who-is-this", false, null, null, null)));
 
         reconciler.reconcile();
 
@@ -82,13 +83,13 @@ class OpenRouterReconcilerTest {
     void aRepairedMismatchAutoResolvesOnTheNextCycle() {
         insertKey("REVOKED", "hash-z");
         when(client.listKeys()).thenReturn(List.of(
-                new OpenRouterClient.ManagedKey("hash-z", "z", false, null, null)));
+                new OpenRouterClient.ManagedKey("hash-z", "z", false, null, null, null)));
         reconciler.reconcile();
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-z");
 
         // Now OpenRouter reports it disabled: the drift no longer holds.
         when(client.listKeys()).thenReturn(List.of(
-                new OpenRouterClient.ManagedKey("hash-z", "z", true, null, null)));
+                new OpenRouterClient.ManagedKey("hash-z", "z", true, null, null, null)));
         reconciler.reconcile();
 
         assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
@@ -101,7 +102,7 @@ class OpenRouterReconcilerTest {
         // and say so.
         insertKey("ACTIVE", "hash-drifted");
         when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
-                "hash-drifted", "d", false, new BigDecimal("99"), null)));
+                "hash-drifted", "d", false, new BigDecimal("99"), null, null)));
 
         reconciler.reconcile();
 
@@ -114,7 +115,7 @@ class OpenRouterReconcilerTest {
         // Same amount written differently ($5 vs 5.00) is the same limit.
         insertKey("ACTIVE", "hash-ok");
         when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
-                "hash-ok", "ok", false, new BigDecimal("5"), null)));
+                "hash-ok", "ok", false, new BigDecimal("5"), null, null)));
 
         reconciler.reconcile();
 
@@ -128,7 +129,7 @@ class OpenRouterReconcilerTest {
         // failed, an operator reading it must not be told it succeeded.
         insertKey("REVOKED", "hash-stubborn");
         when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
-                "hash-stubborn", "s", false, null, null)));
+                "hash-stubborn", "s", false, null, null, null)));
         org.mockito.Mockito.doThrow(new OpenRouterException(500, "nope"))
                 .when(client).setDisabled("hash-stubborn", true);
 
@@ -141,10 +142,64 @@ class OpenRouterReconcilerTest {
     }
 
     @Test
+    void reportedSpendIsStoredOnTheKeyAndAppendedAsASnapshot() {
+        // The money axis is enforced at OpenRouter, so their cumulative figure
+        // is the one the console shows. One value is a gauge; the history is
+        // what a depletion forecast reads a slope from.
+        long id = insertKey("ACTIVE", "hash-spender");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-spender", "s", false, new BigDecimal("5"), null, new BigDecimal("1.75"))));
+
+        reconciler.reconcile();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_usage from llm_api_keys where id = ?", BigDecimal.class, id))
+                .isEqualByComparingTo("1.75");
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_usage_at is not null from llm_api_keys where id = ?",
+                Boolean.class, id)).isTrue();
+        assertThat(jdbcTemplate.queryForList(
+                "select usage_amount from llm_credit_usage_snapshots where key_id = ?",
+                BigDecimal.class, id)).hasSize(1);
+    }
+
+    @Test
+    void aKeyWhoseSpendIsNotReportedIsLeftUnknownRatherThanZeroed() {
+        // Absent is not zero: writing zero would show a student a spend figure
+        // nobody measured, and a forecast would read a slope from it.
+        long id = insertKey("ACTIVE", "hash-silent");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-silent", "s", false, new BigDecimal("5"), null, null)));
+
+        reconciler.reconcile();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_usage from llm_api_keys where id = ?", BigDecimal.class, id))
+                .isNull();
+    }
+
+    @Test
+    void spendIsRecordedEvenWhenTheKeyAlsoDrifted() {
+        // A key whose limit drifted has still spent what it spent, and that
+        // branch returns early — so the spend must be collected before the
+        // verdicts, not inside the healthy one.
+        long id = insertKey("ACTIVE", "hash-both");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-both", "b", false, new BigDecimal("99"), null, new BigDecimal("3.00"))));
+
+        reconciler.reconcile();
+
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-both");
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_usage from llm_api_keys where id = ?", BigDecimal.class, id))
+                .isEqualByComparingTo("3.00");
+    }
+
+    @Test
     void aFailedListingKeepsExistingFindings() {
         insertKey("REVOKED", "hash-kept");
         when(client.listKeys()).thenReturn(List.of(
-                new OpenRouterClient.ManagedKey("hash-kept", "kept", false, null, null)));
+                new OpenRouterClient.ManagedKey("hash-kept", "kept", false, null, null, null)));
         reconciler.reconcile();
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");
 

@@ -67,9 +67,15 @@ public class OpenRouterClient {
     /**
      * One managed key as the list/read endpoints describe it. {@code limit}
      * and {@code limitReset} are null when OpenRouter has none set.
+     *
+     * <p>{@code usage} is what this key has spent, as OpenRouter counts it.
+     * The money limit is enforced there rather than here, so their figure is
+     * the authority: ours would be one shipped batch behind and carries no
+     * prices at all. Null when the listing does not report it.
      */
     public record ManagedKey(String hash, String name, boolean disabled,
-            @Nullable BigDecimal limit, @Nullable String limitReset) {
+            @Nullable BigDecimal limit, @Nullable String limitReset,
+            @Nullable BigDecimal usage) {
     }
 
     /** A freshly created key: the identifier and the one-time plaintext. */
@@ -155,7 +161,9 @@ public class OpenRouterClient {
                         entry.path("disabled").asBoolean(false),
                         entry.path("limit").isNumber()
                                 ? entry.path("limit").decimalValue() : null,
-                        text(entry, "limit_reset")));
+                        text(entry, "limit_reset"),
+                        entry.path("usage").isNumber()
+                                ? entry.path("usage").decimalValue() : null));
             }
             offset += data.size();
         }

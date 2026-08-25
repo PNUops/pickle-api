@@ -136,7 +136,8 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("""
                                 {"data": [
-                                  {"hash": "h1", "name": "a", "disabled": false, "limit": 5},
+                                  {"hash": "h1", "name": "a", "disabled": false, "limit": 5,
+                                   "usage": 1.25},
                                   {"hash": "h2", "name": "b", "disabled": true}]}
                                 """)));
         server.stubFor(get(urlEqualTo("/keys?include_disabled=true&offset=2"))
@@ -149,7 +150,13 @@ class OpenRouterClientTest {
         assertThat(keys).hasSize(2);
         assertThat(keys.get(0).hash()).isEqualTo("h1");
         assertThat(keys.get(0).limit()).isEqualByComparingTo("5");
+        // What the key has spent, as they count it — the money figure the
+        // console shows so nobody has to open the OpenRouter console.
+        assertThat(keys.get(0).usage()).isEqualByComparingTo("1.25");
         assertThat(keys.get(1).disabled()).isTrue();
+        // A listing that reports no spend for a key leaves it unknown rather
+        // than claiming zero.
+        assertThat(keys.get(1).usage()).isNull();
     }
 
     @Test
