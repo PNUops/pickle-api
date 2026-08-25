@@ -43,6 +43,7 @@ operations:
   - { id: systemStatus,      method: GET,    path: "/meta/status",                        roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: listTerms,    method: GET,    path: "/meta/terms",                         roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getTerms,     method: GET,    path: "/meta/terms/{docType}",               roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: profileOptions, method: GET,  path: "/meta/profile-options",              roles: { USER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_MANAGER: public, SYS_ADMIN: public } }
 
   # ── 3.2 Me / self (any authenticated) ─────────────────────────────────────
   - { id: me,                       method: GET,    path: "/me",                          roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

@@ -84,6 +84,7 @@ class ContractDriftTest {
             "GET /orgs",
             "GET /os-images",
             "GET /meta/request-options",
+            "GET /meta/profile-options",
             "GET /workspaces",
             "POST /workspaces",
             "GET /workspaces/{workspaceId}",

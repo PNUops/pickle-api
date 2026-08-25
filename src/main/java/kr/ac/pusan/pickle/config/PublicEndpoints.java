@@ -26,9 +26,11 @@ public final class PublicEndpoints {
             "/swagger-ui.html", "/swagger-ui/**",
             "/actuator/health", "/actuator/health/**");
 
-    /** Public for GET only: the terms documents shown during signup. */
+    /** Public for GET only: what the signup form reads before an account exists. */
     public static final List<String> GET_ONLY = List.of(
-            "/api/v1/meta/terms", "/api/v1/meta/terms/**");
+            "/api/v1/meta/terms", "/api/v1/meta/terms/**",
+            // 직책·소속 catalogues rendered by the signup form.
+            "/api/v1/meta/profile-options");
 
     /**
      * Carve-outs living under a public prefix that still demand a session:
