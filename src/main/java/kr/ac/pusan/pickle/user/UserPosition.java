@@ -13,9 +13,9 @@ package kr.ac.pusan.pickle.user;
  * {@code chk_users_student_no} CHECK); if the console re-derived it from the
  * enum name, adding a position would need a console release to stay correct.
  *
- * <p>Note this is not a role: authorization never reads it. 'STUDENT' is also
- * a retired term for {@code UserRole.USER} (glossary) — these values describe
- * a person, not a permission.
+ * <p>Note this is not a role: authorization never reads it. These values
+ * describe a person, not a permission, and nothing here should be read as one:
+ * a student position grants exactly what {@code UserRole.USER} grants.
  */
 public enum UserPosition {
 

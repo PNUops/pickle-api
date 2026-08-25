@@ -131,7 +131,7 @@ public class NotificationComposer {
                             str(args, "vmName")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName"));
-            // User-facing wording stays on the "who deleted" axis (glossary):
+            // User-facing wording stays on the "who deleted" axis: an
             // admin-initiated deletion is announced as 관리자 삭제 without
             // exposing the force/immediacy distinction.
             case VM_DELETE_FORCE -> new Composed(event.id(),
