@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.oauth.dto.OauthCallbackRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthCompleteRequest;
+import kr.ac.pusan.pickle.oauth.dto.OauthLinkedResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthRegistrationResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartResponse;
@@ -285,7 +286,7 @@ public class GoogleOauthService {
                 Instant.now()));
         auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_IDENTITY_LINKED,
                 "user", user.getPublicId(), Map.of("provider", "GOOGLE", "reason", "manual_link"), ip);
-        return Map.of("kind", "LINKED");
+        return OauthLinkedResponse.of();
     }
 
     /**
