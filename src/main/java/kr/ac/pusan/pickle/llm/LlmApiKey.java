@@ -139,6 +139,18 @@ public class LlmApiKey {
     @Column(name = "openrouter_last_error")
     private @Nullable String openrouterLastError;
 
+    /**
+     * What OpenRouter last reported this key had spent, and when that was read.
+     * Written by the reconciliation rather than by anything on a request path,
+     * so it is always as stale as that job's interval — which is why the time
+     * travels with it. Null is unreported, never zero.
+     */
+    @Column(name = "openrouter_usage")
+    private @Nullable BigDecimal openrouterUsage;
+
+    @Column(name = "openrouter_usage_at")
+    private @Nullable Instant openrouterUsageAt;
+
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
@@ -339,6 +351,14 @@ public class LlmApiKey {
 
     public @Nullable String getOpenrouterLastError() {
         return openrouterLastError;
+    }
+
+    public @Nullable BigDecimal getOpenrouterUsage() {
+        return openrouterUsage;
+    }
+
+    public @Nullable Instant getOpenrouterUsageAt() {
+        return openrouterUsageAt;
     }
 
     public boolean isRecordBodies() {
