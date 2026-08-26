@@ -40,6 +40,7 @@ public final class MailHtmlLayout {
     private static final String SLATE_400 = "#94a3b8";
     private static final String SLATE_500 = "#64748b";
     private static final String SLATE_700 = "#334155";
+    private static final String SLATE_900 = "#0f172a";
 
     private static final String FONT_STACK =
             "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic',"
@@ -103,16 +104,30 @@ public final class MailHtmlLayout {
         return render(heading, textBody, null);
     }
 
-    /** Centered emblem plus wordmark above the card; the text is the images-blocked fallback. */
+    /**
+     * Centered lockup above the card: emblem and wordmark side by side, the
+     * subtitle beneath. The wordmark text is the images-blocked fallback.
+     *
+     * <p>The three sizes are measured against each other, not picked: a 30px
+     * wordmark, a 30px-tall emblem and a 12px gap make the top line 130px
+     * wide, against 131px for the name beneath it, so the two rows end
+     * together and the lockup reads as one block. Changing any one of them
+     * means measuring the pair again.</p>
+     */
     private static void appendHeader(StringBuilder html) {
-        html.append("<tr>\n<td align=\"center\" style=\"padding:40px 0 24px;\">\n")
-                // PNU emblem, original ratio 125x122, shown at 32px height.
+        html.append("<tr>\n<td align=\"center\" style=\"padding:36px 0 20px;\">\n")
+                .append("<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"")
+                .append(" align=\"center\" style=\"margin:0 auto;\">\n<tr>\n")
+                .append("<td style=\"vertical-align:middle;padding-right:12px;\">")
+                // PNU emblem, original ratio 125x122, matched to the wordmark's height
                 .append("<img src=\"").append(LOGO_URL)
-                .append("\" width=\"33\" height=\"32\" alt=\"\" style=\"display:block;border:0;margin:0 auto;\" />\n")
-                .append("<div style=\"margin-top:10px;font-family:").append(FONT_STACK)
-                .append(";font-size:22px;font-weight:bold;line-height:1.2;letter-spacing:0.5px;color:")
-                .append(PNU_BLUE).append(";\">Pickle</div>\n")
-                .append("<div style=\"margin-top:4px;font-family:").append(FONT_STACK)
+                .append("\" width=\"31\" height=\"30\" alt=\"\" style=\"display:block;border:0;\" />")
+                .append("</td>\n<td style=\"vertical-align:middle;\">")
+                .append("<div style=\"font-family:").append(FONT_STACK)
+                .append(";font-size:30px;font-weight:bold;line-height:1.1;letter-spacing:0.5px;color:")
+                .append(SLATE_900).append(";\">Pickle</div>")
+                .append("</td>\n</tr>\n</table>\n")
+                .append("<div style=\"margin-top:7px;font-family:").append(FONT_STACK)
                 .append(";font-size:12px;line-height:1.4;color:").append(SLATE_500)
                 .append(";\">부산대학교 클라우드 플랫폼</div>\n")
                 .append("</td>\n</tr>\n");
