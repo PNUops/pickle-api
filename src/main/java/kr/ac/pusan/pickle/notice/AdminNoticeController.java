@@ -48,7 +48,11 @@ import org.springframework.web.multipart.MultipartFile;
  * one. A viewer therefore sees exactly what an operator of the same
  * organisation sees on the two management surfaces, this list and those
  * previews. The public board is the one place it does not: that resolves its
- * readers through the operating grants, so a viewer is not among them.</p>
+ * readers by workspace-derived membership with the operating grants unioned on
+ * top, and a viewer's grant is not one of them. A viewer who is also an ACTIVE
+ * member of a workspace holding that organisation's resources still reaches the
+ * board by that first path, as any account does — what a viewer's grant alone
+ * does not do is put them there.</p>
  *
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>
