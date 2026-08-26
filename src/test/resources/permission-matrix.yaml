@@ -54,6 +54,7 @@ operations:
   - { id: unlinkIdentity,           method: DELETE, path: "/me/identities/{provider}",    roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: changePassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: setPassword,               method: POST,   path: "/me/password",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: withdraw,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: begin,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: activate,             method: POST,   path: "/me/mfa/totp/activate",        roles: { USER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
