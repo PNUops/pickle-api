@@ -2,8 +2,10 @@ package kr.ac.pusan.pickle.notification;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -300,7 +302,7 @@ public class NotificationComposer {
 
                     릴레이 인스턴스와 터널 상태를 확인해 주세요. 마지막으로 적용된
                     포워딩 규칙은 릴레이에 그대로 남아 있습니다.""".formatted(
-                            str(args, "relayName"), str(args, "lastContactAt")),
+                            str(args, "relayName"), kstOrUnknown(args, "lastContactAt")),
                     "/admin/network", event.defaultImportance(),
                     payload(args, "relayId", "relayName"));
             case RELAY_NEVER_CONTACTED -> new Composed(event.id(),
@@ -455,7 +457,26 @@ public class NotificationComposer {
         if (value instanceof LocalDate d) {
             return d.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant();
         }
+        if (value instanceof Date d) {
+            return d.toInstant(); // java.sql.Timestamp straight off a query row
+        }
+        if (value instanceof OffsetDateTime o) {
+            return o.toInstant();
+        }
         return Instant.parse(String.valueOf(value));
+    }
+
+    /**
+     * KST-formatted timestamp for display. A value the composer cannot read
+     * must not abort the publish it is embedded in — these notices are written
+     * inside the caller's transaction, one row at a time.
+     */
+    private static String kstOrUnknown(Map<String, Object> args, String key) {
+        try {
+            return KST.format(instant(args, key));
+        } catch (RuntimeException e) {
+            return "확인 불가";
+        }
     }
 
     /** Whitelist-copy of the given display fields into the stored payload. */
