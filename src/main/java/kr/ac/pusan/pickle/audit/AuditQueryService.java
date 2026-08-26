@@ -9,13 +9,11 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.dto.ActivityEntryResponse;
 import kr.ac.pusan.pickle.audit.dto.AuditLogViewResponse;
-import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -192,26 +190,15 @@ public class AuditQueryService {
         return detailJson != null ? objectMapper.readTree(detailJson) : null;
     }
 
-    /** Org tier pinned to their org; another org's id answers 404. */
+    /**
+     * The audit log is the one admin surface a read-only role does not reach:
+     * it carries login addresses, which are evidence rather than operational
+     * state, so it answers for the organisations the account may act in.
+     */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        if (!actor.role().isOrgTier()) {
-            // An id no org has filters to nothing, as a non-matching number did.
-            if (orgId != null && requested == null) {
-                return OrgScope.nothing();
-            }
-            return OrgScope.of(requested);
-        }
-        if (actor.operatedOrgIds().isEmpty()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.operates(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.operatedOrgIds());
+        return AdminOrgScope.operated(actor, orgId, requested);
     }
 }

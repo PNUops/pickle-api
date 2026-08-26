@@ -90,37 +90,34 @@ class AdminVmsTest {
     }
 
     @Test
-    void theOrgTierListsEveryOrgAndTheOrgIdParamOnlyFilters() throws Exception {
+    void orgAdminIsPinnedToTheirOrgAndCrossOrgFilterAnswers404() throws Exception {
         // users have no admin VM list → 403 ACCESS_DENIED
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        // every org, unfiltered (2026-08-25)
+        // own org only, with or without the explicit own-org filter
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningA1)).exists())
                 .andExpect(jsonPath(byId(vmStoppedA2)).exists())
-                .andExpect(jsonPath(byId(vmRunningB)).exists());
+                .andExpect(jsonPath(byId(vmRunningB)).doesNotExist());
         mockMvc.perform(get("/api/v1/admin/vms?orgId=" + org.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(vmRunningA1)).exists())
-                .andExpect(jsonPath(byId(vmRunningB)).doesNotExist());
+                .andExpect(jsonPath(byId(vmRunningA1)).exists());
 
-        // another org in the filter is now a filter, not a 404: the org tier
-        // reads every org, so naming one narrows rather than refuses.
+        // another org in the filter → 404, never 403 (existence stays private)
         mockMvc.perform(get("/api/v1/admin/vms?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(vmRunningB)).exists())
-                .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist());
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        // the other org's admin reads the same platform-wide list
+        // and the other org's admin sees the mirror image
         mockMvc.perform(get("/api/v1/admin/vms").header("Authorization", "Bearer " + otherOrgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(byId(vmRunningB)).exists())
-                .andExpect(jsonPath(byId(vmRunningA1)).exists());
+                .andExpect(jsonPath(byId(vmRunningA1)).doesNotExist());
     }
 
     @Test

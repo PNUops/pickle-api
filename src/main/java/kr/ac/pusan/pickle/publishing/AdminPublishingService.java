@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
 import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -332,12 +333,9 @@ public class AdminPublishingService {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     private OrgScope scopedOrgId(AuthenticatedUser actor, UUID orgId) {
-        // Every admin tier reads every organisation (operator decision,
-        // 2026-08-25). The orgId parameter is a filter for all of them now, not
-        // a pin for some; writes stay scoped to the managed orgs.
-        // An id no org has filters to nothing, as a non-matching number did.
-        return orgId == null ? OrgScope.unrestricted()
-                : OrgScope.of(orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L));
+        Long requested = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 
     /** Null for an unrestricted scope, which is what the repositories expect. */

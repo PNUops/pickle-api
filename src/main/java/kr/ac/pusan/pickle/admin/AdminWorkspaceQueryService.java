@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -89,6 +90,18 @@ public class AdminWorkspaceQueryService {
         if (workspaceId == null) {
             throw workspaceNotFound();
         }
+        OrgScope scope = scopeOrgId(actor, null);
+        if (!scope.isUnrestricted()) {
+            List<Object> params = new ArrayList<>(scope.orgIds());
+            params.addAll(scope.orgIds());
+            Boolean linked = jdbcTemplate.queryForObject(
+                    "select " + OrgMembershipSql.workspaceLinkedToOrg(
+                            String.valueOf(workspaceId), scope),
+                    Boolean.class, params.toArray());
+            if (!Boolean.TRUE.equals(linked)) {
+                throw workspaceNotFound();
+            }
+        }
         List<AdminWorkspaceDetailResponse> rows = jdbcTemplate.query("""
                 select g.public_id, g.kind, g.name, g.description, g.created_at,
                        (select count(*) from workspace_members gm
@@ -134,18 +147,10 @@ public class AdminWorkspaceQueryService {
                 "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
     }
 
-    /** Org tier pinned to their org; another org's id answers 404. */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        // Every admin tier reads every organisation (operator decision,
-        // 2026-08-25). The orgId parameter is a filter for all of them now, not
-        // a pin for some; writes stay scoped to the managed orgs.
-        // An id no org has filters to nothing, as a non-matching number did.
-        if (orgId != null && requested == null) {
-            return OrgScope.nothing();
-        }
-        return OrgScope.of(requested);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 }

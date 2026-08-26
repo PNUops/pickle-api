@@ -14,6 +14,7 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
@@ -190,12 +191,6 @@ public class AdminVmQueryService {
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        // Every admin tier reads every organisation (operator decision,
-        // 2026-08-25). The orgId parameter is a filter for all of them now, not
-        // a pin for some; writes stay scoped to the managed orgs.
-        if (orgId != null && requested == null) {
-            return OrgScope.nothing();
-        }
-        return OrgScope.of(requested);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 }

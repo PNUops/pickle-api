@@ -26,10 +26,14 @@ public class AnnouncementQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<AnnouncementView> list(AuthenticatedUser actor, int page, int size) {
-        // Every admin tier sees every announcement (operator decision,
-        // 2026-08-25); who may send one is unchanged.
-        Page<Announcement> result =
-                announcementRepository.findAllByOrderByIdDesc(PageRequest.of(page, size));
+        // Visibility follows the sender's organisation. The org tier sees what
+        // the administrators of the organisations it holds a role in have sent,
+        // which since V90 can be several, plus every platform-wide broadcast.
+        PageRequest pageable = PageRequest.of(page, size);
+        Page<Announcement> result = actor.role().isOrgTier()
+                ? announcementRepository.findVisibleToOrgAdmin(
+                        AnnouncementScope.ALL, actor.readableOrgIds(), pageable)
+                : announcementRepository.findAllByOrderByIdDesc(pageable);
         return PageResponse.of(result.getContent().stream().map(this::toView).toList(), result);
     }
 

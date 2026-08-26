@@ -36,6 +36,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxApiException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStatusInfo;
 import kr.ac.pusan.pickle.proxmox.dto.NodeStorageStatus;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -371,16 +372,12 @@ public class AdminSummaryService {
     OrgScope resolveOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        // Every admin tier reads every organisation (operator decision,
-        // 2026-08-25). The orgId parameter is a filter for all of them now, not
-        // a pin for some; writes stay scoped to the managed orgs.
-        if (orgId == null) {
-            return OrgScope.unrestricted(); // no drill-in → platform-wide
-        }
-        if (requested == null) {
+        if (!actor.role().isOrgTier() && orgId != null && requested == null) {
+            // The summary addresses an organisation rather than filtering by
+            // one, so an unknown id is a 404 here where the lists answer empty.
             throw orgNotFound();
         }
-        return OrgScope.of(requested);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 
     private static ApiException orgNotFound() {

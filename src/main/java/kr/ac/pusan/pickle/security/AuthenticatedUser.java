@@ -29,6 +29,21 @@ public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole r
     }
 
     /**
+     * The organisations this account may <b>read</b>: every one it holds any
+     * role in. Wider than {@link #operatedOrgIds()} once a read-only role
+     * exists, and the two must never be confused — this one answers what may
+     * be seen, that one what may be changed.
+     */
+    public Set<Long> readableOrgIds() {
+        return orgRoles.keySet();
+    }
+
+    /** Holds some role in {@code orgId}, so it may read there. */
+    public boolean reads(Long orgId) {
+        return orgId != null && orgRoles.containsKey(orgId);
+    }
+
+    /**
      * The organisations this account may <b>act</b> in: those where it holds
      * ORG_ADMIN or ORG_MANAGER. Every write guard asks this. It is written as a
      * filter rather than the key set because a role that may only read is

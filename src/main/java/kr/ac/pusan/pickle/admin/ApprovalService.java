@@ -24,6 +24,7 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -213,24 +214,26 @@ public class ApprovalService {
 
     /** Read scope for the request queue. */
     private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
-        // Every admin tier reads every organisation's queue (operator decision,
-        // 2026-08-25). Approve and reject stay scoped; see findWritableWithLock.
-        // An id no org has filters to nothing, as a non-matching number did.
-        return orgId == null ? OrgScope.unrestricted()
-                : OrgScope.of(orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L));
+        Long requested = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 
     /**
-     * Read lookup (request detail, approval context). Every admin tier reads
-     * every organisation's requests (operator decision, 2026-08-25), so only an
-     * unknown id answers 404 here.
+     * Read lookup (request detail, approval context). The org tier reads the
+     * requests of every organisation it holds a role in, a read-only role
+     * included.
      *
-     * <p>Split from {@link #findWritableWithLock} exactly so this could widen
-     * without approve and reject widening with it.
+     * <p>Split from {@link #findWritableWithLock} so the two questions cannot be
+     * answered by one condition: deciding a request needs a role that may act,
+     * reading one does not.
      */
     Request findReadable(AuthenticatedUser actor, UUID requestId) {
         Request request = requestRepository.findByPublicId(requestId).orElse(null);
         if (request == null) {
+            throw requestNotFound();
+        }
+        if (actor.role().isOrgTier() && !actor.reads(request.getOrgId())) {
             throw requestNotFound();
         }
         return request;

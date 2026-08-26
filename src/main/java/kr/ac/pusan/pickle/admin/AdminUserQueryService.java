@@ -227,17 +227,24 @@ public class AdminUserQueryService {
                 "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다.");
     }
 
-    /** The org filter, for every admin tier alike. */
+    /**
+     * The org filter, for every admin tier alike.
+     *
+     * <p><b>The account directory is the one admin surface that is not scoped</b>
+     * (operator decision, 2026-08-25). Everything else the org tier reads is
+     * confined to the organisations it holds a role in; this is not, because org
+     * membership is derived from the resources a workspace holds, so a person
+     * who has never requested anything belongs to no organisation and was
+     * visible to nobody. A student may be supported by any organisation and may
+     * write to one before requesting anything, so every organisation's staff can
+     * find them. The {@code orgId} parameter narrows to an organisation's
+     * derived members for all admin tiers alike; an id no organisation has
+     * filters to nothing, as a non-matching number did.
+     */
     private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        // Every admin tier reads every organisation (operator decision,
-        // 2026-08-25): an account that has never requested a resource used to be
-        // invisible to every org admin, because org membership is derived from
-        // the resources a workspace holds. The orgId parameter is a filter for
-        // all admin tiers now, not a pin for some. Writes stay scoped.
-        // An id no org has filters to nothing, as a non-matching number did.
         if (orgId != null && requested == null) {
             return OrgScope.nothing();
         }
