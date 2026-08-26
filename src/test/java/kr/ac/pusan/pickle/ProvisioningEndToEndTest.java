@@ -138,7 +138,7 @@ class ProvisioningEndToEndTest {
                 .as("mail dispatcher drained").isTrue();
         MailMessage mail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
-        Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
         assertThat(matcher.find()).isTrue();
         postJson("/api/v1/auth/verify-email", null, Map.of("token", matcher.group(1)))
                 .andExpect(status().isOk());
@@ -269,7 +269,7 @@ class ProvisioningEndToEndTest {
         notificationDispatchJob.dispatch();
         MailMessage createdMail = mockMailSender.lastMessageTo(USER_EMAIL);
         assertThat(createdMail.subject()).contains(vm.get("hostname").asString());
-        assertThat(createdMail.body())
+        assertThat(createdMail.textBody())
                 .contains(EXPECTED_IP)
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
 

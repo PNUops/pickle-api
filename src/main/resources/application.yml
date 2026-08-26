@@ -80,9 +80,14 @@ pickle:
     # Enforce 2FA enrollment for admin-tier accounts (scope-restrict the
     # unenrolled). Off in dev/test; the prod profile turns it on.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:false}
+  console:
+    # Console origin the notification mails link back to (no path, no trailing
+    # slash): the stored link_path is appended to it.
+    base-url: ${PICKLE_CONSOLE_BASE_URL:https://pickle.pusan.ac.kr}
   auth:
     refresh-token-ttl: 14d
     verification-token-ttl: 24h
+    password-reset-token-ttl: 30m
     # Console URL the verification mail links to; token is appended as ?token=
     verification-base-url: ${PICKLE_VERIFICATION_BASE_URL:https://pickle.pusan.ac.kr/verify-email}
     # Console URL the password-reset mail links to; token is appended as ?token=
