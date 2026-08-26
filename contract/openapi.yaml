@@ -2891,6 +2891,15 @@ components:
       - "position"
       - "registrationToken"
       type: "object"
+    OauthLinkedResponse:
+      properties:
+        kind:
+          enum:
+          - "LINKED"
+          type: "string"
+      required:
+      - "kind"
+      type: "object"
     OauthPurpose:
       enum:
       - "LOGIN"
@@ -2905,6 +2914,8 @@ components:
           format: "date-time"
           type: "string"
         kind:
+          enum:
+          - "REGISTRATION_REQUIRED"
           type: "string"
         name:
           type: "string"
@@ -8226,7 +8237,8 @@ paths:
                 - $ref: "#/components/schemas/MfaChallengeResponse"
                 - $ref: "#/components/schemas/OauthRegistrationResponse"
                 - $ref: "#/components/schemas/ReverifyResponse"
-          description: "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰"
+                - $ref: "#/components/schemas/OauthLinkedResponse"
+          description: "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰 / 연동 완료"
         default:
           content:
             application/problem+json:
@@ -8250,8 +8262,8 @@ paths:
           content:
             '*/*':
               schema:
-                type: "object"
-          description: "OK"
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: "계정 생성과 토큰 발급"
         default:
           content:
             application/problem+json:
@@ -8276,7 +8288,7 @@ paths:
             '*/*':
               schema:
                 $ref: "#/components/schemas/OauthStartResponse"
-          description: "OK"
+          description: "인가 URL 발급"
         default:
           content:
             application/problem+json:
