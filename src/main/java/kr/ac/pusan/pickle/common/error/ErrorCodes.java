@@ -93,6 +93,15 @@ public final class ErrorCodes {
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
     public static final String DRIFT_FINDING_ALREADY_RESOLVED = "DRIFT_FINDING_ALREADY_RESOLVED";
     public static final String NOTIFICATION_NOT_RESENDABLE = "NOTIFICATION_NOT_RESENDABLE";
+    // 공지사항 이미지. The type is the one the bytes actually are, so a
+    // whitelist refusal is about content rather than a declared header (422);
+    // the size and count refusals are 413 and 409.
+    /** The uploaded bytes are not a PNG, JPEG, WebP or GIF (422). */
+    public static final String NOTICE_IMAGE_TYPE_UNSUPPORTED = "NOTICE_IMAGE_TYPE_UNSUPPORTED";
+    /** One image exceeds the per-image byte cap (413). */
+    public static final String NOTICE_IMAGE_TOO_LARGE = "NOTICE_IMAGE_TOO_LARGE";
+    /** The notice already carries as many images as it may (409). */
+    public static final String NOTICE_IMAGE_LIMIT_EXCEEDED = "NOTICE_IMAGE_LIMIT_EXCEEDED";
     // SSH keys (per-VM issue since v0.42.0).
     public static final String SSH_KEY_ALREADY_ISSUED = "SSH_KEY_ALREADY_ISSUED";
     public static final String VALIDATION_FAILED = "VALIDATION_FAILED";

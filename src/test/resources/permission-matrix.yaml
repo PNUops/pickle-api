@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.47.0, 167 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.48.0, 176 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -280,3 +280,21 @@ operations:
   # ── 3.26 Admin — 교내 IP 신청 처리 (status SYS_ADMIN-only) ────────────────
   - { id: listAdminCampusIpRequests,        method: GET,  path: "/admin/campus-ip-requests",                     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: updateAdminCampusIpRequestStatus, method: POST, path: "/admin/campus-ip-requests/{requestId}/status",  roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.27 공지사항 (notices) ───────────────────────
+  # The three reads are public: the landing page shows notices before anyone has
+  # an account. What an anonymous caller actually gets back is decided per row —
+  # PLATFORM+PUBLIC only — and a notice they may not see answers 404, not 403.
+  - { id: listNotices,    method: GET, path: "/notices",                              roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: getNotice,      method: GET, path: "/notices/{noticeId}",                   roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+  - { id: getNoticeImage, method: GET, path: "/notices/{noticeId}/images/{imageId}",  roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
+
+  # ── 3.28 Admin — 공지사항 관리 (writes ORG_ADMIN / SYS_ADMIN) ─────
+  # The org tier's list includes PLATFORM notices as read-only rows; every write
+  # against one is refused in the service, and another org's notice is masked 404.
+  - { id: listAdminNotices,        method: GET,    path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createAdminNotice,       method: POST,   path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateAdminNotice,       method: PATCH,  path: "/admin/notices/{noticeId}",                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: deleteAdminNotice,       method: DELETE, path: "/admin/notices/{noticeId}",                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: uploadAdminNoticeImage,  method: POST,   path: "/admin/notices/{noticeId}/images",            roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: deleteAdminNoticeImage,  method: DELETE, path: "/admin/notices/{noticeId}/images/{imageId}",  roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

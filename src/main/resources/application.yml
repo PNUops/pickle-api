@@ -24,6 +24,17 @@ spring:
       # connection indefinitely. Applies per session; Flyway shares the pool,
       # but boot-time migrations on a single instance see no lock contention.
       connection-init-sql: SET lock_timeout = '10s'
+  servlet:
+    multipart:
+      # Notice-body images are the only multipart upload the API takes. Boot's
+      # default is 1 MB, which would refuse an image the feature explicitly
+      # allows, so both caps are stated rather than inherited. The file cap
+      # equals the per-image limit the service and the notice_images CHECK
+      # enforce, so an oversized body is refused during parsing (413
+      # NOTICE_IMAGE_TOO_LARGE) instead of being read into memory first; the
+      # request cap leaves room for the part headers around it.
+      max-file-size: 2MB
+      max-request-size: 4MB
   jpa:
     hibernate:
       ddl-auto: validate
