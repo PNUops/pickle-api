@@ -2867,13 +2867,17 @@ components:
         departmentCode:
           maxLength: 32
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         name:
           maxLength: 50
           minLength: 0
           type: "string"
         position:
-          $ref: "#/components/schemas/UserPosition"
+          anyOf:
+          - $ref: "#/components/schemas/UserPosition"
+          - type: "null"
         registrationToken:
           maxLength: 128
           minLength: 0
@@ -2886,9 +2890,7 @@ components:
           - "null"
       required:
       - "consents"
-      - "departmentCode"
       - "name"
-      - "position"
       - "registrationToken"
       type: "object"
     OauthLinkedResponse:
@@ -4304,6 +4306,15 @@ components:
       - "reason"
       - "scheduledFor"
       type: "object"
+    SetPasswordRequest:
+      properties:
+        newPassword:
+          maxLength: 72
+          minLength: 8
+          type: "string"
+      required:
+      - "newPassword"
+      type: "object"
     SettingUpdateRequest:
       properties:
         value: {}
@@ -4350,7 +4361,9 @@ components:
         departmentCode:
           maxLength: 32
           minLength: 0
-          type: "string"
+          type:
+          - "string"
+          - "null"
         email:
           minLength: 1
           pattern: "^[A-Za-z0-9._%+-]+@(pusan\\.ac\\.kr|pnuops\\.com)$"
@@ -4364,7 +4377,9 @@ components:
           minLength: 8
           type: "string"
         position:
-          $ref: "#/components/schemas/UserPosition"
+          anyOf:
+          - $ref: "#/components/schemas/UserPosition"
+          - type: "null"
         studentNo:
           maxLength: 20
           minLength: 0
@@ -4373,11 +4388,9 @@ components:
           - "null"
       required:
       - "consents"
-      - "departmentCode"
       - "email"
       - "name"
       - "password"
-      - "position"
       type: "object"
     SuspendPortMappingRequest:
       properties:
@@ -4723,22 +4736,28 @@ components:
           - "null"
       type: "object"
     UpdateProfileRequest:
+      minProperties: 1
       properties:
         departmentCode:
           maxLength: 32
           minLength: 0
+          type:
+          - "string"
+          - "null"
+        name:
+          maxLength: 50
+          minLength: 0
           type: "string"
         position:
-          $ref: "#/components/schemas/UserPosition"
+          anyOf:
+          - $ref: "#/components/schemas/UserPosition"
+          - type: "null"
         studentNo:
           maxLength: 20
           minLength: 0
           type:
           - "string"
           - "null"
-      required:
-      - "departmentCode"
-      - "position"
       type: "object"
     UpdateResourceAccessGrantRequest:
       properties:
@@ -9257,6 +9276,43 @@ paths:
       tags:
       - "mfa-controller"
   /me/password:
+    post:
+      operationId: "setPassword"
+      parameters:
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPasswordRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "account-controller"
     put:
       operationId: "changePassword"
       requestBody:
