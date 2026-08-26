@@ -253,10 +253,14 @@ class NoticeTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         // Nor is another organisation's. Refused, not quietly rewritten to
         // theirs: an attempted cross-org write is the event worth surfacing.
+        // A field error rather than a refusal, because orgId is a submitted
+        // value and no existing row's privacy is at stake — the same answer
+        // AnnouncementService gives the same shape.
         create(orgAdminToken, body(Map.of(
                 "title", "타기관 시도", "scope", "ORG", "audience", "USERS",
                 "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
 
         // But naming their OWN organisation is accepted, not refused as a field
         // they may not set. The console sends it for every role, so folding this
@@ -269,11 +273,12 @@ class NoticeTest {
                 .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()))
                 .andExpect(jsonPath("$.orgName").value(org.getName()));
 
-        // And an organisation notice always names one.
+        // Omitting it is fine for an account that administers exactly one
+        // organisation: there is only one answer, so the server supplies it.
         create(orgAdminToken, body(Map.of(
                 "title", "기관 미지정", "scope", "ORG", "audience", "USERS")))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
 
         // Another organisation's notice is masked, exactly as it is on the read.
         patchNotice(orgAdminToken, otherOrgNotice, Map.of("title", "가로채기"))
@@ -408,13 +413,73 @@ class NoticeTest {
         create(dualToken, body(Map.of(
                 "title", "겸직 등록 시도", "scope", "ORG", "audience", "USERS",
                 "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
 
         // Nothing landed in the organisation it only reads.
         adminList(sysAdminToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(rowWhere(otherOrgNotice, "@.title=='타기관 공지'")).exists());
+    }
+
+    @Test
+    void theCreateTargetFollowsTheSameRulesAnAnnouncementDoes() throws Exception {
+        // An account administering TWO organisations has no single "own org",
+        // so naming one becomes required from the second onwards.
+        User twoOrgAdmin = ensureOrgUser("notice.two.admin@pusan.ac.kr", "겸임기관장",
+                org.getId(), UserRole.ORG_ADMIN);
+        SeedFixtures.grantOrgRole(jdbcTemplate, twoOrgAdmin.getId(), otherOrg.getId(),
+                UserRole.ORG_ADMIN);
+        String twoOrgToken = jwtService.createAccessToken(twoOrgAdmin);
+
+        create(twoOrgToken, body(Map.of(
+                "title", "겸임 기관 미지정", "scope", "ORG", "audience", "USERS")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
+
+        // Naming either of the two is accepted — both are theirs.
+        create(twoOrgToken, body(Map.of(
+                "title", "겸임 1", "scope", "ORG", "audience", "USERS",
+                "orgId", org.getPublicId().toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
+        create(twoOrgToken, body(Map.of(
+                "title", "겸임 2", "scope", "ORG", "audience", "USERS",
+                "orgId", otherOrg.getPublicId().toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.orgId").value(otherOrg.getPublicId().toString()));
+
+        // An organisation the account holds only a NON-administering role in is
+        // not a target: reading or operating there is not the right to publish.
+        User managerElsewhere = ensureOrgUser("notice.mgr@pusan.ac.kr", "타기관운영자",
+                org.getId(), UserRole.ORG_ADMIN);
+        SeedFixtures.grantOrgRole(jdbcTemplate, managerElsewhere.getId(), otherOrg.getId(),
+                UserRole.ORG_MANAGER);
+        String managerToken = jwtService.createAccessToken(managerElsewhere);
+        create(managerToken, body(Map.of(
+                "title", "운영 기관 시도", "scope", "ORG", "audience", "USERS",
+                "orgId", otherOrg.getPublicId().toString())))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
+
+        // An organisation that does not exist answers exactly as one they do
+        // not administer, so which organisations exist stays private from the
+        // org tier. The sys tier, which may target any of them, gets the 404.
+        create(orgAdminToken, body(Map.of(
+                "title", "없는 기관", "scope", "ORG", "audience", "USERS",
+                "orgId", SeedFixtures.UNKNOWN_ID.toString())))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
+        create(sysAdminToken, body(Map.of(
+                "title", "없는 기관(시스템)", "scope", "ORG", "audience", "USERS",
+                "orgId", SeedFixtures.UNKNOWN_ID.toString())))
+                .andExpect(status().isNotFound());
+
+        // The sys tier administers nothing, so it can never omit the field.
+        create(sysAdminToken, body(Map.of(
+                "title", "시스템 기관 미지정", "scope", "ORG", "audience", "USERS")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
     }
 
     @Test

@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -238,8 +239,21 @@ public class NoticeService {
 
     /**
      * Which organisation the new notice belongs to, and the refusal when the
-     * caller may not write it at all. An ORG_ADMIN's notice is pinned to an
-     * organisation they administer, whether or not the body named one.
+     * caller may not write it at all.
+     *
+     * <p>Shaped after {@code AnnouncementService}, which answers the same
+     * question for the same kind of object — an org-scoped write naming its
+     * target organisation in the body — so the two cannot drift: naming an
+     * organisation the caller does not administer is a <b>field</b> error (422)
+     * rather than a refusal, because {@code orgId} is a submitted value and
+     * there is no existing row whose existence a 404 would be protecting. That
+     * is the opposite of {@link #writable}, where the notice is addressed by id
+     * and masking is what keeps another organisation's notices private.
+     *
+     * <p>Co-appointment: an account can administer several organisations, so
+     * "your own org" is not always a single answer. Naming one is required from
+     * the second organisation onwards; an account administering exactly one
+     * still need not.
      */
     private Long resolveCreateTarget(AuthenticatedUser actor, NoticeCreateRequest request) {
         // A platform notice names no organisation, and saying so beats ignoring
@@ -254,33 +268,45 @@ public class NoticeService {
             }
             return null;
         }
-        // An organisation notice always names its organisation, whoever writes
-        // it. The console sends the field for both roles, and requiring it of
-        // everyone keeps one rule instead of a per-role exception.
-        if (request.orgId() == null) {
+        Long requestedOrgId = request.orgId() == null ? null
+                : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
+        if (actor.role() == UserRole.ORG_ADMIN) {
+            // administeredOrgIds(), not the effective role: since V90 the account
+            // may hold ORG_ADMIN in one organisation and only read another, and
+            // the effective role the @PreAuthorize gate saw is the highest of
+            // them. Asking the role here would let an admin of one organisation
+            // write a notice for every organisation it can merely see.
+            Set<Long> administered = actor.administeredOrgIds();
+            if (administered.isEmpty()) {
+                throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
+            }
+            if (request.orgId() != null) {
+                // Another organisation's is refused rather than quietly
+                // rewritten to one of theirs: an attempted cross-org write is
+                // exactly the event worth surfacing. An organisation that does
+                // not exist answers the same way, so which organisations exist
+                // stays private from the org tier.
+                // requestedOrgId is null when the id names no organisation, and
+                // administeredOrgIds() is a JDK immutable set, whose contains()
+                // throws on null rather than answering false. Asking the null
+                // question first is what keeps the unknown org a 422 like any
+                // other unreachable one instead of a 500.
+                if (requestedOrgId == null || !administered.contains(requestedOrgId)) {
+                    throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
+                            "자기 기관의 공지만 등록할 수 있습니다.")));
+                }
+                return requestedOrgId;
+            }
+            if (administered.size() == 1) {
+                return administered.iterator().next();
+            }
             throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                     "기관 공지에는 대상 기관이 필요합니다.")));
         }
-        Long requestedOrgId = orgRepository.findByPublicId(request.orgId()).map(Org::getId)
-                .orElse(null);
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            if (actor.administeredOrgIds().isEmpty()) {
-                throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
-            }
-            // An organisation they administer is accepted rather than refused as
-            // a field they may not set, and any other is refused rather than
-            // quietly rewritten to one of theirs: an attempted cross-org write
-            // is exactly the event worth surfacing.
-            //
-            // administers(), not the effective role: since V90 the account may
-            // hold ORG_ADMIN in one organisation and only read another, and the
-            // effective role the @PreAuthorize gate saw is the highest of them.
-            // Asking the role here would let an admin of one organisation write
-            // a notice for every organisation it can merely see.
-            if (!actor.administers(requestedOrgId)) {
-                throw forbidden("자기 기관의 공지만 등록할 수 있습니다.");
-            }
-            return requestedOrgId;
+        // The sys tier administers no organisation, so it always names one.
+        if (request.orgId() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
+                    "기관 공지에는 대상 기관이 필요합니다.")));
         }
         if (requestedOrgId == null) {
             throw notFound("해당 기관이 존재하지 않습니다.");
