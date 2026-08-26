@@ -77,6 +77,17 @@ class LlmUsageRetentionSweeperTest {
         sweeper.sweep();
 
         assertThat(eventCount()).isEqualTo(1);
+
+        // And it must still be aggregatable afterwards. A sweep that deleted
+        // nothing must not mark the day gone: the rollup would then skip it as
+        // frozen, advance its watermark past the event, and the NEXT sweep --
+        // no longer blocked by that watermark -- would delete an event that had
+        // never been counted anywhere.
+        rollupService.refresh();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from llm_usage_daily", Long.class)).isEqualTo(1L);
+        sweeper.sweep();
+        assertThat(eventCount()).isZero();
     }
 
     @Test

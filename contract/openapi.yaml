@@ -2194,11 +2194,10 @@ components:
     LlmKeyModelUsageResponse:
       properties:
         avgLatencyMs:
-          description: "이 모델 요청의 평균 응답 시간(ms). 요청이 없으면 null입니다."
+          description: "이 모델 요청의 평균 응답 시간(ms). 실패와 거부까지 포함한 평균이라 정상 응답만 재는 백분위와는 다\
+            른 값입니다."
           format: "int64"
-          type:
-          - "integer"
-          - "null"
+          type: "integer"
         estimatedRequests:
           format: "int64"
           type: "integer"
@@ -2227,6 +2226,7 @@ components:
           format: "int64"
           type: "integer"
       required:
+      - "avgLatencyMs"
       - "estimatedRequests"
       - "failed"
       - "inputTokens"

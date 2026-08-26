@@ -19,6 +19,8 @@ public record LlmKeyModelUsageResponse(
         long inputTokens,
         long outputTokens,
         long estimatedRequests,
-        @Schema(description = "이 모델 요청의 평균 응답 시간(ms). 요청이 없으면 null입니다.")
-        @Nullable Long avgLatencyMs) {
+        @Schema(description = """
+                이 모델 요청의 평균 응답 시간(ms). 실패와 거부까지 포함한 평균이라 \
+                정상 응답만 재는 백분위와는 다른 값입니다.""")
+        long avgLatencyMs) {
 }

@@ -64,8 +64,14 @@ comment on column llm_usage_rollup_state.swept_before is
 -- so their cumulative figure is the truthful one and ours would always lag a
 -- batch; the reconciler that already lists their keys every half hour writes
 -- these, which is why they carry the time they were read.
+-- numeric(14, 6), not the (12, 2) the granted limit uses: a limit is a number
+-- somebody typed in dollars, but this is a meter reading, and OpenRouter reports
+-- fractions of a cent. Rounding it to cents on the way in would be silent, and
+-- the depletion forecast divides two of these readings -- at a tenth of a cent a
+-- day the difference between two cent-rounded readings is zero, and the forecast
+-- would report "no spending" for a key that is spending.
 alter table llm_api_keys
-    add column openrouter_usage numeric(12, 2)
+    add column openrouter_usage numeric(14, 6)
         constraint llm_api_keys_openrouter_usage_check
             check (openrouter_usage is null or openrouter_usage >= 0),
     add column openrouter_usage_at timestamptz;
@@ -79,7 +85,7 @@ comment on column llm_api_keys.openrouter_usage is
 create table llm_credit_usage_snapshots (
     id           bigint generated always as identity primary key,
     key_id       bigint         not null references llm_api_keys (id),
-    usage_amount numeric(12, 2) not null,
+    usage_amount numeric(14, 6) not null,
     credit_limit numeric(12, 2),
     captured_at  timestamptz    not null default now()
 );

@@ -148,8 +148,12 @@ class LlmKeyUsageStatsTest {
         // put a number on the token gauge that the sweep would never agree
         // with, and one of the two would be refusing requests.
         jdbcTemplate.update("update llm_api_keys set daily_tokens = 1000 where id = ?", keyId);
-        event(hoursAgo(1), "pickle-general", "OK", null, 100, 100, 50);
-        event(hoursAgo(1), "openai/gpt-4o-mini", "OK", null, 500, 500, 50);
+        // Noon KST today, not "an hour ago": run in the hour after KST midnight
+        // and an hour ago is yesterday, and today's gauge would read zero.
+        Instant noonToday = LocalDate.now(ClockConfig.KST).atTime(12, 0)
+                .atZone(ClockConfig.KST).toInstant();
+        event(noonToday, "pickle-general", "OK", null, 100, 100, 50);
+        event(noonToday, "openai/gpt-4o-mini", "OK", null, 500, 500, 50);
 
         mockMvc.perform(get(usageUrl()).header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())

@@ -45,6 +45,25 @@ public class LlmUsageRetentionSweeper {
             """;
 
     /**
+     * The oldest KST day still holding a raw event below the cutoff, or null
+     * when the sweep left nothing behind down there.
+     *
+     * <p>The delete is bounded by the rollup's watermark and the mark must be
+     * bounded by the same reality, or the two disagree in the one direction
+     * that loses data: a day whose events survived the delete (because the
+     * rollup has not reached them yet) would be marked gone, the rollup would
+     * skip it as frozen while advancing its watermark past those events, and
+     * the next sweep — no longer blocked by that watermark — would delete
+     * events that were never counted anywhere. Marking only up to what is
+     * actually empty keeps every surviving event rebuildable.
+     */
+    private static final String OLDEST_SURVIVOR_SQL = """
+            select min((requested_at at time zone 'Asia/Seoul')::date)
+              from llm_usage_events
+             where requested_at < ?::date::timestamp at time zone 'Asia/Seoul'
+            """;
+
+    /**
      * Records how far the sweep has actually reached, so the rollup knows which
      * days it can no longer rebuild. **Only ever forward** — shortening or
      * disabling retention does not put deleted events back, and a mark that
@@ -86,10 +105,15 @@ public class LlmUsageRetentionSweeper {
             affected = jdbcTemplate.update(DELETE_SQL, cutoff, watermark, BATCH_SIZE);
             deleted += affected;
         } while (affected == BATCH_SIZE);
-        // Marked whether or not anything was deleted: a day past the cutoff with
-        // no rows left is equally unrebuildable, and marking only on a non-empty
-        // delete would leave those days thawed for the next re-send to repaint.
-        jdbcTemplate.update(MARK_SWEPT_SQL, cutoff);
+        // Marked whether or not anything was deleted — a day past the cutoff
+        // with no rows left is equally unrebuildable — but never past what is
+        // actually empty. Anything still sitting below the cutoff survived
+        // because the rollup has not reached it, and freezing it would strand
+        // it (see OLDEST_SURVIVOR_SQL).
+        LocalDate survivor = jdbcTemplate.queryForObject(
+                OLDEST_SURVIVOR_SQL, LocalDate.class, cutoff);
+        LocalDate mark = survivor == null ? cutoff : survivor;
+        jdbcTemplate.update(MARK_SWEPT_SQL, mark);
         if (deleted > 0) {
             log.info("llm usage retention sweep deleted {} event(s) before {}", deleted, cutoff);
         }

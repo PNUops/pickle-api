@@ -245,8 +245,10 @@ public class LlmKeyUsageService {
                         rs.getLong("input_tokens"),
                         rs.getLong("output_tokens"),
                         rs.getLong("estimated_requests"),
-                        rs.getObject("avg_latency_ms") == null ? null
-                                : Math.round(rs.getDouble("avg_latency_ms"))),
+                        // A model row exists only where at least one request
+                        // does, and latency_ms is NOT NULL, so the average is
+                        // never absent here.
+                        Math.round(rs.getDouble("avg_latency_ms"))),
                 keyId, from, to);
     }
 

@@ -192,9 +192,12 @@ public class OpenRouterReconciler {
                             .formatted(local.getOpenrouterKeyHash(), local.getPublicId()),
                     local.getOpenrouterKeyHash(), now);
         }
-        spendRecorder.record(spends, now);
         findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_ORPHAN, orphanKeys, now);
         findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_STALE, staleKeys, now);
+        // Last, after every verdict is settled: spend reporting is the least
+        // important thing this job does, and a failure here must not cost a
+        // finding or leave one open that the listing just resolved.
+        spendRecorder.record(spends, now);
         if (!orphanKeys.isEmpty() || !staleKeys.isEmpty()) {
             log.info("OpenRouter reconcile: {} orphan(s), {} stale", orphanKeys.size(),
                     staleKeys.size());
