@@ -16,16 +16,21 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * 소속(학과) catalogue, loaded once from {@code departments.json}.
  *
- * <p>It is a classpath resource rather than a table because 소속 is a required
- * signup field: an empty table would mean a fresh database cannot accept a
- * signup at all, and unlike a node or an IP pool this list does not differ
- * between hosts. {@code users.department_code} stores the code and carries no
- * foreign key, so a renamed department needs no data migration.
+ * <p>It is a classpath resource rather than a table because, unlike a node or
+ * an IP pool, this list does not differ between hosts: it is a fact about the
+ * university, not about the machine the platform runs on, so there is nothing
+ * for an operator to decide and a seeding step would only be a way to forget.
+ * (Until v0.46.0 the argument was stronger still — 소속 학과 was a required
+ * signup field, so an empty table meant a fresh database could not accept a
+ * signup at all. It is optional now, so that half no longer applies.)
+ * {@code users.department_code} stores the code and carries no foreign key, so
+ * a renamed department needs no data migration.
  *
  * <p>A code that is not in the catalogue is refused at the service layer, and
- * {@link #OTHER} is the safety net for a 소속 the list does not name. A missing
- * or malformed resource fails startup rather than serving an empty list, which
- * would silently make signup impossible.
+ * {@link #OTHER} is the safety net for a 소속 학과 the list does not name. A
+ * missing or malformed resource fails startup rather than serving an empty
+ * list: signup would survive that now, but the profile prompt would offer no
+ * choices and there would be nothing on screen to say why.
  */
 @Component
 public class DepartmentCatalog {

@@ -30,7 +30,16 @@ public final class PasswordCredential {
         if (!user.hasPassword()) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_PASSWORD_NOT_SET,
                     "비밀번호가 설정되어 있지 않습니다",
-                    "구글 계정으로 가입한 계정입니다. 비밀번호 재설정 메일로 비밀번호를 먼저 설정해 주세요.");
+                    "구글 계정으로 가입한 계정입니다. 내 정보에서 비밀번호를 먼저 설정해 주세요.");
+        }
+    }
+
+    /** Throws 409 when the account already has a password to change instead. */
+    public static void requireAbsent(User user) {
+        if (user.hasPassword()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.AUTH_PASSWORD_ALREADY_SET,
+                    "비밀번호가 이미 설정되어 있습니다",
+                    "이 계정에는 비밀번호가 있습니다. 현재 비밀번호를 입력해 변경해 주세요.");
         }
     }
 }

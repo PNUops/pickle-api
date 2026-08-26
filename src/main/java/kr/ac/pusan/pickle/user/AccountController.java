@@ -10,7 +10,9 @@ import kr.ac.pusan.pickle.auth.SessionCookies;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.user.dto.ChangePasswordRequest;
+import kr.ac.pusan.pickle.user.dto.SetPasswordRequest;
 import kr.ac.pusan.pickle.user.dto.WithdrawRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -47,6 +49,34 @@ public class AccountController {
         AuthService.AuthResult result = authService.changePassword(principal.id(),
                 request.currentPassword(), request.newPassword(), clientIp(httpRequest), userAgent);
         // Fresh token pair keeps the current session alive; other sessions are invalidated.
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
+        sessionCookies.issued(result.refreshToken())
+                .forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));
+        return response.body(result.body());
+    }
+
+    /**
+     * Sets a password on an account that has none, without asking for a
+     * current one. {@code @RequireReauth} is what stands in its place, and it
+     * is the only thing that does: an account created through Google reaches
+     * this by re-verifying with Google, and one that lost its password does
+     * not reach it at all (409 — the reset mail is that account's path).
+     *
+     * <p>Before v0.46.0 the only way to put a password on a Google account was
+     * to send the reset mail to someone who was already signed in and ask them
+     * to come back through it.
+     */
+    @PostMapping("/password")
+    @RequireReauth
+    public ResponseEntity<AuthTokenResponse> setPassword(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody SetPasswordRequest request,
+            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
+            HttpServletRequest httpRequest) {
+        AuthService.AuthResult result = authService.setPassword(principal.id(), request.newPassword(),
+                clientIp(httpRequest), userAgent);
+        // Same as a change: this session keeps going on the fresh pair, every
+        // other one is already dead.
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         sessionCookies.issued(result.refreshToken())
                 .forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));

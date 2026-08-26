@@ -13,6 +13,8 @@ public final class ErrorCodes {
     public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
     /** The account has never had a password, so it cannot supply one (409). */
     public static final String AUTH_PASSWORD_NOT_SET = "AUTH_PASSWORD_NOT_SET";
+    /** The account already has a password: change it, do not set it (409). */
+    public static final String AUTH_PASSWORD_ALREADY_SET = "AUTH_PASSWORD_ALREADY_SET";
     /** Unlinking would leave the account with no way to sign in (409). */
     public static final String IDENTITY_LAST_METHOD = "IDENTITY_LAST_METHOD";
 
