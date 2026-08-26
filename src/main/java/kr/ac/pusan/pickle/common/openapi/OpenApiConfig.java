@@ -41,11 +41,7 @@ import org.springframework.util.AntPathMatcher;
 public class OpenApiConfig {
 
     /** Contract version served in {@code info.version}; bump on any contract change. */
-<<<<<<< HEAD
     public static final String CONTRACT_VERSION = "0.48.0";
-=======
-    public static final String CONTRACT_VERSION = "0.46.0";
->>>>>>> origin/main
 
     /** Name of the bearer-JWT security scheme in the published spec. */
     private static final String BEARER_SCHEME = "bearerAuth";
