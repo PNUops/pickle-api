@@ -518,6 +518,48 @@ class NoticeTest {
     }
 
     @Test
+    void everyWriteRefusalUsesTheCodeItsIdentifierCallsFor() throws Exception {
+        // The rule is where the identifier is, not which verb it is: a notice
+        // named by PATH stays private behind a 404, an orgId named in the BODY
+        // is a field error, and an actor with no organisation at all has no
+        // resource to mask so it is simply refused.
+
+        // All four path-addressed writes mask. The image case uses an image
+        // that really exists on the other organisation's notice, so the 404 can
+        // only be the scope mask and not a missing image answering for it.
+        UUID foreignImage = UUID.fromString(json(upload(otherOrgAdminToken, otherOrgNotice,
+                "foreign.png", "image/png", PNG_BYTES).andExpect(status().isCreated())
+                .andReturn()).get("id").asString());
+        patchNotice(orgAdminToken, otherOrgNotice, Map.of("title", "가로채기"))
+                .andExpect(status().isNotFound());
+        deleteNotice(orgAdminToken, otherOrgNotice).andExpect(status().isNotFound());
+        upload(orgAdminToken, otherOrgNotice, "a.png", "image/png", PNG_BYTES)
+                .andExpect(status().isNotFound());
+        deleteAdminImage(orgAdminToken, otherOrgNotice, foreignImage)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        // The image is still there: the refusal did not half-apply.
+        deleteAdminImage(otherOrgAdminToken, otherOrgNotice, foreignImage)
+                .andExpect(status().isNoContent());
+
+        // An account holding ORG_ADMIN but granted no organisation reaches the
+        // gates — users.role is what they see — and is refused at the service.
+        // 403, not 404: there is no resource here whose existence a mask would
+        // be protecting.
+        User unattached = ensureSysUser("notice.unattached@pusan.ac.kr", "무소속관리자",
+                UserRole.ORG_ADMIN);
+        String unattachedToken = jwtService.createAccessToken(unattached);
+        adminList(unattachedToken)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        create(unattachedToken, body(Map.of(
+                "title", "무소속 등록 시도", "scope", "ORG", "audience", "USERS",
+                "orgId", org.getPublicId().toString())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
     void anOrgNoticeCanNeverBePublic() throws Exception {
         create(sysAdminToken, body(Map.of(
                 "title", "기관 공개 시도", "scope", "ORG", "audience", "PUBLIC",
@@ -774,6 +816,12 @@ class NoticeTest {
 
     private ResultActions deleteNotice(String token, UUID noticeId) throws Exception {
         return mockMvc.perform(authorize(delete("/api/v1/admin/notices/" + noticeId), token));
+    }
+
+    private ResultActions deleteAdminImage(String token, UUID noticeId, UUID imageId)
+            throws Exception {
+        return mockMvc.perform(authorize(
+                delete("/api/v1/admin/notices/" + noticeId + "/images/" + imageId), token));
     }
 
     private ResultActions upload(String token, UUID noticeId, String fileName, String declaredType,
