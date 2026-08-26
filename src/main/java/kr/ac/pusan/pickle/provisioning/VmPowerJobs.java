@@ -7,6 +7,7 @@ import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -53,27 +54,57 @@ public class VmPowerJobs {
         this.proxmoxClient = proxmoxClient;
     }
 
+    /**
+     * Which surface asked is known only where the job is enqueued, so it rides
+     * along as {@code adminAction} and becomes the event's actor kind here.
+     *
+     * <p>The two-argument forms are what jobs enqueued before that parameter
+     * existed were serialized against, and JobRunr resolves a queued job by its
+     * exact signature: dropping them would strand every power action in flight
+     * at deploy time. They read as the member surface, which is what they were.
+     * Removable one release after the queue has drained.</p>
+     */
     @Job(name = "vm-power start %0", retries = 0)
     public void start(long vmId, long actorId) {
-        execute(PowerAction.START, vmId, actorId);
+        start(vmId, actorId, false);
+    }
+
+    @Job(name = "vm-power start %0", retries = 0)
+    public void start(long vmId, long actorId, boolean adminAction) {
+        execute(PowerAction.START, vmId, actorId, adminAction);
     }
 
     @Job(name = "vm-power shutdown %0", retries = 0)
     public void shutdown(long vmId, long actorId) {
-        execute(PowerAction.SHUTDOWN, vmId, actorId);
+        shutdown(vmId, actorId, false);
+    }
+
+    @Job(name = "vm-power shutdown %0", retries = 0)
+    public void shutdown(long vmId, long actorId, boolean adminAction) {
+        execute(PowerAction.SHUTDOWN, vmId, actorId, adminAction);
     }
 
     @Job(name = "vm-power reboot %0", retries = 0)
     public void reboot(long vmId, long actorId) {
-        execute(PowerAction.REBOOT, vmId, actorId);
+        reboot(vmId, actorId, false);
+    }
+
+    @Job(name = "vm-power reboot %0", retries = 0)
+    public void reboot(long vmId, long actorId, boolean adminAction) {
+        execute(PowerAction.REBOOT, vmId, actorId, adminAction);
     }
 
     @Job(name = "vm-power force-stop %0", retries = 0)
     public void forceStop(long vmId, long actorId) {
-        execute(PowerAction.FORCE_STOP, vmId, actorId);
+        forceStop(vmId, actorId, false);
     }
 
-    private void execute(PowerAction action, long vmId, long actorId) {
+    @Job(name = "vm-power force-stop %0", retries = 0)
+    public void forceStop(long vmId, long actorId, boolean adminAction) {
+        execute(PowerAction.FORCE_STOP, vmId, actorId, adminAction);
+    }
+
+    private void execute(PowerAction action, long vmId, long actorId, boolean adminAction) {
         Vm vm = vmRepository.findById(vmId).orElse(null);
         if (vm == null) {
             log.warn("Power job {} skipped: vm {} not found", action, vmId);
@@ -83,13 +114,13 @@ public class VmPowerJobs {
         // finished (or skipped, or failed) action never bricks power controls.
         // Reboot never set the claim, so this is a harmless no-op for it.
         try {
-            run(action, vm, vmId, actorId);
+            run(action, vm, vmId, actorId, adminAction);
         } finally {
             vmRepository.clearPowerActionClaim(vmId, Instant.now());
         }
     }
 
-    private void run(PowerAction action, Vm vm, long vmId, long actorId) {
+    private void run(PowerAction action, Vm vm, long vmId, long actorId, boolean adminAction) {
         VmStatus from = vm.getStatus();
         if (!action.fromStatuses.contains(from)) {
             // Stale/duplicate enqueue, or the VM moved on (e.g. deletion won).
@@ -97,12 +128,12 @@ public class VmPowerJobs {
             return;
         }
         if (vm.getProxmoxVmid() == null) {
-            recordFailure(action, vmId, actorId, "Proxmox VMID가 없는 VM입니다");
+            recordFailure(action, vmId, actorId, adminAction, "Proxmox VMID가 없는 VM입니다");
             return;
         }
         Node node = nodeRepository.findById(vm.getNodeId()).orElse(null);
         if (node == null) {
-            recordFailure(action, vmId, actorId, "배치된 노드 정보를 찾을 수 없습니다");
+            recordFailure(action, vmId, actorId, adminAction, "배치된 노드 정보를 찾을 수 없습니다");
             return;
         }
         try {
@@ -111,23 +142,30 @@ public class VmPowerJobs {
             proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
             int updated = vmRepository.transitionStatus(vmId, from, action.toStatus, null, Instant.now());
             if (updated == 1) {
-                vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId, null));
+                vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId,
+                        kindOf(adminAction), null));
                 log.info("Power job {} completed for vm {} ({} → {})", action, vmId, from, action.toStatus);
             } else {
                 log.info("Power job {} lost the CAS for vm {} — already transitioned elsewhere",
                         action, vmId);
             }
         } catch (RuntimeException e) {
-            recordFailure(action, vmId, actorId, reasonOf(e));
+            recordFailure(action, vmId, actorId, adminAction, reasonOf(e));
         }
     }
 
     /** Failure: keep the status (the poller converges), record detail + event. */
-    private void recordFailure(PowerAction action, long vmId, long actorId, String reason) {
+    private void recordFailure(PowerAction action, long vmId, long actorId, boolean adminAction,
+            String reason) {
         String detail = action.koreanLabel + " 실패: " + reason;
         log.warn("Power job {} failed for vm {}: {}", action, vmId, reason);
         vmRepository.updateStatusDetail(vmId, detail, Instant.now());
-        vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId, detail));
+        vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId, kindOf(adminAction),
+                detail));
+    }
+
+    private static VmActorKind kindOf(boolean adminAction) {
+        return adminAction ? VmActorKind.ADMIN : VmActorKind.MEMBER;
     }
 
     private static String reasonOf(RuntimeException e) {

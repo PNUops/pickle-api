@@ -34,6 +34,7 @@ import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -576,7 +577,7 @@ public class ProvisionVmJob implements ProvisioningService {
                     .map(a -> hostAddress(a.getIp())).orElse(null);
             String imageName = imageRepository.findById(vm.getImageId())
                     .map(OsImage::getDisplayName).orElse(null);
-            vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.CREATE, null,
+            vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.CREATE, null, VmActorKind.SYSTEM,
                     completedDetail(imageName, ip)));
             publishCreated(vm, ip);
         }

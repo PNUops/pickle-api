@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.relay.dto.PortForwardingView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -149,7 +150,7 @@ public class PortForwardingService {
                 generation, actor.id());
         alertOnBandUsage(relay);
 
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_CREATE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_CREATE, actor.id(), VmActorKind.MEMBER,
                 request.proto() + " 공개 포트 할당 → 대상 포트 " + request.targetPort()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_PORT_FORWARD_CREATE, "vm", vm.getPublicId(),
@@ -170,7 +171,7 @@ public class PortForwardingService {
                 .orElseThrow(PortForwardingService::mappingNotFound);
         relayGenerations.bump(mapping.getRelayId());
         portMappingRepository.delete(mapping);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_DELETE, actor.id(), VmActorKind.MEMBER,
                 mapping.getProto() + " " + mapping.getPublicPort() + " 공개 해제"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_PORT_FORWARD_DELETE, "vm", vm.getPublicId(),

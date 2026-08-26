@@ -97,7 +97,7 @@ public class AdminVmQueryService {
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
         return vmQueryService.eventsOf(adminVmAccess.requireReadableVm(actor, vmId).getId(),
-                page, size);
+                page, size, true);
     }
 
     @Transactional(readOnly = true)

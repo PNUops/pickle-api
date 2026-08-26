@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -60,7 +61,7 @@ public class VmGatewayBlockService {
                     : "SSH·웹 터미널 %s: %s".formatted(label, request.reason());
             vmEventRepository.save(new VmEvent(vmId,
                     blocked ? VmEventType.GATEWAY_BLOCK : VmEventType.GATEWAY_UNBLOCK,
-                    actor.id(), detail));
+                    actor.id(), VmActorKind.ADMIN, detail));
             Map<String, Object> auditDetail = new HashMap<>();
             auditDetail.put("blocked", blocked);
             if (request.reason() != null && !request.reason().isBlank()) {

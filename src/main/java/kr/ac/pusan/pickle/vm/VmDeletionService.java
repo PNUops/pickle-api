@@ -146,7 +146,7 @@ public class VmDeletionService {
         if (vmRepository.beginSelfDeletion(vmId, vm.getStatus(), scheduledFor, actor.id(), now) == 0) {
             throw alreadyPendingDeletion(); // lost a race with a concurrent transition
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(), VmActorKind.MEMBER,
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
@@ -182,9 +182,9 @@ public class VmDeletionService {
                 && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
             vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);
         }
-        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(), VmActorKind.MEMBER,
                 "삭제 접수 — 생성 실패(ERROR) 상태, 유예 없이 즉시 파기"));
-        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(), VmActorKind.MEMBER,
                 "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
@@ -217,7 +217,7 @@ public class VmDeletionService {
                 reason, now) == 0) {
             throw alreadyPendingDeletion();
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(), VmActorKind.ADMIN,
                 "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
@@ -259,7 +259,7 @@ public class VmDeletionService {
         } else {
             throw notCancelable(); // FORCE (immediate) or no pending deletion
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(), VmActorKind.ADMIN,
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 취소"));
@@ -308,7 +308,7 @@ public class VmDeletionService {
         }
         failLiveProvisionTask(vmId);
         resumeParkedDeleteTask(vmId);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(), VmActorKind.ADMIN,
                 overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
