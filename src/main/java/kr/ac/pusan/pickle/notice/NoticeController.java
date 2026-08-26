@@ -57,19 +57,31 @@ public class NoticeController {
     /**
      * The stored bytes, under the type they were determined to be at upload.
      *
-     * <p>Cached hard and forever: the identifier is a UUID that names one
+     * <p>Cached for a year either way: the identifier is a UUID naming one
      * immutable set of bytes, so a changed image is a different URL and a stale
-     * cache entry is impossible. {@code inline} because these are body
-     * illustrations to render, not files to save.</p>
+     * entry is impossible. What varies is <em>whose</em> cache may hold it.
+     * {@code public} is the directive that lets a cache shared between users
+     * store a response to a request that carried an {@code Authorization}
+     * header (RFC 9111), and this response has no {@code Vary} that would
+     * separate one caller from another — so on an image whose visibility
+     * depends on who asked, {@code public} would turn a per-request check into
+     * "whoever has the URL, for a year". It is therefore sent only when an
+     * anonymous request for this same URL would succeed anyway; everything else
+     * gets {@code private}, which still caches in the requester's own browser
+     * and costs nothing.</p>
+     *
+     * <p>{@code inline} because these are body illustrations to render, not
+     * files to save.</p>
      */
     @GetMapping("/{noticeId}/images/{imageId}")
     public ResponseEntity<byte[]> getNoticeImage(
             @AuthenticationPrincipal @Nullable AuthenticatedUser principal,
             @PathVariable UUID noticeId, @PathVariable UUID imageId) {
-        NoticeImageContent image = noticeQueryService.image(principal, noticeId, imageId);
+        NoticeImageDelivery image = noticeQueryService.image(principal, noticeId, imageId);
+        String cacheability = image.sharedCacheable() ? "public" : "private";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(image.contentType()))
-                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=31536000, immutable")
+                .header(HttpHeaders.CACHE_CONTROL, cacheability + ", max-age=31536000, immutable")
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(image.bytes());
     }

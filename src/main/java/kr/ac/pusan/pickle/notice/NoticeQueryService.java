@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserRole;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -87,15 +88,38 @@ public class NoticeQueryService {
 
     /**
      * Contract {@code getNoticeImage}: the stored bytes. The image is reached
-     * through its notice, so it inherits that notice's visibility exactly — an
-     * image of a notice the caller may not see is as absent as the notice.
+     * through its notice, so it inherits that notice's visibility — an image of
+     * a notice the caller may not see is as absent as the notice, 404 rather
+     * than 403 like everything else here.
+     *
+     * <p>With one widening the JSON reads do not need: a caller who may
+     * <em>manage</em> the notice also gets its images outside the active
+     * window. Without it the management screen cannot show a scheduled notice
+     * the moment before publishing it, or an expired one being re-dated — its
+     * own list row carries the image URLs, and every one of them would 404. The
+     * body of those notices already reaches the same people through
+     * {@link #listForAdmin}, so this widens no information, only the path it
+     * arrives by.</p>
      */
     @Transactional(readOnly = true)
-    public NoticeImageContent image(@Nullable AuthenticatedUser reader, UUID noticeId,
+    public NoticeImageDelivery image(@Nullable AuthenticatedUser reader, UUID noticeId,
             UUID imageId) {
-        Notice notice = readable(reader, noticeId);
-        return noticeImageStore.load(notice.getId(), imageId)
+        Instant now = Instant.now();
+        Set<Long> orgIds = reader == null ? Set.of() : readerOrgIds(reader);
+        Notice notice = noticeRepository.findByPublicId(noticeId)
+                .filter(candidate -> visibleTo(candidate, reader, orgIds, now)
+                        || manageableBy(reader, candidate))
+                .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
+        NoticeImageContent content = noticeImageStore.load(notice.getId(), imageId)
                 .orElseThrow(() -> notFound("해당 이미지가 존재하지 않습니다."));
+        // A shared cache may keep this only if an anonymous request for the same
+        // URL would succeed right now — which is precisely what the visibility
+        // rule answers with no reader. Deriving the directive from the rule
+        // rather than restating it means the two cannot drift: the moment a
+        // notice stops being anonymously readable, its images stop being
+        // shareable, including a PLATFORM+PUBLIC one that has not started yet.
+        return new NoticeImageDelivery(content.contentType(), content.bytes(),
+                visibleTo(notice, null, Set.of(), now));
     }
 
     /**
@@ -205,6 +229,27 @@ public class NoticeQueryService {
             orgIds.add(reader.orgId());
         }
         return orgIds;
+    }
+
+    /**
+     * Whether this caller may manage the notice — the same scope
+     * {@link #listForAdmin} applies, restated here because this endpoint is
+     * served without authentication and so carries no {@code @PreAuthorize} to
+     * have narrowed the roles first. The sys tier manages everything; the org
+     * tier manages its own organisation's notices and reads the platform's.
+     */
+    private static boolean manageableBy(@Nullable AuthenticatedUser reader, Notice notice) {
+        if (reader == null) {
+            return false;
+        }
+        if (reader.role().isSysTier()) {
+            return true;
+        }
+        if (reader.role() != UserRole.ORG_ADMIN && reader.role() != UserRole.ORG_MANAGER) {
+            return false;
+        }
+        return notice.getScope() == NoticeScope.PLATFORM
+                || (reader.orgId() != null && reader.orgId().equals(notice.getOrgId()));
     }
 
     private Map<Long, List<NoticeImageMeta>> imagesOf(List<Notice> notices) {

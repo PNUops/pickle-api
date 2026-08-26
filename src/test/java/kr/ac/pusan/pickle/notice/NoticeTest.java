@@ -360,6 +360,7 @@ class NoticeTest {
         // concatenation site, and nothing downstream would object to a wrong one.
         assertThat(url).isEqualTo("/api/v1/notices/" + platformPublic + "/images/" + imageId);
 
+        // Anonymously readable, so a cache shared between users may keep it.
         MvcResult served = mockMvc.perform(get(url))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "public, max-age=31536000, immutable"))
@@ -373,8 +374,14 @@ class NoticeTest {
                 PNG_BYTES).andExpect(status().isCreated()).andReturn());
         String orgUrl = orgImage.get("url").asString();
         mockMvc.perform(get(orgUrl)).andExpect(status().isNotFound());
+        // Whose answer this is depends on who asked, and the response carries no
+        // Vary that would tell two callers apart — so it must never be storable
+        // in a cache shared between them. private still caches in the
+        // requester's own browser, which is all this ever needed.
         mockMvc.perform(get(orgUrl).header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control",
+                        "private, max-age=31536000, immutable"));
 
         // An image reached through a notice that does not own it is absent too,
         // even when that notice is one the caller may read.
@@ -477,6 +484,51 @@ class NoticeTest {
 
         // And the notice stays invisible to the other organisation throughout.
         publicGet(otherOrgAdminToken, ownOrgNotice).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void managementCanSeeTheImagesOfANoticeThatIsNotPublishedYet() throws Exception {
+        // The management screen shows a scheduled notice before it goes live,
+        // and its list row carries the image URLs. Sending those through the
+        // public window check alone would 404 every one of them.
+        UUID scheduled = createdId(create(sysAdminToken, body(Map.of(
+                "title", "예정 공지(이미지)", "scope", "PLATFORM", "audience", "PUBLIC",
+                "startsAt", Instant.now().plus(1, ChronoUnit.DAYS).toString()))));
+        String url = json(upload(sysAdminToken, scheduled, "preview.png", "image/png", PNG_BYTES)
+                .andExpect(status().isCreated()).andReturn()).get("url").asString();
+
+        MvcResult served = mockMvc.perform(get(url)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                // Not yet anonymously readable, so not shareable either — a
+                // PLATFORM+PUBLIC notice still outside its window must not be
+                // cached for a year where an anonymous requester could pick it
+                // up before it is published.
+                .andExpect(header().string("Cache-Control",
+                        "private, max-age=31536000, immutable"))
+                .andReturn();
+        assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
+
+        // The org tier manages its own org's notices and reads the platform's,
+        // so it gets the preview too.
+        mockMvc.perform(get(url).header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+
+        // Nobody else does, and the refusal stays a 404.
+        mockMvc.perform(get(url)).andExpect(status().isNotFound());
+        mockMvc.perform(get(url).header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isNotFound());
+        // The widening is the image path only: the JSON read still applies the
+        // window, because the body already reaches managers through their list.
+        publicGet(sysAdminToken, scheduled).andExpect(status().isNotFound());
+
+        // An org notice of a different organisation is not previewable either,
+        // window or no window.
+        String foreignUrl = json(upload(otherOrgAdminToken, otherOrgNotice, "foreign.png",
+                "image/png", PNG_BYTES).andExpect(status().isCreated()).andReturn())
+                .get("url").asString();
+        mockMvc.perform(get(foreignUrl).header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isNotFound());
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
