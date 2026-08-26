@@ -127,13 +127,18 @@ public class NoticeQueryService {
      * window or not. The org tier additionally sees the platform's notices,
      * which it reads but cannot write ({@link NoticeService} enforces that).
      *
-     * <p>Scoped by the actor's {@code users.org_id} rather than by the derived
-     * membership the reads use, and deliberately: this asks who may
-     * <em>manage</em> notices, the administrator and manager tiers are the only
-     * accounts that reach it, and the schema gives exactly those accounts that
-     * column. It is the same split the other admin surfaces make — the audit
-     * and user lists scope the actor by the column and use the derived rule only
-     * for the rows they are searching.</p>
+     * <p>Scoped by the organisations the account holds a role in ({@code
+     * user_org_roles}, V90) rather than by the derived membership the reads use,
+     * and deliberately: this asks who may <em>see the management view</em>, and
+     * only the roles granted in an organisation reach it. It is the same split
+     * the other admin surfaces make — the audit and user lists scope the actor
+     * by their granted organisations and use the derived rule only for the rows
+     * they are searching.</p>
+     *
+     * <p>The scope is {@link AuthenticatedUser#readableOrgIds()}, not the
+     * operated or administered subset: a viewer role exists precisely to read
+     * an organisation without acting in it, and every write is refused
+     * separately in {@link NoticeService}.</p>
      */
     @Transactional(readOnly = true)
     public PageResponse<AdminNoticeView> listForAdmin(AuthenticatedUser actor, int page, int size) {
@@ -143,11 +148,12 @@ public class NoticeQueryService {
         if (actor.role().isSysTier()) {
             result = noticeRepository.findAllForAdmin(pageRequest);
         } else {
-            if (actor.orgId() == null) {
+            Set<Long> scope = actor.readableOrgIds();
+            if (scope.isEmpty()) {
                 throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                         "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
             }
-            result = noticeRepository.findForOrgAdmin(actor.orgId(), pageRequest);
+            result = noticeRepository.findForOrgAdmin(scope, pageRequest);
         }
         Map<Long, List<NoticeImageMeta>> images = imagesOf(result.getContent());
         Map<Long, Org> orgs = orgsOf(result.getContent());
@@ -205,19 +211,19 @@ public class NoticeQueryService {
      * rule ({@link OrgMembershipSql}) rather than by their account's own column.
      *
      * <p>This is the whole reason the visibility query is built the way it is.
-     * An ordinary account has no {@code users.org_id} at all — the schema gives
-     * that column only to the administrator and manager tiers — so reading the
-     * organisation off the account would make an organisation's notices
-     * invisible to every student it was written for. Membership is instead
+     * An ordinary account holds no granted organisation at all — {@code
+     * user_org_roles} carries only the org tier — so reading the organisation
+     * off the account would make an organisation's notices invisible to every
+     * student it was written for. Membership is instead
      * derived from the organisations that own the resources of the workspaces
      * the reader is in, which is the same definition the announcement fan-out
      * uses. Two definitions of "이 기관 사람" is the hazard here: both surfaces
      * would keep returning well-formed answers while disagreeing about who is
      * in the organisation, and nothing would report it.</p>
      *
-     * <p>The administrator tiers' own column is unioned in on top, exactly as
-     * the announcement fan-out does, because the canonical fragment covers the
-     * derived half only. The rule's {@code users.status = 'ACTIVE'} condition is
+     * <p>The organisations the account is granted a role in are unioned in on
+     * top, exactly as the announcement fan-out does, because the canonical
+     * fragment covers the derived half only. The rule's {@code users.status = 'ACTIVE'} condition is
      * carried by the fragment itself, so a suspended account would derive no
      * organisation here even if it could reach this method — which it cannot,
      * since the JWT filter refuses to build a principal for one.</p>
@@ -225,9 +231,7 @@ public class NoticeQueryService {
     private Set<Long> readerOrgIds(AuthenticatedUser reader) {
         Set<Long> orgIds = new HashSet<>(jdbcTemplate.queryForList(
                 OrgMembershipSql.orgIdsOfMember("?"), Long.class, reader.id()));
-        if (reader.orgId() != null) {
-            orgIds.add(reader.orgId());
-        }
+        orgIds.addAll(reader.readableOrgIds());
         return orgIds;
     }
 
@@ -249,7 +253,7 @@ public class NoticeQueryService {
             return false;
         }
         return notice.getScope() == NoticeScope.PLATFORM
-                || (reader.orgId() != null && reader.orgId().equals(notice.getOrgId()));
+                || reader.reads(notice.getOrgId());
     }
 
     private Map<Long, List<NoticeImageMeta>> imagesOf(List<Notice> notices) {

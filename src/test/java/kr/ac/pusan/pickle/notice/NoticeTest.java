@@ -45,17 +45,17 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 공지사항 per contract v0.48.0: the two visibility axes and the 404 mask that
+ * 공지사항 per contract v0.49.0: the two visibility axes and the 404 mask that
  * enforces them, the active window, the organisation pinning on the write
  * paths, and the image rules.
  *
- * <p><b>Who counts as an organisation's reader.</b> Not whoever carries that
- * organisation in {@code users.org_id} — the schema gives that column to the
- * administrator and manager tiers only, so reading membership off the account
- * would hide an organisation's notices from every student it was written for.
+ * <p><b>Who counts as an organisation's reader.</b> Not whoever is granted a
+ * role in that organisation — {@code user_org_roles} carries the org tier only,
+ * so reading membership off the account would hide an organisation's notices
+ * from every student it was written for.
  * Membership is the canonical derived rule instead, and
  * {@code anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation} is the
- * test for exactly that: a regular account with no organisation column, made a
+ * test for exactly that: a regular account granted no organisation, made a
  * member of a workspace whose requests belong to the organisation, sees the
  * notice; one in an unrelated workspace does not.</p>
  *
@@ -305,6 +305,52 @@ class NoticeTest {
     }
 
     @Test
+    void administeringOneOrgNeverConfersAWriteInAnotherItOnlyReads() throws Exception {
+        // Since V90 an account can administer one organisation and only read a
+        // second, and users.role is the HIGHEST role it holds anywhere — so the
+        // @PreAuthorize gate on the writes sees ORG_ADMIN and lets this account
+        // through. What keeps it out of the organisation it merely reads is the
+        // service asking administers(thatOrg), and this is the test for it.
+        User dualRole = ensureOrgUser("notice.dual@pusan.ac.kr", "겸직관리자",
+                org.getId(), UserRole.ORG_ADMIN);
+        SeedFixtures.grantOrgRole(jdbcTemplate, dualRole.getId(), otherOrg.getId(),
+                UserRole.ORG_VIEWER);
+        String dualToken = jwtService.createAccessToken(dualRole);
+
+        // The management list is the wider, readable scope: both organisations.
+        adminList(dualToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(ownOrgNotice))
+                .andExpect(listHas(otherOrgNotice));
+
+        // The organisation it administers writes normally.
+        patchNotice(dualToken, ownOrgNotice, Map.of("title", "겸직 수정"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("겸직 수정"));
+
+        // The one it only reads is masked on every write, exactly as an
+        // organisation it holds nothing in would be.
+        patchNotice(dualToken, otherOrgNotice, Map.of("title", "겸직 가로채기"))
+                .andExpect(status().isNotFound());
+        deleteNotice(dualToken, otherOrgNotice).andExpect(status().isNotFound());
+        upload(dualToken, otherOrgNotice, "a.png", "image/png", PNG_BYTES)
+                .andExpect(status().isNotFound());
+
+        // And it cannot create one there either — refused, not silently pinned
+        // to the organisation it does administer.
+        create(dualToken, body(Map.of(
+                "title", "겸직 등록 시도", "scope", "ORG", "audience", "USERS",
+                "orgId", otherOrg.getPublicId().toString())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // Nothing landed in the organisation it only reads.
+        adminList(sysAdminToken)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(rowWhere(otherOrgNotice, "@.title=='타기관 공지'")).exists());
+    }
+
+    @Test
     void anOrgNoticeCanNeverBePublic() throws Exception {
         create(sysAdminToken, body(Map.of(
                 "title", "기관 공개 시도", "scope", "ORG", "audience", "PUBLIC",
@@ -408,13 +454,14 @@ class NoticeTest {
 
     @Test
     void anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation() throws Exception {
-        // A regular account carries no users.org_id at all — the schema gives
-        // that column only to the administrator and manager tiers. Membership is
-        // derived instead: this reader is an ACTIVE member of a workspace whose
-        // requests belong to the organisation, which is what makes them "이 기관
-        // 사람" for the announcement fan-out and must mean the same here.
+        // A regular account is granted no organisation at all — user_org_roles
+        // carries the org tier only. Membership is derived instead: this reader
+        // is an ACTIVE member of a workspace whose requests belong to the
+        // organisation, which is what makes them "이 기관 사람" for the
+        // announcement fan-out and must mean the same here.
         User member = ensureRegularUser("notice.member@pusan.ac.kr", "공지기관원");
-        assertThat(member.getOrgId()).as("a regular account has no org column").isNull();
+        assertThat(orgRoleRows(member.getId()))
+                .as("a regular account holds no organisation role").isZero();
         long linkedWorkspace = createWorkspace("noticelink", member.getId());
         linkWorkspaceToOrg(linkedWorkspace, org.getId(), member.getId());
         String memberToken = jwtService.createAccessToken(member);
@@ -634,20 +681,51 @@ class NoticeTest {
     }
 
     private User ensureAdmin(String email, String name, Long orgId) {
+        return ensureOrgUser(email, name, orgId, UserRole.ORG_ADMIN);
+    }
+
+    /**
+     * An org-tier account holding {@code role} in {@code orgId}. Since V90 the
+     * organisation is a {@code user_org_roles} row rather than a column on the
+     * account, and {@code users.role} is the effective role the
+     * {@code @PreAuthorize} gate reads — here the two agree, because the fixture
+     * grants exactly one organisation.
+     */
+    private User ensureOrgUser(String email, String name, Long orgId, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
-        user.setRole(UserRole.ORG_ADMIN);
-        user.setOrgId(orgId);
+        user.setRole(role);
         user.setStatus(UserStatus.ACTIVE);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+        return saved;
     }
 
     private User ensureRegularUser(String email, String name) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(UserRole.USER);
-        user.setOrgId(null);
+        user.setStatus(UserStatus.ACTIVE);
+        User saved = userRepository.save(user);
+        // V90 left no column to clear: a regular account is one with no row.
+        jdbcTemplate.update("delete from user_org_roles where user_id = ?", saved.getId());
+        return saved;
+    }
+
+    /**
+     * A sys-tier account. It gets no {@code user_org_roles} row: the tier is not
+     * scoped to an organisation, and the table's CHECK admits the org roles only.
+     */
+    private User ensureSysUser(String email, String name, UserRole role) {
+        User user = userRepository.findByEmail(email).orElseGet(() ->
+                userRepository.save(new User(email, "{noop}unused", name)));
+        user.setRole(role);
         user.setStatus(UserStatus.ACTIVE);
         return userRepository.save(user);
+    }
+
+    private long orgRoleRows(long userId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from user_org_roles where user_id = ?", Long.class, userId);
     }
 }

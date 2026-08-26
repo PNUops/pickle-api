@@ -73,15 +73,19 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
     Page<Notice> findAllForAdmin(Pageable pageable);
 
     /**
-     * Contract {@code listAdminNotices} for the org tier: their own
-     * organisation's notices plus the platform ones, which they read but
-     * cannot write (enforced in {@link NoticeService}).
+     * Contract {@code listAdminNotices} for the org tier: the notices of every
+     * organisation the caller may read, plus the platform ones, which they read
+     * but cannot write (enforced in {@link NoticeService}).
+     *
+     * <p>{@code orgIds} is a set rather than one id because since V90 an
+     * account holds a role in any number of organisations, and it must be
+     * non-empty — an empty {@code in} list is refused before the query runs.</p>
      */
     @Query("""
             select n from Notice n
              where n.scope = kr.ac.pusan.pickle.notice.NoticeScope.PLATFORM
-                or n.orgId = :orgId
+                or n.orgId in :orgIds
              order by n.pinned desc, n.startsAt desc, n.id desc
             """)
-    Page<Notice> findForOrgAdmin(@Param("orgId") Long orgId, Pageable pageable);
+    Page<Notice> findForOrgAdmin(@Param("orgIds") Collection<Long> orgIds, Pageable pageable);
 }

@@ -238,8 +238,8 @@ public class NoticeService {
 
     /**
      * Which organisation the new notice belongs to, and the refusal when the
-     * caller may not write it at all. An ORG_ADMIN's notice is pinned to their
-     * own organisation whether or not the body named one.
+     * caller may not write it at all. An ORG_ADMIN's notice is pinned to an
+     * organisation they administer, whether or not the body named one.
      */
     private Long resolveCreateTarget(AuthenticatedUser actor, NoticeCreateRequest request) {
         // A platform notice names no organisation, and saying so beats ignoring
@@ -264,17 +264,23 @@ public class NoticeService {
         Long requestedOrgId = orgRepository.findByPublicId(request.orgId()).map(Org::getId)
                 .orElse(null);
         if (actor.role() == UserRole.ORG_ADMIN) {
-            if (actor.orgId() == null) {
+            if (actor.administeredOrgIds().isEmpty()) {
                 throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
             }
-            // Their own organisation is accepted rather than refused as a field
-            // they may not set, and another organisation's is refused rather
-            // than quietly rewritten to theirs: an attempted cross-org write is
-            // exactly the event worth surfacing.
-            if (!actor.orgId().equals(requestedOrgId)) {
+            // An organisation they administer is accepted rather than refused as
+            // a field they may not set, and any other is refused rather than
+            // quietly rewritten to one of theirs: an attempted cross-org write
+            // is exactly the event worth surfacing.
+            //
+            // administers(), not the effective role: since V90 the account may
+            // hold ORG_ADMIN in one organisation and only read another, and the
+            // effective role the @PreAuthorize gate saw is the highest of them.
+            // Asking the role here would let an admin of one organisation write
+            // a notice for every organisation it can merely see.
+            if (!actor.administers(requestedOrgId)) {
                 throw forbidden("자기 기관의 공지만 등록할 수 있습니다.");
             }
-            return actor.orgId();
+            return requestedOrgId;
         }
         if (requestedOrgId == null) {
             throw notFound("해당 기관이 존재하지 않습니다.");
@@ -284,8 +290,11 @@ public class NoticeService {
 
     /**
      * The notice a write may touch. An organisation administrator reaches only
-     * their own organisation's; a platform notice is visible to them but not
-     * theirs to change, and another organisation's is neither.
+     * the notices of the organisations they <b>administer</b>; a platform notice
+     * is visible to them but not theirs to change, and any other organisation's
+     * is neither — including one they hold a reading role in, which is why this
+     * asks {@link AuthenticatedUser#administers} rather than reusing the wider
+     * scope the management list is built from.
      */
     private Notice writable(AuthenticatedUser actor, UUID noticeId) {
         Notice notice = noticeRepository.findByPublicId(noticeId)
@@ -296,7 +305,7 @@ public class NoticeService {
         if (notice.getScope() == NoticeScope.PLATFORM) {
             throw forbidden("전역 공지는 시스템 관리자만 수정할 수 있습니다.");
         }
-        if (!notice.getOrgId().equals(actor.orgId())) {
+        if (!actor.administers(notice.getOrgId())) {
             throw notFound("해당 공지가 존재하지 않습니다.");
         }
         return notice;
