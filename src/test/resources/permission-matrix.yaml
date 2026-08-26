@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.48.0, 176 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.49.0, 176 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -291,9 +291,9 @@ operations:
   # an account. What an anonymous caller actually gets back is decided per row —
   # PLATFORM+PUBLIC only — and a notice they may not see answers 404, not 403.
   # An authenticated reader additionally gets their organisation's notices, by
-  # the canonical DERIVED membership rule rather than by users.org_id, which a
-  # regular account never carries. No token here can express that widening;
-  # NoticeTest is its only coverage.
+  # the canonical DERIVED membership rule rather than by the org roles granted
+  # on the account, which a regular account never carries. No token here can
+  # express that widening; NoticeTest is its only coverage.
   - { id: listNotices,    method: GET, path: "/notices",                              roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getNotice,      method: GET, path: "/notices/{noticeId}",                   roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getNoticeImage, method: GET, path: "/notices/{noticeId}/images/{imageId}",  roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
@@ -302,10 +302,15 @@ operations:
   # list includes PLATFORM notices as read-only rows; every write against one is
   # refused in the service, and another org's notice is masked 404. scope and
   # orgId are absent from the update body, so no verb can promote an org notice
-  # to a platform one after the fact. This admin surface scopes by the actor's
-  # users.org_id, unlike the reads above: it asks who may MANAGE, and only the
-  # tiers that carry the column reach it at all.
-  - { id: listAdminNotices,        method: GET,    path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  # to a platform one after the fact. This admin surface scopes by the orgs the
+  # account is granted a role in, unlike the reads above, which use the derived
+  # membership rule: it asks who may see the MANAGEMENT view.
+  #
+  # Both viewers read the list, on the rule that a viewer holds whatever read
+  # access its tier's operator holds; the audit log is the one exception and it
+  # turns on the login addresses in its rows, which a notice has no equivalent
+  # of. A viewer's writes are refused by each write's own method-level gate.
+  - { id: listAdminNotices,        method: GET,    path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createAdminNotice,       method: POST,   path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateAdminNotice,       method: PATCH,  path: "/admin/notices/{noticeId}",                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: deleteAdminNotice,       method: DELETE, path: "/admin/notices/{noticeId}",                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

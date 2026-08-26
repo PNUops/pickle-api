@@ -20,7 +20,6 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -249,7 +248,7 @@ public class NoticeQueryService {
         if (reader.role().isSysTier()) {
             return true;
         }
-        if (reader.role() != UserRole.ORG_ADMIN && reader.role() != UserRole.ORG_MANAGER) {
+        if (!reader.role().isOrgTier()) {
             return false;
         }
         return notice.getScope() == NoticeScope.PLATFORM

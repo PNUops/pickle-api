@@ -34,9 +34,17 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * Contract tag {@code admin}, notice management.
  *
- * <p>Both manager tiers read the list; only the two admin roles write. The
- * org-scoping the matrix calls {@code allow_org_scoped} is service-layer and
- * cannot be said in an annotation: an ORG_ADMIN's list includes the platform's
+ * <p>Every role above USER reads the list; only the two admin roles write. The
+ * viewer roles are in because a viewer holds whatever read access its tier's
+ * operator holds, and a notice carries nothing that argues otherwise — the one
+ * surface the viewers are kept out of is the audit log, and that is about the
+ * login addresses in its rows rather than the shape of the surface.</p>
+ *
+ * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
+ * this class-level one, so widening the read gate cannot reach them.</p>
+ *
+ * <p>The org-scoping the matrix calls {@code allow_org_scoped} is service-layer
+ * and cannot be said in an annotation: an org-tier list includes the platform's
  * notices as read-only rows, and every write against one of those is refused
  * in {@link NoticeService}.</p>
  *
@@ -45,7 +53,7 @@ import org.springframework.web.multipart.MultipartFile;
  */
 @RestController
 @RequestMapping("/api/v1/admin/notices")
-@PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+@PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
 public class AdminNoticeController {
 
     private final NoticeService noticeService;

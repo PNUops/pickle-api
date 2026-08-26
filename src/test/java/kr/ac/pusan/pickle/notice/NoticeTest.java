@@ -305,6 +305,73 @@ class NoticeTest {
     }
 
     @Test
+    void aViewerReadsTheManagementListAndIsRefusedEveryWrite() throws Exception {
+        // A viewer holds whatever read access its tier's operator holds, so the
+        // management list is in scope. The audit log is the one surface the
+        // viewers are kept out of, and that turns on the login addresses its
+        // rows carry rather than on the shape of the surface; a notice has no
+        // equivalent, so nothing here argues for keeping them out.
+        User orgViewer = ensureOrgUser("notice.org.viewer@pusan.ac.kr", "공지기관열람자",
+                org.getId(), UserRole.ORG_VIEWER);
+        String orgViewerToken = jwtService.createAccessToken(orgViewer);
+
+        // Scoped exactly as that organisation's admin sees it: the platform's
+        // notices as read-only rows, its own organisation's, never another's.
+        adminList(orgViewerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformPublic))
+                .andExpect(listHas(ownOrgNotice))
+                .andExpect(listOmits(otherOrgNotice));
+
+        // Every write is refused by the method's own gate, which fully replaces
+        // the widened class-level one — ACCESS_DENIED rather than any other 403,
+        // so a refusal from somewhere else in the chain cannot pass for this.
+        create(orgViewerToken, body(Map.of(
+                "title", "열람자 등록 시도", "scope", "ORG", "audience", "USERS",
+                "orgId", org.getPublicId().toString())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        patchNotice(orgViewerToken, ownOrgNotice, Map.of("title", "열람자 수정 시도"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        deleteNotice(orgViewerToken, ownOrgNotice)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        upload(orgViewerToken, ownOrgNotice, "a.png", "image/png", PNG_BYTES)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // The system viewer is not scoped to an organisation, so it reads every
+        // organisation's notices — and writes none of them.
+        User sysViewer = ensureSysUser("notice.sys.viewer@pusan.ac.kr", "공지전체열람자",
+                UserRole.SYS_VIEWER);
+        String sysViewerToken = jwtService.createAccessToken(sysViewer);
+
+        adminList(sysViewerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformPublic))
+                .andExpect(listHas(ownOrgNotice))
+                .andExpect(listHas(otherOrgNotice));
+
+        create(sysViewerToken, body(Map.of(
+                "title", "전체열람자 등록 시도", "scope", "PLATFORM", "audience", "PUBLIC")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        patchNotice(sysViewerToken, platformPublic, Map.of("title", "전체열람자 수정 시도"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        deleteNotice(sysViewerToken, ownOrgNotice)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // Nothing the refused writes attempted actually landed.
+        adminList(sysAdminToken)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(rowWhere(ownOrgNotice, "@.title=='자기관 공지'")).exists())
+                .andExpect(listHas(platformPublic));
+    }
+
+    @Test
     void administeringOneOrgNeverConfersAWriteInAnotherItOnlyReads() throws Exception {
         // Since V90 an account can administer one organisation and only read a
         // second, and users.role is the HIGHEST role it holds anywhere — so the
