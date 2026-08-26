@@ -49,7 +49,7 @@ class VmMetricsServiceTest {
 
     private static final AuthenticatedUser ACTOR =
             new AuthenticatedUser(7L, UUID.fromString("00000000-0000-4000-8000-000000000007"),
-                    "metrics@pusan.ac.kr", UserRole.USER, null);
+                    "metrics@pusan.ac.kr", UserRole.USER, java.util.Map.of());
 
     private static final UUID VM_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
 

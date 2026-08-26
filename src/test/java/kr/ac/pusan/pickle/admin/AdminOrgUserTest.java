@@ -240,7 +240,8 @@ class AdminOrgUserTest {
         // role change bumped token_version → the old access token is dead
         User reloaded = userRepository.findById(target.getId()).orElseThrow();
         assertThat(reloaded.getTokenVersion()).isEqualTo(versionBefore + 1);
-        assertThat(reloaded.getOrgId()).isEqualTo(org.getId());
+        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
+                .containsExactly(org.getId());
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + targetToken))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
@@ -254,7 +255,8 @@ class AdminOrgUserTest {
                 .andExpect(jsonPath("$.role").value("ORG_ADMIN"));
         reloaded = userRepository.findById(target.getId()).orElseThrow();
         assertThat(reloaded.getTokenVersion()).isEqualTo(versionBefore + 1);
-        assertThat(reloaded.getOrgId()).isEqualTo(secondOrgId);
+        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
+                .containsExactly(secondOrgId);
 
         // user.role_update audit rows
         Long audits = jdbcTemplate.queryForObject(
@@ -281,10 +283,11 @@ class AdminOrgUserTest {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", name);
             user.setRole(role);
-            user.setOrgId(orgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+            return saved;
         });
     }
 

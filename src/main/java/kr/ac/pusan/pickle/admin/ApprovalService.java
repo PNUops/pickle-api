@@ -24,6 +24,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -50,9 +52,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Admin approval flow (contract tag {@code admin}, vm-requests subset).
- * ORG_ADMIN is hard-scoped to their own org — requests of other orgs answer
- * 404 (existence stays private, per contract). Approval is a single
+ * Admin approval flow (contract tag {@code admin}, vm-requests subset). The org
+ * tier reads the requests of every organisation it holds a role in and decides
+ * only in those it operates; anything outside answers 404 (existence stays
+ * private, per contract), which is why the read lookup and the write lookup are
+ * separate methods rather than one condition. Approval is a single
  * transaction that writes intent only: review row + CREATING vm row + a
  * JobRunr provisioning job; no Proxmox call happens here.
  */
@@ -98,19 +102,10 @@ public class ApprovalService {
     public PageResponse<RequestDetailResponse> list(AuthenticatedUser actor, RequestStatus status,
             ResourceType type, UUID orgId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        // Org tier is always pinned to their own org; orgId is sys-tier-only.
-        // An id no org has filters to nothing, as a non-matching number did.
-        Long requestedOrgId = orgId == null ? null
-                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(-1L);
-        Long scopedOrgId = actor.role().isOrgTier() ? actor.orgId() : requestedOrgId;
-        if (actor.role().isOrgTier() && scopedOrgId == null) {
-            // Defensive: an org-tier actor without a managed org sees nothing.
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
+        OrgScope scope = listScopeOrgId(actor, orgId);
         Specification<Request> spec = Specification.unrestricted();
-        if (scopedOrgId != null) {
-            spec = spec.and(RequestSpecs.org(scopedOrgId));
+        if (!scope.isUnrestricted()) {
+            spec = spec.and(RequestSpecs.orgIn(scope.orgIds()));
         }
         if (status != null) {
             spec = spec.and(RequestSpecs.status(status));
@@ -124,13 +119,13 @@ public class ApprovalService {
 
     @Transactional(readOnly = true)
     public RequestDetailResponse get(AuthenticatedUser actor, UUID requestId) {
-        return assembler.toDetail(findScoped(actor, requestId));
+        return assembler.toDetail(findReadable(actor, requestId));
     }
 
     @Transactional
     public RequestDetailResponse approve(AuthenticatedUser actor, UUID requestId,
             ApproveRequestRequest form, String ip) {
-        Request request = findScopedWithLock(actor, requestId);
+        Request request = findWritableWithLock(actor, requestId);
         requireSubmitted(request);
         // Approval creates a resource inside the workspace, so the workspace has
         // to still be there. Deleting a workspace cancels its in-flight requests,
@@ -206,7 +201,7 @@ public class ApprovalService {
     @Transactional
     public RequestDetailResponse reject(AuthenticatedUser actor, UUID requestId,
             RejectRequestRequest form, String ip) {
-        Request request = findScopedWithLock(actor, requestId);
+        Request request = findWritableWithLock(actor, requestId);
         requireSubmitted(request);
         reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(RequestStatus.REJECTED);
@@ -219,22 +214,50 @@ public class ApprovalService {
         return assembler.toDetail(request);
     }
 
-    /** Org-scoped lookup: unknown id and other-org requests both answer 404. */
-    Request findScoped(AuthenticatedUser actor, UUID requestId) {
-        return scoped(actor, requestRepository.findByPublicId(requestId).orElse(null));
+    /** Read scope for the request queue. */
+    private OrgScope listScopeOrgId(AuthenticatedUser actor, UUID orgId) {
+        Long requested = orgId == null ? null
+                : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 
-    private Request findScopedWithLock(AuthenticatedUser actor, UUID requestId) {
-        return scoped(actor, requestRepository.findWithLockByPublicId(requestId).orElse(null));
-    }
-
-    private Request scoped(AuthenticatedUser actor, Request request) {
-        if (request == null
-                || (actor.role().isOrgTier() && !request.getOrgId().equals(actor.orgId()))) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 신청이 존재하지 않습니다.");
+    /**
+     * Read lookup (request detail, approval context). The org tier reads the
+     * requests of every organisation it holds a role in, a read-only role
+     * included.
+     *
+     * <p>Split from {@link #findWritableWithLock} so the two questions cannot be
+     * answered by one condition: deciding a request needs a role that may act,
+     * reading one does not.
+     */
+    Request findReadable(AuthenticatedUser actor, UUID requestId) {
+        Request request = requestRepository.findByPublicId(requestId).orElse(null);
+        if (request == null) {
+            throw requestNotFound();
+        }
+        if (actor.role().isOrgTier() && !actor.reads(request.getOrgId())) {
+            throw requestNotFound();
         }
         return request;
+    }
+
+    /** Write lookup (approve, reject), row-locked. Same 404 masking. */
+    private Request findWritableWithLock(AuthenticatedUser actor, UUID requestId) {
+        Request request = requestRepository.findWithLockByPublicId(requestId).orElse(null);
+        requireSameOrg(actor, request);
+        return request;
+    }
+
+    private static void requireSameOrg(AuthenticatedUser actor, Request request) {
+        if (request == null
+                || (actor.role().isOrgTier() && !actor.operates(request.getOrgId()))) {
+            throw requestNotFound();
+        }
+    }
+
+    private static ApiException requestNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 신청이 존재하지 않습니다.");
     }
 
     private RequestTypeHandler handlerFor(Request request) {

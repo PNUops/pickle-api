@@ -7,15 +7,13 @@ import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.consent.TermsService;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.orgs.Org;
-import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
 import kr.ac.pusan.pickle.identity.UserIdentityRepository;
 import kr.ac.pusan.pickle.profile.ProfileOptionsService;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
@@ -42,7 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeController {
 
     private final UserRepository userRepository;
-    private final OrgRepository orgRepository;
+    private final ManagedOrgQueryService managedOrgQueryService;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final MfaService mfaService;
     private final TermsService termsService;
@@ -51,14 +49,15 @@ public class MeController {
     private final ProfileValidator profileValidator;
     private final AuditService auditService;
 
-    public MeController(UserRepository userRepository, OrgRepository orgRepository,
+    public MeController(UserRepository userRepository,
+            ManagedOrgQueryService managedOrgQueryService,
             WorkspaceMemberRepository workspaceMemberRepository,
             MfaService mfaService, TermsService termsService,
             UserIdentityRepository userIdentityRepository,
             ProfileOptionsService profileOptionsService, ProfileValidator profileValidator,
             AuditService auditService) {
         this.userRepository = userRepository;
-        this.orgRepository = orgRepository;
+        this.managedOrgQueryService = managedOrgQueryService;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.mfaService = mfaService;
         this.termsService = termsService;
@@ -144,9 +143,7 @@ public class MeController {
     }
 
     private UserProfileResponse profileOf(User user) {
-        UUID orgId = user.getOrgId() == null ? null
-                : orgRepository.findById(user.getOrgId()).map(Org::getPublicId).orElse(null);
-        return UserProfileResponse.from(user, orgId,
+        return UserProfileResponse.from(user, managedOrgQueryService.of(user.getId()),
                 workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()),
                 mfaService.isEnrolled(user.getId()), termsService.pendingConsents(user.getId()),
                 profileOptionsService.departmentName(user.getDepartmentCode()),

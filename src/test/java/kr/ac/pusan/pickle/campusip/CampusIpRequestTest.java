@@ -341,10 +341,9 @@ class CampusIpRequestTest {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
             user.setRole(role);
-            if (orgId != null) {
-                user.setOrgId(orgId);
-            }
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+            return saved;
         });
     }
 

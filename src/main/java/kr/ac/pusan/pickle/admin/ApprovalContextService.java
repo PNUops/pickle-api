@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -79,14 +80,14 @@ public class ApprovalContextService {
 
     @Transactional(readOnly = true)
     public ApprovalContextResponse context(AuthenticatedUser actor, UUID requestId) {
-        Request request = approvalService.findScoped(actor, requestId);
+        Request request = approvalService.findReadable(actor, requestId);
         // The requester row always exists: accounts are soft-deleted only
         // (WITHDRAWN + later anonymization keep the row), so
         // applicant.signupAt/email are always non-null per contract.
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
-        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(request.getOrgId());
+        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(OrgScope.of(request.getOrgId()));
         return new ApprovalContextResponse(
                 applicantPanel(request, applicant),
                 applicantResources(request.getRequesterId()),

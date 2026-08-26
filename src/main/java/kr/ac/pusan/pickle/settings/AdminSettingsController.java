@@ -33,7 +33,7 @@ public class AdminSettingsController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<SettingView> listSettings() {
         return settingsService.list();
     }

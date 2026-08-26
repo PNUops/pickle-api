@@ -2179,10 +2179,9 @@ class PublishingTest {
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
             user.setRole(role);
-            if (userOrgId != null) {
-                user.setOrgId(userOrgId);
-            }
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), userOrgId, role);
+            return saved;
         });
     }
 

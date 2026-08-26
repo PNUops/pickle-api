@@ -905,8 +905,9 @@ class VmDeletionTest {
         }
         User otherAdmin = ensureUser("vmdel.otheradmin@pusan.ac.kr", "타기관관리자");
         otherAdmin.setRole(UserRole.ORG_ADMIN);
-        otherAdmin.setOrgId(otherOrgId);
         userRepository.save(otherAdmin);
+        SeedFixtures.grantOrgRole(jdbcTemplate, otherAdmin.getId(), otherOrgId,
+                UserRole.ORG_ADMIN);
         return jwtService.createAccessToken(otherAdmin);
     }
 

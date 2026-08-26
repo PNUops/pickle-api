@@ -59,8 +59,8 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 @Import(EmbeddedPostgresConfig.class)
 class PermissionMatrixTest {
 
-    private static final List<String> ROLES =
-            List.of("USER", "ORG_MANAGER", "ORG_ADMIN", "SYS_MANAGER", "SYS_ADMIN");
+    private static final List<String> ROLES = List.of("USER", "ORG_VIEWER", "ORG_MANAGER",
+            "ORG_ADMIN", "SYS_VIEWER", "SYS_MANAGER", "SYS_ADMIN");
     private static final String API_PREFIX = "/api/v1";
     private static final Pattern ROLE_TOKEN = Pattern.compile("'([A-Z_]+)'");
     private static final Pattern PATH_VAR = Pattern.compile("\\{[^}]+}");
@@ -149,7 +149,7 @@ class PermissionMatrixTest {
         Map<String, Op> matrix = loadMatrix();
         Set<String> runtime = runtimeOps().keySet();
 
-        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.46.0)").hasSize(165);
+        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.47.0)").hasSize(167);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());

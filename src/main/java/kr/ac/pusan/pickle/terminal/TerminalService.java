@@ -283,17 +283,16 @@ public class TerminalService {
     // ── admin: list / terminate ───────────────────────────────────────────────
 
     /**
-     * Live sessions (started only), newest first. ORG tier sees only sessions on
-     * VMs owned by their org; SYS tier sees all.
+     * Live sessions (started only), newest first. The org tier sees the sessions
+     * on VMs of the organisations it holds a role in; ending one stays
+     * SYS_ADMIN-only.
      */
     @Transactional(readOnly = true)
     public List<TerminalSessionView> list(AuthenticatedUser actor) {
         sessionRegistry.prune();
-        List<MirrorSession> sessions = sessionRegistry.started();
-        if (actor.role().isOrgTier()) {
-            Long orgId = actor.orgId();
-            sessions = sessions.stream().filter(s -> orgId != null && s.orgId() == orgId).toList();
-        }
+        List<MirrorSession> sessions = sessionRegistry.started().stream()
+                .filter(s -> !actor.role().isOrgTier() || actor.reads(s.orgId()))
+                .toList();
         if (sessions.isEmpty()) {
             return List.of();
         }

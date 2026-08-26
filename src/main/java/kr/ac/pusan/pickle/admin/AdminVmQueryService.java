@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.common.web.PageResponse;
@@ -15,6 +14,8 @@ import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -30,15 +31,15 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code GET /admin/vms}: ORG_ADMIN hard-scoped to their own org,
- * SYS_ADMIN across orgs with the optional {@code orgId} filter. An ORG_ADMIN
- * naming another org answers 404 so cross-org existence stays private
- * (same convention as the vm-requests queue).
+ * Contract {@code GET /admin/vms}: the org tier answers for the organisations it
+ * holds a role in, a read-only role included; the sys tier for all of them. The
+ * {@code orgId} filter narrows within that, and naming an organisation outside
+ * it answers 404 so which organisations exist stays private (same convention as
+ * the vm-requests queue). The decision itself lives in {@code AdminOrgScope}.
  */
 @Service
 public class AdminVmQueryService {
@@ -87,7 +88,7 @@ public class AdminVmQueryService {
      */
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
         return vmQueryService.detailOf(vm, null);
     }
 
@@ -95,7 +96,7 @@ public class AdminVmQueryService {
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
-        return vmQueryService.eventsOf(adminVmAccess.requireOrgScopedVm(actor, vmId).getId(),
+        return vmQueryService.eventsOf(adminVmAccess.requireReadableVm(actor, vmId).getId(),
                 page, size);
     }
 
@@ -103,14 +104,15 @@ public class AdminVmQueryService {
     public PageResponse<VmSummaryResponse> list(AuthenticatedUser actor, UUID orgId, UUID workspaceId,
             VmStatus status, Integer expiringInDays, Boolean expired, String q, String sort,
             int page, int size) {
-        Long scopedOrgId = scopeOrgId(actor, orgId);
+        OrgScope scope = scopeOrgId(actor, orgId);
         Pageable pageable = PageRequest.of(page, size,
                 resolveSort(sort).and(Sort.by(Sort.Direction.DESC, "id")));
         // An id no org or workspace has filters to nothing, as a non-matching
         // numeric id did — it is a filter, not an addressed resource.
         Long scopedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
-        if ((orgId != null && scopedOrgId == null) || (workspaceId != null && scopedWorkspaceId == null)) {
+        if (scope.orgIds().isEmpty() && !scope.isUnrestricted()
+                || (workspaceId != null && scopedWorkspaceId == null)) {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
         Specification<Vm> spec = (root, query, cb) -> cb.conjunction();
@@ -120,8 +122,8 @@ public class AdminVmQueryService {
                     cb.like(cb.lower(root.get("name")), pattern, '\\'),
                     cb.like(cb.lower(root.get("hostname")), pattern, '\\')));
         }
-        if (scopedOrgId != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("orgId"), scopedOrgId));
+        if (!scope.isUnrestricted()) {
+            spec = spec.and((root, query, cb) -> root.get("orgId").in(scope.orgIds()));
         }
         if (scopedWorkspaceId != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("workspaceId"), scopedWorkspaceId));
@@ -168,7 +170,6 @@ public class AdminVmQueryService {
                 .toList(), result);
     }
 
-    /** ORG_ADMIN is pinned to their own org; another org's id answers 404. */
     private static Sort resolveSort(String sort) {
         if (sort == null) {
             return Sort.unsorted();
@@ -187,21 +188,9 @@ public class AdminVmQueryService {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
-        if (!actor.role().isOrgTier()) {
-            return requested;
-        }
-        if (actor.orgId() == null) {
-            // Defensive: an org-tier actor without a managed org sees nothing.
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.orgId().equals(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return actor.orgId();
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 }

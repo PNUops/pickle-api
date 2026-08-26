@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.support;
 
 import java.util.UUID;
 import kr.ac.pusan.pickle.seed.DevDataSeeder;
+import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -74,6 +75,30 @@ public final class SeedFixtures {
     /** Id of the seeded SYS_ADMIN account. */
     public static long sysadminId(JdbcTemplate jdbcTemplate) {
         return userId(jdbcTemplate, SYSADMIN_EMAIL);
+    }
+
+    /**
+     * Makes an account administer an org. V90 replaced {@code users.org_id}
+     * with the {@code user_org_roles} join table, so a fixture that used to set
+     * one column now writes a row. Idempotent, and a null org is a no-op so the
+     * callers that pass one through stay as they were.
+     */
+    public static void grantOrgRole(JdbcTemplate jdbcTemplate, Long userId, Long orgId,
+            UserRole role) {
+        if (orgId == null) {
+            return;
+        }
+        jdbcTemplate.update("insert into user_org_roles (user_id, org_id, role)"
+                + " values (?, ?, ?::user_role)"
+                + " on conflict (user_id, org_id) do update set role = excluded.role",
+                userId, orgId, role.name());
+    }
+
+    /** The orgs an account administers, for asserting a grant or a revoke. */
+    public static java.util.List<Long> managedOrgIds(JdbcTemplate jdbcTemplate, Long userId) {
+        return jdbcTemplate.queryForList(
+                "select org_id from user_org_roles where user_id = ? order by org_id",
+                Long.class, userId);
     }
 
     private static long userId(JdbcTemplate jdbcTemplate, String email) {

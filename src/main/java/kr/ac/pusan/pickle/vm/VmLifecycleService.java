@@ -147,7 +147,7 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse adminStart(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
         long id = vm.getId();
         // Same expiry guard as the member path: extend the period first.
         if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
@@ -166,7 +166,7 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse adminShutdown(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
         long id = vm.getId();
         claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
@@ -178,7 +178,7 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse adminReboot(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
         long id = vm.getId();
         if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
             throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
@@ -191,7 +191,7 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse adminForceStop(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, vmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
         long id = vm.getId();
         claimPowerAction(id, PowerAction.FORCE_STOP,
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),

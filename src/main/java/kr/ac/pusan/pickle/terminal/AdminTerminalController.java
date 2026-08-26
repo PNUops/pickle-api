@@ -33,6 +33,7 @@ public class AdminTerminalController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<TerminalSessionView> listAdminTerminalSessions(
             @AuthenticationPrincipal AuthenticatedUser principal) {
         return terminalService.list(principal);

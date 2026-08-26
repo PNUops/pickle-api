@@ -408,7 +408,6 @@ public class DevDataSeeder implements ApplicationRunner {
             log.info("Seeding {} account {}", role, email);
             User user = new User(email, passwordEncoder.encode(password), name);
             user.setRole(role);
-            user.setOrgId(orgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
             // Filled in so the profile prompt does not greet every dev login:
@@ -417,6 +416,16 @@ public class DevDataSeeder implements ApplicationRunner {
             user = userRepository.save(user);
             personalWorkspaceService.ensurePersonalWorkspace(user);
         });
+        // The org an org-tier seed account administers lives in user_org_roles
+        // since V90, and is written idempotently so re-running the seeder over
+        // an existing account still lands it.
+        if (role.isOrgTier() && orgId != null) {
+            userRepository.findByEmail(email).ifPresent(user ->
+                    jdbcTemplate.update("insert into user_org_roles (user_id, org_id, role)"
+                            + " values (?, ?, ?::user_role)"
+                            + " on conflict (user_id, org_id) do update set role = excluded.role",
+                            user.getId(), orgId, role.name()));
+        }
         // Seed accounts bypass signup, so grant consent to the current documents
         // idempotently: no migration grants consent, so a seeded account starts with
         // none whatever order the seeder runs in.

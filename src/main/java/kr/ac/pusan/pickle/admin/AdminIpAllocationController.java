@@ -50,6 +50,7 @@ public class AdminIpAllocationController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<IpAllocationResponse> listIpAllocations(
             @RequestParam(required = false) UUID poolId,
             @RequestParam(required = false) AllocationStatus status,

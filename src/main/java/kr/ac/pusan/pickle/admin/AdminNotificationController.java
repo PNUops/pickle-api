@@ -39,6 +39,7 @@ public class AdminNotificationController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminNotificationResponse> listAdminNotifications(
             @RequestParam(required = false) NotificationStatus status,
             @RequestParam(required = false) String event,

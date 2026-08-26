@@ -36,6 +36,7 @@ public class AdminOsImageController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<AdminOsImageResponse> listAdminOsImages() {
         return adminInventoryService.listOsImages();
     }

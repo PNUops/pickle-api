@@ -53,16 +53,18 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             @Param("deleted") VmStatus deleted);
 
     /**
-     * Currently allocated (= not deleted) VMs of an org, for headroom math —
-     * a null {@code orgId} means platform-wide (SYS_ADMIN dashboard).
+     * Currently allocated (= not deleted) VMs of the given orgs, for headroom
+     * math — a null {@code orgIds} means platform-wide (sys-tier dashboard),
+     * and an empty one means no org at all.
      */
     @Query("""
             select v from Vm v
-             where (:orgId is null or v.orgId = :orgId)
+             where (:orgIds is null or v.orgId in :orgIds)
                and v.deletedAt is null and v.status <> :deleted
              order by v.id
             """)
-    List<Vm> findActiveByOrgId(@Param("orgId") Long orgId, @Param("deleted") VmStatus deleted);
+    List<Vm> findActiveByOrgIds(@Param("orgIds") Collection<Long> orgIds,
+            @Param("deleted") VmStatus deleted);
 
     /**
      * Shared blocker query — workspace deletion and account withdrawal both refuse

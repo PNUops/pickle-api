@@ -31,6 +31,7 @@ public class AdminWorkspaceController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<AdminWorkspaceOptionResponse> listAdminWorkspaces(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId) {
@@ -38,6 +39,7 @@ public class AdminWorkspaceController {
     }
 
     @GetMapping("/{workspaceId}")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public AdminWorkspaceDetailResponse getAdminWorkspace(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId) {

@@ -33,10 +33,8 @@ import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
-import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
-import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
@@ -81,6 +79,7 @@ public class VmDeletionService {
     private final VmRepository vmRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
+    private final AdminVmAccess adminVmAccess;
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
     private final SettingsService settingsService;
@@ -104,7 +103,8 @@ public class VmDeletionService {
             ProvisioningTaskRepository provisioningTaskRepository,
             PublishingTeardownService publishingTeardown,
             PortMappingTeardownService portMappingTeardown,
-            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService) {
+            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService,
+            AdminVmAccess adminVmAccess) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -122,6 +122,7 @@ public class VmDeletionService {
         this.portMappingTeardown = portMappingTeardown;
         this.vmSshKeyRepository = vmSshKeyRepository;
         this.vmSettingsService = vmSettingsService;
+        this.adminVmAccess = adminVmAccess;
     }
 
     // ── self-delete (DELETE /vms/{vmId}) ───────────────────────────────────
@@ -196,7 +197,7 @@ public class VmDeletionService {
     @Transactional
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
-        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         // CREATING is deliberately accepted (unlike self-delete): the schedule
@@ -233,7 +234,7 @@ public class VmDeletionService {
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
-        Vm vm = requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
         long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {
@@ -378,7 +379,9 @@ public class VmDeletionService {
             return vm;
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
-            if (!vm.getOrgId().equals(actor.orgId())) {
+            // The admin override belongs to the org this VM is in, not to the
+            // account's highest role somewhere else.
+            if (!actor.administers(vm.getOrgId())) {
                 throw VmAccessService.vmNotFound();
             }
             return vm;
@@ -389,15 +392,6 @@ public class VmDeletionService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
                     "VM을 삭제할 권한이 없습니다",
                     "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
-        }
-        return vm;
-    }
-
-    /** Admin-op scope: ORG_ADMIN sees only their own org's VMs (404 otherwise). */
-    private Vm requireOrgScopedVm(AuthenticatedUser actor, UUID vmId) {
-        Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
-        if (actor.role() == UserRole.ORG_ADMIN && !vm.getOrgId().equals(actor.orgId())) {
-            throw VmAccessService.vmNotFound();
         }
         return vm;
     }
@@ -452,10 +446,7 @@ public class VmDeletionService {
     private List<Long> recipients(Vm vm, boolean includeOrgAdmins) {
         Set<Long> userIds = new LinkedHashSet<>(notificationService.vmAudienceIds(vm));
         if (includeOrgAdmins) {
-            userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, vm.getOrgId()).stream()
-                    .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                    .map(User::getId)
-                    .forEach(userIds::add);
+            userIds.addAll(notificationService.orgAdminIds(vm.getOrgId()));
         }
         return List.copyOf(userIds);
     }

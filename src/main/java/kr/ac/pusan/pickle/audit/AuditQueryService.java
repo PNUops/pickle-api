@@ -9,12 +9,11 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.dto.ActivityEntryResponse;
 import kr.ac.pusan.pickle.audit.dto.AuditLogViewResponse;
-import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,34 +26,32 @@ import tools.jackson.databind.ObjectMapper;
  * append-only with no JPA entity, so no accidental mutation path exists.
  *
  * <p>Scoping is enforced <b>in SQL</b>: {@code /me/activity} is hard-bound to
- * {@code actor_id = principal}, and {@code /admin/audit} pins ORG_ADMIN to
- * rows whose actor belongs to their org by the canonical <b>derived
- * membership</b> rule ({@link OrgMembershipSql}: the actor is one of the
- * org's ORG_ADMINs, or an ACTIVE member of a workspace with requests /
- * non-DELETED VMs in the org). System rows — null actor — are therefore
- * SYS_ADMIN-only. Date bounds are KST calendar days.</p>
+ * {@code actor_id = principal}, and {@code /admin/audit} confines the org tier
+ * to the organisations it may <b>act</b> in ({@code AdminOrgScope.operated}), so
+ * a read-only role reaches nothing here. Within those, an actor belongs to an
+ * organisation by holding any role in it or by the canonical <b>derived
+ * membership</b> rule ({@link OrgMembershipSql}: an ACTIVE member of a workspace
+ * with requests / non-DELETED VMs in the org). System rows — null actor — are
+ * therefore sys-tier-only. Date bounds are KST calendar days.</p>
  */
 @Service
 public class AuditQueryService {
-    /**
-     * The scope an id no org has resolves to: a filter value no row carries, so
-     * the page comes back empty exactly as a non-matching number made it.
-     */
-    private static final Long NO_SUCH_ORG = -1L;
-
-
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     /**
-     * Representative derived-org name for the audit row's actor (v0.9.0 display
-     * field): the actor's managed org (ORG_ADMIN {@code users.org_id}) if any,
-     * else the smallest org id derived from the actor's workspace resources
-     * (requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
-     * Null for system rows and actors with no derived org. Correlated on
+     * Representative organisation name for the audit row's actor (v0.9.0 display
+     * field): the smallest id among the organisations the actor holds a role in,
+     * whatever that role is, else the smallest derived from the actor's
+     * workspace resources (requests / non-DELETED VMs — the canonical rule,
+     * {@link OrgMembershipSql}). "Smallest" is arbitrary and deliberately so:
+     * the column names one organisation for display and an account may belong
+     * to several. Null for system rows and actors with no organisation at all.
+     * Correlated on
      * {@code u}/{@code a} from the outer query; binds no positional parameters.
      */
     private static final String ACTOR_ORG_NAME = """
-            (select o.name from orgs o where o.id = coalesce(u.org_id, (
+            (select o.name from orgs o where o.id = coalesce(
+                 (select min(uor.org_id) from user_org_roles uor where uor.user_id = a.actor_id), (
                  select min(dro.org_id) from (
                      select lr.org_id from requests lr
                        join workspace_members gm on gm.workspace_id = lr.workspace_id
@@ -102,19 +99,22 @@ public class AuditQueryService {
     public PageResponse<AuditLogViewResponse> adminAudit(AuthenticatedUser actor,
             String actorEmail, String action, String targetType, String targetId,
             LocalDate from, LocalDate to, UUID orgId, int page, int size) {
-        Long scopedOrgId = scopeOrgId(actor, orgId);
+        OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
-        if (scopedOrgId != null) {
-            // actor-org scoping in SQL (never post-filtered): the org's
-            // ORG_ADMINs plus derived members; system rows (null actor) and
-            // out-of-org actors drop out
-            where.append(" and (u.org_id = ? or (u.status = 'ACTIVE' and ")
-                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("a.actor_id"))
+        if (!scope.isUnrestricted()) {
+            // actor-org scoping in SQL (never post-filtered): the orgs' own
+            // administrators plus derived members; system rows (null actor) and
+            // out-of-scope actors drop out
+            where.append(" and (exists (select 1 from user_org_roles uor")
+                    .append(" where uor.user_id = u.id and ")
+                    .append(scope.inList("uor.org_id"))
+                    .append(") or (u.status = 'ACTIVE' and ")
+                    .append(OrgMembershipSql.memberOfOrgLinkedWorkspace("a.actor_id", scope))
                     .append("))");
-            params.add(scopedOrgId);
-            params.add(scopedOrgId);
-            params.add(scopedOrgId);
+            params.addAll(scope.orgIds());
+            params.addAll(scope.orgIds());
+            params.addAll(scope.orgIds());
         }
         if (actorEmail != null && !actorEmail.isBlank()) {
             where.append(" and u.email = ?"); // citext — case-insensitive
@@ -189,26 +189,15 @@ public class AuditQueryService {
         return detailJson != null ? objectMapper.readTree(detailJson) : null;
     }
 
-    /** Org tier pinned to their org; another org's id answers 404. */
-    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    /**
+     * The audit log is the one admin surface a read-only role does not reach:
+     * it carries login addresses, which are evidence rather than operational
+     * state, so it answers for the organisations the account may act in.
+     */
+    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        if (!actor.role().isOrgTier()) {
-            // An id no org has filters to nothing, as a non-matching number did.
-            if (orgId != null && requested == null) {
-                return NO_SUCH_ORG;
-            }
-            return requested;
-        }
-        if (actor.orgId() == null) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.orgId().equals(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return actor.orgId();
+        return AdminOrgScope.operated(actor, orgId, requested);
     }
 }

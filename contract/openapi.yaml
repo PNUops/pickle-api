@@ -1797,6 +1797,14 @@ components:
       required:
       - "confirmName"
       type: "object"
+    GrantOrgRoleRequest:
+      properties:
+        role:
+          $ref: "#/components/schemas/UserRole"
+          description: "이 기관에서 부여할 역할 (ORG_ADMIN, ORG_MANAGER, ORG_VIEWER)"
+      required:
+      - "role"
+      type: "object"
     Grantee:
       description: "접근 권한을 가진 사용자"
       properties:
@@ -2323,6 +2331,23 @@ components:
       required:
       - "email"
       - "password"
+      type: "object"
+    ManagedOrgResponse:
+      properties:
+        orgId:
+          description: "기관 ID"
+          format: "uuid"
+          type: "string"
+        orgName:
+          description: "기관 이름"
+          type: "string"
+        role:
+          $ref: "#/components/schemas/UserRole"
+          description: "이 기관에서의 역할"
+      required:
+      - "orgId"
+      - "orgName"
+      - "role"
       type: "object"
     MemberBrief:
       properties:
@@ -4690,6 +4715,10 @@ components:
         id:
           format: "uuid"
           type: "string"
+        managedOrgs:
+          items:
+            $ref: "#/components/schemas/ManagedOrgResponse"
+          type: "array"
         memberships:
           items:
             $ref: "#/components/schemas/Membership"
@@ -4698,11 +4727,6 @@ components:
           type: "boolean"
         name:
           type: "string"
-        orgId:
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         role:
           $ref: "#/components/schemas/UserRole"
         status:
@@ -4721,6 +4745,7 @@ components:
       - "createdAt"
       - "email"
       - "id"
+      - "managedOrgs"
       - "memberships"
       - "mfaEnabled"
       - "name"
@@ -4738,15 +4763,14 @@ components:
         id:
           format: "uuid"
           type: "string"
+        managedOrgs:
+          items:
+            $ref: "#/components/schemas/ManagedOrgResponse"
+          type: "array"
         mfaEnabled:
           type: "boolean"
         name:
           type: "string"
-        orgId:
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         role:
           $ref: "#/components/schemas/UserRole"
         status:
@@ -4755,6 +4779,7 @@ components:
       - "createdAt"
       - "email"
       - "id"
+      - "managedOrgs"
       - "mfaEnabled"
       - "name"
       - "role"
@@ -4790,6 +4815,10 @@ components:
           items:
             $ref: "#/components/schemas/LinkedIdentity"
           type: "array"
+        managedOrgs:
+          items:
+            $ref: "#/components/schemas/ManagedOrgResponse"
+          type: "array"
         memberships:
           items:
             $ref: "#/components/schemas/Membership"
@@ -4798,11 +4827,6 @@ components:
           type: "boolean"
         name:
           type: "string"
-        orgId:
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         pendingConsents:
           items:
             $ref: "#/components/schemas/TermsVersionView"
@@ -4826,6 +4850,7 @@ components:
       - "hasPassword"
       - "id"
       - "identities"
+      - "managedOrgs"
       - "memberships"
       - "mfaEnabled"
       - "name"
@@ -4837,8 +4862,10 @@ components:
     UserRole:
       enum:
       - "USER"
+      - "ORG_VIEWER"
       - "ORG_MANAGER"
       - "ORG_ADMIN"
+      - "SYS_VIEWER"
       - "SYS_MANAGER"
       - "SYS_ADMIN"
       type: "string"
@@ -5758,7 +5785,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.46.0"
+  version: "0.47.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -7465,6 +7492,73 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-user-controller"
+  /admin/users/{userId}/org-roles/{orgId}:
+    delete:
+      operationId: "revokeOrgRole"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "orgId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-controller"
+    put:
+      operationId: "grantOrgRole"
+      parameters:
+      - in: "path"
+        name: "userId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "orgId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantOrgRoleRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserSummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-controller"
   /admin/vm-flavors:
     get:
       operationId: "listAdminVmFlavors"

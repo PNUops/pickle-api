@@ -37,9 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code admin}, vms subset — list, detail/events, power
- * intervention, and deletion management. ORG_ADMIN acts on its own org
- * (cross-org orgId filters and targets answer 404, never 403, so the existence
- * of other orgs stays private); SYS_ADMIN covers all orgs. Force delete and
+ * intervention, and deletion management. The org tier reads the organisations
+ * it holds a role in and acts only in those it operates, with scheduled
+ * deletion narrower still (administers); a target outside answers 404, never
+ * 403, so the existence of other orgs stays private. Force delete and
  * the gateway-block toggle are SYS_ADMIN-only (method-level gates override the
  * class-level one).
  */
@@ -65,7 +66,7 @@ public class AdminVmController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<VmSummaryResponse> listAdminVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -85,7 +86,7 @@ public class AdminVmController {
 
     /** Org-scoped admin view of the full VM detail (viewer is not a member). */
     @GetMapping("/{vmId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public VmDetailResponse getAdminVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId) {
@@ -93,7 +94,7 @@ public class AdminVmController {
     }
 
     @GetMapping("/{vmId}/events")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<VmEventResponse> listAdminVmEvents(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,

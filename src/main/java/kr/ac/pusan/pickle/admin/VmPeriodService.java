@@ -30,8 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
  * Contract {@code PATCH /admin/vms/{vmId}/period}: synchronous usage
  * period change. Clearing both expiry markers in the same CAS is the whole
  * point — an expiry-stopped VM becomes startable again ({@code VM_EXPIRED}
- * lifted) and the notice ladder re-arms for the new end date. ORG_ADMIN is
- * limited to its own org's VMs (cross-org answers 404); deletion-bound VMs
+ * lifted) and the notice ladder re-arms for the new end date. The org tier is
+ * limited to the VMs of the organisations it operates (anything else answers
+ * 404), so a read-only role reaches none of it; deletion-bound VMs
  * answer 409 {@code VM_INVALID_STATE}. Date semantics are KST, endDate
  * inclusive.
  */
@@ -62,7 +63,7 @@ public class VmPeriodService {
     @Transactional
     public VmDetailResponse updatePeriod(AuthenticatedUser actor, UUID publicVmId,
             VmPeriodUpdateRequest request, String ip) {
-        Vm vm = adminVmAccess.requireOrgScopedVm(actor, publicVmId);
+        Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
         long vmId = vm.getId();
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         validateDates(request.endDate(), newStart);

@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminWorkspaceDetailResponse;
@@ -10,6 +11,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
+import kr.ac.pusan.pickle.orgs.AdminOrgScope;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.springframework.http.HttpStatus;
@@ -18,24 +21,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code listAdminWorkspaces}: the announcement workspace picker. ORG_ADMIN
- * sees exactly the workspaces they may target with a WORKSPACE announcement — workspaces
- * linked to their org by the canonical derived-membership rule
- * ({@link OrgMembershipSql}: ≥1 request or non-DELETED VM in the org).
- * {@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly the
- * fan-out basis of a WORKSPACE announcement (contract clarification, docs
- * eb8bbf6). A cross-org {@code orgId} answers 404 (existence stays private);
- * the filter itself is SYS_ADMIN's.
+ * Contract {@code listAdminWorkspaces}: workspaces linked to an organisation by
+ * the canonical derived-membership rule ({@link OrgMembershipSql}: ≥1 request or
+ * non-DELETED VM in the org). The org tier sees those of every organisation it
+ * holds a role in; naming any other answers 404 (existence stays private).
+ *
+ * <p><b>This is wider than the announcement picker it also feeds.</b> Sending a
+ * WORKSPACE announcement needs a role that may act, and ORG scope needs an
+ * organisation the account <i>administers</i>, so a workspace can appear here
+ * and still refuse the send. The console narrows the picker rather than this
+ * list, because the list is also the admin inspection surface.
+ *
+ * <p>{@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly
+ * the fan-out basis of a WORKSPACE announcement (contract clarification, docs
+ * eb8bbf6).
  */
 @Service
 public class AdminWorkspaceQueryService {
-    /**
-     * The scope an id no org has resolves to: a filter value no row carries, so
-     * the page comes back empty exactly as a non-matching number made it.
-     */
-    private static final Long NO_SUCH_ORG = -1L;
-
-
     private final JdbcTemplate jdbcTemplate;
 
     public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate) {
@@ -44,7 +46,7 @@ public class AdminWorkspaceQueryService {
 
     @Transactional(readOnly = true)
     public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId) {
-        Long scopedOrgId = scopeOrgId(actor, orgId);
+        OrgScope scope = scopeOrgId(actor, orgId);
         String select = """
                 select g.public_id, g.name, g.kind, g.created_at,
                        (select count(*) from workspace_members gm
@@ -53,11 +55,14 @@ public class AdminWorkspaceQueryService {
                            as member_count
                   from workspaces g
                 """;
-        if (scopedOrgId != null) {
+        if (!scope.isUnrestricted()) {
+            List<Object> params = new ArrayList<>(scope.orgIds());
+            params.addAll(scope.orgIds());
             return jdbcTemplate.query(
                     select + " where g.deleted_at is null and "
-                            + OrgMembershipSql.workspaceLinkedToOrg("g.id") + " order by g.id",
-                    AdminWorkspaceQueryService::toOption, scopedOrgId, scopedOrgId);
+                            + OrgMembershipSql.workspaceLinkedToOrg("g.id", scope)
+                            + " order by g.id",
+                    AdminWorkspaceQueryService::toOption, params.toArray());
         }
         // Sys tier without a filter: every live workspace (soft-deleted excluded)
         return jdbcTemplate.query(select + " where g.deleted_at is null order by g.id",
@@ -86,11 +91,14 @@ public class AdminWorkspaceQueryService {
         if (workspaceId == null) {
             throw workspaceNotFound();
         }
-        Long scopedOrgId = scopeOrgId(actor, null);
-        if (scopedOrgId != null) {
+        OrgScope scope = scopeOrgId(actor, null);
+        if (!scope.isUnrestricted()) {
+            List<Object> params = new ArrayList<>(scope.orgIds());
+            params.addAll(scope.orgIds());
             Boolean linked = jdbcTemplate.queryForObject(
-                    "select " + OrgMembershipSql.workspaceLinkedToOrg(String.valueOf(workspaceId)),
-                    Boolean.class, scopedOrgId, scopedOrgId);
+                    "select " + OrgMembershipSql.workspaceLinkedToOrg(
+                            String.valueOf(workspaceId), scope),
+                    Boolean.class, params.toArray());
             if (!Boolean.TRUE.equals(linked)) {
                 throw workspaceNotFound();
             }
@@ -140,26 +148,10 @@ public class AdminWorkspaceQueryService {
                 "리소스를 찾을 수 없습니다", "해당 워크스페이스가 존재하지 않습니다.");
     }
 
-    /** Org tier pinned to their org; another org's id answers 404. */
-    private Long scopeOrgId(AuthenticatedUser actor, UUID orgId) {
+    private OrgScope scopeOrgId(AuthenticatedUser actor, UUID orgId) {
         Long requested = orgId == null ? null : jdbcTemplate.query(
                 "select id from orgs where public_id = ?",
                 rs -> rs.next() ? rs.getLong(1) : null, orgId);
-        if (!actor.role().isOrgTier()) {
-            // An id no org has filters to nothing, as a non-matching number did.
-            if (orgId != null && requested == null) {
-                return NO_SUCH_ORG;
-            }
-            return requested;
-        }
-        if (actor.orgId() == null) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-        }
-        if (orgId != null && !actor.orgId().equals(requested)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
-                    "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
-        }
-        return actor.orgId();
+        return AdminOrgScope.read(actor, orgId, requested);
     }
 }

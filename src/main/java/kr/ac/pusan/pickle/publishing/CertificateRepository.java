@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing;
 
+import java.util.Collection;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -64,22 +65,22 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
             select c from Certificate c
               left join Domain d on d.id = c.domainId
               left join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgId is null or c.domainId is null or v.orgId = :orgId)
+            where (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
               and (:status is null or cast(c.status as string) = :status)
             order by c.notAfter asc nulls last, c.id desc
             """)
-    Page<Certificate> findAdmin(@Param("orgId") Long orgId, @Param("status") String status,
+    Page<Certificate> findAdmin(@Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
             Pageable pageable);
 
     @Query("""
             select c from Certificate c
               left join Domain d on d.id = c.domainId
               left join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgId is null or c.domainId is null or v.orgId = :orgId)
+            where (:orgIds is null or c.domainId is null or v.orgId in :orgIds)
               and (:status is null or cast(c.status as string) = :status)
               and c.notAfter <= :notAfter
             order by c.notAfter asc nulls last, c.id desc
             """)
-    Page<Certificate> findAdminExpiring(@Param("orgId") Long orgId, @Param("status") String status,
+    Page<Certificate> findAdminExpiring(@Param("orgIds") Collection<Long> orgIds, @Param("status") String status,
             @Param("notAfter") Instant notAfter, Pageable pageable);
 }

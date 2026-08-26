@@ -34,6 +34,7 @@ public class AdminRelayController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<AdminRelayView> listAdminRelays() {
         return adminRelayService.list();
     }
