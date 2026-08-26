@@ -65,7 +65,7 @@ public class AdminVmController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<VmSummaryResponse> listAdminVms(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -85,7 +85,7 @@ public class AdminVmController {
 
     /** Org-scoped admin view of the full VM detail (viewer is not a member). */
     @GetMapping("/{vmId}")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public VmDetailResponse getAdminVm(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId) {
@@ -93,7 +93,7 @@ public class AdminVmController {
     }
 
     @GetMapping("/{vmId}/events")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<VmEventResponse> listAdminVmEvents(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId,

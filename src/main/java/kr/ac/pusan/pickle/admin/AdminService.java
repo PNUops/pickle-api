@@ -150,7 +150,7 @@ public class AdminService {
                     : previousOrgIds.stream().findFirst().orElse(null);
             if (request.orgId() == null && orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "ORG_ADMIN·ORG_MANAGER 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
+                        "기관 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
             }
             if (orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
@@ -194,7 +194,7 @@ public class AdminService {
             GrantOrgRoleRequest request, String ip) {
         if (!request.role().isOrgTier()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "기관 역할은 ORG_ADMIN 또는 ORG_MANAGER여야 합니다.")));
+                    "기관 역할은 ORG_ADMIN, ORG_MANAGER, ORG_VIEWER 중 하나여야 합니다.")));
         }
         Long targetOrgId = requireGrantableOrg(actor, orgId);
         User user = requireGrantableUser(actor, userId);

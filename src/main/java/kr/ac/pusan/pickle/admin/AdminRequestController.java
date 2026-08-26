@@ -47,6 +47,7 @@ public class AdminRequestController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<RequestDetailResponse> listAdminRequests(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) RequestStatus status,
@@ -58,12 +59,14 @@ public class AdminRequestController {
     }
 
     @GetMapping("/{requestId}")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public RequestDetailResponse getAdminRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID requestId) {
         return approvalService.get(principal, requestId);
     }
 
     @GetMapping("/{requestId}/context")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public ApprovalContextResponse getApprovalContext(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID requestId) {
         return approvalContextService.context(principal, requestId);

@@ -46,6 +46,7 @@ public class AdminUserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<UserAdminViewResponse> listUsers(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) @Size(min = 1, max = 100) String q,
@@ -61,6 +62,7 @@ public class AdminUserController {
     }
 
     @GetMapping("/{userId}")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public UserAdminDetailResponse getUser(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId) {
         return adminUserQueryService.getUser(principal, userId);

@@ -47,12 +47,14 @@ public class AdminNodeController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<NodeSummaryResponse> listAdminNodes() {
         return adminNodeQueryService.listNodes();
     }
 
     /** Live host usage series from the hypervisor (contract v0.35.0). */
     @GetMapping("/{nodeId}/metrics")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public NodeMetricsResponse getAdminNodeMetrics(@PathVariable UUID nodeId,
             @Parameter(description = "조회 구간 — HOUR/DAY/WEEK/MONTH/YEAR "
                     + "(해상도는 구간에 따라 거칠어짐)")

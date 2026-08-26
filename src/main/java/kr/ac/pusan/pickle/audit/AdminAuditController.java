@@ -32,6 +32,7 @@ public class AdminAuditController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AuditLogViewResponse> listAuditLogs(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) String actorEmail,

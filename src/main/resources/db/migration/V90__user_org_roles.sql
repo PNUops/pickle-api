@@ -6,19 +6,32 @@
 -- workspaces hold (OrgMembershipSql), and has always been able to span several.
 -- Only the administrator side was pinned to one, and this table lifts that.
 --
--- The row carries its own role, so an account may administer one organisation
--- and operate another. users.role stays and becomes the effective role: the
+-- The row carries its own role, so an account may administer one organisation,
+-- operate a second and only read a third. users.role stays and becomes the effective role: the
 -- highest role held across these rows, or USER when none are left. That keeps
 -- the @PreAuthorize gates, the JWT role claim and the permission matrix's role
 -- columns as they are, with the annotation asking whether the account may ever
 -- do a thing and the service layer asking whether it may here.
+-- The two viewer roles land with this table because they only make sense
+-- alongside it: a read-only role is what an organisation grants another
+-- organisation's staff so they can see its resources without touching them,
+-- and before this table an account could hold one organisation and one role.
+--
+-- PG rule (V15 and V44 precedent): a value added by ALTER TYPE ... ADD VALUE
+-- cannot be *used* as an enum value in the same transaction that added it.
+-- Flyway runs this migration in one transaction, so the CHECK below compares
+-- role::text against text literals and never materialises 'ORG_VIEWER' as an
+-- enum here.
+alter type user_role add value if not exists 'ORG_VIEWER';
+alter type user_role add value if not exists 'SYS_VIEWER';
+
 create table user_org_roles (
     user_id bigint not null references users (id) on delete cascade,
     org_id  bigint not null references orgs (id),
     role    user_role not null,
     primary key (user_id, org_id),
     constraint chk_user_org_roles_role
-        check (role::text in ('ORG_ADMIN', 'ORG_MANAGER'))
+        check (role::text in ('ORG_ADMIN', 'ORG_MANAGER', 'ORG_VIEWER'))
 );
 
 comment on table user_org_roles is

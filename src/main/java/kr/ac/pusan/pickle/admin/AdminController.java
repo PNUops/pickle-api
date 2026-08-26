@@ -50,7 +50,7 @@ public class AdminController {
      * invisible everywhere (the gap that motivated this op).
      */
     @GetMapping("/orgs")
-    @PreAuthorize("hasAnyRole('SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<OrgDetailResponse> listAdminOrgs() {
         return adminService.listOrgs();
     }

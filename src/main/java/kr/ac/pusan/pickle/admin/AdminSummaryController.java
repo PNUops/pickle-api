@@ -34,7 +34,7 @@ public class AdminSummaryController {
     }
 
     @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public OrgDashboardSummaryResponse getAdminSummary(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId) {
@@ -43,7 +43,7 @@ public class AdminSummaryController {
 
     /** Daily allocation history against today's capacity (contract v0.35.0). */
     @GetMapping("/capacity-trend")
-    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public CapacityTrendResponse getAdminCapacityTrend(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(defaultValue = "90") @Min(7) @Max(365) int days,
@@ -52,7 +52,7 @@ public class AdminSummaryController {
     }
 
     @GetMapping("/system-summary")
-    @PreAuthorize("hasAnyRole('SYS_ADMIN', 'SYS_MANAGER')")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public SystemDashboardSummaryResponse getSystemSummary() {
         return adminSummaryService.systemSummary();
     }

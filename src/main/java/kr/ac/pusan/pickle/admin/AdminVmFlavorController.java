@@ -40,6 +40,7 @@ public class AdminVmFlavorController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<VmFlavorResponse> listAdminVmFlavors() {
         return adminInventoryService.listFlavors();
     }

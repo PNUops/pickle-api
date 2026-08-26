@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -74,10 +75,12 @@ class OrgRoleGrantTest {
     private User bothOrgs;
     private User target;
     private User managerOfB;
+    private User viewerOfA;
     private String sysAdminToken;
     private String adminOfAToken;
     private String bothOrgsToken;
     private String managerOfBToken;
+    private String viewerOfAToken;
 
     @BeforeEach
     void setUp() {
@@ -95,6 +98,10 @@ class OrgRoleGrantTest {
         managerOfB = ensureUser("ogr.manager.b@pusan.ac.kr", "B기관운영자", UserRole.ORG_MANAGER);
         grant(managerOfB, orgB, UserRole.ORG_MANAGER);
 
+        // What one organisation gives another's staff: sight of A, nothing more.
+        viewerOfA = ensureUser("ogr.viewer.a@pusan.ac.kr", "A기관열람자", UserRole.ORG_VIEWER);
+        grant(viewerOfA, orgA, UserRole.ORG_VIEWER);
+
         target = ensureUser("ogr.target@pusan.ac.kr", "대상", UserRole.USER);
         jdbcTemplate.update("delete from user_org_roles where user_id = ?", target.getId());
         target.setRole(UserRole.USER);
@@ -105,6 +112,7 @@ class OrgRoleGrantTest {
         adminOfAToken = jwtService.createAccessToken(adminOfA);
         managerOfBToken = jwtService.createAccessToken(managerOfB);
         bothOrgsToken = jwtService.createAccessToken(bothOrgs);
+        viewerOfAToken = jwtService.createAccessToken(viewerOfA);
     }
 
     @Test
@@ -297,6 +305,58 @@ class OrgRoleGrantTest {
                 .header("Authorization", "Bearer " + sysAdminToken)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
+    }
+
+    /**
+     * The viewer role reads its organisation and changes nothing in it. The
+     * gates admit it to the read surfaces by name, so what stops a write is the
+     * gate itself rather than a service-layer check, and the two questions the
+     * principal answers — may this account see this organisation, may it act in
+     * it — have to disagree for exactly this account.
+     */
+    @Test
+    void aViewerReadsItsOrganisationAndChangesNothing() throws Exception {
+        assertThat(userRepository.findById(viewerOfA.getId()).orElseThrow().getRole())
+                .isEqualTo(UserRole.ORG_VIEWER);
+
+        // reads it holds
+        mockMvc.perform(get("/api/v1/admin/vms")
+                        .header("Authorization", "Bearer " + viewerOfAToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/summary")
+                        .header("Authorization", "Bearer " + viewerOfAToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/users")
+                        .header("Authorization", "Bearer " + viewerOfAToken))
+                .andExpect(status().isOk());
+
+        // the audit log stays with the roles that may act
+        mockMvc.perform(get("/api/v1/admin/audit")
+                        .header("Authorization", "Bearer " + viewerOfAToken))
+                .andExpect(status().isForbidden());
+
+        // writes in the very organisation it reads
+        Fixture inA = createVmIn(orgA);
+        mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", inA.vmId()) + "/shutdown")
+                        .header("Authorization", "Bearer " + viewerOfAToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/v1/admin/users/" + target.getPublicId()
+                        + "/org-roles/" + orgA.getPublicId())
+                        .header("Authorization", "Bearer " + viewerOfAToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("role", UserRole.ORG_VIEWER.name()))))
+                .andExpect(status().isForbidden());
+    }
+
+    /** An organisation's administrator may hand out the viewer role in it. */
+    @Test
+    void anOrgAdminMayGrantTheViewerRoleInItsOwnOrg() throws Exception {
+        putRole(target, orgA, adminOfAToken, UserRole.ORG_VIEWER)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ORG_VIEWER"));
+        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
+                .containsExactly(orgA.getId());
     }
 
     private ResultActions putRole(User user, Org org, String token, UserRole role)

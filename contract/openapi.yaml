@@ -1801,7 +1801,7 @@ components:
       properties:
         role:
           $ref: "#/components/schemas/UserRole"
-          description: "이 기관에서 부여할 역할 (ORG_ADMIN 또는 ORG_MANAGER)"
+          description: "이 기관에서 부여할 역할 (ORG_ADMIN, ORG_MANAGER, ORG_VIEWER)"
       required:
       - "role"
       type: "object"
@@ -4862,8 +4862,10 @@ components:
     UserRole:
       enum:
       - "USER"
+      - "ORG_VIEWER"
       - "ORG_MANAGER"
       - "ORG_ADMIN"
+      - "SYS_VIEWER"
       - "SYS_MANAGER"
       - "SYS_ADMIN"
       type: "string"
