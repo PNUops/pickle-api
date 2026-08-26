@@ -561,6 +561,49 @@ class NoticeTest {
     }
 
     @Test
+    void aViewerReachesTheBoardByWorkspaceThoughItsGrantAloneDoesNot() throws Exception {
+        // The board resolves readers by workspace-derived membership with the
+        // operating grants unioned on top, and a viewer's grant is not one of
+        // them. The derived path, though, asks nothing about roles — so the
+        // same role reaches the board when the account actually works under the
+        // organisation.
+        //
+        // Asserted as a pair on two accounts identical but for the workspace,
+        // because either half alone teaches the wrong rule: the exclusion
+        // reads as "viewers are off the board", and the inclusion as "a viewer
+        // grant puts them on it". The workspace is the only difference.
+        User grantOnly = ensureOrgUser("notice.board.grantonly@pusan.ac.kr", "부여만열람자",
+                org.getId(), UserRole.ORG_VIEWER);
+        User working = ensureOrgUser("notice.board.working@pusan.ac.kr", "현장열람자",
+                org.getId(), UserRole.ORG_VIEWER);
+        long workspace = createWorkspace("noticeviewer", working.getId());
+        linkWorkspaceToOrg(workspace, org.getId(), working.getId());
+
+        // Grant only: absent from the board, and the notice answers as one that
+        // does not exist rather than as one refused.
+        String grantOnlyToken = jwtService.createAccessToken(grantOnly);
+        publicList(grantOnlyToken)
+                .andExpect(status().isOk())
+                .andExpect(listOmits(ownOrgNotice));
+        publicGet(grantOnlyToken, ownOrgNotice).andExpect(status().isNotFound());
+
+        // Same grant, plus a workspace holding the organisation's resources:
+        // on the board, by the path every ordinary account takes.
+        String workingToken = jwtService.createAccessToken(working);
+        publicList(workingToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(ownOrgNotice));
+        publicGet(workingToken, ownOrgNotice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
+
+        // Neither of them gains a write from any of this.
+        patchNotice(workingToken, ownOrgNotice, Map.of("title", "열람자 수정 시도"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
     void anOrgNoticeCanNeverBePublic() throws Exception {
         create(sysAdminToken, body(Map.of(
                 "title", "기관 공개 시도", "scope", "ORG", "audience", "PUBLIC",
