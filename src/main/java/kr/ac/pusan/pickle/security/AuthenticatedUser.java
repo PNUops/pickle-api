@@ -28,14 +28,23 @@ public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole r
         orgRoles = orgRoles == null ? Map.of() : Map.copyOf(orgRoles);
     }
 
-    /** The organisations this account administers or operates. */
-    public Set<Long> managedOrgIds() {
-        return orgRoles.keySet();
+    /**
+     * The organisations this account may <b>act</b> in: those where it holds
+     * ORG_ADMIN or ORG_MANAGER. Every write guard asks this. It is written as a
+     * filter rather than the key set because a role that may only read is
+     * coming, and a guard that asks "is there a row" would admit it.
+     */
+    public Set<Long> operatedOrgIds() {
+        return orgRoles.entrySet().stream()
+                .filter(entry -> entry.getValue() == UserRole.ORG_ADMIN
+                        || entry.getValue() == UserRole.ORG_MANAGER)
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     /**
      * The subset it administers. Every operation ORG_MANAGER is denied has to
-     * ask for this rather than {@link #managedOrgIds()}: administering one
+     * ask for this rather than {@link #operatedOrgIds()}: administering one
      * organisation raises the effective role, and the effective role is what
      * the {@code @PreAuthorize} gate sees, so a gate that admits only
      * ORG_ADMIN admits this account everywhere it holds any role at all.
@@ -47,9 +56,10 @@ public record AuthenticatedUser(Long id, UUID publicId, String email, UserRole r
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
-    /** Holds some org-tier role in {@code orgId}. */
-    public boolean manages(Long orgId) {
-        return orgId != null && orgRoles.containsKey(orgId);
+    /** Holds ORG_ADMIN or ORG_MANAGER in {@code orgId}, so it may act there. */
+    public boolean operates(Long orgId) {
+        UserRole held = orgId == null ? null : orgRoles.get(orgId);
+        return held == UserRole.ORG_ADMIN || held == UserRole.ORG_MANAGER;
     }
 
     /**

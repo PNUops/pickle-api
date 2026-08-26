@@ -204,14 +204,14 @@ public class AuditQueryService {
             }
             return OrgScope.of(requested);
         }
-        if (actor.managedOrgIds().isEmpty()) {
+        if (actor.operatedOrgIds().isEmpty()) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
         }
-        if (orgId != null && !actor.manages(requested)) {
+        if (orgId != null && !actor.operates(requested)) {
             throw new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                     "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
         }
-        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.managedOrgIds());
+        return orgId != null ? OrgScope.of(requested) : OrgScope.of(actor.operatedOrgIds());
     }
 }

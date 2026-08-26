@@ -43,7 +43,7 @@ public class AdminVmAccess {
      */
     public Vm requireWritableVm(AuthenticatedUser actor, UUID vmId) {
         Vm vm = findOrNotFound(vmId);
-        if (actor.role().isOrgTier() && !actor.manages(vm.getOrgId())) {
+        if (actor.role().isOrgTier() && !actor.operates(vm.getOrgId())) {
             throw vmNotFound();
         }
         return vm;

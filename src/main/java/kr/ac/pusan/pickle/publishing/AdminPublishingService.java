@@ -305,7 +305,7 @@ public class AdminPublishingService {
             return;
         }
         Long vmOrgId = vmRepository.findById(domain.getVmId()).map(Vm::getOrgId).orElse(null);
-        if (!actor.manages(vmOrgId)) {
+        if (!actor.operates(vmOrgId)) {
             throw domainNotFound();
         }
     }

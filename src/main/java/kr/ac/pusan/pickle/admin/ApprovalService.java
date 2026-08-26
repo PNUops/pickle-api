@@ -245,7 +245,7 @@ public class ApprovalService {
 
     private static void requireSameOrg(AuthenticatedUser actor, Request request) {
         if (request == null
-                || (actor.role().isOrgTier() && !actor.manages(request.getOrgId()))) {
+                || (actor.role().isOrgTier() && !actor.operates(request.getOrgId()))) {
             throw requestNotFound();
         }
     }
