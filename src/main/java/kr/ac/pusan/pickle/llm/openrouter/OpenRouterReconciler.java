@@ -46,12 +46,14 @@ public class OpenRouterReconciler {
     private final LlmApiKeyRepository keyRepository;
     private final OpenRouterClient client;
     private final DriftFindingRepository findings;
+    private final OpenRouterSpendRecorder spendRecorder;
 
     public OpenRouterReconciler(LlmApiKeyRepository keyRepository, OpenRouterClient client,
-            DriftFindingRepository findings) {
+            DriftFindingRepository findings, OpenRouterSpendRecorder spendRecorder) {
         this.keyRepository = keyRepository;
         this.client = client;
         this.findings = findings;
+        this.spendRecorder = spendRecorder;
     }
 
     /**
@@ -113,9 +115,18 @@ public class OpenRouterReconciler {
         Instant now = Instant.now();
         List<String> orphanKeys = new ArrayList<>();
         List<String> staleKeys = new ArrayList<>();
+        List<OpenRouterSpendRecorder.Spend> spends = new ArrayList<>();
 
         for (OpenRouterClient.ManagedKey managed : remote) {
             LlmApiKey local = localByHash.remove(managed.hash());
+            if (local != null && managed.usage() != null) {
+                // Collected on every matched key, whatever verdict follows: a
+                // key whose limit drifted has still spent what it spent, and
+                // the money figure is what the console shows instead of the
+                // OpenRouter console.
+                spends.add(new OpenRouterSpendRecorder.Spend(local.getId(), managed.usage(),
+                        local.getCreditLimit()));
+            }
             if (local == null) {
                 // OpenRouter holds a key we never recorded: spend on the
                 // shared account that no pickle key explains.
@@ -206,6 +217,10 @@ public class OpenRouterReconciler {
         }
         findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_ORPHAN, orphanKeys, now);
         findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_STALE, staleKeys, now);
+        // Last, after every verdict is settled: spend reporting is the least
+        // important thing this job does, and a failure here must not cost a
+        // finding or leave one open that the listing just resolved.
+        spendRecorder.record(spends, now);
         if (!orphanKeys.isEmpty() || !staleKeys.isEmpty()) {
             log.info("OpenRouter reconcile: {} orphan(s), {} stale", orphanKeys.size(),
                     staleKeys.size());
