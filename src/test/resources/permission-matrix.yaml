@@ -35,7 +35,11 @@
 # viewer roles are what one organisation grants another's staff so they can see
 # its resources without touching them, so ORG_VIEWER holds exactly the reads
 # ORG_MANAGER holds and nothing else. One exception: the audit log, which
-# carries login addresses and stays with the roles that may act.
+# carries login addresses, so within the org tier it stays with the roles that
+# may act and ORG_VIEWER is the one role denied there. SYS_VIEWER reads it like
+# every other system read — "viewers are excluded" is true of the org viewer
+# only, and the unqualified form of that sentence was wrong here until
+# 2026-08-26.
 
 operations:
 
