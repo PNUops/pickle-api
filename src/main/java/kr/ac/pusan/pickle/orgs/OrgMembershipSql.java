@@ -28,6 +28,43 @@ public final class OrgMembershipSql {
     }
 
     /**
+     * The same predicate with the org named by an <b>expression</b> rather than
+     * by a scope's bound ids, so it can be correlated to a column.
+     *
+     * <p>It exists because the question can be asked in two directions: a caller
+     * that knows the organisations asks "is this subject in one of them?" and
+     * passes an {@link OrgScope}, while a caller that has to <em>find</em> them
+     * (see {@link #orgIdsOfMember}) needs the org to be a column of the
+     * surrounding query instead.</p>
+     */
+    public static String workspaceLinkedToOrg(String workspaceIdExpr, String orgIdExpr) {
+        return "(exists (select 1 from requests lr where lr.workspace_id = " + workspaceIdExpr
+                + " and lr.org_id = " + orgIdExpr + ")"
+                + " or exists (select 1 from vms lv where lv.workspace_id = " + workspaceIdExpr
+                + " and lv.org_id = " + orgIdExpr + " and lv.status <> 'DELETED'))";
+    }
+
+    /**
+     * SELECT statement yielding the ids of every org the user identified by
+     * {@code userIdExpr} <b>derives</b> membership in. Binds <b>one</b>
+     * positional parameter (the user id) when {@code userIdExpr} is {@code "?"}.
+     *
+     * <p>The inverse of {@link #memberOfOrgLinkedWorkspace}, for callers that
+     * must have the org set before they can build their query rather than after
+     * — a paged read cannot filter its rows once the page is cut, because the
+     * page would come back short and its total wrong.</p>
+     *
+     * <p>Like its sibling this covers the <em>derived</em> half only. A caller
+     * that also wants the organisations the account holds a role in adds them,
+     * exactly as the announcement fan-out does.</p>
+     */
+    public static String orgIdsOfMember(String userIdExpr) {
+        return "select lo.id from orgs lo"
+                + " where exists (select 1 from workspace_members lgm where lgm.user_id = "
+                + userIdExpr + " and " + workspaceLinkedToOrg("lgm.workspace_id", "lo.id") + ")";
+    }
+
+    /**
      * EXISTS fragment: the user identified by {@code userIdExpr} is a member
      * of at least one workspace linked to the scope (membership only — the caller
      * adds the user-ACTIVE condition where required). Binds the scope's ids
