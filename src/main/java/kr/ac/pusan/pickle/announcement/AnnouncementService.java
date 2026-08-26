@@ -114,7 +114,15 @@ public class AnnouncementService {
                                 "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
                     }
                     if (request.orgId() != null) {
-                        if (!administered.contains(requestedOrgId)) {
+                        // An id no organisation has and one this account does not
+                        // administer answer the same thing, so naming ids cannot
+                        // be used to learn which organisations exist. The null
+                        // test also has to come first: administeredOrgIds()
+                        // returns an unmodifiable set, and those throw on
+                        // contains(null) where a HashSet returns false — the
+                        // collector is three lines away and invisible here, and
+                        // this call answered 500 until 2026-08-26 because of it.
+                        if (requestedOrgId == null || !administered.contains(requestedOrgId)) {
                             errors.add(new FieldValidationError("orgId",
                                     "자기 기관에만 기관 공지를 발송할 수 있습니다."));
                         }
