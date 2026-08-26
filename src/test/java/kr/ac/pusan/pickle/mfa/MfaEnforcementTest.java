@@ -63,6 +63,35 @@ class MfaEnforcementTest {
     }
 
     @Test
+    void aPasswordlessAdminCanStillReachTheEndpointThatGivesItAPassword() throws Exception {
+        // The lock-out this closes: enrolment needs a password, an account made
+        // through Google has none, and the filter used to refuse the endpoint
+        // that would give it one. Promoting a Google account to an admin role
+        // was enough to reach that state, with no way back out.
+        User admin = new User("mfa.enforce.google@pusan.ac.kr", null, "구글관리자");
+        admin.setRole(UserRole.SYS_ADMIN);
+        admin.setStatus(UserStatus.ACTIVE);
+        admin.setEmailVerifiedAt(Instant.now());
+        admin = userRepository.saveAndFlush(admin);
+        String token = jwtService.createAccessToken(admin);
+
+        mockMvc.perform(get("/api/v1/workspaces").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+
+        // Not 403 MFA_ENROLLMENT_REQUIRED: the filter lets it through and the
+        // reauthentication gate answers instead, which is the endpoint's own
+        // authorization and stays in force.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/me/password")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"new-horse-battery-staple!\"}")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+    }
+
+    @Test
     void plainUserIsNeverRestricted() throws Exception {
         User user = createUser("mfa.enforce.user@pusan.ac.kr", UserRole.USER);
         mockMvc.perform(get("/api/v1/workspaces")
