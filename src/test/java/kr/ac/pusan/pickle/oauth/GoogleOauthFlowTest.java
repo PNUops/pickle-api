@@ -128,7 +128,10 @@ class GoogleOauthFlowTest {
         // verification mail would have gone to.
         assertThat(created.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(created.hasPassword()).isFalse();
-        assertThat(created.isProfileComplete()).isTrue();
+        // Not a defect: the onboarding form no longer asks, so a brand-new
+        // Google account starts without a profile and the console prompts for
+        // one after it is inside.
+        assertThat(created.isProfileComplete()).isFalse();
     }
 
     @Test
@@ -426,9 +429,9 @@ class GoogleOauthFlowTest {
                 .content(objectMapper.writeValueAsString(Map.of(
                         "registrationToken", registrationToken,
                         "name", "구글가입",
-                        "position", "STUDENT_UNDERGRAD",
-                        "studentNo", "202099999",
-                        "departmentCode", "COMPUTER_SCIENCE",
+                        // No 직책 or 소속 학과: since v0.46.0 the onboarding form
+                        // is 이름 and the consents, and the profile is asked for
+                        // later inside the console.
                         "consents", List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))));

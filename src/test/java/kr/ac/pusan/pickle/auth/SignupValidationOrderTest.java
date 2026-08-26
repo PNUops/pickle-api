@@ -108,6 +108,38 @@ class SignupValidationOrderTest {
                 .andExpect(status().isAccepted());
     }
 
+    @Test
+    void aSignupWithNoProfileAtAllIsAccepted() throws Exception {
+        // 직책 and 소속 학과 left out entirely (v0.46.0): the console collects
+        // them after the account exists. The ordering rules above still hold —
+        // they simply have nothing to reject.
+        Map<String, Object> none = new LinkedHashMap<>();
+        none.put("position", null);
+        none.put("studentNo", null);
+        none.put("departmentCode", null);
+        signup(REGISTERED, none).andExpect(status().isAccepted());
+        signup("order.noprofile@pusan.ac.kr", none).andExpect(status().isAccepted());
+
+        User created = userRepository.findByEmail("order.noprofile@pusan.ac.kr").orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(created.getPosition()).isNull();
+        org.assertj.core.api.Assertions.assertThat(created.getDepartmentCode()).isNull();
+        org.assertj.core.api.Assertions.assertThat(created.isProfileComplete()).isFalse();
+    }
+
+    @Test
+    void aStudentNumberWithNoPositionIsDroppedRatherThanStored() throws Exception {
+        // No position means no rule looked at this value and the CHECK cannot
+        // either, so it must not reach the column.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("position", null);
+        body.put("studentNo", "not-a-number!!");
+        body.put("departmentCode", null);
+        signup("order.orphan@pusan.ac.kr", body).andExpect(status().isAccepted());
+
+        User created = userRepository.findByEmail("order.orphan@pusan.ac.kr").orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(created.getStudentNo()).isNull();
+    }
+
     private org.springframework.test.web.servlet.ResultActions signup(String email,
             Map<String, ?> overrides) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>(Map.of(
