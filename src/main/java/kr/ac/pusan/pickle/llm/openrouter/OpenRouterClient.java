@@ -75,7 +75,7 @@ public class OpenRouterClient {
      */
     public record ManagedKey(String hash, String name, boolean disabled,
             @Nullable BigDecimal limit, @Nullable String limitReset,
-            @Nullable BigDecimal usage) {
+            boolean includeByokInLimit, @Nullable BigDecimal usage) {
     }
 
     /** A freshly created key: the identifier and the one-time plaintext. */
@@ -93,6 +93,7 @@ public class OpenRouterClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", name);
         body.put("limit", limit);
+        body.put("include_byok_in_limit", true);
         if (reset != null) {
             body.put("limit_reset", reset.wireValue());
         }
@@ -114,11 +115,22 @@ public class OpenRouterClient {
         exchange(HttpMethod.PATCH, "/keys/" + hash, Map.of("disabled", disabled), 200);
     }
 
-    /** {@code PATCH /keys/{hash}} — move the money limit and its window. */
+    /**
+     * {@code PATCH /keys/{hash}} — move the money limit and its window, and
+     * assert that BYOK inference counts against that limit.
+     *
+     * <p>The flag rides every limit write rather than being set once at
+     * creation, because it is the reconciler's only way to repair a key that
+     * predates it or that someone flipped in the OpenRouter console. It
+     * defaults to false over there, and a false value means the limit stops
+     * bounding anything the moment a provider key is attached to the account:
+     * the ceiling still shows in our console and governs nothing.
+     */
     public void updateLimit(String hash, BigDecimal limit, @Nullable CreditLimitReset reset) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("limit", limit);
         body.put("limit_reset", reset == null ? null : reset.wireValue());
+        body.put("include_byok_in_limit", true);
         exchange(HttpMethod.PATCH, "/keys/" + hash, body, 200);
     }
 
@@ -162,6 +174,7 @@ public class OpenRouterClient {
                         entry.path("limit").isNumber()
                                 ? entry.path("limit").decimalValue() : null,
                         text(entry, "limit_reset"),
+                        entry.path("include_byok_in_limit").asBoolean(false),
                         entry.path("usage").isNumber()
                                 ? entry.path("usage").decimalValue() : null));
             }

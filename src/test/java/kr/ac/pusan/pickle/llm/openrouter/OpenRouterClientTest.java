@@ -6,6 +6,8 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.notMatching;
+import static com.github.tomakehurst.wiremock.client.WireMock.patch;
+import static com.github.tomakehurst.wiremock.client.WireMock.patchRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -76,8 +78,30 @@ class OpenRouterClientTest {
                 .withRequestBody(matchingJsonPath("$.name", equalTo("k-1")))
                 .withRequestBody(matchingJsonPath("$[?(@.limit == 5.00)]"))
                 .withRequestBody(matchingJsonPath("$.limit_reset", equalTo("monthly")))
+                .withRequestBody(matchingJsonPath("$.include_byok_in_limit", equalTo("true")))
                 .withRequestBody(matchingJsonPath("$.expires_at",
                         equalTo("2026-12-31T00:00:00Z"))));
+    }
+
+    @Test
+    void everyLimitWriteAssertsThatByokSpendCounts() {
+        // The flag is the whole point of writing a limit: OpenRouter defaults
+        // it to false, and a ceiling that excludes BYOK inference enforces
+        // nothing while still reading as the granted amount on both sides.
+        // It rides updates as well as creation because that is the only way a
+        // key created before this rule, or edited in the OpenRouter console,
+        // ever gets repaired.
+        server.stubFor(patch(urlPathEqualTo("/keys/h9"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\": {\"hash\": \"h9\"}}")));
+
+        client.updateLimit("h9", new BigDecimal("7.50"), CreditLimitReset.DAILY);
+
+        server.verify(patchRequestedFor(urlPathEqualTo("/keys/h9"))
+                .withRequestBody(matchingJsonPath("$[?(@.limit == 7.50)]"))
+                .withRequestBody(matchingJsonPath("$.limit_reset", equalTo("daily")))
+                .withRequestBody(matchingJsonPath("$.include_byok_in_limit", equalTo("true"))));
     }
 
     @Test
@@ -137,7 +161,7 @@ class OpenRouterClientTest {
                         .withBody("""
                                 {"data": [
                                   {"hash": "h1", "name": "a", "disabled": false, "limit": 5,
-                                   "usage": 1.25},
+                                   "include_byok_in_limit": true, "usage": 1.25},
                                   {"hash": "h2", "name": "b", "disabled": true}]}
                                 """)));
         server.stubFor(get(urlEqualTo("/keys?include_disabled=true&offset=2"))
@@ -150,10 +174,15 @@ class OpenRouterClientTest {
         assertThat(keys).hasSize(2);
         assertThat(keys.get(0).hash()).isEqualTo("h1");
         assertThat(keys.get(0).limit()).isEqualByComparingTo("5");
+        assertThat(keys.get(0).includeByokInLimit()).isTrue();
         // What the key has spent, as they count it — the money figure the
         // console shows so nobody has to open the OpenRouter console.
         assertThat(keys.get(0).usage()).isEqualByComparingTo("1.25");
         assertThat(keys.get(1).disabled()).isTrue();
+        // Absent reads as false, which the reconciler treats as divergence and
+        // repairs. Reading absence as true would hide exactly the state this
+        // flag exists to catch.
+        assertThat(keys.get(1).includeByokInLimit()).isFalse();
         // A listing that reports no spend for a key leaves it unknown rather
         // than claiming zero.
         assertThat(keys.get(1).usage()).isNull();
