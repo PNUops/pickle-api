@@ -423,6 +423,21 @@ class NoticeTest {
                 .andExpect(jsonPath("$.orgName").value(org.getName()));
         publicGet(memberToken, otherOrgNotice).andExpect(status().isNotFound());
 
+        // Suspending the account takes the organisation's notices away again.
+        // On a permitAll path an unusable token is not a 401 — the filter simply
+        // builds no principal — so the caller degrades to anonymous and sees
+        // less, never more.
+        member.setStatus(UserStatus.DISABLED);
+        userRepository.save(member);
+        publicList(memberToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformPublic))
+                .andExpect(listOmits(platformUsers))
+                .andExpect(listOmits(ownOrgNotice));
+        publicGet(memberToken, ownOrgNotice).andExpect(status().isNotFound());
+        member.setStatus(UserStatus.ACTIVE);
+        userRepository.save(member);
+
         // A reader whose workspace has nothing to do with either organisation
         // derives no membership and sees only the platform's notices.
         User stranger = ensureRegularUser("notice.stranger@pusan.ac.kr", "무관워크스페이스원");

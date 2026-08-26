@@ -57,11 +57,25 @@ public final class OrgMembershipSql {
      * <p>Like its sibling this covers the <em>derived</em> half only. A caller
      * that also wants the organisations the account holds a role in adds them,
      * exactly as the announcement fan-out does.</p>
+     *
+     * <p>It does, however, apply the {@code users.status = 'ACTIVE'} condition
+     * that {@link #memberOfOrgLinkedWorkspace} leaves to its callers, and the
+     * difference is deliberate. That one is a predicate composed into a query
+     * that already has the user row in scope — all three of its call sites write
+     * {@code (u.org_id = ? or (u.status = 'ACTIVE' and <predicate>))} around it.
+     * This one is consumed as a finished answer to "which orgs is this user in",
+     * with no surrounding query to add the condition, so leaving it out would
+     * hand a suspended account its organisations. A disabled account cannot
+     * authenticate at all today, which makes the condition redundant on the one
+     * path that calls this — and redundant is the wrong thing to rely on when
+     * the cost of stating it is a join.</p>
      */
     public static String orgIdsOfMember(String userIdExpr) {
         return "select lo.id from orgs lo"
-                + " where exists (select 1 from workspace_members lgm where lgm.user_id = "
-                + userIdExpr + " and " + workspaceLinkedToOrg("lgm.workspace_id", "lo.id") + ")";
+                + " where exists (select 1 from workspace_members lgm"
+                + " join users lu on lu.id = lgm.user_id"
+                + " where lgm.user_id = " + userIdExpr + " and lu.status = 'ACTIVE' and "
+                + workspaceLinkedToOrg("lgm.workspace_id", "lo.id") + ")";
     }
 
     /**

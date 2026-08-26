@@ -193,7 +193,10 @@ public class NoticeQueryService {
      *
      * <p>The administrator tiers' own column is unioned in on top, exactly as
      * the announcement fan-out does, because the canonical fragment covers the
-     * derived half only.</p>
+     * derived half only. The rule's {@code users.status = 'ACTIVE'} condition is
+     * carried by the fragment itself, so a suspended account would derive no
+     * organisation here even if it could reach this method — which it cannot,
+     * since the JWT filter refuses to build a principal for one.</p>
      */
     private Set<Long> readerOrgIds(AuthenticatedUser reader) {
         Set<Long> orgIds = new HashSet<>(jdbcTemplate.queryForList(
