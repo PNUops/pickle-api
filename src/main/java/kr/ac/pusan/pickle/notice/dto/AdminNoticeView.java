@@ -8,6 +8,7 @@ import kr.ac.pusan.pickle.notice.Notice;
 import kr.ac.pusan.pickle.notice.NoticeAudience;
 import kr.ac.pusan.pickle.notice.NoticeImageMeta;
 import kr.ac.pusan.pickle.notice.NoticeScope;
+import kr.ac.pusan.pickle.orgs.Org;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -22,6 +23,8 @@ public record AdminNoticeView(
         NoticeScope scope,
         @Schema(description = "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다.")
         @Nullable UUID orgId,
+        @Schema(description = "그 기관의 이름. 전역 공지에서는 비어 있습니다.")
+        @Nullable String orgName,
         NoticeAudience audience,
         boolean pinned,
         boolean popup,
@@ -30,16 +33,19 @@ public record AdminNoticeView(
         @Nullable Instant endsAt,
         @Schema(description = "지금 게시 창 안에 있는지. 예정·만료된 공지도 이 목록에는 함께 나옵니다.")
         boolean active,
+        @Schema(description = "공지를 등록한 사람의 이름. 계정이 지워졌으면 비어 있습니다.")
+        @Nullable String createdByName,
         List<NoticeImageView> images,
         Instant createdAt,
         Instant updatedAt) {
 
-    public static AdminNoticeView from(Notice notice, @Nullable UUID orgId,
-            List<NoticeImageMeta> images, Instant now) {
+    public static AdminNoticeView from(Notice notice, @Nullable Org org,
+            @Nullable String createdByName, List<NoticeImageMeta> images, Instant now) {
         return new AdminNoticeView(notice.getPublicId(), notice.getTitle(), notice.getBody(),
-                notice.getScope(), orgId, notice.getAudience(), notice.isPinned(),
+                notice.getScope(), org == null ? null : org.getPublicId(),
+                org == null ? null : org.getName(), notice.getAudience(), notice.isPinned(),
                 notice.isPopup(), notice.getStartsAt(), notice.getEndsAt(),
-                notice.isActiveAt(now),
+                notice.isActiveAt(now), createdByName,
                 images.stream().map(image -> NoticeImageView.from(notice.getPublicId(), image))
                         .toList(),
                 notice.getCreatedAt(), notice.getUpdatedAt());

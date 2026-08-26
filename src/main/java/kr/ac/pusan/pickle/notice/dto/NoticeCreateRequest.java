@@ -12,9 +12,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Contract {@code NoticeCreateRequest}. The cross-field rules the service
- * enforces on top of these: an ORG notice needs an org and may never be PUBLIC,
- * a PLATFORM notice may not name one, and an organisation administrator writes
- * only for their own organisation.
+ * enforces on top of these: an ORG notice always names its organisation and may
+ * never be PUBLIC, a PLATFORM notice may not name one, and an organisation
+ * administrator writes only for their own organisation — naming their own is
+ * accepted, naming another's is refused rather than corrected.
  */
 public record NoticeCreateRequest(
         @NotBlank(message = "제목을 입력해 주세요.")
@@ -25,7 +26,7 @@ public record NoticeCreateRequest(
         String body,
         @NotNull(message = "공지 범위를 선택해 주세요.")
         NoticeScope scope,
-        @Schema(description = "기관 공지의 대상 기관. 기관 관리자는 생략하면 자기 기관으로 정해집니다.")
+        @Schema(description = "기관 공지의 대상 기관. 기관 공지에는 반드시 있어야 하고 전역 공지에는 넣을 수 없습니다. 기관 관리자는 자기 기관만 지정할 수 있습니다.")
         @Nullable UUID orgId,
         @NotNull(message = "공개 범위를 선택해 주세요.")
         NoticeAudience audience,

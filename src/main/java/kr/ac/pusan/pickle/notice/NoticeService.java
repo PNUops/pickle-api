@@ -20,6 +20,8 @@ import kr.ac.pusan.pickle.notice.dto.NoticeUpdateRequest;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,15 +37,22 @@ import org.springframework.web.multipart.MultipartFile;
  * <ul>
  *   <li>an ORG_ADMIN writes only ORG notices, only for their own organisation —
  *       a PLATFORM request or another organisation's id is 403, the same shape
- *       an ALL-scope announcement gets;</li>
+ *       an ALL-scope announcement gets. Naming their <em>own</em> organisation
+ *       is accepted, not refused as a field they may not set: the console sends
+ *       it for every role;</li>
  *   <li>an ORG_ADMIN edits, deletes and attaches to only their own
  *       organisation's notices. Another organisation's answers 404 because they
  *       cannot see it either; a platform notice answers 403 because they can —
  *       it is in their list, read-only, and masking it would say the opposite
  *       of what the list already showed;</li>
- *   <li>{@code audience=PUBLIC} on an ORG notice is a 422 validation error.
- *       The database refuses it too, but a constraint violation would surface
- *       as a 500 and tell the author nothing.</li>
+ *   <li>{@code audience=PUBLIC} on an ORG notice is a 422 validation error,
+ *       re-checked on update against the <em>stored</em> scope. The database
+ *       refuses it too, but a constraint violation would surface as a 500 and
+ *       tell the author nothing;</li>
+ *   <li>{@code scope} and {@code orgId} are absent from the update body
+ *       entirely. Were they editable, an ORG_ADMIN could create an ORG notice
+ *       and then promote it to PLATFORM or move it to another organisation,
+ *       which is the create gate defeated through a second verb.</li>
  * </ul>
  *
  * <p>Images are validated by what their bytes are rather than by what the
@@ -57,13 +66,16 @@ public class NoticeService {
     private final NoticeRepository noticeRepository;
     private final NoticeImageStore noticeImageStore;
     private final OrgRepository orgRepository;
+    private final UserRepository userRepository;
     private final AuditService auditService;
 
     public NoticeService(NoticeRepository noticeRepository, NoticeImageStore noticeImageStore,
-            OrgRepository orgRepository, AuditService auditService) {
+            OrgRepository orgRepository, UserRepository userRepository,
+            AuditService auditService) {
         this.noticeRepository = noticeRepository;
         this.noticeImageStore = noticeImageStore;
         this.orgRepository = orgRepository;
+        this.userRepository = userRepository;
         this.auditService = auditService;
     }
 
@@ -230,30 +242,39 @@ public class NoticeService {
      * own organisation whether or not the body named one.
      */
     private Long resolveCreateTarget(AuthenticatedUser actor, NoticeCreateRequest request) {
-        Long requestedOrgId = request.orgId() == null ? null
-                : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            if (request.scope() != NoticeScope.ORG) {
+        // A platform notice names no organisation, and saying so beats ignoring
+        // it: a client that sent one believes something the server does not.
+        if (request.scope() == NoticeScope.PLATFORM) {
+            if (actor.role() == UserRole.ORG_ADMIN) {
                 throw forbidden("전역 공지는 시스템 관리자만 등록할 수 있습니다.");
             }
-            if (actor.orgId() == null) {
-                throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
-            }
-            if (request.orgId() != null && !actor.orgId().equals(requestedOrgId)) {
-                throw forbidden("자기 기관의 공지만 등록할 수 있습니다.");
-            }
-            return actor.orgId();
-        }
-        if (request.scope() == NoticeScope.PLATFORM) {
             if (request.orgId() != null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "전역 공지에는 기관을 지정할 수 없습니다.")));
             }
             return null;
         }
+        // An organisation notice always names its organisation, whoever writes
+        // it. The console sends the field for both roles, and requiring it of
+        // everyone keeps one rule instead of a per-role exception.
         if (request.orgId() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                     "기관 공지에는 대상 기관이 필요합니다.")));
+        }
+        Long requestedOrgId = orgRepository.findByPublicId(request.orgId()).map(Org::getId)
+                .orElse(null);
+        if (actor.role() == UserRole.ORG_ADMIN) {
+            if (actor.orgId() == null) {
+                throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
+            }
+            // Their own organisation is accepted rather than refused as a field
+            // they may not set, and another organisation's is refused rather
+            // than quietly rewritten to theirs: an attempted cross-org write is
+            // exactly the event worth surfacing.
+            if (!actor.orgId().equals(requestedOrgId)) {
+                throw forbidden("자기 기관의 공지만 등록할 수 있습니다.");
+            }
+            return actor.orgId();
         }
         if (requestedOrgId == null) {
             throw notFound("해당 기관이 존재하지 않습니다.");
@@ -282,9 +303,11 @@ public class NoticeService {
     }
 
     private AdminNoticeView view(Notice notice) {
-        UUID orgId = notice.getOrgId() == null ? null
-                : orgRepository.findById(notice.getOrgId()).map(Org::getPublicId).orElse(null);
-        return AdminNoticeView.from(notice, orgId,
+        Org org = notice.getOrgId() == null ? null
+                : orgRepository.findById(notice.getOrgId()).orElse(null);
+        String author = notice.getCreatedBy() == null ? null
+                : userRepository.findById(notice.getCreatedBy()).map(User::getName).orElse(null);
+        return AdminNoticeView.from(notice, org, author,
                 noticeImageStore.metadataByNotice(List.of(notice.getId()))
                         .getOrDefault(notice.getId(), List.of()),
                 Instant.now());

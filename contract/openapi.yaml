@@ -266,6 +266,11 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
+        createdByName:
+          description: "공지를 등록한 사람의 이름. 계정이 지워졌으면 비어 있습니다."
+          type:
+          - "string"
+          - "null"
         endsAt:
           description: "게시 종료 시각. 비어 있으면 만료되지 않습니다."
           format: "date-time"
@@ -282,6 +287,11 @@ components:
         orgId:
           description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
           format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
           type:
           - "string"
           - "null"
@@ -2898,7 +2908,8 @@ components:
           - "string"
           - "null"
         orgId:
-          description: "기관 공지의 대상 기관. 기관 관리자는 생략하면 자기 기관으로 정해집니다."
+          description: "기관 공지의 대상 기관. 기관 공지에는 반드시 있어야 하고 전역 공지에는 넣을 수 없습니다. 기관 관리자\
+            는 자기 기관만 지정할 수 있습니다."
           format: "uuid"
           type:
           - "string"
@@ -3008,6 +3019,11 @@ components:
         orgId:
           description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
           format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
           type:
           - "string"
           - "null"

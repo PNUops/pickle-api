@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -48,12 +49,20 @@ import tools.jackson.databind.ObjectMapper;
  * enforces them, the active window, the organisation pinning on the write
  * paths, and the image rules.
  *
- * <p><b>Who counts as an organisation's reader.</b> The visibility rule reads
- * the account's {@code org_id} column, which the schema sets for the
- * administrator and manager tiers only — an ordinary account carries none. So
- * the fixtures below use organisation administrators as the signed-in readers
- * of an ORG notice; the regular account is here to prove the admin surface
- * refuses it, not to stand for an organisation's membership.</p>
+ * <p><b>Who counts as an organisation's reader.</b> Not whoever carries that
+ * organisation in {@code users.org_id} — the schema gives that column to the
+ * administrator and manager tiers only, so reading membership off the account
+ * would hide an organisation's notices from every student it was written for.
+ * Membership is the canonical derived rule instead, and
+ * {@code anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation} is the
+ * test for exactly that: a regular account with no organisation column, made a
+ * member of a workspace whose requests belong to the organisation, sees the
+ * notice; one in an unrelated workspace does not.</p>
+ *
+ * <p>These reads are also the <b>only</b> coverage of the visibility widening.
+ * The permission matrix records the three public operations as {@code public}
+ * and stops there — it has no way to say that an anonymous caller gets less
+ * back than an authenticated one.</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -115,10 +124,13 @@ class NoticeTest {
                 "title", "전체 공개 공지", "scope", "PLATFORM", "audience", "PUBLIC"))));
         platformUsers = createdId(create(sysAdminToken, body(Map.of(
                 "title", "로그인 전용 전역 공지", "scope", "PLATFORM", "audience", "USERS"))));
+        // Both roles name the organisation explicitly; the console does the same.
         ownOrgNotice = createdId(create(orgAdminToken, body(Map.of(
-                "title", "자기관 공지", "scope", "ORG", "audience", "USERS"))));
+                "title", "자기관 공지", "scope", "ORG", "audience", "USERS",
+                "orgId", org.getPublicId().toString()))));
         otherOrgNotice = createdId(create(otherOrgAdminToken, body(Map.of(
-                "title", "타기관 공지", "scope", "ORG", "audience", "USERS"))));
+                "title", "타기관 공지", "scope", "ORG", "audience", "USERS",
+                "orgId", otherOrg.getPublicId().toString()))));
     }
 
     @Test
@@ -239,11 +251,29 @@ class NoticeTest {
                 "title", "전역 시도", "scope", "PLATFORM", "audience", "PUBLIC")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        // Nor is another organisation's.
+        // Nor is another organisation's. Refused, not quietly rewritten to
+        // theirs: an attempted cross-org write is the event worth surfacing.
         create(orgAdminToken, body(Map.of(
                 "title", "타기관 시도", "scope", "ORG", "audience", "USERS",
                 "orgId", otherOrg.getPublicId().toString())))
                 .andExpect(status().isForbidden());
+
+        // But naming their OWN organisation is accepted, not refused as a field
+        // they may not set. The console sends it for every role, so folding this
+        // into the 403 branch would reject a write the user cannot even see the
+        // input for.
+        create(orgAdminToken, body(Map.of(
+                "title", "자기 기관 명시", "scope", "ORG", "audience", "USERS",
+                "orgId", org.getPublicId().toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()))
+                .andExpect(jsonPath("$.orgName").value(org.getName()));
+
+        // And an organisation notice always names one.
+        create(orgAdminToken, body(Map.of(
+                "title", "기관 미지정", "scope", "ORG", "audience", "USERS")))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
 
         // Another organisation's notice is masked, exactly as it is on the read.
         patchNotice(orgAdminToken, otherOrgNotice, Map.of("title", "가로채기"))
@@ -369,6 +399,71 @@ class NoticeTest {
         assertThat(auditRows("notice.delete", platformPublic)).isEqualTo(1);
     }
 
+    @Test
+    void anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation() throws Exception {
+        // A regular account carries no users.org_id at all — the schema gives
+        // that column only to the administrator and manager tiers. Membership is
+        // derived instead: this reader is an ACTIVE member of a workspace whose
+        // requests belong to the organisation, which is what makes them "이 기관
+        // 사람" for the announcement fan-out and must mean the same here.
+        User member = ensureRegularUser("notice.member@pusan.ac.kr", "공지기관원");
+        assertThat(member.getOrgId()).as("a regular account has no org column").isNull();
+        long linkedWorkspace = createWorkspace("noticelink", member.getId());
+        linkWorkspaceToOrg(linkedWorkspace, org.getId(), member.getId());
+        String memberToken = jwtService.createAccessToken(member);
+
+        publicList(memberToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformPublic))
+                .andExpect(listHas(platformUsers))
+                .andExpect(listHas(ownOrgNotice))
+                .andExpect(listOmits(otherOrgNotice));
+        publicGet(memberToken, ownOrgNotice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orgName").value(org.getName()));
+        publicGet(memberToken, otherOrgNotice).andExpect(status().isNotFound());
+
+        // A reader whose workspace has nothing to do with either organisation
+        // derives no membership and sees only the platform's notices.
+        User stranger = ensureRegularUser("notice.stranger@pusan.ac.kr", "무관워크스페이스원");
+        createWorkspace("noticefree", stranger.getId());
+        String strangerToken = jwtService.createAccessToken(stranger);
+        publicList(strangerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformUsers))
+                .andExpect(listOmits(ownOrgNotice))
+                .andExpect(listOmits(otherOrgNotice));
+        // The 404 mask uses the same resolved set as the list, so a notice this
+        // reader cannot list is not fetchable by id either.
+        publicGet(strangerToken, ownOrgNotice).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void aNoticeCannotBePromotedOrMovedAfterItIsCreated() throws Exception {
+        // The create gate would be worth nothing if the object were mutable
+        // through a second verb, so the edit body carries neither field and an
+        // attempt to send them changes nothing.
+        Map<String, Object> promote = new HashMap<>();
+        promote.put("scope", "PLATFORM");
+        promote.put("orgId", otherOrg.getPublicId().toString());
+        promote.put("title", "승격 시도");
+        patchNotice(orgAdminToken, ownOrgNotice, promote)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("승격 시도"))
+                .andExpect(jsonPath("$.scope").value("ORG"))
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
+
+        // Same from the system tier: the fields are not part of the contract,
+        // so nobody has a promote path.
+        patchNotice(sysAdminToken, ownOrgNotice, promote)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scope").value("ORG"))
+                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
+
+        // And the notice stays invisible to the other organisation throughout.
+        publicGet(otherOrgAdminToken, ownOrgNotice).andExpect(status().isNotFound());
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────
 
     private ResultActions publicList(String token) throws Exception {
@@ -450,6 +545,25 @@ class NoticeTest {
         return jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs where action = ? and target_id = ?
                 """, Long.class, action, targetId.toString());
+    }
+
+    private long createWorkspace(String prefix, long... memberIds) {
+        String name = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+        long workspaceId = jdbcTemplate.queryForObject("""
+                insert into workspaces (kind, name) values ('TEAM', ?) returning id
+                """, Long.class, name);
+        for (long memberId : memberIds) {
+            jdbcTemplate.update("""
+                    insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')
+                    """, workspaceId, memberId);
+        }
+        return workspaceId;
+    }
+
+    /** Derived-membership link: one request of the workspace in the org. */
+    private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
+        RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId,
+                "조직 연계(테스트)", null, 1, 1024, 20);
     }
 
     private User ensureAdmin(String email, String name, Long orgId) {
