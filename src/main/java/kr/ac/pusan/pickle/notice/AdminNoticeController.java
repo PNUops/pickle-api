@@ -41,6 +41,13 @@ import org.springframework.web.multipart.MultipartFile;
  * viewer: its rows carry login addresses, so within the org tier it stays with
  * the roles that may act. SYS_VIEWER reads it like every other system read.</p>
  *
+ * <p>Reading the list is not the whole of what that grants. The same scope
+ * reaches the images of those notices while they are outside their active
+ * window, through {@code NoticeQueryService.manageableBy} — the list row
+ * carries the image URLs, so a management view whose every image 404s is not
+ * one. A viewer therefore sees exactly what an operator of the same
+ * organisation sees, on both surfaces.</p>
+ *
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>
  *

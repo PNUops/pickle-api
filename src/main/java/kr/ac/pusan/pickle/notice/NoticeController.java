@@ -82,6 +82,15 @@ public class NoticeController {
      * them legitimately, which is indistinguishable from their having saved the
      * file, so the year stays there and buys the repeat views it was for.</p>
      *
+     * <p>So the two ceilings bound different things, and only one of them
+     * bounds revocation: {@code s-maxage} gives a shared cache an hour, while
+     * {@code max-age} lets the browser of somebody who already fetched the
+     * image go on serving it for up to a year after the notice flips to USERS,
+     * closes its window or is deleted. That is deliberate rather than an
+     * oversight — it is the same person's copy, not a wider audience — but a
+     * reader who sees only the {@code s-maxage} should not conclude that
+     * revocation is bounded everywhere.</p>
+     *
      * <p>{@code inline} because these are body illustrations to render, not
      * files to save.</p>
      */

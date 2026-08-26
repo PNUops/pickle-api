@@ -264,8 +264,8 @@ class NoticeTest {
 
         // But naming their OWN organisation is accepted, not refused as a field
         // they may not set. The console sends it for every role, so folding this
-        // into the 403 branch would reject a write the user cannot even see the
-        // input for.
+        // into the refusal above would reject a write the user cannot even see
+        // the input for.
         create(orgAdminToken, body(Map.of(
                 "title", "자기 기관 명시", "scope", "ORG", "audience", "USERS",
                 "orgId", org.getPublicId().toString())))

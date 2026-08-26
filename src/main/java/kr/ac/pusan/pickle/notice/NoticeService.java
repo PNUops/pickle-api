@@ -36,16 +36,23 @@ import org.springframework.web.multipart.MultipartFile;
  * What it cannot express, and what lives here, is the rest of the rule:</p>
  *
  * <ul>
- *   <li>an ORG_ADMIN writes only ORG notices, only for their own organisation —
- *       a PLATFORM request or another organisation's id is 403, the same shape
- *       an ALL-scope announcement gets. Naming their <em>own</em> organisation
- *       is accepted, not refused as a field they may not set: the console sends
- *       it for every role;</li>
- *   <li>an ORG_ADMIN edits, deletes and attaches to only their own
- *       organisation's notices. Another organisation's answers 404 because they
- *       cannot see it either; a platform notice answers 403 because they can —
- *       it is in their list, read-only, and masking it would say the opposite
- *       of what the list already showed;</li>
+ *   <li>an ORG_ADMIN writes only ORG notices, and only for an organisation it
+ *       administers. A PLATFORM request is 403, the same shape an ALL-scope
+ *       announcement gets; an organisation it does not administer is a
+ *       <b>422</b> field error on {@code orgId}, because that is a value the
+ *       client submitted rather than a resource whose existence a refusal would
+ *       disclose. Naming an organisation it does administer is accepted, not
+ *       refused as a field it may not set: the console sends it for every role.
+ *       The field may be omitted only by an account administering exactly one
+ *       organisation, since co-appointment leaves no single answer otherwise;</li>
+ *   <li>an ORG_ADMIN edits, deletes and attaches to only the notices of the
+ *       organisations it administers. Any other organisation's answers 404 —
+ *       a uniform answer for everything outside that scope, not a claim that
+ *       the caller cannot see it, which a co-appointed account disproves: one
+ *       administering A and only reading B sees B's notices in its management
+ *       list and still gets 404 writing them. A platform notice answers 403
+ *       instead, because the list does show it to them read-only and masking it
+ *       would say the opposite of what the list already showed;</li>
  *   <li>{@code audience=PUBLIC} on an ORG notice is a 422 validation error,
  *       re-checked on update against the <em>stored</em> scope. The database
  *       refuses it too, but a constraint violation would surface as a 500 and
@@ -57,7 +64,8 @@ import org.springframework.web.multipart.MultipartFile;
  * </ul>
  *
  * <p>Images are validated by what their bytes are rather than by what the
- * upload claimed ({@link NoticeImageTypes}), capped per image and per notice,
+ * upload claimed ({@link NoticeImageTypes}), capped at 2 MiB each and 5 per
+ * notice ({@code NoticeImageTypes.MAX_BYTES} and {@code MAX_PER_NOTICE}),
  * and stored through {@link NoticeImageStore}. Deleting a notice takes its
  * images with it through the foreign key's cascade.</p>
  */
