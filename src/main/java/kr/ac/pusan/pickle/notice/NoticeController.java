@@ -57,18 +57,30 @@ public class NoticeController {
     /**
      * The stored bytes, under the type they were determined to be at upload.
      *
-     * <p>Cached for a year either way: the identifier is a UUID naming one
-     * immutable set of bytes, so a changed image is a different URL and a stale
-     * entry is impossible. What varies is <em>whose</em> cache may hold it.
-     * {@code public} is the directive that lets a cache shared between users
+     * <p>The identifier is a UUID naming one immutable set of bytes, so a
+     * changed image is a different URL and a stale entry is impossible. What
+     * can go stale is not the bytes but the <em>entitlement</em>: a notice can
+     * flip from PUBLIC to USERS, reach the end of its window, or be deleted.
+     * {@code immutable} tells a cache it never needs to revalidate, which is
+     * precisely the promise that cannot be kept once entitlement can change, so
+     * the shared branch does not make it.</p>
+     *
+     * <p>{@code public} is the directive that lets a cache shared between users
      * store a response to a request that carried an {@code Authorization}
      * header (RFC 9111), and this response has no {@code Vary} that would
      * separate one caller from another — so on an image whose visibility
      * depends on who asked, {@code public} would turn a per-request check into
-     * "whoever has the URL, for a year". It is therefore sent only when an
-     * anonymous request for this same URL would succeed anyway; everything else
-     * gets {@code private}, which still caches in the requester's own browser
-     * and costs nothing.</p>
+     * "whoever has the URL". It is therefore sent only when an anonymous
+     * request for this same URL would succeed anyway; everything else gets
+     * {@code private}, which still caches in the requester's own browser and
+     * costs nothing.</p>
+     *
+     * <p>The two lifetimes differ because the two blast radii do. Only a
+     * <b>shared</b> cache can serve a revoked image to somebody who was never
+     * entitled to it, so {@code s-maxage} bounds that to an hour. A private
+     * cache can only re-serve bytes to the one requester who already received
+     * them legitimately, which is indistinguishable from their having saved the
+     * file, so the year stays there and buys the repeat views it was for.</p>
      *
      * <p>{@code inline} because these are body illustrations to render, not
      * files to save.</p>
@@ -78,10 +90,12 @@ public class NoticeController {
             @AuthenticationPrincipal @Nullable AuthenticatedUser principal,
             @PathVariable UUID noticeId, @PathVariable UUID imageId) {
         NoticeImageDelivery image = noticeQueryService.image(principal, noticeId, imageId);
-        String cacheability = image.sharedCacheable() ? "public" : "private";
+        String cacheControl = image.sharedCacheable()
+                ? "public, max-age=31536000, s-maxage=3600"
+                : "private, max-age=31536000, immutable";
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(image.contentType()))
-                .header(HttpHeaders.CACHE_CONTROL, cacheability + ", max-age=31536000, immutable")
+                .header(HttpHeaders.CACHE_CONTROL, cacheControl)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
                 .body(image.bytes());
     }

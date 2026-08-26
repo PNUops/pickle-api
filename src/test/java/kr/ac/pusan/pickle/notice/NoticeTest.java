@@ -312,10 +312,11 @@ class NoticeTest {
     @Test
     void aViewerReadsTheManagementListAndIsRefusedEveryWrite() throws Exception {
         // A viewer holds whatever read access its tier's operator holds, so the
-        // management list is in scope. The audit log is the one surface the
-        // viewers are kept out of, and that turns on the login addresses its
-        // rows carry rather than on the shape of the surface; a notice has no
-        // equivalent, so nothing here argues for keeping them out.
+        // management list is in scope. The audit log is the one surface that
+        // argues otherwise, and only for the ORG viewer — its rows carry login
+        // addresses, so inside the org tier it stays with the roles that may
+        // act, while SYS_VIEWER reads it like any other system read. A notice
+        // has no equivalent, so nothing here argues for keeping either out.
         User orgViewer = ensureOrgUser("notice.org.viewer@pusan.ac.kr", "공지기관열람자",
                 org.getId(), UserRole.ORG_VIEWER);
         String orgViewerToken = jwtService.createAccessToken(orgViewer);
@@ -348,7 +349,7 @@ class NoticeTest {
 
         // The system viewer is not scoped to an organisation, so it reads every
         // organisation's notices — and writes none of them.
-        User sysViewer = ensureSysUser("notice.sys.viewer@pusan.ac.kr", "공지전체열람자",
+        User sysViewer = ensureUnattachedUser("notice.sys.viewer@pusan.ac.kr", "공지전체열람자",
                 UserRole.SYS_VIEWER);
         String sysViewerToken = jwtService.createAccessToken(sysViewer);
 
@@ -546,7 +547,7 @@ class NoticeTest {
         // gates — users.role is what they see — and is refused at the service.
         // 403, not 404: there is no resource here whose existence a mask would
         // be protecting.
-        User unattached = ensureSysUser("notice.unattached@pusan.ac.kr", "무소속관리자",
+        User unattached = ensureUnattachedUser("notice.unattached@pusan.ac.kr", "무소속관리자",
                 UserRole.ORG_ADMIN);
         String unattachedToken = jwtService.createAccessToken(unattached);
         adminList(unattachedToken)
@@ -615,10 +616,15 @@ class NoticeTest {
         // concatenation site, and nothing downstream would object to a wrong one.
         assertThat(url).isEqualTo("/api/v1/notices/" + platformPublic + "/images/" + imageId);
 
-        // Anonymously readable, so a cache shared between users may keep it.
+        // Anonymously readable, so a cache shared between users may keep it —
+        // but only for an hour, and without the promise never to revalidate.
+        // The bytes behind this URL never change; what can change is whether
+        // this caller is still entitled to them, and a shared cache is the only
+        // one that could then serve them to somebody who never was.
         MvcResult served = mockMvc.perform(get(url))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Cache-Control", "public, max-age=31536000, immutable"))
+                .andExpect(header().string("Cache-Control",
+                        "public, max-age=31536000, s-maxage=3600"))
                 .andExpect(header().string("Content-Disposition", "inline"))
                 .andExpect(header().string("Content-Type", "image/png"))
                 .andReturn();
@@ -632,7 +638,9 @@ class NoticeTest {
         // Whose answer this is depends on who asked, and the response carries no
         // Vary that would tell two callers apart — so it must never be storable
         // in a cache shared between them. private still caches in the
-        // requester's own browser, which is all this ever needed.
+        // requester's own browser, which is all this ever needed, and keeps the
+        // year: re-serving bytes to the one caller who already received them is
+        // indistinguishable from their having saved the file.
         mockMvc.perform(get(orgUrl).header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control",
@@ -758,8 +766,9 @@ class NoticeTest {
                 .andExpect(status().isOk())
                 // Not yet anonymously readable, so not shareable either — a
                 // PLATFORM+PUBLIC notice still outside its window must not be
-                // cached for a year where an anonymous requester could pick it
-                // up before it is published.
+                // stored where an anonymous requester could pick it up before
+                // it is published. private keeps the year precisely because it
+                // cannot be reached by anyone but this caller.
                 .andExpect(header().string("Cache-Control",
                         "private, max-age=31536000, immutable"))
                 .andReturn();
@@ -769,6 +778,17 @@ class NoticeTest {
         // so it gets the preview too.
         mockMvc.perform(get(url).header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
+
+        // But an org-tier account granted no organisation has no management
+        // screen that needs it: listAdminNotices refuses it outright, so the
+        // preview would be the one surface where it saw a notice it cannot
+        // list. The platform branch asks no organisation question, so this is
+        // the account the two would otherwise disagree about.
+        String unattachedToken = jwtService.createAccessToken(ensureUnattachedUser(
+                "notice.preview.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN));
+        adminList(unattachedToken).andExpect(status().isForbidden());
+        mockMvc.perform(get(url).header("Authorization", "Bearer " + unattachedToken))
+                .andExpect(status().isNotFound());
 
         // Nobody else does, and the refusal stays a 404.
         mockMvc.perform(get(url)).andExpect(status().isNotFound());
@@ -928,10 +948,13 @@ class NoticeTest {
     }
 
     /**
-     * A sys-tier account. It gets no {@code user_org_roles} row: the tier is not
-     * scoped to an organisation, and the table's CHECK admits the org roles only.
+     * An account holding {@code role} and granted no organisation. Correct for
+     * the sys tier, which is never org-scoped and whose roles the table's CHECK
+     * would refuse anyway, and it is also how the org-tier account that holds no
+     * row is built — the seam where the gate reads {@code users.role} and admits
+     * the caller while the service refuses it.
      */
-    private User ensureSysUser(String email, String name, UserRole role) {
+    private User ensureUnattachedUser(String email, String name, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(role);

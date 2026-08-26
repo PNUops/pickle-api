@@ -114,9 +114,12 @@ public class NoticeQueryService {
         // A shared cache may keep this only if an anonymous request for the same
         // URL would succeed right now — which is precisely what the visibility
         // rule answers with no reader. Deriving the directive from the rule
-        // rather than restating it means the two cannot drift: the moment a
-        // notice stops being anonymously readable, its images stop being
+        // rather than restating it means the two cannot drift, so the moment a
+        // notice stops being anonymously readable its images stop being MARKED
         // shareable, including a PLATFORM+PUBLIC one that has not started yet.
+        // What that does not do is reach copies a shared cache already stored:
+        // those keep being served until they expire, which is the whole reason
+        // the shared ceiling is an hour rather than a year (NoticeController).
         return new NoticeImageDelivery(content.contentType(), content.bytes(),
                 visibleTo(notice, null, Set.of(), now));
     }
@@ -202,6 +205,13 @@ public class NoticeQueryService {
         }
         // An ORG notice is USERS-only by constraint, so a null reader never
         // reaches here with a match; contains keeps the comparison a value one.
+        //
+        // The argument is never null: notices_scope_target_check (V92) makes
+        // org_id present exactly when scope is ORG, and PLATFORM returned above.
+        // That is what keeps this clear of the hazard that an immutable set's
+        // contains(null) throws rather than answering false — the anonymous
+        // callers pass Set.of() in here. Should a notice ever be able to carry
+        // a null org_id, this needs the null asked first, not the set changed.
         return reader != null && readerOrgIds.contains(notice.getOrgId());
     }
 
@@ -247,6 +257,12 @@ public class NoticeQueryService {
      * served without authentication and so carries no {@code @PreAuthorize} to
      * have narrowed the roles first. The sys tier manages everything; the org
      * tier manages its own organisation's notices and reads the platform's.
+     *
+     * <p>"The same scope" includes the refusal: an org-tier account granted no
+     * organisation has no management view at all, so it gets no preview either.
+     * Without that the two disagree on exactly one account — the platform
+     * branch below asks no organisation question, so it would hand previews to
+     * a caller whose {@link #listForAdmin} answers 403.
      */
     private static boolean manageableBy(@Nullable AuthenticatedUser reader, Notice notice) {
         if (reader == null) {
@@ -255,7 +271,7 @@ public class NoticeQueryService {
         if (reader.role().isSysTier()) {
             return true;
         }
-        if (!reader.role().isOrgTier()) {
+        if (!reader.role().isOrgTier() || reader.readableOrgIds().isEmpty()) {
             return false;
         }
         return notice.getScope() == NoticeScope.PLATFORM

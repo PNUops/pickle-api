@@ -321,6 +321,17 @@ public class NoticeService {
      * is neither — including one they hold a reading role in, which is why this
      * asks {@link AuthenticatedUser#administers} rather than reusing the wider
      * scope the management list is built from.
+     *
+     * <p>The 404 is a uniform answer for everything outside that scope, not a
+     * claim that the caller cannot see the notice. Usually both are true, but
+     * not for a co-appointed account: one that administers A and only reads B
+     * <b>does</b> see B's notices in its management list and still gets 404
+     * writing them. That is deliberate — the write scope is narrower than the
+     * read scope, and the alternative is a 403 that distinguishes "exists but
+     * not yours" from "does not exist" for every other caller, which is the
+     * disclosure the mask exists to prevent. A platform notice is the one case
+     * answered with 403 instead, because the management list shows it to them
+     * and pretending it is absent would contradict that list.
      */
     private Notice writable(AuthenticatedUser actor, UUID noticeId) {
         Notice notice = noticeRepository.findByPublicId(noticeId)

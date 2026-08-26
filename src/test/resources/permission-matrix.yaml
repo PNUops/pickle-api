@@ -307,9 +307,11 @@ operations:
   # membership rule: it asks who may see the MANAGEMENT view.
   #
   # Both viewers read the list, on the rule that a viewer holds whatever read
-  # access its tier's operator holds; the audit log is the one exception and it
-  # turns on the login addresses in its rows, which a notice has no equivalent
-  # of. A viewer's writes are refused by each write's own method-level gate.
+  # access its tier's operator holds. The audit log is the one exception and it
+  # is narrower than it sounds: it turns on the login addresses in its rows, so
+  # ORG_VIEWER is denied there while SYS_VIEWER reads it like every other system
+  # read (see listAuditLogs above). A notice has no equivalent of those rows.
+  # A viewer's writes are refused by each write's own method-level gate.
   - { id: listAdminNotices,        method: GET,    path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createAdminNotice,       method: POST,   path: "/admin/notices",                              roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateAdminNotice,       method: PATCH,  path: "/admin/notices/{noticeId}",                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }

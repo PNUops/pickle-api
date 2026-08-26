@@ -36,9 +36,10 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * <p>Every role above USER reads the list; only the two admin roles write. The
  * viewer roles are in because a viewer holds whatever read access its tier's
- * operator holds, and a notice carries nothing that argues otherwise — the one
- * surface the viewers are kept out of is the audit log, and that is about the
- * login addresses in its rows rather than the shape of the surface.</p>
+ * operator holds, and a notice carries nothing that argues otherwise. The one
+ * surface that does argue otherwise is the audit log, and only for the org
+ * viewer: its rows carry login addresses, so within the org tier it stays with
+ * the roles that may act. SYS_VIEWER reads it like every other system read.</p>
  *
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>

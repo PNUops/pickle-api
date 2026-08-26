@@ -61,11 +61,14 @@ public final class OrgMembershipSql {
      * <p>It does, however, apply the {@code users.status = 'ACTIVE'} condition
      * that {@link #memberOfOrgLinkedWorkspace} leaves to its callers, and the
      * difference is deliberate. That one is a predicate composed into a query
-     * that already has the user row in scope — all three of its call sites write
-     * {@code (u.org_id = ? or (u.status = 'ACTIVE' and <predicate>))} around it.
-     * This one is consumed as a finished answer to "which orgs is this user in",
-     * with no surrounding query to add the condition, so leaving it out would
-     * hand a suspended account its organisations. A disabled account cannot
+     * that already has the user row in scope: each of its three call sites makes
+     * it one arm of an OR whose other arm is an {@code exists} over
+     * {@code user_org_roles}, and each applies the ACTIVE condition itself —
+     * the user and audit listings by wrapping this arm in it, the announcement
+     * fan-out by constraining the whole statement. This one is consumed as a
+     * finished answer to "which orgs is this user in", with no surrounding query
+     * to add the condition, so leaving it out would hand a suspended account its
+     * organisations. A disabled account cannot
      * authenticate at all today, which makes the condition redundant on the one
      * path that calls this — and redundant is the wrong thing to rely on when
      * the cost of stating it is a join.</p>
