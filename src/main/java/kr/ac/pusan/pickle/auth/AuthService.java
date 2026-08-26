@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.auth;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
@@ -63,9 +62,6 @@ public class AuthService {
 
     /** Suppression window for the already-registered notice mail (1 per hour). */
     private static final String NOTICE_SCOPE = "signup_notice:acct";
-
-    /** Password-reset link validity (contract: 30 minutes, single use). */
-    private static final Duration PASSWORD_RESET_TOKEN_TTL = Duration.ofMinutes(30);
 
     private final UserRepository userRepository;
     private final EmailVerificationRepository emailVerificationRepository;
@@ -599,7 +595,8 @@ public class AuthService {
         emailVerificationRepository.invalidateOpen(user.getId(), VerificationPurpose.PASSWORD_RESET, now);
         String rawToken = TokenHasher.newToken();
         emailVerificationRepository.save(new EmailVerification(user.getId(), TokenHasher.sha256Hex(rawToken),
-                VerificationPurpose.PASSWORD_RESET, now.plus(PASSWORD_RESET_TOKEN_TTL)));
+                VerificationPurpose.PASSWORD_RESET,
+                now.plus(authProperties.passwordResetTokenTtl())));
         mailDispatcher.dispatch(
                 verificationMailComposer.composePasswordReset(user.getEmail(), user.getName(), rawToken));
     }

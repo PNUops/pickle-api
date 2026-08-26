@@ -156,7 +156,7 @@ class RefreshCsrfTest {
                 .as("mail dispatcher drained").isTrue();
         MailMessage mail = mockMailSender.lastMessageTo(email);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
-        Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
         assertThat(matcher.find()).as("verification link with token in mail body").isTrue();
         postJson("/api/v1/auth/verify-email", Map.of("token", matcher.group(1)))
                 .andExpect(status().isOk());

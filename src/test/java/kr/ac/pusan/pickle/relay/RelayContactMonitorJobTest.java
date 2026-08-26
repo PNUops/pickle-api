@@ -128,6 +128,16 @@ class RelayContactMonitorJobTest {
         assertThat(contactLostSince(relayId)).isNotNull();
         assertThat(noticeCount(relayId, "relay.contact_lost")).isPositive();
         assertThat(noticeCount(relayId, "relay.never_contacted")).isZero();
+        // the last-contact line reads as a KST wall clock, not a raw timestamp
+        // (no fractional seconds, no offset suffix)
+        assertThat(jdbcTemplate.queryForList("""
+                select body from notifications where event = 'relay.contact_lost'
+                 and payload ->> 'relayId' = ?
+                """, String.class, String.valueOf(relayId)))
+                .isNotEmpty()
+                .allSatisfy(body -> assertThat(body)
+                        .containsPattern("마지막 접촉: \\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\n")
+                        .doesNotContain("확인 불가"));
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────
