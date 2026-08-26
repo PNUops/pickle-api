@@ -46,7 +46,9 @@ import org.springframework.web.multipart.MultipartFile;
  * window, through {@code NoticeQueryService.manageableBy} — the list row
  * carries the image URLs, so a management view whose every image 404s is not
  * one. A viewer therefore sees exactly what an operator of the same
- * organisation sees, on both surfaces.</p>
+ * organisation sees on the two management surfaces, this list and those
+ * previews. The public board is the one place it does not: that resolves its
+ * readers through the operating grants, so a viewer is not among them.</p>
  *
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>
