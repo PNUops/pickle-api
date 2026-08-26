@@ -36,7 +36,8 @@ public final class RequestSpecs {
         return (root, query, cb) -> cb.equal(root.get("workspaceId"), workspaceId);
     }
 
-    public static Specification<Request> org(Long orgId) {
-        return (root, query, cb) -> cb.equal(root.get("orgId"), orgId);
+    /** Restricts to a set of orgs: an admin may manage more than one (V90). */
+    public static Specification<Request> orgIn(Collection<Long> orgIds) {
+        return (root, query, cb) -> root.get("orgId").in(orgIds);
     }
 }

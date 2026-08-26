@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract {@code listAuditLogs} (tag {@code admin}): ORG_ADMIN sees only rows
- * whose actor belongs to their org (enforced in SQL, cross-org {@code orgId}
- * answers 404); SYS_ADMIN sees everything with the optional org filter.
+ * Contract {@code listAuditLogs} (tag {@code admin}). <b>The narrowest admin
+ * read.</b> The org tier sees rows whose actor belongs to an organisation it may
+ * <b>act</b> in — a read-only role does not reach this surface at all, because
+ * the rows carry login addresses and those are evidence rather than operational
+ * state. Enforced in SQL; naming any other organisation answers 404. The sys
+ * tier sees everything with the optional org filter.
  */
 @RestController
 @RequestMapping("/api/v1/admin/audit")
@@ -32,6 +35,7 @@ public class AdminAuditController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AuditLogViewResponse> listAuditLogs(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) String actorEmail,

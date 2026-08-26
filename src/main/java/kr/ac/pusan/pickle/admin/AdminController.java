@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
+import kr.ac.pusan.pickle.admin.dto.GrantOrgRoleRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest;
@@ -15,20 +16,23 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, org/user management subset — SYS_ADMIN only
- * (ORG_ADMIN gets 403 ACCESS_DENIED via the method-security gate). The
- * v0.20.0 org list read widens to the sys tier so SYS_MANAGER can see
- * DISABLED/hidden orgs too (writes stay SYS_ADMIN).
+ * Contract tag {@code admin}, org/user management subset. Organisation writes
+ * and the wholesale user edit are SYS_ADMIN only; the organisation-role grant
+ * and revoke also admit ORG_ADMIN, confined by the service to the organisations
+ * it administers. The org list read covers the sys tier so a system operator or
+ * viewer can see DISABLED/hidden orgs too (writes stay SYS_ADMIN).
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -47,7 +51,7 @@ public class AdminController {
      * invisible everywhere (the gap that motivated this op).
      */
     @GetMapping("/orgs")
-    @PreAuthorize("hasAnyRole('SYS_MANAGER', 'SYS_ADMIN')")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<OrgDetailResponse> listAdminOrgs() {
         return adminService.listOrgs();
     }
@@ -75,5 +79,30 @@ public class AdminController {
             @Valid @RequestBody UpdateUserAdminRequest request,
             HttpServletRequest httpRequest) {
         return adminService.updateUser(principal, userId, request, clientIp(httpRequest));
+    }
+
+    /**
+     * Gives an account a role in one organisation. Open to ORG_ADMIN as well as
+     * SYS_ADMIN, unlike the wholesale edit above: an org admin can staff the
+     * organisations it administers without going through an operator. The
+     * organisation-level check is in the service — the gate here only knows the
+     * effective role, which is the same everywhere the account holds one.
+     */
+    @PutMapping("/users/{userId}/org-roles/{orgId}")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    public UserSummaryResponse grantOrgRole(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID userId, @PathVariable UUID orgId,
+            @Valid @RequestBody GrantOrgRoleRequest request,
+            HttpServletRequest httpRequest) {
+        return adminService.grantOrgRole(principal, userId, orgId, request, clientIp(httpRequest));
+    }
+
+    /** Takes an account's role in one organisation away, leaving the others. */
+    @DeleteMapping("/users/{userId}/org-roles/{orgId}")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    public UserSummaryResponse revokeOrgRole(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID userId, @PathVariable UUID orgId,
+            HttpServletRequest httpRequest) {
+        return adminService.revokeOrgRole(principal, userId, orgId, clientIp(httpRequest));
     }
 }

@@ -39,6 +39,7 @@ public class AdminDriftController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<DriftFindingResponse> listDriftFindings(
             @RequestParam(required = false) DriftFindingStatus status,
             @RequestParam(required = false) DriftFindingKind kind,

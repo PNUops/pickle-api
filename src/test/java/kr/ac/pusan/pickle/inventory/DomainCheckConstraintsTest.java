@@ -49,23 +49,36 @@ class DomainCheckConstraintsTest {
     }
 
     @Test
-    void userWithOrgIdIsRejected() {
-        assertThatThrownBy(() -> jdbc.update("""
-                insert into users (email, password_hash, name, role, org_id, status)
-                values (?, 'x', '학생', 'USER', ?, 'ACTIVE')
-                """, UUID.randomUUID() + "@pusan.ac.kr", orgId))
+    void nonOrgTierRoleInAManagedOrgIsRejected() {
+        Long userId = jdbc.queryForObject("""
+                insert into users (email, password_hash, name, role, status)
+                values (?, 'x', '학생', 'USER', 'ACTIVE') returning id
+                """, Long.class, UUID.randomUUID() + "@pusan.ac.kr");
+        assertThatThrownBy(() -> jdbc.update(
+                "insert into user_org_roles (user_id, org_id, role) values (?, ?, 'USER')",
+                userId, orgId))
                 .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_users_org_role");
+                .hasMessageContaining("chk_user_org_roles_role");
     }
 
+    /**
+     * V90 replaced users.org_id with a join table, so the old biconditional
+     * (org-tier iff an org is set) spans two tables and is no longer a CHECK.
+     * What the database still refuses is a second row for the same pair — the
+     * account holds one role per organisation, not a list of them.
+     */
     @Test
-    void orgAdminWithoutOrgIdIsRejected() {
-        assertThatThrownBy(() -> jdbc.update("""
+    void aSecondRoleInTheSameOrgIsRejected() {
+        Long userId = jdbc.queryForObject("""
                 insert into users (email, password_hash, name, role, status)
-                values (?, 'x', '기관관리자', 'ORG_ADMIN', 'ACTIVE')
-                """, UUID.randomUUID() + "@pusan.ac.kr"))
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_users_org_role");
+                values (?, 'x', '기관관리자', 'ORG_ADMIN', 'ACTIVE') returning id
+                """, Long.class, UUID.randomUUID() + "@pusan.ac.kr");
+        jdbc.update("insert into user_org_roles (user_id, org_id, role)"
+                + " values (?, ?, 'ORG_ADMIN')", userId, orgId);
+        assertThatThrownBy(() -> jdbc.update(
+                "insert into user_org_roles (user_id, org_id, role)"
+                        + " values (?, ?, 'ORG_MANAGER')", userId, orgId))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

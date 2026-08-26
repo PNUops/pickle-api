@@ -38,6 +38,7 @@ public class AdminCampusIpRequestController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminCampusIpRequestView> listAdminCampusIpRequests(
             @RequestParam(required = false) CampusIpRequestStatus status,
             @RequestParam(required = false) UUID vmId,

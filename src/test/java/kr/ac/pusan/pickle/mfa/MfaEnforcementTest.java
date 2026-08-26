@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** Admin-tier 2FA enrollment enforcement is ON (prod behaviour). */
+/** Sys-tier 2FA enrollment enforcement is ON (prod behaviour). */
 @SpringBootTest(properties = "pickle.mfa.enforce-admin=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -84,5 +84,27 @@ class MfaEnforcementTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /**
+     * The org tier is asked for 2FA, not required to have it (operator
+     * decision, 2026-08-25). Enforcement covers the two sys roles, which are
+     * the ones holding every destructive operation.
+     */
+    @Test
+    void enforcementCoversTheSysTierOnly() throws Exception {
+        User sysManager = createUser("mfa.enforce.sysmanager@pusan.ac.kr", UserRole.SYS_MANAGER);
+        mockMvc.perform(get("/api/v1/workspaces")
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(sysManager)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+
+        for (UserRole orgTier : new UserRole[] {UserRole.ORG_ADMIN, UserRole.ORG_MANAGER}) {
+            User orgAdmin = createUser("mfa.enforce." + orgTier.name().toLowerCase()
+                    + "@pusan.ac.kr", orgTier);
+            mockMvc.perform(get("/api/v1/workspaces")
+                            .header("Authorization", "Bearer " + jwtService.createAccessToken(orgAdmin)))
+                    .andExpect(status().isOk());
+        }
     }
 }

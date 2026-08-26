@@ -143,7 +143,7 @@ public class LlmApiKeyService {
             return key;
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
-            if (!key.getOrgId().equals(actor.orgId())) {
+            if (!actor.administers(key.getOrgId())) {
                 throw LlmKeyResourceAdapter.MESSAGES.notFound();
             }
             return key;

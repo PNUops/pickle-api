@@ -249,7 +249,6 @@ class AuditReadApiTest {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(UserRole.USER);
-        user.setOrgId(null);
         user.setStatus(UserStatus.ACTIVE);
         return userRepository.save(user);
     }

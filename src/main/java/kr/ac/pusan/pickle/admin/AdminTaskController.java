@@ -40,6 +40,7 @@ public class AdminTaskController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminTaskResponse> listAdminTasks(
             // Multi-value (v0.9.0): ?status=FAILED&status=NEEDS_ADMIN → OR filter;
             // a single value still binds to a one-element list (compat).

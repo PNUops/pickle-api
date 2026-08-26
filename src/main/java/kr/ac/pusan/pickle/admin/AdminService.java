@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -7,6 +8,7 @@ import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest;
+import kr.ac.pusan.pickle.admin.dto.GrantOrgRoleRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.UserSummaryResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -17,6 +19,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserOrgRoleService;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
@@ -24,20 +27,26 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * SYS_ADMIN-only org and user administration (contract tag {@code admin};
- * the role gate is enforced by {@code @PreAuthorize} on the controllers).
+ * Organisation and user administration (contract tag {@code admin}). Most of it
+ * is SYS_ADMIN-only and the role gate for those sits on the controller, but the
+ * organisation-role grant and revoke are open to ORG_ADMIN as well, and
+ * <b>their organisation-level check is here, not on the controller</b>: the gate
+ * sees only the effective role, which an account carries everywhere it holds
+ * any role at all.
  */
 @Service
 public class AdminService {
 
     private final OrgRepository orgRepository;
+    private final UserOrgRoleService userOrgRoleService;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public AdminService(OrgRepository orgRepository, UserRepository userRepository,
-            AuditService auditService) {
+            UserOrgRoleService userOrgRoleService, AuditService auditService) {
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
+        this.userOrgRoleService = userOrgRoleService;
         this.auditService = auditService;
     }
 
@@ -116,26 +125,48 @@ public class AdminService {
 
         UserRole previousRole = user.getRole();
         UserRole targetRole = request.role() != null ? request.role() : user.getRole();
+        List<Long> previousOrgIds = userOrgRoleService.scopeOf(user.getId()).orgIds();
         if (targetRole.isOrgTier()) {
-            // ORG_ADMIN and ORG_MANAGER both manage one org (per the permission matrix).
+            // This screen assigns one organisation at a time and replaces what
+            // the account had. Both halves may be left out when there is exactly
+            // one row to carry over, and neither may be left out when there are
+            // several. Guessing which organisation to keep would silently drop
+            // the rest; carrying the role over would take the account's HIGHEST
+            // role, which is not necessarily its role in the organisation being
+            // named, and would raise it there without anybody saying so. The
+            // narrow org-role endpoints are what edits one row at a time.
+            if (previousOrgIds.size() > 1) {
+                List<FieldValidationError> ambiguous = new ArrayList<>();
+                if (request.orgId() == null) {
+                    ambiguous.add(new FieldValidationError("orgId",
+                            "여러 기관을 관리하는 계정입니다. 어느 기관인지 지정해 주세요."));
+                }
+                if (request.role() == null) {
+                    ambiguous.add(new FieldValidationError("role",
+                            "여러 기관을 관리하는 계정입니다. 남길 역할을 지정해 주세요."));
+                }
+                if (!ambiguous.isEmpty()) {
+                    throw ApiException.validationFailed(ambiguous);
+                }
+            }
             Long orgId = request.orgId() != null
                     ? orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null)
-                    : user.getOrgId();
+                    : previousOrgIds.stream().findFirst().orElse(null);
             if (request.orgId() == null && orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "ORG_ADMIN·ORG_MANAGER 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
+                        "기관 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
             }
             if (orgId == null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "존재하지 않는 기관(orgId)입니다.")));
             }
-            user.setOrgId(orgId);
+            userOrgRoleService.replaceWithSingle(user, orgId, targetRole);
         } else {
             if (request.orgId() != null) {
                 throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
                         "이 역할에는 orgId를 지정할 수 없습니다.")));
             }
-            user.setOrgId(null);
+            userOrgRoleService.clear(user);
         }
 
         if (request.role() != null && request.role() != previousRole) {
@@ -146,19 +177,120 @@ public class AdminService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
-                        "orgId", orgPublicIdOrNull(user.getOrgId())), ip);
+                        "orgId", orgPublicIdsOrNone(
+                                userOrgRoleService.scopeOf(user.getId()).orgIds())), ip);
         return UserSummaryResponse.from(user);
     }
 
     /**
-     * The organisation the account now belongs to, named publicly. Map.of
-     * refuses a null value, so an account under no organisation keeps the
-     * literal {@code "null"} this field has always carried there.
+     * Gives an account a role in one organisation, or changes the one it has
+     * there. Additive: what it holds in other organisations is untouched.
+     *
+     * <p>The {@code @PreAuthorize} gate cannot decide this on its own. It sees
+     * the effective role, and an account that administers any organisation
+     * carries {@code ORG_ADMIN} everywhere — so the organisation-level check
+     * belongs here. A caller who does not administer the target organisation
+     * gets the same 404 an unknown organisation gets, because whether an
+     * organisation exists is not theirs to learn.
      */
-    private String orgPublicIdOrNull(Long orgId) {
-        return orgId == null ? "null"
-                : orgRepository.findById(orgId).map(org -> org.getPublicId().toString())
-                        .orElse("null");
+    @Transactional
+    public UserSummaryResponse grantOrgRole(AuthenticatedUser actor, UUID userId, UUID orgId,
+            GrantOrgRoleRequest request, String ip) {
+        if (!request.role().isOrgTier()) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("role",
+                    "기관 역할은 ORG_ADMIN, ORG_MANAGER, ORG_VIEWER 중 하나여야 합니다.")));
+        }
+        Long targetOrgId = requireGrantableOrg(actor, orgId);
+        User user = requireGrantableUser(actor, userId);
+        UserRole previousRole = user.getRole();
+        userOrgRoleService.grant(user, targetOrgId, request.role());
+        bumpIfRoleChanged(user, previousRole);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
+                "user", user.getPublicId(),
+                Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
+                        "grantedOrgId", String.valueOf(orgId),
+                        "grantedRole", request.role().name()), ip);
+        return UserSummaryResponse.from(user);
+    }
+
+    /**
+     * Takes an account's role in one organisation away. When it was the last,
+     * the account stops being org-tier and its outstanding tokens die with the
+     * role change.
+     */
+    @Transactional
+    public UserSummaryResponse revokeOrgRole(AuthenticatedUser actor, UUID userId, UUID orgId,
+            String ip) {
+        Long targetOrgId = requireGrantableOrg(actor, orgId);
+        User user = requireGrantableUser(actor, userId);
+        UserRole previousRole = user.getRole();
+        userOrgRoleService.revoke(user, targetOrgId);
+        bumpIfRoleChanged(user, previousRole);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
+                "user", user.getPublicId(),
+                Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
+                        "revokedOrgId", String.valueOf(orgId)), ip);
+        return UserSummaryResponse.from(user);
+    }
+
+    /** The org the grant names, if this actor may hand out roles in it. */
+    private Long requireGrantableOrg(AuthenticatedUser actor, UUID orgId) {
+        Long resolved = orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
+        if (resolved == null) {
+            throw orgNotFound();
+        }
+        if (actor.role().isOrgTier() && !actor.administers(resolved)) {
+            throw orgNotFound();
+        }
+        return resolved;
+    }
+
+    /**
+     * The account being edited. Two refusals: an actor may not edit itself, and
+     * the org tier may not touch a sys-tier account — otherwise an org admin
+     * could strip or re-grade the people above it.
+     */
+    private User requireGrantableUser(AuthenticatedUser actor, UUID userId) {
+        User user = userRepository.findByPublicId(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
+        if (actor.id().equals(user.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "자신의 기관 역할은 변경할 수 없습니다.");
+        }
+        if (user.getRole().isSysTier()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "시스템 관리자 계정의 기관 역할은 변경할 수 없습니다.");
+        }
+        return user;
+    }
+
+    /** A changed effective role invalidates the account's outstanding tokens. */
+    private void bumpIfRoleChanged(User user, UserRole previousRole) {
+        if (user.getRole() != previousRole) {
+            user.bumpTokenVersion();
+        }
+    }
+
+    private static ApiException orgNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                "리소스를 찾을 수 없습니다", "해당 기관을 찾을 수 없습니다.");
+    }
+
+    /**
+     * The organisations the account administers after the edit, named publicly
+     * and comma-joined. Map.of refuses a null value, so an account under no
+     * organisation keeps the literal {@code "null"} this field has always
+     * carried there.
+     */
+    private String orgPublicIdsOrNone(List<Long> orgIds) {
+        if (orgIds.isEmpty()) {
+            return "null";
+        }
+        return orgIds.stream()
+                .map(id -> orgRepository.findById(id).map(org -> org.getPublicId().toString())
+                        .orElse("null"))
+                .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static String normalize(String description) {

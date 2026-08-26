@@ -46,6 +46,7 @@ public class AdminPortMappingController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminPortMappingResponse> listAdminPortMappings(
             @RequestParam(required = false) UUID relayId,
             @RequestParam(required = false) UUID vmId,

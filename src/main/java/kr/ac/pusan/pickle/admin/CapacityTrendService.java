@@ -7,6 +7,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendPointResponse;
 import kr.ac.pusan.pickle.admin.dto.CapacityTrendResponse;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -61,7 +62,7 @@ public class CapacityTrendService {
                      on v.created_at < (d::date + 1)::timestamp at time zone 'Asia/Seoul'
                     and (v.deleted_at is null
                          or v.deleted_at >= (d::date + 1)::timestamp at time zone 'Asia/Seoul')
-                    and (?::bigint is null or v.org_id = ?)
+                    and %s
              group by d
              order by d
             """;
@@ -81,17 +82,19 @@ public class CapacityTrendService {
 
     @Transactional(readOnly = true)
     public CapacityTrendResponse trend(AuthenticatedUser actor, int days, UUID orgId) {
-        Long scopedOrgId = adminSummaryService.resolveOrgId(actor, orgId);
+        OrgScope scope = adminSummaryService.resolveOrgId(actor, orgId);
+        String orgs = scope.arrayParam();
         LocalDate to = ClockConfig.todayKst(clock);
         LocalDate from = to.minusDays(days - 1L);
-        List<CapacityTrendPointResponse> points = jdbcTemplate.query(TREND_SQL,
+        List<CapacityTrendPointResponse> points = jdbcTemplate.query(
+                TREND_SQL.formatted(scope.guard("v.org_id")),
                 (rs, rowNum) -> new CapacityTrendPointResponse(
                         rs.getObject("day", LocalDate.class),
                         rs.getLong("vm_count"),
                         rs.getLong("vcpu"),
                         rs.getLong("memory_mb"),
                         rs.getLong("disk_gb")),
-                from, to, scopedOrgId, scopedOrgId);
+                from, to, orgs, orgs);
         OrgHeadroomService.PlatformCapacity capacity = orgHeadroomService.capacity();
         return new CapacityTrendResponse(from, to, capacity.cpuThreads(), capacity.memoryMb(),
                 capacity.diskGb(), points);

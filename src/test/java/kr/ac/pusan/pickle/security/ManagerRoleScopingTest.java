@@ -108,14 +108,16 @@ class ManagerRoleScopingTest {
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
-        // the admin VMs / users / audit surfaces reject a foreign orgId with 404
+        // the admin VMs and audit surfaces reject a foreign orgId with 404
         get("/api/v1/admin/vms?orgId=" + orgB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound());
-        get("/api/v1/admin/users/" + foreignAdminB.getPublicId(), orgManagerAToken)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         get("/api/v1/admin/audit?orgId=" + orgB.getPublicId(), orgManagerAToken)
                 .andExpect(status().isNotFound());
+        // the account directory is the exception: a person may be supported by
+        // any organisation, and one who has requested nothing belongs to none,
+        // so every organisation's staff can find them (2026-08-25)
+        get("/api/v1/admin/users/" + foreignAdminB.getPublicId(), orgManagerAToken)
+                .andExpect(status().isOk());
 
         // and it can read its own org's dashboard + queue
         get("/api/v1/admin/summary", orgManagerAToken).andExpect(status().isOk());
@@ -274,10 +276,11 @@ class ManagerRoleScopingTest {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", name);
             user.setRole(role);
-            user.setOrgId(orgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+            return saved;
         });
     }
 

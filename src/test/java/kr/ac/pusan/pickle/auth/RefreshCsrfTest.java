@@ -44,6 +44,17 @@ class RefreshCsrfTest {
 
     private static final String PASSWORD = "Corr3ct-horse-battery!";
 
+    private static final java.util.concurrent.atomic.AtomicInteger ADDRESS =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** 테스트마다 다른 주소. 세 테스트가 서로의 IP 예산도 먹지 않게 한다. */
+    private String clientAddress = "10.99.0.1";
+
+    @org.junit.jupiter.api.BeforeEach
+    void assignClientAddress() {
+        clientAddress = "10.99.0." + (ADDRESS.incrementAndGet() % 250 + 1);
+    }
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -156,7 +167,7 @@ class RefreshCsrfTest {
                 .as("mail dispatcher drained").isTrue();
         MailMessage mail = mockMailSender.lastMessageTo(email);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
-        Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
         assertThat(matcher.find()).as("verification link with token in mail body").isTrue();
         postJson("/api/v1/auth/verify-email", Map.of("token", matcher.group(1)))
                 .andExpect(status().isOk());
@@ -167,9 +178,26 @@ class RefreshCsrfTest {
                 .andReturn();
     }
 
+    /**
+     * 이 스위트만의 클라이언트 주소.
+     *
+     * <p>요청 제한은 IP 로도 잡히고 그 창이 분당 10회다. 모든 테스트가 기본
+     * 127.0.0.1 을 쓰면 같은 분에 도는 다른 스위트의 로그인이 이 스위트의 예산을
+     * 먹는다. 2026-08-26 배포 게이트가 그렇게 멈췄다 — 인접한 스위트에 로그인
+     * 하나가 늘어난 것이 전부였고, 이 스위트의 세 번째 테스트가 429 를 받았다.
+     * 실패는 여기서 났지만 원인은 여기에 없었다.
+     */
+    private org.springframework.test.web.servlet.request.RequestPostProcessor fromThisCase() {
+        return request -> {
+            request.setRemoteAddr(clientAddress);
+            return request;
+        };
+    }
+
     private org.springframework.test.web.servlet.ResultActions postJson(String uri, Map<String, ?> body)
             throws Exception {
         return mockMvc.perform(post(uri)
+                .with(fromThisCase())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }

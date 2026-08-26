@@ -25,10 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Admin publishing views (contract tag {@code admin}): route/domain/certificate
- * listings (ORG_ADMIN self-org, SYS_ADMIN all), the sys-tier sync-all trigger,
- * and the post-hoc intervention ops (contract v0.18.0): force release, forced
- * re-verification, and single-route re-apply — all four admin roles with the
- * org tier limited to its own org's targets (cross-org answers 404).
+ * listings (the org tier for the organisations it holds a role in, the sys tier
+ * for all), the sys-tier sync-all trigger, and the post-hoc intervention ops
+ * (contract v0.18.0): force release, forced re-verification, and single-route
+ * re-apply — open to every admin role that may act, with the org tier limited
+ * to the organisations it operates (anything outside answers 404).
  */
 @RestController
 @RequestMapping("/api/v1/admin")
@@ -44,6 +45,7 @@ public class AdminPublishingController {
     }
 
     @GetMapping("/routes")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminRouteView> listAdminRoutes(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -54,6 +56,7 @@ public class AdminPublishingController {
     }
 
     @GetMapping("/domains")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminDomainView> listAdminDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
@@ -65,6 +68,7 @@ public class AdminPublishingController {
     }
 
     @GetMapping("/certificates")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public PageResponse<AdminCertificateView> listAdminCertificates(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,

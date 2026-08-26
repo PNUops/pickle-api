@@ -98,9 +98,10 @@ class AnnouncementTest {
                 .orElseGet(() -> userRepository.save(
                         new User("ann.other.admin@pusan.ac.kr", "{noop}unused", "공지타기관장")));
         otherOrgAdmin.setRole(UserRole.ORG_ADMIN);
-        otherOrgAdmin.setOrgId(otherOrg.getId());
         otherOrgAdmin.setStatus(UserStatus.ACTIVE);
         otherOrgAdmin = userRepository.save(otherOrgAdmin);
+        SeedFixtures.grantOrgRole(jdbcTemplate, otherOrgAdmin.getId(), otherOrg.getId(),
+                UserRole.ORG_ADMIN);
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         orgAdminToken = jwtService.createAccessToken(
@@ -243,9 +244,10 @@ class AnnouncementTest {
                 .orElseGet(() -> userRepository.save(
                         new User("ann.burst.admin@pusan.ac.kr", "{noop}unused", "공지폭주")));
         burster.setRole(UserRole.ORG_ADMIN);
-        burster.setOrgId(org.getId());
         burster.setStatus(UserStatus.ACTIVE);
         burster = userRepository.save(burster);
+        SeedFixtures.grantOrgRole(jdbcTemplate, burster.getId(), org.getId(),
+                UserRole.ORG_ADMIN);
         String bursterToken = jwtService.createAccessToken(burster);
         // rejected attempts (403/422/404) never consume the send budget —
         // the limit covers SENDS, not tries
@@ -348,7 +350,6 @@ class AnnouncementTest {
         User user = userRepository.findByEmail(email).orElseGet(() ->
                 userRepository.save(new User(email, "{noop}unused", name)));
         user.setRole(UserRole.USER);
-        user.setOrgId(null);
         user.setStatus(status);
         return userRepository.save(user);
     }

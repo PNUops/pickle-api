@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Dev/test mail sender: records messages in memory for tests and, when
- * {@code pickle.mail.mock-spool-path} is set (dev), appends the full body to a
+ * {@code pickle.mail.mock-spool-path} is set (dev), appends the text body to a
  * service-user-only spool file. The journal gets recipient/subject only —
  * verification links carry bearer tokens, and the dev journal is readable by
  * anyone with log access on a publicly reachable host. An unprofiled launch
@@ -62,8 +62,13 @@ public class MockMailSender implements MailSender {
                 Files.createFile(spoolPath,
                         PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
             }
-            String entry = "--- %s to=%s subject=%s%n%s%n".formatted(
-                    Instant.now(), message.to(), message.subject(), message.body());
+            // Text part only. The spool is read by hand and by the smoke
+            // scripts that grep a verification link out of it; an HTML copy
+            // would bury both under a page of markup for no gain.
+            String entry = "--- %s to=%s subject=%s%s%n%s%n".formatted(
+                    Instant.now(), message.to(), message.subject(),
+                    message.hasHtml() ? " html=%db".formatted(message.htmlBody().length()) : "",
+                    message.textBody());
             Files.writeString(spoolPath, entry, StandardCharsets.UTF_8,
                     StandardOpenOption.APPEND);
         } catch (IOException e) {

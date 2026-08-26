@@ -141,7 +141,7 @@ class AccountLifecycleTest {
 
         MailMessage mail = mockMailSender.lastMessageTo(user.getEmail());
         assertThat(mail).isNotNull();
-        Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
         assertThat(matcher.find()).isTrue();
         String token = matcher.group(1);
 

@@ -1,13 +1,10 @@
 package kr.ac.pusan.pickle.announcement;
 
 import kr.ac.pusan.pickle.announcement.dto.AnnouncementView;
-import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,17 +26,14 @@ public class AnnouncementQueryService {
 
     @Transactional(readOnly = true)
     public PageResponse<AnnouncementView> list(AuthenticatedUser actor, int page, int size) {
-        Page<Announcement> result;
-        if (actor.role().isSysTier()) {
-            result = announcementRepository.findAllByOrderByIdDesc(PageRequest.of(page, size));
-        } else {
-            if (actor.orgId() == null) {
-                throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                        "접근 권한이 없습니다", "관리 기관이 지정되지 않은 계정입니다.");
-            }
-            result = announcementRepository.findVisibleToOrgAdmin(AnnouncementScope.ALL,
-                    actor.orgId(), PageRequest.of(page, size));
-        }
+        // Visibility follows the sender's organisation. The org tier sees what
+        // the administrators of the organisations it holds a role in have sent,
+        // which since V90 can be several, plus every platform-wide broadcast.
+        PageRequest pageable = PageRequest.of(page, size);
+        Page<Announcement> result = actor.role().isOrgTier()
+                ? announcementRepository.findVisibleToOrgAdmin(
+                        AnnouncementScope.ALL, actor.readableOrgIds(), pageable)
+                : announcementRepository.findAllByOrderByIdDesc(pageable);
         return PageResponse.of(result.getContent().stream().map(this::toView).toList(), result);
     }
 

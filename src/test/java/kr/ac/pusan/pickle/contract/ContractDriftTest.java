@@ -128,6 +128,8 @@ class ContractDriftTest {
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",
             "PATCH /admin/users/{userId}",
+            "PUT /admin/users/{userId}/org-roles/{orgId}",
+            "DELETE /admin/users/{userId}/org-roles/{orgId}",
             "GET /admin/nodes",
             "PATCH /admin/nodes/{nodeId}",
             "GET /admin/os-images",

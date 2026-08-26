@@ -214,7 +214,7 @@ class VmDeletionTest {
         List<MailMessage> mails = mockMailSender.getMessages();
         assertThat(mails).extracting(MailMessage::to)
                 .contains(owner.getEmail(), member.getEmail(), SeedFixtures.ORGADMIN_EMAIL);
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다")
                 .contains("삭제 취소는 관리자만 가능합니다");
 
@@ -449,7 +449,7 @@ class VmDeletionTest {
         assertThat(eventTypes(vmId)).contains("SCHEDULE_DELETE");
         assertThat(auditCount("vm.schedule_delete", vmId)).isEqualTo(1);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body())
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody())
                 .contains("사용 종료일이 지난 VM 정리")
                 .contains("플랫폼은 VM 데이터를 백업하지 않으며 삭제 후 복구할 수 없습니다");
 
@@ -494,7 +494,7 @@ class VmDeletionTest {
         assertThat(eventTypes(selfVm)).contains("CANCEL_SCHEDULED_DELETE");
         assertThat(auditCount("vm.cancel_scheduled_delete", selfVm)).isEqualTo(1);
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("취소");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("취소");
 
         // ADMIN: schedule only — the power state is preserved
         long adminVm = createVm(VmStatus.RUNNING);
@@ -619,7 +619,7 @@ class VmDeletionTest {
                 Long.class);
         assertThat(enqueued).isPositive();
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).body()).contains("관리자");
+        assertThat(mockMailSender.lastMessageTo(owner.getEmail()).textBody()).contains("관리자");
 
         // already destroyed → 409
         setStatus(vmId, VmStatus.DELETED);
@@ -721,7 +721,7 @@ class VmDeletionTest {
         assertThat(ordered).containsExactly("PUT", "DELETE");
         // org admin notified of the final destruction
         notificationDispatchJob.dispatch();
-        assertThat(mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL).body()).contains("파기");
+        assertThat(mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL).textBody()).contains("파기");
     }
 
     @Test
@@ -905,8 +905,9 @@ class VmDeletionTest {
         }
         User otherAdmin = ensureUser("vmdel.otheradmin@pusan.ac.kr", "타기관관리자");
         otherAdmin.setRole(UserRole.ORG_ADMIN);
-        otherAdmin.setOrgId(otherOrgId);
         userRepository.save(otherAdmin);
+        SeedFixtures.grantOrgRole(jdbcTemplate, otherAdmin.getId(), otherOrgId,
+                UserRole.ORG_ADMIN);
         return jwtService.createAccessToken(otherAdmin);
     }
 

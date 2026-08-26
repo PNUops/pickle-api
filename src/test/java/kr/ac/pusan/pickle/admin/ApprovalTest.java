@@ -157,11 +157,12 @@ class ApprovalTest {
                 Map.of("comment", "타 기관 반려 시도"))
                 .andExpect(status().isNotFound());
 
-        // ORG_ADMIN cannot escape their org via the orgId filter (pinned)
+        // Naming an org outside the caller's own answers 404, the same as every
+        // other admin list. It used to pin silently to the caller's org, which
+        // said "here is your queue" to a request that asked for another's.
         mockMvc.perform(get("/api/v1/admin/requests?orgId=" + otherOrg.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[?(@.id == '%s')]".formatted(pub("requests", submitted))).exists());
+                .andExpect(status().isNotFound());
 
         // SYS_ADMIN sees all orgs and may filter by orgId
         mockMvc.perform(get("/api/v1/admin/requests").header("Authorization", "Bearer " + sysAdminToken))
@@ -175,6 +176,15 @@ class ApprovalTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(pub("requests", submitted).toString()));
+
+        // An id no organisation has narrows to nothing rather than to everything.
+        // The scope renders an empty IN list for this case, which is the one
+        // shape no other test reaches — an empty list that rendered as "no
+        // clause" would answer with every request instead of none.
+        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + SeedFixtures.UNKNOWN_ID)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test
@@ -735,10 +745,11 @@ class ApprovalTest {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User(email, "{test-no-login}", name);
             user.setRole(role);
-            user.setOrgId(orgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
-            return userRepository.save(user);
+            User saved = userRepository.save(user);
+            SeedFixtures.grantOrgRole(jdbcTemplate, saved.getId(), orgId, role);
+            return saved;
         });
     }
 

@@ -64,12 +64,30 @@ class PasswordSetTest {
     @Autowired
     private JwtService jwtService;
 
+    /**
+     * 요청 제한은 IP 로도 잡히고 그 창이 머신 전역 127.0.0.1 에 공유된다. 로그인
+     * 하나를 더 얹는 것만으로 다른 스위트의 로그인이 429 가 될 수 있어서(실제로
+     * 배포 게이트에서 `RefreshCsrfTest` 가 그렇게 터졌다) 이 스위트는 자기 주소를
+     * 쓴다. `GoogleOauthFlowTest` 가 같은 이유로 같은 일을 한다.
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger ADDRESS =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    private String clientAddress;
     private String passwordlessToken;
     private long passwordlessId;
     private String withPasswordToken;
 
+    private org.springframework.test.web.servlet.request.RequestPostProcessor fromThisCase() {
+        return request -> {
+            request.setRemoteAddr(clientAddress);
+            return request;
+        };
+    }
+
     @BeforeEach
     void seedBothShapes() {
+        clientAddress = "10.98.0." + (ADDRESS.incrementAndGet() % 250 + 1);
         String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
         passwordless = "set.password.none." + suffix + "@pusan.ac.kr";
         withPassword = "set.password.has." + suffix + "@pusan.ac.kr";
@@ -109,7 +127,8 @@ class PasswordSetTest {
         // whether or not one was there before: the bearer token that made the
         // call is itself dead afterwards, and the caller continues on the pair
         // the response carried.
-        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + passwordlessToken))
+        mockMvc.perform(get("/api/v1/me").with(fromThisCase())
+                        .header("Authorization", "Bearer " + passwordlessToken))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -118,6 +137,7 @@ class PasswordSetTest {
         // The gate is the whole of the authorization here — no current password
         // is asked for, so an access token alone must not be enough.
         mockMvc.perform(post("/api/v1/me/password")
+                        .with(fromThisCase())
                         .header("Authorization", "Bearer " + passwordlessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
@@ -155,6 +175,7 @@ class PasswordSetTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/auth/login")
+                        .with(fromThisCase())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "email", passwordless, "password", "new-horse-battery-staple!"))))
@@ -165,6 +186,7 @@ class PasswordSetTest {
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder setPassword(
             String accessToken, String reauthToken, String newPassword) throws Exception {
         return post("/api/v1/me/password")
+                .with(fromThisCase())
                 .header("Authorization", "Bearer " + accessToken)
                 .header(ReauthTestSupport.HEADER, reauthToken)
                 .contentType(MediaType.APPLICATION_JSON)

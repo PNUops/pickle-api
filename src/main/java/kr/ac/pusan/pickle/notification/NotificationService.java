@@ -18,6 +18,8 @@ import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 import kr.ac.pusan.pickle.notification.dto.NotificationView;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserOrgRole;
+import kr.ac.pusan.pickle.user.UserOrgRoleRepository;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -58,11 +60,13 @@ public class NotificationService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final ResourceAccessGrantRepository grantRepository;
     private final UserRepository userRepository;
+    private final UserOrgRoleRepository userOrgRoleRepository;
 
     public NotificationService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
             NotificationComposer composer, NotificationRepository notificationRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
-            ResourceAccessGrantRepository grantRepository, UserRepository userRepository) {
+            ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
+            UserOrgRoleRepository userOrgRoleRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.composer = composer;
@@ -70,6 +74,7 @@ public class NotificationService {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
         this.userRepository = userRepository;
+        this.userOrgRoleRepository = userOrgRoleRepository;
     }
 
     // ── publishing ─────────────────────────────────────────────────────────
@@ -182,9 +187,18 @@ public class NotificationService {
                 .toList();
     }
 
-    /** The org's ACTIVE ORG_ADMINs. */
+    /**
+     * The org's ACTIVE ORG_ADMINs — the accounts holding that role <i>in this
+     * org</i>. An account that administers another org and merely operates this
+     * one is not a recipient here, which is why the role is read from the
+     * membership row rather than from {@code users.role} (V90).
+     */
     public List<Long> orgAdminIds(long orgId) {
-        return userRepository.findByRoleAndOrgId(UserRole.ORG_ADMIN, orgId).stream()
+        List<Long> holderIds = userOrgRoleRepository
+                .findByOrgIdAndRole(orgId, UserRole.ORG_ADMIN).stream()
+                .map(UserOrgRole::getUserId)
+                .toList();
+        return userRepository.findAllById(holderIds).stream()
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .map(User::getId)
                 .toList();
