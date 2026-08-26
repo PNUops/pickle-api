@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -54,30 +55,39 @@ public class OpenRouterReconciler {
     }
 
     /**
-     * Whether OpenRouter's ceiling for this key differs from what we granted.
-     * Compared by value, not by object: {@code 1} and {@code 1.00} are the
-     * same limit. A null remote limit means unlimited over there, which never
-     * matches a granted amount.
+     * How OpenRouter's ceiling for this key differs from what we granted, or
+     * null when it does not. Amounts are compared by value, not by object:
+     * {@code 1} and {@code 1.00} are the same limit. A null remote limit means
+     * unlimited over there, which never matches a granted amount.
      *
      * <p>A key whose {@code include_byok_in_limit} is false counts as diverged
      * even when the amount matches, because the amount is then not being
      * enforced against BYOK inference at all. That is the more dangerous shape
      * of the two: a wrong ceiling is visible, a ceiling that counts nothing
      * looks exactly like a correct one.
+     *
+     * <p>The reason is returned rather than a boolean because it is shown to
+     * an operator. Four different states reach the same repair, and a finding
+     * that says the amount differs when the amounts are identical reads as the
+     * reconciler malfunctioning.
      */
-    private static boolean limitDiverged(LlmApiKey local, OpenRouterClient.ManagedKey managed) {
+    private static @Nullable String limitDivergence(
+            LlmApiKey local, OpenRouterClient.ManagedKey managed) {
         if (managed.limit() == null) {
-            return true;
+            return "상한이 걸려 있지 않음";
         }
         if (!managed.includeByokInLimit()) {
-            return true;
+            return "BYOK 사용분을 한도에서 세지 않음";
         }
         if (managed.limit().compareTo(local.getCreditLimit()) != 0) {
-            return true;
+            return "금액이 부여값과 다름";
         }
         String granted = local.getCreditLimitReset() == null ? null
                 : local.getCreditLimitReset().wireValue();
-        return !java.util.Objects.equals(granted, managed.limitReset());
+        if (!java.util.Objects.equals(granted, managed.limitReset())) {
+            return "리셋 주기가 부여값과 다름";
+        }
+        return null;
     }
 
     @Recurring(id = JOB_ID, interval = "PT30M")
@@ -119,7 +129,8 @@ public class OpenRouterReconciler {
             }
             boolean over = local.getStatus() == LlmApiKeyStatus.REVOKED
                     || (local.getExpiresAt() != null && local.getExpiresAt().isBefore(now));
-            if (!over && limitDiverged(local, managed)) {
+            String divergence = over ? null : limitDivergence(local, managed);
+            if (divergence != null) {
                 // The money limit is enforced THERE, so a limit that drifted
                 // from what we granted is a real spend ceiling nobody chose.
                 // Push ours back and report it: silent correction would hide
@@ -139,12 +150,15 @@ public class OpenRouterReconciler {
                 staleKeys.add(managed.hash());
                 findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
                         (reapplied
-                                ? "OpenRouter 금액 한도가 부여값과 달라 다시 적용했습니다: "
-                                : "OpenRouter 금액 한도가 부여값과 다른데 다시 적용하지 못했습니다: ")
-                                + local.getPublicId(),
-                        "{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"granted\":\"%s\",\"remote\":\"%s\"}"
-                                .formatted(managed.hash(), local.getPublicId(),
-                                        local.getCreditLimit(), managed.limit()),
+                                ? "OpenRouter 금액 한도를 다시 적용했습니다(%s): %s"
+                                : "OpenRouter 금액 한도를 다시 적용하지 못했습니다(%s): %s")
+                                .formatted(divergence, local.getPublicId()),
+                        ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"reason\":\"%s\","
+                                + "\"granted\":\"%s\",\"remote\":\"%s\","
+                                + "\"includeByokInLimit\":%s}")
+                                .formatted(managed.hash(), local.getPublicId(), divergence,
+                                        local.getCreditLimit(), managed.limit(),
+                                        managed.includeByokInLimit()),
                         managed.hash(), now);
                 continue;
             }

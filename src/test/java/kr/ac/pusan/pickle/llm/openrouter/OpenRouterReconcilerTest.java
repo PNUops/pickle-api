@@ -137,6 +137,11 @@ class OpenRouterReconcilerTest {
 
         verify(client).updateLimit("hash-uncounted", new BigDecimal("5.00"), null);
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-uncounted");
+        // The operator has to be able to act on this. Both amounts read 5, so
+        // a finding that says the amount differs reads as the reconciler
+        // malfunctioning and gets ignored.
+        assertThat(findingMessage("hash-uncounted")).contains("BYOK");
+        assertThat(findingMessage("hash-uncounted")).doesNotContain("금액이 부여값과 다름");
     }
 
     @Test
@@ -170,6 +175,12 @@ class OpenRouterReconcilerTest {
 
         // A failed read must not resolve anything for free.
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");
+    }
+
+    private String findingMessage(String dedupKey) {
+        return jdbcTemplate.queryForObject(
+                "select summary from drift_findings where dedup_key = ? and status = 'OPEN'",
+                String.class, dedupKey);
     }
 
     private List<String> openFindings(String kind) {
