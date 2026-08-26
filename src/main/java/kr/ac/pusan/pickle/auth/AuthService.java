@@ -474,11 +474,13 @@ public class AuthService {
      * adds a credential" — adding one is exactly how a stolen access token
      * turns into lasting access.
      *
-     * <p>Everything after the check is {@link #changePassword}'s tail,
-     * deliberately identical: the version bump plus refresh-token revocation
-     * end every other session, and the fresh pair keeps this one. A password
-     * appearing on an account is a session-invalidating event whether or not
-     * one was there before.
+     * <p>Everything after the check is {@link #changePassword}'s tail: the
+     * version bump plus refresh-token revocation end every other session, and
+     * the fresh pair keeps this one. A password appearing on an account is a
+     * session-invalidating event whether or not one was there before. The one
+     * thing not carried over is {@code clearLoginFailures} — there was no
+     * failed comparison here to clear, and this account had no password to
+     * fail against in the first place.
      */
     @Transactional
     public AuthResult setPassword(long userId, String newPassword, String ip, String userAgent) {

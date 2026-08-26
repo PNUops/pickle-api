@@ -220,6 +220,26 @@ class ProfileSurfaceTest {
         assertThat(userRepository.findByEmail(EMAIL).orElseThrow().getStudentNo()).isNull();
     }
 
+    @Test
+    void clearingThePositionAlsoClearsTheStudentNumberItBelongedTo() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
+
+        // The 학번 is not in this request at all, and it still goes. It belonged
+        // to the position being cleared, and a 학번 with no 직책 to hang off is
+        // the unvalidatable state the CHECK cannot refuse. Same drop as the
+        // 학부생-to-교수 switch, reached from the other direction.
+        Map<String, Object> body = new HashMap<>();
+        body.put("position", null);
+        updateProfile(body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.position").doesNotExist())
+                .andExpect(jsonPath("$.studentNo").doesNotExist())
+                // 소속 학과 was not mentioned either, and unlike 학번 it does not
+                // depend on the position, so it stays.
+                .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"));
+    }
+
     private org.springframework.test.web.servlet.ResultActions updateProfile(Map<String, ?> body)
             throws Exception {
         return mockMvc.perform(put("/api/v1/me/profile")

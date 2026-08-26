@@ -18,10 +18,12 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>이름 is the exception — present-but-null is refused (422) because
  * {@code users.name} is NOT NULL and an account with no name has nowhere to be
- * displayed. 학번 has no field of its own to clear against: it is derived from
- * the position by {@code ProfileValidator.normalizeStudentNo}, which drops it
- * for a position that does not carry one.
+ * displayed. 학번 is presence-tracked like the rest, but it is also derived:
+ * {@code ProfileValidator.normalizeStudentNo} drops it for a position that
+ * does not carry one, so a position change clears it whether or not the
+ * request said anything about it.
  */
+@Schema(minProperties = 1)
 public class UpdateProfileRequest {
 
     // Not @Nullable, unlike the two below: clearing 이름 is refused (422), so

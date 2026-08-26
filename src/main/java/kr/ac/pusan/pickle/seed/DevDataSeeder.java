@@ -391,6 +391,13 @@ public class DevDataSeeder implements ApplicationRunner {
                     + "/etc/pickle/api.env (there is no default: it would be public in git).");
         }
         userRepository.findByEmail(email).ifPresentOrElse(existing -> {
+            // Accounts seeded before the profile existed would meet the prompt on
+            // every dev login. Filled only when empty, so a value set by hand in
+            // a dev database survives the next boot.
+            if (!existing.isProfileComplete()) {
+                existing.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
+                userRepository.save(existing);
+            }
             if (!passwordEncoder.matches(password, existing.getPasswordHash())) {
                 log.info("Seed account {} hash differs from configured password — re-encoding "
                         + "(PICKLE_SEED_* env is the source of truth)", email);

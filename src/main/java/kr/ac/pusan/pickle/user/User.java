@@ -226,13 +226,19 @@ public class User {
      * rule spans two of the three fields, so a setter per field would let a
      * caller land a state the CHECK rejects and only find out at flush.
      */
-    public void setProfile(UserPosition position, @Nullable String studentNo, String departmentCode) {
+    public void setProfile(@Nullable UserPosition position, @Nullable String studentNo,
+            @Nullable String departmentCode) {
         this.position = position;
         this.studentNo = studentNo;
         this.departmentCode = departmentCode;
     }
 
-    /** Whether the account has filled in 직책·소속 (and 학번 where required). */
+    /**
+     * Whether the account has filled in 직책·소속 학과 (and 학번 where required).
+     *
+     * <p>False is an ordinary state since v0.46.0, not an incomplete signup:
+     * the console reads this to decide whether to ask, not whether to allow.
+     */
     public boolean isProfileComplete() {
         return position != null && departmentCode != null
                 && (!position.requiresStudentNo() || studentNo != null);

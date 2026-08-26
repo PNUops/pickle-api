@@ -110,9 +110,10 @@ class SignupValidationOrderTest {
 
     @Test
     void aSignupWithNoProfileAtAllIsAccepted() throws Exception {
-        // 직책 and 소속 학과 left out entirely (v0.46.0): the console collects
-        // them after the account exists. The ordering rules above still hold —
-        // they simply have nothing to reject.
+        // 직책 and 소속 학과 sent as explicit nulls (v0.46.0), which is what an
+        // absent JSON key binds to on a record anyway. The console collects them
+        // after the account exists. The ordering rules above still hold, they
+        // simply have nothing to reject.
         Map<String, Object> none = new LinkedHashMap<>();
         none.put("position", null);
         none.put("studentNo", null);
