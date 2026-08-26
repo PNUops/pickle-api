@@ -396,18 +396,29 @@ public class NotificationComposer {
                 payload(args, "requestId", "workspaceName"));
     }
 
-    /** Per-stage id (vm.expiry.d7 …); the last day (D-1) escalates to HIGH. */
+    /**
+     * The id keeps the stage ladder (vm.expiry.d7 …) the dedup design hangs on;
+     * the wording and importance use the real days left, which a late-created
+     * VM makes smaller than the stage.
+     */
     private Composed expiryNotice(Map<String, Object> args) {
-        int days = ((Number) args.get("days")).intValue();
-        return new Composed("vm.expiry.d" + days,
-                "VM 사용 종료 D-" + days + " — " + str(args, "vmName"),
-                """
-                VM '%s'의 사용 종료일(%s)이 %d일 남았습니다.
+        int stage = ((Number) args.get("days")).intValue();
+        int daysLeft = args.get("daysLeft") instanceof Number n ? n.intValue() : stage;
+        String vmName = str(args, "vmName");
+        String title = daysLeft <= 0
+                ? "VM 사용 종료 오늘 — " + vmName
+                : "VM 사용 종료 D-" + daysLeft + " — " + vmName;
+        String firstLine = daysLeft <= 0
+                ? "VM '%s'의 사용 종료일(%s)이 오늘입니다.".formatted(vmName, args.get("endDate"))
+                : "VM '%s'의 사용 종료일(%s)이 %d일 남았습니다.".formatted(
+                        vmName, args.get("endDate"), daysLeft);
+        return new Composed("vm.expiry.d" + stage, title,
+                firstLine + """
+
                 종료일이 지나면 VM이 자동 정지될 수 있습니다. 계속 사용하려면
-                관리자에게 기간 연장을 요청해 주세요.""".formatted(
-                        str(args, "vmName"), args.get("endDate"), days),
+                관리자에게 기간 연장을 요청해 주세요.""",
                 "/console/vms/" + args.get("vmId"),
-                days <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
+                daysLeft <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
                 payload(args, "vmId", "vmName", "endDate"));
     }
 

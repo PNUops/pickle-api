@@ -30,8 +30,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li><b>Notices</b>: for each dated live VM without a pending deletion, the
  *       applicable stage is the smallest configured D-day covering
  *       {@code daysLeft} (a VM created late skips straight to the current
- *       stage). The stage CAS ({@code last_expiry_notice_stage} descends only)
- *       plus the per-recipient dedup key ({@code vm-expiry:<id>:<endDate>:D<s>}
+ *       stage). The stage only drives dedup — the wording and importance use
+ *       the real {@code daysLeft}, so a late-created VM reads "D-2", not the
+ *       stage's "D-7". The stage CAS ({@code last_expiry_notice_stage} descends
+ *       only) plus the per-recipient dedup key
+ *       ({@code vm-expiry:<id>:<endDate>:D<s>}
  *       — the end date in the key re-arms notices after an extension) make
  *       re-runs send nothing. Stage mark + notification insert share one tx.</li>
  *   <li><b>Auto-stop</b> (when {@code vm_expiry_autostop_enabled}): VMs whose
@@ -113,12 +116,12 @@ public class VmExpiryJob {
             if (stage == null) {
                 continue;
             }
-            notifyStage(vm, stage);
+            notifyStage(vm, stage, daysLeft);
         }
     }
 
     /** Stage CAS + notification insert in one tx per VM (both or neither). */
-    private void notifyStage(Vm vm, int stage) {
+    private void notifyStage(Vm vm, int stage, long daysLeft) {
         transactionTemplate.executeWithoutResult(tx -> {
             if (vmRepository.markExpiryNoticeStage(vm.getId(), stage, Instant.now()) == 0) {
                 return; // this or an inner stage already went out
@@ -126,10 +129,11 @@ public class VmExpiryJob {
             List<Long> recipients = notificationService.vmResponsibleIds(vm);
             notificationService.publish(recipients, NotificationEvent.VM_EXPIRY_NOTICE,
                     Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(),
-                            "endDate", String.valueOf(vm.getEndDate()), "days", stage),
+                            "endDate", String.valueOf(vm.getEndDate()),
+                            "days", stage, "daysLeft", daysLeft),
                     "vm-expiry:%d:%s:D%d".formatted(vm.getId(), vm.getEndDate(), stage));
-            log.info("vm {} expiry notice D-{} sent to {} recipient(s) (end date {})",
-                    vm.getId(), stage, recipients.size(), vm.getEndDate());
+            log.info("vm {} expiry notice D-{} (stage D-{}) sent to {} recipient(s) (end date {})",
+                    vm.getId(), daysLeft, stage, recipients.size(), vm.getEndDate());
         });
     }
 
