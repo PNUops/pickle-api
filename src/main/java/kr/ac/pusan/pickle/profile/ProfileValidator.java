@@ -39,8 +39,17 @@ public class ProfileValidator {
         this.options = options;
     }
 
-    /** Throws 422 with one field error per broken rule. */
-    public void validate(UserPosition position, @Nullable String studentNo, String departmentCode) {
+    /**
+     * Throws 422 with one field error per broken rule.
+     *
+     * <p>직책 and 소속 학과 are both optional since v0.46.0 — an account that
+     * has filled in neither is an ordinary state, not an incomplete one — so
+     * every rule below is written to pass on null. What is still enforced is
+     * the pair: a position that carries a 학번 must have one, and a 소속 학과
+     * must be a code the catalogue knows.
+     */
+    public void validate(@Nullable UserPosition position, @Nullable String studentNo,
+            @Nullable String departmentCode) {
         List<FieldValidationError> errors = new ArrayList<>();
         String trimmed = studentNo == null ? null : studentNo.strip();
 
@@ -68,9 +77,20 @@ public class ProfileValidator {
     /**
      * The value to store: blank becomes null so a non-student never carries an
      * empty string, and the CHECK constraint sees the same thing the rule did.
+     *
+     * <p>A null position drops the 학번 as well, and that is not cosmetic.
+     * Since v0.46.0 직책 is optional, so {@code position == null} reaches here
+     * from an ordinary signup — and both the format check in {@link #validate}
+     * and the branch below used to be gated on {@code position != null},
+     * which left an unvalidated, unnormalised string as the only thing that
+     * ever reached the column. {@code chk_users_student_no} cannot catch it
+     * either: it is an implication whose first disjunct is {@code position is
+     * null}, so it is satisfied by construction. A 학번 with no 직책 to hang
+     * off is not a fact about anyone, so it is dropped exactly as a 교수's is.
      */
-    public static @Nullable String normalizeStudentNo(UserPosition position, @Nullable String studentNo) {
-        if (position != null && !position.requiresStudentNo()) {
+    public static @Nullable String normalizeStudentNo(@Nullable UserPosition position,
+            @Nullable String studentNo) {
+        if (position == null || !position.requiresStudentNo()) {
             return null;
         }
         if (studentNo == null) {

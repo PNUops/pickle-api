@@ -463,6 +463,54 @@ public class AuthService {
     }
 
     /**
+     * First-time password set ({@code POST /me/password}) for an account made
+     * through Google, which has never had one.
+     *
+     * <p>No current password is asked for because there is none to ask for.
+     * What replaces it is {@code @RequireReauth} on the controller: the caller
+     * proved within the last ten minutes that they hold the account, by
+     * password or by Google. That gate is the whole of the authorisation here,
+     * so it must never be removed on the reasoning that "the endpoint only
+     * adds a credential" — adding one is exactly how a stolen access token
+     * turns into lasting access.
+     *
+     * <p>Everything after the check is {@link #changePassword}'s tail: the
+     * version bump plus refresh-token revocation end every other session, and
+     * the fresh pair keeps this one. A password appearing on an account is a
+     * session-invalidating event whether or not one was there before. The one
+     * thing not carried over is {@code clearLoginFailures} — there was no
+     * failed comparison here to clear, and this account had no password to
+     * fail against in the first place.
+     */
+    @Transactional
+    public AuthResult setPassword(long userId, String newPassword, String ip, String userAgent) {
+        User user = userRepository.findById(userId).orElseThrow(AuthService::sessionUserGone);
+        rateLimitService.hit("password_set:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        rateLimitService.hit("password_set:acct", user.getEmail(),
+                RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        PasswordCredential.requireAbsent(user);
+        passwordPolicy.validate(newPassword);
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.bumpTokenVersion();
+        refreshTokenService.revokeAllForUser(user.getId());
+        var issued = refreshTokenService.issue(user.getId(), authProperties.refreshTokenTtl(), null,
+                userAgent, ip);
+
+        auditService.recordAfterCommit(user.getId(), user.getRole().name(),
+                AuditService.ACCOUNT_PASSWORD_CHANGE, "user", user.getPublicId(),
+                Map.of("firstTime", "true"), ip);
+        // The same notification the reset path sends when it turns a null hash
+        // into a value: what the holder needs to see is that their account now
+        // has a password, not which endpoint put it there.
+        notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PASSWORD_CHANGED, Map.of(),
+                "account_password_changed:" + user.getId() + ":" + user.getTokenVersion());
+        return new AuthResult(
+                new AuthTokenResponse(jwtService.createAccessToken(user), UserSummaryResponse.from(user)),
+                issued.rawToken());
+    }
+
+    /**
      * Password-reset request ({@code POST /auth/password-reset}). Uniform 202:
      * a non-existent or non-ACTIVE account is a silent no-op so account
      * existence is not disclosed.

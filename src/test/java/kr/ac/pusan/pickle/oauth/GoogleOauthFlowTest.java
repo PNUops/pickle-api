@@ -128,7 +128,10 @@ class GoogleOauthFlowTest {
         // verification mail would have gone to.
         assertThat(created.getStatus()).isEqualTo(UserStatus.ACTIVE);
         assertThat(created.hasPassword()).isFalse();
-        assertThat(created.isProfileComplete()).isTrue();
+        // Not a defect: the onboarding form no longer asks, so a brand-new
+        // Google account starts without a profile and the console prompts for
+        // one after it is inside.
+        assertThat(created.isProfileComplete()).isFalse();
     }
 
     @Test
@@ -418,6 +421,39 @@ class GoogleOauthFlowTest {
                         Map.of("code", "stub-authorization-code", "state", state))));
     }
 
+    @Test
+    void aCallerThatDoesSendAProfileStillHasItStored() throws Exception {
+        // The onboarding form stopped asking, but the fields are still on the
+        // schema and a caller holding the values may send them. Dropping the
+        // form must not quietly drop the acceptance.
+        Flow flow = start();
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims(
+                "sub-with-profile", "with.profile@pusan.ac.kr", flow.nonce()));
+        MvcResult result = callback(flow.state())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("REGISTRATION_REQUIRED"))
+                .andReturn();
+        String token = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("registrationToken").asString();
+
+        mockMvc.perform(post("/api/v1/auth/oauth/google/complete")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "registrationToken", token,
+                                "name", "구글가입",
+                                "position", "PROFESSOR",
+                                "departmentCode", "COMPUTER_SCIENCE",
+                                "consents", List.of(
+                                        Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                                        Map.of("docType", "PRIVACY_POLICY", "version", 1))))))
+                .andExpect(status().isOk());
+
+        User created = userRepository.findByEmail("with.profile@pusan.ac.kr").orElseThrow();
+        assertThat(created.isProfileComplete()).isTrue();
+        assertThat(created.getDepartmentCode()).isEqualTo("COMPUTER_SCIENCE");
+    }
+
     private org.springframework.test.web.servlet.ResultActions complete(String registrationToken,
             String email) throws Exception {
         return mockMvc.perform(post("/api/v1/auth/oauth/google/complete")
@@ -426,9 +462,9 @@ class GoogleOauthFlowTest {
                 .content(objectMapper.writeValueAsString(Map.of(
                         "registrationToken", registrationToken,
                         "name", "구글가입",
-                        "position", "STUDENT_UNDERGRAD",
-                        "studentNo", "202099999",
-                        "departmentCode", "COMPUTER_SCIENCE",
+                        // No 직책 or 소속 학과: since v0.46.0 the onboarding form
+                        // is 이름 and the consents, and the profile is asked for
+                        // later inside the console.
                         "consents", List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))));

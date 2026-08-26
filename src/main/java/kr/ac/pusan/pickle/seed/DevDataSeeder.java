@@ -6,7 +6,9 @@ import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
+import kr.ac.pusan.pickle.profile.DepartmentCatalog;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserPosition;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -389,6 +391,13 @@ public class DevDataSeeder implements ApplicationRunner {
                     + "/etc/pickle/api.env (there is no default: it would be public in git).");
         }
         userRepository.findByEmail(email).ifPresentOrElse(existing -> {
+            // Accounts seeded before the profile existed would meet the prompt on
+            // every dev login. Filled only when empty, so a value set by hand in
+            // a dev database survives the next boot.
+            if (!existing.isProfileComplete()) {
+                existing.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
+                userRepository.save(existing);
+            }
             if (!passwordEncoder.matches(password, existing.getPasswordHash())) {
                 log.info("Seed account {} hash differs from configured password — re-encoding "
                         + "(PICKLE_SEED_* env is the source of truth)", email);
@@ -402,6 +411,9 @@ public class DevDataSeeder implements ApplicationRunner {
             user.setOrgId(orgId);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
+            // Filled in so the profile prompt does not greet every dev login:
+            // a prompt that is always on screen cannot be verified.
+            user.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
             user = userRepository.save(user);
             personalWorkspaceService.ensurePersonalWorkspace(user);
         });

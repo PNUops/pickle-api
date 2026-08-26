@@ -1,27 +1,108 @@
 package kr.ac.pusan.pickle.user.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import kr.ac.pusan.pickle.user.UserPosition;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Contract schema {@code UpdateProfileRequest} — PUT /me/profile.
+ * Contract schema {@code UpdateProfileRequest} — PUT /me/profile
+ * ({@code minProperties: 1}).
  *
- * <p>The same three fields signup collects, because this is how an account
- * created before they existed fills them in, and how anyone corrects a 소속
- * after transferring. The cross-field rule (학번 for a student position) and
- * the department lookup are ProfileValidator's, exactly as at signup.
+ * <p>Presence-tracked rather than a record, and that is load-bearing. 직책 and
+ * 소속 학과 became optional in v0.46.0, so a record could no longer tell "leave
+ * this alone" from "clear this": the account screen sends only 이름 when the
+ * display name changes, and a record would carry three nulls along with it and
+ * wipe the profile without an error. Absent means unchanged, an explicit
+ * {@code null} means clear.
+ *
+ * <p>이름 is the exception — present-but-null is refused (422) because
+ * {@code users.name} is NOT NULL and an account with no name has nowhere to be
+ * displayed. 학번 is presence-tracked like the rest, but it is also derived:
+ * {@code ProfileValidator.normalizeStudentNo} drops it for a position that
+ * does not carry one, so a position change clears it whether or not the
+ * request said anything about it.
  */
-public record UpdateProfileRequest(
-        @NotNull(message = "직책을 선택해 주세요.")
-        UserPosition position,
+@Schema(minProperties = 1)
+public class UpdateProfileRequest {
 
-        @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
-        @Nullable String studentNo,
+    // Not @Nullable, unlike the two below: clearing 이름 is refused (422), so
+    // the published schema must not offer null as a value. The same split as
+    // UpdateOrgRequest, where name is required-if-present and description is
+    // clearable.
+    @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
+    private String name;
+    private boolean nameSet;
 
-        @NotBlank(message = "소속을 선택해 주세요.")
-        @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
-        String departmentCode) {
+    private @Nullable UserPosition position;
+    private boolean positionSet;
+
+    @Size(max = 20, message = "학번은 20자 이하여야 합니다.")
+    private @Nullable String studentNo;
+    private boolean studentNoSet;
+
+    @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
+    private @Nullable String departmentCode;
+    private boolean departmentCodeSet;
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+        this.nameSet = true;
+    }
+
+    @Schema(hidden = true)
+    public boolean isNameSet() {
+        return nameSet;
+    }
+
+    public @Nullable UserPosition getPosition() {
+        return position;
+    }
+
+    public void setPosition(@Nullable UserPosition position) {
+        this.position = position;
+        this.positionSet = true;
+    }
+
+    @Schema(hidden = true)
+    public boolean isPositionSet() {
+        return positionSet;
+    }
+
+    public @Nullable String getStudentNo() {
+        return studentNo;
+    }
+
+    public void setStudentNo(@Nullable String studentNo) {
+        this.studentNo = studentNo;
+        this.studentNoSet = true;
+    }
+
+    @Schema(hidden = true)
+    public boolean isStudentNoSet() {
+        return studentNoSet;
+    }
+
+    public @Nullable String getDepartmentCode() {
+        return departmentCode;
+    }
+
+    public void setDepartmentCode(@Nullable String departmentCode) {
+        this.departmentCode = departmentCode;
+        this.departmentCodeSet = true;
+    }
+
+    @Schema(hidden = true)
+    public boolean isDepartmentCodeSet() {
+        return departmentCodeSet;
+    }
+
+    @Schema(hidden = true)
+    public boolean isEmpty() {
+        return !nameSet && !positionSet && !studentNoSet && !departmentCodeSet;
+    }
 }

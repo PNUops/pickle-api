@@ -192,6 +192,8 @@ class ContractDriftTest {
             "POST /auth/password-reset/confirm",
             "POST /me/withdraw",
             "PUT /me/password",
+            // First-time password set for a Google account (contract v0.46.0).
+            "POST /me/password",
             // Admin user surface (contract v0.9.0).
             "GET /admin/users",
             "GET /admin/users/{userId}",

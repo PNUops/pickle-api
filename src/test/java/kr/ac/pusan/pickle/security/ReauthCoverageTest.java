@@ -47,6 +47,11 @@ class ReauthCoverageTest {
             // mirror of adding one: a hijacked session that could quietly
             // unlink the owner's provider would lock them out of their account.
             "DELETE /me/identities/{provider}",
+            // Setting the first password asks for no current one, because there
+            // is none to ask for. The gate is not an extra precaution here, it
+            // is the only authorization the endpoint has: without it an access
+            // token alone would plant a credential that outlives the token.
+            "POST /me/password",
             // Minting or replacing a key's secret hands somebody a working
             // credential, and revoking takes one away; both step up the way
             // reading a VM password does.
