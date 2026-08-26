@@ -25,8 +25,11 @@ comment on table user_org_roles is
     'Organisations an account administers, and its role in each. users.role is '
     'the highest role held here, or USER when the account holds none. That '
     'biconditional spans two tables and so is no longer a CHECK: the grant and '
-    'revoke path is its single writer, and an org-tier account that somehow '
-    'holds no row here fails closed (the scope resolvers answer 403).';
+    'revoke path is its single writer. An org-tier account that somehow holds '
+    'no row here still reads what any administrator reads, because reads span '
+    'every organisation; what it cannot do is write. Every write guard asks '
+    'this table and answers the cross-org 404 when the answer is empty, and '
+    'the audit log and the organisation announcement answer 403.';
 
 create index user_org_roles_org_id_idx on user_org_roles (org_id);
 

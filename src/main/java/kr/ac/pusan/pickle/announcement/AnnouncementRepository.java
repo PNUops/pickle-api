@@ -1,35 +1,20 @@
 package kr.ac.pusan.pickle.announcement;
 
-import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 public interface AnnouncementRepository extends JpaRepository<Announcement, Long> {
 
     /** Resolution of the identifier this row wears outside the API boundary. */
     Optional<Announcement> findByPublicId(UUID publicId);
 
-    Page<Announcement> findAllByOrderByIdDesc(Pageable pageable);
-
     /**
-     * Sender-org visibility for ORG_ADMIN (contract {@code listAnnouncements}):
-     * announcements authored by their own org's admins, plus every ALL-scope
-     * broadcast. A SYS_ADMIN's WORKSPACE send stays invisible here even when the
-     * workspace has members of the caller's org — the recipients see it in their
-     * own inboxes instead.
+     * Every announcement, newest first. The org tier used to see only what its
+     * own organisation's administrators had sent; since 2026-08-25 the listing
+     * spans every organisation, so one query serves all admin roles.
      */
-    @Query("""
-            select a from Announcement a
-             where a.scope = :allScope
-                or exists (select 1 from UserOrgRole r
-                            where r.userId = a.authorId and r.orgId in :orgIds)
-             order by a.id desc
-            """)
-    Page<Announcement> findVisibleToOrgAdmin(@Param("allScope") AnnouncementScope allScope,
-            @Param("orgIds") Collection<Long> orgIds, Pageable pageable);
+    Page<Announcement> findAllByOrderByIdDesc(Pageable pageable);
 }

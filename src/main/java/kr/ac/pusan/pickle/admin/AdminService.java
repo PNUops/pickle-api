@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -123,14 +124,26 @@ public class AdminService {
         List<Long> previousOrgIds = userOrgRoleService.scopeOf(user.getId()).orgIds();
         if (targetRole.isOrgTier()) {
             // This screen assigns one organisation at a time and replaces what
-            // the account had. Leaving orgId out is only meaningful when there
-            // is exactly one to carry over: guessing which of several to keep
-            // would silently drop the rest, and could raise the account's role
-            // in an organisation the operator never named. Editing an account
-            // that administers several therefore has to say which one.
-            if (request.orgId() == null && previousOrgIds.size() > 1) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "여러 기관을 관리하는 계정입니다. 어느 기관인지 지정해 주세요.")));
+            // the account had. Both halves may be left out when there is exactly
+            // one row to carry over, and neither may be left out when there are
+            // several. Guessing which organisation to keep would silently drop
+            // the rest; carrying the role over would take the account's HIGHEST
+            // role, which is not necessarily its role in the organisation being
+            // named, and would raise it there without anybody saying so. The
+            // narrow org-role endpoints are what edits one row at a time.
+            if (previousOrgIds.size() > 1) {
+                List<FieldValidationError> ambiguous = new ArrayList<>();
+                if (request.orgId() == null) {
+                    ambiguous.add(new FieldValidationError("orgId",
+                            "여러 기관을 관리하는 계정입니다. 어느 기관인지 지정해 주세요."));
+                }
+                if (request.role() == null) {
+                    ambiguous.add(new FieldValidationError("role",
+                            "여러 기관을 관리하는 계정입니다. 남길 역할을 지정해 주세요."));
+                }
+                if (!ambiguous.isEmpty()) {
+                    throw ApiException.validationFailed(ambiguous);
+                }
             }
             Long orgId = request.orgId() != null
                     ? orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null)
