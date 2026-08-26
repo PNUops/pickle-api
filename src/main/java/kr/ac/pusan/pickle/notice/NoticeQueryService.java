@@ -220,9 +220,16 @@ public class NoticeQueryService {
      * would keep returning well-formed answers while disagreeing about who is
      * in the organisation, and nothing would report it.</p>
      *
-     * <p>The organisations the account is granted a role in are unioned in on
-     * top, exactly as the announcement fan-out does, because the canonical
-     * fragment covers the derived half only. The rule's {@code users.status = 'ACTIVE'} condition is
+     * <p>The organisations the account is granted an <b>operating</b> role in
+     * are unioned in on top, exactly as the announcement fan-out does, because
+     * the canonical fragment covers the derived half only. Operating, not
+     * readable: an ORG notice is addressed to that organisation's people, and a
+     * viewer is an outsider permitted to look in rather than one of them. They
+     * reach these notices through the management surface, which exists for
+     * looking in, and not through the board, which is where an organisation's
+     * own people read what was addressed to them. The fan-out draws the same
+     * line for an ORG announcement, and one product may not hold two answers to
+     * who "이 기관 사람" are. The rule's {@code users.status = 'ACTIVE'} condition is
      * carried by the fragment itself, so a suspended account would derive no
      * organisation here even if it could reach this method — which it cannot,
      * since the JWT filter refuses to build a principal for one.</p>
@@ -230,7 +237,7 @@ public class NoticeQueryService {
     private Set<Long> readerOrgIds(AuthenticatedUser reader) {
         Set<Long> orgIds = new HashSet<>(jdbcTemplate.queryForList(
                 OrgMembershipSql.orgIdsOfMember("?"), Long.class, reader.id()));
-        orgIds.addAll(reader.readableOrgIds());
+        orgIds.addAll(reader.operatedOrgIds());
         return orgIds;
     }
 

@@ -418,6 +418,41 @@ class NoticeTest {
     }
 
     @Test
+    void aViewerLooksInThroughManagementAndNotThroughTheBoard() throws Exception {
+        // An ORG notice is addressed to that organisation's people. A viewer is
+        // an outsider permitted to look in, so it reaches the notice through the
+        // management surface, which exists for looking in, and not through the
+        // board, where an organisation's own people read what was addressed to
+        // them. The announcement fan-out draws the same line.
+        User orgViewer = ensureOrgUser("notice.board.viewer@pusan.ac.kr", "게시판열람자",
+                org.getId(), UserRole.ORG_VIEWER);
+        String viewerToken = jwtService.createAccessToken(orgViewer);
+
+        // Not on the board, and the notice answers as one that does not exist.
+        publicList(viewerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(platformPublic))
+                .andExpect(listHas(platformUsers))
+                .andExpect(listOmits(ownOrgNotice));
+        publicGet(viewerToken, ownOrgNotice).andExpect(status().isNotFound());
+
+        // But present on the management surface, which is the pair that pins the
+        // distinction: this is about which definition of "이 기관 사람" governs
+        // the board, not about withholding the notice from them.
+        adminList(viewerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(ownOrgNotice));
+
+        // An operating role in the same organisation does reach the board: they
+        // are the organisation's own people, not outsiders looking in.
+        User orgManager = ensureOrgUser("notice.board.mgr@pusan.ac.kr", "게시판운영자",
+                org.getId(), UserRole.ORG_MANAGER);
+        publicList(jwtService.createAccessToken(orgManager))
+                .andExpect(status().isOk())
+                .andExpect(listHas(ownOrgNotice));
+    }
+
+    @Test
     void anOrgNoticeCanNeverBePublic() throws Exception {
         create(sysAdminToken, body(Map.of(
                 "title", "기관 공개 시도", "scope", "ORG", "audience", "PUBLIC",
