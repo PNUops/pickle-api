@@ -151,6 +151,16 @@ public class AuditService {
     // Admin surfaces (contract v0.5.0).
     public static final String SETTING_UPDATE = "setting.update";
     public static final String ANNOUNCEMENT_CREATE = "announcement.create";
+    // 공지사항. The target is always the notice, images included — an image has
+    // no standing of its own, and naming it as a target would scatter one
+    // notice's history across rows nobody can join back together. The detail
+    // map carries whitelisted display fields (title, scope, audience, which
+    // fields an edit changed) and never the body bytes of an image.
+    public static final String NOTICE_CREATE = "notice.create";
+    public static final String NOTICE_UPDATE = "notice.update";
+    public static final String NOTICE_DELETE = "notice.delete";
+    public static final String NOTICE_IMAGE_ADD = "notice.image_add";
+    public static final String NOTICE_IMAGE_DELETE = "notice.image_delete";
     // Web terminal (contract v0.10.0, internal route contract). Actor is
     // the mint-time user (session-start/end) or the admin (force_terminate). The
     // detail map NEVER carries terminal frame/keystroke content — only lifecycle

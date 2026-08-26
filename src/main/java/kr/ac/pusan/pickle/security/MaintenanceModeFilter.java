@@ -32,7 +32,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * {@code /auth/mfa} runs with an anonymous principal, so gating it would 503
  * every enrolled admin at stage 2; deploy health also refreshes tokens),
  * {@code /meta/**} (the status poll that surfaces the notice,
- * per contract), the actuator health endpoint (the deploy health gate polls it —
+ * per contract), {@code /notices/**} (a maintenance window is precisely when a
+ * notice has to stay readable — it is where the explanation of the outage is
+ * published; everything under that prefix is a GET, so exempting it opens no
+ * write path), the actuator health endpoint (the deploy health gate polls it —
  * a 503 would roll back a good deploy), and the springdoc {@code /openapi} document.
  * The admin tier is matched by role <em>name</em> — ORG_ADMIN/SYS_ADMIN plus the
  * ORG_MANAGER/SYS_MANAGER operator-tier strings — so no change is needed when
@@ -95,6 +98,7 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
                 || "/api/v1/auth/refresh".equals(uri)
                 || "/api/v1/auth/logout".equals(uri)
                 || uri.startsWith("/api/v1/meta")
+                || uri.startsWith("/api/v1/notices")
                 || uri.startsWith("/api/v1/openapi")
                 || uri.startsWith("/actuator/health");
     }

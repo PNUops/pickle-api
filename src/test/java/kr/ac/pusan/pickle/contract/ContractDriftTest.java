@@ -254,7 +254,17 @@ class ContractDriftTest {
             "GET /llm-keys/{keyId}/access",
             "POST /llm-keys/{keyId}/access",
             "PATCH /llm-keys/{keyId}/access/{grantId}",
-            "DELETE /llm-keys/{keyId}/access/{grantId}");
+            "DELETE /llm-keys/{keyId}/access/{grantId}",
+            // 공지사항: the public board and its management surface.
+            "GET /notices",
+            "GET /notices/{noticeId}",
+            "GET /notices/{noticeId}/images/{imageId}",
+            "GET /admin/notices",
+            "POST /admin/notices",
+            "PATCH /admin/notices/{noticeId}",
+            "DELETE /admin/notices/{noticeId}",
+            "POST /admin/notices/{noticeId}/images",
+            "DELETE /admin/notices/{noticeId}/images/{imageId}");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

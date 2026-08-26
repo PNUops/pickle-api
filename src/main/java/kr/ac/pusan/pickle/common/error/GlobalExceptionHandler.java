@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -88,6 +89,21 @@ public class GlobalExceptionHandler {
         ProblemDetail problem = problem(HttpStatus.FORBIDDEN, "접근 권한이 없습니다",
                 "이 작업을 수행할 권한이 없습니다.", ErrorCodes.ACCESS_DENIED, request);
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(problem);
+    }
+
+    /**
+     * A multipart body past {@code spring.servlet.multipart.max-file-size}
+     * never reaches its handler — the parse aborts first. Notice images are the
+     * only multipart upload the API takes and the cap is set to exactly their
+     * per-image limit, so this is that refusal arriving early, and it must read
+     * the same as the one the service raises rather than as a 500.
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ProblemDetail> handleUploadTooLarge(MaxUploadSizeExceededException ex,
+            HttpServletRequest request) {
+        ProblemDetail problem = problem(HttpStatus.PAYLOAD_TOO_LARGE, "이미지가 너무 큽니다",
+                "이미지 한 장은 2 MiB까지 첨부할 수 있습니다.", ErrorCodes.NOTICE_IMAGE_TOO_LARGE, request);
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(problem);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
