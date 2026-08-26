@@ -83,7 +83,7 @@ class AuthFlowTest {
         // on a background thread, so wait for the dispatcher to drain first)
         MailMessage mail = flushMail(EMAIL);
         assertThat(mail).as("verification mail recorded by MockMailSender").isNotNull();
-        Matcher matcher = TOKEN_IN_LINK.matcher(mail.body());
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
         assertThat(matcher.find()).as("verification link with token in mail body").isTrue();
         String verificationToken = matcher.group(1);
 
@@ -95,8 +95,11 @@ class AuthFlowTest {
                 .andExpect(jsonPath("$.message").isNotEmpty());
         MailMessage notice = flushMail(EMAIL);
         assertThat(notice.subject()).contains("가입 안내");
-        assertThat(notice.body()).contains("이미 가입된 계정");
-        assertThat(notice.body()).as("a notice mail carries no token").doesNotContain("token=");
+        assertThat(notice.textBody()).contains("이미 가입된 계정");
+        assertThat(notice.textBody()).as("a notice mail carries no token").doesNotContain("token=");
+        // the HTML part is held to the same rule, and carries no link at all
+        assertThat(notice.htmlBody()).as("a notice mail carries no token")
+                .doesNotContain("token=").doesNotContain("<a ");
 
         // ...and a request that fails validation fails identically for a taken and
         // a free address, so the validation order is not an oracle either

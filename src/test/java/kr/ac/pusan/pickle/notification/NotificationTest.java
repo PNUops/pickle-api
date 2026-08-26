@@ -178,7 +178,12 @@ class NotificationTest {
         MailMessage mail = mockMailSender.lastMessageTo(alice.getEmail());
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).isEqualTo("[Pickle] 발송 확인");
-        assertThat(mail.body()).contains("Pickle 운영팀");
+        assertThat(mail.textBody()).contains("Pickle 운영팀");
+        // the branded HTML part rides along; the text part above is the fallback
+        assertThat(mail.htmlBody()).isNotNull()
+                .contains("<!DOCTYPE html>")
+                .contains("발송 확인")
+                .contains("max-width:600px");
         assertThat(jdbcTemplate.queryForMap("""
                 select status::text as status, attempts, sent_at from notifications
                  where user_id = ? order by id desc limit 1
@@ -186,6 +191,27 @@ class NotificationTest {
                 .containsEntry("status", "SENT")
                 .containsEntry("attempts", 1)
                 .hasEntrySatisfying("sent_at", sentAt -> assertThat(sentAt).isNotNull());
+    }
+
+    @Test
+    void dispatcherLinksBackToTheConsoleOnlyWhenTheRowCarriesAPath() {
+        // an announcement has no link_path; a VM notice does
+        publishAnnouncement(alice.getId(), "링크 없는 알림", null);
+        dispatchJob.dispatch();
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .doesNotContain("<a ");
+
+        String vmPublicId = UUID.randomUUID().toString();
+        notificationService.publish(alice.getId(), NotificationEvent.VM_EXPIRY_NOTICE,
+                Map.of("vmId", vmPublicId, "vmName", "vm-link", "endDate", "2026-09-01",
+                        "days", 7, "daysLeft", 2L),
+                null);
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .contains("콘솔에서 확인")
+                .contains("https://pickle.pusan.ac.kr/console/vms/" + vmPublicId);
     }
 
     @Test

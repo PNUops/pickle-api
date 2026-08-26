@@ -76,8 +76,10 @@ public class RelayContactMonitorJob {
                     relay.get("name"), relay.get("last_contact_at"));
             notificationService.publish(notificationService.sysAdminIds(),
                     NotificationEvent.RELAY_CONTACT_LOST,
+                    // the raw timestamp, so the composer can render it in KST —
+                    // the update's `is not null` guard keeps Map.of from seeing null
                     Map.of("relayId", relay.get("id"), "relayName", relay.get("name"),
-                            "lastContactAt", String.valueOf(relay.get("last_contact_at"))),
+                            "lastContactAt", relay.get("last_contact_at")),
                     null);
         }
     }

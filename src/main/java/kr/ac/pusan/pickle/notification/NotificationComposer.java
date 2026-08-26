@@ -2,8 +2,10 @@ package kr.ac.pusan.pickle.notification;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.access.ResourceType;
@@ -300,7 +302,7 @@ public class NotificationComposer {
 
                     릴레이 인스턴스와 터널 상태를 확인해 주세요. 마지막으로 적용된
                     포워딩 규칙은 릴레이에 그대로 남아 있습니다.""".formatted(
-                            str(args, "relayName"), str(args, "lastContactAt")),
+                            str(args, "relayName"), kstOrUnknown(args, "lastContactAt")),
                     "/admin/network", event.defaultImportance(),
                     payload(args, "relayId", "relayName"));
             case RELAY_NEVER_CONTACTED -> new Composed(event.id(),
@@ -396,18 +398,29 @@ public class NotificationComposer {
                 payload(args, "requestId", "workspaceName"));
     }
 
-    /** Per-stage id (vm.expiry.d7 …); the last day (D-1) escalates to HIGH. */
+    /**
+     * The id keeps the stage ladder (vm.expiry.d7 …) the dedup design hangs on;
+     * the wording and importance use the real days left, which a late-created
+     * VM makes smaller than the stage.
+     */
     private Composed expiryNotice(Map<String, Object> args) {
-        int days = ((Number) args.get("days")).intValue();
-        return new Composed("vm.expiry.d" + days,
-                "VM 사용 종료 D-" + days + " — " + str(args, "vmName"),
-                """
-                VM '%s'의 사용 종료일(%s)이 %d일 남았습니다.
+        int stage = ((Number) args.get("days")).intValue();
+        int daysLeft = args.get("daysLeft") instanceof Number n ? n.intValue() : stage;
+        String vmName = str(args, "vmName");
+        String title = daysLeft <= 0
+                ? "VM 사용 종료 오늘 — " + vmName
+                : "VM 사용 종료 D-" + daysLeft + " — " + vmName;
+        String firstLine = daysLeft <= 0
+                ? "VM '%s'의 사용 종료일(%s)이 오늘입니다.".formatted(vmName, args.get("endDate"))
+                : "VM '%s'의 사용 종료일(%s)이 %d일 남았습니다.".formatted(
+                        vmName, args.get("endDate"), daysLeft);
+        return new Composed("vm.expiry.d" + stage, title,
+                firstLine + """
+
                 종료일이 지나면 VM이 자동 정지될 수 있습니다. 계속 사용하려면
-                관리자에게 기간 연장을 요청해 주세요.""".formatted(
-                        str(args, "vmName"), args.get("endDate"), days),
+                관리자에게 기간 연장을 요청해 주세요.""",
                 "/console/vms/" + args.get("vmId"),
-                days <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
+                daysLeft <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
                 payload(args, "vmId", "vmName", "endDate"));
     }
 
@@ -444,7 +457,26 @@ public class NotificationComposer {
         if (value instanceof LocalDate d) {
             return d.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant();
         }
+        if (value instanceof Date d) {
+            return d.toInstant(); // java.sql.Timestamp straight off a query row
+        }
+        if (value instanceof OffsetDateTime o) {
+            return o.toInstant();
+        }
         return Instant.parse(String.valueOf(value));
+    }
+
+    /**
+     * KST-formatted timestamp for display. A value the composer cannot read
+     * must not abort the publish it is embedded in — these notices are written
+     * inside the caller's transaction, one row at a time.
+     */
+    private static String kstOrUnknown(Map<String, Object> args, String key) {
+        try {
+            return KST.format(instant(args, key));
+        } catch (RuntimeException e) {
+            return "확인 불가";
+        }
     }
 
     /** Whitelist-copy of the given display fields into the stored payload. */

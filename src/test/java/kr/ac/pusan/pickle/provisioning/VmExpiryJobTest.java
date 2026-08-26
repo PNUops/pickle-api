@@ -192,6 +192,14 @@ class VmExpiryJobTest {
         assertThat(stageOf(vm14)).isEqualTo(14);
         assertThat(stageOf(vmLate)).isEqualTo(7);
 
+        // the wording follows the real days left, not the stage: the late VM
+        // (5 days out, stage D-7) must not claim a week remains
+        assertThat(noticeTitles(vmLate)).allSatisfy(title ->
+                assertThat(title).contains("D-5").doesNotContain("D-7"));
+        assertThat(noticeBodies(vmLate)).allSatisfy(body ->
+                assertThat(body).contains("5일 남았습니다").doesNotContain("7일"));
+        assertThat(noticeTitles(vm7)).allSatisfy(title -> assertThat(title).contains("D-7"));
+
         // recipients: the VM's EDITOR grantee + the workspace's owner, never a member
         // the VM was not opened to; D-1 is HIGH
         assertThat(recipientsOf(vm1)).containsExactlyInAnyOrder(ownerId, editorId);
@@ -223,6 +231,23 @@ class VmExpiryJobTest {
                 select count(distinct payload ->> 'endDate') from notifications
                  where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
                 """, Long.class, pub("vms", vm1).toString())).isEqualTo(2);
+    }
+
+    @Test
+    void noticeForVmEndingTodayReadsTodayNotDMinusOne() {
+        long vmToday = createVm("STOPPED", TODAY); // daysLeft 0 → still stage 1
+
+        vmExpiryJob.run();
+
+        assertThat(noticeEvents(vmToday)).containsExactly("vm.expiry.d1");
+        assertThat(noticeTitles(vmToday)).allSatisfy(title ->
+                assertThat(title).contains("오늘").doesNotContain("D-"));
+        assertThat(noticeBodies(vmToday)).allSatisfy(body ->
+                assertThat(body).contains("오늘입니다").doesNotContain("일 남았습니다"));
+        assertThat(jdbcTemplate.queryForObject("""
+                select distinct importance from notifications
+                 where event = 'vm.expiry.d1' and payload ->> 'vmId' = ?
+                """, String.class, pub("vms", vmToday).toString())).isEqualTo("HIGH");
     }
 
     // ── auto-stop ──────────────────────────────────────────────────────────
@@ -407,6 +432,20 @@ class VmExpiryJobTest {
     private List<String> noticeEvents(long vmId) {
         return jdbcTemplate.queryForList("""
                 select distinct event from notifications
+                 where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
+                """, String.class, pub("vms", vmId).toString());
+    }
+
+    private List<String> noticeTitles(long vmId) {
+        return jdbcTemplate.queryForList("""
+                select title from notifications
+                 where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
+                """, String.class, pub("vms", vmId).toString());
+    }
+
+    private List<String> noticeBodies(long vmId) {
+        return jdbcTemplate.queryForList("""
+                select body from notifications
                  where event like 'vm.expiry.d%' and payload ->> 'vmId' = ?
                 """, String.class, pub("vms", vmId).toString());
     }

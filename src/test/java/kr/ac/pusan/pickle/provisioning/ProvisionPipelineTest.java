@@ -433,7 +433,7 @@ class ProvisionPipelineTest {
         MailMessage mail = mockMailSender.lastMessageTo(SeedFixtures.ORGADMIN_EMAIL);
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).contains(vm.getHostname());
-        assertThat(mail.body())
+        assertThat(mail.textBody())
                 .contains(ip)
                 .contains("플랫폼은 VM 데이터를 백업하지 않습니다");
     }

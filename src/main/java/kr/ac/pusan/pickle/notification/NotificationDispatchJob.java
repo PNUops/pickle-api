@@ -2,12 +2,14 @@ package kr.ac.pusan.pickle.notification;
 
 import java.time.Duration;
 import java.util.List;
+import kr.ac.pusan.pickle.mail.MailHtmlLayout;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MailSender;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +21,9 @@ import org.springframework.stereotype.Component;
  * {@code FAILED} after {@value #MAX_ATTEMPTS} attempts (the SYS_ADMIN delivery
  * log resends from there). Per-row errors are swallowed — one bad recipient
  * never stalls the batch.
+ *
+ * <p>The HTML part is built here, at send time; what the row stores stays the
+ * plain text the console inbox shows.</p>
  */
 @Component
 public class NotificationDispatchJob {
@@ -34,23 +39,29 @@ public class NotificationDispatchJob {
 
     private static final String MAIL_FOOTER = "\n\n— Pickle 운영팀\n";
 
-    private record PendingMail(long id, int attempts, String title, String body, String email,
-                               String userStatus) {
+    private record PendingMail(long id, int attempts, String title, String body, String linkPath,
+                               String email, String userStatus) {
     }
 
     private final JdbcTemplate jdbcTemplate;
     private final MailSender mailSender;
+    private final String consoleBaseUrl;
 
-    public NotificationDispatchJob(JdbcTemplate jdbcTemplate, MailSender mailSender) {
+    public NotificationDispatchJob(JdbcTemplate jdbcTemplate, MailSender mailSender,
+            @Value("${pickle.console.base-url:https://pickle.pusan.ac.kr}") String consoleBaseUrl) {
         this.jdbcTemplate = jdbcTemplate;
         this.mailSender = mailSender;
+        String base = consoleBaseUrl == null || consoleBaseUrl.isBlank()
+                ? "https://pickle.pusan.ac.kr" : consoleBaseUrl;
+        this.consoleBaseUrl = base.replaceAll("/+$", ""); // link paths start with '/'
     }
 
     @Recurring(id = JOB_ID, interval = "PT1M")
     @Job(name = JOB_ID, retries = 0)
     public void dispatch() {
         List<PendingMail> due = jdbcTemplate.query("""
-                select n.id, n.attempts, n.title, n.body, u.email, u.status as user_status
+                select n.id, n.attempts, n.title, n.body, n.link_path,
+                       u.email, u.status as user_status
                   from notifications n
                   join users u on u.id = n.user_id
                  where n.status = 'PENDING' and n.next_attempt_at <= now()
@@ -58,8 +69,8 @@ public class NotificationDispatchJob {
                  limit %d
                 """.formatted(BATCH_SIZE),
                 (rs, rowNum) -> new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
-                        rs.getString("title"), rs.getString("body"), rs.getString("email"),
-                        rs.getString("user_status")));
+                        rs.getString("title"), rs.getString("body"), rs.getString("link_path"),
+                        rs.getString("email"), rs.getString("user_status")));
         for (PendingMail mail : due) {
             // Recipient deactivated between enqueue and send (publish resolves
             // ACTIVE at insert time) — never mail a closed account; SKIPPED
@@ -82,7 +93,7 @@ public class NotificationDispatchJob {
             int attempt = mail.attempts() + 1;
             try {
                 mailSender.send(new MailMessage(mail.email(), "[Pickle] " + mail.title(),
-                        mail.body() + MAIL_FOOTER));
+                        mail.body() + MAIL_FOOTER, htmlPart(mail)));
                 jdbcTemplate.update("""
                         update notifications set status = 'SENT', sent_at = now(), last_error = null
                          where id = ?
@@ -107,6 +118,23 @@ public class NotificationDispatchJob {
                             mail.id(), attempt, backoff, error);
                 }
             }
+        }
+    }
+
+    /**
+     * The branded HTML part, or null to fall back to text alone — a layout
+     * bug must cost this mail its styling, not the whole batch its delivery.
+     */
+    private String htmlPart(PendingMail mail) {
+        try {
+            MailHtmlLayout.Cta cta = mail.linkPath() == null || mail.linkPath().isBlank()
+                    ? null
+                    : new MailHtmlLayout.Cta("콘솔에서 확인", consoleBaseUrl + mail.linkPath());
+            return MailHtmlLayout.render(mail.title(), mail.body(), cta);
+        } catch (RuntimeException e) {
+            log.warn("notification {} html render failed, sending text only: {}",
+                    mail.id(), e.toString());
+            return null;
         }
     }
 
