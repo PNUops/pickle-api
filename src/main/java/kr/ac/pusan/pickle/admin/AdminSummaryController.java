@@ -15,10 +15,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, dashboard summaries — the org panel
- * (ORG_ADMIN pinned to their org, SYS_ADMIN drills in via {@code orgId}), the
- * same panel over time (capacity trend, scoped identically) and the
- * SYS_ADMIN-only platform panel.
+ * Contract tag {@code admin}, dashboard summaries — the org panel (the org tier
+ * aggregates the organisations it holds a role in and may drill into one of
+ * them with {@code orgId}; the sys tier aggregates all of them), the same panel
+ * over time (capacity trend, scoped identically) and the platform panel, which
+ * the whole sys tier reads.
  */
 @RestController
 @RequestMapping("/api/v1/admin")

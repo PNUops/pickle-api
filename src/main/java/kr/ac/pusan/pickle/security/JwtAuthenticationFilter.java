@@ -87,8 +87,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * The organisations this account administers, read per request like the
-     * token version beside it. Deliberately not a JWT claim: the org_id claim
+     * The organisations this account holds a role in, whatever the role, read
+     * per request like the token version beside it. This one map answers all
+     * three of the principal's questions — what may be read, acted in, and
+     * administered — so it deliberately does not filter. Deliberately not a JWT claim: the org_id claim
      * was dropped in V78 so a decoded token discloses no internal ids, and
      * reading here means revoking someone's org takes effect on their next
      * request rather than when their access token happens to expire.

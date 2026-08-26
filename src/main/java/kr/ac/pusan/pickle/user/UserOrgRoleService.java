@@ -81,7 +81,8 @@ public class UserOrgRoleService {
         userOrgRoleRepository.flush();
     }
 
-    /** What the account administers, for a scope decision made outside a request. */
+    /** Every organisation the account holds a role in, for a scope decision
+     * made outside a request. */
     @Transactional(readOnly = true)
     public OrgScope scopeOf(Long userId) {
         return OrgScope.of(userOrgRoleRepository.findByUserIdOrderByOrgIdAsc(userId).stream()

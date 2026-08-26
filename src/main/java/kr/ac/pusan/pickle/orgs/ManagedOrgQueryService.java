@@ -13,7 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Reads the organisations an account administers, named for a response.
+ * Reads the organisations an account holds a role in, named for a response.
+ * Every role, the read-only one included — the response says which.
  *
  * <p>Batched because the admin user list renders a page of accounts at once and
  * a per-row lookup would be one query per user.

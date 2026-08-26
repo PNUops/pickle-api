@@ -38,19 +38,26 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Read side of the admin user surface ({@code GET /admin/users} and
- * {@code /{userId}}). Scoping is enforced <b>in SQL</b>: SYS_ADMIN sees every
- * user; ORG_ADMIN is pinned to their org by the canonical <b>derived
- * membership</b> rule ({@link OrgMembershipSql}) — an out-of-scope user is
- * masked as 404. {@code mfaEnabled} reflects live {@code user_mfa} enrollment
- * (batch-loaded for the list, single lookup for the detail).
+ * {@code /{userId}}). <b>The one admin surface that is not scoped by
+ * organisation</b> (operator decision, 2026-08-25): every admin role answers for
+ * every account, because organisation membership is derived from the resources a
+ * workspace holds, so a person who has requested nothing belongs to no
+ * organisation and was visible to nobody. A student may be supported by any
+ * organisation and may write to one before requesting anything.
+ *
+ * <p>The {@code orgId} parameter narrows to an organisation's derived members
+ * ({@link OrgMembershipSql}) for all tiers alike; it is a filter, not a pin, and
+ * an id no organisation has filters to nothing. {@code mfaEnabled} reflects live
+ * {@code user_mfa} enrollment (batch-loaded for the list, single lookup for the
+ * detail).
+ *
+ * <p>What this hands out is wider than a directory: the detail carries the
+ * account's workspace memberships across every organisation, its disable reason,
+ * and its full status-change history including the acting administrator. That
+ * follows from the decision above and is recorded in the product spec.
  */
 @Service
 public class AdminUserQueryService {
-    /**
-     * The scope an id no org has resolves to: a filter value no row carries, so
-     * the page comes back empty exactly as a non-matching number made it.
-     */
-
     /** Whitelisted {@code sort} → SQL order-by. Default is latest signup ({@code -id}). */
     private static final Map<String, String> SORTS = Map.of(
             "name", "u.name asc",

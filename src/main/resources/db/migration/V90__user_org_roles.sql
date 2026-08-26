@@ -7,11 +7,13 @@
 -- Only the administrator side was pinned to one, and this table lifts that.
 --
 -- The row carries its own role, so an account may administer one organisation,
--- operate a second and only read a third. users.role stays and becomes the effective role: the
--- highest role held across these rows, or USER when none are left. That keeps
--- the @PreAuthorize gates, the JWT role claim and the permission matrix's role
--- columns as they are, with the annotation asking whether the account may ever
--- do a thing and the service layer asking whether it may here.
+-- operate a second and only read a third. users.role stays and becomes the
+-- effective role: the highest held across these rows, or USER when none are
+-- left. That keeps the @PreAuthorize gates, the JWT role claim and the
+-- permission matrix's role columns as they are, with the annotation asking
+-- whether the account may ever do a thing and the service layer asking whether
+-- it may here.
+--
 -- The two viewer roles land with this table because they only make sense
 -- alongside it: a read-only role is what an organisation grants another
 -- organisation's staff so they can see its resources without touching them,
@@ -35,14 +37,14 @@ create table user_org_roles (
 );
 
 comment on table user_org_roles is
-    'Organisations an account administers, and its role in each. users.role is '
-    'the highest role held here, or USER when the account holds none. That '
+    'Organisations an account holds a role in, and the role in each. users.role '
+    'is the highest held here, or USER when the account holds none. That '
     'biconditional spans two tables and so is no longer a CHECK: the grant and '
     'revoke path is its single writer. An org-tier account that somehow holds '
-    'no row here still reads what any administrator reads, because reads span '
-    'every organisation; what it cannot do is write. Every write guard asks '
-    'this table and answers the cross-org 404 when the answer is empty, and '
-    'the audit log and the organisation announcement answer 403.';
+    'no row here can still read the account directory, which is not scoped by '
+    'organisation, and nothing else: every organisation-scoped listing refuses '
+    'it outright, and an addressed resource answers the same not-found as an '
+    'id nothing has, so which organisations exist stays private.';
 
 create index user_org_roles_org_id_idx on user_org_roles (org_id);
 

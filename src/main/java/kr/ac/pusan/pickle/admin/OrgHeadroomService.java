@@ -46,9 +46,9 @@ public class OrgHeadroomService {
     }
 
     /**
-     * Allocated-vs-capacity aggregates + threshold warnings + guidance for one
-     * org — or platform-wide (all orgs) when {@code orgId} is null (SYS_ADMIN
-     * dashboard without a drill-in).
+     * Allocated-vs-capacity aggregates + threshold warnings + guidance for the
+     * organisations in {@code scope} — or platform-wide when the scope is
+     * unrestricted (the sys-tier dashboard without a drill-in).
      */
     public HeadroomResult headroom(OrgScope scope) {
         List<Vm> orgVms = vmRepository.findActiveByOrgIds(

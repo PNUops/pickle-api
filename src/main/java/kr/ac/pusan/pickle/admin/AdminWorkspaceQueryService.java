@@ -21,22 +21,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code listAdminWorkspaces}: the announcement workspace picker. ORG_ADMIN
- * sees exactly the workspaces they may target with a WORKSPACE announcement — workspaces
- * linked to their org by the canonical derived-membership rule
- * ({@link OrgMembershipSql}: ≥1 request or non-DELETED VM in the org).
- * {@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly the
- * fan-out basis of a WORKSPACE announcement (contract clarification, docs
- * eb8bbf6). A cross-org {@code orgId} answers 404 (existence stays private);
- * the filter itself is SYS_ADMIN's.
+ * Contract {@code listAdminWorkspaces}: workspaces linked to an organisation by
+ * the canonical derived-membership rule ({@link OrgMembershipSql}: ≥1 request or
+ * non-DELETED VM in the org). The org tier sees those of every organisation it
+ * holds a role in; naming any other answers 404 (existence stays private).
+ *
+ * <p><b>This is wider than the announcement picker it also feeds.</b> Sending a
+ * WORKSPACE announcement needs a role that may act, and ORG scope needs an
+ * organisation the account <i>administers</i>, so a workspace can appear here
+ * and still refuse the send. The console narrows the picker rather than this
+ * list, because the list is also the admin inspection surface.
+ *
+ * <p>{@code memberCount} counts the workspace's <b>ACTIVE</b> members — exactly
+ * the fan-out basis of a WORKSPACE announcement (contract clarification, docs
+ * eb8bbf6).
  */
 @Service
 public class AdminWorkspaceQueryService {
-    /**
-     * The scope an id no org has resolves to: a filter value no row carries, so
-     * the page comes back empty exactly as a non-matching number made it.
-     */
-
     private final JdbcTemplate jdbcTemplate;
 
     public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate) {

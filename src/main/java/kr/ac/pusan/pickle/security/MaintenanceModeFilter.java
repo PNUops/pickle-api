@@ -41,9 +41,14 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class MaintenanceModeFilter extends OncePerRequestFilter {
 
-    /** Roles that keep full access during maintenance (names, forward-compatible). */
+    /**
+     * Roles that keep full access during maintenance (names, forward-compatible).
+     * Every admin role, viewers included: a viewer's whole purpose is to watch,
+     * and maintenance is when watching matters most.
+     */
     private static final Set<String> ADMIN_TIER_ROLES =
-            Set.of("ORG_ADMIN", "SYS_ADMIN", "ORG_MANAGER", "SYS_MANAGER");
+            Set.of("ORG_VIEWER", "ORG_MANAGER", "ORG_ADMIN",
+                    "SYS_VIEWER", "SYS_MANAGER", "SYS_ADMIN");
 
     private static final String DEFAULT_MESSAGE =
             "서비스 점검 중입니다. 잠시 후 다시 이용해 주세요.";

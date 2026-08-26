@@ -176,6 +176,15 @@ class ApprovalTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(pub("requests", submitted).toString()));
+
+        // An id no organisation has narrows to nothing rather than to everything.
+        // The scope renders an empty IN list for this case, which is the one
+        // shape no other test reaches — an empty list that rendered as "no
+        // clause" would answer with every request instead of none.
+        mockMvc.perform(get("/api/v1/admin/requests?orgId=" + SeedFixtures.UNKNOWN_ID)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 
     @Test

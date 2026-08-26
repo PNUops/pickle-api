@@ -26,8 +26,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, vm-requests subset — ORG_ADMIN (own org) and
- * SYS_ADMIN (all orgs). Cross-org requests answer 404, never 403, so the
+ * Contract tag {@code admin}, vm-requests subset. The org tier reads the
+ * organisations it holds a role in and decides in those it operates; the sys
+ * tier covers all of them. Anything outside answers 404, never 403, so the
  * existence of other orgs' requests stays private (contract v0.2.3).
  */
 @RestController

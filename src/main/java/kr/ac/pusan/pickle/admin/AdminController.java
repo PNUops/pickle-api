@@ -28,10 +28,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Contract tag {@code admin}, org/user management subset — SYS_ADMIN only
- * (ORG_ADMIN gets 403 ACCESS_DENIED via the method-security gate). The
- * v0.20.0 org list read widens to the sys tier so SYS_MANAGER can see
- * DISABLED/hidden orgs too (writes stay SYS_ADMIN).
+ * Contract tag {@code admin}, org/user management subset. Organisation writes
+ * and the wholesale user edit are SYS_ADMIN only; the organisation-role grant
+ * and revoke also admit ORG_ADMIN, confined by the service to the organisations
+ * it administers. The org list read covers the sys tier so a system operator or
+ * viewer can see DISABLED/hidden orgs too (writes stay SYS_ADMIN).
  */
 @RestController
 @RequestMapping("/api/v1/admin")

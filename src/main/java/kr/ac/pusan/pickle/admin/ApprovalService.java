@@ -52,9 +52,11 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Admin approval flow (contract tag {@code admin}, vm-requests subset).
- * ORG_ADMIN is hard-scoped to their own org — requests of other orgs answer
- * 404 (existence stays private, per contract). Approval is a single
+ * Admin approval flow (contract tag {@code admin}, vm-requests subset). The org
+ * tier reads the requests of every organisation it holds a role in and decides
+ * only in those it operates; anything outside answers 404 (existence stays
+ * private, per contract), which is why the read lookup and the write lookup are
+ * separate methods rather than one condition. Approval is a single
  * transaction that writes intent only: review row + CREATING vm row + a
  * JobRunr provisioning job; no Proxmox call happens here.
  */

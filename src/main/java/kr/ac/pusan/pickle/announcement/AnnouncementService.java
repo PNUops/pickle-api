@@ -28,13 +28,18 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Announcement send (contract {@code createAnnouncement}). Scope rules:
- * ALL is SYS_ADMIN-only (403); an ORG_ADMIN's ORG scope is pinned to their own
- * org (mismatch 422); WORKSPACE scope is gated — for an ORG_ADMIN — on the workspace
- * having resources (requests / non-DELETED VMs) in their org (else 404,
- * existence masked); a gated workspace's recipients are all its ACTIVE members.
- * ORG-scope recipients follow the canonical <b>derived org membership</b>
- * ({@link OrgMembershipSql}) — ACTIVE members of org-linked workspaces plus the
- * org's ORG_ADMINs.
+ * ALL is SYS_ADMIN-only (403); an ORG_ADMIN's ORG scope is confined to the
+ * organisations it <b>administers</b>, which it must name once there is more
+ * than one (mismatch or omission 422); WORKSPACE scope is gated — for an
+ * ORG_ADMIN — on the workspace having resources (requests / non-DELETED VMs) in
+ * one of those (else 404, existence masked); a gated workspace's recipients are
+ * all its ACTIVE members.
+ *
+ * <p>ORG-scope recipients follow the canonical <b>derived org membership</b>
+ * ({@link OrgMembershipSql}) — ACTIVE members of org-linked workspaces — plus
+ * the organisation's own administrators and operators. <b>A read-only role is
+ * not a recipient</b>: a viewer is another organisation's staff looking in, not
+ * a person this organisation announces to.
  *
  * <p>Fan-out is a synchronous INSERT…SELECT into {@code notifications} inside
  * this transaction — the in-app rows exist when the 201 returns; email leaves
@@ -207,10 +212,14 @@ public class AnnouncementService {
                 params.addAll(scope.orgIds());
                 params.addAll(scope.orgIds());
                 params.addAll(scope.orgIds());
+                // A viewer row does not make somebody a recipient: it is how one
+                // organisation lets another's staff look in, and an internal
+                // announcement is not addressed to them.
                 yield jdbcTemplate.update(
                         base + " where u.status = 'ACTIVE' and (exists (select 1"
                                 + " from user_org_roles uor where uor.user_id = u.id and "
-                                + scope.inList("uor.org_id") + ") or "
+                                + scope.inList("uor.org_id")
+                                + " and uor.role::text in ('ORG_ADMIN', 'ORG_MANAGER')) or "
                                 + OrgMembershipSql.memberOfOrgLinkedWorkspace("u.id", scope) + ")",
                         params.toArray());
             }

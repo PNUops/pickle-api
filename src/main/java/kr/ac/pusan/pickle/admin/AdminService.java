@@ -27,8 +27,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * SYS_ADMIN-only org and user administration (contract tag {@code admin};
- * the role gate is enforced by {@code @PreAuthorize} on the controllers).
+ * Organisation and user administration (contract tag {@code admin}). Most of it
+ * is SYS_ADMIN-only and the role gate for those sits on the controller, but the
+ * organisation-role grant and revoke are open to ORG_ADMIN as well, and
+ * <b>their organisation-level check is here, not on the controller</b>: the gate
+ * sees only the effective role, which an account carries everywhere it holds
+ * any role at all.
  */
 @Service
 public class AdminService {

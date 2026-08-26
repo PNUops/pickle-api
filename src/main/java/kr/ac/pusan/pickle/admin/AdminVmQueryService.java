@@ -35,10 +35,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Contract {@code GET /admin/vms}: ORG_ADMIN hard-scoped to their own org,
- * SYS_ADMIN across orgs with the optional {@code orgId} filter. An ORG_ADMIN
- * naming another org answers 404 so cross-org existence stays private
- * (same convention as the vm-requests queue).
+ * Contract {@code GET /admin/vms}: the org tier answers for the organisations it
+ * holds a role in, a read-only role included; the sys tier for all of them. The
+ * {@code orgId} filter narrows within that, and naming an organisation outside
+ * it answers 404 so which organisations exist stays private (same convention as
+ * the vm-requests queue). The decision itself lives in {@code AdminOrgScope}.
  */
 @Service
 public class AdminVmQueryService {
@@ -169,7 +170,6 @@ public class AdminVmQueryService {
                 .toList(), result);
     }
 
-    /** ORG_ADMIN is pinned to their own org; another org's id answers 404. */
     private static Sort resolveSort(String sort) {
         if (sort == null) {
             return Sort.unsorted();

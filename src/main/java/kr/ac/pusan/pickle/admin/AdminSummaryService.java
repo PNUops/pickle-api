@@ -360,10 +360,11 @@ public class AdminSummaryService {
     }
 
     /**
-     * ORG_ADMIN is pinned to their own org (another org's id answers 404).
-     * SYS_ADMIN: an explicit {@code orgId} must exist (unknown → 404), and no
-     * {@code orgId} means the platform-wide aggregate (null scope) — the
-     * console home calls the summary without a drill-in for both roles.
+     * The org tier aggregates the organisations it holds a role in, and may
+     * name one of them; naming any other answers 404. For the sys tier an
+     * explicit {@code orgId} must exist (unknown → 404) and no {@code orgId}
+     * means the platform-wide aggregate — the console home calls the summary
+     * without a drill-in for every role.
      *
      * <p>Package-private rather than private because the capacity trend is the
      * same panel over time and must be scoped by the identical rule; two copies

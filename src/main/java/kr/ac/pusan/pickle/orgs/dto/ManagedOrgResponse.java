@@ -5,8 +5,9 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.user.UserRole;
 
 /**
- * Contract schema {@code ManagedOrg} — one organisation an account administers,
- * and its role there.
+ * Contract schema {@code ManagedOrg} — one organisation an account holds a role
+ * in, and the role it holds there. The role may be a read-only one, so this is
+ * not only what the account administers.
  *
  * <p>Replaces the single {@code orgId} the account responses carried, which
  * could only name one organisation (V90).

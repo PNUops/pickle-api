@@ -26,28 +26,27 @@ import tools.jackson.databind.ObjectMapper;
  * append-only with no JPA entity, so no accidental mutation path exists.
  *
  * <p>Scoping is enforced <b>in SQL</b>: {@code /me/activity} is hard-bound to
- * {@code actor_id = principal}, and {@code /admin/audit} pins ORG_ADMIN to
- * rows whose actor belongs to their org by the canonical <b>derived
- * membership</b> rule ({@link OrgMembershipSql}: the actor is one of the
- * org's ORG_ADMINs, or an ACTIVE member of a workspace with requests /
- * non-DELETED VMs in the org). System rows — null actor — are therefore
- * SYS_ADMIN-only. Date bounds are KST calendar days.</p>
+ * {@code actor_id = principal}, and {@code /admin/audit} confines the org tier
+ * to the organisations it may <b>act</b> in ({@code AdminOrgScope.operated}), so
+ * a read-only role reaches nothing here. Within those, an actor belongs to an
+ * organisation by holding any role in it or by the canonical <b>derived
+ * membership</b> rule ({@link OrgMembershipSql}: an ACTIVE member of a workspace
+ * with requests / non-DELETED VMs in the org). System rows — null actor — are
+ * therefore sys-tier-only. Date bounds are KST calendar days.</p>
  */
 @Service
 public class AuditQueryService {
-    /**
-     * The scope an id no org has resolves to: a filter value no row carries, so
-     * the page comes back empty exactly as a non-matching number made it.
-     */
-
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     /**
-     * Representative derived-org name for the audit row's actor (v0.9.0 display
-     * field): the actor's managed org (ORG_ADMIN {@code the actor's administered orgs}) if any,
-     * else the smallest org id derived from the actor's workspace resources
-     * (requests / non-DELETED VMs — the canonical rule, {@link OrgMembershipSql}).
-     * Null for system rows and actors with no derived org. Correlated on
+     * Representative organisation name for the audit row's actor (v0.9.0 display
+     * field): the smallest id among the organisations the actor holds a role in,
+     * whatever that role is, else the smallest derived from the actor's
+     * workspace resources (requests / non-DELETED VMs — the canonical rule,
+     * {@link OrgMembershipSql}). "Smallest" is arbitrary and deliberately so:
+     * the column names one organisation for display and an account may belong
+     * to several. Null for system rows and actors with no organisation at all.
+     * Correlated on
      * {@code u}/{@code a} from the outer query; binds no positional parameters.
      */
     private static final String ACTOR_ORG_NAME = """

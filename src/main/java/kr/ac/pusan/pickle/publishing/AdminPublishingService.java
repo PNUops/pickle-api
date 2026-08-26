@@ -43,9 +43,10 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 /**
  * Admin publishing views (contract tag {@code admin}): route/domain/certificate
- * listings and the SYS_ADMIN sync-all trigger. ORG_ADMIN is hard-scoped to its
- * own org; SYS_ADMIN sees all and may filter by {@code orgId}. The shared
- * platform wildcard cert is visible to every admin.
+ * listings and the SYS_ADMIN sync-all trigger. The org tier reads the
+ * organisations it holds a role in and intervenes only in those it operates;
+ * the sys tier sees all and may filter by {@code orgId}. The shared platform
+ * wildcard cert is visible to every admin.
  */
 @Service
 public class AdminPublishingService {

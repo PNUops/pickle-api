@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import kr.ac.pusan.pickle.user.UserRole;
 
 /**
- * Contract schema {@code GrantOrgRole} — the role to give an account in one
+ * Contract schema {@code GrantOrgRoleRequest} — the role to give an account in one
  * organisation. A viewer role is how one organisation lets another's staff see
  * its resources without being able to change them.
  */

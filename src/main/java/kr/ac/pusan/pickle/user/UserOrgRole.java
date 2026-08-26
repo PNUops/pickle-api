@@ -13,7 +13,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 /**
- * One organisation an account administers, and its role there (V90).
+ * One organisation an account holds a role in, and the role there (V90).
  *
  * <p>Replaces the single {@code users.org_id}. An account may hold several of
  * these, and may hold a different role in each; {@code users.role} is the
