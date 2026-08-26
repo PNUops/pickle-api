@@ -58,9 +58,18 @@ public class OpenRouterReconciler {
      * Compared by value, not by object: {@code 1} and {@code 1.00} are the
      * same limit. A null remote limit means unlimited over there, which never
      * matches a granted amount.
+     *
+     * <p>A key whose {@code include_byok_in_limit} is false counts as diverged
+     * even when the amount matches, because the amount is then not being
+     * enforced against BYOK inference at all. That is the more dangerous shape
+     * of the two: a wrong ceiling is visible, a ceiling that counts nothing
+     * looks exactly like a correct one.
      */
     private static boolean limitDiverged(LlmApiKey local, OpenRouterClient.ManagedKey managed) {
         if (managed.limit() == null) {
+            return true;
+        }
+        if (!managed.includeByokInLimit()) {
             return true;
         }
         if (managed.limit().compareTo(local.getCreditLimit()) != 0) {
