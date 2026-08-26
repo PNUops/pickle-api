@@ -140,6 +140,16 @@ class AnnouncementTest {
         // ORG pinned: another org's id → 422
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
                 "orgId", otherOrg.getPublicId())).andExpect(status().isUnprocessableContent());
+        // An id no organisation has answers the same 422 as one the caller does
+        // not administer — telling them apart would turn this field into a probe
+        // for which organisations exist. It answered 500 until 2026-08-26: the id
+        // resolved to null and the guard called contains(null) on an unmodifiable
+        // set, which throws where a HashSet returns false. The case above passed
+        // throughout, so only this line covers it.
+        create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "ORG",
+                "orgId", SeedFixtures.UNKNOWN_ID))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("orgId"));
         // WORKSPACE without resources in the caller's org → 404 (existence
         // masked), exactly like a workspace that does not exist at all
         create(orgAdminToken, Map.of("title", "t", "body", "b", "scope", "WORKSPACE",
