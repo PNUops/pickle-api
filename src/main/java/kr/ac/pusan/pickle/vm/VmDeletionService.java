@@ -390,6 +390,16 @@ public class VmDeletionService {
      */
     private DeletableVm requireDeletableByActor(AuthenticatedUser actor, UUID vmId) {
         Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
+        // Standing as a member is checked FIRST, and the order is the whole
+        // point: an administrator who also owns this VM, or owns the workspace
+        // that holds it, is deleting their own resource like anyone else. Ask
+        // the role before the access list and their name disappears from their
+        // own colleagues' history — the same failure that made this column
+        // record the surface rather than the role.
+        VmAccess access = vmAccessService.of(vm, actor.id());
+        if (access.manages()) {
+            return new DeletableVm(vm, VmActorKind.MEMBER);
+        }
         if (actor.role() == UserRole.SYS_ADMIN) {
             return new DeletableVm(vm, VmActorKind.ADMIN);
         }
@@ -401,14 +411,10 @@ public class VmDeletionService {
             }
             return new DeletableVm(vm, VmActorKind.ADMIN);
         }
-        VmAccess access = vmAccessService.of(vm, actor.id());
-        if (!access.manages()) {
-            access.requireVisible();
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "VM을 삭제할 권한이 없습니다",
-                    "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
-        }
-        return new DeletableVm(vm, VmActorKind.MEMBER);
+        access.requireVisible();
+        throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
+                "VM을 삭제할 권한이 없습니다",
+                "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
     }
 
     private void requireNoPendingDeletion(Vm vm) {

@@ -136,6 +136,23 @@ class AdminVmInterventionTest {
                 .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
                 .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
 
+        // The role is held per organisation, so the question has to be asked per
+        // organisation. An account that only views THIS org while operating
+        // another one holds ORG_MANAGER as its effective role, and asking that
+        // would name the administrators of an organisation it may only look at.
+        User crossOrg = ensureUser("avi.crossorg@pusan.ac.kr", UserRole.ORG_VIEWER, orgId);
+        Org otherOrgForRole = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관")
+                .orElseGet(() -> orgRepository.save(new Org("개입 테스트 타기관", null)));
+        SeedFixtures.grantOrgRole(jdbcTemplate, crossOrg.getId(), otherOrgForRole.getId(),
+                UserRole.ORG_MANAGER);
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(
+                                userRepository.findById(crossOrg.getId()).orElseThrow())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
+
         // cross-org admin: same 404 as an unknown id
         Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관").orElseGet(() ->
                 orgRepository.save(new Org("개입 테스트 타기관", null)));

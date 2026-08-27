@@ -13,6 +13,12 @@
 -- write ADMIN, the member endpoints write MEMBER, the background jobs write
 -- SYSTEM. Same reasoning as audit_logs.actor_role — a fact about the moment,
 -- fixed at the moment, not re-derived later from state that keeps moving.
+--
+-- Two refinements the code carries and this column has to allow for. The
+-- member-facing delete path lets an administrator who is neither owner nor
+-- member through, so that path decides per request and writes ADMIN for those;
+-- and where the surface is not knowable the value is UNKNOWN rather than a
+-- guess, which is also what the rows written before this column get.
 
 create type vm_actor_kind as enum ('SYSTEM', 'MEMBER', 'ADMIN', 'UNKNOWN');
 
@@ -57,8 +63,9 @@ update vm_events e
 alter table vm_events alter column actor_kind drop default;
 
 -- The two columns answer the same question from different sides, so a row that
--- disagrees with itself must not be insertable. NOT VALID keeps the exclusive
--- lock off the scan; the validation that follows takes a weaker one.
+-- disagrees with itself must not be insertable. Left as one statement: Flyway
+-- runs a migration in a single transaction, and the add-column above already
+-- holds ACCESS EXCLUSIVE until it commits, so splitting this into NOT VALID
+-- plus VALIDATE would buy a weaker lock that the table is not under anyway.
 alter table vm_events add constraint vm_events_actor_kind_ck
-    check ((actor_id is null) = (actor_kind = 'SYSTEM')) not valid;
-alter table vm_events validate constraint vm_events_actor_kind_ck;
+    check ((actor_id is null) = (actor_kind = 'SYSTEM'));

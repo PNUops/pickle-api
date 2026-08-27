@@ -17,7 +17,6 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmQueryService;
@@ -102,12 +101,20 @@ public class AdminVmQueryService {
      * organisation grants to <b>another organisation's</b> staff — and filling
      * an administrator's name in for that reader would widen what the role sees
      * as a side effect of a display change (contract §3.15, v0.50.0).
+     *
+     * <p>The test is asked <b>per organisation</b>, exactly as the audit log
+     * scopes itself, because a role is not a property of an account: since V90
+     * one account can view one organisation and operate another. Reading the
+     * effective role instead would answer for the strongest role held anywhere,
+     * so an account that merely views this VM's organisation would be named the
+     * administrators of it on the strength of a role it holds somewhere else.
      */
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
-        return vmQueryService.eventsOf(adminVmAccess.requireReadableVm(actor, vmId).getId(),
-                page, size, actor.role() != UserRole.ORG_VIEWER);
+        Vm vm = adminVmAccess.requireReadableVm(actor, vmId);
+        boolean auditVisible = actor.role().isSysTier() || actor.operates(vm.getOrgId());
+        return vmQueryService.eventsOf(vm.getId(), page, size, auditVisible);
     }
 
     @Transactional(readOnly = true)
