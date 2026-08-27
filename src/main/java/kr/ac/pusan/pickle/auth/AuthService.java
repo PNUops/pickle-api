@@ -137,7 +137,8 @@ public class AuthService {
         // looked at, or the validation order becomes the enumeration oracle the
         // uniform 202 below is meant to remove.
         passwordPolicy.validate(request.password());
-        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());
+        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode(),
+                request.departmentOther());
         termsService.validateSignupConsents(request.consents());
 
         if (userRepository.existsByEmail(email)) {
@@ -164,7 +165,8 @@ public class AuthService {
         User user = new User(email, passwordEncoder.encode(request.password()), request.name().strip());
         user.setProfile(request.position(),
                 ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
-                request.departmentCode());
+                request.departmentCode(),
+                ProfileValidator.normalizeDepartmentOther(request.departmentOther()));
         user = userRepository.save(user);
         // Consent completeness is validated here (422 rolls the whole tx back, so
         // no verification mail is sent for an incomplete signup).

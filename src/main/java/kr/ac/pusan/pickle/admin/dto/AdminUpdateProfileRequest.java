@@ -1,4 +1,4 @@
-package kr.ac.pusan.pickle.user.dto;
+package kr.ac.pusan.pickle.admin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
@@ -6,38 +6,27 @@ import kr.ac.pusan.pickle.user.UserPosition;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Contract schema {@code UpdateProfileRequest} — PUT /me/profile
- * ({@code minProperties: 1}).
+ * Contract schema {@code AdminUpdateProfileRequest} — PATCH
+ * /admin/users/{userId}/profile ({@code minProperties: 1}).
  *
- * <p>Presence-tracked rather than a record, and that is load-bearing. 직책 and
- * 소속 학과 became optional in v0.46.0, so a record could no longer tell "leave
- * this alone" from "clear this": the account screen sends only 이름 when the
- * display name changes, and a record would carry three nulls along with it and
- * wipe the profile without an error. Absent means unchanged, an explicit
- * {@code null} means clear.
+ * <p>The other half of the write-once lock: 직책·학번·소속 stop moving for the
+ * account holder, so someone has to be able to move them, and the first value
+ * being permanent is what makes that necessary rather than convenient
+ * ({@code V89} declined a unique constraint on 학번 for exactly this reason —
+ * a typo would claim a real student's number with no way back).
  *
- * <p>Since 2026-08-27 직책·학번·소속 are write-once for the holder: the request
- * may fill an empty field but not move a filled one, which {@code ProfileLock}
- * refuses with a 422 naming the field. 이름 stays freely changeable, so this
- * schema carries both a locked and an unlocked kind of field.
+ * <p>Presence-tracked for the same reason {@code UpdateProfileRequest} is: an
+ * administrator correcting 학번 alone must not blank 직책 and 소속 by omission.
+ * Absent means unchanged, an explicit {@code null} means clear — and clearing
+ * is allowed here, unlike on the holder's own path, because a value entered by
+ * mistake has to be removable and not only replaceable.
  *
- * <p>이름 is the exception — present-but-null is refused (422) because
- * {@code users.name} is NOT NULL and an account with no name has nowhere to be
- * displayed. 학번 is presence-tracked like the rest, but it is also derived:
- * {@code ProfileValidator.normalizeStudentNo} drops it for a position that
- * does not carry one, so a position change clears it whether or not the
- * request said anything about it.
+ * <p>이름 is not here. It is already the holder's to change and putting it on
+ * an administrator endpoint would widen the write surface for no case anyone
+ * has.
  */
 @Schema(minProperties = 1)
-public class UpdateProfileRequest {
-
-    // Not @Nullable, unlike the two below: clearing 이름 is refused (422), so
-    // the published schema must not offer null as a value. The same split as
-    // UpdateOrgRequest, where name is required-if-present and description is
-    // clearable.
-    @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
-    private String name;
-    private boolean nameSet;
+public class AdminUpdateProfileRequest {
 
     private @Nullable UserPosition position;
     private boolean positionSet;
@@ -54,19 +43,9 @@ public class UpdateProfileRequest {
     private @Nullable String departmentOther;
     private boolean departmentOtherSet;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-        this.nameSet = true;
-    }
-
-    @Schema(hidden = true)
-    public boolean isNameSet() {
-        return nameSet;
-    }
+    /** Why the correction was made; recorded in the audit entry. */
+    @Size(max = 200, message = "사유는 200자 이하여야 합니다.")
+    private @Nullable String reason;
 
     public @Nullable UserPosition getPosition() {
         return position;
@@ -124,9 +103,16 @@ public class UpdateProfileRequest {
         return departmentOtherSet;
     }
 
+    public @Nullable String getReason() {
+        return reason;
+    }
+
+    public void setReason(@Nullable String reason) {
+        this.reason = reason;
+    }
+
     @Schema(hidden = true)
     public boolean isEmpty() {
-        return !nameSet && !positionSet && !studentNoSet && !departmentCodeSet
-                && !departmentOtherSet;
+        return !positionSet && !studentNoSet && !departmentCodeSet && !departmentOtherSet;
     }
 }

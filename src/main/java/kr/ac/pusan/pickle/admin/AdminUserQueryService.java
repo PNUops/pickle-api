@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
 import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgScope;
+import kr.ac.pusan.pickle.profile.ProfileOptionsService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -74,12 +75,14 @@ public class AdminUserQueryService {
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final UserMfaRepository userMfaRepository;
     private final ManagedOrgQueryService managedOrgQueryService;
+    private final ProfileOptionsService profileOptionsService;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
             WorkspaceMemberRepository workspaceMemberRepository, VmRepository vmRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             UserMfaRepository userMfaRepository,
-            ManagedOrgQueryService managedOrgQueryService) {
+            ManagedOrgQueryService managedOrgQueryService,
+            ProfileOptionsService profileOptionsService) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -87,6 +90,7 @@ public class AdminUserQueryService {
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.userMfaRepository = userMfaRepository;
         this.managedOrgQueryService = managedOrgQueryService;
+        this.profileOptionsService = profileOptionsService;
     }
 
     @Transactional(readOnly = true)
@@ -173,13 +177,28 @@ public class AdminUserQueryService {
 
         List<UserStatusChangeResponse> statusChanges =
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
+        boolean profileVisible = actor.role().isSysTier();
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
                 user.getRole(), managedOrgQueryService.of(user.getId()), user.getStatus(),
                 userMfaRepository.isEnrolled(user.getId()),
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
-                memberships, activeVmCount, statusChanges);
+                memberships, activeVmCount, statusChanges,
+                // 학번 is a personal identifier, and this endpoint admits one
+                // role the audit log deliberately does not: ORG_VIEWER, which
+                // an organisation grants to ANOTHER organisation's staff. The
+                // endpoint is not org-scoped either, so filling these in for
+                // the org tier would hand every organisation's staff every
+                // account's 학번. Drawn at the same line the audit log draws
+                // (contract §3.10, v0.51.0) — the earlier reasoning that the
+                // list is the exposed surface was wrong: the detail is reached
+                // by the same six roles.
+                profileVisible ? user.getPosition() : null,
+                profileVisible ? user.getStudentNo() : null,
+                profileVisible ? user.getDepartmentCode() : null,
+                profileVisible ? profileOptionsService.departmentName(user.getDepartmentCode()) : null,
+                profileVisible ? user.getDepartmentOther() : null);
     }
 
     /** Resolves each transition's actor in one batch: id, email and name. */

@@ -326,7 +326,8 @@ public class GoogleOauthService {
         rateLimitService.hit("oauth_complete:acct", registration.getEmail(),
                 RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
 
-        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode());
+        profileValidator.validate(request.position(), request.studentNo(), request.departmentCode(),
+                request.departmentOther());
         // Between issuing the token and redeeming it, the address may have been
         // taken (a parallel signup) — answer as the link path would rather than
         // colliding on the unique index.
@@ -342,7 +343,8 @@ public class GoogleOauthService {
         User user = new User(registration.getEmail(), null, request.name().strip());
         user.setProfile(request.position(),
                 ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
-                request.departmentCode());
+                request.departmentCode(),
+                ProfileValidator.normalizeDepartmentOther(request.departmentOther()));
         user = userRepository.save(user);
         // Same transaction as the user row, exactly as signup does it: an
         // incomplete consent set has to roll the account back, not leave one

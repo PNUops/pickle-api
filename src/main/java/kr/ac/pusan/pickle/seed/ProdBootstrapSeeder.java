@@ -7,7 +7,6 @@ import kr.ac.pusan.pickle.auth.PasswordPolicy;
 import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.profile.DepartmentCatalog;
 import kr.ac.pusan.pickle.user.UserPosition;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -97,7 +96,7 @@ public class ProdBootstrapSeeder implements ApplicationRunner {
         // profile in: without this the very first login on a fresh deployment
         // meets the profile prompt, on the one account whose job is to set the
         // deployment up. STAFF carries no 학번.
-        admin.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
+        admin.setProfile(UserPosition.STAFF, null, null, "플랫폼 운영");
         admin = userRepository.save(admin);
         personalWorkspaceService.ensurePersonalWorkspace(admin);
     }

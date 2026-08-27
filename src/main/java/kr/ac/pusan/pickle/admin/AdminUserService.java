@@ -2,19 +2,25 @@ package kr.ac.pusan.pickle.admin;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.admin.dto.AdminUpdateProfileRequest;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.RefreshTokenService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.profile.ProfileLock;
+import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserPosition;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
@@ -39,11 +45,13 @@ public class AdminUserService {
     private final AdminUserQueryService adminUserQueryService;
     private final MfaService mfaService;
     private final RefreshTokenService refreshTokenService;
+    private final ProfileValidator profileValidator;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
             NotificationService notificationService, AdminUserQueryService adminUserQueryService,
-            MfaService mfaService, RefreshTokenService refreshTokenService) {
+            MfaService mfaService, RefreshTokenService refreshTokenService,
+            ProfileValidator profileValidator) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
@@ -51,6 +59,7 @@ public class AdminUserService {
         this.adminUserQueryService = adminUserQueryService;
         this.mfaService = mfaService;
         this.refreshTokenService = refreshTokenService;
+        this.profileValidator = profileValidator;
     }
 
     /**
@@ -64,6 +73,80 @@ public class AdminUserService {
         mfaService.adminReset(actor.id(), actor.role().name(), target, ip);
         return new MessageResponse(
                 "2단계 인증을 초기화했습니다. 사용자는 비밀번호로 로그인한 뒤 다시 등록해야 합니다.");
+    }
+
+    /**
+     * SYS_ADMIN profile correction ({@code PATCH /admin/users/{userId}/profile}).
+     *
+     * <p>The counterpart of the write-once lock on {@code PUT /me/profile}: the
+     * holder fills 직책·학번·소속 once and an administrator is who moves them
+     * after that. Kept to SYS_ADMIN like every other write on another account —
+     * 학번 identifies a real person and a wrong one is not the holder's to fix,
+     * so widening this later is a decision, not an oversight.
+     *
+     * <p>Unlike the holder's path this may clear a value, because the case it
+     * exists for is a value that should never have been there.
+     */
+    @Transactional
+    public UserAdminDetailResponse updateProfile(AuthenticatedUser actor, UUID userId,
+            AdminUpdateProfileRequest request, String ip) {
+        User user = userRepository.findByPublicId(userId).orElseThrow(AdminUserService::userNotFound);
+        if (request.isEmpty()) {
+            throw ApiException.validationFailed(List.of(
+                    new FieldValidationError("position", "수정할 값을 하나 이상 보내 주세요.")));
+        }
+
+        UserPosition position = request.isPositionSet() ? request.getPosition() : user.getPosition();
+        String studentNo = request.isStudentNoSet() ? request.getStudentNo() : user.getStudentNo();
+        String departmentCode = request.isDepartmentCodeSet()
+                ? request.getDepartmentCode() : user.getDepartmentCode();
+        String departmentOther = request.isDepartmentOtherSet()
+                ? request.getDepartmentOther() : user.getDepartmentOther();
+        // The same value rules the holder's path runs. An administrator may
+        // correct a profile, not store one the CHECK constraints refuse.
+        boolean codeIsNew = request.isDepartmentCodeSet()
+                && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
+        profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
+
+        UserPosition previousPosition = user.getPosition();
+        String previousStudentNo = user.getStudentNo();
+        String previousDepartmentCode = user.getDepartmentCode();
+        boolean droppedStudentNo =
+                ProfileLock.positionChangeDropsStudentNo(previousPosition, position, previousStudentNo);
+        user.setProfile(position, ProfileValidator.normalizeStudentNo(position, studentNo),
+                departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
+        userRepository.save(user);
+
+        // 학번 is recorded as set/not-set rather than as a value, matching the
+        // holder's own entry: the audit log is not a second place to keep it.
+        // droppedStudentNo is recorded because a 직책 change discards the 학번
+        // without the request ever mentioning it, and an entry that does not
+        // say so reads as if the value were still there.
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("position", String.valueOf(position));
+        payload.put("departmentCode", String.valueOf(departmentCode));
+        payload.put("departmentOtherSet", String.valueOf(departmentOther != null));
+        payload.put("studentNoSet", String.valueOf(user.getStudentNo() != null));
+        payload.put("previousPosition", String.valueOf(previousPosition));
+        payload.put("previousDepartmentCode", String.valueOf(previousDepartmentCode));
+        payload.put("previousStudentNoSet", String.valueOf(previousStudentNo != null));
+        payload.put("studentNoDroppedByPositionChange", String.valueOf(droppedStudentNo));
+        payload.put("reason", String.valueOf(request.getReason()));
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.USER_PROFILE_UPDATE, "user", user.getPublicId(), payload, ip);
+
+        Map<String, Object> args = new LinkedHashMap<>();
+        args.put("userId", user.getId());
+        args.put("userEmail", user.getEmail());
+        // Deduplicated per correction, not per account: a second correction is
+        // a second thing the holder has to be told about. A timestamp would
+        // merge two corrections landing in the same millisecond, which is the
+        // one case the key is supposed to keep apart.
+        String dedupKey = "profile_updated:" + user.getId() + ":" + UUID.randomUUID();
+        notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PROFILE_UPDATED,
+                args, dedupKey);
+
+        return adminUserQueryService.getUser(actor, userId);
     }
 
     @Transactional
