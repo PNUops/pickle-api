@@ -177,6 +177,7 @@ public class AdminUserQueryService {
 
         List<UserStatusChangeResponse> statusChanges =
                 mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
+        boolean profileVisible = actor.role().isSysTier();
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
                 user.getRole(), managedOrgQueryService.of(user.getId()), user.getStatus(),
@@ -184,9 +185,20 @@ public class AdminUserQueryService {
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
                 memberships, activeVmCount, statusChanges,
-                user.getPosition(), user.getStudentNo(), user.getDepartmentCode(),
-                profileOptionsService.departmentName(user.getDepartmentCode()),
-                user.getDepartmentOther());
+                // 학번 is a personal identifier, and this endpoint admits one
+                // role the audit log deliberately does not: ORG_VIEWER, which
+                // an organisation grants to ANOTHER organisation's staff. The
+                // endpoint is not org-scoped either, so filling these in for
+                // the org tier would hand every organisation's staff every
+                // account's 학번. Drawn at the same line the audit log draws
+                // (contract §3.10, v0.51.0) — the earlier reasoning that the
+                // list is the exposed surface was wrong: the detail is reached
+                // by the same six roles.
+                profileVisible ? user.getPosition() : null,
+                profileVisible ? user.getStudentNo() : null,
+                profileVisible ? user.getDepartmentCode() : null,
+                profileVisible ? profileOptionsService.departmentName(user.getDepartmentCode()) : null,
+                profileVisible ? user.getDepartmentOther() : null);
     }
 
     /** Resolves each transition's actor in one batch: id, email and name. */

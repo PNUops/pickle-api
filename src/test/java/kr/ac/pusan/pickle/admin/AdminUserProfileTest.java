@@ -168,14 +168,7 @@ class AdminUserProfileTest {
 
     @Test
     void aNonSysAdminCannotReachIt() throws Exception {
-        User orgAdmin = userRepository.findByEmail("aup.orgadmin@pusan.ac.kr").orElseGet(() -> {
-            User user = new User("aup.orgadmin@pusan.ac.kr",
-                    "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7uHhZ8mCEyXbNP9qhrPQicvBSl2Fx16", "기관관리자");
-            user.setStatus(UserStatus.ACTIVE);
-            user.setRole(UserRole.ORG_ADMIN);
-            user.setEmailVerifiedAt(Instant.now());
-            return userRepository.save(user);
-        });
+        User orgAdmin = ensureUser("aup.orgadmin@pusan.ac.kr", UserRole.ORG_ADMIN, "기관관리자");
         // 학번 identifies a real person and a wrong one is not the holder's to
         // fix, so this stays with the role that holds every other write on
         // another account. Widening it later is a decision, not an oversight.
@@ -184,6 +177,78 @@ class AdminUserProfileTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"studentNo\":\"202099999\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void theOrgTierDoesNotSeeTheProfileOnTheDetail() throws Exception {
+        // This endpoint admits ORG_VIEWER, which an organisation grants to
+        // ANOTHER organisation's staff, and it is not org-scoped — so filling
+        // 학번 in for the org tier would hand every organisation's staff every
+        // account's identifier. Drawn at the line the audit log draws.
+        User orgAdmin = ensureUser("aup.orgadmin@pusan.ac.kr", UserRole.ORG_ADMIN, "기관관리자");
+        mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(orgAdmin)))
+                .andExpect(status().isOk())
+                // The row is still readable; the identifier is not.
+                .andExpect(jsonPath("$.email").value(TARGET))
+                .andExpect(jsonPath("$.studentNo").doesNotExist())
+                .andExpect(jsonPath("$.position").doesNotExist())
+                .andExpect(jsonPath("$.departmentCode").doesNotExist())
+                .andExpect(jsonPath("$.departmentName").doesNotExist())
+                .andExpect(jsonPath("$.departmentOther").doesNotExist());
+    }
+
+    @Test
+    void theSysTierReadsIt() throws Exception {
+        // SYS_VIEWER reads the audit log's ground already, so the line is the
+        // tier and not the one role that can write.
+        User sysViewer = ensureUser("aup.sysviewer@pusan.ac.kr", UserRole.SYS_VIEWER, "시스템열람자");
+        mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(sysViewer)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentNo").value("202012345"));
+    }
+
+    @Test
+    void theLegacyShapeCanBeMovedToWrittenDepartmentInOneRequest() throws Exception {
+        // The account the holder cannot fix: a non-student carrying a
+        // catalogue code, which is what every pre-v0.46.0 profile looks like.
+        // Both halves in one request, because clearing first is not a state
+        // this endpoint has to pass through.
+        target.setProfile(UserPosition.RESEARCHER, null, "COMPUTER_SCIENCE", null);
+        target = userRepository.saveAndFlush(target);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("departmentCode", null);
+        body.put("departmentOther", "정보컴퓨터공학부 부설연구소");
+        body.put("reason", "학과 코드에서 자유 입력으로 이행");
+        updateProfile(body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departmentCode").doesNotExist())
+                .andExpect(jsonPath("$.departmentOther").value("정보컴퓨터공학부 부설연구소"));
+    }
+
+    @Test
+    void movingToAStudentPositionWithoutANumberIsRefused() throws Exception {
+        // The rule holds on this path too: an administrator may correct a
+        // profile, not store a shape chk_users_student_no refuses.
+        target.setProfile(UserPosition.PROFESSOR, null, "COMPUTER_SCIENCE", null);
+        target = userRepository.saveAndFlush(target);
+
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "reason", "학적 정정"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+    }
+
+    private User ensureUser(String email, UserRole role, String name) {
+        return userRepository.findByEmail(email).orElseGet(() -> {
+            User user = new User(email,
+                    "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7uHhZ8mCEyXbNP9qhrPQicvBSl2Fx16", name);
+            user.setStatus(UserStatus.ACTIVE);
+            user.setRole(role);
+            user.setEmailVerifiedAt(Instant.now());
+            return userRepository.save(user);
+        });
     }
 
     private Map<String, Object> latestAuditEntry() {

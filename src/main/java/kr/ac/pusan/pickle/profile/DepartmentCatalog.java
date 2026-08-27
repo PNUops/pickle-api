@@ -78,7 +78,7 @@ public class DepartmentCatalog {
     static final Path HOST_OVERRIDE = Path.of("/etc/pickle/departments.json");
 
     private static Map<String, DepartmentView> load() {
-        Catalog catalog = Files.isReadable(HOST_OVERRIDE) ? readHostOverride() : readPackaged();
+        Catalog catalog = Files.exists(HOST_OVERRIDE) ? readHostOverride() : readPackaged();
         Map<String, DepartmentView> map = new LinkedHashMap<>();
         for (DepartmentView department : catalog.departments()) {
             if (map.put(department.code(), department) != null) {
@@ -100,18 +100,25 @@ public class DepartmentCatalog {
     }
 
     /**
-     * Reads the host file, and refuses to start if it is there but malformed.
+     * Reads the host file, and refuses to start if it is there but unusable.
      *
-     * <p>Falling back to the packaged list on a parse error would be the worse
-     * failure: the service comes up serving a list the operator believes they
-     * replaced, and the only symptom is that an edit did nothing.
+     * <p>Falling back to the packaged list would be the worse failure: the
+     * service comes up serving a list the operator believes they replaced, and
+     * the only symptom is that an edit did nothing.
+     *
+     * <p>Keyed on {@code exists}, not {@code isReadable}, and that is the whole
+     * point. A file the service cannot open — root-owned 600, a directory it
+     * cannot traverse — is the same silent substitution as a malformed one, and
+     * {@code isReadable} classifies it as absent. The only signal either way is
+     * the success log below, so its absence says nothing.
      */
     private static Catalog readHostOverride() {
         try (InputStream in = Files.newInputStream(HOST_OVERRIDE)) {
             log.info("소속 카탈로그를 호스트 파일에서 읽습니다: {}", HOST_OVERRIDE);
             return JsonMapper.builder().build().readValue(in, Catalog.class);
         } catch (IOException e) {
-            throw new UncheckedIOException(HOST_OVERRIDE + " is present but not readable as JSON", e);
+            throw new UncheckedIOException(HOST_OVERRIDE + " is present but could not be read as JSON"
+                    + " (check permissions and syntax)", e);
         }
     }
 

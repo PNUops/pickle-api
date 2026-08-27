@@ -52,9 +52,40 @@ public class ProfileValidator {
      * belong to a 연구소 or a 부서 that no 학과 list contains, so they write it
      * out. A student whose 학과 is not listed uses both: the {@code OTHER} code
      * and the written value.
+     *
+     * <p><b>That pairing is the console's to offer, not this method's to
+     * enforce</b>, and deliberately so. Every account that filled in a profile
+     * before v0.46.0 was made to choose a 학과 code, 교수 and 직원 included, so
+     * refusing a code beside a non-student position would refuse the rows that
+     * already exist — including on a request that only changes 이름, since the
+     * rules run against the merge. What is enforced is the one combination the
+     * CHECK constraint refuses, because that one would be a 500 at flush.
      */
     public void validate(@Nullable UserPosition position, @Nullable String studentNo,
             @Nullable String departmentCode, @Nullable String departmentOther) {
+        validate(position, studentNo, departmentCode, departmentOther, true);
+    }
+
+    /**
+     * As above, with {@code verifyDepartmentCode} false when the code reaching
+     * here is the stored one rather than one the request is introducing.
+     *
+     * <p>The catalogue moves. It is a file with a host override precisely so a
+     * yearly reorganisation can change it, and a code that was valid when it
+     * was stored can stop being listed. Checking a stored code on every write
+     * turns that into a total lockout: the value is judged against the merge,
+     * so an account whose 소속 has left the catalogue gets a 422 on
+     * {@code departmentCode} for a request that only changes 이름 — and under
+     * write-once it can neither pick another code nor clear the old one. Before
+     * the lock that account could pick something else and move on.
+     *
+     * <p>So catalogue membership is a rule about what is being introduced, not
+     * about what is already there. A stored code passed this check once; the
+     * list changing afterwards is not the holder's doing.
+     */
+    public void validate(@Nullable UserPosition position, @Nullable String studentNo,
+            @Nullable String departmentCode, @Nullable String departmentOther,
+            boolean verifyDepartmentCode) {
         List<FieldValidationError> errors = new ArrayList<>();
         String trimmed = studentNo == null ? null : studentNo.strip();
         String otherTrimmed = departmentOther == null ? null : departmentOther.strip();
@@ -72,7 +103,8 @@ public class ProfileValidator {
                         "학번 형식이 올바르지 않습니다. (영문·숫자·하이픈 4~20자)"));
             }
         }
-        if (departmentCode != null && !options.isKnownDepartment(departmentCode)) {
+        if (verifyDepartmentCode && departmentCode != null
+                && !options.isKnownDepartment(departmentCode)) {
             errors.add(new FieldValidationError("departmentCode", "소속을 다시 선택해 주세요."));
         }
         // A code that is not OTHER already names the 소속, so a written value

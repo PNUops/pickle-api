@@ -332,6 +332,70 @@ class ProfileSurfaceTest {
                 .andExpect(jsonPath("$.profileComplete").value(true));
     }
 
+    @Test
+    void aWrittenDepartmentIsLockedLikeTheRest() throws Exception {
+        // The fourth locked field, and the one the first pass left unchecked.
+        updateProfile(Map.of("position", "PROFESSOR", "departmentOther", "부설연구소"))
+                .andExpect(status().isOk());
+
+        updateProfile(Map.of("departmentOther", "다른 연구소"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentOther')]").exists());
+
+        Map<String, Object> cleared = new HashMap<>();
+        cleared.put("departmentOther", null);
+        updateProfile(cleared)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentOther')]").exists());
+    }
+
+    @Test
+    void anAccountWhoseDepartmentLeftTheCatalogueCanStillChangeItsName() throws Exception {
+        // The catalogue is a file with a host override so a yearly
+        // reorganisation can change it, which means a stored code can stop
+        // being listed. Judged against the merge, that code reaches validation
+        // on every write — so without the exemption this account would get a
+        // 422 on 소속 for a request that only changes 이름, and under write-once
+        // it could neither pick another code nor clear the old one. Before the
+        // lock it could pick something else and move on.
+        User user = userRepository.findByEmail(EMAIL).orElseThrow();
+        user.setProfile(UserPosition.PROFESSOR, null, "DEPARTMENT_THAT_CLOSED", null);
+        userRepository.saveAndFlush(user);
+
+        updateProfile(Map.of("name", "학과가 없어진 사람"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("학과가 없어진 사람"))
+                .andExpect(jsonPath("$.departmentCode").value("DEPARTMENT_THAT_CLOSED"))
+                // Unresolvable, so the code stands in for the name.
+                .andExpect(jsonPath("$.departmentName").value("DEPARTMENT_THAT_CLOSED"));
+
+        // A code the request introduces is still checked.
+        updateProfile(Map.of("name", "또 바꿈", "departmentCode", "ALSO_NOT_A_DEPARTMENT"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentCode')]").exists());
+    }
+
+    @Test
+    void aNonStudentHoldingACatalogueCodeCanStillSave() throws Exception {
+        // The shape every pre-v0.46.0 profile has: 소속 was required for
+        // everyone, 교수 included. Refusing a code beside a non-student
+        // position would refuse rows that exist on live data today, on a
+        // request that only changes 이름.
+        User user = userRepository.findByEmail(EMAIL).orElseThrow();
+        user.setProfile(UserPosition.RESEARCHER, null, "COMPUTER_SCIENCE", null);
+        userRepository.saveAndFlush(user);
+
+        updateProfile(Map.of("name", "코드를 든 연구원"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"));
+
+        // What it cannot do is move to the written shape: the stored code is
+        // locked and the two together are refused. That is the administrator's
+        // to do, in one request that clears the code and writes the value.
+        updateProfile(Map.of("departmentOther", "부설연구소"))
+                .andExpect(status().isUnprocessableContent());
+    }
+
     private org.springframework.test.web.servlet.ResultActions updateProfile(Map<String, ?> body)
             throws Exception {
         return mockMvc.perform(put("/api/v1/me/profile")

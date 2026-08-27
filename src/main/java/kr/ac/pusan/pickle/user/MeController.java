@@ -78,11 +78,15 @@ public class MeController {
     }
 
     /**
-     * Fills in, corrects, or clears 이름·직책·학번·소속 학과. Deliberately not
-     * gated behind sudo-mode reauthentication: this is descriptive information
-     * about the holder, it grants nothing, and the accounts that most need it
-     * are the ones created through an external identity, which have no
-     * password to re-type.
+     * Changes 이름, and fills in 직책·학번·소속 while they are empty.
+     *
+     * <p>Those three are write-once for the holder ({@code ProfileLock}) and
+     * an administrator moves them afterwards. Still not gated behind sudo-mode
+     * reauthentication, and the lock is why that reasoning holds rather than
+     * breaks: the fields grant nothing, so what the lock protects is not an
+     * authorization boundary but a value other people may come to rely on.
+     * The accounts that most need to fill these in are also the ones created
+     * through an external identity, which have no password to re-type.
      *
      * <p>Every field is optional and presence-tracked, so a request that
      * carries only 이름 leaves the profile untouched. Validation runs against
@@ -116,7 +120,11 @@ public class MeController {
                 ? request.getDepartmentCode() : user.getDepartmentCode();
         String departmentOther = request.isDepartmentOtherSet()
                 ? request.getDepartmentOther() : user.getDepartmentOther();
-        profileValidator.validate(position, studentNo, departmentCode, departmentOther);
+        // Only a code this request introduces is checked against the catalogue.
+        // A stored one already passed once, and the list can move underneath it.
+        boolean codeIsNew = request.isDepartmentCodeSet()
+                && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
+        profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
 
         String previousName = user.getName();
         String previousStudentNo = user.getStudentNo();

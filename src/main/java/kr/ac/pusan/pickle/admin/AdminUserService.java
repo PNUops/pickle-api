@@ -104,7 +104,9 @@ public class AdminUserService {
                 ? request.getDepartmentOther() : user.getDepartmentOther();
         // The same value rules the holder's path runs. An administrator may
         // correct a profile, not store one the CHECK constraints refuse.
-        profileValidator.validate(position, studentNo, departmentCode, departmentOther);
+        boolean codeIsNew = request.isDepartmentCodeSet()
+                && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
+        profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
 
         UserPosition previousPosition = user.getPosition();
         String previousStudentNo = user.getStudentNo();
@@ -137,8 +139,10 @@ public class AdminUserService {
         args.put("userId", user.getId());
         args.put("userEmail", user.getEmail());
         // Deduplicated per correction, not per account: a second correction is
-        // a second thing the holder has to be told about.
-        String dedupKey = "profile_updated:" + user.getId() + ":" + Instant.now().toEpochMilli();
+        // a second thing the holder has to be told about. A timestamp would
+        // merge two corrections landing in the same millisecond, which is the
+        // one case the key is supposed to keep apart.
+        String dedupKey = "profile_updated:" + user.getId() + ":" + UUID.randomUUID();
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_PROFILE_UPDATED,
                 args, dedupKey);
 
