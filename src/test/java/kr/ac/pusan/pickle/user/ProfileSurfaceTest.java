@@ -95,17 +95,21 @@ class ProfileSurfaceTest {
     }
 
     @Test
-    void movingFromAStudentPositionDropsTheStudentNumber() throws Exception {
+    void movingFromAStudentPositionIsRefusedOnceThePositionIsSet() throws Exception {
         updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
-        // The number is not carried over: it was required by the old position
-        // and means nothing under the new one. Sending it anyway is what the
-        // console does if it forgets to clear its own field.
-        updateProfile(Map.of("position", "PROFESSOR", "studentNo", "202012345",
-                "departmentCode", "COMPUTER_SCIENCE"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.studentNo").doesNotExist())
-                .andExpect(jsonPath("$.profileComplete").value(true));
+
+        // Until 2026-08-27 this went through and dropped the 학번 with it. It is
+        // the graduation case, and it is now an administrator's to make: the
+        // drop is a write to a locked field that the request never mentions, so
+        // allowing the 직책 half would have made the lock on 학번 bypassable.
+        updateProfile(Map.of("position", "PROFESSOR"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
+                .andExpect(jsonPath("$.studentNo").value("202012345"));
     }
 
     @Test
@@ -159,33 +163,88 @@ class ProfileSurfaceTest {
     }
 
     @Test
-    void changingOnlyThePositionIsJudgedAgainstTheStoredStudentNumber() throws Exception {
+    void aStudentNumberAddedLaterIsJudgedAgainstTheStoredPosition() throws Exception {
+        // 직책 first, 학번 later — which the profile prompt produces when someone
+        // fills half of it, closes it, and comes back.
         updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // Validation runs against the merge, not the request. Judged against
-        // the request alone this is a student position with no 학번 and would
-        // be a 422 the console could not clear without resending a field it
-        // was not changing.
-        updateProfile(Map.of("position", "STUDENT_GRADUATE"))
+        // the request alone, a body carrying only 소속 is a profile with no 직책
+        // and no 학번; judged against the merge it is the stored 학부생 with a
+        // 학번, which is what it actually is.
+        updateProfile(Map.of("departmentCode", "COMPUTER_SCIENCE"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.position").value("STUDENT_GRADUATE"))
+                .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
                 .andExpect(jsonPath("$.studentNo").value("202012345"));
     }
 
     @Test
-    void anExplicitNullClearsTheField() throws Exception {
+    void aFieldStillEmptyCanBeFilledAfterTheOthersAreLocked() throws Exception {
+        // Write-once is per field, not per profile. Someone who answered 직책
+        // and closed the prompt has to be able to come back for the rest —
+        // locking the whole profile on first save would strand them.
+        updateProfile(Map.of("position", "PROFESSOR")).andExpect(status().isOk());
+        updateProfile(Map.of("departmentOther", "정보컴퓨터공학부 부설연구소"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departmentOther").value("정보컴퓨터공학부 부설연구소"))
+                .andExpect(jsonPath("$.profileComplete").value(true));
+    }
+
+    @Test
+    void resendingAStoredValueIsNotTreatedAsAChange() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
+
+        // The console's profile modal opens prefilled and submits every field
+        // it shows. Reading "present" as "changed" would refuse an edit that
+        // only touches 이름, so what is refused is a different value.
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", "같은 프로필 새 이름");
+        body.put("position", "STUDENT_UNDERGRAD");
+        body.put("studentNo", "  202012345  ");
+        body.put("departmentCode", "COMPUTER_SCIENCE");
+        updateProfile(body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("같은 프로필 새 이름"))
+                .andExpect(jsonPath("$.studentNo").value("202012345"));
+    }
+
+    @Test
+    void aStoredStudentNumberCannotBeReplacedOrCleared() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
+
+        // The reason the lock exists: a 학번 that is not the holder's stops
+        // being reachable by editing.
+        updateProfile(Map.of("studentNo", "202099999"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+
+        Map<String, Object> cleared = new HashMap<>();
+        cleared.put("studentNo", null);
+        updateProfile(cleared)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.studentNo").value("202012345"));
+    }
+
+    @Test
+    void anExplicitNullNoLongerClearsAStoredField() throws Exception {
         updateProfile(Map.of("position", "PROFESSOR", "departmentCode", "COMPUTER_SCIENCE"))
                 .andExpect(status().isOk());
 
+        // Clearing used to be the way out of a wrong answer. Under write-once
+        // it is the way around the lock — clear, then set something else — so
+        // it is refused with the same message, and correcting a wrong value is
+        // the administrator endpoint's job.
         Map<String, Object> body = new HashMap<>();
         body.put("departmentCode", null);
         updateProfile(body)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.departmentCode").doesNotExist())
-                // Not a defect: the profile is optional, so an emptied field is
-                // an ordinary state and the console only prompts about it.
-                .andExpect(jsonPath("$.profileComplete").value(false));
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentCode')]").exists());
     }
 
     @Test
@@ -221,23 +280,56 @@ class ProfileSurfaceTest {
     }
 
     @Test
-    void clearingThePositionAlsoClearsTheStudentNumberItBelongedTo() throws Exception {
+    void clearingAStoredPositionIsRefusedRatherThanCascading() throws Exception {
         updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
-        // The 학번 is not in this request at all, and it still goes. It belonged
-        // to the position being cleared, and a 학번 with no 직책 to hang off is
-        // the unvalidatable state the CHECK cannot refuse. Same drop as the
-        // 학부생-to-교수 switch, reached from the other direction.
+        // This used to clear the 학번 along with the 직책 it belonged to, without
+        // the request mentioning 학번 at all. That cascade is why clearing 직책
+        // had to be refused too: it was a write to a locked field through a
+        // field that was not the locked one.
         Map<String, Object> body = new HashMap<>();
         body.put("position", null);
         updateProfile(body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.studentNo").value("202012345"));
+    }
+
+    @Test
+    void aFreeTextDepartmentBesideACatalogueCodeIsRefused() throws Exception {
+        // 소속 has two shapes and they are alternatives: a student picks a code,
+        // everyone else writes it, and only the unlisted-학과 case carries both
+        // (with the OTHER code). chk_users_department_other refuses the rest, so
+        // saying it here is the difference between a field error and a 500.
+        updateProfile(Map.of("position", "PROFESSOR", "departmentCode", "COMPUTER_SCIENCE",
+                "departmentOther", "부설연구소"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentOther')]").exists());
+    }
+
+    @Test
+    void aStudentWhoseDepartmentIsUnlistedCarriesBoth() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "OTHER", "departmentOther", "융합학부"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.position").doesNotExist())
-                .andExpect(jsonPath("$.studentNo").doesNotExist())
-                // 소속 학과 was not mentioned either, and unlike 학번 it does not
-                // depend on the position, so it stays.
-                .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"));
+                .andExpect(jsonPath("$.departmentCode").value("OTHER"))
+                .andExpect(jsonPath("$.departmentOther").value("융합학부"))
+                .andExpect(jsonPath("$.profileComplete").value(true));
+    }
+
+    @Test
+    void aWrittenDepartmentAloneCompletesTheProfile() throws Exception {
+        // The shape a 교수 or 직원 produces: no catalogue code at all. Requiring
+        // the code would leave every one of them permanently incomplete and the
+        // prompt would reopen every session.
+        updateProfile(Map.of("position", "PROFESSOR", "departmentOther", "정보컴퓨터공학부"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departmentCode").doesNotExist())
+                .andExpect(jsonPath("$.departmentOther").value("정보컴퓨터공학부"))
+                .andExpect(jsonPath("$.profileComplete").value(true));
     }
 
     private org.springframework.test.web.servlet.ResultActions updateProfile(Map<String, ?> body)

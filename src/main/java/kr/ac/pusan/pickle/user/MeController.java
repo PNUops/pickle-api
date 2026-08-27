@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
 import kr.ac.pusan.pickle.identity.UserIdentityRepository;
 import kr.ac.pusan.pickle.profile.ProfileOptionsService;
+import kr.ac.pusan.pickle.profile.ProfileLock;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
 import kr.ac.pusan.pickle.user.dto.UpdateProfileRequest;
 import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
@@ -47,6 +48,7 @@ public class MeController {
     private final UserIdentityRepository userIdentityRepository;
     private final ProfileOptionsService profileOptionsService;
     private final ProfileValidator profileValidator;
+    private final ProfileLock profileLock;
     private final AuditService auditService;
 
     public MeController(UserRepository userRepository,
@@ -55,6 +57,7 @@ public class MeController {
             MfaService mfaService, TermsService termsService,
             UserIdentityRepository userIdentityRepository,
             ProfileOptionsService profileOptionsService, ProfileValidator profileValidator,
+            ProfileLock profileLock,
             AuditService auditService) {
         this.userRepository = userRepository;
         this.managedOrgQueryService = managedOrgQueryService;
@@ -64,6 +67,7 @@ public class MeController {
         this.userIdentityRepository = userIdentityRepository;
         this.profileOptionsService = profileOptionsService;
         this.profileValidator = profileValidator;
+        this.profileLock = profileLock;
         this.auditService = auditService;
     }
 
@@ -102,11 +106,17 @@ public class MeController {
                     new FieldValidationError("name", "이름을 입력해 주세요.")));
         }
 
+        // Before the merge, not after: the lock compares what was asked for
+        // against what is stored, and the merge is what erases that difference.
+        profileLock.enforce(user, request);
+
         UserPosition position = request.isPositionSet() ? request.getPosition() : user.getPosition();
         String studentNo = request.isStudentNoSet() ? request.getStudentNo() : user.getStudentNo();
         String departmentCode = request.isDepartmentCodeSet()
                 ? request.getDepartmentCode() : user.getDepartmentCode();
-        profileValidator.validate(position, studentNo, departmentCode);
+        String departmentOther = request.isDepartmentOtherSet()
+                ? request.getDepartmentOther() : user.getDepartmentOther();
+        profileValidator.validate(position, studentNo, departmentCode, departmentOther);
 
         String previousName = user.getName();
         String previousStudentNo = user.getStudentNo();
@@ -115,7 +125,7 @@ public class MeController {
             user.setName(request.getName().strip());
         }
         user.setProfile(position, ProfileValidator.normalizeStudentNo(position, studentNo),
-                departmentCode);
+                departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
         // Audited like every other self-service write on /me. 학번 is a personal
         // identifier the holder can rewrite at will, so "who changed this and
         // when" has to have an answer; the before-values are recorded because
@@ -129,6 +139,7 @@ public class MeController {
                 AuditService.ACCOUNT_PROFILE_UPDATE, "user", user.getPublicId(),
                 Map.of("position", String.valueOf(position),
                         "departmentCode", String.valueOf(departmentCode),
+                        "departmentOtherSet", String.valueOf(departmentOther != null),
                         "previousPosition", String.valueOf(previousPosition),
                         "previousStudentNoSet", String.valueOf(previousStudentNo != null),
                         "previousName", previousName),
