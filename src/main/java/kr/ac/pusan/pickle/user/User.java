@@ -68,6 +68,18 @@ public class User {
     @Column(name = "department_code")
     private @Nullable String departmentCode;
 
+    /**
+     * 소속, written out rather than chosen from the catalogue.
+     *
+     * <p>A student belongs to a 학과 and picks a code. A 교수, 연구원 or 직원 may
+     * belong to a 연구소 or a 부서 no 학과 list contains, so they write it. The two
+     * are mutually exclusive except for a student whose 학과 is unlisted, who
+     * carries the {@code OTHER} code and the written value together;
+     * {@code chk_users_department_other} is what refuses the rest.
+     */
+    @Column(name = "department_other")
+    private @Nullable String departmentOther;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "user_status")
@@ -210,26 +222,37 @@ public class User {
         return departmentCode;
     }
 
+    public @Nullable String getDepartmentOther() {
+        return departmentOther;
+    }
+
     /**
      * Sets the whole profile at once. It travels as a unit — the student-number
      * rule spans two of the three fields, so a setter per field would let a
      * caller land a state the CHECK rejects and only find out at flush.
      */
     public void setProfile(@Nullable UserPosition position, @Nullable String studentNo,
-            @Nullable String departmentCode) {
+            @Nullable String departmentCode, @Nullable String departmentOther) {
         this.position = position;
         this.studentNo = studentNo;
         this.departmentCode = departmentCode;
+        this.departmentOther = departmentOther;
     }
 
     /**
-     * Whether the account has filled in 직책·소속 학과 (and 학번 where required).
+     * Whether the account has filled in 직책·소속 (and 학번 where required).
      *
      * <p>False is an ordinary state since v0.46.0, not an incomplete signup:
      * the console reads this to decide whether to ask, not whether to allow.
+     *
+     * <p>소속 is satisfied by <b>either</b> shape. Requiring the code alone
+     * would leave every 교수 and 직원 permanently incomplete once 소속 became
+     * free text for them, so the prompt would reopen every session for an
+     * account that has answered everything it was asked.
      */
     public boolean isProfileComplete() {
-        return position != null && departmentCode != null
+        boolean departmentGiven = departmentCode != null || departmentOther != null;
+        return position != null && departmentGiven
                 && (!position.requiresStudentNo() || studentNo != null);
     }
 

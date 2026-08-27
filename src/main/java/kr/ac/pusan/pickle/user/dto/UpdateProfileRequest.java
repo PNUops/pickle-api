@@ -16,6 +16,11 @@ import org.jspecify.annotations.Nullable;
  * wipe the profile without an error. Absent means unchanged, an explicit
  * {@code null} means clear.
  *
+ * <p>Since 2026-08-27 직책·학번·소속 are write-once for the holder: the request
+ * may fill an empty field but not move a filled one, which {@code ProfileLock}
+ * refuses with a 422 naming the field. 이름 stays freely changeable, so this
+ * schema carries both a locked and an unlocked kind of field.
+ *
  * <p>이름 is the exception — present-but-null is refused (422) because
  * {@code users.name} is NOT NULL and an account with no name has nowhere to be
  * displayed. 학번 is presence-tracked like the rest, but it is also derived:
@@ -44,6 +49,10 @@ public class UpdateProfileRequest {
     @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
     private @Nullable String departmentCode;
     private boolean departmentCodeSet;
+
+    @Size(max = 100, message = "소속은 100자 이하여야 합니다.")
+    private @Nullable String departmentOther;
+    private boolean departmentOtherSet;
 
     public String getName() {
         return name;
@@ -101,8 +110,23 @@ public class UpdateProfileRequest {
         return departmentCodeSet;
     }
 
+    public @Nullable String getDepartmentOther() {
+        return departmentOther;
+    }
+
+    public void setDepartmentOther(@Nullable String departmentOther) {
+        this.departmentOther = departmentOther;
+        this.departmentOtherSet = true;
+    }
+
+    @Schema(hidden = true)
+    public boolean isDepartmentOtherSet() {
+        return departmentOtherSet;
+    }
+
     @Schema(hidden = true)
     public boolean isEmpty() {
-        return !nameSet && !positionSet && !studentNoSet && !departmentCodeSet;
+        return !nameSet && !positionSet && !studentNoSet && !departmentCodeSet
+                && !departmentOtherSet;
     }
 }

@@ -31,6 +31,7 @@ public record UserProfileResponse(
         @Nullable String studentNo,
         @Nullable String departmentCode,
         @Nullable String departmentName,
+        @Nullable String departmentOther,
         /**
          * Whether 직책·소속 (and 학번 where the position needs one) are filled
          * in. The console gates on this rather than on the fields being null:
@@ -76,7 +77,7 @@ public record UserProfileResponse(
                 user.getRole(), managedOrgs, user.getStatus(),
                 memberships.stream().map(Membership::from).toList(), mfaEnabled, pendingConsents,
                 user.getPosition(), user.getStudentNo(), user.getDepartmentCode(), departmentName,
-                user.isProfileComplete(), user.hasPassword(),
+                user.getDepartmentOther(), user.isProfileComplete(), user.hasPassword(),
                 identities.stream().map(LinkedIdentity::from).toList());
     }
 }

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserPosition;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
@@ -42,16 +43,21 @@ public class ProfileValidator {
     /**
      * Throws 422 with one field error per broken rule.
      *
-     * <p>직책 and 소속 학과 are both optional since v0.46.0 — an account that
-     * has filled in neither is an ordinary state, not an incomplete one — so
-     * every rule below is written to pass on null. What is still enforced is
-     * the pair: a position that carries a 학번 must have one, and a 소속 학과
-     * must be a code the catalogue knows.
+     * <p>직책 and 소속 are both optional since v0.46.0 — an account that has
+     * filled in neither is an ordinary state, not an incomplete one — so every
+     * rule below is written to pass on null.
+     *
+     * <p>소속 has two shapes and the position picks between them. A student
+     * belongs to a 학과 and chooses a catalogue code. A 교수, 연구원 or 직원 may
+     * belong to a 연구소 or a 부서 that no 학과 list contains, so they write it
+     * out. A student whose 학과 is not listed uses both: the {@code OTHER} code
+     * and the written value.
      */
     public void validate(@Nullable UserPosition position, @Nullable String studentNo,
-            @Nullable String departmentCode) {
+            @Nullable String departmentCode, @Nullable String departmentOther) {
         List<FieldValidationError> errors = new ArrayList<>();
         String trimmed = studentNo == null ? null : studentNo.strip();
+        String otherTrimmed = departmentOther == null ? null : departmentOther.strip();
 
         // Both branches are gated on the position needing a 학번 at all. Checking
         // the format for a position that discards the value produces an error on
@@ -69,9 +75,33 @@ public class ProfileValidator {
         if (departmentCode != null && !options.isKnownDepartment(departmentCode)) {
             errors.add(new FieldValidationError("departmentCode", "소속을 다시 선택해 주세요."));
         }
+        // A code that is not OTHER already names the 소속, so a written value
+        // beside it is a second answer to the same question and the CHECK
+        // refuses it. Saying so here is the difference between a field error
+        // and a 500 at flush.
+        if (otherTrimmed != null && !otherTrimmed.isEmpty()
+                && departmentCode != null && !DepartmentCatalog.OTHER.equals(departmentCode)) {
+            errors.add(new FieldValidationError("departmentOther",
+                    "목록에서 고른 소속과 직접 입력한 소속 중 하나만 보낼 수 있습니다."));
+        }
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
+    }
+
+    /**
+     * Blank becomes null, so a 소속 nobody wrote is absent rather than empty.
+     *
+     * <p>{@code chk_users_department_other} and {@link User#isProfileComplete}
+     * both read this column as "was it answered", and an empty string answers
+     * nothing while satisfying both.
+     */
+    public static @Nullable String normalizeDepartmentOther(@Nullable String departmentOther) {
+        if (departmentOther == null) {
+            return null;
+        }
+        String trimmed = departmentOther.strip();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**

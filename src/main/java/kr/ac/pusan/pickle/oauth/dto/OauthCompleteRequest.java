@@ -39,6 +39,12 @@ public record OauthCompleteRequest(
         @Size(max = 32, message = "소속 코드가 올바르지 않습니다.")
         @Nullable String departmentCode,
 
+        // 소속, written out. A student picks a catalogue code; everyone else
+        // writes it, because a 연구소 or a 부서 is not in any 학과 list. Both
+        // together is the unlisted-학과 case and needs the OTHER code.
+        @Size(max = 100, message = "소속은 100자 이하여야 합니다.")
+        @Nullable String departmentOther,
+
         @NotEmpty(message = "약관 동의가 필요합니다.")
         @Valid
         List<ConsentInput> consents) {

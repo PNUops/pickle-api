@@ -6,7 +6,6 @@ import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
-import kr.ac.pusan.pickle.profile.DepartmentCatalog;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserPosition;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -395,7 +394,7 @@ public class DevDataSeeder implements ApplicationRunner {
             // every dev login. Filled only when empty, so a value set by hand in
             // a dev database survives the next boot.
             if (!existing.isProfileComplete()) {
-                existing.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
+                existing.setProfile(UserPosition.STAFF, null, null, "플랫폼 운영");
                 userRepository.save(existing);
             }
             if (!passwordEncoder.matches(password, existing.getPasswordHash())) {
@@ -412,7 +411,7 @@ public class DevDataSeeder implements ApplicationRunner {
             user.setEmailVerifiedAt(Instant.now());
             // Filled in so the profile prompt does not greet every dev login:
             // a prompt that is always on screen cannot be verified.
-            user.setProfile(UserPosition.STAFF, null, DepartmentCatalog.OTHER);
+            user.setProfile(UserPosition.STAFF, null, null, "플랫폼 운영");
             user = userRepository.save(user);
             personalWorkspaceService.ensurePersonalWorkspace(user);
         });
