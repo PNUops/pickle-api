@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -47,7 +48,20 @@ public class DepartmentCatalog {
     private final Map<String, DepartmentView> byCode;
 
     public DepartmentCatalog() {
-        this.byCode = load();
+        this(HOST_OVERRIDE);
+    }
+
+    /**
+     * The override path, for the tests that exercise the loading rules.
+     *
+     * <p>A hard-coded absolute path made every one of those rules unreachable:
+     * the duplicate-code refusal, the missing-{@code OTHER} refusal, and the
+     * refusal to fall back when the file is present but unusable — which is the
+     * rule this class was corrected for once already. A constant nothing can
+     * point at is a rule nothing can check.
+     */
+    DepartmentCatalog(Path override) {
+        this.byCode = load(override);
     }
 
     /** Catalogue order, which is the display order the console renders. */
@@ -77,8 +91,8 @@ public class DepartmentCatalog {
      */
     static final Path HOST_OVERRIDE = Path.of("/etc/pickle/departments.json");
 
-    private static Map<String, DepartmentView> load() {
-        Catalog catalog = Files.exists(HOST_OVERRIDE) ? readHostOverride() : readPackaged();
+    private static Map<String, DepartmentView> load(Path override) {
+        Catalog catalog = Files.exists(override) ? readHostOverride(override) : readPackaged();
         Map<String, DepartmentView> map = new LinkedHashMap<>();
         for (DepartmentView department : catalog.departments()) {
             if (map.put(department.code(), department) != null) {
@@ -94,8 +108,8 @@ public class DepartmentCatalog {
     private static Catalog readPackaged() {
         try (InputStream in = new ClassPathResource("departments.json").getInputStream()) {
             return JsonMapper.builder().build().readValue(in, Catalog.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException("departments.json is not readable", e);
+        } catch (IOException | JacksonException e) {
+            throw new UncheckedIOException("departments.json is not readable", asIo(e));
         }
     }
 
@@ -112,14 +126,24 @@ public class DepartmentCatalog {
      * {@code isReadable} classifies it as absent. The only signal either way is
      * the success log below, so its absence says nothing.
      */
-    private static Catalog readHostOverride() {
-        try (InputStream in = Files.newInputStream(HOST_OVERRIDE)) {
-            log.info("소속 카탈로그를 호스트 파일에서 읽습니다: {}", HOST_OVERRIDE);
+    private static Catalog readHostOverride(Path override) {
+        try (InputStream in = Files.newInputStream(override)) {
+            log.info("소속 카탈로그를 호스트 파일에서 읽습니다: {}", override);
             return JsonMapper.builder().build().readValue(in, Catalog.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException(HOST_OVERRIDE + " is present but could not be read as JSON"
-                    + " (check permissions and syntax)", e);
+        } catch (IOException | JacksonException e) {
+            // Both, and the second is not redundant: a Jackson parse failure is
+            // a RuntimeException, not an IOException, so catching IOException
+            // alone let a malformed file escape as a raw parser stack trace.
+            // Startup still failed — but the one message that says what to look
+            // at never reached the operator, which is most of the value here.
+            throw new UncheckedIOException(override + " is present but could not be read as JSON"
+                    + " (check permissions and syntax)", asIo(e));
         }
+    }
+
+    /** {@link UncheckedIOException} insists on an {@link IOException} cause. */
+    private static IOException asIo(Exception cause) {
+        return cause instanceof IOException io ? io : new IOException(cause);
     }
 
     /** Shape of the resource file; the leading {@code _comment} block is not data. */

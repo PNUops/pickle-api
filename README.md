@@ -183,6 +183,12 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_PROXMOX_TOKEN_ID` / `_SECRET` | PVE API 토큰. Proxmox 없는 로컬 개발은 비워 둬도 됩니다 |
 | `PICKLE_SSH_PLATFORM_PUBLIC_KEY` | 전 VM에 주입되는 게이트웨이 공개키. 없으면 프로비저닝 중단 |
 
+환경 변수는 아니지만 기동을 좌우하는 호스트 파일이 하나 더 있습니다.
+
+| 파일 | 용도 |
+|---|---|
+| `/etc/pickle/departments.json` | 소속 학과 목록을 앱에 내장된 것 대신 씁니다. **선택입니다** — 없으면 내장 목록으로 뜨고, 지우면 내장 목록으로 돌아옵니다. 다만 **파일이 있는데 읽을 수 없으면 권한이든 JSON 문법이든 기동을 거부합니다.** 내장 목록으로 조용히 돌아가면 바꿨다고 믿는 목록과 실제가 어긋나고, 증상이 「편집이 아무 일도 안 했다」뿐이기 때문입니다. 형식은 `src/main/resources/departments.json`과 같고, 코드가 중복되면 안 되며 목록에 없는 소속을 담는 `OTHER` 항목이 있어야 합니다 |
+
 <details>
 <summary>전체 환경 변수 표 (메일, Proxmox, 내부 연동, 시드 계정)</summary>
 

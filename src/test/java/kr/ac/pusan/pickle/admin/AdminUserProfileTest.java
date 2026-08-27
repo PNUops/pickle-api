@@ -167,6 +167,42 @@ class AdminUserProfileTest {
     }
 
     @Test
+    void twoCorrectionsTellTheHolderTwice() throws Exception {
+        // The dedup key is a UUID because a timestamp merged two corrections
+        // landing in the same millisecond — the one case the key exists to keep
+        // apart. Asserting one notice after one correction never saw that.
+        // Counted as a delta: the row survives the class, so an absolute count
+        // would be reading what the other cases left behind.
+        int before = profileNotices();
+        updateProfile(Map.of("studentNo", "202054321", "reason", "1차")).andExpect(status().isOk());
+        updateProfile(Map.of("studentNo", "202099999", "reason", "2차")).andExpect(status().isOk());
+
+        assertThat(profileNotices() - before).isEqualTo(2);
+    }
+
+    @Test
+    void theCatalogueFallbackAloneIsAcceptedAndThatIsDeliberate() throws Exception {
+        // 소속 = 기타 with nothing written is not a 소속, and the server takes
+        // it: no rule requires the written value beside the code, the CHECK
+        // allows the column to be null, and profileComplete is satisfied by the
+        // code alone. Both consoles refuse it, and this pins what the server
+        // does so that a change here is a decision rather than a surprise.
+        //
+        // Why the server does not refuse it: the same rule would refuse the
+        // rows that already exist. Every profile filled in before v0.46.0 was
+        // made to choose a 학과, and the validation runs against the merge, so
+        // it would fire on a request that only changes 이름.
+        Map<String, Object> body = new HashMap<>();
+        body.put("departmentCode", "OTHER");
+        body.put("departmentOther", null);
+        body.put("reason", "카탈로그 대체값만");
+        updateProfile(body)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.departmentCode").value("OTHER"))
+                .andExpect(jsonPath("$.departmentOther").doesNotExist());
+    }
+
+    @Test
     void aNonSysAdminCannotReachIt() throws Exception {
         User orgAdmin = ensureUser("aup.orgadmin@pusan.ac.kr", UserRole.ORG_ADMIN, "기관관리자");
         // 학번 identifies a real person and a wrong one is not the holder's to
@@ -249,6 +285,14 @@ class AdminUserProfileTest {
             user.setEmailVerifiedAt(Instant.now());
             return userRepository.save(user);
         });
+    }
+
+    /** 대상자에게 간 프로필 정정 알림 수. 행이 클래스를 넘어 살아남으므로 차이로 읽는다. */
+    private int profileNotices() {
+        Integer n = jdbcTemplate.queryForObject(
+                "select count(*) from notifications where user_id = ? and event = ?",
+                Integer.class, target.getId(), "account.profile.updated");
+        return n == null ? 0 : n;
     }
 
     private Map<String, Object> latestAuditEntry() {
