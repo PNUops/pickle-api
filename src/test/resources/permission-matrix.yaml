@@ -184,6 +184,7 @@ operations:
   - { id: disableUser,          method: POST,   path: "/admin/users/{userId}/disable",     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: enableUser,           method: POST,   path: "/admin/users/{userId}/enable",      roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: resetUserMfa,         method: POST,   path: "/admin/users/{userId}/mfa-reset",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateUserProfile,    method: PATCH,  path: "/admin/users/{userId}/profile",     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
   # ── 3.11 Admin — VMs (force-delete SYS_ADMIN-only) ────────────────────────
   - { id: listAdminVms,             method: GET,   path: "/admin/vms",                                 roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

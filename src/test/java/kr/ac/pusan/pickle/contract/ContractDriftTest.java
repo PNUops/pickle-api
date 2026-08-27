@@ -208,6 +208,7 @@ class ContractDriftTest {
             "POST /me/mfa/recovery-codes",
             "POST /auth/mfa",
             "POST /admin/users/{userId}/mfa-reset",
+            "PATCH /admin/users/{userId}/profile",
             // Terms and consent (contract v0.9.0).
             "GET /meta/terms",
             "GET /meta/terms/{docType}",
