@@ -396,6 +396,54 @@ class ProfileSurfaceTest {
                 .andExpect(status().isUnprocessableContent());
     }
 
+    @Test
+    void aStoredDepartmentCodeCannotBeReplacedByAnotherValidOne() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
+
+        // The gap this closes: the only replacement the suite tried was an
+        // unknown code, and that is refused by the catalogue check rather than
+        // by the lock. A lock narrowed to "clearing only" would have passed
+        // every test while a stored 소속 stayed freely rewritable — which is
+        // the thing the lock exists to stop.
+        updateProfile(Map.of("departmentCode", "KOREAN_LANG_LIT"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentCode')]").exists());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"));
+    }
+
+    @Test
+    void aStoredPositionCannotBeReplacedWhenNoStudentNumberIsInvolved() throws Exception {
+        updateProfile(Map.of("position", "PROFESSOR", "departmentOther", "부설연구소"))
+                .andExpect(status().isOk());
+
+        // Every position case in the suite moved a 학번 as a side effect, so a
+        // lock narrowed to "changes that would drop a 학번" — which is a shape
+        // the code actually has a helper for — would have stayed green while
+        // 직책 remained rewritable for everyone who never had one.
+        updateProfile(Map.of("position", "RESEARCHER"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.position").value("PROFESSOR"));
+    }
+
+    @Test
+    void oneStudentPositionCannotBecomeTheOther() throws Exception {
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
+
+        // 학부생 to 대학원생 keeps the 학번, so the drop-guard has nothing to
+        // say about it and only the lock refuses it. Graduation is the
+        // administrator's to record.
+        updateProfile(Map.of("position", "STUDENT_GRADUATE"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
+    }
+
     private org.springframework.test.web.servlet.ResultActions updateProfile(Map<String, ?> body)
             throws Exception {
         return mockMvc.perform(put("/api/v1/me/profile")

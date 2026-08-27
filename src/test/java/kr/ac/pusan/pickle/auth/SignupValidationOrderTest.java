@@ -94,6 +94,39 @@ class SignupValidationOrderTest {
     }
 
     @Test
+    void aDepartmentSentAsBothShapesIsRefusedBeforeTheAddressIsLookedUp() throws Exception {
+        // The shape the CHECK constraint refuses, so failing to catch it here
+        // is a 500 at flush rather than a field error. And it has to be caught
+        // before the lookup like every other request-shape rejection, or the
+        // validation order becomes the oracle the uniform 202 exists to remove.
+        Map<String, Object> both = Map.of("position", "PROFESSOR",
+                "departmentCode", "COMPUTER_SCIENCE", "departmentOther", "부설연구소");
+        // Both addresses, because the point is that the rejection does not
+        // depend on which one it is — that is the invariant this class defends.
+        signup(REGISTERED, both, "10.96.0.11")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentOther')]").exists());
+        signup(UNKNOWN, both, "10.96.0.11")
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'departmentOther')]").exists());
+    }
+
+    @Test
+    void aWrittenDepartmentAloneIsAcceptedOnEitherAddress() throws Exception {
+        // The shape a 교수 produces. Signup accepted the field from the start
+        // of this round but no test had ever sent it.
+        // The base body carries a 학과 code, and the two shapes together are
+        // refused, so the code has to be cleared explicitly — which is exactly
+        // what the console does for a non-student position.
+        Map<String, Object> written = new java.util.HashMap<>();
+        written.put("position", "PROFESSOR");
+        written.put("studentNo", null);
+        written.put("departmentCode", null);
+        written.put("departmentOther", "정보컴퓨터공학부 부설연구소");
+        signup(UNKNOWN, written, "10.96.0.12").andExpect(status().isAccepted());
+    }
+
+    @Test
     void aWellFormedSignupStillAnswersTheSameOnEitherAddress() throws Exception {
         // The other half of the invariant: once the shape is valid, both
         // addresses get the identical 202.
@@ -143,6 +176,18 @@ class SignupValidationOrderTest {
 
     private org.springframework.test.web.servlet.ResultActions signup(String email,
             Map<String, ?> overrides) throws Exception {
+        return signup(email, overrides, "10.96.0.7");
+    }
+
+    /**
+     * As above, from a named client address.
+     *
+     * <p>The per-IP signup window is shared, so a case that posts its own
+     * handful of signups takes its own address. Raising the limit to fit the
+     * suite would weaken the thing the limit is for.
+     */
+    private org.springframework.test.web.servlet.ResultActions signup(String email,
+            Map<String, ?> overrides, String clientAddr) throws Exception {
         Map<String, Object> body = new LinkedHashMap<>(Map.of(
                 "email", email,
                 "password", PASSWORD,
@@ -156,7 +201,7 @@ class SignupValidationOrderTest {
                 .with(request -> {
                     // Its own client address: these cases post several signups and
                     // the per-IP window is shared with every other test class.
-                    request.setRemoteAddr("10.96.0.7");
+                    request.setRemoteAddr(clientAddr);
                     return request;
                 })
                 .contentType(MediaType.APPLICATION_JSON)
