@@ -59,14 +59,24 @@ public class VmPowerJobs {
      * along as {@code adminAction} and becomes the event's actor kind here.
      *
      * <p>The two-argument forms are what jobs enqueued before that parameter
-     * existed were serialized against, and JobRunr resolves a queued job by its
-     * exact signature: dropping them would strand every power action in flight
-     * at deploy time. They record {@link VmActorKind#UNKNOWN}, because the
-     * member and the admin power endpoints both enqueued through them and the
-     * queued job carries nothing that tells the two apart. Guessing "member"
-     * there would print an administrator's name in a workspace's history for
-     * the width of one deploy, and that row is permanent. Removable one release
-     * after the queue has drained.</p>
+     * existed were serialized against. Such a job still deserializes without
+     * them — it carries two longs and nothing else — but JobRunr resolves the
+     * method by name <b>and parameter types</b>, so the lookup would find
+     * nothing and the job fails outright with no retry ({@code retries = 0}).
+     * The Proxmox call would be the smaller loss: the power-action claim is
+     * released in the job's own {@code finally}, so a job that never runs
+     * leaves that VM's power controls held until the stale-task sweeper frees
+     * them. They record {@link VmActorKind#UNKNOWN}, because the member and the
+     * admin power endpoints both enqueued through them and the queued job
+     * carries nothing that tells the two apart. Guessing "member" there would
+     * print an administrator's name in a workspace's history for the width of
+     * one deploy, and that row is permanent. Removable one release after the
+     * queue has drained.</p>
+     *
+     * <p><b>Overloads are safe here only because the arities differ.</b>
+     * JobRunr's method lookup matches assignable parameter types, so two
+     * same-arity overloads resolve to whichever it finds first — silently, not
+     * as an error.</p>
      */
     @Job(name = "vm-power start %0", retries = 0)
     public void start(long vmId, long actorId) {

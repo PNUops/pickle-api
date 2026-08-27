@@ -28,8 +28,10 @@ public record VmEventResponse(
     /**
      * @param actorId   the actor's public id, or null when the audience may not
      *                  see it
-     * @param actorName the actor's display name, or null for the same reason
-     *                  (also null for an account whose name is gone)
+     * @param actorName the actor's display name, or null for the same reason.
+     *                  Not null for any other reason: {@code users.name} is
+     *                  NOT NULL and the rows are kept after withdrawal, so an
+     *                  empty name here always means withheld, never missing
      */
     public static VmEventResponse from(VmEvent event, @Nullable UUID actorId,
             @Nullable String actorName) {
