@@ -70,8 +70,13 @@ public class VmPowerJobs {
      * admin power endpoints both enqueued through them and the queued job
      * carries nothing that tells the two apart. Guessing "member" there would
      * print an administrator's name in a workspace's history for the width of
-     * one deploy, and that row is permanent. Removable one release after the
-     * queue has drained.</p>
+     * one deploy, and that row is permanent.</p>
+     *
+     * <p>Removable once the queue no longer holds one, which is a question with
+     * an answer rather than a feeling: no non-terminal {@code jobrunr_jobs} row
+     * carries a two-long {@code VmPowerJobs} signature. Left un-checked, an
+     * overload written for one deploy window stays forever — and while it does,
+     * this class sits inside the trap below.</p>
      *
      * <p><b>Overloads are safe here only because the arities differ.</b>
      * JobRunr's method lookup matches assignable parameter types, so two
