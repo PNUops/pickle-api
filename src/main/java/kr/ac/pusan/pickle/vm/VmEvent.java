@@ -17,7 +17,13 @@ import org.hibernate.type.SqlTypes;
 /**
  * Permanent per-VM history entry (vm_events).
  * Append-only: rows are inserted and read, never updated or deleted.
- * {@code actorId} is null for system-initiated events (sweeper, reconciler).
+ * {@code actorId} is null for system-initiated events (sweeper, reconciler),
+ * which is the same fact {@code actorKind} carries as {@link VmActorKind#SYSTEM}
+ * — a check constraint keeps the two from disagreeing.
+ *
+ * <p>There is one constructor and it takes the kind, so every call site has to
+ * say which surface it is: a default would let a new administrator action be
+ * recorded as a member's and nothing would notice.
  */
 @Entity
 @Table(name = "vm_events")
@@ -46,6 +52,11 @@ public class VmEvent {
     @Column(name = "actor_id")
     private Long actorId;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "actor_kind", nullable = false, columnDefinition = "vm_actor_kind")
+    private VmActorKind actorKind;
+
     private String detail;
 
     @CreationTimestamp
@@ -55,10 +66,11 @@ public class VmEvent {
     protected VmEvent() {
     }
 
-    public VmEvent(Long vmId, VmEventType type, Long actorId, String detail) {
+    public VmEvent(Long vmId, VmEventType type, Long actorId, VmActorKind actorKind, String detail) {
         this.vmId = vmId;
         this.type = type;
         this.actorId = actorId;
+        this.actorKind = actorKind;
         this.detail = detail;
     }
 
@@ -80,6 +92,10 @@ public class VmEvent {
 
     public Long getActorId() {
         return actorId;
+    }
+
+    public VmActorKind getActorKind() {
+        return actorKind;
     }
 
     public String getDetail() {

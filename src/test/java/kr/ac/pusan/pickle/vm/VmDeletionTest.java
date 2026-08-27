@@ -30,6 +30,7 @@ import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
 import kr.ac.pusan.pickle.provisioning.DeletionSweeper;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
+import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.User;
@@ -264,6 +265,40 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
                 .andExpect(status().isAccepted());
+
+        // …and that deletion is an intervention, however member-shaped the
+        // endpoint is: recording it as a member's own would put the
+        // administrator's name in this workspace's history.
+        assertThat(jdbcTemplate.queryForObject(
+                "select actor_kind from vm_events where vm_id = ? and type = 'SELF_DELETE'"
+                        + " order by id desc limit 1", String.class, vmId))
+                .isEqualTo("ADMIN");
+    }
+
+    /**
+     * The other direction, which is just as easy to get wrong: an administrator
+     * who is <b>also</b> this workspace's owner is deleting their own VM, not
+     * intervening in someone else's. Reading the role first would hide their
+     * name from the colleagues they share the workspace with, which is the
+     * failure that made this column record the surface instead of the role.
+     */
+    @Test
+    void anAdminDeletingTheirOwnWorkspacesVmIsRecordedAsAMember() throws Exception {
+        User orgAdmin = userRepository.findByEmail(SeedFixtures.ORGADMIN_EMAIL).orElseThrow();
+        addMember(workspaceId, orgAdmin.getEmail(), "MEMBER");
+        long vmId = createVm(VmStatus.STOPPED);
+        // Standing on the VM itself, which is what the member path asks for.
+        AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, orgAdmin.getId(), "OWNER");
+
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
+                        .header("Authorization", "Bearer " + orgAdminToken)
+                        .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
+                .andExpect(status().isAccepted());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select actor_kind from vm_events where vm_id = ? and type = 'SELF_DELETE'"
+                        + " order by id desc limit 1", String.class, vmId))
+                .isEqualTo("MEMBER");
     }
 
     /**

@@ -9,6 +9,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmDeleteKind;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -140,16 +141,20 @@ class ProvisioningLifecycleTest {
     @Test
     void vmEventsAppendAndLifecycleColumnsMapOntoTheEntity() {
         long vmId = createVm();
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.CREATE, requesterId, "생성됨"));
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.CREATE, requesterId,
+                VmActorKind.MEMBER, "생성됨"));
         // system actor (sweeper/reconciler) is null; new v0.3.x event types work
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, null, null));
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, null,
+                VmActorKind.SYSTEM, null));
 
         var page = vmEventRepository.findByVmIdOrderByIdDesc(vmId, PageRequest.of(0, 10));
         assertThat(page.getTotalElements()).isEqualTo(2);
         assertThat(page.getContent().getFirst().getType()).isEqualTo(VmEventType.SCHEDULE_DELETE);
         assertThat(page.getContent().getFirst().getActorId()).isNull();
+        assertThat(page.getContent().getFirst().getActorKind()).isEqualTo(VmActorKind.SYSTEM);
         assertThat(page.getContent().getLast().getType()).isEqualTo(VmEventType.CREATE);
         assertThat(page.getContent().getLast().getActorId()).isEqualTo(requesterId);
+        assertThat(page.getContent().getLast().getActorKind()).isEqualTo(VmActorKind.MEMBER);
         assertThat(page.getContent().getLast().getDetail()).isEqualTo("생성됨");
 
         jdbcTemplate.update("""

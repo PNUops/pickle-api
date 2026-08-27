@@ -271,22 +271,42 @@ public class VmQueryService {
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page, int size) {
-        return eventsOf(requireVisibleVm(actor, vmId).getId(), page, size);
+        return eventsOf(requireVisibleVm(actor, vmId).getId(), page, size, false);
     }
 
     /**
      * History page for an <b>already authorized</b> VM — shared by the
      * member-scoped {@link #events} and the org-scoped admin surface.
+     *
+     * <p>{@code revealAdminActor} is what separates the two audiences. A
+     * member sees which of their own people acted, and sees an administrator's
+     * intervention only as an intervention; an administrator sees the name
+     * behind it too. Everything else about the page is identical.
+     *
+     * <p>A row whose surface is {@link VmActorKind#UNKNOWN} is withheld from
+     * the member audience on the same terms as an administrator's: the actor is
+     * recorded, but whether they acted as a colleague or reached in is not, and
+     * naming them would publish an administrator on the chance that they were
+     * one. An administrator reading the same page sees the name, because for
+     * that audience there is nothing to withhold.
      */
     @Transactional(readOnly = true)
-    public PageResponse<VmEventResponse> eventsOf(long vmId, int page, int size) {
+    public PageResponse<VmEventResponse> eventsOf(long vmId, int page, int size,
+            boolean revealAdminActor) {
         Page<VmEvent> result = vmEventRepository.findByVmIdOrderByIdDesc(vmId,
                 PageRequest.of(page, size));
-        Map<Long, UUID> actorIds = userRepository.findAllById(result.getContent().stream()
+        Map<Long, User> actors = userRepository.findAllById(result.getContent().stream()
                         .map(VmEvent::getActorId).filter(java.util.Objects::nonNull).distinct().toList())
-                .stream().collect(Collectors.toMap(User::getId, User::getPublicId));
+                .stream().collect(Collectors.toMap(User::getId, user -> user));
         return PageResponse.of(result.getContent().stream()
-                .map(event -> VmEventResponse.from(event, actorIds.get(event.getActorId())))
+                .map(event -> {
+                    boolean withheld = !revealAdminActor
+                            && (event.getActorKind() == VmActorKind.ADMIN
+                                || event.getActorKind() == VmActorKind.UNKNOWN);
+                    User who = withheld ? null : actors.get(event.getActorId());
+                    return VmEventResponse.from(event, who == null ? null : who.getPublicId(),
+                            who == null ? null : who.getName());
+                })
                 .toList(), result);
     }
 

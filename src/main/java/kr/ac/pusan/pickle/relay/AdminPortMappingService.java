@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -206,7 +207,7 @@ public class AdminPortMappingService {
         relayGenerations.bump(mapping.getRelayId());
         portMappingRepository.delete(mapping);
         vmEventRepository.save(new VmEvent(mapping.getVmId(), VmEventType.PORT_FORWARD_DELETE,
-                actor.id(), "관리자 삭제 — " + mapping.getProto() + " " + mapping.getPublicPort()));
+                actor.id(), VmActorKind.ADMIN, "관리자 삭제 — " + mapping.getProto() + " " + mapping.getPublicPort()));
         // Same channel as an admin suspend: the owning workspace loses an external
         // access path and must not learn it from a dead connection.
         Vm vm = vmRepository.findById(mapping.getVmId()).orElse(null);

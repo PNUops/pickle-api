@@ -86,7 +86,8 @@ class AdminVmInterventionTest {
     void adminDetailAndEventsAreOrgScopedWithThe404Mask() throws Exception {
         long vmId = createVm("RUNNING", null);
         jdbcTemplate.update("""
-                insert into vm_events (vm_id, type, detail) values (?, 'CREATE', '생성')
+                insert into vm_events (vm_id, type, actor_kind, detail)
+                values (?, 'CREATE', 'SYSTEM', '생성')
                 """, vmId);
 
         // all admin tiers read the detail; the viewer has no workspace role
@@ -104,7 +105,53 @@ class AdminVmInterventionTest {
         mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].type").value("CREATE"));
+                .andExpect(jsonPath("$.content[0].type").value("CREATE"))
+                .andExpect(jsonPath("$.content[0].actorKind").value("SYSTEM"));
+
+        // the intervention the member surface reports without a name: an
+        // administrator reading the same history sees who it was
+        User intervener = ensureUser("avi.intervener@pusan.ac.kr", UserRole.ORG_ADMIN, orgId);
+        jdbcTemplate.update("""
+                insert into vm_events (vm_id, type, actor_id, actor_kind, detail)
+                values (?, 'GATEWAY_BLOCK', ?, 'ADMIN', '관리자 차단')
+                """, vmId, intervener.getId());
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value(
+                        intervener.getPublicId().toString()))
+                .andExpect(jsonPath("$.content[0].actorName").value(intervener.getName()));
+
+        // …but not to the one role the audit log leaves out. ORG_VIEWER is what
+        // an organisation grants another organisation's staff, and it reads this
+        // page; naming the administrator here would hand that reader something
+        // /admin/audit refuses them, as a side effect of a display change.
+        String orgViewerToken = jwtService.createAccessToken(
+                ensureUser("avi.orgviewer@pusan.ac.kr", UserRole.ORG_VIEWER, orgId));
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + orgViewerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
+
+        // The role is held per organisation, so the question has to be asked per
+        // organisation. An account that only views THIS org while operating
+        // another one holds ORG_MANAGER as its effective role, and asking that
+        // would name the administrators of an organisation it may only look at.
+        User crossOrg = ensureUser("avi.crossorg@pusan.ac.kr", UserRole.ORG_VIEWER, orgId);
+        Org otherOrgForRole = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관")
+                .orElseGet(() -> orgRepository.save(new Org("개입 테스트 타기관", null)));
+        SeedFixtures.grantOrgRole(jdbcTemplate, crossOrg.getId(), otherOrgForRole.getId(),
+                UserRole.ORG_MANAGER);
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(
+                                userRepository.findById(crossOrg.getId()).orElseThrow())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
 
         // cross-org admin: same 404 as an unknown id
         Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관").orElseGet(() ->

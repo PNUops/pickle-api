@@ -33,6 +33,7 @@ import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -142,7 +143,8 @@ public class PublishingService {
         Domain domain = requestedCustom != null
                 ? createCustom(actor, vm, resolvedPort, requestedCustom)
                 : createPlatform(vm, resolvedPort, subdomain, rootDomain);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(), domain.getFqdn()));
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.PUBLISH, actor.id(),
+                VmActorKind.MEMBER, domain.getFqdn()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_PUBLISH,
                 "vm", vm.getPublicId(), Map.of("fqdn", domain.getFqdn(), "port", resolvedPort,
                         "kind", domain.getKind().name()), ip);
@@ -203,7 +205,7 @@ public class PublishingService {
         teardown(domain);
         if (served) {
             vmEventRepository.save(new VmEvent(domain.getVmId(), VmEventType.UNPUBLISH, actor.id(),
-                    domain.getFqdn()));
+                    VmActorKind.MEMBER, domain.getFqdn()));
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.DOMAIN_DELETE,
                 "domain", domain.getPublicId(), Map.of("fqdn", domain.getFqdn()), ip);

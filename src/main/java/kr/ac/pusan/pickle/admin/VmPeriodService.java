@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -73,7 +74,7 @@ public class VmPeriodService {
             // raced with a schedule-delete/delete accept — same 409 as the pre-check
             throw deletionBound();
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.PERIOD_UPDATE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.PERIOD_UPDATE, actor.id(), VmActorKind.ADMIN,
                 "기간 변경: %s ~ %s → %s ~ %s".formatted(
                         vm.getStartDate(), vm.getEndDate(), newStart, request.endDate())));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

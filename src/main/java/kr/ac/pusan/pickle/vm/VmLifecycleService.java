@@ -99,7 +99,7 @@ public class VmLifecycleService {
         claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, false));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -111,7 +111,7 @@ public class VmLifecycleService {
         claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, false));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -126,7 +126,7 @@ public class VmLifecycleService {
             throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
         }
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, false));
         return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -139,7 +139,7 @@ public class VmLifecycleService {
                 List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, false));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -160,7 +160,7 @@ public class VmLifecycleService {
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, true));
         return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -172,7 +172,7 @@ public class VmLifecycleService {
                 "RUNNING 상태의 VM만 종료할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, true));
         return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -185,7 +185,7 @@ public class VmLifecycleService {
         }
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, true));
         return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
@@ -198,7 +198,7 @@ public class VmLifecycleService {
                 "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
         recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId));
+        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, true));
         return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
     }
 
