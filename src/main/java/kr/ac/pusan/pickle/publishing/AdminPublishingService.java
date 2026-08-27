@@ -27,6 +27,7 @@ import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -211,7 +212,7 @@ public class AdminPublishingService {
         if (vm != null) {
             if (served) {
                 vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.UNPUBLISH, actor.id(),
-                        "관리자 해제 — " + domain.getFqdn()));
+                        VmActorKind.ADMIN, "관리자 해제 — " + domain.getFqdn()));
             }
             notificationService.publish(
                     notificationService.vmResponsibleIds(vm),

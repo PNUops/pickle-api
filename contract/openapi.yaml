@@ -254,6 +254,75 @@ components:
       - "workspaceId"
       - "workspaceName"
       type: "object"
+    AdminNoticeView:
+      properties:
+        active:
+          description: "지금 게시 창 안에 있는지. 예정·만료된 공지도 이 목록에는 함께 나옵니다."
+          type: "boolean"
+        audience:
+          $ref: "#/components/schemas/NoticeAudience"
+        body:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        createdByName:
+          description: "공지를 등록한 사람의 이름. 계정이 지워졌으면 비어 있습니다."
+          type:
+          - "string"
+          - "null"
+        endsAt:
+          description: "게시 종료 시각. 비어 있으면 만료되지 않습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        images:
+          items:
+            $ref: "#/components/schemas/NoticeImageView"
+          type: "array"
+        orgId:
+          description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
+          type:
+          - "string"
+          - "null"
+        pinned:
+          type: "boolean"
+        popup:
+          type: "boolean"
+        scope:
+          $ref: "#/components/schemas/NoticeScope"
+        startsAt:
+          format: "date-time"
+          type: "string"
+        title:
+          type: "string"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+      required:
+      - "active"
+      - "audience"
+      - "body"
+      - "createdAt"
+      - "id"
+      - "images"
+      - "pinned"
+      - "popup"
+      - "scope"
+      - "startsAt"
+      - "title"
+      - "updatedAt"
+      type: "object"
     AdminNotificationResponse:
       properties:
         attempts:
@@ -2819,6 +2888,175 @@ components:
       - "storage"
       - "vmBridge"
       type: "object"
+    NoticeAudience:
+      enum:
+      - "PUBLIC"
+      - "USERS"
+      type: "string"
+    NoticeCreateRequest:
+      properties:
+        audience:
+          $ref: "#/components/schemas/NoticeAudience"
+        body:
+          maxLength: 20000
+          minLength: 0
+          type: "string"
+        endsAt:
+          description: "게시 종료 시각. 생략하면 만료되지 않습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        orgId:
+          description: "기관 공지의 대상 기관이며, 전역 공지에는 넣을 수 없습니다. 관리하는 기관이 하나뿐인 기관 관리자는 생\
+            략할 수 있고 그 기관으로 지정됩니다. 관리하는 기관이 둘 이상이거나 시스템 관리자라면 반드시 지정해야 합니다. 기관 관리자는\
+            \ 자신이 관리하는 기관만 지정할 수 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        pinned:
+          description: "목록 상단 고정 여부. 생략하면 고정하지 않습니다."
+          type: "boolean"
+        popup:
+          description: "콘솔이 모달로 띄울지. 생략하면 띄우지 않습니다."
+          type: "boolean"
+        scope:
+          $ref: "#/components/schemas/NoticeScope"
+        startsAt:
+          description: "게시 시작 시각. 생략하면 즉시 게시합니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        title:
+          maxLength: 200
+          minLength: 0
+          type: "string"
+      required:
+      - "audience"
+      - "body"
+      - "scope"
+      - "title"
+      type: "object"
+    NoticeImageView:
+      properties:
+        byteSize:
+          format: "int32"
+          type: "integer"
+        contentType:
+          description: "저장된 실제 형식. 업로드 시 파일 선두 바이트로 판별한 값입니다."
+          type: "string"
+        fileName:
+          description: "업로드 당시의 파일 이름. 클라이언트가 보내지 않았으면 비어 있습니다."
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        url:
+          description: "이미지를 내려받는 경로. 인증 없이 열 수 있는지는 공지의 공개 범위를 따릅니다."
+          type: "string"
+      required:
+      - "byteSize"
+      - "contentType"
+      - "id"
+      - "url"
+      type: "object"
+    NoticeScope:
+      enum:
+      - "PLATFORM"
+      - "ORG"
+      type: "string"
+    NoticeUpdateRequest:
+      properties:
+        audience:
+          $ref: "#/components/schemas/NoticeAudience"
+        body:
+          maxLength: 20000
+          minLength: 0
+          type: "string"
+        endsAt:
+          description: "게시 종료 시각. null을 명시하면 만료 없음으로 바꿉니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        pinned:
+          type: "boolean"
+        popup:
+          type: "boolean"
+        startsAt:
+          format: "date-time"
+          type: "string"
+        title:
+          maxLength: 200
+          minLength: 0
+          type: "string"
+      type: "object"
+    NoticeView:
+      properties:
+        audience:
+          $ref: "#/components/schemas/NoticeAudience"
+        body:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        endsAt:
+          description: "게시 종료 시각. 비어 있으면 만료되지 않습니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        images:
+          items:
+            $ref: "#/components/schemas/NoticeImageView"
+          type: "array"
+        orgId:
+          description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
+          type:
+          - "string"
+          - "null"
+        pinned:
+          description: "목록 상단 고정 여부"
+          type: "boolean"
+        popup:
+          description: "콘솔이 모달로 띄울 공지인지"
+          type: "boolean"
+        scope:
+          $ref: "#/components/schemas/NoticeScope"
+        startsAt:
+          format: "date-time"
+          type: "string"
+        title:
+          type: "string"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+      required:
+      - "audience"
+      - "body"
+      - "createdAt"
+      - "id"
+      - "images"
+      - "pinned"
+      - "popup"
+      - "scope"
+      - "startsAt"
+      - "title"
+      - "updatedAt"
+      type: "object"
     NotificationChannel:
       enum:
       - "EMAIL"
@@ -3237,6 +3475,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseAdminNoticeView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminNoticeView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseAdminNotificationResponse:
       properties:
         content:
@@ -3467,6 +3730,31 @@ components:
         content:
           items:
             $ref: "#/components/schemas/LlmKeySummaryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseNoticeView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/NoticeView"
           type: "array"
         page:
           format: "int32"
@@ -5099,6 +5387,13 @@ components:
       required:
       - "token"
       type: "object"
+    VmActorKind:
+      enum:
+      - "SYSTEM"
+      - "MEMBER"
+      - "ADMIN"
+      - "UNKNOWN"
+      type: "string"
     VmBriefResponse:
       properties:
         diskGb:
@@ -5317,6 +5612,12 @@ components:
           type:
           - "string"
           - "null"
+        actorKind:
+          $ref: "#/components/schemas/VmActorKind"
+        actorName:
+          type:
+          - "string"
+          - "null"
         createdAt:
           format: "date-time"
           type: "string"
@@ -5330,6 +5631,7 @@ components:
         type:
           $ref: "#/components/schemas/VmEventType"
       required:
+      - "actorKind"
       - "createdAt"
       - "id"
       - "type"
@@ -5952,7 +6254,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.48.0"
+  version: "0.50.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -6562,6 +6864,177 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-node-controller"
+  /admin/notices:
+    get:
+      operationId: "listAdminNotices"
+      parameters:
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminNoticeView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
+    post:
+      operationId: "createAdminNotice"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoticeCreateRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminNoticeView"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
+  /admin/notices/{noticeId}:
+    delete:
+      operationId: "deleteAdminNotice"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
+    patch:
+      operationId: "updateAdminNotice"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoticeUpdateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminNoticeView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
+  /admin/notices/{noticeId}/images:
+    post:
+      operationId: "uploadAdminNoticeImage"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              properties:
+                file:
+                  format: "binary"
+                  type: "string"
+              type: "object"
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NoticeImageView"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
+  /admin/notices/{noticeId}/images/{imageId}:
+    delete:
+      operationId: "deleteAdminNoticeImage"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "imageId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-notice-controller"
   /admin/notifications:
     get:
       operationId: "listAdminNotifications"
@@ -9580,6 +10053,102 @@ paths:
       security: []
       tags:
       - "meta-controller"
+  /notices:
+    get:
+      operationId: "listNotices"
+      parameters:
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNoticeView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "notice-controller"
+  /notices/{noticeId}:
+    get:
+      operationId: "getNotice"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NoticeView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "notice-controller"
+  /notices/{noticeId}/images/{imageId}:
+    get:
+      operationId: "getNoticeImage"
+      parameters:
+      - in: "path"
+        name: "noticeId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "imageId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                format: "byte"
+                type: "string"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      security: []
+      tags:
+      - "notice-controller"
   /notifications:
     get:
       operationId: "listNotifications"

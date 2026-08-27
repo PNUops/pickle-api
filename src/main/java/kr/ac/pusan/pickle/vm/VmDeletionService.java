@@ -129,12 +129,13 @@ public class VmDeletionService {
 
     @Transactional
     public VmDeletionResponse selfDelete(AuthenticatedUser actor, UUID publicVmId, String ip) {
-        Vm vm = requireDeletableByActor(actor, publicVmId);
+        DeletableVm deletable = requireDeletableByActor(actor, publicVmId);
+        Vm vm = deletable.vm();
         long vmId = vm.getId();
         requireNoPendingDeletion(vm);
         requireNotDeletionProtected(vmId);
         if (vm.getStatus() == VmStatus.ERROR) {
-            return deleteErrorVmImmediately(actor, vm, ip);
+            return deleteErrorVmImmediately(actor, deletable, ip);
         }
         requireStatusOutside(vm, Set.of(VmStatus.CREATING, VmStatus.DELETING, VmStatus.DELETED,
                 VmStatus.NEEDS_ADMIN), "현재 상태에서는 삭제할 수 없습니다.");
@@ -147,6 +148,7 @@ public class VmDeletionService {
             throw alreadyPendingDeletion(); // lost a race with a concurrent transition
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SELF_DELETE, actor.id(),
+                deletable.actorKind(),
                 "삭제 접수 — " + KST.format(scheduledFor) + " (KST) 파기 예정"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
@@ -160,7 +162,9 @@ public class VmDeletionService {
     }
 
     /** ERROR VM: nothing to destroy — release the IP and finish immediately. */
-    private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor, Vm vm, String ip) {
+    private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor,
+            DeletableVm deletable, String ip) {
+        Vm vm = deletable.vm();
         Instant now = Instant.now();
         if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
             throw alreadyPendingDeletion();
@@ -183,9 +187,9 @@ public class VmDeletionService {
             vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);
         }
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(),
-                "삭제 접수 — 생성 실패(ERROR) 상태, 유예 없이 즉시 파기"));
+                deletable.actorKind(), "삭제 접수 — 생성 실패(ERROR) 상태, 유예 없이 즉시 파기"));
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
-                "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
+                deletable.actorKind(), "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "immediate", true), ip);
@@ -217,7 +221,7 @@ public class VmDeletionService {
                 reason, now) == 0) {
             throw alreadyPendingDeletion();
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(), VmActorKind.ADMIN,
                 "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
@@ -259,7 +263,7 @@ public class VmDeletionService {
         } else {
             throw notCancelable(); // FORCE (immediate) or no pending deletion
         }
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(), VmActorKind.ADMIN,
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 취소"));
@@ -308,7 +312,7 @@ public class VmDeletionService {
         }
         failLiveProvisionTask(vmId);
         resumeParkedDeleteTask(vmId);
-        vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(),
+        vmEventRepository.save(new VmEvent(vmId, VmEventType.FORCE_DELETE, actor.id(), VmActorKind.ADMIN,
                 overrodeProtection ? "강제 삭제 접수 — 삭제 보호 오버라이드, 즉시 강제 종료 후 파기"
                         : "강제 삭제 접수 — 즉시 강제 종료 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
@@ -368,15 +372,36 @@ public class VmDeletionService {
     // ── shared guards ──────────────────────────────────────────────────────
 
     /**
+     * A VM this actor may delete, together with <b>how they got the right</b>.
+     * The path is the member-facing one, but two of its four ways in are an
+     * administrator's override, and an override is an intervention however
+     * ordinary the endpoint looks: recording it as a member's own deletion
+     * would put the administrator's name in the workspace's history, which is
+     * exactly what this history withholds everywhere else.
+     */
+    private record DeletableVm(Vm vm, VmActorKind actorKind) {
+    }
+
+    /**
      * Self-delete authorization: an owner of the VM's access list, an owner of
      * the workspace that owns it (deletion is one of the three standing rights),
      * ORG_ADMIN of the VM's org, or SYS_ADMIN. Non-members and cross-org admins
      * get 404 (masking); anyone else who can see the VM gets 403.
      */
-    private Vm requireDeletableByActor(AuthenticatedUser actor, UUID vmId) {
+    private DeletableVm requireDeletableByActor(AuthenticatedUser actor, UUID vmId) {
         Vm vm = vmRepository.findByPublicId(vmId).orElseThrow(VmAccessService::vmNotFound);
+        // Standing as a member is checked FIRST, and the order is the whole
+        // point: an administrator who also owns this VM, or owns the workspace
+        // that holds it, is deleting their own resource like anyone else. Ask
+        // the role before the access list and their name disappears from their
+        // own colleagues' history — the same failure that made this column
+        // record the surface rather than the role.
+        VmAccess access = vmAccessService.of(vm, actor.id());
+        if (access.manages()) {
+            return new DeletableVm(vm, VmActorKind.MEMBER);
+        }
         if (actor.role() == UserRole.SYS_ADMIN) {
-            return vm;
+            return new DeletableVm(vm, VmActorKind.ADMIN);
         }
         if (actor.role() == UserRole.ORG_ADMIN) {
             // The admin override belongs to the org this VM is in, not to the
@@ -384,16 +409,12 @@ public class VmDeletionService {
             if (!actor.administers(vm.getOrgId())) {
                 throw VmAccessService.vmNotFound();
             }
-            return vm;
+            return new DeletableVm(vm, VmActorKind.ADMIN);
         }
-        VmAccess access = vmAccessService.of(vm, actor.id());
-        if (!access.manages()) {
-            access.requireVisible();
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
-                    "VM을 삭제할 권한이 없습니다",
-                    "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
-        }
-        return vm;
+        access.requireVisible();
+        throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.WORKSPACE_ROLE_INSUFFICIENT,
+                "VM을 삭제할 권한이 없습니다",
+                "이 VM의 소유자, 워크스페이스 소유자 또는 관리자만 VM을 삭제할 수 있습니다.");
     }
 
     private void requireNoPendingDeletion(Vm vm) {

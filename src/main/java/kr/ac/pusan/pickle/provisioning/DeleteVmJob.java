@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
 import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -224,7 +225,7 @@ public class DeleteVmJob {
             int updated = vmRepository.markDeleted(vmId, vm.getDeleteRequestedBy(), now);
             taskRepository.complete(task.getId(), now);
             if (updated == 1) {
-                vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, null, "VM 파기 완료"));
+                vmEventRepository.save(new VmEvent(vmId, VmEventType.DELETE, null, VmActorKind.SYSTEM, "VM 파기 완료"));
                 notifyOrgAdmins(vm);
                 log.info("Delete pipeline completed for vm {} (vmid {})", vmId, vm.getProxmoxVmid());
             }

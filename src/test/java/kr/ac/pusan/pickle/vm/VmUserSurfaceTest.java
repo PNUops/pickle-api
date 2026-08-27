@@ -94,8 +94,9 @@ class VmUserSurfaceTest {
     void vmEventsPageNewestFirstWithVisibilityScoping() throws Exception {
         long vmId = createVm();
         jdbcTemplate.update("""
-                insert into vm_events (vm_id, type, actor_id, detail)
-                values (?, 'CREATE', null, '승인에 따라 자동 생성'), (?, 'START', ?, null)
+                insert into vm_events (vm_id, type, actor_id, actor_kind, detail)
+                values (?, 'CREATE', null, 'SYSTEM', '승인에 따라 자동 생성'),
+                       (?, 'START', ?, 'MEMBER', null)
                 """, vmId, vmId, owner.getId());
 
         // anyone the access list names (VIEWER+) reads, newest first
@@ -104,10 +105,16 @@ class VmUserSurfaceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(2))
                 .andExpect(jsonPath("$.content[0].type").value("START"))
+                .andExpect(jsonPath("$.content[0].actorKind").value("MEMBER"))
                 .andExpect(jsonPath("$.content[0].actorId").value(owner.getPublicId().toString()))
+                // a member of the workspace is named: the member list already shows
+                // this name to everyone who can read this page
+                .andExpect(jsonPath("$.content[0].actorName").value(owner.getName()))
                 .andExpect(jsonPath("$.content[0].detail").value((Object) null))
                 .andExpect(jsonPath("$.content[1].type").value("CREATE"))
+                .andExpect(jsonPath("$.content[1].actorKind").value("SYSTEM"))
                 .andExpect(jsonPath("$.content[1].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[1].actorName").value((Object) null))
                 .andExpect(jsonPath("$.content[1].detail").value("승인에 따라 자동 생성"))
                 .andExpect(jsonPath("$.content[1].createdAt").isNotEmpty());
 
@@ -131,6 +138,51 @@ class VmUserSurfaceTest {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * An administrator's intervention reaches the member surface as an
+     * intervention and nothing else: the kind says an administrator acted, and
+     * the identity behind it is emptied server-side rather than left to the
+     * client to hide. Who exactly acted stays readable in the audit log.
+     */
+    @Test
+    void adminActionsReachTheMemberHistoryWithoutTheAdministratorsIdentity() throws Exception {
+        long vmId = createVm();
+        User admin = ensureUser("vmsurf.admin@pusan.ac.kr", "표면관리자");
+        jdbcTemplate.update("""
+                insert into vm_events (vm_id, type, actor_id, actor_kind, detail)
+                values (?, 'GATEWAY_BLOCK', ?, 'ADMIN', '관리자 차단')
+                """, vmId, admin.getId());
+
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null))
+                .andExpect(jsonPath("$.content[0].detail").value("관리자 차단"));
+    }
+
+    /**
+     * A row that predates the surface column names nobody either. The actor is
+     * recorded, but whether they acted as a colleague or reached in is not, and
+     * a name printed on that chance is a name printed on an administrator.
+     */
+    @Test
+    void rowsWithAnUnknownSurfaceAreReportedWithoutTheActor() throws Exception {
+        long vmId = createVm();
+        jdbcTemplate.update("""
+                insert into vm_events (vm_id, type, actor_id, actor_kind, detail)
+                values (?, 'STOP', ?, 'UNKNOWN', null)
+                """, vmId, owner.getId());
+
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("UNKNOWN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
     }
 
     @Test

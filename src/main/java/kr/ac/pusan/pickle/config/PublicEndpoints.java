@@ -30,7 +30,11 @@ public final class PublicEndpoints {
     public static final List<String> GET_ONLY = List.of(
             "/api/v1/meta/terms", "/api/v1/meta/terms/**",
             // 직책·소속 catalogues rendered by the signup form.
-            "/api/v1/meta/profile-options");
+            "/api/v1/meta/profile-options",
+            // 공지사항. The landing page shows notices to visitors who have no
+            // account yet; which of them an anonymous caller actually gets back
+            // is the notice's own audience, decided per row in the service.
+            "/api/v1/notices", "/api/v1/notices/**");
 
     /**
      * Carve-outs living under a public prefix that still demand a session:

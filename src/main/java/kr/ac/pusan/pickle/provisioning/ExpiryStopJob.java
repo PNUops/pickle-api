@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTimeoutException;
 import kr.ac.pusan.pickle.proxmox.dto.ClusterResource;
 import kr.ac.pusan.pickle.vm.Vm;
+import kr.ac.pusan.pickle.vm.VmActorKind;
 import kr.ac.pusan.pickle.vm.VmEvent;
 import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
@@ -150,7 +151,7 @@ public class ExpiryStopJob {
                 log.info("expiry stop of vm {} lost the CAS — already transitioned", vmId);
                 return;
             }
-            vmEventRepository.save(new VmEvent(vmId, VmEventType.EXPIRE_STOP, null,
+            vmEventRepository.save(new VmEvent(vmId, VmEventType.EXPIRE_STOP, null, VmActorKind.SYSTEM,
                     DETAIL_EXPIRY_STOPPED));
             Set<Long> recipients = new LinkedHashSet<>();
             recipients.addAll(notificationService.vmResponsibleIds(vm));
