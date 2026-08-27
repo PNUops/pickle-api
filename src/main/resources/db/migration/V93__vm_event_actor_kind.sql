@@ -14,30 +14,51 @@
 -- SYSTEM. Same reasoning as audit_logs.actor_role — a fact about the moment,
 -- fixed at the moment, not re-derived later from state that keeps moving.
 
-create type vm_actor_kind as enum ('SYSTEM', 'MEMBER', 'ADMIN');
+create type vm_actor_kind as enum ('SYSTEM', 'MEMBER', 'ADMIN', 'UNKNOWN');
 
-alter table vm_events add column actor_kind vm_actor_kind;
+-- The default lets the column land without rewriting the table (PG 11+ keeps
+-- it in the catalogue), so only the rows the backfill actually decides are
+-- written. It is dropped again below: an insert that forgets the kind must
+-- fail, not inherit a wrong one.
+alter table vm_events add column actor_kind vm_actor_kind not null default 'SYSTEM';
 
--- Existing rows predate the stamp, so their kind is INFERRED, not recorded:
--- an actor who is still a member of the VM's workspace is read as MEMBER,
--- anyone else as an administrator who reached in from outside. That inference
--- is right for the rows this schema has (administrators are not members of the
--- workspaces they intervene in) and is made exactly once, here. Every row
--- written from now on carries what the code stamped, not what a query guessed.
+-- Existing rows predate the stamp, so their kind is RECOVERED where the event
+-- type decides it and left UNKNOWN where nothing does.
+--
+-- The type decides it whenever only one surface can write that type: the six
+-- admin-only types below are reachable through the admin endpoints alone, and
+-- PUBLISH and PORT_FORWARD_CREATE only through the member ones. What is left
+-- is genuinely ambiguous — power actions, deletions and UNPUBLISH each have a
+-- member endpoint and an admin one.
+--
+-- For those, current workspace membership is used in ONE direction only. An
+-- actor who is still a member is read as a member: their name is already on
+-- the workspace's member list, so nothing is disclosed by it. An actor who is
+-- not is left UNKNOWN rather than read as an administrator, because leaving a
+-- workspace deletes the membership row — inferring ADMIN from its absence
+-- would rewrite a departed colleague's ordinary work into an intervention
+-- that never happened, in a history that is append-only. UNKNOWN renders the
+-- way this history read before this column existed: a human acted, unnamed.
 update vm_events e
    set actor_kind = case
-           when e.actor_id is null then 'SYSTEM'::vm_actor_kind
+           when e.type in ('SCHEDULE_DELETE', 'CANCEL_SCHEDULED_DELETE', 'FORCE_DELETE',
+                           'PERIOD_UPDATE', 'GATEWAY_BLOCK', 'GATEWAY_UNBLOCK')
+               then 'ADMIN'::vm_actor_kind
+           when e.type in ('PUBLISH', 'PORT_FORWARD_CREATE') then 'MEMBER'::vm_actor_kind
            when exists (select 1
                           from vms v
                           join workspace_members m on m.workspace_id = v.workspace_id
                          where v.id = e.vm_id
                            and m.user_id = e.actor_id) then 'MEMBER'::vm_actor_kind
-           else 'ADMIN'::vm_actor_kind
-       end;
+           else 'UNKNOWN'::vm_actor_kind
+       end
+ where e.actor_id is not null;
 
-alter table vm_events alter column actor_kind set not null;
+alter table vm_events alter column actor_kind drop default;
 
 -- The two columns answer the same question from different sides, so a row that
--- disagrees with itself must not be insertable.
+-- disagrees with itself must not be insertable. NOT VALID keeps the exclusive
+-- lock off the scan; the validation that follows takes a weaker one.
 alter table vm_events add constraint vm_events_actor_kind_ck
-    check ((actor_id is null) = (actor_kind = 'SYSTEM'));
+    check ((actor_id is null) = (actor_kind = 'SYSTEM')) not valid;
+alter table vm_events validate constraint vm_events_actor_kind_ck;

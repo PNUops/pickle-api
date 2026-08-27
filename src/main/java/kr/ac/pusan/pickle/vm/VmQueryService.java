@@ -282,6 +282,13 @@ public class VmQueryService {
      * member sees which of their own people acted, and sees an administrator's
      * intervention only as an intervention; an administrator sees the name
      * behind it too. Everything else about the page is identical.
+     *
+     * <p>A row whose surface is {@link VmActorKind#UNKNOWN} is withheld from
+     * the member audience on the same terms as an administrator's: the actor is
+     * recorded, but whether they acted as a colleague or reached in is not, and
+     * naming them would publish an administrator on the chance that they were
+     * one. An administrator reading the same page sees the name, because for
+     * that audience there is nothing to withhold.
      */
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> eventsOf(long vmId, int page, int size,
@@ -293,9 +300,10 @@ public class VmQueryService {
                 .stream().collect(Collectors.toMap(User::getId, user -> user));
         return PageResponse.of(result.getContent().stream()
                 .map(event -> {
-                    User who = event.getActorKind() == VmActorKind.ADMIN && !revealAdminActor
-                            ? null
-                            : actors.get(event.getActorId());
+                    boolean withheld = !revealAdminActor
+                            && (event.getActorKind() == VmActorKind.ADMIN
+                                || event.getActorKind() == VmActorKind.UNKNOWN);
+                    User who = withheld ? null : actors.get(event.getActorId());
                     return VmEventResponse.from(event, who == null ? null : who.getPublicId(),
                             who == null ? null : who.getName());
                 })

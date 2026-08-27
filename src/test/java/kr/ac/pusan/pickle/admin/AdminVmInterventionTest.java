@@ -123,6 +123,19 @@ class AdminVmInterventionTest {
                         intervener.getPublicId().toString()))
                 .andExpect(jsonPath("$.content[0].actorName").value(intervener.getName()));
 
+        // …but not to the one role the audit log leaves out. ORG_VIEWER is what
+        // an organisation grants another organisation's staff, and it reads this
+        // page; naming the administrator here would hand that reader something
+        // /admin/audit refuses them, as a side effect of a display change.
+        String orgViewerToken = jwtService.createAccessToken(
+                ensureUser("avi.orgviewer@pusan.ac.kr", UserRole.ORG_VIEWER, orgId));
+        mockMvc.perform(get("/api/v1/admin/vms/{id}/events", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + orgViewerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("ADMIN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
+
         // cross-org admin: same 404 as an unknown id
         Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("개입 테스트 타기관").orElseGet(() ->
                 orgRepository.save(new Org("개입 테스트 타기관", null)));

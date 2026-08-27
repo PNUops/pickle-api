@@ -264,6 +264,14 @@ class VmDeletionTest {
                         .header("Authorization", "Bearer " + orgAdminToken)
                         .header(ReauthTestSupport.HEADER, reauth(orgAdminToken)))
                 .andExpect(status().isAccepted());
+
+        // …and that deletion is an intervention, however member-shaped the
+        // endpoint is: recording it as a member's own would put the
+        // administrator's name in this workspace's history.
+        assertThat(jdbcTemplate.queryForObject(
+                "select actor_kind from vm_events where vm_id = ? and type = 'SELF_DELETE'"
+                        + " order by id desc limit 1", String.class, vmId))
+                .isEqualTo("ADMIN");
     }
 
     /**

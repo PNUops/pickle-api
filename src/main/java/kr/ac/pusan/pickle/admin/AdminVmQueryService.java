@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.vm.AdminVmAccess;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmQueryService;
@@ -92,12 +93,21 @@ public class AdminVmQueryService {
         return vmQueryService.detailOf(vm, null);
     }
 
-    /** Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): org-scoped history. */
+    /**
+     * Contract {@code GET /admin/vms/{vmId}/events} (v0.17.0): org-scoped history.
+     *
+     * <p>Who intervened is named for the readers who could already learn it
+     * from the audit log, and for nobody else. This endpoint admits one role
+     * that the audit log deliberately does not — {@code ORG_VIEWER}, which an
+     * organisation grants to <b>another organisation's</b> staff — and filling
+     * an administrator's name in for that reader would widen what the role sees
+     * as a side effect of a display change (contract §3.15, v0.50.0).
+     */
     @Transactional(readOnly = true)
     public PageResponse<VmEventResponse> events(AuthenticatedUser actor, UUID vmId, int page,
             int size) {
         return vmQueryService.eventsOf(adminVmAccess.requireReadableVm(actor, vmId).getId(),
-                page, size, true);
+                page, size, actor.role() != UserRole.ORG_VIEWER);
     }
 
     @Transactional(readOnly = true)

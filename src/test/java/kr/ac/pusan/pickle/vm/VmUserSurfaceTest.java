@@ -164,6 +164,27 @@ class VmUserSurfaceTest {
                 .andExpect(jsonPath("$.content[0].detail").value("관리자 차단"));
     }
 
+    /**
+     * A row that predates the surface column names nobody either. The actor is
+     * recorded, but whether they acted as a colleague or reached in is not, and
+     * a name printed on that chance is a name printed on an administrator.
+     */
+    @Test
+    void rowsWithAnUnknownSurfaceAreReportedWithoutTheActor() throws Exception {
+        long vmId = createVm();
+        jdbcTemplate.update("""
+                insert into vm_events (vm_id, type, actor_id, actor_kind, detail)
+                values (?, 'STOP', ?, 'UNKNOWN', null)
+                """, vmId, owner.getId());
+
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/events")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].actorKind").value("UNKNOWN"))
+                .andExpect(jsonPath("$.content[0].actorId").value((Object) null))
+                .andExpect(jsonPath("$.content[0].actorName").value((Object) null));
+    }
+
     @Test
     void vmDetailAssemblesLifecycleSurface() throws Exception {
         long vmId = createVm();
