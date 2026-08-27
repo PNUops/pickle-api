@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.DisableUserRequest;
+import kr.ac.pusan.pickle.admin.dto.AdminUpdateProfileRequest;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
@@ -19,6 +20,7 @@ import kr.ac.pusan.pickle.user.UserStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -83,6 +85,20 @@ public class AdminUserController {
     public UserAdminDetailResponse enableUser(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID userId, HttpServletRequest httpRequest) {
         return adminUserService.enable(principal, userId, clientIp(httpRequest));
+    }
+
+    /**
+     * 프로필 정정. 직책·학번·소속 are write-once for the account holder, so this
+     * is where they change after that; see {@code ProfileLock} for why the two
+     * halves ship together.
+     */
+    @PatchMapping("/{userId}/profile")
+    @PreAuthorize("hasRole('SYS_ADMIN')")
+    public UserAdminDetailResponse updateUserProfile(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID userId, @Valid @RequestBody AdminUpdateProfileRequest request,
+            HttpServletRequest httpRequest) {
+        return adminUserService.updateProfile(principal, userId, request, clientIp(httpRequest));
     }
 
     @PostMapping("/{userId}/mfa-reset")

@@ -45,6 +45,8 @@ public enum NotificationEvent {
     ACCOUNT_MFA_ENROLLED("account.mfa.enrolled", NotificationImportance.HIGH),
     ACCOUNT_MFA_DISABLED("account.mfa.disabled", NotificationImportance.HIGH),
     ACCOUNT_MFA_RESET("account.mfa.reset", NotificationImportance.HIGH),
+    /** An administrator corrected 직책·학번·소속 — values the holder cannot change back. */
+    ACCOUNT_PROFILE_UPDATED("account.profile.updated", NotificationImportance.HIGH),
     // HIGH: "a login method was attached to your account" is exactly the
     // event someone has to see if it was not them who attached it.
     ACCOUNT_IDENTITY_LINKED("account.identity.linked", NotificationImportance.HIGH),

@@ -52,6 +52,16 @@ public class AuditService {
     public static final String ACCOUNT_MFA_ENROLL = "account.mfa_enroll";
     public static final String ACCOUNT_MFA_DISABLE = "account.mfa_disable";
     public static final String ACCOUNT_MFA_RESET = "account.mfa_reset";
+    /**
+     * An administrator corrected another account's 직책·학번·소속.
+     *
+     * <p>Separate from {@code account.profile_update}, which is the holder
+     * writing their own: there the actor and the target are the same row and
+     * the payload assumes it. Folding an administrator's write into it would
+     * make "who changed this 학번" unanswerable, which is the one question the
+     * write-once lock exists to keep answerable.
+     */
+    public static final String USER_PROFILE_UPDATE = "user.profile_update";
     public static final String USER_DISABLE = "user.disable";
     public static final String USER_ENABLE = "user.enable";
     public static final String VM_SELF_DELETE = "vm.self_delete";

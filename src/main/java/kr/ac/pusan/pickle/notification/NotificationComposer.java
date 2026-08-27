@@ -283,6 +283,16 @@ public class NotificationComposer {
                     본인이 해제한 것이 아니라면 즉시 비밀번호를 변경하고
                     관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
+            // 직책·학번·소속 are write-once for the holder, so an administrator
+            // is the only one who can have changed them and the holder cannot
+            // change them back. Told rather than left to notice.
+            case ACCOUNT_PROFILE_UPDATED -> new Composed(event.id(), "프로필 정보 변경 안내 (관리자 조치)",
+                    """
+                    관리자가 계정의 직책·학번·소속 정보를 변경했습니다. 계정 화면에서
+                    바뀐 내용을 확인해 주세요.
+
+                    요청한 적이 없다면 즉시 관리자에게 문의해 주세요.""",
+                    "/console/account", event.defaultImportance(), null);
             case ACCOUNT_MFA_RESET -> new Composed(event.id(), "2단계 인증 초기화 안내 (관리자 조치)",
                     """
                     관리자가 계정의 2단계 인증을 초기화했습니다. 다음 로그인은

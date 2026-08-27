@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.orgs.ManagedOrgQueryService;
 import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.orgs.OrgMembershipSql;
 import kr.ac.pusan.pickle.orgs.OrgScope;
+import kr.ac.pusan.pickle.profile.ProfileOptionsService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -74,12 +75,14 @@ public class AdminUserQueryService {
     private final UserStatusChangeRepository userStatusChangeRepository;
     private final UserMfaRepository userMfaRepository;
     private final ManagedOrgQueryService managedOrgQueryService;
+    private final ProfileOptionsService profileOptionsService;
 
     public AdminUserQueryService(JdbcTemplate jdbcTemplate, UserRepository userRepository,
             WorkspaceMemberRepository workspaceMemberRepository, VmRepository vmRepository,
             UserStatusChangeRepository userStatusChangeRepository,
             UserMfaRepository userMfaRepository,
-            ManagedOrgQueryService managedOrgQueryService) {
+            ManagedOrgQueryService managedOrgQueryService,
+            ProfileOptionsService profileOptionsService) {
         this.jdbcTemplate = jdbcTemplate;
         this.userRepository = userRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -87,6 +90,7 @@ public class AdminUserQueryService {
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.userMfaRepository = userMfaRepository;
         this.managedOrgQueryService = managedOrgQueryService;
+        this.profileOptionsService = profileOptionsService;
     }
 
     @Transactional(readOnly = true)
@@ -179,7 +183,10 @@ public class AdminUserQueryService {
                 userMfaRepository.isEnrolled(user.getId()),
                 user.getCreatedAt(),
                 user.getWithdrawnAt(), user.getDisabledAt(), user.getDisabledReason(),
-                memberships, activeVmCount, statusChanges);
+                memberships, activeVmCount, statusChanges,
+                user.getPosition(), user.getStudentNo(), user.getDepartmentCode(),
+                profileOptionsService.departmentName(user.getDepartmentCode()),
+                user.getDepartmentOther());
     }
 
     /** Resolves each transition's actor in one batch: id, email and name. */
