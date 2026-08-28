@@ -135,9 +135,10 @@ public class MeController {
         user.setProfile(position, ProfileValidator.normalizeStudentNo(position, studentNo),
                 departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
         // Audited like every other self-service write on /me. 학번 is a personal
-        // identifier the holder can rewrite at will, so "who changed this and
-        // when" has to have an answer; the before-values are recorded because
-        // the after-values are already readable on the row. 학번 itself is
+        // identifier, and since v0.51.0 the holder writes it exactly once — so
+        // "who put this here, and when" has to have an answer, and there is only
+        // ever one such answer per account. The before-values are recorded
+        // because the after-values are already readable on the row. 학번 itself is
         // recorded as a boolean rather than a value — the audit log is not a
         // second place to keep it.
         //
