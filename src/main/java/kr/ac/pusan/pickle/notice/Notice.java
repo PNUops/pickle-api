@@ -16,14 +16,14 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * One notice-board document (V92). Unlike an announcement it is never fanned
- * out — the row itself is what readers open, for as long as its active window
- * lasts.
+ * One notice-board document (V92, narrowed by V95). Unlike an announcement it
+ * is never fanned out — the row itself is what readers open, for as long as its
+ * active window lasts.
  *
- * <p>{@link #scope} and {@link #audience} together decide who may open it:
- * an ORG notice belongs to {@link #orgId} and is always
- * {@link NoticeAudience#USERS}, so nothing an organisation writes can be read
- * anonymously.</p>
+ * <p>Every notice is platform-wide: an organisation says who supplies a node or
+ * a resource, not who may read what, so V95 dropped the scope axis. What is
+ * left is {@link #audience}, which together with the active window is the whole
+ * of who may open it — PUBLIC reaches anonymous visitors, USERS does not.</p>
  */
 @Entity
 @Table(name = "notices")
@@ -46,13 +46,6 @@ public class Notice {
 
     @Column(nullable = false)
     private String body;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private NoticeScope scope;
-
-    @Column(name = "org_id")
-    private Long orgId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -84,12 +77,10 @@ public class Notice {
     protected Notice() {
     }
 
-    public Notice(Long createdBy, NoticeScope scope, Long orgId, NoticeAudience audience,
+    public Notice(Long createdBy, NoticeAudience audience,
             String title, String body, boolean pinned, boolean popup,
             Instant startsAt, Instant endsAt) {
         this.createdBy = createdBy;
-        this.scope = scope;
-        this.orgId = orgId;
         this.audience = audience;
         this.title = title;
         this.body = body;
@@ -126,14 +117,6 @@ public class Notice {
 
     public void setBody(String body) {
         this.body = body;
-    }
-
-    public NoticeScope getScope() {
-        return scope;
-    }
-
-    public Long getOrgId() {
-        return orgId;
     }
 
     public NoticeAudience getAudience() {

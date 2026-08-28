@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -18,12 +17,9 @@ import kr.ac.pusan.pickle.notice.dto.AdminNoticeView;
 import kr.ac.pusan.pickle.notice.dto.NoticeCreateRequest;
 import kr.ac.pusan.pickle.notice.dto.NoticeImageView;
 import kr.ac.pusan.pickle.notice.dto.NoticeUpdateRequest;
-import kr.ac.pusan.pickle.orgs.Org;
-import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserRole;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,36 +28,33 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * The notice writes (contract {@code createAdminNotice} and friends).
  *
- * <p>Method security has already narrowed these to ORG_ADMIN and SYS_ADMIN.
- * What it cannot express, and what lives here, is the rest of the rule:</p>
+ * <p>Method security has already narrowed these to ORG_ADMIN and SYS_ADMIN, and
+ * since V95 that is very nearly the whole rule. A notice belongs to no
+ * organisation, so the two roles write the same thing: an organisation
+ * administrator publishes to every user of the platform, and to anonymous
+ * visitors too when it chooses {@code audience=PUBLIC}. An organisation names
+ * who supplies a node or a resource; it is not a mechanism for deciding who may
+ * use a feature, which is what the old scope axis had made it.</p>
+ *
+ * <p>What is left here on top of the gate:</p>
  *
  * <ul>
- *   <li>an ORG_ADMIN writes only ORG notices, and only for an organisation it
- *       administers. A PLATFORM request is 403, the same shape an ALL-scope
- *       announcement gets; an organisation it does not administer is a
- *       <b>422</b> field error on {@code orgId}, because that is a value the
- *       client submitted rather than a resource whose existence a refusal would
- *       disclose. Naming an organisation it does administer is accepted, not
- *       refused as a field it may not set: the console sends it for every role.
- *       The field may be omitted only by an account administering exactly one
- *       organisation, since co-appointment leaves no single answer otherwise;</li>
- *   <li>an ORG_ADMIN edits, deletes and attaches to only the notices of the
- *       organisations it administers. Any other organisation's answers 404 —
- *       a uniform answer for everything outside that scope, not a claim that
- *       the caller cannot see it, which a co-appointed account disproves: one
- *       administering A and only reading B sees B's notices in its management
- *       list and still gets 404 writing them. A platform notice answers 403
- *       instead, because the list does show it to them read-only and masking it
- *       would say the opposite of what the list already showed;</li>
- *   <li>{@code audience=PUBLIC} on an ORG notice is a 422 validation error,
- *       re-checked on update against the <em>stored</em> scope. The database
- *       refuses it too, but a constraint violation would surface as a 500 and
- *       tell the author nothing;</li>
- *   <li>{@code scope} and {@code orgId} are absent from the update body
- *       entirely. Were they editable, an ORG_ADMIN could create an ORG notice
- *       and then promote it to PLATFORM or move it to another organisation,
- *       which is the create gate defeated through a second verb.</li>
+ *   <li>a notice named by a path that resolves to nothing is 404. That is a
+ *       fact rather than a mask: everyone through the gate may write every
+ *       notice, so there is nothing left for a masked answer to protect;</li>
+ *   <li>the publication window is validated rather than left to
+ *       {@code notices_window_check}, which would surface as a 500 and tell the
+ *       author nothing;</li>
+ *   <li>{@code audience} is the only axis, and it is editable. Widening a
+ *       notice to PUBLIC after the fact is an ordinary edit, and the
+ *       consequence — text and images in front of anonymous visitors — is the
+ *       same one the create path carries.</li>
  * </ul>
+ *
+ * <p>The masking that does remain is on the public read path, not here: an
+ * anonymous caller asking for a USERS notice gets 404 rather than 403, because
+ * a refusal would confirm that the identifier names a real notice
+ * ({@link NoticeQueryService}).</p>
  *
  * <p>Images are validated by what their bytes are rather than by what the
  * upload claimed ({@link NoticeImageTypes}), capped at 2 MiB each and 5 per
@@ -74,28 +67,20 @@ public class NoticeService {
 
     private final NoticeRepository noticeRepository;
     private final NoticeImageStore noticeImageStore;
-    private final OrgRepository orgRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public NoticeService(NoticeRepository noticeRepository, NoticeImageStore noticeImageStore,
-            OrgRepository orgRepository, UserRepository userRepository,
-            AuditService auditService) {
+            UserRepository userRepository, AuditService auditService) {
         this.noticeRepository = noticeRepository;
         this.noticeImageStore = noticeImageStore;
-        this.orgRepository = orgRepository;
         this.userRepository = userRepository;
         this.auditService = auditService;
     }
 
     @Transactional
     public AdminNoticeView create(AuthenticatedUser actor, NoticeCreateRequest request, String ip) {
-        Long orgId = resolveCreateTarget(actor, request);
         List<FieldValidationError> errors = new ArrayList<>();
-        if (request.scope() == NoticeScope.ORG && request.audience() == NoticeAudience.PUBLIC) {
-            errors.add(new FieldValidationError("audience",
-                    "기관 공지는 로그인한 사용자에게만 공개할 수 있습니다."));
-        }
         Instant startsAt = request.startsAt() == null ? Instant.now() : request.startsAt();
         if (request.endsAt() != null && !request.endsAt().isAfter(startsAt)) {
             errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 뒤여야 합니다."));
@@ -104,12 +89,12 @@ public class NoticeService {
             throw ApiException.validationFailed(errors);
         }
 
-        Notice notice = noticeRepository.saveAndFlush(new Notice(actor.id(), request.scope(),
-                orgId, request.audience(), request.title().strip(), request.body().strip(),
+        Notice notice = noticeRepository.saveAndFlush(new Notice(actor.id(), request.audience(),
+                request.title().strip(), request.body().strip(),
                 request.isPinned(), request.isPopup(), startsAt, request.endsAt()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.NOTICE_CREATE,
                 "notice", notice.getPublicId(),
-                Map.of("scope", notice.getScope().name(), "audience", notice.getAudience().name(),
+                Map.of("audience", notice.getAudience().name(),
                         "title", notice.getTitle(), "pinned", notice.isPinned(),
                         "popup", notice.isPopup()), ip);
         return view(notice);
@@ -118,7 +103,7 @@ public class NoticeService {
     @Transactional
     public AdminNoticeView update(AuthenticatedUser actor, UUID noticeId,
             NoticeUpdateRequest request, String ip) {
-        Notice notice = writable(actor, noticeId);
+        Notice notice = writable(noticeId);
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
                     new FieldValidationError("body", "변경할 항목을 하나 이상 보내 주세요.")));
@@ -133,10 +118,6 @@ public class NoticeService {
         Instant endsAt = request.isEndsAtSet() ? request.getEndsAt() : notice.getEndsAt();
 
         List<FieldValidationError> errors = new ArrayList<>();
-        if (notice.getScope() == NoticeScope.ORG && audience == NoticeAudience.PUBLIC) {
-            errors.add(new FieldValidationError("audience",
-                    "기관 공지는 로그인한 사용자에게만 공개할 수 있습니다."));
-        }
         if (endsAt != null && !endsAt.isAfter(startsAt)) {
             errors.add(new FieldValidationError("endsAt", "게시 종료 시각은 시작 시각보다 뒤여야 합니다."));
         }
@@ -192,20 +173,19 @@ public class NoticeService {
 
     @Transactional
     public void delete(AuthenticatedUser actor, UUID noticeId, String ip) {
-        Notice notice = writable(actor, noticeId);
+        Notice notice = writable(noticeId);
         UUID publicId = notice.getPublicId();
         String title = notice.getTitle();
-        String scope = notice.getScope().name();
         // The images go with it: notice_images.notice_id cascades on delete.
         noticeRepository.delete(notice);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.NOTICE_DELETE,
-                "notice", publicId, Map.of("title", title, "scope", scope), ip);
+                "notice", publicId, Map.of("title", title), ip);
     }
 
     @Transactional
     public NoticeImageView addImage(AuthenticatedUser actor, UUID noticeId, MultipartFile file,
             String ip) {
-        Notice notice = writable(actor, noticeId);
+        Notice notice = writable(noticeId);
         if (file == null || file.isEmpty()) {
             throw ApiException.validationFailed(List.of(
                     new FieldValidationError("file", "이미지 파일을 첨부해 주세요.")));
@@ -236,7 +216,7 @@ public class NoticeService {
 
     @Transactional
     public void deleteImage(AuthenticatedUser actor, UUID noticeId, UUID imageId, String ip) {
-        Notice notice = writable(actor, noticeId);
+        Notice notice = writable(noticeId);
         if (!noticeImageStore.delete(notice.getId(), imageId)) {
             throw notFound("해당 이미지가 존재하지 않습니다.");
         }
@@ -246,122 +226,26 @@ public class NoticeService {
     }
 
     /**
-     * Which organisation the new notice belongs to, and the refusal when the
-     * caller may not write it at all.
+     * The notice a write may touch — since V95, any of them. Everyone the
+     * controller's gate admits administers every notice, so this resolves the
+     * identifier and nothing more.
      *
-     * <p>Shaped after {@code AnnouncementService}, which answers the same
-     * question for the same kind of object — an org-scoped write naming its
-     * target organisation in the body — so the two cannot drift: naming an
-     * organisation the caller does not administer is a <b>field</b> error (422)
-     * rather than a refusal, because {@code orgId} is a submitted value and
-     * there is no existing row whose existence a 404 would be protecting. That
-     * is the opposite of {@link #writable}, where the notice is addressed by id
-     * and masking is what keeps another organisation's notices private.
-     *
-     * <p>Co-appointment: an account can administer several organisations, so
-     * "your own org" is not always a single answer. Naming one is required from
-     * the second organisation onwards; an account administering exactly one
-     * still need not.
+     * <p>The 404 is therefore a fact and not a mask. It used to be one: an
+     * organisation administrator got the same answer for another
+     * organisation's notice as for one that did not exist, because
+     * distinguishing them would have disclosed that the identifier named
+     * something. There is no such scope left to hide, and the masking that
+     * remains is on the public read path in {@link NoticeQueryService}.
      */
-    private Long resolveCreateTarget(AuthenticatedUser actor, NoticeCreateRequest request) {
-        // A platform notice names no organisation, and saying so beats ignoring
-        // it: a client that sent one believes something the server does not.
-        if (request.scope() == NoticeScope.PLATFORM) {
-            if (actor.role() == UserRole.ORG_ADMIN) {
-                throw forbidden("전역 공지는 시스템 관리자만 등록할 수 있습니다.");
-            }
-            if (request.orgId() != null) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "전역 공지에는 기관을 지정할 수 없습니다.")));
-            }
-            return null;
-        }
-        Long requestedOrgId = request.orgId() == null ? null
-                : orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null);
-        if (actor.role() == UserRole.ORG_ADMIN) {
-            // administeredOrgIds(), not the effective role: since V90 the account
-            // may hold ORG_ADMIN in one organisation and only read another, and
-            // the effective role the @PreAuthorize gate saw is the highest of
-            // them. Asking the role here would let an admin of one organisation
-            // write a notice for every organisation it can merely see.
-            Set<Long> administered = actor.administeredOrgIds();
-            if (administered.isEmpty()) {
-                throw forbidden("관리 기관이 지정되지 않은 계정입니다.");
-            }
-            if (request.orgId() != null) {
-                // Another organisation's is refused rather than quietly
-                // rewritten to one of theirs: an attempted cross-org write is
-                // exactly the event worth surfacing. An organisation that does
-                // not exist answers the same way, so which organisations exist
-                // stays private from the org tier.
-                // requestedOrgId is null when the id names no organisation, and
-                // administeredOrgIds() is a JDK immutable set, whose contains()
-                // throws on null rather than answering false. Asking the null
-                // question first is what keeps the unknown org a 422 like any
-                // other unreachable one instead of a 500.
-                if (requestedOrgId == null || !administered.contains(requestedOrgId)) {
-                    throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                            "자기 기관의 공지만 등록할 수 있습니다.")));
-                }
-                return requestedOrgId;
-            }
-            if (administered.size() == 1) {
-                return administered.iterator().next();
-            }
-            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "기관 공지에는 대상 기관이 필요합니다.")));
-        }
-        // The sys tier administers no organisation, so it always names one.
-        if (request.orgId() == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "기관 공지에는 대상 기관이 필요합니다.")));
-        }
-        if (requestedOrgId == null) {
-            throw notFound("해당 기관이 존재하지 않습니다.");
-        }
-        return requestedOrgId;
-    }
-
-    /**
-     * The notice a write may touch. An organisation administrator reaches only
-     * the notices of the organisations they <b>administer</b>; a platform notice
-     * is visible to them but not theirs to change, and any other organisation's
-     * is neither — including one they hold a reading role in, which is why this
-     * asks {@link AuthenticatedUser#administers} rather than reusing the wider
-     * scope the management list is built from.
-     *
-     * <p>The 404 is a uniform answer for everything outside that scope, not a
-     * claim that the caller cannot see the notice. Usually both are true, but
-     * not for a co-appointed account: one that administers A and only reads B
-     * <b>does</b> see B's notices in its management list and still gets 404
-     * writing them. That is deliberate — the write scope is narrower than the
-     * read scope, and the alternative is a 403 that distinguishes "exists but
-     * not yours" from "does not exist" for every other caller, which is the
-     * disclosure the mask exists to prevent. A platform notice is the one case
-     * answered with 403 instead, because the management list shows it to them
-     * and pretending it is absent would contradict that list.
-     */
-    private Notice writable(AuthenticatedUser actor, UUID noticeId) {
-        Notice notice = noticeRepository.findByPublicId(noticeId)
+    private Notice writable(UUID noticeId) {
+        return noticeRepository.findByPublicId(noticeId)
                 .orElseThrow(() -> notFound("해당 공지가 존재하지 않습니다."));
-        if (actor.role().isSysTier()) {
-            return notice;
-        }
-        if (notice.getScope() == NoticeScope.PLATFORM) {
-            throw forbidden("전역 공지는 시스템 관리자만 수정할 수 있습니다.");
-        }
-        if (!actor.administers(notice.getOrgId())) {
-            throw notFound("해당 공지가 존재하지 않습니다.");
-        }
-        return notice;
     }
 
     private AdminNoticeView view(Notice notice) {
-        Org org = notice.getOrgId() == null ? null
-                : orgRepository.findById(notice.getOrgId()).orElse(null);
         String author = notice.getCreatedBy() == null ? null
                 : userRepository.findById(notice.getCreatedBy()).map(User::getName).orElse(null);
-        return AdminNoticeView.from(notice, org, author,
+        return AdminNoticeView.from(notice, author,
                 noticeImageStore.metadataByNotice(List.of(notice.getId()))
                         .getOrDefault(notice.getId(), List.of()),
                 Instant.now());

@@ -14,9 +14,10 @@ import org.jspecify.annotations.Nullable;
  * {@code "endsAt": null} turns a notice that expires into one that does not.
  * Those two are the same value in a record and would be indistinguishable.</p>
  *
- * <p>{@code scope} and {@code orgId} are absent on purpose. Moving a notice
- * between organisations, or between a platform and an organisation, changes who
- * may read it and who may edit it — that is a new notice, not an edit.</p>
+ * <p>{@code audience} is editable, and it is the only axis a notice has since
+ * V95. Widening one to PUBLIC after the fact is an ordinary edit rather than a
+ * privilege escalation: every account that reaches this endpoint could have
+ * created the notice PUBLIC in the first place.</p>
  */
 public class NoticeUpdateRequest {
 

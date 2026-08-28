@@ -41,26 +41,21 @@ import org.springframework.web.multipart.MultipartFile;
  * viewer: its rows carry login addresses, so within the org tier it stays with
  * the roles that may act. SYS_VIEWER reads it like every other system read.</p>
  *
- * <p>Reading the list is not the whole of what that grants. The same scope
- * reaches the images of those notices while they are outside their active
- * window, through {@code NoticeQueryService.manageableBy} — the list row
- * carries the image URLs, so a management view whose every image 404s is not
- * one. A viewer therefore sees exactly what an operator of the same
- * organisation sees on the two management surfaces, this list and those
- * previews. The public board is the one place it does not: that resolves its
- * readers by workspace-derived membership with the operating grants unioned on
- * top, and a viewer's grant is not one of them. A viewer who is also an ACTIVE
- * member of a workspace holding that organisation's resources still reaches the
- * board by that first path, as any account does — what a viewer's grant alone
- * does not do is put them there.</p>
+ * <p>The list is unscoped since V95: a notice belongs to no organisation, so
+ * every role admitted here reads every notice, and every organisation
+ * administrator writes for the whole platform. The gate below is therefore the
+ * entire authorization story for this surface — including for an org-tier
+ * account granted no organisation at all, which is admitted like any other,
+ * because refusing it would be an organisation deciding who may use a
+ * feature.</p>
+ *
+ * <p>Reading the list is not the whole of what that grants. The same roles
+ * reach the images of those notices while they are outside their active window,
+ * through {@code NoticeQueryService.manageableBy} — the list row carries the
+ * image URLs, so a management view whose every image 404s is not one.</p>
  *
  * <p>Each write carries its own {@code @PreAuthorize}, which fully replaces
  * this class-level one, so widening the read gate cannot reach them.</p>
- *
- * <p>The org-scoping the matrix calls {@code allow_org_scoped} is service-layer
- * and cannot be said in an annotation: an org-tier list includes the platform's
- * notices as read-only rows, and every write against one of those is refused
- * in {@link NoticeService}.</p>
  *
  * <p>There is no admin detail read on purpose — {@link AdminNoticeView} rows
  * carry the body, so the list is already the editor's source.</p>
@@ -81,10 +76,9 @@ public class AdminNoticeController {
 
     @GetMapping
     public PageResponse<AdminNoticeView> listAdminNotices(
-            @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return noticeQueryService.listForAdmin(principal, page, size);
+        return noticeQueryService.listForAdmin(page, size);
     }
 
     @PostMapping
