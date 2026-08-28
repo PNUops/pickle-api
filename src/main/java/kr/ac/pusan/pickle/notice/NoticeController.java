@@ -60,7 +60,8 @@ public class NoticeController {
      * <p>The identifier is a UUID naming one immutable set of bytes, so a
      * changed image is a different URL and a stale entry is impossible. What
      * can go stale is not the bytes but the <em>entitlement</em>: a notice can
-     * flip from PUBLIC to USERS, reach the end of its window, or be deleted.
+     * have its popup flag turned off, reach the end of its window, or be
+     * deleted.
      * {@code immutable} tells a cache it never needs to revalidate, which is
      * precisely the promise that cannot be kept once entitlement can change, so
      * the shared branch does not make it.</p>
@@ -83,13 +84,15 @@ public class NoticeController {
      * file, so the year stays there and buys the repeat views it was for.</p>
      *
      * <p>So the two ceilings bound different things, and only one of them
-     * bounds revocation: {@code s-maxage} gives a shared cache an hour, while
-     * {@code max-age} lets the browser of somebody who already fetched the
-     * image go on serving it for up to a year after the notice flips to USERS,
-     * closes its window or is deleted. That is deliberate rather than an
-     * oversight — it is the same person's copy, not a wider audience — but a
-     * reader who sees only the {@code s-maxage} should not conclude that
-     * revocation is bounded everywhere.</p>
+     * bounds revocation. The two numbers are not the same number and should
+     * not be read as one: {@code s-maxage=3600} gives a <b>shared</b> cache an
+     * hour, while {@code max-age=31536000} lets the browser of somebody who
+     * already fetched the image go on serving it for up to a <b>year</b> after
+     * the notice's popup flag is turned off, its window closes, or it is
+     * deleted. That is deliberate rather than an oversight — it is the same
+     * person's copy, not a wider audience — but a reader who sees only the
+     * {@code s-maxage} should not conclude that revocation is bounded
+     * everywhere.</p>
      *
      * <p>{@code inline} because these are body illustrations to render, not
      * files to save.</p>
