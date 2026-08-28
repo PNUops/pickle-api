@@ -336,12 +336,21 @@ public class AuthService {
     @Transactional
     public AuthResult completeMfaLogin(String mfaToken, String code, String recoveryCode,
             String ip, String userAgent) {
+        // The escalating lockout is keyed on (account, client address), so it bounds
+        // one address and nothing else. Every other code-taking endpoint pairs it
+        // with a per-minute window that bounds the account across addresses; this one
+        // had no window at all, which made it the only place where the account-wide
+        // cap the lockout's own contract promises did not exist. The address window
+        // goes first because it needs no identity; the account one waits until the
+        // challenge has resolved to a user.
+        rateLimitService.hit("mfa_login:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         MfaService.requireExactlyOneCode(code, recoveryCode);
         MfaLoginToken challenge = mfaService.loadChallengeOrThrow(mfaToken);
         User user = userRepository.findById(challenge.getUserId())
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(AuthService::invalidCredentials);
 
+        rateLimitService.hit("mfa_login:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         rateLimitService.checkLoginLock(user.getEmail(), ip);
         if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
