@@ -33,7 +33,8 @@ public final class PublicEndpoints {
             "/api/v1/meta/profile-options",
             // 공지사항. The landing page shows notices to visitors who have no
             // account yet; which of them an anonymous caller actually gets back
-            // is the notice's own audience, decided per row in the service.
+            // is decided per row in the service, by the notice's popup flag and
+            // its publication window.
             "/api/v1/notices", "/api/v1/notices/**");
 
     /**

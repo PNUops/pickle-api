@@ -259,8 +259,6 @@ components:
         active:
           description: "지금 게시 창 안에 있는지. 예정·만료된 공지도 이 목록에는 함께 나옵니다."
           type: "boolean"
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           type: "string"
         createdAt:
@@ -284,23 +282,12 @@ components:
           items:
             $ref: "#/components/schemas/NoticeImageView"
           type: "array"
-        orgId:
-          description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
-        orgName:
-          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
-          type:
-          - "string"
-          - "null"
         pinned:
+          description: "목록 상단 고정 여부"
           type: "boolean"
         popup:
+          description: "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다."
           type: "boolean"
-        scope:
-          $ref: "#/components/schemas/NoticeScope"
         startsAt:
           format: "date-time"
           type: "string"
@@ -311,14 +298,12 @@ components:
           type: "string"
       required:
       - "active"
-      - "audience"
       - "body"
       - "createdAt"
       - "id"
       - "images"
       - "pinned"
       - "popup"
-      - "scope"
       - "startsAt"
       - "title"
       - "updatedAt"
@@ -2920,15 +2905,8 @@ components:
       - "storage"
       - "vmBridge"
       type: "object"
-    NoticeAudience:
-      enum:
-      - "PUBLIC"
-      - "USERS"
-      type: "string"
     NoticeCreateRequest:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           maxLength: 20000
           minLength: 0
@@ -2939,22 +2917,12 @@ components:
           type:
           - "string"
           - "null"
-        orgId:
-          description: "기관 공지의 대상 기관이며, 전역 공지에는 넣을 수 없습니다. 관리하는 기관이 하나뿐인 기관 관리자는 생\
-            략할 수 있고 그 기관으로 지정됩니다. 관리하는 기관이 둘 이상이거나 시스템 관리자라면 반드시 지정해야 합니다. 기관 관리자는\
-            \ 자신이 관리하는 기관만 지정할 수 있습니다."
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         pinned:
           description: "목록 상단 고정 여부. 생략하면 고정하지 않습니다."
           type: "boolean"
         popup:
-          description: "콘솔이 모달로 띄울지. 생략하면 띄우지 않습니다."
+          description: "콘솔이 모달로 띄울지. 켜면 로그인하지 않은 방문자에게도 보입니다. 생략하면 둘 다 하지 않습니다."
           type: "boolean"
-        scope:
-          $ref: "#/components/schemas/NoticeScope"
         startsAt:
           description: "게시 시작 시각. 생략하면 즉시 게시합니다."
           format: "date-time"
@@ -2966,9 +2934,7 @@ components:
           minLength: 0
           type: "string"
       required:
-      - "audience"
       - "body"
-      - "scope"
       - "title"
       type: "object"
     NoticeImageView:
@@ -2996,15 +2962,8 @@ components:
       - "id"
       - "url"
       type: "object"
-    NoticeScope:
-      enum:
-      - "PLATFORM"
-      - "ORG"
-      type: "string"
     NoticeUpdateRequest:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           maxLength: 20000
           minLength: 0
@@ -3029,8 +2988,6 @@ components:
       type: "object"
     NoticeView:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           type: "string"
         createdAt:
@@ -3049,25 +3006,12 @@ components:
           items:
             $ref: "#/components/schemas/NoticeImageView"
           type: "array"
-        orgId:
-          description: "기관 공지가 속한 기관. 전역 공지에서는 비어 있습니다."
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
-        orgName:
-          description: "그 기관의 이름. 전역 공지에서는 비어 있습니다."
-          type:
-          - "string"
-          - "null"
         pinned:
           description: "목록 상단 고정 여부"
           type: "boolean"
         popup:
-          description: "콘솔이 모달로 띄울 공지인지"
+          description: "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다."
           type: "boolean"
-        scope:
-          $ref: "#/components/schemas/NoticeScope"
         startsAt:
           format: "date-time"
           type: "string"
@@ -3077,14 +3021,12 @@ components:
           format: "date-time"
           type: "string"
       required:
-      - "audience"
       - "body"
       - "createdAt"
       - "id"
       - "images"
       - "pinned"
       - "popup"
-      - "scope"
       - "startsAt"
       - "title"
       - "updatedAt"
@@ -6328,7 +6270,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.51.0"
+  version: "0.52.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:

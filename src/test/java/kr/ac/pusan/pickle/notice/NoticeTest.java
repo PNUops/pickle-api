@@ -14,13 +14,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -45,19 +45,27 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 공지사항 per contract v0.49.0: the two visibility axes and the 404 mask that
- * enforces them, the active window, the organisation pinning on the write
- * paths, and the image rules.
+ * 공지사항 per contract v0.52.0: the single visibility flag and the 404 mask
+ * that enforces it, the active window, and the image rules.
  *
- * <p><b>Who counts as an organisation's reader.</b> Not whoever is granted a
- * role in that organisation — {@code user_org_roles} carries the org tier only,
- * so reading membership off the account would hide an organisation's notices
- * from every student it was written for.
- * Membership is the canonical derived rule instead, and
- * {@code anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation} is the
- * test for exactly that: a regular account granted no organisation, made a
- * member of a workspace whose requests belong to the organisation, sees the
- * notice; one in an unrelated workspace does not.</p>
+ * <p><b>What V95 removed.</b> A notice used to carry two axes. One named the
+ * organisation it belonged to, and most of this class used to be about who
+ * counted as that organisation's reader; an organisation names who supplies a
+ * node or a resource, not who may use a feature, so every notice is now
+ * platform-wide. The other was {@code audience}, which duplicated a decision
+ * the author was already making, so {@code popup} absorbed it.</p>
+ *
+ * <p><b>The anonymous boundary is one predicate.</b> {@code popup = true}
+ * inside the publication window, and nothing else. That makes
+ * {@code anonymousReaderSeesOnlyPopupNotices} the load-bearing test of this
+ * class: it is the only thing standing between a board notice and the public
+ * internet.</p>
+ *
+ * <p><b>The coupling that follows.</b> A notice worth interrupting a reader for
+ * is now necessarily a notice a visitor who cannot sign in may read. There is
+ * no modal-for-signed-in-readers-only, and
+ * {@code aPopupIsAlwaysAnonymouslyReadable} pins that as a property rather than
+ * leaving it as an accident of two flags happening to agree.</p>
  *
  * <p>These reads are also the <b>only</b> coverage of the visibility widening.
  * The permission matrix records the three public operations as {@code public}
@@ -96,18 +104,17 @@ class NoticeTest {
     private String otherOrgAdminToken;
     private String userToken;
 
-    private UUID platformPublic;
-    private UUID platformUsers;
-    private UUID ownOrgNotice;
-    private UUID otherOrgNotice;
+    private UUID popupNotice;
+    private UUID boardNotice;
+    private UUID orgAdminNotice;
 
     @BeforeEach
     void setUp() throws Exception {
         org = orgRepository.findFirstByNameOrderByIdAsc(SeedFixtures.ORG_NAME).orElseThrow();
         otherOrg = orgRepository.findFirstByNameOrderByIdAsc("공지 타기관").orElseGet(() ->
                 orgRepository.save(new Org("공지 타기관", null)));
-        User otherOrgAdmin = ensureAdmin("notice.other.admin@pusan.ac.kr", "공지타기관장",
-                otherOrg.getId());
+        User otherOrgAdmin = ensureOrgUser("notice.other.admin@pusan.ac.kr", "공지타기관장",
+                otherOrg.getId(), UserRole.ORG_ADMIN);
         User reader = ensureRegularUser("notice.reader@pusan.ac.kr", "공지독자");
 
         sysAdminToken = jwtService.createAccessToken(
@@ -120,97 +127,302 @@ class NoticeTest {
         // Images cascade with their notice, so one delete clears both tables.
         jdbcTemplate.update("delete from notices");
 
-        platformPublic = createdId(create(sysAdminToken, body(Map.of(
-                "title", "전체 공개 공지", "scope", "PLATFORM", "audience", "PUBLIC"))));
-        platformUsers = createdId(create(sysAdminToken, body(Map.of(
-                "title", "로그인 전용 전역 공지", "scope", "PLATFORM", "audience", "USERS"))));
-        // Both roles name the organisation explicitly; the console does the same.
-        ownOrgNotice = createdId(create(orgAdminToken, body(Map.of(
-                "title", "자기관 공지", "scope", "ORG", "audience", "USERS",
-                "orgId", org.getPublicId().toString()))));
-        otherOrgNotice = createdId(create(otherOrgAdminToken, body(Map.of(
-                "title", "타기관 공지", "scope", "ORG", "audience", "USERS",
-                "orgId", otherOrg.getPublicId().toString()))));
+        popupNotice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 공지", "popup", true))));
+        boardNotice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 공지"))));
+        // An organisation administrator writes for the whole platform, so this
+        // is the same kind of object the system administrator just created.
+        orgAdminNotice = createdId(create(orgAdminToken, body(Map.of(
+                "title", "기관 관리자 공지"))));
     }
 
     @Test
-    void anonymousReaderSeesOnlyPublicPlatformNotices() throws Exception {
+    void anonymousReaderSeesOnlyPopupNotices() throws Exception {
+        // The whole anonymous boundary: popup = true inside the window. Nothing
+        // else separates a signed-out caller from a signed-in one, so this is
+        // the assertion that keeps board notices off the open internet.
         publicList(null)
                 .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listOmits(platformUsers))
-                .andExpect(listOmits(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
+                .andExpect(listHas(popupNotice))
+                .andExpect(listOmits(boardNotice))
+                .andExpect(listOmits(orgAdminNotice));
 
         // A notice an anonymous caller may not see is absent, not refused: a 403
         // would confirm that this identifier names a real notice.
-        publicGet(null, platformPublic).andExpect(status().isOk());
-        publicGet(null, platformUsers)
+        publicGet(null, popupNotice).andExpect(status().isOk());
+        publicGet(null, boardNotice)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        publicGet(null, ownOrgNotice).andExpect(status().isNotFound());
+        publicGet(null, orgAdminNotice)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        // An identifier that names nothing answers exactly the same way, which
+        // is what makes the two indistinguishable from outside.
+        publicGet(null, SeedFixtures.UNKNOWN_ID)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test
-    void signedInReaderSeesOwnOrgButNeverAnother() throws Exception {
-        publicList(orgAdminToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(platformUsers))
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
+    void everySignedInReaderSeesEveryNoticeInItsWindow() throws Exception {
+        // Being signed in is the entire widening. A regular account carrying no
+        // organisation role and belonging to no workspace sees exactly what the
+        // system administrator sees.
+        assertThat(orgRoleRows(userRepository.findByEmail("notice.reader@pusan.ac.kr")
+                .orElseThrow().getId()))
+                .as("a regular account holds no organisation role").isZero();
 
-        publicGet(orgAdminToken, ownOrgNotice)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-        // The other organisation's notice answers exactly as a nonexistent one.
-        publicGet(orgAdminToken, otherOrgNotice).andExpect(status().isNotFound());
-        publicGet(orgAdminToken, SeedFixtures.UNKNOWN_ID).andExpect(status().isNotFound());
-
-        // An account carrying no organisation at all is the ordinary case, and
-        // the query must answer it rather than fault on the null: it gets both
-        // platform notices and neither organisation's.
         publicList(userToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(platformUsers))
-                .andExpect(listOmits(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
-        publicGet(userToken, platformUsers).andExpect(status().isOk());
-        publicGet(userToken, ownOrgNotice).andExpect(status().isNotFound());
+                .andExpect(listHas(popupNotice))
+                .andExpect(listHas(boardNotice))
+                .andExpect(listHas(orgAdminNotice));
+        publicGet(userToken, boardNotice).andExpect(status().isOk());
+        publicGet(userToken, orgAdminNotice).andExpect(status().isOk());
+
+        // Suspending the account takes the board notices away again. On a
+        // permitAll path an unusable token is not a 401 — the filter simply
+        // builds no principal — so the caller degrades to anonymous and sees
+        // less, never more.
+        User member = userRepository.findByEmail("notice.reader@pusan.ac.kr").orElseThrow();
+        member.setStatus(UserStatus.DISABLED);
+        userRepository.save(member);
+        publicList(userToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(popupNotice))
+                .andExpect(listOmits(boardNotice))
+                .andExpect(listOmits(orgAdminNotice));
+        publicGet(userToken, boardNotice).andExpect(status().isNotFound());
+        member.setStatus(UserStatus.ACTIVE);
+        userRepository.save(member);
+    }
+
+    @Test
+    void theAnonymousQueryAndTheVisibilityFunctionAgreeOnEveryCase() throws Exception {
+        // The anonymous rule is written twice: once as SQL in
+        // findVisibleToAnonymous, which serves the public list, and once as
+        // Java in visibleTo(..., null, ...), which serves the detail read AND
+        // is what the image cache directive is derived from. Both say "popup,
+        // inside the window", and nothing but this test ever compares them. If
+        // they drift, an image becomes markable for shared caches that the list
+        // will not show — or the reverse — and every other test still passes,
+        // because each one exercises a single surface.
+        //
+        // So: all four combinations of the two halves, checked on all three
+        // surfaces at once.
+        Instant now = Instant.now();
+        Map<String, UUID> cases = new LinkedHashMap<>();
+        cases.put("팝업·게시중", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 게시중", "popup", true)))));
+        cases.put("팝업·예정", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 예정", "popup", true,
+                "startsAt", now.plus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("팝업·만료", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 만료", "popup", true,
+                "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
+                "endsAt", now.minus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("게시판·게시중", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 게시중")))));
+        cases.put("게시판·예정", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 예정",
+                "startsAt", now.plus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("게시판·만료", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 만료",
+                "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
+                "endsAt", now.minus(1, ChronoUnit.DAYS).toString())))));
+
+        for (Map.Entry<String, UUID> entry : cases.entrySet()) {
+            // Exactly one case is anonymously readable. Deriving the expectation
+            // from the case name rather than restating the rule keeps this test
+            // from re-implementing what it is checking.
+            boolean anonymouslyReadable = entry.getKey().equals("팝업·게시중");
+            UUID id = entry.getValue();
+
+            // 1. the SQL, through the public list
+            publicList(null).andExpect(status().isOk())
+                    .andExpect(anonymouslyReadable ? listHas(id) : listOmits(id));
+            // 2. the Java, through the detail read
+            publicGet(null, id).andExpect(anonymouslyReadable
+                    ? status().isOk() : status().isNotFound());
+            // 3. the Java again, through the cache directive an authenticated
+            //    fetch carries — the answer must be the same one, which is the
+            //    whole reason image() calls the function instead of restating it
+            String url = json(upload(sysAdminToken, id, "c.png", "image/png", PNG_BYTES)
+                    .andExpect(status().isCreated()).andReturn()).get("url").asString();
+            mockMvc.perform(get(url).header("Authorization", "Bearer " + sysAdminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Cache-Control", anonymouslyReadable
+                            ? "public, max-age=31536000, s-maxage=3600"
+                            : "private, max-age=31536000, immutable"));
+        }
+    }
+
+    @Test
+    void anOrgAdminsNoticeReachesAReaderWithNoOrganisationRelationAtAll() throws Exception {
+        // The rule V95 replaced: an organisation administrator's notice used to
+        // reach only that organisation's derived members. This reader holds no
+        // user_org_roles row and belongs to no workspace, so under the old rule
+        // it was unreachable — and it is now the ordinary case.
+        User stranger = ensureRegularUser("notice.stranger@pusan.ac.kr", "무관계독자");
+        assertThat(orgRoleRows(stranger.getId())).isZero();
+        assertThat(workspaceRows(stranger.getId()))
+                .as("and no workspace to derive a membership from").isZero();
+        String strangerToken = jwtService.createAccessToken(stranger);
+
+        publicList(strangerToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(orgAdminNotice));
+        publicGet(strangerToken, orgAdminNotice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("기관 관리자 공지"));
+
+        // What still stops at the login is the popup flag, not any organisation
+        // shape: this notice is not a popup, so anonymously it is absent.
+        publicGet(null, orgAdminNotice).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anOrgAdminPublishesToAnonymousVisitorsToo() throws Exception {
+        // Previously unreachable from this role in both directions: an ORG
+        // notice could not be publicly readable (422) and a platform one was
+        // refused (403). Now one flag does it.
+        UUID published = createdId(create(orgAdminToken, body(Map.of(
+                "title", "기관 관리자 팝업 공지", "popup", true))));
+
+        publicList(null)
+                .andExpect(status().isOk())
+                .andExpect(listHas(published));
+        publicGet(null, published)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("기관 관리자 팝업 공지"));
+
+        // And its image is served to an anonymous caller under the shared-cache
+        // directive, which re-checks that the cache rule is derived from the
+        // visibility function and not from who wrote the notice.
+        String url = json(upload(orgAdminToken, published, "open.png", "image/png", PNG_BYTES)
+                .andExpect(status().isCreated()).andReturn()).get("url").asString();
+        MvcResult served = mockMvc.perform(get(url))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control",
+                        "public, max-age=31536000, s-maxage=3600"))
+                .andReturn();
+        assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
+    }
+
+    @Test
+    void aPopupIsAlwaysAnonymouslyReadableAndTheTwoCannotBeSeparated() throws Exception {
+        // popup carries two meanings at once since V95: it raises the modal AND
+        // it opens the notice to visitors who cannot sign in. The combination
+        // this removes — interrupt signed-in readers only — is not merely
+        // unreachable through the console, it does not exist in the model, and
+        // that is the point worth pinning rather than leaving to two flags
+        // happening to agree.
+        //
+        // Asserted as a pair on the same notice, flipped in place, because
+        // either half alone reads as a coincidence.
+        UUID notice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "결합 확인", "popup", false))));
+
+        publicList(null).andExpect(status().isOk()).andExpect(listOmits(notice));
+        publicGet(null, notice).andExpect(status().isNotFound());
+        publicGet(userToken, notice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(false));
+
+        // Turning the modal on is what opens it up. There is no third state.
+        patchNotice(sysAdminToken, notice, Map.of("popup", true))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(true));
+        publicList(null).andExpect(status().isOk()).andExpect(listHas(notice));
+        publicGet(null, notice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(true));
+
+        // And turning it off closes it again, so the edit is not one-way.
+        patchNotice(sysAdminToken, notice, Map.of("popup", false))
+                .andExpect(status().isOk());
+        publicGet(null, notice).andExpect(status().isNotFound());
+
+        // The response body carries no separate visibility field for a client
+        // to disagree with: popup is the only one, and pinned is about order.
+        publicGet(userToken, notice)
+                .andExpect(jsonPath("$.audience").doesNotExist())
+                .andExpect(jsonPath("$.pinned").exists())
+                .andExpect(jsonPath("$.popup").exists());
+    }
+
+    @Test
+    void administratorsEditEachOthersNoticesWhicheverRoleWroteThem() throws Exception {
+        // Nobody owns a notice, so the write scope is the gate and nothing more.
+        patchNotice(orgAdminToken, popupNotice, Map.of("title", "시스템 공지(기관 관리자 수정)"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("시스템 공지(기관 관리자 수정)"));
+        patchNotice(sysAdminToken, orgAdminNotice, Map.of("title", "기관 관리자 공지(시스템 관리자 수정)"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("기관 관리자 공지(시스템 관리자 수정)"));
+
+        // An administrator of a different organisation is not a different case:
+        // there is no organisation on a notice for it to be different from.
+        patchNotice(otherOrgAdminToken, orgAdminNotice, Map.of("title", "타기관 관리자 수정"))
+                .andExpect(status().isOk());
+        upload(otherOrgAdminToken, popupNotice, "a.png", "image/png", PNG_BYTES)
+                .andExpect(status().isCreated());
+        deleteNotice(otherOrgAdminToken, popupNotice).andExpect(status().isNoContent());
+
+        // An org-tier account granted no organisation at all reaches both the
+        // management list and the writes. Refusing it used to be the one place
+        // an unattached account was told no, and that refusal was exactly an
+        // organisation gating a feature.
+        String unattachedToken = jwtService.createAccessToken(ensureUnattachedUser(
+                "notice.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN));
+        adminList(unattachedToken)
+                .andExpect(status().isOk())
+                .andExpect(listHas(orgAdminNotice));
+        create(unattachedToken, body(Map.of("title", "무소속 등록")))
+                .andExpect(status().isCreated());
+
+        // A notice that does not exist is still 404 — a fact now, not a mask.
+        patchNotice(sysAdminToken, SeedFixtures.UNKNOWN_ID, Map.of("title", "없는 공지"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test
     void theActiveWindowFiltersThePublicListButNotTheAdminOne() throws Exception {
         Instant now = Instant.now();
         UUID scheduled = createdId(create(sysAdminToken, body(Map.of(
-                "title", "예정 공지", "scope", "PLATFORM", "audience", "PUBLIC",
+                "title", "예정 공지", "popup", true,
                 "startsAt", now.plus(1, ChronoUnit.DAYS).toString()))));
         UUID expired = createdId(create(sysAdminToken, body(Map.of(
-                "title", "만료 공지", "scope", "PLATFORM", "audience", "PUBLIC",
+                "title", "만료 공지", "popup", true,
                 "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
                 "endsAt", now.minus(1, ChronoUnit.DAYS).toString()))));
 
         publicList(null)
-                .andExpect(listHas(platformPublic))
+                .andExpect(listHas(popupNotice))
                 .andExpect(listOmits(scheduled))
                 .andExpect(listOmits(expired));
         publicGet(null, scheduled).andExpect(status().isNotFound());
         publicGet(null, expired).andExpect(status().isNotFound());
+        // The window binds a signed-in reader too: it is the half of the
+        // visibility rule that has nothing to do with who is asking.
+        publicGet(userToken, scheduled).andExpect(status().isNotFound());
+        publicGet(userToken, expired).andExpect(status().isNotFound());
 
         // The admin list is the whole surface, each row saying where it stands.
         adminList(sysAdminToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(rowWhere(scheduled, "@.active==false")).exists())
                 .andExpect(jsonPath(rowWhere(expired, "@.active==false")).exists())
-                .andExpect(jsonPath(rowWhere(platformPublic, "@.active==true")).exists())
+                .andExpect(jsonPath(rowWhere(popupNotice, "@.active==true")).exists())
                 // list rows carry the body, which is why there is no admin detail read
-                .andExpect(jsonPath(rowWhere(platformPublic, "@.body")).exists());
+                .andExpect(jsonPath(rowWhere(popupNotice, "@.body")).exists());
 
         // A window that closes before it opens is refused here rather than left
         // to notices_window_check, which would surface as a 500.
         create(sysAdminToken, body(Map.of(
-                "title", "거꾸로", "scope", "PLATFORM", "audience", "PUBLIC",
+                "title", "거꾸로", "popup", true,
                 "startsAt", now.toString(),
                 "endsAt", now.minus(1, ChronoUnit.HOURS).toString())))
                 .andExpect(status().isUnprocessableContent())
@@ -221,7 +433,7 @@ class NoticeTest {
     void anOmittedEditFieldKeepsItsValueAndAnExplicitNullClearsTheExpiry() throws Exception {
         Instant endsAt = Instant.now().plus(7, ChronoUnit.DAYS);
         UUID expiring = createdId(create(sysAdminToken, body(Map.of(
-                "title", "기간 있는 공지", "scope", "PLATFORM", "audience", "PUBLIC",
+                "title", "기간 있는 공지", "popup", true,
                 "endsAt", endsAt.toString()))));
 
         // Omitted: the expiry survives an edit that says nothing about it.
@@ -245,71 +457,6 @@ class NoticeTest {
     }
 
     @Test
-    void anOrgAdminIsPinnedToItsOwnOrganisation() throws Exception {
-        // A platform notice is not theirs to publish.
-        create(orgAdminToken, body(Map.of(
-                "title", "전역 시도", "scope", "PLATFORM", "audience", "PUBLIC")))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        // Nor is another organisation's. Refused, not quietly rewritten to
-        // theirs: an attempted cross-org write is the event worth surfacing.
-        // A field error rather than a refusal, because orgId is a submitted
-        // value and no existing row's privacy is at stake — the same answer
-        // AnnouncementService gives the same shape.
-        create(orgAdminToken, body(Map.of(
-                "title", "타기관 시도", "scope", "ORG", "audience", "USERS",
-                "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-
-        // But naming their OWN organisation is accepted, not refused as a field
-        // they may not set. The console sends it for every role, so folding this
-        // into the 422 above would reject a write the user cannot even see the
-        // input for.
-        create(orgAdminToken, body(Map.of(
-                "title", "자기 기관 명시", "scope", "ORG", "audience", "USERS",
-                "orgId", org.getPublicId().toString())))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()))
-                .andExpect(jsonPath("$.orgName").value(org.getName()));
-
-        // Omitting it is fine for an account that administers exactly one
-        // organisation: there is only one answer, so the server supplies it.
-        create(orgAdminToken, body(Map.of(
-                "title", "기관 미지정", "scope", "ORG", "audience", "USERS")))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-
-        // Another organisation's notice is masked, exactly as it is on the read.
-        patchNotice(orgAdminToken, otherOrgNotice, Map.of("title", "가로채기"))
-                .andExpect(status().isNotFound());
-        deleteNotice(orgAdminToken, otherOrgNotice).andExpect(status().isNotFound());
-        upload(orgAdminToken, otherOrgNotice, "a.png", "image/png", PNG_BYTES)
-                .andExpect(status().isNotFound());
-
-        // A platform notice is refused rather than masked: they see it in their
-        // own admin list, so pretending it is absent would contradict that list.
-        patchNotice(orgAdminToken, platformPublic, Map.of("title", "전역 수정"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-
-        // Their own notice edits normally.
-        patchNotice(orgAdminToken, ownOrgNotice, Map.of("title", "자기관 공지(수정)"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("자기관 공지(수정)"));
-
-        // Their admin list carries the platform notices and never another org's.
-        adminList(orgAdminToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
-
-        // A regular account never reaches the surface at all.
-        adminList(userToken).andExpect(status().isForbidden());
-    }
-
-    @Test
     void aViewerReadsTheManagementListAndIsRefusedEveryWrite() throws Exception {
         // A viewer holds whatever read access its tier's operator holds, so the
         // management list is in scope. The audit log is the one surface that
@@ -321,343 +468,115 @@ class NoticeTest {
                 org.getId(), UserRole.ORG_VIEWER);
         String orgViewerToken = jwtService.createAccessToken(orgViewer);
 
-        // Scoped exactly as that organisation's admin sees it: the platform's
-        // notices as read-only rows, its own organisation's, never another's.
+        // The list is unscoped, so a viewer of one organisation reads the
+        // notices another organisation's administrator wrote, like everyone else.
         adminList(orgViewerToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
+                .andExpect(listHas(popupNotice))
+                .andExpect(listHas(orgAdminNotice));
 
         // Every write is refused by the method's own gate, which fully replaces
         // the widened class-level one — ACCESS_DENIED rather than any other 403,
         // so a refusal from somewhere else in the chain cannot pass for this.
-        create(orgViewerToken, body(Map.of(
-                "title", "열람자 등록 시도", "scope", "ORG", "audience", "USERS",
-                "orgId", org.getPublicId().toString())))
+        create(orgViewerToken, body(Map.of("title", "열람자 등록 시도")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchNotice(orgViewerToken, ownOrgNotice, Map.of("title", "열람자 수정 시도"))
+        patchNotice(orgViewerToken, orgAdminNotice, Map.of("title", "열람자 수정 시도"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        deleteNotice(orgViewerToken, ownOrgNotice)
+        deleteNotice(orgViewerToken, orgAdminNotice)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        upload(orgViewerToken, ownOrgNotice, "a.png", "image/png", PNG_BYTES)
+        upload(orgViewerToken, orgAdminNotice, "a.png", "image/png", PNG_BYTES)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        // The system viewer is not scoped to an organisation, so it reads every
-        // organisation's notices — and writes none of them.
+        // The system viewer reads the same list and writes none of it either.
         User sysViewer = ensureUnattachedUser("notice.sys.viewer@pusan.ac.kr", "공지전체열람자",
                 UserRole.SYS_VIEWER);
         String sysViewerToken = jwtService.createAccessToken(sysViewer);
 
         adminList(sysViewerToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listHas(otherOrgNotice));
+                .andExpect(listHas(popupNotice))
+                .andExpect(listHas(orgAdminNotice));
 
-        create(sysViewerToken, body(Map.of(
-                "title", "전체열람자 등록 시도", "scope", "PLATFORM", "audience", "PUBLIC")))
+        create(sysViewerToken, body(Map.of("title", "전체열람자 등록 시도", "popup", true)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchNotice(sysViewerToken, platformPublic, Map.of("title", "전체열람자 수정 시도"))
+        patchNotice(sysViewerToken, popupNotice, Map.of("title", "전체열람자 수정 시도"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        deleteNotice(sysViewerToken, ownOrgNotice)
+        deleteNotice(sysViewerToken, orgAdminNotice)
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // A regular account never reaches the surface at all.
+        adminList(userToken).andExpect(status().isForbidden());
 
         // Nothing the refused writes attempted actually landed.
         adminList(sysAdminToken)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(rowWhere(ownOrgNotice, "@.title=='자기관 공지'")).exists())
-                .andExpect(listHas(platformPublic));
-    }
-
-    @Test
-    void administeringOneOrgNeverConfersAWriteInAnotherItOnlyReads() throws Exception {
-        // Since V90 an account can administer one organisation and only read a
-        // second, and users.role is the HIGHEST role it holds anywhere — so the
-        // @PreAuthorize gate on the writes sees ORG_ADMIN and lets this account
-        // through. What keeps it out of the organisation it merely reads is the
-        // service asking administers(thatOrg), and this is the test for it.
-        User dualRole = ensureOrgUser("notice.dual@pusan.ac.kr", "겸직관리자",
-                org.getId(), UserRole.ORG_ADMIN);
-        SeedFixtures.grantOrgRole(jdbcTemplate, dualRole.getId(), otherOrg.getId(),
-                UserRole.ORG_VIEWER);
-        String dualToken = jwtService.createAccessToken(dualRole);
-
-        // The management list is the wider, readable scope: both organisations.
-        adminList(dualToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listHas(otherOrgNotice));
-
-        // The organisation it administers writes normally.
-        patchNotice(dualToken, ownOrgNotice, Map.of("title", "겸직 수정"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("겸직 수정"));
-
-        // The one it only reads is masked on every write, exactly as an
-        // organisation it holds nothing in would be.
-        patchNotice(dualToken, otherOrgNotice, Map.of("title", "겸직 가로채기"))
-                .andExpect(status().isNotFound());
-        deleteNotice(dualToken, otherOrgNotice).andExpect(status().isNotFound());
-        upload(dualToken, otherOrgNotice, "a.png", "image/png", PNG_BYTES)
-                .andExpect(status().isNotFound());
-
-        // And it cannot create one there either — refused, not silently pinned
-        // to the organisation it does administer.
-        create(dualToken, body(Map.of(
-                "title", "겸직 등록 시도", "scope", "ORG", "audience", "USERS",
-                "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-
-        // Nothing landed in the organisation it only reads.
-        adminList(sysAdminToken)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(rowWhere(otherOrgNotice, "@.title=='타기관 공지'")).exists());
-    }
-
-    @Test
-    void theCreateTargetFollowsTheSameRulesAnAnnouncementDoes() throws Exception {
-        // An account administering TWO organisations has no single "own org",
-        // so naming one becomes required from the second onwards.
-        User twoOrgAdmin = ensureOrgUser("notice.two.admin@pusan.ac.kr", "겸임기관장",
-                org.getId(), UserRole.ORG_ADMIN);
-        SeedFixtures.grantOrgRole(jdbcTemplate, twoOrgAdmin.getId(), otherOrg.getId(),
-                UserRole.ORG_ADMIN);
-        String twoOrgToken = jwtService.createAccessToken(twoOrgAdmin);
-
-        create(twoOrgToken, body(Map.of(
-                "title", "겸임 기관 미지정", "scope", "ORG", "audience", "USERS")))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-
-        // Naming either of the two is accepted — both are theirs.
-        create(twoOrgToken, body(Map.of(
-                "title", "겸임 1", "scope", "ORG", "audience", "USERS",
-                "orgId", org.getPublicId().toString())))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-        create(twoOrgToken, body(Map.of(
-                "title", "겸임 2", "scope", "ORG", "audience", "USERS",
-                "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.orgId").value(otherOrg.getPublicId().toString()));
-
-        // An organisation the account holds only a NON-administering role in is
-        // not a target: reading or operating there is not the right to publish.
-        User managerElsewhere = ensureOrgUser("notice.mgr@pusan.ac.kr", "타기관운영자",
-                org.getId(), UserRole.ORG_ADMIN);
-        SeedFixtures.grantOrgRole(jdbcTemplate, managerElsewhere.getId(), otherOrg.getId(),
-                UserRole.ORG_MANAGER);
-        String managerToken = jwtService.createAccessToken(managerElsewhere);
-        create(managerToken, body(Map.of(
-                "title", "운영 기관 시도", "scope", "ORG", "audience", "USERS",
-                "orgId", otherOrg.getPublicId().toString())))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-
-        // An organisation that does not exist answers exactly as one they do
-        // not administer, so which organisations exist stays private from the
-        // org tier. The sys tier, which may target any of them, gets the 404.
-        create(orgAdminToken, body(Map.of(
-                "title", "없는 기관", "scope", "ORG", "audience", "USERS",
-                "orgId", SeedFixtures.UNKNOWN_ID.toString())))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-        create(sysAdminToken, body(Map.of(
-                "title", "없는 기관(시스템)", "scope", "ORG", "audience", "USERS",
-                "orgId", SeedFixtures.UNKNOWN_ID.toString())))
-                .andExpect(status().isNotFound());
-
-        // The sys tier administers nothing, so it can never omit the field.
-        create(sysAdminToken, body(Map.of(
-                "title", "시스템 기관 미지정", "scope", "ORG", "audience", "USERS")))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='orgId')]").exists());
-    }
-
-    @Test
-    void aViewerLooksInThroughManagementAndNotThroughTheBoard() throws Exception {
-        // An ORG notice is addressed to that organisation's people. A viewer is
-        // an outsider permitted to look in, so it reaches the notice through the
-        // management surface, which exists for looking in, and not through the
-        // board, where an organisation's own people read what was addressed to
-        // them. The announcement fan-out draws the same line.
-        User orgViewer = ensureOrgUser("notice.board.viewer@pusan.ac.kr", "게시판열람자",
-                org.getId(), UserRole.ORG_VIEWER);
-        String viewerToken = jwtService.createAccessToken(orgViewer);
-
-        // Not on the board, and the notice answers as one that does not exist.
-        publicList(viewerToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(platformUsers))
-                .andExpect(listOmits(ownOrgNotice));
-        publicGet(viewerToken, ownOrgNotice).andExpect(status().isNotFound());
-
-        // But present on the management surface, which is the pair that pins the
-        // distinction: this is about which definition of "이 기관 사람" governs
-        // the board, not about withholding the notice from them.
-        adminList(viewerToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(ownOrgNotice));
-
-        // An operating role in the same organisation does reach the board: they
-        // are the organisation's own people, not outsiders looking in.
-        User orgManager = ensureOrgUser("notice.board.mgr@pusan.ac.kr", "게시판운영자",
-                org.getId(), UserRole.ORG_MANAGER);
-        publicList(jwtService.createAccessToken(orgManager))
-                .andExpect(status().isOk())
-                .andExpect(listHas(ownOrgNotice));
-    }
-
-    @Test
-    void everyWriteRefusalUsesTheCodeItsIdentifierCallsFor() throws Exception {
-        // The rule is where the identifier is, not which verb it is: a notice
-        // named by PATH stays private behind a 404, an orgId named in the BODY
-        // is a field error, and an actor with no organisation at all has no
-        // resource to mask so it is simply refused.
-
-        // All four path-addressed writes mask. The image case uses an image
-        // that really exists on the other organisation's notice, so the 404 can
-        // only be the scope mask and not a missing image answering for it.
-        UUID foreignImage = UUID.fromString(json(upload(otherOrgAdminToken, otherOrgNotice,
-                "foreign.png", "image/png", PNG_BYTES).andExpect(status().isCreated())
-                .andReturn()).get("id").asString());
-        patchNotice(orgAdminToken, otherOrgNotice, Map.of("title", "가로채기"))
-                .andExpect(status().isNotFound());
-        deleteNotice(orgAdminToken, otherOrgNotice).andExpect(status().isNotFound());
-        upload(orgAdminToken, otherOrgNotice, "a.png", "image/png", PNG_BYTES)
-                .andExpect(status().isNotFound());
-        deleteAdminImage(orgAdminToken, otherOrgNotice, foreignImage)
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        // The image is still there: the refusal did not half-apply.
-        deleteAdminImage(otherOrgAdminToken, otherOrgNotice, foreignImage)
-                .andExpect(status().isNoContent());
-
-        // An account holding ORG_ADMIN but granted no organisation reaches the
-        // gates — users.role is what they see — and is refused at the service.
-        // 403, not 404: there is no resource here whose existence a mask would
-        // be protecting.
-        User unattached = ensureUnattachedUser("notice.unattached@pusan.ac.kr", "무소속관리자",
-                UserRole.ORG_ADMIN);
-        String unattachedToken = jwtService.createAccessToken(unattached);
-        adminList(unattachedToken)
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        create(unattachedToken, body(Map.of(
-                "title", "무소속 등록 시도", "scope", "ORG", "audience", "USERS",
-                "orgId", org.getPublicId().toString())))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-    }
-
-    @Test
-    void aViewerReachesTheBoardByWorkspaceThoughItsGrantAloneDoesNot() throws Exception {
-        // The board resolves readers by workspace-derived membership with the
-        // operating grants unioned on top, and a viewer's grant is not one of
-        // them. The derived path, though, asks nothing about roles — so the
-        // same role reaches the board when the account actually works under the
-        // organisation.
-        //
-        // Asserted as a pair on two accounts identical but for the workspace,
-        // because either half alone teaches the wrong rule: the exclusion
-        // reads as "viewers are off the board", and the inclusion as "a viewer
-        // grant puts them on it". The workspace is the only difference.
-        User grantOnly = ensureOrgUser("notice.board.grantonly@pusan.ac.kr", "부여만열람자",
-                org.getId(), UserRole.ORG_VIEWER);
-        User working = ensureOrgUser("notice.board.working@pusan.ac.kr", "현장열람자",
-                org.getId(), UserRole.ORG_VIEWER);
-        long workspace = createWorkspace("noticeviewer", working.getId());
-        linkWorkspaceToOrg(workspace, org.getId(), working.getId());
-
-        // Grant only: absent from the board, and the notice answers as one that
-        // does not exist rather than as one refused.
-        String grantOnlyToken = jwtService.createAccessToken(grantOnly);
-        publicList(grantOnlyToken)
-                .andExpect(status().isOk())
-                .andExpect(listOmits(ownOrgNotice));
-        publicGet(grantOnlyToken, ownOrgNotice).andExpect(status().isNotFound());
-
-        // Same grant, plus a workspace holding the organisation's resources:
-        // on the board, by the path every ordinary account takes.
-        String workingToken = jwtService.createAccessToken(working);
-        publicList(workingToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(ownOrgNotice));
-        publicGet(workingToken, ownOrgNotice)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-
-        // Neither of them gains a write from any of this.
-        patchNotice(workingToken, ownOrgNotice, Map.of("title", "열람자 수정 시도"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-    }
-
-    @Test
-    void anOrgNoticeCanNeverBePublic() throws Exception {
-        create(sysAdminToken, body(Map.of(
-                "title", "기관 공개 시도", "scope", "ORG", "audience", "PUBLIC",
-                "orgId", org.getPublicId().toString())))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[?(@.field=='audience')]").exists());
-
-        // And the same refusal on the way in through an edit.
-        patchNotice(orgAdminToken, ownOrgNotice, Map.of("audience", "PUBLIC"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[?(@.field=='audience')]").exists());
+                .andExpect(jsonPath(rowWhere(orgAdminNotice, "@.title=='기관 관리자 공지'")).exists())
+                .andExpect(listHas(popupNotice));
     }
 
     @Test
     void imageUploadsAreJudgedByTheirBytesAndCapped() throws Exception {
         // A text payload wearing image/png is refused: the declared type is a
         // claim, and the leading bytes are what decide.
-        upload(sysAdminToken, platformPublic, "fake.png", "image/png",
+        upload(sysAdminToken, popupNotice, "fake.png", "image/png",
                 "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_TYPE_UNSUPPORTED"));
 
         byte[] oversized = new byte[NoticeImageTypes.MAX_BYTES + 1];
         System.arraycopy(PNG_BYTES, 0, oversized, 0, PNG_BYTES.length);
-        upload(sysAdminToken, platformPublic, "big.png", "image/png", oversized)
+        upload(sysAdminToken, popupNotice, "big.png", "image/png", oversized)
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_TOO_LARGE"));
 
         // The stored type is the real one, not the one the upload declared.
-        upload(sysAdminToken, platformPublic, "photo.png", "image/png", JPEG_BYTES)
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.contentType").value("image/jpeg"))
-                .andExpect(jsonPath("$.byteSize").value(JPEG_BYTES.length));
+        UUID firstImageId = UUID.fromString(json(
+                upload(sysAdminToken, popupNotice, "photo.png", "image/png", JPEG_BYTES)
+                        .andExpect(status().isCreated())
+                        .andExpect(jsonPath("$.contentType").value("image/jpeg"))
+                        .andExpect(jsonPath("$.byteSize").value(JPEG_BYTES.length))
+                        .andReturn()).get("id").asString());
 
         // Four more fill the notice; the one after that is refused.
         for (int i = 2; i <= NoticeImageTypes.MAX_PER_NOTICE; i++) {
-            upload(sysAdminToken, platformPublic, "img" + i + ".png", "image/png", PNG_BYTES)
+            upload(sysAdminToken, popupNotice, "img" + i + ".png", "image/png", PNG_BYTES)
                     .andExpect(status().isCreated());
         }
-        upload(sysAdminToken, platformPublic, "one-too-many.png", "image/png", PNG_BYTES)
+        upload(sysAdminToken, popupNotice, "one-too-many.png", "image/png", PNG_BYTES)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_LIMIT_EXCEEDED"));
+
+        // Deleting one frees a slot, and the row really goes: the cap is
+        // counted from the store rather than from anything the notice caches.
+        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", popupNotice);
+        assertThat(imageRows(noticeId)).isEqualTo(NoticeImageTypes.MAX_PER_NOTICE);
+        deleteAdminImage(sysAdminToken, popupNotice, firstImageId)
+                .andExpect(status().isNoContent());
+        assertThat(imageRows(noticeId)).isEqualTo(NoticeImageTypes.MAX_PER_NOTICE - 1);
+        // The same id twice is 404, not a second silent success.
+        deleteAdminImage(sysAdminToken, popupNotice, firstImageId)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        upload(sysAdminToken, popupNotice, "refill.png", "image/png", PNG_BYTES)
+                .andExpect(status().isCreated());
     }
 
     @Test
     void servingAnImageReturnsTheStoredBytesAndInheritsTheNoticesVisibility() throws Exception {
-        JsonNode uploaded = json(upload(sysAdminToken, platformPublic, "hero.png", "image/png",
+        JsonNode uploaded = json(upload(sysAdminToken, popupNotice, "hero.png", "image/png",
                 PNG_BYTES).andExpect(status().isCreated()).andReturn());
         UUID imageId = UUID.fromString(uploaded.get("id").asString());
         String url = uploaded.get("url").asString();
         // The finished string, not just the ids behind it: this is a
         // concatenation site, and nothing downstream would object to a wrong one.
-        assertThat(url).isEqualTo("/api/v1/notices/" + platformPublic + "/images/" + imageId);
+        assertThat(url).isEqualTo("/api/v1/notices/" + popupNotice + "/images/" + imageId);
 
         // Anonymously readable, so a cache shared between users may keep it —
         // but only for an hour, and without the promise never to revalidate.
@@ -673,124 +592,44 @@ class NoticeTest {
                 .andReturn();
         assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
 
-        // The notice's own visibility governs its images.
-        JsonNode orgImage = json(upload(orgAdminToken, ownOrgNotice, "org.png", "image/png",
+        // The notice's own visibility governs its images: this one is not a
+        // popup, so it is absent anonymously and private when it is served.
+        JsonNode restricted = json(upload(sysAdminToken, boardNotice, "members.png", "image/png",
                 PNG_BYTES).andExpect(status().isCreated()).andReturn());
-        String orgUrl = orgImage.get("url").asString();
-        mockMvc.perform(get(orgUrl)).andExpect(status().isNotFound());
+        String restrictedUrl = restricted.get("url").asString();
+        mockMvc.perform(get(restrictedUrl)).andExpect(status().isNotFound());
         // Whose answer this is depends on who asked, and the response carries no
         // Vary that would tell two callers apart — so it must never be storable
         // in a cache shared between them. private still caches in the
         // requester's own browser, which is all this ever needed, and keeps the
         // year: re-serving bytes to the one caller who already received them is
         // indistinguishable from their having saved the file.
-        mockMvc.perform(get(orgUrl).header("Authorization", "Bearer " + orgAdminToken))
+        mockMvc.perform(get(restrictedUrl).header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control",
                         "private, max-age=31536000, immutable"));
 
         // An image reached through a notice that does not own it is absent too,
         // even when that notice is one the caller may read.
-        mockMvc.perform(get("/api/v1/notices/" + platformPublic + "/images/"
-                        + orgImage.get("id").asString()))
+        mockMvc.perform(get("/api/v1/notices/" + popupNotice + "/images/"
+                        + restricted.get("id").asString()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void deletingANoticeTakesItsImagesAndLeavesAnAuditTrail() throws Exception {
-        upload(sysAdminToken, platformPublic, "gone.png", "image/png", PNG_BYTES)
+        upload(sysAdminToken, popupNotice, "gone.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated());
-        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", platformPublic);
+        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", popupNotice);
         assertThat(imageRows(noticeId)).isEqualTo(1);
 
-        deleteNotice(sysAdminToken, platformPublic).andExpect(status().isNoContent());
+        deleteNotice(sysAdminToken, popupNotice).andExpect(status().isNoContent());
         assertThat(imageRows(noticeId)).isZero();
-        publicGet(null, platformPublic).andExpect(status().isNotFound());
+        publicGet(null, popupNotice).andExpect(status().isNotFound());
 
-        assertThat(auditRows("notice.create", ownOrgNotice)).isEqualTo(1);
-        assertThat(auditRows("notice.image_add", platformPublic)).isEqualTo(1);
-        assertThat(auditRows("notice.delete", platformPublic)).isEqualTo(1);
-    }
-
-    @Test
-    void anOrgNoticeReachesTheWorkspacesThatWorkUnderThatOrganisation() throws Exception {
-        // A regular account is granted no organisation at all — user_org_roles
-        // carries the org tier only. Membership is derived instead: this reader
-        // is an ACTIVE member of a workspace whose requests belong to the
-        // organisation, which is what makes them "이 기관 사람" for the
-        // announcement fan-out and must mean the same here.
-        User member = ensureRegularUser("notice.member@pusan.ac.kr", "공지기관원");
-        assertThat(orgRoleRows(member.getId()))
-                .as("a regular account holds no organisation role").isZero();
-        long linkedWorkspace = createWorkspace("noticelink", member.getId());
-        linkWorkspaceToOrg(linkedWorkspace, org.getId(), member.getId());
-        String memberToken = jwtService.createAccessToken(member);
-
-        publicList(memberToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listHas(platformUsers))
-                .andExpect(listHas(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
-        publicGet(memberToken, ownOrgNotice)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.orgName").value(org.getName()));
-        publicGet(memberToken, otherOrgNotice).andExpect(status().isNotFound());
-
-        // Suspending the account takes the organisation's notices away again.
-        // On a permitAll path an unusable token is not a 401 — the filter simply
-        // builds no principal — so the caller degrades to anonymous and sees
-        // less, never more.
-        member.setStatus(UserStatus.DISABLED);
-        userRepository.save(member);
-        publicList(memberToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformPublic))
-                .andExpect(listOmits(platformUsers))
-                .andExpect(listOmits(ownOrgNotice));
-        publicGet(memberToken, ownOrgNotice).andExpect(status().isNotFound());
-        member.setStatus(UserStatus.ACTIVE);
-        userRepository.save(member);
-
-        // A reader whose workspace has nothing to do with either organisation
-        // derives no membership and sees only the platform's notices.
-        User stranger = ensureRegularUser("notice.stranger@pusan.ac.kr", "무관워크스페이스원");
-        createWorkspace("noticefree", stranger.getId());
-        String strangerToken = jwtService.createAccessToken(stranger);
-        publicList(strangerToken)
-                .andExpect(status().isOk())
-                .andExpect(listHas(platformUsers))
-                .andExpect(listOmits(ownOrgNotice))
-                .andExpect(listOmits(otherOrgNotice));
-        // The 404 mask uses the same resolved set as the list, so a notice this
-        // reader cannot list is not fetchable by id either.
-        publicGet(strangerToken, ownOrgNotice).andExpect(status().isNotFound());
-    }
-
-    @Test
-    void aNoticeCannotBePromotedOrMovedAfterItIsCreated() throws Exception {
-        // The create gate would be worth nothing if the object were mutable
-        // through a second verb, so the edit body carries neither field and an
-        // attempt to send them changes nothing.
-        Map<String, Object> promote = new HashMap<>();
-        promote.put("scope", "PLATFORM");
-        promote.put("orgId", otherOrg.getPublicId().toString());
-        promote.put("title", "승격 시도");
-        patchNotice(orgAdminToken, ownOrgNotice, promote)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("승격 시도"))
-                .andExpect(jsonPath("$.scope").value("ORG"))
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-
-        // Same from the system tier: the fields are not part of the contract,
-        // so nobody has a promote path.
-        patchNotice(sysAdminToken, ownOrgNotice, promote)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.scope").value("ORG"))
-                .andExpect(jsonPath("$.orgId").value(org.getPublicId().toString()));
-
-        // And the notice stays invisible to the other organisation throughout.
-        publicGet(otherOrgAdminToken, ownOrgNotice).andExpect(status().isNotFound());
+        assertThat(auditRows("notice.create", orgAdminNotice)).isEqualTo(1);
+        assertThat(auditRows("notice.image_add", popupNotice)).isEqualTo(1);
+        assertThat(auditRows("notice.delete", popupNotice)).isEqualTo(1);
     }
 
     @Test
@@ -799,7 +638,7 @@ class NoticeTest {
         // and its list row carries the image URLs. Sending those through the
         // public window check alone would 404 every one of them.
         UUID scheduled = createdId(create(sysAdminToken, body(Map.of(
-                "title", "예정 공지(이미지)", "scope", "PLATFORM", "audience", "PUBLIC",
+                "title", "예정 공지(이미지)", "popup", true,
                 "startsAt", Instant.now().plus(1, ChronoUnit.DAYS).toString()))));
         String url = json(upload(sysAdminToken, scheduled, "preview.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated()).andReturn()).get("url").asString();
@@ -808,46 +647,35 @@ class NoticeTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 // Not yet anonymously readable, so not shareable either — a
-                // PLATFORM+PUBLIC notice still outside its window must not be
-                // stored where an anonymous requester could pick it up before
-                // it is published. private keeps the year precisely because it
-                // cannot be reached by anyone but this caller.
+                // popup notice still outside its window must not be stored
+                // where an anonymous requester could pick it up before it is
+                // published. This is the pair that pins the cache directive to
+                // the visibility function rather than to the flag alone: asking
+                // notice.isPopup() by itself would mark this one shared.
+                // private keeps the year precisely because it cannot be reached
+                // by anyone but this caller.
                 .andExpect(header().string("Cache-Control",
                         "private, max-age=31536000, immutable"))
                 .andReturn();
         assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
 
-        // The org tier manages its own org's notices and reads the platform's,
-        // so it gets the preview too.
+        // Every role on the management surface gets the preview, an org-tier
+        // account granted no organisation included — it reads the same list.
         mockMvc.perform(get(url).header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk());
-
-        // But an org-tier account granted no organisation has no management
-        // screen that needs it: listAdminNotices refuses it outright, so the
-        // preview would be the one surface where it saw a notice it cannot
-        // list. The platform branch asks no organisation question, so this is
-        // the account the two would otherwise disagree about.
         String unattachedToken = jwtService.createAccessToken(ensureUnattachedUser(
                 "notice.preview.unattached@pusan.ac.kr", "무소속관리자", UserRole.ORG_ADMIN));
-        adminList(unattachedToken).andExpect(status().isForbidden());
+        adminList(unattachedToken).andExpect(status().isOk());
         mockMvc.perform(get(url).header("Authorization", "Bearer " + unattachedToken))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
 
-        // Nobody else does, and the refusal stays a 404.
+        // Nobody below that surface does, and the refusal stays a 404.
         mockMvc.perform(get(url)).andExpect(status().isNotFound());
         mockMvc.perform(get(url).header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNotFound());
         // The widening is the image path only: the JSON read still applies the
         // window, because the body already reaches managers through their list.
         publicGet(sysAdminToken, scheduled).andExpect(status().isNotFound());
-
-        // An org notice of a different organisation is not previewable either,
-        // window or no window.
-        String foreignUrl = json(upload(otherOrgAdminToken, otherOrgNotice, "foreign.png",
-                "image/png", PNG_BYTES).andExpect(status().isCreated()).andReturn())
-                .get("url").asString();
-        mockMvc.perform(get(foreignUrl).header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
@@ -939,35 +767,13 @@ class NoticeTest {
                 """, Long.class, action, targetId.toString());
     }
 
-    private long createWorkspace(String prefix, long... memberIds) {
-        String name = prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
-        long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM', ?) returning id
-                """, Long.class, name);
-        for (long memberId : memberIds) {
-            jdbcTemplate.update("""
-                    insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')
-                    """, workspaceId, memberId);
-        }
-        return workspaceId;
-    }
-
-    /** Derived-membership link: one request of the workspace in the org. */
-    private void linkWorkspaceToOrg(long workspaceId, long orgId, long requesterId) {
-        RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId,
-                "조직 연계(테스트)", null, 1, 1024, 20);
-    }
-
-    private User ensureAdmin(String email, String name, Long orgId) {
-        return ensureOrgUser(email, name, orgId, UserRole.ORG_ADMIN);
-    }
-
     /**
      * An org-tier account holding {@code role} in {@code orgId}. Since V90 the
      * organisation is a {@code user_org_roles} row rather than a column on the
      * account, and {@code users.role} is the effective role the
      * {@code @PreAuthorize} gate reads — here the two agree, because the fixture
-     * grants exactly one organisation.
+     * grants exactly one organisation. Notices no longer ask the question, but
+     * the grant is still what makes these accounts realistic.
      */
     private User ensureOrgUser(String email, String name, Long orgId, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
@@ -994,8 +800,8 @@ class NoticeTest {
      * An account holding {@code role} and granted no organisation. Correct for
      * the sys tier, which is never org-scoped and whose roles the table's CHECK
      * would refuse anyway, and it is also how the org-tier account that holds no
-     * row is built — the seam where the gate reads {@code users.role} and admits
-     * the caller while the service refuses it.
+     * row is built — the account the notice surface used to refuse and now
+     * admits.
      */
     private User ensureUnattachedUser(String email, String name, UserRole role) {
         User user = userRepository.findByEmail(email).orElseGet(() ->
@@ -1008,5 +814,10 @@ class NoticeTest {
     private long orgRoleRows(long userId) {
         return jdbcTemplate.queryForObject(
                 "select count(*) from user_org_roles where user_id = ?", Long.class, userId);
+    }
+
+    private long workspaceRows(long userId) {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from workspace_members where user_id = ?", Long.class, userId);
     }
 }

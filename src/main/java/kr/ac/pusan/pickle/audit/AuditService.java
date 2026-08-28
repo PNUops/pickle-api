@@ -164,8 +164,9 @@ public class AuditService {
     // 공지사항. The target is always the notice, images included — an image has
     // no standing of its own, and naming it as a target would scatter one
     // notice's history across rows nobody can join back together. The detail
-    // map carries whitelisted display fields (title, scope, audience, which
-    // fields an edit changed) and never the body bytes of an image.
+    // map carries whitelisted display fields (title, the popup and pinned
+    // flags, which fields an edit changed) and never the body bytes of an
+    // image.
     public static final String NOTICE_CREATE = "notice.create";
     public static final String NOTICE_UPDATE = "notice.update";
     public static final String NOTICE_DELETE = "notice.delete";
