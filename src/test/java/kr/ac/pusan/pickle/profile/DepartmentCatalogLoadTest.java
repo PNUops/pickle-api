@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.profile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -54,14 +55,33 @@ class DepartmentCatalogLoadTest {
     }
 
     @Test
-    void aFilePresentButUnreadableRefusesStartup(@TempDir Path dir) throws IOException {
+    void somethingPresentButUnopenableRefusesStartup(@TempDir Path dir) throws IOException {
         // The correction this class exists for. Keyed on existence, not
-        // readability: classifying an unreadable file as absent serves a list
+        // readability: classifying an unopenable path as absent serves a list
         // the operator believes they replaced, and the only symptom is that
         // the edit did nothing.
+        //
+        // A directory rather than a mode-000 file, because the permission
+        // version does not hold everywhere: root ignores the mode bits, so on
+        // the deploy host the file stays readable and the case never fires.
+        // Opening a directory as a stream fails for every user, which is the
+        // same branch reached by a means that does not depend on who is running.
+        Path asDirectory = Files.createDirectory(dir.resolve("departments.json"));
+        assertThatThrownBy(() -> new DepartmentCatalog(asDirectory))
+                .isInstanceOf(UncheckedIOException.class)
+                .hasMessageContaining("check permissions and syntax");
+    }
+
+    @Test
+    void aModeZeroFileRefusesStartupWhereTheModeIsHonoured(@TempDir Path dir) throws IOException {
+        // The literal permission case, skipped where it cannot be staged.
+        // Running as root makes the file readable no matter what the mode says,
+        // and a test that silently passes because its premise never held is
+        // worse than one that says it did not run.
         Path file = write(dir, "{\"departments\":[{\"code\":\"OTHER\",\"name\":\"기타\",\"college\":\"기타\"}]}");
         assertThat(file.toFile().setReadable(false)).isTrue();
         try {
+            assumeTrue(!Files.isReadable(file), "이 사용자에게는 모드 비트가 적용되지 않는다");
             assertThatThrownBy(() -> new DepartmentCatalog(file))
                     .isInstanceOf(UncheckedIOException.class)
                     .hasMessageContaining("check permissions and syntax");
