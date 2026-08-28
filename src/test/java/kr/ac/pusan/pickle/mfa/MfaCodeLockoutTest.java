@@ -142,6 +142,67 @@ class MfaCodeLockoutTest {
     }
 
     @Test
+    void loginStageTwoIsBoundedAcrossAddressesByTheAccountWindow() throws Exception {
+        User user = createActiveUser("mfa.codelock.spread@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        enroll(access, "10.98.6.1");
+
+        // One challenge is enough: a wrong code does not consume it. The lockout is
+        // keyed on (account, address), so an attacker who spreads over addresses gets
+        // a fresh five each time and the lockout never fires. What has to stop that is
+        // the account-wide window, which this endpoint did not have.
+        MvcResult challenge = login(user.getEmail(), "10.98.6.2")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaRequired").value(true))
+                .andReturn();
+        String mfaToken = json(challenge).get("mfaToken").asText();
+
+        for (int i = 0; i < 10; i++) {
+            completeMfa(mfaToken, "10.98.7." + i).andExpect(status().isUnauthorized());
+        }
+        // eleventh in the same minute, from an eleventh address the lockout has never
+        // seen: only the account window can refuse this one
+        completeMfa(mfaToken, "10.98.7.10")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void oneAddressCannotSpendTheAccountWindowAndLockTheOwnerOut() throws Exception {
+        User user = createActiveUser("mfa.codelock.owner@pusan.ac.kr");
+        String access = jwtService.createAccessToken(user);
+        String secret = enroll(access, "10.98.8.1");
+        String attacker = "10.98.8.2";
+        String owner = "10.98.8.3";
+
+        // An account-wide budget has no (account, address) key to protect the owner,
+        // so the lock has to be checked before the budget is charged. Otherwise a
+        // client that knows the password spends the whole minute from one address and
+        // the owner's correct code comes back 429 — the remote lock-out the pair key
+        // exists to prevent.
+        MvcResult challenge = login(user.getEmail(), attacker).andExpect(status().isOk()).andReturn();
+        String stolen = json(challenge).get("mfaToken").asText();
+        for (int i = 0; i < 11; i++) {
+            completeMfa(stolen, attacker);
+        }
+
+        MvcResult mine = login(user.getEmail(), owner)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mfaRequired").value(true))
+                .andReturn();
+        mockMvc.perform(post("/api/v1/auth/mfa")
+                .with(request -> {
+                    request.setRemoteAddr(owner);
+                    return request;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                        "mfaToken", json(mine).get("mfaToken").asText(),
+                        "code", totpService.generate(secret, Instant.now().getEpochSecond() / 30)))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void disablePasswordFailuresStillLockTheGuessingClientOutOfLogin() throws Exception {
         User user = createActiveUser("mfa.codelock.password@pusan.ac.kr");
         String access = jwtService.createAccessToken(user);
@@ -167,14 +228,27 @@ class MfaCodeLockoutTest {
                 .andExpect(jsonPath("$.mfaRequired").value(true));
     }
 
-    /** begin + activate, so the account ends up enrolled with live recovery codes. */
-    private void enroll(String access, String ip) throws Exception {
+    /** begin + activate, so the account ends up enrolled with live recovery codes. Returns the secret. */
+    private String enroll(String access, String ip) throws Exception {
         MvcResult begun = postJson("/api/v1/me/mfa/totp", access, Map.of("password", PASSWORD), ip)
                 .andExpect(status().isOk()).andReturn();
         String secret = json(begun).get("secret").asText();
         postJson("/api/v1/me/mfa/totp/activate", access,
                 Map.of("code", totpService.generate(secret, Instant.now().getEpochSecond() / 30)), ip)
                 .andExpect(status().isOk());
+        return secret;
+    }
+
+    /** Login stage 2 with a deliberately wrong recovery code, from the given address. */
+    private ResultActions completeMfa(String mfaToken, String ip) throws Exception {
+        return mockMvc.perform(post("/api/v1/auth/mfa")
+                .with(request -> {
+                    request.setRemoteAddr(ip);
+                    return request;
+                })
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                        Map.of("mfaToken", mfaToken, "recoveryCode", WRONG_RECOVERY_CODE))));
     }
 
     private ResultActions login(String email, String ip) throws Exception {

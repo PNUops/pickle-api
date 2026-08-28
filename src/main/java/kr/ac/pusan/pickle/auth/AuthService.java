@@ -336,13 +336,29 @@ public class AuthService {
     @Transactional
     public AuthResult completeMfaLogin(String mfaToken, String code, String recoveryCode,
             String ip, String userAgent) {
+        // The escalating lockout is keyed on (account, client address), so it bounds
+        // one address and nothing else. Every other code-taking endpoint pairs it
+        // with a per-minute window that bounds the account across addresses; this one
+        // had no window at all, which made it the only place where the account-wide
+        // cap the lockout's own contract promises did not exist. The address window
+        // goes first because it needs no identity; the account one waits until the
+        // challenge has resolved to a user.
+        rateLimitService.hit("mfa_login:ip", ip, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         MfaService.requireExactlyOneCode(code, recoveryCode);
         MfaLoginToken challenge = mfaService.loadChallengeOrThrow(mfaToken);
         User user = userRepository.findById(challenge.getUserId())
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(AuthService::invalidCredentials);
 
+        // The lock is checked BEFORE the account window is charged, and the order is
+        // the whole of what keeps this window from becoming a remote lock-out lever.
+        // The lock is keyed on (account, address) precisely so one client's failures
+        // cannot shut the owner out; an account-wide budget has no such protection, so
+        // a client that is already locked must not go on spending it. Charging first
+        // lets one address burn the account's whole minute and answer the owner's
+        // correct code with 429.
         rateLimitService.checkLoginLock(user.getEmail(), ip);
+        rateLimitService.hit("mfa_login:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,

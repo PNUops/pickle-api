@@ -184,8 +184,14 @@ class MfaLoginTest {
     }
 
     private ResultActions mfa(Map<String, Object> body) throws Exception {
-        // /auth/mfa has no per-IP limiter (only the per-account lockout), so no XFF needed.
+        // Its own address, because /auth/mfa carries a per-minute window since
+        // 2026-08-28. Left on the default, this class and every other suite that
+        // posts here would share one budget and fail each other at a distance.
         return mockMvc.perform(post("/api/v1/auth/mfa")
+                .with(request -> {
+                    request.setRemoteAddr("10.96.1.1");
+                    return request;
+                })
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }

@@ -168,6 +168,10 @@ class MaintenanceModeTest {
         // out every enrolled admin. The request must reach the handler (a bogus
         // token is 410, not a 503 MAINTENANCE_MODE).
         mockMvc.perform(post("/api/v1/auth/mfa")
+                        .with(request -> {
+                            request.setRemoteAddr("10.96.2.1");
+                            return request;
+                        })
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mfaToken\":\"bogus\",\"code\":\"123456\"}"))
                 .andExpect(status().isGone())
