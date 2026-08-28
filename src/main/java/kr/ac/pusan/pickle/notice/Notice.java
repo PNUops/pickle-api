@@ -2,8 +2,6 @@ package kr.ac.pusan.pickle.notice;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -20,10 +18,14 @@ import org.hibernate.type.SqlTypes;
  * is never fanned out — the row itself is what readers open, for as long as its
  * active window lasts.
  *
- * <p>Every notice is platform-wide: an organisation says who supplies a node or
- * a resource, not who may read what, so V95 dropped the scope axis. What is
- * left is {@link #audience}, which together with the active window is the whole
- * of who may open it — PUBLIC reaches anonymous visitors, USERS does not.</p>
+ * <p>V95 dropped both of the axes V92 gave it. An organisation says who
+ * supplies a node or a resource, not who may read what, so a notice is
+ * platform-wide; and the separate audience axis duplicated a decision the
+ * author was already making with {@link #popup}, so that one flag now carries
+ * it. A popup notice interrupts the reader <em>and</em> reaches a visitor who
+ * cannot sign in; a notice that is not a popup sits on the board for signed-in
+ * readers. Together with the active window that is the whole of who may open
+ * it.</p>
  */
 @Entity
 @Table(name = "notices")
@@ -46,10 +48,6 @@ public class Notice {
 
     @Column(nullable = false)
     private String body;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private NoticeAudience audience;
 
     @Column(nullable = false)
     private boolean pinned;
@@ -77,11 +75,9 @@ public class Notice {
     protected Notice() {
     }
 
-    public Notice(Long createdBy, NoticeAudience audience,
-            String title, String body, boolean pinned, boolean popup,
+    public Notice(Long createdBy, String title, String body, boolean pinned, boolean popup,
             Instant startsAt, Instant endsAt) {
         this.createdBy = createdBy;
-        this.audience = audience;
         this.title = title;
         this.body = body;
         this.pinned = pinned;
@@ -119,14 +115,6 @@ public class Notice {
         this.body = body;
     }
 
-    public NoticeAudience getAudience() {
-        return audience;
-    }
-
-    public void setAudience(NoticeAudience audience) {
-        this.audience = audience;
-    }
-
     public boolean isPinned() {
         return pinned;
     }
@@ -135,6 +123,11 @@ public class Notice {
         this.pinned = pinned;
     }
 
+    /**
+     * The single visibility flag: a popup notice is raised as a modal and is
+     * readable without a session; anything else needs one. {@code
+     * NoticeQueryService.visibleTo} is where that is stated.
+     */
     public boolean isPopup() {
         return popup;
     }

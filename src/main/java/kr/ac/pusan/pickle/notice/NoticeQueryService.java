@@ -27,13 +27,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>The three public ones are served without authentication, so the principal
  * is nullable and decides the whole of what comes back: an anonymous caller
- * sees the notices published PUBLIC, a signed-in one sees every notice inside
- * its window. Since V95 that is the entire axis — an organisation names who
- * supplies a resource, not who may read a notice — so being signed in is the
- * only thing the audience axis distinguishes. A notice the caller may not see
- * answers 404 rather than 403, because a refusal would confirm that the
- * identifier names a real notice, which is the thing the audience axis exists
- * to keep private.</p>
+ * sees the popup notices, a signed-in one sees every notice inside its window.
+ * Since V95 that is the entire rule — an organisation names who supplies a
+ * resource rather than who may read a notice, and the separate audience axis
+ * collapsed into {@code popup} — so being signed in is the only thing a notice
+ * distinguishes its readers by. A notice the caller may not see answers 404
+ * rather than 403, because a refusal would confirm that the identifier names a
+ * real notice, which is the thing the flag exists to keep private.</p>
  *
  * <p>The admin read is the same rows without the window filter, so scheduled
  * and expired notices are manageable; each row says whether it is
@@ -106,8 +106,8 @@ public class NoticeQueryService {
         // rule answers with no reader. Deriving the directive from the rule
         // rather than restating it means the two cannot drift, so the moment a
         // notice stops being anonymously readable its images stop being MARKED
-        // shareable, including a PUBLIC one that has not started yet. Asking
-        // audience == PUBLIC here instead would look equivalent and drop the
+        // shareable, including a popup one that has not started yet. Asking
+        // notice.isPopup() here instead would look equivalent and drop the
         // window half of the rule.
         // What that does not do is reach copies a shared cache already stored:
         // those keep being served until they expire, which is the whole reason
@@ -151,16 +151,15 @@ public class NoticeQueryService {
      * The single statement of who may read a notice, and the mirror of
      * {@link NoticeRepository#findVisibleToAnonymous}. Outside the active
      * window nobody gets it through this surface; inside it, a signed-in caller
-     * gets it whatever its audience, and an anonymous one only if it is PUBLIC.
+     * gets it popup or not, and an anonymous one only if it is a popup.
      *
      * <p>Both halves matter, and the window is the half that is easy to lose:
      * {@link #image} derives its cache directive by calling this with no
-     * reader, so restating it as {@code audience == PUBLIC} anywhere would mark
-     * a scheduled notice's images shareable before it is published.</p>
+     * reader, so restating it as {@code notice.isPopup()} anywhere would mark a
+     * scheduled notice's images shareable before it is published.</p>
      */
     static boolean visibleTo(Notice notice, @Nullable AuthenticatedUser reader, Instant now) {
-        return notice.isActiveAt(now)
-                && (reader != null || notice.getAudience() == NoticeAudience.PUBLIC);
+        return notice.isActiveAt(now) && (reader != null || notice.isPopup());
     }
 
     /**

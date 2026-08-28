@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.notice.Notice;
-import kr.ac.pusan.pickle.notice.NoticeAudience;
 import kr.ac.pusan.pickle.notice.NoticeImageMeta;
 import org.jspecify.annotations.Nullable;
 
@@ -18,8 +17,9 @@ public record AdminNoticeView(
         UUID id,
         String title,
         String body,
-        NoticeAudience audience,
+        @Schema(description = "목록 상단 고정 여부")
         boolean pinned,
+        @Schema(description = "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다.")
         boolean popup,
         Instant startsAt,
         @Schema(description = "게시 종료 시각. 비어 있으면 만료되지 않습니다.")
@@ -35,8 +35,7 @@ public record AdminNoticeView(
     public static AdminNoticeView from(Notice notice, @Nullable String createdByName,
             List<NoticeImageMeta> images, Instant now) {
         return new AdminNoticeView(notice.getPublicId(), notice.getTitle(), notice.getBody(),
-                notice.getAudience(), notice.isPinned(), notice.isPopup(),
-                notice.getStartsAt(), notice.getEndsAt(),
+                notice.isPinned(), notice.isPopup(), notice.getStartsAt(), notice.getEndsAt(),
                 notice.isActiveAt(now), createdByName,
                 images.stream().map(image -> NoticeImageView.from(notice.getPublicId(), image))
                         .toList(),

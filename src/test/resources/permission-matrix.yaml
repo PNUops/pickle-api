@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.51.0, 177 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.52.0, 177 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -290,12 +290,13 @@ operations:
   #
   # The three reads are public: the landing page shows notices before anyone has
   # an account. What an anonymous caller actually gets back is decided per row —
-  # audience = PUBLIC, inside the publication window — and a notice they may not
-  # see answers 404, not 403. A signed-in reader gets every notice in its window
-  # whatever its audience, and being signed in is the whole of that widening:
-  # V95 removed the organisation axis, so no membership question is asked of
-  # anyone. No token here can express the widening; NoticeTest is its only
-  # coverage.
+  # popup = true, inside the publication window — and a notice they may not see
+  # answers 404, not 403. That pair is the whole of the anonymous boundary since
+  # V95, which dropped both of the axes V92 had: the organisation one entirely,
+  # and the separate audience one into popup. A signed-in reader gets every
+  # notice in its window, popup or not, and being signed in is the whole of that
+  # widening — no membership question is asked of anyone. No token here can
+  # express it; NoticeTest is its only coverage.
   - { id: listNotices,    method: GET, path: "/notices",                              roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getNotice,      method: GET, path: "/notices/{noticeId}",                   roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: getNoticeImage, method: GET, path: "/notices/{noticeId}/images/{imageId}",  roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
@@ -309,10 +310,12 @@ operations:
   # an organisation deciding who may use a feature.
   #
   # ORG_ADMIN's writes are therefore wider than they were: it publishes to every
-  # user of the platform, and with audience = PUBLIC to anonymous visitors as
-  # well. That was previously reachable only by SYS_ADMIN (an ORG notice could
-  # not be PUBLIC, and a PLATFORM one was refused to the org tier). Recorded as
-  # a decision, not an oversight: an organisation is not a feature gate.
+  # user of the platform, and with popup = true to anonymous visitors as well.
+  # That was previously reachable only by SYS_ADMIN (an ORG notice could not be
+  # PUBLIC, and a PLATFORM one was refused to the org tier). Recorded as a
+  # decision, not an oversight: an organisation is not a feature gate. The one
+  # thing no role can now do is raise a modal for signed-in readers alone: the
+  # flag that interrupts them is the flag that opens the notice to visitors.
   #
   # Both viewers read the list, on the rule that a viewer holds whatever read
   # access its tier's operator holds. The audit log is the one exception and it

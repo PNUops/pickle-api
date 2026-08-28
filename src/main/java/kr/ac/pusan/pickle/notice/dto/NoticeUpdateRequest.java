@@ -3,7 +3,6 @@ package kr.ac.pusan.pickle.notice.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import kr.ac.pusan.pickle.notice.NoticeAudience;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -14,10 +13,10 @@ import org.jspecify.annotations.Nullable;
  * {@code "endsAt": null} turns a notice that expires into one that does not.
  * Those two are the same value in a record and would be indistinguishable.</p>
  *
- * <p>{@code audience} is editable, and it is the only axis a notice has since
- * V95. Widening one to PUBLIC after the fact is an ordinary edit rather than a
- * privilege escalation: every account that reaches this endpoint could have
- * created the notice PUBLIC in the first place.</p>
+ * <p>{@code popup} is editable, and since V95 it is the only visibility
+ * control a notice has. Turning it on after the fact is an ordinary edit rather
+ * than a privilege escalation: every account that reaches this endpoint could
+ * have created the notice as a popup in the first place.</p>
  */
 public class NoticeUpdateRequest {
 
@@ -28,9 +27,6 @@ public class NoticeUpdateRequest {
     @Size(max = 20000, message = "본문은 20,000자 이하여야 합니다.")
     private String body;
     private boolean bodySet;
-
-    private NoticeAudience audience;
-    private boolean audienceSet;
 
     private Boolean pinned;
     private boolean pinnedSet;
@@ -71,20 +67,6 @@ public class NoticeUpdateRequest {
     @Schema(hidden = true)
     public boolean isBodySet() {
         return bodySet;
-    }
-
-    public NoticeAudience getAudience() {
-        return audience;
-    }
-
-    public void setAudience(NoticeAudience audience) {
-        this.audience = audience;
-        this.audienceSet = true;
-    }
-
-    @Schema(hidden = true)
-    public boolean isAudienceSet() {
-        return audienceSet;
     }
 
     public Boolean getPinned() {
@@ -145,7 +127,7 @@ public class NoticeUpdateRequest {
 
     @Schema(hidden = true)
     public boolean isEmpty() {
-        return !titleSet && !bodySet && !audienceSet && !pinnedSet && !popupSet
+        return !titleSet && !bodySet && !pinnedSet && !popupSet
                 && !startsAtSet && !endsAtSet;
     }
 }

@@ -44,23 +44,27 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 공지사항 per contract v0.52.0: the one visibility axis and the 404 mask that
- * enforces it, the active window, and the image rules.
+ * 공지사항 per contract v0.52.0: the single visibility flag and the 404 mask
+ * that enforces it, the active window, and the image rules.
  *
- * <p><b>What V95 removed.</b> A notice used to carry a second axis naming the
+ * <p><b>What V95 removed.</b> A notice used to carry two axes. One named the
  * organisation it belonged to, and most of this class used to be about who
- * counted as that organisation's reader. An organisation names who supplies a
- * node or a resource; it is not a mechanism for deciding who may use a feature,
- * so every notice is now platform-wide and every administrator writes for the
- * whole platform. The tests that pinned the organisation rules are gone, and
- * three new ones stand where they stood — one for each thing the removal made
- * newly reachable.</p>
+ * counted as that organisation's reader; an organisation names who supplies a
+ * node or a resource, not who may use a feature, so every notice is now
+ * platform-wide. The other was {@code audience}, which duplicated a decision
+ * the author was already making, so {@code popup} absorbed it.</p>
  *
- * <p><b>The anonymous boundary is one predicate.</b> {@code audience = PUBLIC}
+ * <p><b>The anonymous boundary is one predicate.</b> {@code popup = true}
  * inside the publication window, and nothing else. That makes
- * {@code anonymousReaderSeesOnlyPublicNotices} the load-bearing test of this
- * class: it is the only thing standing between a USERS notice and the public
+ * {@code anonymousReaderSeesOnlyPopupNotices} the load-bearing test of this
+ * class: it is the only thing standing between a board notice and the public
  * internet.</p>
+ *
+ * <p><b>The coupling that follows.</b> A notice worth interrupting a reader for
+ * is now necessarily a notice a visitor who cannot sign in may read. There is
+ * no modal-for-signed-in-readers-only, and
+ * {@code aPopupIsAlwaysAnonymouslyReadable} pins that as a property rather than
+ * leaving it as an accident of two flags happening to agree.</p>
  *
  * <p>These reads are also the <b>only</b> coverage of the visibility widening.
  * The permission matrix records the three public operations as {@code public}
@@ -99,8 +103,8 @@ class NoticeTest {
     private String otherOrgAdminToken;
     private String userToken;
 
-    private UUID publicNotice;
-    private UUID usersNotice;
+    private UUID popupNotice;
+    private UUID boardNotice;
     private UUID orgAdminNotice;
 
     @BeforeEach
@@ -122,31 +126,31 @@ class NoticeTest {
         // Images cascade with their notice, so one delete clears both tables.
         jdbcTemplate.update("delete from notices");
 
-        publicNotice = createdId(create(sysAdminToken, body(Map.of(
-                "title", "전체 공개 공지", "audience", "PUBLIC"))));
-        usersNotice = createdId(create(sysAdminToken, body(Map.of(
-                "title", "로그인 전용 공지", "audience", "USERS"))));
+        popupNotice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 공지", "popup", true))));
+        boardNotice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 공지"))));
         // An organisation administrator writes for the whole platform, so this
         // is the same kind of object the system administrator just created.
         orgAdminNotice = createdId(create(orgAdminToken, body(Map.of(
-                "title", "기관 관리자 공지", "audience", "USERS"))));
+                "title", "기관 관리자 공지"))));
     }
 
     @Test
-    void anonymousReaderSeesOnlyPublicNotices() throws Exception {
-        // The whole anonymous boundary: audience = PUBLIC inside the window.
-        // Nothing else separates a signed-out caller from a signed-in one, so
-        // this is the assertion that keeps USERS notices off the open internet.
+    void anonymousReaderSeesOnlyPopupNotices() throws Exception {
+        // The whole anonymous boundary: popup = true inside the window. Nothing
+        // else separates a signed-out caller from a signed-in one, so this is
+        // the assertion that keeps board notices off the open internet.
         publicList(null)
                 .andExpect(status().isOk())
-                .andExpect(listHas(publicNotice))
-                .andExpect(listOmits(usersNotice))
+                .andExpect(listHas(popupNotice))
+                .andExpect(listOmits(boardNotice))
                 .andExpect(listOmits(orgAdminNotice));
 
         // A notice an anonymous caller may not see is absent, not refused: a 403
         // would confirm that this identifier names a real notice.
-        publicGet(null, publicNotice).andExpect(status().isOk());
-        publicGet(null, usersNotice)
+        publicGet(null, popupNotice).andExpect(status().isOk());
+        publicGet(null, boardNotice)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         publicGet(null, orgAdminNotice)
@@ -170,13 +174,13 @@ class NoticeTest {
 
         publicList(userToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(publicNotice))
-                .andExpect(listHas(usersNotice))
+                .andExpect(listHas(popupNotice))
+                .andExpect(listHas(boardNotice))
                 .andExpect(listHas(orgAdminNotice));
-        publicGet(userToken, usersNotice).andExpect(status().isOk());
+        publicGet(userToken, boardNotice).andExpect(status().isOk());
         publicGet(userToken, orgAdminNotice).andExpect(status().isOk());
 
-        // Suspending the account takes the USERS notices away again. On a
+        // Suspending the account takes the board notices away again. On a
         // permitAll path an unusable token is not a 401 — the filter simply
         // builds no principal — so the caller degrades to anonymous and sees
         // less, never more.
@@ -185,10 +189,10 @@ class NoticeTest {
         userRepository.save(member);
         publicList(userToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(publicNotice))
-                .andExpect(listOmits(usersNotice))
+                .andExpect(listHas(popupNotice))
+                .andExpect(listOmits(boardNotice))
                 .andExpect(listOmits(orgAdminNotice));
-        publicGet(userToken, usersNotice).andExpect(status().isNotFound());
+        publicGet(userToken, boardNotice).andExpect(status().isNotFound());
         member.setStatus(UserStatus.ACTIVE);
         userRepository.save(member);
     }
@@ -212,24 +216,25 @@ class NoticeTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("기관 관리자 공지"));
 
-        // What still stops at the login is the audience, not any organisation
-        // shape: the same notice is USERS, so anonymously it is absent.
+        // What still stops at the login is the popup flag, not any organisation
+        // shape: this notice is not a popup, so anonymously it is absent.
         publicGet(null, orgAdminNotice).andExpect(status().isNotFound());
     }
 
     @Test
     void anOrgAdminPublishesToAnonymousVisitorsToo() throws Exception {
         // Previously unreachable from this role in both directions: an ORG
-        // notice could not be PUBLIC (422) and a PLATFORM one was refused (403).
+        // notice could not be publicly readable (422) and a platform one was
+        // refused (403). Now one flag does it.
         UUID published = createdId(create(orgAdminToken, body(Map.of(
-                "title", "기관 관리자 공개 공지", "audience", "PUBLIC"))));
+                "title", "기관 관리자 팝업 공지", "popup", true))));
 
         publicList(null)
                 .andExpect(status().isOk())
                 .andExpect(listHas(published));
         publicGet(null, published)
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.title").value("기관 관리자 공개 공지"));
+                .andExpect(jsonPath("$.title").value("기관 관리자 팝업 공지"));
 
         // And its image is served to an anonymous caller under the shared-cache
         // directive, which re-checks that the cache rule is derived from the
@@ -245,9 +250,51 @@ class NoticeTest {
     }
 
     @Test
+    void aPopupIsAlwaysAnonymouslyReadableAndTheTwoCannotBeSeparated() throws Exception {
+        // popup carries two meanings at once since V95: it raises the modal AND
+        // it opens the notice to visitors who cannot sign in. The combination
+        // this removes — interrupt signed-in readers only — is not merely
+        // unreachable through the console, it does not exist in the model, and
+        // that is the point worth pinning rather than leaving to two flags
+        // happening to agree.
+        //
+        // Asserted as a pair on the same notice, flipped in place, because
+        // either half alone reads as a coincidence.
+        UUID notice = createdId(create(sysAdminToken, body(Map.of(
+                "title", "결합 확인", "popup", false))));
+
+        publicList(null).andExpect(status().isOk()).andExpect(listOmits(notice));
+        publicGet(null, notice).andExpect(status().isNotFound());
+        publicGet(userToken, notice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(false));
+
+        // Turning the modal on is what opens it up. There is no third state.
+        patchNotice(sysAdminToken, notice, Map.of("popup", true))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(true));
+        publicList(null).andExpect(status().isOk()).andExpect(listHas(notice));
+        publicGet(null, notice)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.popup").value(true));
+
+        // And turning it off closes it again, so the edit is not one-way.
+        patchNotice(sysAdminToken, notice, Map.of("popup", false))
+                .andExpect(status().isOk());
+        publicGet(null, notice).andExpect(status().isNotFound());
+
+        // The response body carries no separate visibility field for a client
+        // to disagree with: popup is the only one, and pinned is about order.
+        publicGet(userToken, notice)
+                .andExpect(jsonPath("$.audience").doesNotExist())
+                .andExpect(jsonPath("$.pinned").exists())
+                .andExpect(jsonPath("$.popup").exists());
+    }
+
+    @Test
     void administratorsEditEachOthersNoticesWhicheverRoleWroteThem() throws Exception {
         // Nobody owns a notice, so the write scope is the gate and nothing more.
-        patchNotice(orgAdminToken, publicNotice, Map.of("title", "시스템 공지(기관 관리자 수정)"))
+        patchNotice(orgAdminToken, popupNotice, Map.of("title", "시스템 공지(기관 관리자 수정)"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.title").value("시스템 공지(기관 관리자 수정)"));
         patchNotice(sysAdminToken, orgAdminNotice, Map.of("title", "기관 관리자 공지(시스템 관리자 수정)"))
@@ -258,9 +305,9 @@ class NoticeTest {
         // there is no organisation on a notice for it to be different from.
         patchNotice(otherOrgAdminToken, orgAdminNotice, Map.of("title", "타기관 관리자 수정"))
                 .andExpect(status().isOk());
-        upload(otherOrgAdminToken, publicNotice, "a.png", "image/png", PNG_BYTES)
+        upload(otherOrgAdminToken, popupNotice, "a.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated());
-        deleteNotice(otherOrgAdminToken, publicNotice).andExpect(status().isNoContent());
+        deleteNotice(otherOrgAdminToken, popupNotice).andExpect(status().isNoContent());
 
         // An org-tier account granted no organisation at all reaches both the
         // management list and the writes. Refusing it used to be the one place
@@ -271,7 +318,7 @@ class NoticeTest {
         adminList(unattachedToken)
                 .andExpect(status().isOk())
                 .andExpect(listHas(orgAdminNotice));
-        create(unattachedToken, body(Map.of("title", "무소속 등록", "audience", "USERS")))
+        create(unattachedToken, body(Map.of("title", "무소속 등록")))
                 .andExpect(status().isCreated());
 
         // A notice that does not exist is still 404 — a fact now, not a mask.
@@ -284,15 +331,15 @@ class NoticeTest {
     void theActiveWindowFiltersThePublicListButNotTheAdminOne() throws Exception {
         Instant now = Instant.now();
         UUID scheduled = createdId(create(sysAdminToken, body(Map.of(
-                "title", "예정 공지", "audience", "PUBLIC",
+                "title", "예정 공지", "popup", true,
                 "startsAt", now.plus(1, ChronoUnit.DAYS).toString()))));
         UUID expired = createdId(create(sysAdminToken, body(Map.of(
-                "title", "만료 공지", "audience", "PUBLIC",
+                "title", "만료 공지", "popup", true,
                 "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
                 "endsAt", now.minus(1, ChronoUnit.DAYS).toString()))));
 
         publicList(null)
-                .andExpect(listHas(publicNotice))
+                .andExpect(listHas(popupNotice))
                 .andExpect(listOmits(scheduled))
                 .andExpect(listOmits(expired));
         publicGet(null, scheduled).andExpect(status().isNotFound());
@@ -307,14 +354,14 @@ class NoticeTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(rowWhere(scheduled, "@.active==false")).exists())
                 .andExpect(jsonPath(rowWhere(expired, "@.active==false")).exists())
-                .andExpect(jsonPath(rowWhere(publicNotice, "@.active==true")).exists())
+                .andExpect(jsonPath(rowWhere(popupNotice, "@.active==true")).exists())
                 // list rows carry the body, which is why there is no admin detail read
-                .andExpect(jsonPath(rowWhere(publicNotice, "@.body")).exists());
+                .andExpect(jsonPath(rowWhere(popupNotice, "@.body")).exists());
 
         // A window that closes before it opens is refused here rather than left
         // to notices_window_check, which would surface as a 500.
         create(sysAdminToken, body(Map.of(
-                "title", "거꾸로", "audience", "PUBLIC",
+                "title", "거꾸로", "popup", true,
                 "startsAt", now.toString(),
                 "endsAt", now.minus(1, ChronoUnit.HOURS).toString())))
                 .andExpect(status().isUnprocessableContent())
@@ -325,7 +372,7 @@ class NoticeTest {
     void anOmittedEditFieldKeepsItsValueAndAnExplicitNullClearsTheExpiry() throws Exception {
         Instant endsAt = Instant.now().plus(7, ChronoUnit.DAYS);
         UUID expiring = createdId(create(sysAdminToken, body(Map.of(
-                "title", "기간 있는 공지", "audience", "PUBLIC",
+                "title", "기간 있는 공지", "popup", true,
                 "endsAt", endsAt.toString()))));
 
         // Omitted: the expiry survives an edit that says nothing about it.
@@ -364,13 +411,13 @@ class NoticeTest {
         // notices another organisation's administrator wrote, like everyone else.
         adminList(orgViewerToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(publicNotice))
+                .andExpect(listHas(popupNotice))
                 .andExpect(listHas(orgAdminNotice));
 
         // Every write is refused by the method's own gate, which fully replaces
         // the widened class-level one — ACCESS_DENIED rather than any other 403,
         // so a refusal from somewhere else in the chain cannot pass for this.
-        create(orgViewerToken, body(Map.of("title", "열람자 등록 시도", "audience", "USERS")))
+        create(orgViewerToken, body(Map.of("title", "열람자 등록 시도")))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         patchNotice(orgViewerToken, orgAdminNotice, Map.of("title", "열람자 수정 시도"))
@@ -390,13 +437,13 @@ class NoticeTest {
 
         adminList(sysViewerToken)
                 .andExpect(status().isOk())
-                .andExpect(listHas(publicNotice))
+                .andExpect(listHas(popupNotice))
                 .andExpect(listHas(orgAdminNotice));
 
-        create(sysViewerToken, body(Map.of("title", "전체열람자 등록 시도", "audience", "PUBLIC")))
+        create(sysViewerToken, body(Map.of("title", "전체열람자 등록 시도", "popup", true)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
-        patchNotice(sysViewerToken, publicNotice, Map.of("title", "전체열람자 수정 시도"))
+        patchNotice(sysViewerToken, popupNotice, Map.of("title", "전체열람자 수정 시도"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         deleteNotice(sysViewerToken, orgAdminNotice)
@@ -410,27 +457,27 @@ class NoticeTest {
         adminList(sysAdminToken)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath(rowWhere(orgAdminNotice, "@.title=='기관 관리자 공지'")).exists())
-                .andExpect(listHas(publicNotice));
+                .andExpect(listHas(popupNotice));
     }
 
     @Test
     void imageUploadsAreJudgedByTheirBytesAndCapped() throws Exception {
         // A text payload wearing image/png is refused: the declared type is a
         // claim, and the leading bytes are what decide.
-        upload(sysAdminToken, publicNotice, "fake.png", "image/png",
+        upload(sysAdminToken, popupNotice, "fake.png", "image/png",
                 "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_TYPE_UNSUPPORTED"));
 
         byte[] oversized = new byte[NoticeImageTypes.MAX_BYTES + 1];
         System.arraycopy(PNG_BYTES, 0, oversized, 0, PNG_BYTES.length);
-        upload(sysAdminToken, publicNotice, "big.png", "image/png", oversized)
+        upload(sysAdminToken, popupNotice, "big.png", "image/png", oversized)
                 .andExpect(status().isPayloadTooLarge())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_TOO_LARGE"));
 
         // The stored type is the real one, not the one the upload declared.
         UUID firstImageId = UUID.fromString(json(
-                upload(sysAdminToken, publicNotice, "photo.png", "image/png", JPEG_BYTES)
+                upload(sysAdminToken, popupNotice, "photo.png", "image/png", JPEG_BYTES)
                         .andExpect(status().isCreated())
                         .andExpect(jsonPath("$.contentType").value("image/jpeg"))
                         .andExpect(jsonPath("$.byteSize").value(JPEG_BYTES.length))
@@ -438,37 +485,37 @@ class NoticeTest {
 
         // Four more fill the notice; the one after that is refused.
         for (int i = 2; i <= NoticeImageTypes.MAX_PER_NOTICE; i++) {
-            upload(sysAdminToken, publicNotice, "img" + i + ".png", "image/png", PNG_BYTES)
+            upload(sysAdminToken, popupNotice, "img" + i + ".png", "image/png", PNG_BYTES)
                     .andExpect(status().isCreated());
         }
-        upload(sysAdminToken, publicNotice, "one-too-many.png", "image/png", PNG_BYTES)
+        upload(sysAdminToken, popupNotice, "one-too-many.png", "image/png", PNG_BYTES)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("NOTICE_IMAGE_LIMIT_EXCEEDED"));
 
         // Deleting one frees a slot, and the row really goes: the cap is
         // counted from the store rather than from anything the notice caches.
-        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", publicNotice);
+        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", popupNotice);
         assertThat(imageRows(noticeId)).isEqualTo(NoticeImageTypes.MAX_PER_NOTICE);
-        deleteAdminImage(sysAdminToken, publicNotice, firstImageId)
+        deleteAdminImage(sysAdminToken, popupNotice, firstImageId)
                 .andExpect(status().isNoContent());
         assertThat(imageRows(noticeId)).isEqualTo(NoticeImageTypes.MAX_PER_NOTICE - 1);
         // The same id twice is 404, not a second silent success.
-        deleteAdminImage(sysAdminToken, publicNotice, firstImageId)
+        deleteAdminImage(sysAdminToken, popupNotice, firstImageId)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
-        upload(sysAdminToken, publicNotice, "refill.png", "image/png", PNG_BYTES)
+        upload(sysAdminToken, popupNotice, "refill.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated());
     }
 
     @Test
     void servingAnImageReturnsTheStoredBytesAndInheritsTheNoticesVisibility() throws Exception {
-        JsonNode uploaded = json(upload(sysAdminToken, publicNotice, "hero.png", "image/png",
+        JsonNode uploaded = json(upload(sysAdminToken, popupNotice, "hero.png", "image/png",
                 PNG_BYTES).andExpect(status().isCreated()).andReturn());
         UUID imageId = UUID.fromString(uploaded.get("id").asString());
         String url = uploaded.get("url").asString();
         // The finished string, not just the ids behind it: this is a
         // concatenation site, and nothing downstream would object to a wrong one.
-        assertThat(url).isEqualTo("/api/v1/notices/" + publicNotice + "/images/" + imageId);
+        assertThat(url).isEqualTo("/api/v1/notices/" + popupNotice + "/images/" + imageId);
 
         // Anonymously readable, so a cache shared between users may keep it —
         // but only for an hour, and without the promise never to revalidate.
@@ -484,9 +531,9 @@ class NoticeTest {
                 .andReturn();
         assertThat(served.getResponse().getContentAsByteArray()).isEqualTo(PNG_BYTES);
 
-        // The notice's own visibility governs its images: this one is USERS, so
-        // it is absent anonymously and private when it is served.
-        JsonNode restricted = json(upload(sysAdminToken, usersNotice, "members.png", "image/png",
+        // The notice's own visibility governs its images: this one is not a
+        // popup, so it is absent anonymously and private when it is served.
+        JsonNode restricted = json(upload(sysAdminToken, boardNotice, "members.png", "image/png",
                 PNG_BYTES).andExpect(status().isCreated()).andReturn());
         String restrictedUrl = restricted.get("url").asString();
         mockMvc.perform(get(restrictedUrl)).andExpect(status().isNotFound());
@@ -503,25 +550,25 @@ class NoticeTest {
 
         // An image reached through a notice that does not own it is absent too,
         // even when that notice is one the caller may read.
-        mockMvc.perform(get("/api/v1/notices/" + publicNotice + "/images/"
+        mockMvc.perform(get("/api/v1/notices/" + popupNotice + "/images/"
                         + restricted.get("id").asString()))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void deletingANoticeTakesItsImagesAndLeavesAnAuditTrail() throws Exception {
-        upload(sysAdminToken, publicNotice, "gone.png", "image/png", PNG_BYTES)
+        upload(sysAdminToken, popupNotice, "gone.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated());
-        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", publicNotice);
+        long noticeId = SeedFixtures.internalId(jdbcTemplate, "notices", popupNotice);
         assertThat(imageRows(noticeId)).isEqualTo(1);
 
-        deleteNotice(sysAdminToken, publicNotice).andExpect(status().isNoContent());
+        deleteNotice(sysAdminToken, popupNotice).andExpect(status().isNoContent());
         assertThat(imageRows(noticeId)).isZero();
-        publicGet(null, publicNotice).andExpect(status().isNotFound());
+        publicGet(null, popupNotice).andExpect(status().isNotFound());
 
         assertThat(auditRows("notice.create", orgAdminNotice)).isEqualTo(1);
-        assertThat(auditRows("notice.image_add", publicNotice)).isEqualTo(1);
-        assertThat(auditRows("notice.delete", publicNotice)).isEqualTo(1);
+        assertThat(auditRows("notice.image_add", popupNotice)).isEqualTo(1);
+        assertThat(auditRows("notice.delete", popupNotice)).isEqualTo(1);
     }
 
     @Test
@@ -530,7 +577,7 @@ class NoticeTest {
         // and its list row carries the image URLs. Sending those through the
         // public window check alone would 404 every one of them.
         UUID scheduled = createdId(create(sysAdminToken, body(Map.of(
-                "title", "예정 공지(이미지)", "audience", "PUBLIC",
+                "title", "예정 공지(이미지)", "popup", true,
                 "startsAt", Instant.now().plus(1, ChronoUnit.DAYS).toString()))));
         String url = json(upload(sysAdminToken, scheduled, "preview.png", "image/png", PNG_BYTES)
                 .andExpect(status().isCreated()).andReturn()).get("url").asString();
@@ -539,11 +586,11 @@ class NoticeTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 // Not yet anonymously readable, so not shareable either — a
-                // PUBLIC notice still outside its window must not be stored
+                // popup notice still outside its window must not be stored
                 // where an anonymous requester could pick it up before it is
                 // published. This is the pair that pins the cache directive to
-                // the visibility function rather than to the audience field:
-                // asking audience == PUBLIC alone would mark this one shared.
+                // the visibility function rather than to the flag alone: asking
+                // notice.isPopup() by itself would mark this one shared.
                 // private keeps the year precisely because it cannot be reached
                 // by anyone but this caller.
                 .andExpect(header().string("Cache-Control",

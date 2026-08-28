@@ -32,9 +32,9 @@ import org.springframework.web.multipart.MultipartFile;
  * since V95 that is very nearly the whole rule. A notice belongs to no
  * organisation, so the two roles write the same thing: an organisation
  * administrator publishes to every user of the platform, and to anonymous
- * visitors too when it chooses {@code audience=PUBLIC}. An organisation names
- * who supplies a node or a resource; it is not a mechanism for deciding who may
- * use a feature, which is what the old scope axis had made it.</p>
+ * visitors too when it sets {@code popup}. An organisation names who supplies a
+ * node or a resource; it is not a mechanism for deciding who may use a feature,
+ * which is what the old scope axis had made it.</p>
  *
  * <p>What is left here on top of the gate:</p>
  *
@@ -45,15 +45,17 @@ import org.springframework.web.multipart.MultipartFile;
  *   <li>the publication window is validated rather than left to
  *       {@code notices_window_check}, which would surface as a 500 and tell the
  *       author nothing;</li>
- *   <li>{@code audience} is the only axis, and it is editable. Widening a
- *       notice to PUBLIC after the fact is an ordinary edit, and the
- *       consequence — text and images in front of anonymous visitors — is the
- *       same one the create path carries.</li>
+ *   <li>{@code popup} is the only visibility control, and it is editable.
+ *       Turning it on after the fact is an ordinary edit, and the consequence —
+ *       text and images in front of anonymous visitors — is the same one the
+ *       create path carries. It is also a coupling worth knowing about: there
+ *       is no way to raise a modal for signed-in readers alone, because the
+ *       flag that interrupts them is the flag that opens the notice up.</li>
  * </ul>
  *
  * <p>The masking that does remain is on the public read path, not here: an
- * anonymous caller asking for a USERS notice gets 404 rather than 403, because
- * a refusal would confirm that the identifier names a real notice
+ * anonymous caller asking for a notice that is not a popup gets 404 rather than
+ * 403, because a refusal would confirm that the identifier names a real notice
  * ({@link NoticeQueryService}).</p>
  *
  * <p>Images are validated by what their bytes are rather than by what the
@@ -89,13 +91,12 @@ public class NoticeService {
             throw ApiException.validationFailed(errors);
         }
 
-        Notice notice = noticeRepository.saveAndFlush(new Notice(actor.id(), request.audience(),
+        Notice notice = noticeRepository.saveAndFlush(new Notice(actor.id(),
                 request.title().strip(), request.body().strip(),
                 request.isPinned(), request.isPopup(), startsAt, request.endsAt()));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.NOTICE_CREATE,
                 "notice", notice.getPublicId(),
-                Map.of("audience", notice.getAudience().name(),
-                        "title", notice.getTitle(), "pinned", notice.isPinned(),
+                Map.of("title", notice.getTitle(), "pinned", notice.isPinned(),
                         "popup", notice.isPopup()), ip);
         return view(notice);
     }
@@ -111,8 +112,6 @@ public class NoticeService {
         // Field-by-field so the audit records what actually changed, and so the
         // cross-field checks below see the notice as it will be, not as it was.
         Map<String, Object> changed = new LinkedHashMap<>();
-        NoticeAudience audience = request.isAudienceSet() && request.getAudience() != null
-                ? request.getAudience() : notice.getAudience();
         Instant startsAt = request.isStartsAtSet() && request.getStartsAt() != null
                 ? request.getStartsAt() : notice.getStartsAt();
         Instant endsAt = request.isEndsAtSet() ? request.getEndsAt() : notice.getEndsAt();
@@ -138,10 +137,6 @@ public class NoticeService {
         if (request.isBodySet() && !notice.getBody().equals(request.getBody().strip())) {
             notice.setBody(request.getBody().strip());
             changed.put("bodyChanged", true);
-        }
-        if (audience != notice.getAudience()) {
-            notice.setAudience(audience);
-            changed.put("audience", audience.name());
         }
         if (request.isPinnedSet() && request.getPinned() != null
                 && request.getPinned() != notice.isPinned()) {
@@ -269,11 +264,6 @@ public class NoticeService {
     private static ApiException imageTooLarge() {
         return new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, ErrorCodes.NOTICE_IMAGE_TOO_LARGE,
                 "이미지가 너무 큽니다", "이미지 한 장은 2 MiB까지 첨부할 수 있습니다.");
-    }
-
-    private static ApiException forbidden(String detail) {
-        return new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                "접근 권한이 없습니다", detail);
     }
 
     private static ApiException notFound(String detail) {

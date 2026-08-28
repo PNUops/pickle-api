@@ -18,25 +18,25 @@ public interface NoticeRepository extends JpaRepository<Notice, Long> {
      * What an anonymous reader may see (contract {@code listNotices}).
      *
      * <p>Since V95 this is the entire anonymous boundary, and it is one
-     * predicate: {@code audience = PUBLIC} inside the active window. Nothing
-     * else — no organisation, no role, no membership — separates a signed-out
-     * caller from a signed-in one, so a change to this clause is a change to
-     * what the public internet can read.</p>
+     * predicate: {@code popup = true} inside the active window. Nothing else —
+     * no organisation, no audience field, no role, no membership — separates a
+     * signed-out caller from a signed-in one, so a change to this clause is a
+     * change to what the public internet can read.</p>
      */
     @Query("""
             select n from Notice n
              where n.startsAt <= :now
                and (n.endsAt is null or n.endsAt > :now)
-               and n.audience = kr.ac.pusan.pickle.notice.NoticeAudience.PUBLIC
+               and n.popup = true
              order by n.pinned desc, n.startsAt desc, n.id desc
             """)
     Page<Notice> findVisibleToAnonymous(@Param("now") Instant now, Pageable pageable);
 
     /**
      * What any signed-in reader may see: every notice inside its active window,
-     * whatever its audience. Being signed in is the whole of the entitlement —
-     * one query for every account, because a notice is no longer addressed to
-     * an organisation.
+     * popup or not. Being signed in is the whole of the entitlement — one query
+     * for every account, because a notice is addressed neither to an
+     * organisation nor to an audience.
      */
     @Query("""
             select n from Notice n

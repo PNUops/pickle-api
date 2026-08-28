@@ -259,8 +259,6 @@ components:
         active:
           description: "지금 게시 창 안에 있는지. 예정·만료된 공지도 이 목록에는 함께 나옵니다."
           type: "boolean"
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           type: "string"
         createdAt:
@@ -285,8 +283,10 @@ components:
             $ref: "#/components/schemas/NoticeImageView"
           type: "array"
         pinned:
+          description: "목록 상단 고정 여부"
           type: "boolean"
         popup:
+          description: "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다."
           type: "boolean"
         startsAt:
           format: "date-time"
@@ -298,7 +298,6 @@ components:
           type: "string"
       required:
       - "active"
-      - "audience"
       - "body"
       - "createdAt"
       - "id"
@@ -2906,15 +2905,8 @@ components:
       - "storage"
       - "vmBridge"
       type: "object"
-    NoticeAudience:
-      enum:
-      - "PUBLIC"
-      - "USERS"
-      type: "string"
     NoticeCreateRequest:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           maxLength: 20000
           minLength: 0
@@ -2929,7 +2921,7 @@ components:
           description: "목록 상단 고정 여부. 생략하면 고정하지 않습니다."
           type: "boolean"
         popup:
-          description: "콘솔이 모달로 띄울지. 생략하면 띄우지 않습니다."
+          description: "콘솔이 모달로 띄울지. 켜면 로그인하지 않은 방문자에게도 보입니다. 생략하면 둘 다 하지 않습니다."
           type: "boolean"
         startsAt:
           description: "게시 시작 시각. 생략하면 즉시 게시합니다."
@@ -2942,7 +2934,6 @@ components:
           minLength: 0
           type: "string"
       required:
-      - "audience"
       - "body"
       - "title"
       type: "object"
@@ -2973,8 +2964,6 @@ components:
       type: "object"
     NoticeUpdateRequest:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           maxLength: 20000
           minLength: 0
@@ -2999,8 +2988,6 @@ components:
       type: "object"
     NoticeView:
       properties:
-        audience:
-          $ref: "#/components/schemas/NoticeAudience"
         body:
           type: "string"
         createdAt:
@@ -3023,7 +3010,7 @@ components:
           description: "목록 상단 고정 여부"
           type: "boolean"
         popup:
-          description: "콘솔이 모달로 띄울 공지인지"
+          description: "콘솔이 모달로 띄울 공지인지. 이 공지가 로그인 없이도 보이는지도 같은 값이 정합니다."
           type: "boolean"
         startsAt:
           format: "date-time"
@@ -3034,7 +3021,6 @@ components:
           format: "date-time"
           type: "string"
       required:
-      - "audience"
       - "body"
       - "createdAt"
       - "id"
