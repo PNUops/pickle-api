@@ -130,7 +130,8 @@ public class RateLimitService {
      * an account-wide key would let anyone who knows an address lock its owner
      * out remotely, so a caller can only ever lock the pair it is calling from.
      * Total attempts against one account across many addresses stay bounded by
-     * the separate account-wide sliding window ({@code hit("login:acct", …)}).
+     * the endpoint's own account-wide sliding window ({@code hit("login:acct", …)}
+     * for {@code /auth/login}, {@code hit("mfa_login:acct", …)} for the step-up).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public void checkLoginLock(String account, String ip) {
@@ -156,8 +157,9 @@ public class RateLimitService {
      * doubles (1 min → … → 15 min cap). The address is part of the key so a
      * remote attacker's failures escalate only against their own address and
      * never lock the legitimate owner out. Attempts distributed across many
-     * addresses are held down instead by the account-wide sliding window
-     * ({@code hit("login:acct", …)}).
+     * addresses are held down instead by the endpoint's account-wide sliding window
+     * ({@code hit("login:acct", …)}, or {@code hit("mfa_login:acct", …)} on the
+     * step-up).
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void registerLoginFailure(String account, String ip) {
@@ -180,8 +182,8 @@ public class RateLimitService {
      * (account, client address) pair — the same key the failures were recorded
      * under, so proving the password clears only the caller's own lockout and
      * cannot wipe another address's escalation. Account-wide volume is still
-     * accounted for by the sliding window ({@code hit("login:acct", …)}), which
-     * a success does not reset.
+     * accounted for by the calling endpoint's own sliding window, which a success
+     * does not reset.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void clearLoginFailures(String account, String ip) {

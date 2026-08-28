@@ -350,8 +350,15 @@ public class AuthService {
                 .filter(u -> u.getStatus() == UserStatus.ACTIVE)
                 .orElseThrow(AuthService::invalidCredentials);
 
-        rateLimitService.hit("mfa_login:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
+        // The lock is checked BEFORE the account window is charged, and the order is
+        // the whole of what keeps this window from becoming a remote lock-out lever.
+        // The lock is keyed on (account, address) precisely so one client's failures
+        // cannot shut the owner out; an account-wide budget has no such protection, so
+        // a client that is already locked must not go on spending it. Charging first
+        // lets one address burn the account's whole minute and answer the owner's
+        // correct code with 429.
         rateLimitService.checkLoginLock(user.getEmail(), ip);
+        rateLimitService.hit("mfa_login:acct", user.getEmail(), RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         if (!mfaService.verifyEnrolledCode(user.getId(), code, recoveryCode)) {
             rateLimitService.registerLoginFailure(user.getEmail(), ip);
             auditService.record(user.getId(), user.getRole().name(), AuditService.AUTH_LOGIN_FAILED,
