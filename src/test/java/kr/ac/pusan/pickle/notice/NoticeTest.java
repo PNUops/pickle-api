@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.Org;
@@ -195,6 +196,66 @@ class NoticeTest {
         publicGet(userToken, boardNotice).andExpect(status().isNotFound());
         member.setStatus(UserStatus.ACTIVE);
         userRepository.save(member);
+    }
+
+    @Test
+    void theAnonymousQueryAndTheVisibilityFunctionAgreeOnEveryCase() throws Exception {
+        // The anonymous rule is written twice: once as SQL in
+        // findVisibleToAnonymous, which serves the public list, and once as
+        // Java in visibleTo(..., null, ...), which serves the detail read AND
+        // is what the image cache directive is derived from. Both say "popup,
+        // inside the window", and nothing but this test ever compares them. If
+        // they drift, an image becomes markable for shared caches that the list
+        // will not show — or the reverse — and every other test still passes,
+        // because each one exercises a single surface.
+        //
+        // So: all four combinations of the two halves, checked on all three
+        // surfaces at once.
+        Instant now = Instant.now();
+        Map<String, UUID> cases = new LinkedHashMap<>();
+        cases.put("팝업·게시중", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 게시중", "popup", true)))));
+        cases.put("팝업·예정", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 예정", "popup", true,
+                "startsAt", now.plus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("팝업·만료", createdId(create(sysAdminToken, body(Map.of(
+                "title", "팝업 만료", "popup", true,
+                "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
+                "endsAt", now.minus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("게시판·게시중", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 게시중")))));
+        cases.put("게시판·예정", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 예정",
+                "startsAt", now.plus(1, ChronoUnit.DAYS).toString())))));
+        cases.put("게시판·만료", createdId(create(sysAdminToken, body(Map.of(
+                "title", "게시판 만료",
+                "startsAt", now.minus(2, ChronoUnit.DAYS).toString(),
+                "endsAt", now.minus(1, ChronoUnit.DAYS).toString())))));
+
+        for (Map.Entry<String, UUID> entry : cases.entrySet()) {
+            // Exactly one case is anonymously readable. Deriving the expectation
+            // from the case name rather than restating the rule keeps this test
+            // from re-implementing what it is checking.
+            boolean anonymouslyReadable = entry.getKey().equals("팝업·게시중");
+            UUID id = entry.getValue();
+
+            // 1. the SQL, through the public list
+            publicList(null).andExpect(status().isOk())
+                    .andExpect(anonymouslyReadable ? listHas(id) : listOmits(id));
+            // 2. the Java, through the detail read
+            publicGet(null, id).andExpect(anonymouslyReadable
+                    ? status().isOk() : status().isNotFound());
+            // 3. the Java again, through the cache directive an authenticated
+            //    fetch carries — the answer must be the same one, which is the
+            //    whole reason image() calls the function instead of restating it
+            String url = json(upload(sysAdminToken, id, "c.png", "image/png", PNG_BYTES)
+                    .andExpect(status().isCreated()).andReturn()).get("url").asString();
+            mockMvc.perform(get(url).header("Authorization", "Bearer " + sysAdminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Cache-Control", anonymouslyReadable
+                            ? "public, max-age=31536000, s-maxage=3600"
+                            : "private, max-age=31536000, immutable"));
+        }
     }
 
     @Test
