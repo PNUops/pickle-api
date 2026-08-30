@@ -129,6 +129,8 @@ class ContractDriftTest {
             "PUT /admin/llm/keys/{keyId}/limits",
             "POST /admin/llm/keys/{keyId}/suspend",
             "POST /admin/llm/keys/{keyId}/resume",
+            "GET /admin/llm/status",
+            "GET /admin/llm/metrics",
             "GET /admin/orgs",
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",

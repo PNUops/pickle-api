@@ -32,5 +32,50 @@ public record LlmSyncRequest(
         String lastError,
         Long bodiesDropped,
         Long usageShipFailures,
-        Long spoolWriteFailures) {
+        Long spoolWriteFailures,
+        Integer upstreamObservationFormat,
+        List<UpstreamObservation> upstreams,
+        Instant lastUsageShipSuccessAt,
+        Instant oldestUnshippedEventAt,
+        Long queuedUsageEvents,
+        Long queuedUsageBytes,
+        Instant usageQueueObservedAt,
+        Long usageQueueScanFailures) {
+
+    /** One configured upstream's passive, active and catalogue observations. */
+    public record UpstreamObservation(
+            String ref,
+            PassiveObservation passive,
+            ActiveObservation active,
+            CatalogObservation catalog) {
+    }
+
+    public record PassiveObservation(
+            Instant lastAttemptAt,
+            Instant lastSuccessAt,
+            Instant lastFailureAt,
+            String lastFailureType,
+            Integer consecutiveFailures,
+            Instant cooldownUntil) {
+    }
+
+    public record ActiveObservation(
+            Instant lastAttemptAt,
+            Instant lastSuccessAt,
+            Instant lastFailureAt,
+            String status,
+            String lastFailureType,
+            Integer intervalSeconds,
+            Long latencyMs,
+            Integer modelCount,
+            Integer consecutiveFailures) {
+    }
+
+    public record CatalogObservation(
+            String status,
+            Integer expectedModelCount,
+            Integer missingModelCount,
+            Integer unexpectedModelCount,
+            List<String> missingPublicModels) {
+    }
 }
