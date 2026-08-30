@@ -4,9 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import org.jspecify.annotations.Nullable;
 
-/** Gateway heartbeat and usage-pipeline state. Diagnostic members are SYS-only. */
-@Schema(description = "LLM gateway heartbeat와 usage 전송 상태. reportState와 lastContactAt은 "
-        + "모든 관리자에게 보이며, 나머지 진단 필드는 SYS 계층에만 값이 있고 ORG 계층에서는 null입니다.")
+/** Gateway heartbeat and coarse queue freshness for all admins; detailed diagnostics are SYS-only. */
+@Schema(description = "LLM gateway heartbeat와 usage 전송 상태. reportState, usageQueueReportState와 "
+        + "lastContactAt은 모든 관리자에게 보입니다. Queue 수치와 loss counter를 포함한 나머지 "
+        + "진단 필드는 SYS 계층에만 값이 있고 ORG 계층에서는 null입니다.")
 public record LlmGatewayStatusResponse(
         @Schema(description = "5초 sync heartbeat의 보고 신선도")
         LlmGatewayReportState reportState,

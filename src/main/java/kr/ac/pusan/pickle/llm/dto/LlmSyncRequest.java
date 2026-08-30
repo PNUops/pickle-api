@@ -13,10 +13,12 @@ import java.util.List;
  * touching any row, and gauges are stored as reported.
  *
  * <p>Only {@code appliedGeneration}, {@code supportedFormat} and
- * {@code inFlight} are always present; every other member is omitted when
- * zero or empty, so an ordinary poll from a healthy gateway carries a handful
- * of fields. Deliberately no rejecting constraints beyond the three required
- * members: a 400 here would repeat on every 5-second poll and freeze the
+ * {@code inFlight} are unconditionally required across versions. A format-1
+ * reporter also always sends {@code upstreamObservationFormat}, the authoritative
+ * {@code upstreams} array (including explicit empty), and a successful queue scan's
+ * {@code usageQueueObservedAt}; legacy gauges are otherwise omitted when zero or
+ * empty. Deliberately no rejecting constraints beyond the three version-independent
+ * required members: a 400 here would repeat on every 5-second poll and freeze the
  * authorization channel over a cosmetic report field.</p>
  */
 public record LlmSyncRequest(
