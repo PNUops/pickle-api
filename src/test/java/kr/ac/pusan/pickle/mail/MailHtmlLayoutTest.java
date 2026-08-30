@@ -164,8 +164,9 @@ class MailHtmlLayoutTest {
         String html = MailHtmlLayout.render("제목", "본문");
 
         assertThat(html).contains(">Pickle</div>");
+        assertThat(html).contains("Pickle 운영팀");
         assertThat(html).contains("부산대학교 클라우드 플랫폼");
-        assertThat(html).contains("부산대학교 정보컴퓨터공학부 PNUops");
+        assertThat(html).contains("운영: 부산대학교 정보컴퓨터공학부 PNUops");
         assertThat(html).contains("발신 전용");
     }
 

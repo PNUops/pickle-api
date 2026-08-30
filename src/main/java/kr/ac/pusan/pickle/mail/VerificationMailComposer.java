@@ -17,8 +17,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Component
 public class VerificationMailComposer {
 
-    private static final String SIGNATURE = "\n— Pickle 운영팀\n";
-
     private static final String SUBJECT = "[Pickle] 부산대학교 클라우드 플랫폼 이메일 인증";
     private static final String HEADING = "이메일 인증";
 
@@ -90,7 +88,7 @@ public class VerificationMailComposer {
 
     public MailMessage composeAlreadyRegistered(String email) {
         return new MailMessage(email, ALREADY_REGISTERED_SUBJECT,
-                ALREADY_REGISTERED_BODY + "\n" + SIGNATURE,
+                ALREADY_REGISTERED_BODY + "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n",
                 MailHtmlLayout.render(ALREADY_REGISTERED_HEADING, ALREADY_REGISTERED_BODY));
     }
 
@@ -100,7 +98,7 @@ public class VerificationMailComposer {
      * spool is read for.
      */
     private static String textWithLink(String body, String link) {
-        return body + "\n\n" + link + "\n" + SIGNATURE;
+        return body + "\n\n" + link + "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n";
     }
 
     /** Duration as the mail says it: {@code 24시간}, {@code 30분}, {@code 1시간 30분}. */
