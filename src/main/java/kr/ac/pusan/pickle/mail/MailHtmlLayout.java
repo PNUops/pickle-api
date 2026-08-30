@@ -27,13 +27,13 @@ import java.util.List;
  */
 public final class MailHtmlLayout {
 
-    private static final String SENDER_NAME = "Pickle 운영팀";
-    private static final String OFFICIAL_NAME = "부산대학교 클라우드 플랫폼";
     private static final String OPERATOR_NAME = "부산대학교 정보컴퓨터공학부 PNUops";
+    private static final String SEND_ONLY_NOTICE =
+            "본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.";
 
     /** Plain-text counterpart of the HTML footer; both mail paths use this one value. */
     public static final String TEXT_SIGNATURE =
-            "— " + SENDER_NAME + "\n" + OFFICIAL_NAME + "\n운영: " + OPERATOR_NAME;
+            OPERATOR_NAME + "\n" + SEND_ONLY_NOTICE;
 
     /** Single call-to-action button placed under the body text. */
     public record Cta(String label, String url) {
@@ -249,17 +249,11 @@ public final class MailHtmlLayout {
     private static void appendFooter(StringBuilder html) {
         html.append("<tr>\n<td align=\"center\" style=\"padding:28px 4px 40px;\">\n")
                 .append("<p style=\"margin:0 0 6px;").append(FOOTER_TEXT_STYLE)
-                .append("font-weight:bold;color:").append(SLATE_700).append(";\">")
-                .append(SENDER_NAME).append("</p>\n")
-                .append("<p style=\"margin:0 0 4px;").append(FOOTER_TEXT_STYLE)
                 .append("color:").append(SLATE_500).append(";\">")
-                .append(OFFICIAL_NAME).append("</p>\n")
-                .append("<p style=\"margin:0 0 6px;").append(FOOTER_TEXT_STYLE)
-                .append("color:").append(SLATE_500).append(";\">운영: ")
                 .append(OPERATOR_NAME).append("</p>\n")
                 .append("<p style=\"margin:0;").append(FOOTER_TEXT_STYLE)
                 .append("color:").append(SLATE_400).append(";\">")
-                .append("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.</p>\n")
+                .append(SEND_ONLY_NOTICE).append("</p>\n")
                 .append("</td>\n</tr>\n");
     }
 

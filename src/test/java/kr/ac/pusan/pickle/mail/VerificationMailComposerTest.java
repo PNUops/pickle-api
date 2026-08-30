@@ -28,9 +28,10 @@ class VerificationMailComposerTest {
         assertThat(mail.textBody())
                 .contains("홍길동님")
                 .contains("https://pickle.pusan.ac.kr/verify-email?token=TOK123")
-                .contains("— Pickle 운영팀")
-                .contains("부산대학교 클라우드 플랫폼")
-                .contains("운영: 부산대학교 정보컴퓨터공학부 PNUops");
+                .contains("부산대학교 정보컴퓨터공학부 PNUops")
+                .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.")
+                .doesNotContain("Pickle 운영팀")
+                .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
         assertThat(mail.hasHtml()).isTrue();
         assertThat(mail.htmlBody())
                 .contains("이메일 인증하기")

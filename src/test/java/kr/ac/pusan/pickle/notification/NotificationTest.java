@@ -179,9 +179,10 @@ class NotificationTest {
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).isEqualTo("[Pickle] 발송 확인");
         assertThat(mail.textBody())
-                .contains("Pickle 운영팀")
-                .contains("부산대학교 클라우드 플랫폼")
-                .contains("운영: 부산대학교 정보컴퓨터공학부 PNUops");
+                .contains("부산대학교 정보컴퓨터공학부 PNUops")
+                .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.")
+                .doesNotContain("Pickle 운영팀")
+                .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
         // the branded HTML part rides along; the text part above is the fallback
         assertThat(mail.htmlBody()).isNotNull()
                 .contains("<!DOCTYPE html>")
