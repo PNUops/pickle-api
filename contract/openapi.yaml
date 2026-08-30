@@ -7185,7 +7185,8 @@ paths:
       - "admin-ip-allocation-controller"
   /admin/llm/keys:
     get:
-      description: "기관과 워크스페이스, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다."
+      description: "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않\
+        습니다."
       operationId: "listAdminLlmKeys"
       parameters:
       - in: "query"
@@ -7196,6 +7197,13 @@ paths:
           type: "string"
       - in: "query"
         name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "키를 발급한 신청 공개 ID"
+        in: "query"
+        name: "requestId"
         required: false
         schema:
           format: "uuid"

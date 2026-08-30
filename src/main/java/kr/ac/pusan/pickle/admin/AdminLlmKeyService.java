@@ -74,15 +74,19 @@ public class AdminLlmKeyService {
 
     @Transactional(readOnly = true)
     public PageResponse<AdminLlmKeySummaryResponse> list(AuthenticatedUser actor, UUID orgId,
-            UUID workspaceId, LlmApiKeyStatus status, String query, int page, int size) {
+            UUID workspaceId, UUID requestId, LlmApiKeyStatus status, String query,
+            int page, int size) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
         OrgScope scope = AdminOrgScope.read(actor, orgId, requestedOrgId);
         Long requestedWorkspaceId = workspaceId == null ? null
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
+        Long requestedRequestId = requestId == null ? null
+                : requestRepository.findByPublicId(requestId).map(Request::getId).orElse(null);
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         if ((!scope.isUnrestricted() && scope.orgIds().isEmpty())
-                || (workspaceId != null && requestedWorkspaceId == null)) {
+                || (workspaceId != null && requestedWorkspaceId == null)
+                || (requestId != null && requestedRequestId == null)) {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
 
@@ -94,6 +98,10 @@ public class AdminLlmKeyService {
         if (requestedWorkspaceId != null) {
             spec = spec.and((root, ignored, cb) -> cb.equal(root.get("workspaceId"),
                     requestedWorkspaceId));
+        }
+        if (requestedRequestId != null) {
+            spec = spec.and((root, ignored, cb) -> cb.equal(root.get("requestId"),
+                    requestedRequestId));
         }
         if (status != null) {
             if (status == LlmApiKeyStatus.EXPIRED) {

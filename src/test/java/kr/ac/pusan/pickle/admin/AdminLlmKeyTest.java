@@ -67,6 +67,8 @@ class AdminLlmKeyTest {
     private String requesterToken;
     private String orgManagerToken;
     private String orgViewerToken;
+    private String orgAdminToken;
+    private String sysViewerToken;
     private String sysManagerToken;
     private String sysAdminToken;
 
@@ -88,6 +90,13 @@ class AdminLlmKeyTest {
                 UserRole.ORG_MANAGER, orgA.getId()));
         orgViewerToken = token(user("adminllm.orgviewer@pusan.ac.kr", "기관 열람자",
                 UserRole.ORG_VIEWER, orgA.getId()));
+        User orgAdmin = user("adminllm.orgadmin@pusan.ac.kr", "복수 기관 관리자",
+                UserRole.ORG_ADMIN, orgA.getId());
+        SeedFixtures.grantOrgRole(jdbcTemplate, orgAdmin.getId(), orgB.getId(),
+                UserRole.ORG_VIEWER);
+        orgAdminToken = token(orgAdmin);
+        sysViewerToken = token(user("adminllm.sysviewer@pusan.ac.kr", "시스템 열람자",
+                UserRole.SYS_VIEWER, null));
         sysManagerToken = token(user("adminllm.sysmanager@pusan.ac.kr", "시스템 운영자",
                 UserRole.SYS_MANAGER, null));
         sysAdminToken = token(user("adminllm.sysadmin@pusan.ac.kr", "시스템 관리자",
@@ -119,6 +128,66 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.requestId").value(a.requestPublicId().toString()))
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString())
                         .doesNotContain(a.tokenHash()).doesNotContain(a.tokenPrefix()));
+    }
+
+    @Test
+    void requestIdFilterFindsTheExactKeyAndUnknownIsEmpty() throws Exception {
+        Key wanted = key(orgA.getId(), workspaceA, "신청 연결 대상", "ACTIVE", null);
+        key(orgA.getId(), workspaceA, "같은 범위의 다른 키", "ACTIVE", null);
+
+        mockMvc.perform(get("/api/v1/admin/llm/keys?requestId=" + wanted.requestPublicId())
+                        .header("Authorization", "Bearer " + orgManagerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].id").value(wanted.publicId().toString()))
+                .andExpect(jsonPath("$.content[0].requestId")
+                        .value(wanted.requestPublicId().toString()));
+
+        mockMvc.perform(get("/api/v1/admin/llm/keys?requestId=" + UUID.randomUUID())
+                        .header("Authorization", "Bearer " + orgManagerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void allRolesAndMultiOrgGrantsEnforceReadWriteScope() throws Exception {
+        Key a = key(orgA.getId(), workspaceA, "기관 A 역할 키", "ACTIVE", null);
+        Key b = key(orgB.getId(), workspaceB, "기관 B 역할 키", "ACTIVE", null);
+
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + a.publicId())
+                        .header("Authorization", "Bearer " + requesterToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + a.publicId())
+                        .header("Authorization", "Bearer " + orgViewerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + a.publicId())
+                        .header("Authorization", "Bearer " + orgManagerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + a.publicId())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
+                        .header("Authorization", "Bearer " + sysViewerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
+                        .header("Authorization", "Bearer " + sysManagerToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk());
+
+        putLimits(b.publicId(), orgAdminToken, limits(70, "1.00"))
+                .andExpect(status().isNotFound());
+        postJson("/api/v1/admin/llm/keys/" + b.publicId() + "/suspend",
+                orgAdminToken, Map.of("reason", "기관 B 쓰기 거부 확인"))
+                .andExpect(status().isNotFound());
+        putLimits(a.publicId(), orgAdminToken, limits(70, "1.00"))
+                .andExpect(status().isOk());
+        putLimits(b.publicId(), sysViewerToken, limits(70, "1.00"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -279,6 +348,18 @@ class AdminLlmKeyTest {
                         .formatted(pub("requests", historical))).value("이전 LLM 신청"));
     }
 
+    @Test
+    void vmApprovalContextUsesTheVmContributorAndMirrorPayload() throws Exception {
+        long requestId = vmRequest(orgA.getId(), workspaceA, "VM 승인 context");
+
+        mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", requestId) + "/context")
+                        .header("Authorization", "Bearer " + orgManagerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.type").value("VM"))
+                .andExpect(jsonPath("$.vm").isNotEmpty())
+                .andExpect(jsonPath("$.llmKey").value((Object) null));
+    }
+
     private org.springframework.test.web.servlet.ResultActions putLimits(UUID keyId, String token,
             Map<String, ?> body) throws Exception {
         return mockMvc.perform(put("/api/v1/admin/llm/keys/" + keyId + "/limits")
@@ -333,6 +414,23 @@ class AdminLlmKeyTest {
                 returning id
                 """, Long.class, workspaceId, orgId, requester.getId(), displayName);
         jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        return requestId;
+    }
+
+    private long vmRequest(long orgId, long workspaceId, String displayName) {
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into requests (resource_type, workspace_id, org_id, requester_id,
+                                      purpose, display_name)
+                values ('VM', ?, ?, ?, '테스트', ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requester.getId(), displayName);
+        Long imageId = jdbcTemplate.queryForObject(
+                "select id from os_images order by id limit 1", Long.class);
+        jdbcTemplate.update("""
+                insert into vm_request_details (request_id, image_id, req_vcpu,
+                                                req_memory_mb, req_disk_gb)
+                values (?, ?, 2, 2048, 20)
+                """, requestId, imageId);
         return requestId;
     }
 

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -42,16 +43,18 @@ public class AdminLlmKeyController {
 
     @GetMapping
     @Operation(summary = "관리자 LLM API 키 목록",
-            description = "기관과 워크스페이스, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
+            description = "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않습니다.")
     public PageResponse<AdminLlmKeySummaryResponse> listAdminLlmKeys(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId,
             @RequestParam(required = false) UUID workspaceId,
+            @Parameter(description = "키를 발급한 신청 공개 ID")
+            @RequestParam(required = false) UUID requestId,
             @RequestParam(required = false) LlmApiKeyStatus status,
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return service.list(principal, orgId, workspaceId, status, query, page, size);
+        return service.list(principal, orgId, workspaceId, requestId, status, query, page, size);
     }
 
     @GetMapping("/{keyId}")
