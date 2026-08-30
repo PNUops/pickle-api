@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.52.0, 177 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.53.0, 182 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -171,6 +171,13 @@ operations:
   - { id: getApprovalContext,   method: GET,    path: "/admin/requests/{requestId}/context",    roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: approveRequest,     method: POST,   path: "/admin/requests/{requestId}/approve",    roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: rejectRequest,      method: POST,   path: "/admin/requests/{requestId}/reject",     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+
+  # ── 3.9b Admin — LLM API keys ─────────────────────────────────────────────
+  - { id: listAdminLlmKeys,          method: GET,  path: "/admin/llm/keys",                  roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminLlmKey,            method: GET,  path: "/admin/llm/keys/{keyId}",          roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: replaceAdminLlmKeyLimits,  method: PUT,  path: "/admin/llm/keys/{keyId}/limits",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: suspendAdminLlmKey,        method: POST, path: "/admin/llm/keys/{keyId}/suspend",  roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: resumeAdminLlmKey,         method: POST, path: "/admin/llm/keys/{keyId}/resume",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
   - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

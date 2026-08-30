@@ -318,4 +318,4 @@ pickle:
     # Admin-tier 2FA is mandatory in production; override per env if needed.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
   mail:
-    from: ${PICKLE_SMTP_USERNAME}
+    from: ${PICKLE_MAIL_FROM:${PICKLE_SMTP_USERNAME}}

@@ -168,21 +168,26 @@ public class AdminVmQueryService {
         Map<Long, Workspace> workspaces = workspaceRepository.findAllById(
                         vms.stream().map(Vm::getWorkspaceId).distinct().toList())
                 .stream().collect(Collectors.toMap(Workspace::getId, java.util.function.Function.identity()));
-        Map<Long, String> orgNames = orgRepository.findAllById(
+        Map<Long, Org> orgs = orgRepository.findAllById(
                         vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
                                 .distinct().toList())
-                .stream().collect(Collectors.toMap(Org::getId, Org::getName));
+                .stream().collect(Collectors.toMap(Org::getId, java.util.function.Function.identity()));
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
         Map<Long, UUID> requestIds = vmQueryService.requestPublicIds(vms);
+        Map<Long, UUID> deletionRequesterIds = vmQueryService.deletionRequesterPublicIds(vms);
         return PageResponse.of(vms.stream()
                 .map(vm -> {
                     Workspace workspace = workspaces.get(vm.getWorkspaceId());
+                    Org org = orgs.get(vm.getOrgId());
                     return VmSummaryResponse.from(vm,
                             workspace == null ? null : workspace.getPublicId(),
                             workspace == null ? "" : workspace.getName(),
-                            orgNames.get(vm.getOrgId()), displayNames.get(vm.getId()),
-                            requestIds.get(vm.getRequestId()));
+                            org == null ? null : org.getPublicId(),
+                            org == null ? null : org.getName(), displayNames.get(vm.getId()),
+                            requestIds.get(vm.getRequestId()),
+                            vm.getDeleteRequestedBy() == null ? null
+                                    : deletionRequesterIds.get(vm.getDeleteRequestedBy()));
                 })
                 .toList(), result);
     }

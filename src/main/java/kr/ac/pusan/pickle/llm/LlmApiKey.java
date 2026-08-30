@@ -217,6 +217,14 @@ public class LlmApiKey {
         return creditLimit.signum() > 0 && openrouterKeyHash != null;
     }
 
+    /** Status shown to a reader at {@code now}; expiry wins without a write. */
+    public LlmApiKeyStatus effectiveStatus(Instant now) {
+        if (status != LlmApiKeyStatus.REVOKED && expiresAt != null && !expiresAt.isAfter(now)) {
+            return LlmApiKeyStatus.EXPIRED;
+        }
+        return status;
+    }
+
     /**
      * Marks the key revoked, keeping the row. Idempotent: revoking twice is
      * what a retried click looks like, and the second one must not move the
@@ -262,6 +270,30 @@ public class LlmApiKey {
 
     public void setRecordBodies(boolean recordBodies, Instant when) {
         this.recordBodies = recordBodies;
+        this.updatedAt = when;
+    }
+
+    /** Replaces every independently managed limit in one write. */
+    public void replaceLimits(@Nullable Integer rpm, @Nullable Integer tpm,
+            @Nullable Integer concurrency, @Nullable Long dailyTokens,
+            BigDecimal creditLimit, @Nullable CreditLimitReset creditLimitReset,
+            Instant when) {
+        this.rpm = rpm;
+        this.tpm = tpm;
+        this.concurrency = concurrency;
+        this.dailyTokens = dailyTokens;
+        this.creditLimit = creditLimit;
+        this.creditLimitReset = creditLimitReset;
+        this.updatedAt = when;
+    }
+
+    public void suspend(Instant when) {
+        this.status = LlmApiKeyStatus.SUSPENDED;
+        this.updatedAt = when;
+    }
+
+    public void resume(Instant when) {
+        this.status = LlmApiKeyStatus.ACTIVE;
         this.updatedAt = when;
     }
 

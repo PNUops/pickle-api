@@ -254,6 +254,238 @@ components:
       - "workspaceId"
       - "workspaceName"
       type: "object"
+    AdminGlobalRole:
+      enum:
+      - "USER"
+      - "SYS_VIEWER"
+      - "SYS_MANAGER"
+      - "SYS_ADMIN"
+      type: "string"
+    AdminLlmKeyDetailResponse:
+      properties:
+        concurrency:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        creditAxisConnected:
+          description: "금액 축이 발급되어 현재 연결되어 있는지"
+          type: "boolean"
+        creditLimit:
+          type: "number"
+        creditLimitReset:
+          anyOf:
+          - $ref: "#/components/schemas/CreditLimitReset"
+          - type: "null"
+        dailyTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        expiresAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        lastUsedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        name:
+          type: "string"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type: "string"
+        purpose:
+          type:
+          - "string"
+          - "null"
+        quotaExhausted:
+          type: "boolean"
+        requestId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        revokedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        rpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        tpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type: "string"
+      required:
+      - "createdAt"
+      - "creditAxisConnected"
+      - "creditLimit"
+      - "id"
+      - "name"
+      - "orgName"
+      - "quotaExhausted"
+      - "status"
+      - "workspaceName"
+      type: "object"
+    AdminLlmKeyLimitsRequest:
+      properties:
+        concurrency:
+          description: "동시 요청 한도. null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        creditLimit:
+          description: "금액 한도(USD 크레딧). 0이면 금액 축을 닫습니다."
+          minimum: 0
+          type: "number"
+        creditLimitReset:
+          anyOf:
+          - $ref: "#/components/schemas/CreditLimitReset"
+          - type: "null"
+          description: "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다."
+        dailyTokens:
+          description: "일일 토큰 한도. null이면 무제한이고 0이면 토큰 축을 닫습니다."
+          format: "int64"
+          minimum: 0
+          type:
+          - "integer"
+          - "null"
+        rpm:
+          description: "분당 요청 한도. null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          maximum: 10000
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+        tpm:
+          description: "분당 토큰 한도. null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          minimum: 1
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "concurrency"
+      - "creditLimit"
+      - "creditLimitReset"
+      - "dailyTokens"
+      - "rpm"
+      - "tpm"
+      type: "object"
+    AdminLlmKeySummaryResponse:
+      properties:
+        concurrency:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        creditAxisConnected:
+          description: "금액 축이 발급되어 현재 연결되어 있는지"
+          type: "boolean"
+        creditLimit:
+          type: "number"
+        creditLimitReset:
+          anyOf:
+          - $ref: "#/components/schemas/CreditLimitReset"
+          - type: "null"
+        dailyTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        expiresAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        lastUsedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        name:
+          type: "string"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type: "string"
+        purpose:
+          type:
+          - "string"
+          - "null"
+        requestId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        rpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        tpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type: "string"
+      required:
+      - "createdAt"
+      - "creditAxisConnected"
+      - "creditLimit"
+      - "id"
+      - "name"
+      - "orgName"
+      - "status"
+      - "workspaceName"
+      type: "object"
     AdminNoticeView:
       properties:
         active:
@@ -937,14 +1169,27 @@ components:
           $ref: "#/components/schemas/Applicant"
         applicantResources:
           $ref: "#/components/schemas/Resources"
+          deprecated: true
         guidance:
+          deprecated: true
           type: "string"
         history:
           items:
             $ref: "#/components/schemas/HistoryEntry"
           type: "array"
+        llmKey:
+          anyOf:
+          - $ref: "#/components/schemas/LlmKeyContext"
+          - type: "null"
         orgHeadroom:
           $ref: "#/components/schemas/OrgHeadroom"
+          deprecated: true
+        type:
+          $ref: "#/components/schemas/ResourceType"
+        vm:
+          anyOf:
+          - $ref: "#/components/schemas/VmContext"
+          - type: "null"
         workspace:
           $ref: "#/components/schemas/WorkspacePanel"
       required:
@@ -953,6 +1198,7 @@ components:
       - "guidance"
       - "history"
       - "orgHeadroom"
+      - "type"
       - "workspace"
       type: "object"
     ApproveLlmKeyRequestSpec:
@@ -1919,6 +2165,8 @@ components:
         requestId:
           format: "uuid"
           type: "string"
+        resourceName:
+          type: "string"
         reviewerName:
           type:
           - "string"
@@ -1928,10 +2176,14 @@ components:
         submittedAt:
           format: "date-time"
           type: "string"
+        type:
+          $ref: "#/components/schemas/ResourceType"
       required:
       - "requestId"
+      - "resourceName"
       - "status"
       - "submittedAt"
+      - "type"
       type: "object"
     IdentityProvider:
       enum:
@@ -2089,6 +2341,63 @@ components:
       - "REVOKED"
       - "EXPIRED"
       type: "string"
+    LlmKeyBrief:
+      properties:
+        concurrency:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        creditAxisConnected:
+          type: "boolean"
+        creditLimit:
+          type: "number"
+        creditLimitReset:
+          anyOf:
+          - $ref: "#/components/schemas/CreditLimitReset"
+          - type: "null"
+        dailyTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        expiresAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        name:
+          type: "string"
+        rpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        tpm:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type: "string"
+      required:
+      - "creditAxisConnected"
+      - "creditLimit"
+      - "id"
+      - "name"
+      - "status"
+      - "workspaceName"
+      type: "object"
     LlmKeyBudgetResponse:
       properties:
         creditDepletionForecast:
@@ -2131,6 +2440,20 @@ components:
       - "creditLimit"
       - "quotaExhausted"
       - "todayTokens"
+      type: "object"
+    LlmKeyContext:
+      properties:
+        applicantKeys:
+          items:
+            $ref: "#/components/schemas/LlmKeyBrief"
+          type: "array"
+        workspaceKeys:
+          items:
+            $ref: "#/components/schemas/LlmKeyBrief"
+          type: "array"
+      required:
+      - "applicantKeys"
+      - "workspaceKeys"
       type: "object"
     LlmKeyDetailResponse:
       properties:
@@ -3455,6 +3778,31 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseAdminLlmKeySummaryResponse:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/AdminLlmKeySummaryResponse"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseAdminNoticeView:
       properties:
         content:
@@ -4691,6 +5039,15 @@ components:
       - "name"
       - "password"
       type: "object"
+    SuspendAdminLlmKeyRequest:
+      properties:
+        reason:
+          maxLength: 500
+          minLength: 0
+          type: "string"
+      required:
+      - "reason"
+      type: "object"
     SuspendPortMappingRequest:
       properties:
         reason:
@@ -5074,13 +5431,8 @@ components:
       type: "object"
     UpdateUserAdminRequest:
       properties:
-        orgId:
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         role:
-          $ref: "#/components/schemas/UserRole"
+          $ref: "#/components/schemas/AdminGlobalRole"
       type: "object"
     UpdateVmFlavorRequest:
       properties:
@@ -5440,6 +5792,24 @@ components:
       - "name"
       - "status"
       - "vcpu"
+      type: "object"
+    VmContext:
+      properties:
+        applicantResources:
+          $ref: "#/components/schemas/Resources"
+          deprecated: true
+        guidance:
+          type: "string"
+        orgHeadroom:
+          $ref: "#/components/schemas/OrgHeadroom"
+          deprecated: true
+        workspaceResources:
+          $ref: "#/components/schemas/Resources"
+      required:
+      - "applicantResources"
+      - "guidance"
+      - "orgHeadroom"
+      - "workspaceResources"
       type: "object"
     VmDeleteKind:
       enum:
@@ -6050,6 +6420,11 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
+        deletion:
+          anyOf:
+          - $ref: "#/components/schemas/VmDeletionResponse"
+          - type: "null"
+          description: "예약된 삭제. 예약이 없거나 접근 제한 행이면 null입니다."
         diskGb:
           description: "디스크(GiB). 접근 권한이 없으면 생략됩니다."
           format: "int32"
@@ -6087,6 +6462,12 @@ components:
         name:
           description: "SSH 슬러그. 접근 권한이 없으면 대신 표시 이름이 들어갑니다."
           type: "string"
+        orgId:
+          description: "소유 기관. 접근 권한이 없거나 기관 행이 사라진 경우 null입니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         orgName:
           type:
           - "string"
@@ -6209,6 +6590,9 @@ components:
     WorkspacePanel:
       properties:
         activeVms:
+          deprecated: true
+          description: "호환용 VM 목록. 새 클라이언트는 vm.workspaceResources.activeVms를 사용합니다\
+            ."
           items:
             $ref: "#/components/schemas/VmBriefResponse"
           type: "array"
@@ -6225,6 +6609,8 @@ components:
           type: "string"
         totals:
           $ref: "#/components/schemas/ResourceTotalsResponse"
+          deprecated: true
+          description: "호환용 VM 합계. 새 클라이언트는 vm.workspaceResources.totals를 사용합니다."
       required:
       - "activeVms"
       - "id"
@@ -6270,7 +6656,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.52.0"
+  version: "0.53.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -6797,6 +7183,194 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-ip-allocation-controller"
+  /admin/llm/keys:
+    get:
+      description: "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않\
+        습니다."
+      operationId: "listAdminLlmKeys"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "키를 발급한 신청 공개 ID"
+        in: "query"
+        name: "requestId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+      - in: "query"
+        name: "query"
+        required: false
+        schema:
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseAdminLlmKeySummaryResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 목록"
+      tags:
+      - "admin"
+  /admin/llm/keys/{keyId}:
+    get:
+      description: "기관 범위 안의 키 운영 상태와 한도를 조회합니다. 인증 비밀이나 기록된 본문은 반환하지 않습니다."
+      operationId: "getAdminLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 상세"
+      tags:
+      - "admin"
+  /admin/llm/keys/{keyId}/limits:
+    put:
+      description: "여섯 한도 값을 한 번에 교체합니다. 시스템 운영자는 금액과 리셋 창을 바꿀 수 없습니다."
+      operationId: "replaceAdminLlmKeyLimits"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLlmKeyLimitsRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 한도 교체"
+      tags:
+      - "admin"
+  /admin/llm/keys/{keyId}/resume:
+    post:
+      description: "정지된 키를 다시 활성화합니다."
+      operationId: "resumeAdminLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 재개"
+      tags:
+      - "admin"
+  /admin/llm/keys/{keyId}/suspend:
+    post:
+      description: "활성 키를 정지합니다. 사유는 감사 기록에 남고 평문 요청 본문은 기록하지 않습니다."
+      operationId: "suspendAdminLlmKey"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SuspendAdminLlmKeyRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 정지"
+      tags:
+      - "admin"
   /admin/nodes:
     get:
       operationId: "listAdminNodes"
@@ -11780,6 +12354,8 @@ servers:
 tags:
 - description: "VM 접근 권한 — 이 VM에 누가 접근할 수 있는지를 정합니다."
   name: "vm-access"
+- description: "관리자 API"
+  name: "admin"
 - description: "LLM API 키 접근 권한 — 이 키에 누가 접근할 수 있는지를 정합니다."
   name: "llm-key-access"
 - description: "LLM API 키 — 워크스페이스가 보유한 키의 목록과 상세입니다. 키 평문은 발급 시 한 번만 표시되며 여기서는 다시\

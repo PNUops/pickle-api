@@ -79,6 +79,7 @@ public final class ErrorCodes {
     public static final String VM_ACCESS_GRANT_EXISTS = "VM_ACCESS_GRANT_EXISTS";
     public static final String LLM_KEY_ACCESS_GRANT_EXISTS = "LLM_KEY_ACCESS_GRANT_EXISTS";
     public static final String LLM_KEY_REVOKED = "LLM_KEY_REVOKED";
+    public static final String LLM_KEY_INVALID_STATE = "LLM_KEY_INVALID_STATE";
     // VM protection settings (contract v0.9.0).
     public static final String VM_DELETION_PROTECTED = "VM_DELETION_PROTECTED";
     public static final String VM_STOP_PROTECTED = "VM_STOP_PROTECTED";

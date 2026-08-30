@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.admin;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -124,61 +123,22 @@ public class AdminService {
         }
 
         UserRole previousRole = user.getRole();
-        UserRole targetRole = request.role() != null ? request.role() : user.getRole();
+        UserRole targetRole = request.role().toUserRole();
         List<Long> previousOrgIds = userOrgRoleService.scopeOf(user.getId()).orgIds();
-        if (targetRole.isOrgTier()) {
-            // This screen assigns one organisation at a time and replaces what
-            // the account had. Both halves may be left out when there is exactly
-            // one row to carry over, and neither may be left out when there are
-            // several. Guessing which organisation to keep would silently drop
-            // the rest; carrying the role over would take the account's HIGHEST
-            // role, which is not necessarily its role in the organisation being
-            // named, and would raise it there without anybody saying so. The
-            // narrow org-role endpoints are what edits one row at a time.
-            if (previousOrgIds.size() > 1) {
-                List<FieldValidationError> ambiguous = new ArrayList<>();
-                if (request.orgId() == null) {
-                    ambiguous.add(new FieldValidationError("orgId",
-                            "여러 기관을 관리하는 계정입니다. 어느 기관인지 지정해 주세요."));
-                }
-                if (request.role() == null) {
-                    ambiguous.add(new FieldValidationError("role",
-                            "여러 기관을 관리하는 계정입니다. 남길 역할을 지정해 주세요."));
-                }
-                if (!ambiguous.isEmpty()) {
-                    throw ApiException.validationFailed(ambiguous);
-                }
-            }
-            Long orgId = request.orgId() != null
-                    ? orgRepository.findByPublicId(request.orgId()).map(Org::getId).orElse(null)
-                    : previousOrgIds.stream().findFirst().orElse(null);
-            if (request.orgId() == null && orgId == null) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "기관 역할에는 관리 기관(orgId)을 지정해야 합니다.")));
-            }
-            if (orgId == null) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "존재하지 않는 기관(orgId)입니다.")));
-            }
-            userOrgRoleService.replaceWithSingle(user, orgId, targetRole);
-        } else {
-            if (request.orgId() != null) {
-                throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                        "이 역할에는 orgId를 지정할 수 없습니다.")));
-            }
-            userOrgRoleService.clear(user);
+        if (!previousOrgIds.isEmpty()) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("role",
+                    "기관 역할이 남아 있습니다. 기관별 역할을 모두 회수한 뒤 전역 역할을 변경해 주세요.")));
         }
 
-        if (request.role() != null && request.role() != previousRole) {
-            user.setRole(request.role());
+        if (targetRole != previousRole) {
+            user.setRole(targetRole);
             user.bumpTokenVersion();
         }
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ROLE_UPDATE,
                 "user", user.getPublicId(),
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
-                        "orgId", orgPublicIdsOrNone(
-                                userOrgRoleService.scopeOf(user.getId()).orgIds())), ip);
+                        "orgId", orgPublicIdsOrNone(previousOrgIds)), ip);
         return UserSummaryResponse.from(user);
     }
 

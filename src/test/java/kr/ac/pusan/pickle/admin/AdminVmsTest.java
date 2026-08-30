@@ -15,6 +15,7 @@ import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
+import org.hamcrest.Matchers;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -158,6 +159,8 @@ class AdminVmsTest {
                 .andExpect(jsonPath("$.content[0].memoryMb").value(2048))
                 .andExpect(jsonPath("$.content[0].diskGb").value(10))
                 .andExpect(jsonPath("$.content[0].workspaceId").value(pub("workspaces", workspaceA1).toString()))
+                .andExpect(jsonPath("$.content[0].orgId").value(org.getPublicId().toString()))
+                .andExpect(jsonPath("$.content[0].deletion").value((Object) null))
                 .andExpect(jsonPath("$.content[0].requestId").isNotEmpty())
                 .andExpect(jsonPath("$.content[0].createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.page").value(0))
@@ -176,6 +179,33 @@ class AdminVmsTest {
         mockMvc.perform(get("/api/v1/admin/vms?size=0")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
+    void summaryCarriesPendingDeletionWithoutAnExtraDetailRead() throws Exception {
+        long vmId = createVm(org.getId(), workspaceA1, "RUNNING", "삭제 예약 요약");
+        long requestedBy = SeedFixtures.sysadminId(jdbcTemplate);
+        jdbcTemplate.update("""
+                update vms
+                   set delete_kind = 'ADMIN'::vm_delete_kind,
+                       delete_scheduled_for = now() + interval '2 days',
+                       delete_requested_at = now(),
+                       delete_requested_by = ?,
+                       delete_reason = '요약 테스트'
+                 where id = ?
+                """, requestedBy, vmId);
+
+        mockMvc.perform(get("/api/v1/admin/vms?workspaceId=" + pub("workspaces", workspaceA1))
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(vmId) + ".deletion.kind")
+                        .value(Matchers.contains("ADMIN")))
+                .andExpect(jsonPath(byId(vmId) + ".deletion.requestedById")
+                        .value(Matchers.contains(
+                                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL)
+                                        .orElseThrow().getPublicId().toString())))
+                .andExpect(jsonPath(byId(vmId) + ".deletion.cancelable")
+                        .value(Matchers.contains(true)));
     }
 
     @Test

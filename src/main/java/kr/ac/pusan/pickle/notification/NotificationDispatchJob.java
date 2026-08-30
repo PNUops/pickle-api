@@ -37,7 +37,7 @@ public class NotificationDispatchJob {
     private static final List<Duration> BACKOFFS =
             List.of(Duration.ofMinutes(1), Duration.ofMinutes(5), Duration.ofMinutes(15));
 
-    private static final String MAIL_FOOTER = "\n\n— Pickle 운영팀\n";
+    private static final String MAIL_FOOTER = "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n";
 
     private record PendingMail(long id, int attempts, String title, String body, String linkPath,
                                String email, String userStatus) {

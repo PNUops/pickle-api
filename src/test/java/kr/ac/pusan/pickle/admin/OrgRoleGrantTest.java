@@ -264,40 +264,23 @@ class OrgRoleGrantTest {
 
     // --- fixtures ---------------------------------------------------------------
 
-    /**
-     * The wholesale edit replaces every row with one. On an account holding
-     * several, leaving either half out lets the server choose: which
-     * organisation survives, or which role it survives with. The role it would
-     * carry over is the account's HIGHEST, which in the organisation being
-     * named may be a promotion nobody asked for.
-     */
+    /** The global edit cannot replace or clear any per-organisation row. */
     @Test
-    void theWholesaleEditRefusesToGuessOnAMultiOrgAccount() throws Exception {
+    void theGlobalEditRefusesEveryMultiOrgTransition() throws Exception {
         putRole(target, orgA, sysAdminToken, UserRole.ORG_ADMIN).andExpect(status().isOk());
         putRole(target, orgB, sysAdminToken, UserRole.ORG_MANAGER).andExpect(status().isOk());
 
-        // organisation named, role left out: B would silently rise to ORG_ADMIN
-        patchUser(Map.of("orgId", orgB.getPublicId().toString()))
+        patchUser(Map.of("role", "USER"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[?(@.field == 'role')]").exists());
+        patchUser(Map.of("role", "SYS_MANAGER"))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.errors[?(@.field == 'role')]").exists());
 
-        // role named, organisation left out: one of the two would be dropped
-        patchUser(Map.of("role", "ORG_MANAGER"))
-                .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errors[?(@.field == 'orgId')]").exists());
-
-        // neither row moved
         assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
                 .containsExactlyInAnyOrder(orgA.getId(), orgB.getId());
         assertThat(userRepository.findById(target.getId()).orElseThrow().getRole())
                 .isEqualTo(UserRole.ORG_ADMIN);
-
-        // naming both is accepted and replaces the set with the one named
-        patchUser(Map.of("orgId", orgB.getPublicId().toString(), "role", "ORG_MANAGER"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("ORG_MANAGER"));
-        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
-                .containsExactly(orgB.getId());
     }
 
     private ResultActions patchUser(Map<String, String> body) throws Exception {

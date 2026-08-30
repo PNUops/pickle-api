@@ -178,7 +178,10 @@ class NotificationTest {
         MailMessage mail = mockMailSender.lastMessageTo(alice.getEmail());
         assertThat(mail).isNotNull();
         assertThat(mail.subject()).isEqualTo("[Pickle] 발송 확인");
-        assertThat(mail.textBody()).contains("Pickle 운영팀");
+        assertThat(mail.textBody())
+                .contains("Pickle 운영팀")
+                .contains("부산대학교 클라우드 플랫폼")
+                .contains("운영: 부산대학교 정보컴퓨터공학부 PNUops");
         // the branded HTML part rides along; the text part above is the fallback
         assertThat(mail.htmlBody()).isNotNull()
                 .contains("<!DOCTYPE html>")

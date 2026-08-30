@@ -2,8 +2,10 @@ package kr.ac.pusan.pickle.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -35,8 +37,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * Admin org/user management per contract: SYS_ADMIN-only gates, org slug
- * uniqueness, ORG_ADMIN⇒orgId validation and the token_version bump on role
- * change.
+ * uniqueness, global-role separation and the token_version bump on role change.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -198,29 +199,15 @@ class AdminOrgUserTest {
     }
 
     @Test
-    void userRoleUpdateValidatesOrgIdAndBumpsTokenVersion() throws Exception {
+    void globalRoleUpdateRejectsOrgRolesAndPreservesOrgRows() throws Exception {
         User target = ensureUser("adm.promotee@pusan.ac.kr", "승격대상", UserRole.USER, null);
         String targetToken = jwtService.createAccessToken(target);
         int versionBefore = target.getTokenVersion();
         Org org = orgRepository.findFirstByNameOrderByIdAsc("관리 테스트 기관").orElseThrow();
 
-        // ORG_ADMIN requires orgId → 422 with the field error
+        // Organisation roles are no longer part of this contract enum.
         patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of("role", "ORG_ADMIN"))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("orgId"));
-
-        // unknown orgId → 422
-        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
-                Map.of("role", "ORG_ADMIN", "orgId", SeedFixtures.UNKNOWN_ID))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("orgId"));
-
-        // USER/SYS_ADMIN must not carry an orgId → 422
-        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
-                Map.of("role", "USER", "orgId", org.getPublicId()))
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("orgId"));
+                .andExpect(status().isUnprocessableContent());
 
         // empty patch → 422, unknown user → 404
         patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of())
@@ -229,40 +216,53 @@ class AdminOrgUserTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
-        // promotion works and returns the contract UserSummary
+        // Global promotion works and invalidates the old token.
         patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken,
-                Map.of("role", "ORG_ADMIN", "orgId", org.getPublicId()))
+                Map.of("role", "SYS_MANAGER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(target.getPublicId().toString()))
                 .andExpect(jsonPath("$.email").value(target.getEmail()))
-                .andExpect(jsonPath("$.role").value("ORG_ADMIN"));
+                .andExpect(jsonPath("$.role").value("SYS_MANAGER"));
 
         // role change bumped token_version → the old access token is dead
         User reloaded = userRepository.findById(target.getId()).orElseThrow();
         assertThat(reloaded.getTokenVersion()).isEqualTo(versionBefore + 1);
-        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
-                .containsExactly(org.getId());
+        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId())).isEmpty();
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + targetToken))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_TOKEN_INVALID"));
 
-        // orgId-only change keeps the role and does NOT bump token_version
-        postJson("/api/v1/admin/orgs", sysAdminToken, Map.of("name", "이관 기관"))
-                .andExpect(status().isCreated());
-        long secondOrgId = orgRepository.findFirstByNameOrderByIdAsc("이관 기관").orElseThrow().getId();
-        patchJson("/api/v1/admin/users/" + target.getPublicId(), sysAdminToken, Map.of("orgId", pub("orgs", secondOrgId)))
+        // A per-org grant blocks every global transition until it is revoked.
+        User orgTarget = ensureUser("adm.org-role-target@pusan.ac.kr", "기관역할대상",
+                UserRole.USER, null);
+        mockMvc.perform(put("/api/v1/admin/users/" + orgTarget.getPublicId()
+                        + "/org-roles/" + org.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("role", "ORG_MANAGER"))))
+                .andExpect(status().isOk());
+        patchJson("/api/v1/admin/users/" + orgTarget.getPublicId(), sysAdminToken,
+                Map.of("role", "USER"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("role"));
+        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, orgTarget.getId()))
+                .containsExactly(org.getId());
+
+        mockMvc.perform(delete("/api/v1/admin/users/" + orgTarget.getPublicId()
+                        + "/org-roles/" + org.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("ORG_ADMIN"));
-        reloaded = userRepository.findById(target.getId()).orElseThrow();
-        assertThat(reloaded.getTokenVersion()).isEqualTo(versionBefore + 1);
-        assertThat(SeedFixtures.managedOrgIds(jdbcTemplate, target.getId()))
-                .containsExactly(secondOrgId);
+                .andExpect(jsonPath("$.role").value("USER"));
+        patchJson("/api/v1/admin/users/" + orgTarget.getPublicId(), sysAdminToken,
+                Map.of("role", "SYS_ADMIN"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("SYS_ADMIN"));
 
         // user.role_update audit rows
         Long audits = jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'user.role_update' and target_id = ?",
                 Long.class, target.getPublicId().toString());
-        assertThat(audits).isGreaterThanOrEqualTo(2);
+        assertThat(audits).isGreaterThanOrEqualTo(1);
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {

@@ -83,6 +83,9 @@ public class AuditService {
     public static final String LLM_KEY_ISSUE = "llm_key.issue";
     public static final String LLM_KEY_REVOKE = "llm_key.revoke";
     public static final String LLM_KEY_UPDATE = "llm_key.update";
+    public static final String LLM_KEY_LIMITS_UPDATE = "llm_key.limits_update";
+    public static final String LLM_KEY_SUSPEND = "llm_key.suspend";
+    public static final String LLM_KEY_RESUME = "llm_key.resume";
     // HTTP publishing.
     public static final String VM_PUBLISH = "vm.publish";
     public static final String DOMAIN_UPDATE = "domain.update";
