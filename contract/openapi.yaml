@@ -2463,8 +2463,9 @@ components:
       - "STALE"
       type: "string"
     LlmGatewayStatusResponse:
-      description: "LLM gateway heartbeat와 usage 전송 상태. reportState와 lastContactAt은\
-        \ 모든 관리자에게 보이며, 나머지 진단 필드는 SYS 계층에만 값이 있고 ORG 계층에서는 null입니다."
+      description: "LLM gateway heartbeat와 usage 전송 상태. reportState, usageQueueReportState와\
+        \ lastContactAt은 모든 관리자에게 보입니다. Queue 수치와 loss counter를 포함한 나머지 진단 필드는 SYS\
+        \ 계층에만 값이 있고 ORG 계층에서는 null입니다."
       properties:
         agentVersion:
           description: "gateway binary 버전. SYS 전용이며 구 gateway·ORG에서는 null"
@@ -7207,7 +7208,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.54.0"
+  version: "0.54.1"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
