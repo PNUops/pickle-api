@@ -141,6 +141,7 @@ public class OpenRouterReconciler {
             boolean over = local.getStatus() == LlmApiKeyStatus.REVOKED
                     || (local.getExpiresAt() != null && local.getExpiresAt().isBefore(now));
             String divergence = over ? null : limitDivergence(local, managed);
+            boolean limitReapplied = false;
             if (divergence != null) {
                 // The money limit is enforced THERE, so a limit that drifted
                 // from what we granted is a real spend ceiling nobody chose.
@@ -149,67 +150,69 @@ public class OpenRouterReconciler {
                 // A finding is the record of an intervention, so it says what
                 // actually happened rather than what was attempted — an
                 // operator reading "다시 적용했습니다" must be able to believe it.
-                boolean reapplied = true;
+                limitReapplied = true;
                 try {
                     client.updateLimit(managed.hash(), local.getCreditLimit(),
                             local.getCreditLimitReset());
                 } catch (OpenRouterException e) {
-                    reapplied = false;
+                    limitReapplied = false;
                     log.warn("re-applying a diverged money limit failed: HTTP {} {}",
                             e.status(), e.getMessage());
                 }
-                staleKeys.add(managed.hash());
-                findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
-                        (reapplied
-                                ? "OpenRouter 금액 한도를 다시 적용했습니다(%s): %s"
-                                : "OpenRouter 금액 한도를 다시 적용하지 못했습니다(%s): %s")
-                                .formatted(divergence, local.getPublicId()),
-                        ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"reason\":\"%s\","
-                                + "\"granted\":\"%s\",\"remote\":\"%s\","
-                                + "\"includeByokInLimit\":%s}")
-                                .formatted(managed.hash(), local.getPublicId(), divergence,
-                                        local.getCreditLimit(), managed.limit(),
-                                        managed.includeByokInLimit()),
-                        managed.hash(), now);
-                continue;
             }
             boolean shouldBeDisabled = over || local.getStatus() == LlmApiKeyStatus.SUSPENDED;
             boolean statusDiverged = shouldBeDisabled != managed.disabled()
                     && (shouldBeDisabled || local.getStatus() == LlmApiKeyStatus.ACTIVE);
+            boolean statusRepaired = false;
             if (statusDiverged) {
                 // Suspend/resume is authoritative here too. A failed direct
                 // post-commit propagation is repaired by this pass, while a
                 // revoked or expired remote credential remains fail-closed.
-                boolean repaired = true;
+                statusRepaired = true;
                 try {
                     client.setDisabled(managed.hash(), shouldBeDisabled);
                 } catch (OpenRouterException e) {
-                    repaired = false;
+                    statusRepaired = false;
                     log.warn("repairing a stale OpenRouter key status failed: HTTP {} {}",
                             e.status(), e.getMessage());
                 }
+            }
+            if (divergence != null || statusDiverged) {
                 staleKeys.add(managed.hash());
-                String statusSummary;
-                if (over) {
-                    statusSummary = repaired
-                            ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다: "
-                            : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다: ";
-                } else if (shouldBeDisabled) {
-                    statusSummary = repaired
-                            ? "정지된 키의 OpenRouter 키를 비활성화했습니다: "
-                            : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다: ";
+                String summary;
+                String detail;
+                if (divergence != null && statusDiverged) {
+                    summary = limitSummary(divergence, limitReapplied) + "; "
+                            + statusSummary(over, shouldBeDisabled, statusRepaired) + ": "
+                            + local.getPublicId();
+                    detail = ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\","
+                            + "\"limit\":{\"reason\":\"%s\",\"granted\":\"%s\","
+                            + "\"remote\":\"%s\",\"includeByokInLimit\":%s,"
+                            + "\"reapplied\":%s},\"status\":{\"local\":\"%s\","
+                            + "\"expectedDisabled\":%s,\"repaired\":%s}}")
+                            .formatted(managed.hash(), local.getPublicId(), divergence,
+                                    local.getCreditLimit(), managed.limit(),
+                                    managed.includeByokInLimit(), limitReapplied,
+                                    local.getStatus(), shouldBeDisabled, statusRepaired);
+                } else if (divergence != null) {
+                    summary = limitSummary(divergence, limitReapplied) + ": "
+                            + local.getPublicId();
+                    detail = ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"reason\":\"%s\","
+                            + "\"granted\":\"%s\",\"remote\":\"%s\","
+                            + "\"includeByokInLimit\":%s}")
+                            .formatted(managed.hash(), local.getPublicId(), divergence,
+                                    local.getCreditLimit(), managed.limit(),
+                                    managed.includeByokInLimit());
                 } else {
-                    statusSummary = repaired
-                            ? "활성 키의 OpenRouter 키를 다시 활성화했습니다: "
-                            : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다: ";
+                    summary = statusSummary(over, shouldBeDisabled, statusRepaired) + ": "
+                            + local.getPublicId();
+                    detail = ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"status\":\"%s\","
+                            + "\"expectedDisabled\":%s}")
+                            .formatted(managed.hash(), local.getPublicId(),
+                                    local.getStatus(), shouldBeDisabled);
                 }
                 findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
-                        statusSummary + local.getPublicId(),
-                        ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"status\":\"%s\","
-                                + "\"expectedDisabled\":%s}")
-                                .formatted(managed.hash(), local.getPublicId(),
-                                        local.getStatus(), shouldBeDisabled),
-                        managed.hash(), now);
+                        summary, detail, managed.hash(), now);
             }
         }
         // Whatever is left in localByHash exists here and not there: the
@@ -240,5 +243,29 @@ public class OpenRouterReconciler {
             log.info("OpenRouter reconcile: {} orphan(s), {} stale", orphanKeys.size(),
                     staleKeys.size());
         }
+    }
+
+    private static String limitSummary(String divergence, boolean reapplied) {
+        return (reapplied
+                ? "OpenRouter 금액 한도를 다시 적용했습니다(%s)"
+                : "OpenRouter 금액 한도를 다시 적용하지 못했습니다(%s)")
+                .formatted(divergence);
+    }
+
+    private static String statusSummary(boolean over, boolean shouldBeDisabled,
+            boolean repaired) {
+        if (over) {
+            return repaired
+                    ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다"
+                    : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다";
+        }
+        if (shouldBeDisabled) {
+            return repaired
+                    ? "정지된 키의 OpenRouter 키를 비활성화했습니다"
+                    : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다";
+        }
+        return repaired
+                ? "활성 키의 OpenRouter 키를 다시 활성화했습니다"
+                : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다";
     }
 }

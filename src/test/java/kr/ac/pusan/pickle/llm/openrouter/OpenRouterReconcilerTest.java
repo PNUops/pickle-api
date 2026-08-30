@@ -98,6 +98,27 @@ class OpenRouterReconcilerTest {
     }
 
     @Test
+    void combinedLimitAndSuspensionDriftRepairsBothInOneCycle() {
+        // Both post-commit writes were lost: OpenRouter still has the former
+        // ceiling and still allows a key that pickle has suspended. One
+        // reconcile pass must close both windows, not defer the status half
+        // until the next 30-minute run.
+        insertKey("SUSPENDED", "hash-combined");
+        when(client.listKeys()).thenReturn(List.of(new OpenRouterClient.ManagedKey(
+                "hash-combined", "combined", false,
+                new BigDecimal("99"), null, true, null)));
+
+        reconciler.reconcile();
+
+        verify(client).updateLimit("hash-combined", new BigDecimal("5.00"), null);
+        verify(client).setDisabled("hash-combined", true);
+        assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-combined");
+        assertThat(findingMessage("hash-combined"))
+                .contains("금액 한도를 다시 적용했습니다")
+                .contains("정지된 키의 OpenRouter 키를 비활성화했습니다");
+    }
+
+    @Test
     void aRepairedMismatchAutoResolvesOnTheNextCycle() {
         insertKey("REVOKED", "hash-z");
         when(client.listKeys()).thenReturn(List.of(
