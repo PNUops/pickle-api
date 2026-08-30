@@ -70,6 +70,7 @@ class LlmGatewayEndpointTest {
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from llm_models");
+        jdbcTemplate.update("delete from llm_upstream_state");
         jdbcTemplate.update("delete from llm_gateway_state");
     }
 
@@ -493,7 +494,7 @@ class LlmGatewayEndpointTest {
         body.put("agentVersion", "7eb7a60\u001b[31mRED\u001b[0m");
         body.put("startedAt", "2026-08-11T04:10:22Z");
         body.put("maxInFlight", 16);
-        body.put("upstreamRefs", List.of("main", "backup"));
+        body.put("upstreamRefs", List.of("main", "backup", "a".repeat(129)));
         body.put("rejectedEntries", 3);
         body.put("lastError", "boom\r\nline");
         body.put("bodiesDropped", 7);
@@ -508,11 +509,161 @@ class LlmGatewayEndpointTest {
         assertThat(row.get("agent_version")).isEqualTo("7eb7a60[31mRED[0m"); // ESC gone
         assertThat(((Number) row.get("max_in_flight")).intValue()).isEqualTo(16);
         assertThat((String) row.get("upstream_refs")).contains("main").contains("backup");
+        assertThat((String) row.get("upstream_refs")).doesNotContain("a".repeat(20));
         assertThat(((Number) row.get("rejected_entries")).intValue()).isEqualTo(3);
         assertThat(row.get("last_error")).isEqualTo("boomline"); // CR/LF gone
         assertThat(((Number) row.get("bodies_dropped")).longValue()).isEqualTo(7);
         assertThat(((Number) row.get("usage_ship_failures")).longValue()).isEqualTo(1);
         assertThat(((Number) row.get("spool_write_failures")).longValue()).isEqualTo(2);
+    }
+
+    @Test
+    void versionedUpstreamObservationsAndUsageQueueAreStoredAsCurrentState() throws Exception {
+        Map<String, Object> body = poll(0);
+        body.put("upstreamObservationFormat", 1);
+        body.put("lastUsageShipSuccessAt", "2026-08-30T02:00:00Z");
+        body.put("oldestUnshippedEventAt", "2026-08-30T02:01:00Z");
+        body.put("usageQueueObservedAt", "2026-08-30T02:01:30Z");
+        body.put("upstreams", List.of(Map.of(
+                "ref", "DGX",
+                "passive", Map.of(
+                        "lastAttemptAt", "2026-08-30T02:02:00Z",
+                        "lastSuccessAt", "2026-08-30T02:02:00Z",
+                        "consecutiveFailures", 0),
+                "active", Map.of(
+                        "lastAttemptAt", "2026-08-30T02:03:00Z",
+                        "lastSuccessAt", "2026-08-30T02:03:00Z",
+                        "lastFailureType", "TRANSPORT_ERROR",
+                        "status", "OK", "intervalSeconds", 60,
+                        "latencyMs", 24,
+                        "consecutiveFailures", 0),
+                "catalog", Map.of(
+                        "status", "MISMATCH", "expectedModelCount", 3,
+                        "missingModelCount", 1, "unexpectedModelCount", 2,
+                        "missingPublicModels", List.of("pickle-coder")))));
+
+        syncFrom(SOURCE, TOKEN, body).andExpect(status().isOk());
+
+        Map<String, Object> gateway = jdbcTemplate.queryForMap("""
+                select upstream_observation_format, queued_usage_events, queued_usage_bytes,
+                       last_usage_ship_success_at, oldest_unshipped_event_at,
+                       usage_queue_observed_at, usage_queue_scan_failures, rejected_entries,
+                       reload_failures, bodies_dropped, usage_ship_failures,
+                       spool_write_failures
+                  from llm_gateway_state
+                """);
+        assertThat(((Number) gateway.get("upstream_observation_format")).intValue()).isEqualTo(1);
+        assertThat(((Number) gateway.get("queued_usage_events")).longValue()).isZero();
+        assertThat(((Number) gateway.get("queued_usage_bytes")).longValue()).isZero();
+        assertThat(gateway.get("last_usage_ship_success_at")).isNotNull();
+        assertThat(gateway.get("oldest_unshipped_event_at")).isNotNull();
+        assertThat(gateway.get("usage_queue_observed_at")).isNotNull();
+        assertThat(((Number) gateway.get("usage_queue_scan_failures")).longValue()).isZero();
+        assertThat(((Number) gateway.get("rejected_entries")).intValue()).isZero();
+        assertThat(((Number) gateway.get("reload_failures")).longValue()).isZero();
+        assertThat(((Number) gateway.get("bodies_dropped")).longValue()).isZero();
+        assertThat(((Number) gateway.get("usage_ship_failures")).longValue()).isZero();
+        assertThat(((Number) gateway.get("spool_write_failures")).longValue()).isZero();
+
+        Map<String, Object> upstream = jdbcTemplate.queryForMap("""
+                select ref, configured, active_status, active_failure_type,
+                       active_probe_interval_seconds, active_latency_ms, active_model_count,
+                       catalog_status,
+                       catalog_unexpected_model_count, catalog_missing_public_models
+                  from llm_upstream_state where ref = 'dgx'
+                """);
+        assertThat(upstream.get("ref")).isEqualTo("dgx");
+        assertThat(upstream.get("configured")).isEqualTo(true);
+        assertThat(upstream.get("active_status")).isEqualTo("OK");
+        assertThat(upstream.get("active_failure_type")).isEqualTo("TRANSPORT_ERROR");
+        assertThat(((Number) upstream.get("active_probe_interval_seconds")).intValue())
+                .isEqualTo(60);
+        assertThat(((Number) upstream.get("active_model_count")).intValue()).isZero();
+        assertThat(((Number) upstream.get("active_latency_ms")).longValue()).isEqualTo(24);
+        assertThat(upstream.get("catalog_status")).isEqualTo("MISMATCH");
+        assertThat(((Number) upstream.get("catalog_unexpected_model_count")).intValue())
+                .isEqualTo(2);
+        assertThat(upstream.get("catalog_missing_public_models").toString())
+                .contains("pickle-coder");
+    }
+
+    @Test
+    void oldGatewayOmissionPreservesRowsButVersionedEmptyListDeconfiguresThem() throws Exception {
+        Map<String, Object> versioned = poll(0);
+        versioned.put("upstreamObservationFormat", 1);
+        versioned.put("upstreams", List.of(Map.of("ref", "dgx"),
+                Map.of("ref", "openrouter")));
+        syncFrom(SOURCE, TOKEN, versioned).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select configured from llm_upstream_state where ref = 'dgx'", Boolean.class))
+                .isTrue();
+
+        // A rolled-back binary has no format member. It updates the heartbeat,
+        // but its omission is not an authoritative empty configured set.
+        syncFrom(SOURCE, TOKEN, poll(1)).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select configured from llm_upstream_state where ref = 'dgx'", Boolean.class))
+                .isTrue();
+
+        Map<String, Object> malformed = poll(1);
+        malformed.put("upstreamObservationFormat", 1);
+        malformed.put("upstreams", java.util.Arrays.asList(
+                Map.of("ref", "dgx", "active", Map.of("status", "OK")), null,
+                Map.of("ref", "not a valid ref")));
+        syncFrom(SOURCE, TOKEN, malformed).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select active_status from llm_upstream_state where ref = 'dgx'", String.class))
+                .isEqualTo("OK");
+        assertThat(jdbcTemplate.queryForObject("select configured from llm_upstream_state "
+                + "where ref = 'openrouter'", Boolean.class)).isTrue();
+
+        String validPrefix = "a".repeat(128);
+        Map<String, Object> overlongIdentity = poll(1);
+        overlongIdentity.put("upstreamObservationFormat", 1);
+        overlongIdentity.put("upstreams", List.of(Map.of("ref", validPrefix + "z")));
+        syncFrom(SOURCE, TOKEN, overlongIdentity).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from llm_upstream_state where ref = ?", Long.class,
+                validPrefix)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select configured from llm_upstream_state "
+                + "where ref = 'openrouter'", Boolean.class)).isTrue();
+
+        Map<String, Object> duplicate = poll(1);
+        duplicate.put("upstreamObservationFormat", 1);
+        duplicate.put("upstreams", List.of(Map.of("ref", "dgx"), Map.of("ref", "DGX")));
+        syncFrom(SOURCE, TOKEN, duplicate).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("select configured from llm_upstream_state "
+                + "where ref = 'openrouter'", Boolean.class)).isTrue();
+
+        List<Map<String, Object>> overflowRows = new java.util.ArrayList<>();
+        for (int i = 0; i <= LlmSyncService.MAX_UPSTREAM_REFS; i++) {
+            overflowRows.add(Map.of("ref", "overflow-" + i));
+        }
+        Map<String, Object> overflow = poll(1);
+        overflow.put("upstreamObservationFormat", 1);
+        overflow.put("upstreams", overflowRows);
+        syncFrom(SOURCE, TOKEN, overflow).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("select configured from llm_upstream_state "
+                + "where ref = 'openrouter'", Boolean.class)).isTrue();
+
+        // A newer observation shape is also unknown to this build. Treating
+        // its list as v1 would make an API rollback silently deconfigure rows.
+        Map<String, Object> future = poll(1);
+        future.put("upstreamObservationFormat", 2);
+        future.put("upstreams", List.of());
+        syncFrom(SOURCE, TOKEN, future).andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                "select configured from llm_upstream_state where ref = 'dgx'", Boolean.class))
+                .isTrue();
+
+        Map<String, Object> empty = poll(1);
+        empty.put("upstreamObservationFormat", 1);
+        empty.put("upstreams", List.of());
+        syncFrom(SOURCE, TOKEN, empty).andExpect(status().isOk());
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "select configured, deconfigured_at from llm_upstream_state where ref = 'dgx'");
+        assertThat(row.get("configured")).isEqualTo(false);
+        assertThat(row.get("deconfigured_at")).isNotNull();
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

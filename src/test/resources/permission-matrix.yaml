@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.53.0, 182 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.54.0, 184 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -178,6 +178,8 @@ operations:
   - { id: replaceAdminLlmKeyLimits,  method: PUT,  path: "/admin/llm/keys/{keyId}/limits",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: suspendAdminLlmKey,        method: POST, path: "/admin/llm/keys/{keyId}/suspend",  roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: resumeAdminLlmKey,         method: POST, path: "/admin/llm/keys/{keyId}/resume",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminLlmStatus,         method: GET,  path: "/admin/llm/status",                roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminLlmMetrics,        method: GET,  path: "/admin/llm/metrics",               roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
   - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

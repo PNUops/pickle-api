@@ -1,11 +1,15 @@
 package kr.ac.pusan.pickle.llm;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
@@ -57,6 +61,9 @@ public class LlmSyncService {
 
     /** Upstream names stored from the report; anything past this is dropped. */
     static final int MAX_UPSTREAM_REFS = 32;
+
+    /** Missing catalogue names are diagnostic samples, never an unbounded dump. */
+    static final int MAX_MISSING_PUBLIC_MODELS = 20;
 
     private static final Logger log = LoggerFactory.getLogger(LlmSyncService.class);
 
@@ -138,6 +145,7 @@ public class LlmSyncService {
     @Transactional
     public LlmSyncResponse sync(LlmSyncRequest request) {
         long generation = upsertReport(request);
+        ingestUpstreamObservations(request);
         long reported = request.appliedGeneration();
 
         boolean forceFull = false;
@@ -178,13 +186,25 @@ public class LlmSyncService {
         String agentVersion = Texts.sanitizeReported(request.agentVersion(), REPORTED_TEXT_MAX);
         String lastError = Texts.sanitizeReported(request.lastError(), REPORTED_TEXT_MAX);
         String upstreamRefs = upstreamRefsJson(request.upstreamRefs());
+        OffsetDateTime queueObservedAt = offset(request.usageQueueObservedAt());
+        Long queuedUsageEvents = queueObservedAt == null ? null
+                : defaultZero(request.queuedUsageEvents());
+        Long queuedUsageBytes = queueObservedAt == null ? null
+                : defaultZero(request.queuedUsageBytes());
+        Long usageQueueScanFailures = queueObservedAt == null ? null
+                : defaultZero(request.usageQueueScanFailures());
+        boolean currentReporter = Integer.valueOf(1).equals(request.upstreamObservationFormat());
         return jdbcTemplate.queryForObject("""
                 insert into llm_gateway_state (id, applied_generation, supported_format,
                     agent_version, started_at, in_flight, max_in_flight, upstream_refs,
                     rejected_entries, reload_failures, last_error, bodies_dropped,
-                    usage_ship_failures, spool_write_failures, last_contact_at,
+                    usage_ship_failures, spool_write_failures, upstream_observation_format,
+                    last_usage_ship_success_at, oldest_unshipped_event_at,
+                    queued_usage_events, queued_usage_bytes, usage_queue_observed_at,
+                    usage_queue_scan_failures, last_contact_at,
                     contact_lost_since, updated_at)
-                values (true, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now(), null, now())
+                values (true, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    now(), null, now())
                 on conflict (id) do update set
                     applied_generation = excluded.applied_generation,
                     supported_format = excluded.supported_format,
@@ -199,15 +219,259 @@ public class LlmSyncService {
                     bodies_dropped = excluded.bodies_dropped,
                     usage_ship_failures = excluded.usage_ship_failures,
                     spool_write_failures = excluded.spool_write_failures,
+                    upstream_observation_format = excluded.upstream_observation_format,
+                    last_usage_ship_success_at = excluded.last_usage_ship_success_at,
+                    oldest_unshipped_event_at = excluded.oldest_unshipped_event_at,
+                    queued_usage_events = excluded.queued_usage_events,
+                    queued_usage_bytes = excluded.queued_usage_bytes,
+                    usage_queue_observed_at = excluded.usage_queue_observed_at,
+                    usage_queue_scan_failures = excluded.usage_queue_scan_failures,
                     last_contact_at = now(), contact_lost_since = null, updated_at = now()
                 returning generation
                 """, Long.class,
                 request.appliedGeneration(), request.supportedFormat(), agentVersion,
                 request.startedAt() == null ? null : request.startedAt().atOffset(ZoneOffset.UTC),
                 request.inFlight(), request.maxInFlight(), upstreamRefs,
-                request.rejectedEntries(), request.reloadFailures(), lastError,
-                request.bodiesDropped(), request.usageShipFailures(),
-                request.spoolWriteFailures());
+                currentReporterCounter(request.rejectedEntries(), currentReporter),
+                currentReporterCounter(request.reloadFailures(), currentReporter), lastError,
+                currentReporterCounter(request.bodiesDropped(), currentReporter),
+                currentReporterCounter(request.usageShipFailures(), currentReporter),
+                currentReporterCounter(request.spoolWriteFailures(), currentReporter),
+                nonNegative(request.upstreamObservationFormat()),
+                offset(request.lastUsageShipSuccessAt()), offset(request.oldestUnshippedEventAt()),
+                queuedUsageEvents, queuedUsageBytes, queueObservedAt,
+                usageQueueScanFailures);
+    }
+
+    /**
+     * Format 1 makes {@code upstreams} an authoritative list of what this
+     * gateway currently has configured. A gateway that predates the format
+     * omits the version; that omission updates no upstream row and therefore
+     * cannot turn a rollback into a mass deconfiguration.
+     */
+    private void ingestUpstreamObservations(LlmSyncRequest request) {
+        if (request.upstreamObservationFormat() == null
+                || request.upstreamObservationFormat() != 1) {
+            return;
+        }
+        if (request.upstreams() == null) {
+            log.warn("LLM gateway observation format 1 omitted upstreams; preserving existing "
+                    + "configured flags");
+            return;
+        }
+        Set<String> reportedRefs = new LinkedHashSet<>();
+        List<LlmSyncRequest.UpstreamObservation> observations = request.upstreams();
+        int invalid = 0;
+        int duplicates = 0;
+        int overflow = Math.max(0, observations.size() - MAX_UPSTREAM_REFS);
+        for (LlmSyncRequest.UpstreamObservation observation : observations) {
+            if (observation == null) {
+                invalid++;
+                continue;
+            }
+            String ref = normalizedRef(observation.ref());
+            if (ref == null) {
+                invalid++;
+                continue;
+            }
+            if (!reportedRefs.add(ref)) {
+                duplicates++;
+                continue;
+            }
+            if (reportedRefs.size() <= MAX_UPSTREAM_REFS) {
+                upsertUpstreamObservation(ref, observation);
+            }
+        }
+        boolean complete = invalid == 0 && duplicates == 0 && overflow == 0;
+        if (!complete) {
+            // Do not log any reported ref: even a malformed one is gateway
+            // configuration data. Counts are enough to diagnose the shape.
+            log.warn("LLM gateway upstream observation list incomplete (invalid={}, "
+                    + "duplicates={}, overflow={}); valid rows updated, existing configured "
+                    + "flags preserved", invalid, duplicates, overflow);
+            return;
+        }
+        if (reportedRefs.isEmpty()) {
+            jdbcTemplate.update("""
+                    update llm_upstream_state
+                       set configured = false,
+                           deconfigured_at = coalesce(deconfigured_at, now())
+                     where configured
+                    """);
+            return;
+        }
+        String placeholders = String.join(", ",
+                java.util.Collections.nCopies(reportedRefs.size(), "?"));
+        String sql = """
+                update llm_upstream_state
+                   set configured = false,
+                       deconfigured_at = coalesce(deconfigured_at, now())
+                 where configured and ref not in (%s)
+                """.formatted(placeholders);
+        jdbcTemplate.update(sql, reportedRefs.toArray());
+    }
+
+    private void upsertUpstreamObservation(String ref,
+            LlmSyncRequest.UpstreamObservation observation) {
+        LlmSyncRequest.PassiveObservation passive = observation.passive();
+        LlmSyncRequest.ActiveObservation active = observation.active();
+        LlmSyncRequest.CatalogObservation catalog = observation.catalog();
+        jdbcTemplate.update("""
+                insert into llm_upstream_state (
+                    ref, configured, last_reported_at, deconfigured_at,
+                    passive_last_attempt_at, passive_last_success_at,
+                    passive_last_failure_at, passive_last_failure_type,
+                    passive_consecutive_failures, passive_cooldown_until,
+                    active_last_attempt_at, active_last_success_at, active_last_failure_at,
+                    active_status, active_failure_type, active_probe_interval_seconds,
+                    active_latency_ms,
+                    active_model_count, active_consecutive_failures,
+                    catalog_status, catalog_expected_model_count,
+                    catalog_missing_model_count, catalog_unexpected_model_count,
+                    catalog_missing_public_models)
+                values (?, true, now(), null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict (ref) do update set
+                    configured = true, last_reported_at = now(), deconfigured_at = null,
+                    passive_last_attempt_at = excluded.passive_last_attempt_at,
+                    passive_last_success_at = excluded.passive_last_success_at,
+                    passive_last_failure_at = excluded.passive_last_failure_at,
+                    passive_last_failure_type = excluded.passive_last_failure_type,
+                    passive_consecutive_failures = excluded.passive_consecutive_failures,
+                    passive_cooldown_until = excluded.passive_cooldown_until,
+                    active_last_attempt_at = excluded.active_last_attempt_at,
+                    active_last_success_at = excluded.active_last_success_at,
+                    active_last_failure_at = excluded.active_last_failure_at,
+                    active_status = excluded.active_status,
+                    active_failure_type = excluded.active_failure_type,
+                    active_probe_interval_seconds = excluded.active_probe_interval_seconds,
+                    active_latency_ms = excluded.active_latency_ms,
+                    active_model_count = excluded.active_model_count,
+                    active_consecutive_failures = excluded.active_consecutive_failures,
+                    catalog_status = excluded.catalog_status,
+                    catalog_expected_model_count = excluded.catalog_expected_model_count,
+                    catalog_missing_model_count = excluded.catalog_missing_model_count,
+                    catalog_unexpected_model_count = excluded.catalog_unexpected_model_count,
+                    catalog_missing_public_models = excluded.catalog_missing_public_models
+                """, ref,
+                offset(passive == null ? null : passive.lastAttemptAt()),
+                offset(passive == null ? null : passive.lastSuccessAt()),
+                offset(passive == null ? null : passive.lastFailureAt()),
+                reportedText(passive == null ? null : passive.lastFailureType(), 128),
+                nonNegative(passive == null ? null : passive.consecutiveFailures()),
+                offset(passive == null ? null : passive.cooldownUntil()),
+                offset(active == null ? null : active.lastAttemptAt()),
+                offset(active == null ? null : active.lastSuccessAt()),
+                offset(active == null ? null : active.lastFailureAt()),
+                activeStatus(active == null ? null : active.status()),
+                reportedText(active == null ? null : active.lastFailureType(), 128),
+                positive(active == null ? null : active.intervalSeconds()),
+                nonNegative(active == null ? null : active.latencyMs()),
+                activeModelCount(active),
+                nonNegative(active == null ? null : active.consecutiveFailures()),
+                catalogStatus(catalog == null ? null : catalog.status()),
+                nonNegative(catalog == null ? null : catalog.expectedModelCount()),
+                nonNegative(catalog == null ? null : catalog.missingModelCount()),
+                nonNegative(catalog == null ? null : catalog.unexpectedModelCount()),
+                missingPublicModelsJson(catalog == null ? null : catalog.missingPublicModels()));
+    }
+
+    private String missingPublicModelsJson(List<String> reported) {
+        if (reported == null || reported.isEmpty()) {
+            return null;
+        }
+        List<String> sanitized = new ArrayList<>();
+        for (String name : reported) {
+            if (sanitized.size() >= MAX_MISSING_PUBLIC_MODELS) {
+                break;
+            }
+            String clean = reportedText(name, 256);
+            if (clean != null) {
+                sanitized.add(clean);
+            }
+        }
+        return sanitized.isEmpty() ? null : objectMapper.writeValueAsString(sanitized);
+    }
+
+    private static @Nullable String normalizedRef(@Nullable String value) {
+        if (value == null) {
+            return null;
+        }
+        String clean = value.strip();
+        if (clean.isEmpty() || clean.length() > 128) {
+            return null;
+        }
+        for (int i = 0; i < clean.length(); i++) {
+            if (Character.isISOControl(clean.charAt(i))) {
+                return null;
+            }
+        }
+        clean = clean.toLowerCase(Locale.ROOT);
+        return clean.matches("[a-z0-9][a-z0-9_-]{0,127}") ? clean : null;
+    }
+
+    private static @Nullable String reportedText(@Nullable String value, int max) {
+        return Texts.sanitizeReported(value, max);
+    }
+
+    private static String activeStatus(@Nullable String value) {
+        return switch (value == null ? "" : value.strip().toUpperCase(Locale.ROOT)) {
+            case "OK", "AUTH_UNVERIFIED", "FAILED", "UNKNOWN" ->
+                    value.strip().toUpperCase(Locale.ROOT);
+            default -> "UNKNOWN";
+        };
+    }
+
+    private static String catalogStatus(@Nullable String value) {
+        return switch (value == null ? "" : value.strip().toUpperCase(Locale.ROOT)) {
+            case "MATCH", "MISMATCH", "NOT_APPLICABLE", "UNKNOWN" ->
+                    value.strip().toUpperCase(Locale.ROOT);
+            default -> "UNKNOWN";
+        };
+    }
+
+    private static @Nullable OffsetDateTime offset(@Nullable Instant value) {
+        return value == null ? null : value.atOffset(ZoneOffset.UTC);
+    }
+
+    private static @Nullable Integer nonNegative(@Nullable Integer value) {
+        return value == null ? null : Math.max(0, value);
+    }
+
+    private static @Nullable Integer positive(@Nullable Integer value) {
+        return value == null || value <= 0 ? null : value;
+    }
+
+    private static @Nullable Long nonNegative(@Nullable Long value) {
+        return value == null ? null : Math.max(0L, value);
+    }
+
+    private static long defaultZero(@Nullable Long value) {
+        return value == null ? 0L : Math.max(0L, value);
+    }
+
+    private static @Nullable Integer currentReporterCounter(@Nullable Integer value,
+            boolean currentReporter) {
+        if (value == null) {
+            return currentReporter ? Integer.valueOf(0) : null;
+        }
+        return nonNegative(value);
+    }
+
+    private static @Nullable Long currentReporterCounter(@Nullable Long value,
+            boolean currentReporter) {
+        if (value == null) {
+            return currentReporter ? Long.valueOf(0L) : null;
+        }
+        return nonNegative(value);
+    }
+
+    private static @Nullable Integer activeModelCount(
+            LlmSyncRequest.ActiveObservation active) {
+        if (active == null) {
+            return null;
+        }
+        Integer count = nonNegative(active.modelCount());
+        return count == null && "OK".equals(activeStatus(active.status())) ? 0 : count;
     }
 
     /**
@@ -226,7 +490,7 @@ public class LlmSyncService {
             if (sanitized.size() >= MAX_UPSTREAM_REFS) {
                 break;
             }
-            String clean = Texts.sanitizeReported(ref, 128);
+            String clean = normalizedRef(ref);
             if (clean != null) {
                 sanitized.add(clean);
             }
