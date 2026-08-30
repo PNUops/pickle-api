@@ -7,25 +7,19 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Applicant;
-import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Capacity;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.WorkspacePanel;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.HistoryEntry;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.MemberBrief;
-import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.OrgHeadroom;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.Resources;
-import kr.ac.pusan.pickle.admin.dto.ResourceTotalsResponse;
-import kr.ac.pusan.pickle.admin.dto.VmBriefResponse;
+import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.VmContext;
+import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
-import kr.ac.pusan.pickle.orgs.OrgScope;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.vm.Vm;
-import kr.ac.pusan.pickle.vm.VmRepository;
-import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestReview;
@@ -58,24 +52,26 @@ public class ApprovalContextService {
     private final ApprovalService approvalService;
     private final RequestRepository requestRepository;
     private final RequestReviewRepository reviewRepository;
-    private final VmRepository vmRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final UserRepository userRepository;
-    private final OrgHeadroomService orgHeadroomService;
+    private final Map<ResourceType, ApprovalContextContributor> contributors;
+    private final VmApprovalContextContributor vmContributor;
 
     public ApprovalContextService(ApprovalService approvalService, RequestRepository requestRepository,
-            RequestReviewRepository reviewRepository, VmRepository vmRepository,
+            RequestReviewRepository reviewRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
-            UserRepository userRepository, OrgHeadroomService orgHeadroomService) {
+            UserRepository userRepository, List<ApprovalContextContributor> contributors,
+            VmApprovalContextContributor vmContributor) {
         this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
-        this.vmRepository = vmRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.userRepository = userRepository;
-        this.orgHeadroomService = orgHeadroomService;
+        this.contributors = contributors.stream().collect(Collectors.toUnmodifiableMap(
+                ApprovalContextContributor::type, Function.identity()));
+        this.vmContributor = vmContributor;
     }
 
     @Transactional(readOnly = true)
@@ -87,18 +83,26 @@ public class ApprovalContextService {
         User applicant = userRepository.findById(request.getRequesterId()).orElseThrow();
         Workspace workspace = workspaceRepository.findById(request.getWorkspaceId()).orElseThrow();
 
-        OrgHeadroomService.HeadroomResult headroom = orgHeadroomService.headroom(OrgScope.of(request.getOrgId()));
+        List<Long> applicantWorkspaceIds = applicantWorkspaceIds(request.getRequesterId());
+        VmContext legacyVm = vmContributor.contribute(request, applicantWorkspaceIds).vm();
+        ApprovalContextContributor contributor = contributors.get(request.getResourceType());
+        if (contributor == null) {
+            throw new IllegalStateException("approval context contributor is missing for "
+                    + request.getResourceType());
+        }
+        ApprovalContextContributor.Contribution contribution = request.getResourceType() == ResourceType.VM
+                ? ApprovalContextContributor.Contribution.vm(legacyVm)
+                : contributor.contribute(request, applicantWorkspaceIds);
         return new ApprovalContextResponse(
+                request.getResourceType(),
                 applicantPanel(request, applicant),
-                applicantResources(request.getRequesterId()),
-                workspacePanel(workspace),
+                legacyVm.applicantResources(),
+                workspacePanel(workspace, legacyVm.workspaceResources()),
                 history(request),
-                new OrgHeadroom(headroom.allocated(),
-                        new Capacity(headroom.capacityVcpu(), headroom.capacityMemoryMb(),
-                                headroom.capacityDiskGb()),
-                        headroom.vcpuRatio(), headroom.memoryRatio(), headroom.diskRatio(),
-                        headroom.warnings()),
-                headroom.guidance());
+                legacyVm.orgHeadroom(),
+                legacyVm.guidance(),
+                contribution.vm(),
+                contribution.llmKey());
     }
 
     private Applicant applicantPanel(Request request, User applicant) {
@@ -111,17 +115,13 @@ public class ApprovalContextService {
                 requestRepository.countByRequesterIdAndStatus(request.getRequesterId(), RequestStatus.REJECTED));
     }
 
-    private Resources applicantResources(Long userId) {
-        List<Long> workspaceIds = workspaceMemberRepository.findWithWorkspaceByUserId(userId).stream()
+    private List<Long> applicantWorkspaceIds(Long userId) {
+        return workspaceMemberRepository.findWithWorkspaceByUserId(userId).stream()
                 .map(m -> m.getWorkspace().getId())
                 .toList();
-        List<Vm> activeVms = workspaceIds.isEmpty()
-                ? List.of()
-                : vmRepository.findActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
-        return new Resources(briefs(activeVms), ResourceTotalsResponse.of(activeVms));
     }
 
-    private WorkspacePanel workspacePanel(Workspace workspace) {
+    private WorkspacePanel workspacePanel(Workspace workspace, Resources resources) {
         List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceIdOrderByIdAsc(workspace.getId());
         Map<Long, User> users = userRepository
                 .findAllById(members.stream().map(WorkspaceMember::getUserId).toList())
@@ -132,9 +132,8 @@ public class ApprovalContextService {
                         users.containsKey(m.getUserId()) ? users.get(m.getUserId()).getName() : "탈퇴 회원",
                         m.getRole()))
                 .toList();
-        List<Vm> activeVms = vmRepository.findActiveByWorkspaceIdIn(List.of(workspace.getId()), VmStatus.DELETED);
         return new WorkspacePanel(workspace.getPublicId(), workspace.getName(), workspace.getKind(), memberBriefs,
-                briefs(activeVms), ResourceTotalsResponse.of(activeVms));
+                resources.activeVms(), resources.totals());
     }
 
     private List<HistoryEntry> history(Request request) {
@@ -153,15 +152,12 @@ public class ApprovalContextService {
                 .map(r -> {
                     RequestReview review = reviews.get(r.getId());
                     User reviewer = review != null ? reviewers.get(review.getReviewerId()) : null;
-                    return new HistoryEntry(r.getPublicId(), r.getCreatedAt(), r.getStatus(),
+                    return new HistoryEntry(r.getPublicId(), r.getResourceType(), r.getDisplayName(),
+                            r.getCreatedAt(), r.getStatus(),
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
                             reviewer != null ? reviewer.getName() : null);
                 })
                 .toList();
-    }
-
-    private static List<VmBriefResponse> briefs(List<Vm> vms) {
-        return vms.stream().map(VmBriefResponse::from).toList();
     }
 }

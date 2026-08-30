@@ -365,6 +365,10 @@ class VmDeletionTest {
                         .value(org.hamcrest.Matchers.contains(true)))
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].hostname")
                         .value(org.hamcrest.Matchers.contains((Object) null)))
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].orgId")
+                        .value(org.hamcrest.Matchers.contains((Object) null)))
+                .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].deletion")
+                        .value(org.hamcrest.Matchers.contains((Object) null)))
                 // Blanking `hostname` alone still handed the slug over: `name`
                 // is the same string on an open row. This VM has no display
                 // name, so the restricted row falls back to its id.

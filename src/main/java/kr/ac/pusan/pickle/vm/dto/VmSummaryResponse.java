@@ -38,6 +38,8 @@ public record VmSummaryResponse(
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,
         String workspaceName,
+        @Schema(description = "소유 기관. 접근 권한이 없거나 기관 행이 사라진 경우 null입니다.")
+        @Nullable UUID orgId,
         @Nullable String orgName,
         @Nullable String displayName,
         @Nullable UUID requestId,
@@ -45,6 +47,8 @@ public record VmSummaryResponse(
         @Nullable Boolean sshGatewayBlocked,
         @Nullable LocalDate endDate,
         @Nullable Instant expiryStoppedAt,
+        @Schema(description = "예약된 삭제. 예약이 없거나 접근 제한 행이면 null입니다.")
+        @Nullable VmDeletionResponse deletion,
         Instant createdAt,
         @Schema(description = "true면 이 VM의 접근 권한이 없어 이름·상태·소유자만 표시됩니다.")
         boolean accessLimited,
@@ -54,12 +58,13 @@ public record VmSummaryResponse(
         boolean accessManageAllowed) {
 
     public static VmSummaryResponse from(Vm vm, UUID workspaceId, String workspaceName,
-            String orgName, String displayName, UUID requestId) {
+            @Nullable UUID orgId, String orgName, String displayName, UUID requestId,
+            @Nullable UUID deleteRequestedById) {
         return new VmSummaryResponse(vm.getPublicId(), vm.getName(), vm.getHostname(), vm.getStatus(),
-                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), workspaceId, workspaceName, orgName,
+                vm.getVcpu(), vm.getMemoryMb(), vm.getDiskGb(), workspaceId, workspaceName, orgId, orgName,
                 displayName, requestId, vm.getStatusDetail(), vm.isSshGatewayBlocked(),
-                vm.getEndDate(), vm.getExpiryStoppedAt(), vm.getCreatedAt(), false, List.of(),
-                false);
+                vm.getEndDate(), vm.getExpiryStoppedAt(), VmDeletionResponse.from(vm, deleteRequestedById),
+                vm.getCreatedAt(), false, List.of(), false);
     }
 
     /**
@@ -74,9 +79,9 @@ public record VmSummaryResponse(
     public static VmSummaryResponse restricted(Vm vm, UUID workspaceId, String workspaceName,
             String displayName, List<String> ownerNames, boolean accessManageAllowed) {
         return new VmSummaryResponse(vm.getPublicId(), restrictedName(vm, displayName), null, vm.getStatus(),
-                null, null, null, workspaceId, workspaceName, null,
+                null, null, null, workspaceId, workspaceName, null, null,
                 null, null, null, null,
-                null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed);
+                null, null, null, vm.getCreatedAt(), true, ownerNames, accessManageAllowed);
     }
 
     /**

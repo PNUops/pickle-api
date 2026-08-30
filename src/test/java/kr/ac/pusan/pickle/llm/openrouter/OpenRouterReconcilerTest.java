@@ -80,6 +80,24 @@ class OpenRouterReconcilerTest {
     }
 
     @Test
+    void suspendedAndResumedKeysRepairRemoteDisabledState() {
+        insertKey("SUSPENDED", "hash-suspended");
+        insertKey("ACTIVE", "hash-resumed");
+        when(client.listKeys()).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("hash-suspended", "s", false,
+                        new BigDecimal("5"), null, true, null),
+                new OpenRouterClient.ManagedKey("hash-resumed", "r", true,
+                        new BigDecimal("5"), null, true, null)));
+
+        reconciler.reconcile();
+
+        verify(client).setDisabled("hash-suspended", true);
+        verify(client).setDisabled("hash-resumed", false);
+        assertThat(openFindings("OPENROUTER_STALE"))
+                .containsExactly("hash-resumed", "hash-suspended");
+    }
+
+    @Test
     void aRepairedMismatchAutoResolvesOnTheNextCycle() {
         insertKey("REVOKED", "hash-z");
         when(client.listKeys()).thenReturn(List.of(

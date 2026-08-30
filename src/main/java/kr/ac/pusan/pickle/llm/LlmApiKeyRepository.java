@@ -1,14 +1,18 @@
 package kr.ac.pusan.pickle.llm;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long> {
+public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
+        JpaSpecificationExecutor<LlmApiKey> {
 
     Optional<LlmApiKey> findByPublicId(UUID publicId);
 
@@ -17,6 +21,18 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long> {
     Page<LlmApiKey> findByWorkspaceIdIn(List<Long> workspaceIds, Pageable pageable);
 
     List<LlmApiKey> findByWorkspaceId(long workspaceId);
+
+    @Query("""
+            select k from LlmApiKey k
+             where k.workspaceId in :workspaceIds
+               and k.status in :statuses
+               and (k.expiresAt is null or k.expiresAt > :now)
+             order by k.id desc
+            """)
+    List<LlmApiKey> findCurrentByWorkspaceIdIn(
+            @Param("workspaceIds") List<Long> workspaceIds,
+            @Param("statuses") List<LlmApiKeyStatus> statuses,
+            @Param("now") Instant now);
 
     /**
      * Keys that still count as the workspace holding something. A revoked key

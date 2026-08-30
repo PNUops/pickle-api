@@ -145,8 +145,9 @@ public class VmQueryService {
                     : vmRepository.findByWorkspaceIdIn(workspaceIds, pageable);
         }
         List<Vm> vms = result.getContent();
-        Map<Long, String> orgNames = orgNames(vms);
+        Map<Long, Org> orgs = orgs(vms);
         Map<Long, UUID> requestIds = requestPublicIds(vms);
+        Map<Long, UUID> deletionRequesterIds = deletionRequesterPublicIds(vms);
         Map<Long, String> displayNames = vmSettingsService.displayNames(
                 vms.stream().map(Vm::getId).toList());
         Set<Long> ownedWorkspaceIds = memberships.stream()
@@ -161,14 +162,18 @@ public class VmQueryService {
                     UUID workspacePublicId = workspace == null ? null : workspace.getPublicId();
                     String workspaceName = workspace == null ? "" : workspace.getName();
                     String displayName = displayNames.get(vm.getId());
+                    Org org = orgs.get(vm.getOrgId());
                     // Only a grant opens the row. A workspace owner without one gets
                     // the same restricted row as anyone else, plus the flag that
                     // lets the console offer them the access list — the way back
                     // in for a VM whose own owner is gone.
                     if (access.reachable().contains(vm.getId())) {
                         return VmSummaryResponse.from(vm, workspacePublicId, workspaceName,
-                                orgNames.get(vm.getOrgId()), displayName,
-                                requestIds.get(vm.getRequestId()));
+                                org == null ? null : org.getPublicId(),
+                                org == null ? null : org.getName(), displayName,
+                                requestIds.get(vm.getRequestId()),
+                                vm.getDeleteRequestedBy() == null ? null
+                                        : deletionRequesterIds.get(vm.getDeleteRequestedBy()));
                     }
                     return VmSummaryResponse.restricted(vm, workspacePublicId, workspaceName, displayName,
                             access.ownerNames().getOrDefault(vm.getId(), List.of()),
@@ -193,15 +198,26 @@ public class VmQueryService {
                 .collect(Collectors.toMap(Request::getId, Request::getPublicId));
     }
 
+    /** Batch join for the actor named by a pending deletion in summary rows. */
+    public Map<Long, UUID> deletionRequesterPublicIds(List<Vm> vms) {
+        List<Long> userIds = vms.stream().map(Vm::getDeleteRequestedBy)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getPublicId));
+    }
+
     /** Batch org-name join for the summary views (avoids N+1). */
-    private Map<Long, String> orgNames(List<Vm> vms) {
+    private Map<Long, Org> orgs(List<Vm> vms) {
         List<Long> orgIds = vms.stream().map(Vm::getOrgId).filter(java.util.Objects::nonNull)
                 .distinct().toList();
         if (orgIds.isEmpty()) {
             return Map.of();
         }
         return orgRepository.findAllById(orgIds).stream()
-                .collect(Collectors.toMap(Org::getId, Org::getName));
+                .collect(Collectors.toMap(Org::getId, java.util.function.Function.identity()));
     }
 
     @Transactional(readOnly = true)

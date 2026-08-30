@@ -173,27 +173,42 @@ public class OpenRouterReconciler {
                         managed.hash(), now);
                 continue;
             }
-            if (over && !managed.disabled()) {
-                // The pickle side is over but the money side still works.
-                // Disable it now (reversible), report it, and leave deletion
-                // to a person.
-                boolean disabled = true;
+            boolean shouldBeDisabled = over || local.getStatus() == LlmApiKeyStatus.SUSPENDED;
+            boolean statusDiverged = shouldBeDisabled != managed.disabled()
+                    && (shouldBeDisabled || local.getStatus() == LlmApiKeyStatus.ACTIVE);
+            if (statusDiverged) {
+                // Suspend/resume is authoritative here too. A failed direct
+                // post-commit propagation is repaired by this pass, while a
+                // revoked or expired remote credential remains fail-closed.
+                boolean repaired = true;
                 try {
-                    client.setDisabled(managed.hash(), true);
+                    client.setDisabled(managed.hash(), shouldBeDisabled);
                 } catch (OpenRouterException e) {
-                    disabled = false;
-                    log.warn("disabling a stale OpenRouter key failed: HTTP {} {}",
+                    repaired = false;
+                    log.warn("repairing a stale OpenRouter key status failed: HTTP {} {}",
                             e.status(), e.getMessage());
                 }
                 staleKeys.add(managed.hash());
+                String statusSummary;
+                if (over) {
+                    statusSummary = repaired
+                            ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다: "
+                            : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다: ";
+                } else if (shouldBeDisabled) {
+                    statusSummary = repaired
+                            ? "정지된 키의 OpenRouter 키를 비활성화했습니다: "
+                            : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다: ";
+                } else {
+                    statusSummary = repaired
+                            ? "활성 키의 OpenRouter 키를 다시 활성화했습니다: "
+                            : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다: ";
+                }
                 findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
-                        (disabled
-                                ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다: "
-                                : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다: ")
-                                + local.getPublicId(),
-                        "{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"status\":\"%s\"}"
+                        statusSummary + local.getPublicId(),
+                        ("{\"hash\":\"%s\",\"llmKeyId\":\"%s\",\"status\":\"%s\","
+                                + "\"expectedDisabled\":%s}")
                                 .formatted(managed.hash(), local.getPublicId(),
-                                        local.getStatus()),
+                                        local.getStatus(), shouldBeDisabled),
                         managed.hash(), now);
             }
         }

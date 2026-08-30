@@ -1,7 +1,9 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
 import java.time.Instant;
+import java.math.BigDecimal;
 import java.util.List;
+import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
@@ -9,6 +11,7 @@ import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -158,6 +161,33 @@ public class LlmOpenRouterProvisioner {
             client.deleteKey(openrouterKeyHash);
         } catch (OpenRouterException e) {
             log.warn("OpenRouter key deletion failed (the reconciler will catch it): HTTP {} {}",
+                    e.status(), e.getMessage());
+        }
+    }
+
+    /** Best-effort post-commit propagation of a changed money ceiling. */
+    public void updateLimitAfterChange(String openrouterKeyHash, BigDecimal limit,
+            @Nullable CreditLimitReset reset) {
+        if (!client.configured()) {
+            return;
+        }
+        try {
+            client.updateLimit(openrouterKeyHash, limit, reset);
+        } catch (OpenRouterException e) {
+            log.warn("OpenRouter limit update failed (the reconciler will catch it): HTTP {} {}",
+                    e.status(), e.getMessage());
+        }
+    }
+
+    /** Best-effort post-commit propagation of suspend or resume. */
+    public void setDisabledAfterStatusChange(String openrouterKeyHash, boolean disabled) {
+        if (!client.configured()) {
+            return;
+        }
+        try {
+            client.setDisabled(openrouterKeyHash, disabled);
+        } catch (OpenRouterException e) {
+            log.warn("OpenRouter status update failed (the reconciler will catch it): HTTP {} {}",
                     e.status(), e.getMessage());
         }
     }
