@@ -448,13 +448,14 @@ class LlmGatewayEndpointTest {
         event.put("attempts", 2);
         event.put("generation", 43);
         event.put("publicModelName", "pnu-general");
+        event.put("budgetAxis", "CREDIT");
         event.put("inputTokens", 18);
         event.put("outputTokens", 694);
         event.put("estimated", false);
         event.put("ttftMs", 6419);
         usage(Map.of("events", List.of(event))).andExpect(status().isOk());
         Map<String, Object> row = jdbcTemplate.queryForMap("""
-                select upstream_ref, attempts, generation, public_model_name,
+                select upstream_ref, attempts, generation, public_model_name, budget_axis,
                        input_tokens, output_tokens, ttft_ms
                   from llm_usage_events where event_id = 'evt-full'
                 """);
@@ -462,9 +463,30 @@ class LlmGatewayEndpointTest {
         assertThat(((Number) row.get("attempts")).intValue()).isEqualTo(2);
         assertThat(((Number) row.get("generation")).longValue()).isEqualTo(43);
         assertThat(row.get("public_model_name")).isEqualTo("pnu-general");
+        assertThat(row.get("budget_axis")).isEqualTo("CREDIT");
         assertThat(((Number) row.get("input_tokens")).intValue()).isEqualTo(18);
         assertThat(((Number) row.get("output_tokens")).intValue()).isEqualTo(694);
         assertThat(((Number) row.get("ttft_ms")).longValue()).isEqualTo(6419);
+    }
+
+    @Test
+    void missingOrInvalidBudgetAxisIsAcceptedAsUnknown() throws Exception {
+        Map<String, Object> missing = event("evt-axis-missing", null,
+                "2026-08-10T20:03:57Z");
+        Map<String, Object> invalid = event("evt-axis-invalid", null,
+                "2026-08-10T20:03:58Z");
+        invalid.put("budgetAxis", "SOMETHING_NEW");
+
+        usage(Map.of("events", List.of(missing, invalid)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(2))
+                .andExpect(jsonPath("$.rejected").value(0));
+        Long unknown = jdbcTemplate.queryForObject("""
+                select count(*) from llm_usage_events
+                 where event_id in ('evt-axis-missing', 'evt-axis-invalid')
+                   and budget_axis is null
+                """, Long.class);
+        assertThat(unknown).isEqualTo(2);
     }
 
     // ── bodies channel ──────────────────────────────────────────────────────

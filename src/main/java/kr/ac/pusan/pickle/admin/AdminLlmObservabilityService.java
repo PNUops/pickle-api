@@ -128,6 +128,13 @@ public class AdminLlmObservabilityService {
                 List.copyOf(upstreams));
     }
 
+    /** Shared global gateway read with the same SYS diagnostics redaction as the status API. */
+    LlmGatewayStatusResponse gatewayStatus(AuthenticatedUser actor, Instant now) {
+        GatewayRow row = gateway();
+        return gatewayResponse(row, gatewayReportState(row, now),
+                !actor.role().isOrgTier(), now);
+    }
+
     /**
      * Summary, upstream groups and local rejections are three SQL statements.
      * One repeatable-read snapshot prevents an ingest commit between them from

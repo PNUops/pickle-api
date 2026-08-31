@@ -542,6 +542,42 @@ components:
       - "status"
       - "workspaceName"
       type: "object"
+    AdminLlmUsageResponse:
+      properties:
+        consumers:
+          $ref: "#/components/schemas/LlmUsageConsumersResponse"
+        days:
+          format: "int32"
+          type: "integer"
+        demand:
+          $ref: "#/components/schemas/LlmUsageDemandResponse"
+        from:
+          format: "date"
+          type: "string"
+        generatedAt:
+          format: "date-time"
+          type: "string"
+        limitReview:
+          $ref: "#/components/schemas/LlmLimitReviewCollectionResponse"
+        quality:
+          $ref: "#/components/schemas/LlmUsageQualityResponse"
+        timezone:
+          description: "모든 일자 경계와 오늘 사용량에 적용한 시간대"
+          type: "string"
+        to:
+          format: "date"
+          type: "string"
+      required:
+      - "consumers"
+      - "days"
+      - "demand"
+      - "from"
+      - "generatedAt"
+      - "limitReview"
+      - "quality"
+      - "timezone"
+      - "to"
+      type: "object"
     AdminNoticeView:
       properties:
         active:
@@ -3278,6 +3314,122 @@ components:
       - "points"
       - "to"
       type: "object"
+    LlmLimitPressureResponse:
+      properties:
+        reason:
+          enum:
+          - "quota_exhausted"
+          - "credit_exhausted"
+          - "rate_limit_requests"
+          - "rate_limit_tokens"
+          - "rate_limit_concurrency"
+          type: "string"
+        requests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "reason"
+      - "requests"
+      type: "object"
+    LlmLimitReviewCollectionResponse:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/LlmLimitReviewResponse"
+          type: "array"
+        totalItems:
+          format: "int64"
+          type: "integer"
+        truncated:
+          type: "boolean"
+      required:
+      - "items"
+      - "totalItems"
+      - "truncated"
+      type: "object"
+    LlmLimitReviewResponse:
+      properties:
+        creditAxisConnected:
+          type: "boolean"
+        creditLimit:
+          type: "number"
+        creditLimitRemaining:
+          type:
+          - "number"
+          - "null"
+        creditLimitReset:
+          anyOf:
+          - $ref: "#/components/schemas/CreditLimitReset"
+          - type: "null"
+        creditUsage:
+          type:
+          - "number"
+          - "null"
+        creditUsageAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        dailyTokens:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        keyId:
+          format: "uuid"
+          type: "string"
+        keyName:
+          type: "string"
+        openrouterAccountId:
+          description: "불변 binding된 OpenRouter 사업 account. 미결합이면 null"
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        openrouterAccountName:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        pressure:
+          items:
+            $ref: "#/components/schemas/LlmLimitPressureResponse"
+          type: "array"
+        quotaExhausted:
+          type: "boolean"
+        status:
+          $ref: "#/components/schemas/LlmApiKeyStatus"
+        todayTokens:
+          format: "int64"
+          type: "integer"
+        todayUnknownAxisTokens:
+          description: "요청 당시 budget axis가 보고되지 않은 오늘 입력+출력 token"
+          format: "int64"
+          type: "integer"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+      required:
+      - "creditAxisConnected"
+      - "creditLimit"
+      - "keyId"
+      - "keyName"
+      - "orgId"
+      - "orgName"
+      - "pressure"
+      - "quotaExhausted"
+      - "status"
+      - "todayTokens"
+      - "todayUnknownAxisTokens"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
     LlmLocalRejectionMetricResponse:
       properties:
         errorType:
@@ -3569,6 +3721,296 @@ components:
       - "name"
       - "passive"
       - "reportState"
+      type: "object"
+    LlmUsageConsumerLevel:
+      enum:
+      - "ORG"
+      - "WORKSPACE"
+      - "KEY"
+      type: "string"
+    LlmUsageConsumerResponse:
+      properties:
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        keyId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        keyName:
+          type:
+          - "string"
+          - "null"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+        workspaceId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        workspaceName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "inputTokens"
+      - "outputTokens"
+      - "requests"
+      type: "object"
+    LlmUsageConsumersResponse:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/LlmUsageConsumerResponse"
+          type: "array"
+        level:
+          $ref: "#/components/schemas/LlmUsageConsumerLevel"
+        totalItems:
+          format: "int64"
+          type: "integer"
+        truncated:
+          type: "boolean"
+      required:
+      - "items"
+      - "level"
+      - "totalItems"
+      - "truncated"
+      type: "object"
+    LlmUsageDailyPointResponse:
+      properties:
+        axisCoverage:
+          description: "요청 당시 TOKEN/CREDIT 축이 기록된 request 비율. 요청이 없으면 null"
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        creditAxisRequests:
+          format: "int64"
+          type: "integer"
+        day:
+          format: "date"
+          type: "string"
+        estimatedRequests:
+          format: "int64"
+          type: "integer"
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+        tokenAxisRequests:
+          format: "int64"
+          type: "integer"
+        unknownAxisRequests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "creditAxisRequests"
+      - "day"
+      - "estimatedRequests"
+      - "inputTokens"
+      - "outputTokens"
+      - "requests"
+      - "tokenAxisRequests"
+      - "unknownAxisRequests"
+      type: "object"
+    LlmUsageDemandResponse:
+      properties:
+        daily:
+          items:
+            $ref: "#/components/schemas/LlmUsageDailyPointResponse"
+          type: "array"
+        windows:
+          items:
+            $ref: "#/components/schemas/LlmUsageWindowResponse"
+          type: "array"
+      required:
+      - "daily"
+      - "windows"
+      type: "object"
+    LlmUsageQualityResponse:
+      description: "사용량 숫자의 source와 delivery 상태. latestUsageReceivedAt은 API가 마지막으로\
+        \ event를 받은 시각일 뿐 completeness watermark가 아닙니다. Gateway queue와 loss 수치는 전역\
+        \ 값이며 SYS가 기관으로 좁혀도 전역이고, ORG에는 null입니다."
+      properties:
+        creditMetersObserved:
+          description: "양수 credit limit key 중 vendor meter 관측 이력이 있는 수"
+          format: "int64"
+          type: "integer"
+        creditMetersTotal:
+          description: "양수 credit limit을 가진 key 수"
+          format: "int64"
+          type: "integer"
+        estimatedRequestRatio:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        estimatedRequests:
+          format: "int64"
+          type: "integer"
+        estimatedTokenRatio:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        estimatedTokens:
+          description: "Estimated input+output token. 원본이 없는 bucket이 섞이면 null"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        gatewayReportState:
+          $ref: "#/components/schemas/LlmGatewayReportState"
+        lastContactAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        lastUsageShipSuccessAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        latestCreditUsageAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        latestUsageReceivedAt:
+          description: "API가 마지막 usage event를 받은 시각. Completeness watermark가 아님"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        oldestCreditUsageAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        oldestUnshippedEventAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        queuedUsageBytes:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        queuedUsageEvents:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        rollupLastSuccessAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        spoolWriteFailures:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        totalRequests:
+          format: "int64"
+          type: "integer"
+        totalTokens:
+          format: "int64"
+          type: "integer"
+        unattributedRequests:
+          description: "Key에 귀속되지 않은 selected-window request 수. SYS global에서만 값이 있\
+            음"
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        usageQueueObservedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        usageQueueReportState:
+          $ref: "#/components/schemas/LlmGatewayReportState"
+        usageQueueScanFailures:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        usageShipFailures:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+      required:
+      - "creditMetersObserved"
+      - "creditMetersTotal"
+      - "estimatedRequests"
+      - "gatewayReportState"
+      - "totalRequests"
+      - "totalTokens"
+      - "usageQueueReportState"
+      type: "object"
+    LlmUsageWindowResponse:
+      properties:
+        axisCoverage:
+          description: "요청 당시 TOKEN/CREDIT 축이 기록된 request 비율. 요청이 없으면 null"
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        creditAxisRequests:
+          format: "int64"
+          type: "integer"
+        days:
+          format: "int32"
+          type: "integer"
+        estimatedRequests:
+          format: "int64"
+          type: "integer"
+        inputTokens:
+          format: "int64"
+          type: "integer"
+        outputTokens:
+          format: "int64"
+          type: "integer"
+        requests:
+          format: "int64"
+          type: "integer"
+        tokenAxisRequests:
+          format: "int64"
+          type: "integer"
+        unknownAxisRequests:
+          format: "int64"
+          type: "integer"
+      required:
+      - "creditAxisRequests"
+      - "days"
+      - "estimatedRequests"
+      - "inputTokens"
+      - "outputTokens"
+      - "requests"
+      - "tokenAxisRequests"
+      - "unknownAxisRequests"
       type: "object"
     LoginRequest:
       properties:
@@ -7667,7 +8109,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.56.0"
+  version: "0.57.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -8874,6 +9316,60 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "관리자 LLM 서비스 상태"
+      tags:
+      - "admin"
+  /admin/llm/usage:
+    get:
+      description: "DB에 저장된 rollup과 usage event, vendor meter cache, gateway 자기보고를\
+        \ 읽어 수요·소비처·한도 검토·데이터 신뢰도를 제공합니다. 조회 과정에서 gateway나 vendor를 직접 호출하지 않습니다."
+      operationId: "getAdminLlmUsage"
+      parameters:
+      - description: "조회할 기관. 기관 계층은 맡은 기관만 지정할 수 있습니다."
+        in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "소비처를 key 단계로 좁힐 workspace 공개 ID"
+        in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "일별 추이와 소비처 기간. 7, 30, 90 중 하나"
+        in: "query"
+        name: "days"
+        required: false
+        schema:
+          default: 7
+          format: "int32"
+          type: "integer"
+      - description: "소비처와 한도 검토가 각각 반환할 최대 행 수"
+        in: "query"
+        name: "top"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminLlmUsageResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM 사용량 통계"
       tags:
       - "admin"
   /admin/nodes:

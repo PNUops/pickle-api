@@ -191,6 +191,29 @@ class LlmDailyQuotaTest {
     }
 
     @Test
+    void requestTimeAxisWinsWhileOldEventsUseCurrentCatalogueFallback() {
+        // A CREDIT request must stay commercial even while its model is TOKEN now.
+        recordUsage(keyId, "pnu-test", "CREDIT", 5_000, 5_000, NOON_KST);
+        assertThat(quotaService.refresh()).isZero();
+        assertThat(exhausted(keyId)).isFalse();
+
+        // A TOKEN request remains chargeable after the catalogue is re-axed.
+        recordUsage(keyId, "pnu-test", "TOKEN", 600, 500, NOON_KST);
+        jdbcTemplate.update("update llm_models set budget_axis = 'CREDIT' "
+                + "where public_name = 'pnu-test'");
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(keyId)).isTrue();
+
+        // The old-gateway null shape still follows the current catalogue.
+        long compatibilityKey = insertKeyWithDailyLimit(1_000L);
+        recordUsage(compatibilityKey, "vendor-test", 600, 500, NOON_KST);
+        jdbcTemplate.update("update llm_models set budget_axis = 'TOKEN' "
+                + "where public_name = 'vendor-test'");
+        assertThat(quotaService.refresh()).isEqualTo(1);
+        assertThat(exhausted(compatibilityKey)).isTrue();
+    }
+
+    @Test
     void aZeroAllowanceClosesTheTokenAxisWithoutAnyUsage() {
         // 0 means "the token axis is unusable" (distinct from null = no daily
         // limit), so the flag must flip on the very first sweep, before any
@@ -237,6 +260,18 @@ class LlmDailyQuotaTest {
                 values (?, ?, ?, 'OK', ?, ?, ?)
                 """, UUID.randomUUID().toString(), forKeyId, modelName, input, output,
                 java.time.OffsetDateTime.ofInstant(when, ZoneId.of("Asia/Seoul")));
+    }
+
+    private void recordUsage(Long forKeyId, String modelName, String budgetAxis,
+            int input, int output, Instant when) {
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name,
+                                              budget_axis, status, input_tokens,
+                                              output_tokens, requested_at)
+                values (?, ?, ?, ?, 'OK', ?, ?, ?)
+                """, UUID.randomUUID().toString(), forKeyId, modelName, budgetAxis,
+                input, output, java.time.OffsetDateTime.ofInstant(
+                        when, ZoneId.of("Asia/Seoul")));
     }
 
     private boolean exhausted(long id) {

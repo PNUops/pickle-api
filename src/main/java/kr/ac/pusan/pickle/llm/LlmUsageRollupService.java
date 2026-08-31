@@ -85,7 +85,8 @@ public class LlmUsageRollupService {
     private static final String REBUILD_DAY_SQL = """
             insert into llm_usage_daily (day, key_id, public_model_name, requests, succeeded,
                     rate_limited, failed, input_tokens, output_tokens, estimated_requests,
-                    latency_ms_sum)
+                    latency_ms_sum, token_axis_requests, credit_axis_requests,
+                    unknown_axis_requests, estimated_tokens)
             select ?::date, e.key_id, e.public_model_name,
                    count(*),
                    count(*) filter (where e.status = 'OK'),
@@ -95,7 +96,12 @@ public class LlmUsageRollupService {
                    coalesce(sum(e.input_tokens), 0),
                    coalesce(sum(e.output_tokens), 0),
                    count(*) filter (where e.estimated),
-                   coalesce(sum(e.latency_ms), 0)
+                   coalesce(sum(e.latency_ms), 0),
+                   count(*) filter (where e.budget_axis = 'TOKEN'),
+                   count(*) filter (where e.budget_axis = 'CREDIT'),
+                   count(*) filter (where e.budget_axis is null),
+                   coalesce(sum(e.input_tokens::bigint + e.output_tokens::bigint)
+                       filter (where e.estimated), 0)
               from llm_usage_events e
              where e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
                and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
@@ -103,10 +109,19 @@ public class LlmUsageRollupService {
             """;
 
     private static final String ADVANCE_SQL = """
-            insert into llm_usage_rollup_state (id, last_event_id, updated_at)
-            values (true, ?, now())
+            insert into llm_usage_rollup_state
+                (id, last_event_id, updated_at, last_success_at)
+            values (true, ?, now(), now())
             on conflict (id) do update
-                    set last_event_id = excluded.last_event_id, updated_at = excluded.updated_at
+                    set last_event_id = excluded.last_event_id,
+                        updated_at = excluded.updated_at,
+                        last_success_at = excluded.last_success_at
+            """;
+
+    private static final String MARK_NOOP_SUCCESS_SQL = """
+            insert into llm_usage_rollup_state (id, last_event_id, last_success_at)
+            values (true, 0, now())
+            on conflict (id) do update set last_success_at = excluded.last_success_at
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -180,6 +195,7 @@ public class LlmUsageRollupService {
         Long highest = jdbcTemplate.queryForObject(
                 "select max(id) from llm_usage_events", Long.class);
         if (highest == null || highest <= watermark) {
+            jdbcTemplate.update(MARK_NOOP_SUCCESS_SQL);
             return 0;
         }
         List<LocalDate> days = jdbcTemplate.queryForList(

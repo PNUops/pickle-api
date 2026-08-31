@@ -29,13 +29,17 @@ public record LlmUsageRequest(
      * characters, NOT necessarily a UUID (the gateway falls back to a
      * timestamp-derived id when its random source fails). {@code keyId} may
      * be absent — several error paths never resolve a key, and those events
-     * are kept, not dropped.
+     * are kept, not dropped. {@code budgetAxis} is the request-time TOKEN or
+     * CREDIT decision. Old gateways omit it; an absent or unknown value keeps
+     * the event and is stored as an unknown axis rather than rejecting a
+     * durable usage batch.
      */
     public record UsageEvent(
             String eventUuid,
             Long generation,
             String keyId,
             String publicModelName,
+            String budgetAxis,
             String upstreamRef,
             Integer attempts,
             String status,
