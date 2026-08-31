@@ -155,7 +155,14 @@ class MaintenanceModeTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"x@y.z\",\"password\":\"nope\"}"))
                 .andExpect(status().isUnauthorized());
-        // Deploy health poll must never 503 (would roll back a good deploy).
+        // Deployment probes must bypass maintenance and security filters.
+        mockMvc.perform(get("/actuator/health/liveness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+        mockMvc.perform(get("/actuator/health/readiness"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+        // Aggregate health remains reachable for dependency diagnostics.
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk());
     }
