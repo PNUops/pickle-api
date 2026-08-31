@@ -67,6 +67,19 @@ jobrunr:
     password: ${PICKLE_JOBRUNR_DASH_PASS:}
 
 management:
+  endpoint:
+    health:
+      # Deployment rollback reads readiness, not aggregate health: an external
+      # dependency outage (for example SMTP DNS) cannot be fixed by restoring
+      # the previous jar. Keep both built-in groups state-only and explicit so
+      # a framework default change cannot silently widen the rollback gate.
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState
   endpoints:
     web:
       exposure:
