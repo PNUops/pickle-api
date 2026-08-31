@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.doReturn;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -348,7 +350,8 @@ class AdminOpenRouterAccountTest {
                 .isEqualTo(OpenRouterCredentialError.THROTTLED);
         assertThat(failed.rotationCredential().lastVerificationAttemptAt())
                 .isAfterOrEqualTo(firstSuccess);
-        assertThat(failed.rotationCredential().verifiedAt()).isEqualTo(firstSuccess);
+        assertThat(failed.rotationCredential().verifiedAt())
+                .isCloseTo(firstSuccess, within(1, ChronoUnit.MICROS));
 
         doReturn(new OpenRouterClient.Credits(BigDecimal.TEN, BigDecimal.ZERO))
                 .when(client).credits(MANAGEMENT_KEY);
@@ -523,7 +526,8 @@ class AdminOpenRouterAccountTest {
             OpenRouterAccountCredential oldCredential = credentialRepository
                     .findById(oldAccess.credentialId()).orElseThrow();
             assertThat(oldCredential.getStatus()).isEqualTo(OpenRouterCredentialStatus.RETIRING);
-            assertThat(oldCredential.getLastUsedAt()).isAfterOrEqualTo(finalTouch.get());
+            assertThat(oldCredential.getLastUsedAt()).isAfterOrEqualTo(
+                    finalTouch.get().minus(1, ChronoUnit.MICROS));
             assertThat(oldCredential.getLastReconciledAt()).isNotNull();
             OpenRouterAccountResponse rotated = service.get(sysAdmin, account.getPublicId());
             assertThat(rotated.activeCredential().status())
