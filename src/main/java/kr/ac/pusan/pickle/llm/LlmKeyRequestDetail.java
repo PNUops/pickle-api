@@ -57,6 +57,9 @@ public class LlmKeyRequestDetail {
     @Enumerated(EnumType.STRING)
     private @Nullable CreditLimitReset grantedCreditLimitReset;
 
+    @Column(name = "granted_openrouter_account_id")
+    private @Nullable Long grantedOpenrouterAccountId;
+
     protected LlmKeyRequestDetail() {
     }
 
@@ -77,12 +80,23 @@ public class LlmKeyRequestDetail {
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset) {
+        grant(rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, null);
+    }
+
+    public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
+            @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset, @Nullable Long openrouterAccountId) {
         this.grantedRpm = rpm;
         this.grantedTpm = tpm;
         this.grantedConcurrency = concurrency;
         this.grantedDailyTokens = dailyTokens;
         this.grantedCreditLimit = creditLimit;
         this.grantedCreditLimitReset = creditLimitReset;
+        if (grantedOpenrouterAccountId != null
+                && !grantedOpenrouterAccountId.equals(openrouterAccountId)) {
+            throw new IllegalStateException("granted OpenRouter account binding is immutable");
+        }
+        this.grantedOpenrouterAccountId = openrouterAccountId;
     }
 
     public Long getRequestId() {
@@ -128,4 +142,6 @@ public class LlmKeyRequestDetail {
     public @Nullable CreditLimitReset getGrantedCreditLimitReset() {
         return grantedCreditLimitReset;
     }
+
+    public @Nullable Long getGrantedOpenrouterAccountId() { return grantedOpenrouterAccountId; }
 }

@@ -139,6 +139,14 @@ public class LlmApiKey {
     @Column(name = "openrouter_last_error")
     private @Nullable String openrouterLastError;
 
+    /** Immutable vendor-account binding; null only for token-only or legacy rows. */
+    @Column(name = "openrouter_account_id")
+    private @Nullable Long openrouterAccountId;
+
+    /** Transition marker for rows still administered by the legacy env credential. */
+    @Column(name = "openrouter_legacy", nullable = false)
+    private boolean openrouterLegacy;
+
     /**
      * What OpenRouter last reported this key had spent, and when that was read.
      * Written by the reconciliation rather than by anything on a request path,
@@ -172,6 +180,16 @@ public class LlmApiKey {
             @Nullable Integer tpm, @Nullable Integer concurrency,
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset, long createdBy) {
+        this(workspaceId, orgId, requestId, name, purpose, expiresAt, rpm, tpm, concurrency,
+                dailyTokens, creditLimit, creditLimitReset, null, createdBy);
+    }
+
+    public LlmApiKey(long workspaceId, long orgId, long requestId, String name,
+            @Nullable String purpose, @Nullable Instant expiresAt, @Nullable Integer rpm,
+            @Nullable Integer tpm, @Nullable Integer concurrency,
+            @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset,
+            @Nullable Long openrouterAccountId, long createdBy) {
         this.publicId = UUID.randomUUID();
         this.workspaceId = workspaceId;
         this.orgId = orgId;
@@ -185,6 +203,8 @@ public class LlmApiKey {
         this.dailyTokens = dailyTokens;
         this.creditLimit = creditLimit == null ? BigDecimal.ZERO : creditLimit;
         this.creditLimitReset = creditLimitReset;
+        this.openrouterAccountId = openrouterAccountId;
+        this.openrouterLegacy = openrouterAccountId == null;
         this.createdBy = createdBy;
     }
 
@@ -285,6 +305,19 @@ public class LlmApiKey {
         this.creditLimit = creditLimit;
         this.creditLimitReset = creditLimitReset;
         this.updatedAt = when;
+    }
+
+    /** First binding only. A bound key never moves or clears its vendor account. */
+    public void bindOpenrouterAccount(long accountId, Instant when) {
+        if (openrouterAccountId != null && openrouterAccountId != accountId) {
+            throw new IllegalStateException("OpenRouter account binding is immutable");
+        }
+        if (openrouterLegacy && (openrouterKeyHash != null || openrouterKeyEnc != null)) {
+            throw new IllegalStateException("provisioned legacy OpenRouter keys require cutover");
+        }
+        openrouterLegacy = false;
+        openrouterAccountId = accountId;
+        updatedAt = when;
     }
 
     public void suspend(Instant when) {
@@ -392,6 +425,10 @@ public class LlmApiKey {
     public @Nullable Instant getOpenrouterUsageAt() {
         return openrouterUsageAt;
     }
+
+    public @Nullable Long getOpenrouterAccountId() { return openrouterAccountId; }
+
+    public boolean isOpenrouterLegacy() { return openrouterLegacy; }
 
     public boolean isRecordBodies() {
         return recordBodies;

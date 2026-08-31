@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.llm.openrouter;
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
@@ -40,22 +41,26 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class LlmOpenRouterProvisioner {
 
     private static final Logger log = LoggerFactory.getLogger(LlmOpenRouterProvisioner.class);
+    private static final int POST_COMMIT_CONVERGENCE_ATTEMPTS = 3;
 
     static final String JOB_ID = "llm-openrouter-provisioner";
 
     private final LlmApiKeyRepository keyRepository;
     private final OpenRouterClient client;
     private final CredentialCipher credentialCipher;
+    private final OpenRouterCredentialResolver credentialResolver;
     private final LlmGatewayGenerations generations;
     private final TransactionTemplate tx;
 
     public LlmOpenRouterProvisioner(LlmApiKeyRepository keyRepository, OpenRouterClient client,
             CredentialCipher credentialCipher, LlmGatewayGenerations generations,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            OpenRouterCredentialResolver credentialResolver) {
         this.keyRepository = keyRepository;
         this.client = client;
         this.credentialCipher = credentialCipher;
         this.generations = generations;
+        this.credentialResolver = credentialResolver;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -66,12 +71,6 @@ public class LlmOpenRouterProvisioner {
     @Recurring(id = JOB_ID, cron = "*/5 * * * *", zoneId = "Asia/Seoul")
     @Job(name = JOB_ID, retries = 0)
     public void sweep() {
-        if (!client.configured()) {
-            // No management key yet: every funded key simply stays
-            // unconnected, which the console says out loud. Not an error —
-            // the operator decided this failure shape.
-            return;
-        }
         List<LlmApiKey> waiting = keyRepository.findAwaitingOpenrouterProvisioning();
         for (LlmApiKey key : waiting) {
             provision(key.getId());
@@ -88,14 +87,29 @@ public class LlmOpenRouterProvisioner {
      */
     public void provision(long keyId) {
         LlmApiKey key = keyRepository.findById(keyId).orElse(null);
-        if (key == null || key.getOpenrouterKeyHash() != null
-                || key.getCreditLimit().signum() <= 0) {
+        ProvisioningIntent intent = key == null ? null
+                : ProvisioningIntent.capture(key, Instant.now());
+        if (intent == null || !intent.initiallyEligible(key)) {
             return; // settled between the scan and now
         }
+        OpenRouterManagementAccess access = accessForKey(key);
+        if (access == null) {
+            tx.executeWithoutResult(status -> keyRepository.findById(keyId)
+                    .ifPresent(fresh -> fresh.recordOpenrouterFailure(
+                            "ACCOUNT_CREDENTIAL_UNAVAILABLE", Instant.now())));
+            return;
+        }
         try {
-            OpenRouterClient.CreatedKey created = client.createKey(
-                    key.getPublicId().toString(), key.getCreditLimit(),
-                    key.getCreditLimitReset(), key.getExpiresAt());
+            OpenRouterClient.CreatedKey created = client.createKey(access.secret(),
+                    access.workspaceId(), key.getPublicId().toString(), intent.creditLimit(),
+                    intent.creditLimitReset(), intent.expiresAt());
+            if (access.workspaceId() != null
+                    && !access.workspaceId().equals(created.workspaceId())) {
+                try {
+                    client.deleteKey(access.secret(), created.workspaceId(), created.hash());
+                } catch (RuntimeException ignored) { }
+                throw new OpenRouterException(0, "created key belongs to a different workspace");
+            }
             String enc = credentialCipher.encrypt(created.plaintext());
             boolean[] stranded = {false};
             tx.executeWithoutResult(status -> {
@@ -108,22 +122,18 @@ public class LlmOpenRouterProvisioner {
                 // it. LlmApiKeyService.issue() guards the same hazard the
                 // same way; this is not a place to be clever.
                 generations.bump();
-                LlmApiKey fresh = keyRepository.findById(keyId).orElse(null);
-                if (fresh == null || fresh.getOpenrouterKeyHash() != null
-                        || fresh.getStatus() == LlmApiKeyStatus.REVOKED
-                        || fresh.getCreditLimit().signum() <= 0) {
+                LlmApiKey fresh = keyRepository.findWithLockById(keyId).orElse(null);
+                if (fresh == null || !intent.stillMatches(fresh, Instant.now())) {
                     // Settled while the remote create was in flight — another
-                    // writer got there first, or the key was revoked, or its
-                    // money budget was withdrawn. Recording the hash now would
-                    // attach a live OpenRouter key to a key that must not have
-                    // one, and the revoke path already ran its deletion
-                    // against a hash that did not exist yet. So this side
-                    // drops it and deletes the remote half below.
+                    // writer got there first, its serving state or expiry
+                    // changed, its grant changed, or its management source
+                    // moved. Recording the hash now would attach a credential
+                    // created from stale policy or the wrong vendor account.
                     stranded[0] = true;
+                    status.setRollbackOnly();
+                    return;
                 }
-                if (!stranded[0]) {
-                    fresh.recordOpenrouterKey(created.hash(), enc, Instant.now());
-                }
+                fresh.recordOpenrouterKey(created.hash(), enc, Instant.now());
             });
             if (stranded[0]) {
                 // Nothing recorded it, so nothing else will ever clean it up:
@@ -131,17 +141,18 @@ public class LlmOpenRouterProvisioner {
                 // this call fails too.
                 log.warn("the llm key settled while its OpenRouter key was being created; "
                         + "deleting the stranded remote key");
-                deleteAfterRevoke(created.hash());
+                deleteWithAccess(access, created.hash());
                 return;
             }
+            credentialResolver.markUsed(access, Instant.now());
             log.info("provisioned an OpenRouter key for llm key {}", key.getPublicId());
         } catch (OpenRouterException e) {
             tx.executeWithoutResult(status -> keyRepository.findById(keyId)
                     .ifPresent(fresh -> fresh.recordOpenrouterFailure(
-                            "HTTP " + e.status() + ": " + bounded(e.getMessage()),
+                            vendorError(e),
                             Instant.now())));
-            log.warn("OpenRouter provisioning failed for llm key {}: HTTP {} {}",
-                    key.getPublicId(), e.status(), e.getMessage());
+            log.warn("OpenRouter provisioning failed for llm key {}: {}",
+                    key.getPublicId(), vendorError(e));
         }
     }
 
@@ -153,49 +164,172 @@ public class LlmOpenRouterProvisioner {
      * A failure here is logged and left to the reconciler, which reports the
      * still-alive key as drift and disables it.
      */
-    public void deleteAfterRevoke(String openrouterKeyHash) {
-        if (!client.configured()) {
+    public void deleteAfterRevoke(long keyId, String ignoredHash) {
+        LlmApiKey key = keyRepository.findById(keyId).orElse(null);
+        if (key == null) {
+            return;
+        }
+        String currentHash = key.getOpenrouterKeyHash();
+        if (currentHash == null) {
+            return;
+        }
+        OpenRouterManagementAccess access = accessForKey(key);
+        if (access == null) {
             return;
         }
         try {
-            client.deleteKey(openrouterKeyHash);
+            client.deleteKey(access.secret(), access.workspaceId(), currentHash);
+            credentialResolver.markUsed(access, Instant.now());
         } catch (OpenRouterException e) {
-            log.warn("OpenRouter key deletion failed (the reconciler will catch it): HTTP {} {}",
-                    e.status(), e.getMessage());
+            log.warn("OpenRouter key deletion failed; the reconciler will catch it: {}",
+                    vendorError(e));
         }
     }
 
     /** Best-effort post-commit propagation of a changed money ceiling. */
-    public void updateLimitAfterChange(String openrouterKeyHash, BigDecimal limit,
-            @Nullable CreditLimitReset reset) {
-        if (!client.configured()) {
-            return;
+    public void updateLimitAfterChange(long keyId, String ignoredHash, BigDecimal ignoredLimit,
+            @Nullable CreditLimitReset ignoredReset) {
+        for (int attempt = 1; attempt <= POST_COMMIT_CONVERGENCE_ATTEMPTS; attempt++) {
+            LlmApiKey key = keyRepository.findById(keyId).orElse(null);
+            if (key == null || key.getOpenrouterKeyHash() == null) { return; }
+            LimitPush sent = LimitPush.capture(key);
+            OpenRouterManagementAccess access = accessForKey(key);
+            if (access == null) { return; }
+            try {
+                client.updateLimit(access.secret(), access.workspaceId(), sent.hash(),
+                        sent.limit(), sent.reset());
+                credentialResolver.markUsed(access, Instant.now());
+            } catch (OpenRouterException e) {
+                log.warn("OpenRouter limit update failed; the reconciler will catch it: {}",
+                        vendorError(e));
+                return;
+            }
+            if (sent.matches(keyRepository.findById(keyId).orElse(null))) {
+                return;
+            }
         }
-        try {
-            client.updateLimit(openrouterKeyHash, limit, reset);
-        } catch (OpenRouterException e) {
-            log.warn("OpenRouter limit update failed (the reconciler will catch it): HTTP {} {}",
-                    e.status(), e.getMessage());
-        }
+        log.warn("OpenRouter limit update did not converge after {} attempt(s); "
+                + "the reconciler will repair it", POST_COMMIT_CONVERGENCE_ATTEMPTS);
     }
 
     /** Best-effort post-commit propagation of suspend or resume. */
-    public void setDisabledAfterStatusChange(String openrouterKeyHash, boolean disabled) {
-        if (!client.configured()) {
-            return;
+    public void setDisabledAfterStatusChange(long keyId, String ignoredHash,
+            boolean ignoredDisabled) {
+        for (int attempt = 1; attempt <= POST_COMMIT_CONVERGENCE_ATTEMPTS; attempt++) {
+            LlmApiKey key = keyRepository.findById(keyId).orElse(null);
+            if (key == null || key.getOpenrouterKeyHash() == null) { return; }
+            StatusPush sent = StatusPush.capture(key, Instant.now());
+            OpenRouterManagementAccess access = accessForKey(key);
+            if (access == null) { return; }
+            try {
+                client.setDisabled(access.secret(), access.workspaceId(), sent.hash(),
+                        sent.disabled());
+                credentialResolver.markUsed(access, Instant.now());
+            } catch (OpenRouterException e) {
+                log.warn("OpenRouter status update failed; the reconciler will catch it: {}",
+                        vendorError(e));
+                return;
+            }
+            LlmApiKey latest = keyRepository.findById(keyId).orElse(null);
+            if (sent.matches(latest, Instant.now())) {
+                return;
+            }
         }
+        log.warn("OpenRouter status update did not converge after {} attempt(s); "
+                + "the reconciler will repair it", POST_COMMIT_CONVERGENCE_ATTEMPTS);
+    }
+
+    private void deleteWithAccess(OpenRouterManagementAccess access, String hash) {
         try {
-            client.setDisabled(openrouterKeyHash, disabled);
+            client.deleteKey(access.secret(), access.workspaceId(), hash);
         } catch (OpenRouterException e) {
-            log.warn("OpenRouter status update failed (the reconciler will catch it): HTTP {} {}",
-                    e.status(), e.getMessage());
+            log.warn("stranded OpenRouter key cleanup failed: {}", vendorError(e));
         }
     }
 
-    private static String bounded(String message) {
-        if (message == null) {
-            return "";
+    private @Nullable OpenRouterManagementAccess accessForKey(LlmApiKey key) {
+        try {
+            return credentialResolver.forKey(key).orElse(null);
+        } catch (OpenRouterException e) {
+            log.warn("OpenRouter management credential is unavailable for llm key {}",
+                    key.getPublicId());
+            return null;
         }
-        return message.length() > 500 ? message.substring(0, 500) : message;
+    }
+
+    private static String vendorError(OpenRouterException e) {
+        if (e.status() == 401 || e.status() == 403) { return "CREDENTIAL_ERROR"; }
+        if (e.status() == 429) { return "THROTTLED"; }
+        if (e.status() == 0 || e.status() >= 500) { return "VENDOR_UNAVAILABLE"; }
+        return "VENDOR_REJECTED";
+    }
+
+    private record ProvisioningIntent(BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset, @Nullable Instant expiresAt,
+            LlmApiKeyStatus effectiveStatus, @Nullable Long accountId, boolean legacy) {
+
+        private static ProvisioningIntent capture(LlmApiKey key, Instant now) {
+            return new ProvisioningIntent(key.getCreditLimit(), key.getCreditLimitReset(),
+                    key.getExpiresAt(), key.effectiveStatus(now),
+                    key.getOpenrouterAccountId(), key.isOpenrouterLegacy());
+        }
+
+        private boolean initiallyEligible(LlmApiKey key) {
+            return key.getOpenrouterKeyHash() == null && creditLimit.signum() > 0
+                    && allowed(effectiveStatus);
+        }
+
+        private boolean stillMatches(LlmApiKey key, Instant now) {
+            return key.getOpenrouterKeyHash() == null
+                    && key.getCreditLimit().signum() > 0
+                    && key.getCreditLimit().compareTo(creditLimit) == 0
+                    && Objects.equals(key.getCreditLimitReset(), creditLimitReset)
+                    && Objects.equals(key.getExpiresAt(), expiresAt)
+                    && allowed(key.effectiveStatus(now))
+                    && Objects.equals(key.getOpenrouterAccountId(), accountId)
+                    && key.isOpenrouterLegacy() == legacy;
+        }
+
+        private static boolean allowed(LlmApiKeyStatus status) {
+            return status == LlmApiKeyStatus.PENDING || status == LlmApiKeyStatus.ACTIVE;
+        }
+    }
+
+    private record LimitPush(String hash, BigDecimal limit,
+            @Nullable CreditLimitReset reset, @Nullable Long accountId, boolean legacy) {
+
+        private static LimitPush capture(LlmApiKey key) {
+            return new LimitPush(key.getOpenrouterKeyHash(), key.getCreditLimit(),
+                    key.getCreditLimitReset(), key.getOpenrouterAccountId(),
+                    key.isOpenrouterLegacy());
+        }
+
+        private boolean matches(@Nullable LlmApiKey key) {
+            return key != null && Objects.equals(key.getOpenrouterKeyHash(), hash)
+                    && key.getCreditLimit().compareTo(limit) == 0
+                    && Objects.equals(key.getCreditLimitReset(), reset)
+                    && sameSource(key, accountId, legacy);
+        }
+    }
+
+    private record StatusPush(String hash, boolean disabled,
+            @Nullable Long accountId, boolean legacy) {
+
+        private static StatusPush capture(LlmApiKey key, Instant now) {
+            return new StatusPush(key.getOpenrouterKeyHash(),
+                    key.effectiveStatus(now) != LlmApiKeyStatus.ACTIVE,
+                    key.getOpenrouterAccountId(), key.isOpenrouterLegacy());
+        }
+
+        private boolean matches(@Nullable LlmApiKey key, Instant now) {
+            return key != null && Objects.equals(key.getOpenrouterKeyHash(), hash)
+                    && (key.effectiveStatus(now) != LlmApiKeyStatus.ACTIVE) == disabled
+                    && sameSource(key, accountId, legacy);
+        }
+    }
+
+    private static boolean sameSource(LlmApiKey key, @Nullable Long accountId, boolean legacy) {
+        return Objects.equals(key.getOpenrouterAccountId(), accountId)
+                && key.isOpenrouterLegacy() == legacy;
     }
 }

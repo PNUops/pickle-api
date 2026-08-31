@@ -131,6 +131,16 @@ class ContractDriftTest {
             "POST /admin/llm/keys/{keyId}/resume",
             "GET /admin/llm/status",
             "GET /admin/llm/metrics",
+            "GET /admin/llm/accounts",
+            "POST /admin/llm/accounts",
+            "GET /admin/llm/accounts/{accountId}",
+            "PATCH /admin/llm/accounts/{accountId}",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged/activate",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged/cancel",
+            "POST /admin/llm/accounts/{accountId}/credentials/retiring/rollback",
+            "POST /admin/llm/accounts/{accountId}/credentials/retiring/finalize",
+            "POST /admin/llm/accounts/{accountId}/credentials/active/delete",
             "GET /admin/orgs",
             "POST /admin/orgs",
             "PATCH /admin/orgs/{orgId}",
@@ -308,6 +318,17 @@ class ContractDriftTest {
     }
 
     @Test
+    void accountBindingRolloutGateKeepsSuccessAndPublishesProblem503() throws Exception {
+        JsonNode runtime = fetchRuntimeSpec();
+        assertBindingGateResponse(runtime,
+                "/api/v1/admin/requests/{requestId}/approve", "post",
+                "#/components/schemas/RequestDetailResponse");
+        assertBindingGateResponse(runtime,
+                "/api/v1/admin/llm/keys/{keyId}/limits", "put",
+                "#/components/schemas/AdminLlmKeyDetailResponse");
+    }
+
+    @Test
     void runtimeExposesExactlyTheImplementedSet() throws Exception {
         assertThat(endpointsOf(fetchRuntimeSpec(), SERVER_PREFIX))
                 .as("springdoc runtime spec path+method set vs the implemented set")
@@ -407,6 +428,19 @@ class ContractDriftTest {
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return new ObjectMapper().readTree(runtimeJson);
+    }
+
+    private static void assertBindingGateResponse(JsonNode spec, String path, String method,
+            String successSchema) {
+        JsonNode responses = spec.path("paths").path(path).path(method).path("responses");
+        assertThat(responses.path("200").path("content").path("application/json")
+                .path("schema").path("$ref").asText()).isEqualTo(successSchema);
+        JsonNode response = responses.path("503");
+        assertThat(response.path("description").asText())
+                .contains("OPENROUTER_ACCOUNT_BINDING_DISABLED");
+        assertThat(response.path("content").path("application/problem+json")
+                .path("schema").path("$ref").asText())
+                .isEqualTo("#/components/schemas/Problem");
     }
 
     /**

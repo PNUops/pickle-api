@@ -24,6 +24,9 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   정보까지 준비합니다.
 - **LLM API 키 관리**: 승인된 신청에서 키를 만들고 발급과 한도, 정지, 재개, 폐기 상태를
   관리합니다. 관리자 조회는 기관별 역할 범위로 제한합니다.
+- **기관별 OpenRouter 사업 account**: 한 기관이 사업·재원별 account를 여러 개 등록하고,
+  검증된 management credential을 staged overlap으로 교체합니다. 금액 축 key는 승인 시 한
+  account에 불변 binding되며 account-bound 호출은 legacy env credential로 fallback하지 않습니다.
 - **LLM 서비스 관측**: 게이트웨이의 5초 sync 자기보고에서 upstream별 실제 요청 상태와
   별도 `/models` probe, catalog 비교, usage 전송 queue를 현재 상태로 저장합니다. 관리자
   `GET /api/v1/admin/llm/status`와 `/metrics`는 DB와 raw usage event만 읽으며 upstream을
@@ -244,8 +247,33 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_GATEWAY_SOURCE_IP` | `/internal/llm` 허용 출발지 | `172.30.1.40` |
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
-| `PICKLE_OPENROUTER_MGMT_KEY` | OpenRouter 키 관리(management) 키. 비면 금액 축 프로비저닝과 대사가 조용히 쉬고, 금액 한도가 부여된 키는 미연결 상태로 남는다(토큰 축 서비스는 무영향) | 없음 |
+| `PICKLE_OPENROUTER_MGMT_KEY` | V97 이전 key를 이관하는 동안만 쓰는 legacy OpenRouter management key. Account-bound key는 이 값으로 fallback하지 않음 | 없음 |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
+| `PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED` | 새 양수 CREDIT 승인과 최초 account binding을 허용하는 비가역 rollout cutoff | `false` |
+| `PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID` | DB에 저장할 account별 management credential을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 credential 쓰기는 거부 | 없음 |
+| `PICKLE_OPENROUTER_CREDENTIAL_READ_KEYS` | `keyId=base64-32-byte-key`를 쉼표로 나열한 전용 복호화 keyring. write key도 반드시 포함 | 없음 |
+
+OpenRouter management credential keyring에서 read key를 제거하려면 DB의 어떤 암호문 frame도
+그 key id를 참조하지 않는지 먼저 확인해야 합니다. 현재 자동 재암호화 잡은 없으므로 기존
+암호문을 새 key id로 바꾸는 경로는 vendor credential을 다시 stage하고 rotation하는 절차뿐입니다.
+V97의 `openrouter_legacy` 기본값은 old jar rollback 호환을 위해 account-null key 전체에
+적용됩니다. Remote key가 없는 행만 최초 양수 전환 때 account에 binding할 수 있습니다.
+이미 remote key가 있는 legacy 행은 새 account의 새 Pickle key로 전환한 뒤 기존 key를
+폐기해야 합니다. 0-credit이고 remote key가 없는 행에서 표식을 제거하는 정리는 old jar가
+rollback 대상에서 빠진 뒤에만 합니다.
+Legacy env credential은 여러 기관의 기존 key를 함께 관리하는 전역 transition scope이며
+`openrouter_accounts` 행이나 관리자 UI account로 표현하지 않습니다. Account-bound key는
+복호화 가능한 DB ACTIVE credential만 사용합니다. 첫 credential stage는 legacy env
+credential의 default vendor workspace를 별도로 probe하며, 같은 결제 account로 판정되거나
+서로 다름을 확인할 수 없으면 등록을 거부합니다. 기존 legacy key는 기관별 별도 vendor
+account에 새 key를 발급해 전환하며 두 scope를 합치지 않습니다.
+
+Account binding rollout은 V97과 새 jar를
+`PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED=false`로 먼저 배포한 뒤 account 등록, credential
+검증과 운영 smoke를 끝내고 진행합니다. 그 다음 값을 `true`로 켜는 순간이 비가역적인 jar
+rollback cutoff입니다. 최초 account-bound key가 생긴 뒤에는 V96 jar로 되돌리지 않으며,
+문제 발생 시 새 jar의 forward-fix 또는 DB restore로 복구합니다. Flag를 다시 `false`로 내려도
+이미 생성된 account binding을 legacy env account로 안전하게 되돌릴 수는 없습니다.
 
 ### 시드 계정 (dev/test 전용, 멱등)
 

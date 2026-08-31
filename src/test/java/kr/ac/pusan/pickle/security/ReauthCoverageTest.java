@@ -43,6 +43,13 @@ class ReauthCoverageTest {
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
             "POST /admin/relays/{relayId}/token",
+            "POST /admin/llm/accounts",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged/activate",
+            "POST /admin/llm/accounts/{accountId}/credentials/staged/cancel",
+            "POST /admin/llm/accounts/{accountId}/credentials/retiring/rollback",
+            "POST /admin/llm/accounts/{accountId}/credentials/retiring/finalize",
+            "POST /admin/llm/accounts/{accountId}/credentials/active/delete",
             // Removing an external login is the removal of a way in, and the
             // mirror of adding one: a hijacked session that could quietly
             // unlink the owner's provider would lock them out of their account.

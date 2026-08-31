@@ -23,6 +23,9 @@ import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -56,12 +59,15 @@ public class AdminLlmKeyService {
     private final LlmOpenRouterProvisioner provisioner;
     private final AuditService auditService;
     private final EntityManager entityManager;
+    private final OpenRouterAccountRepository accountRepository;
+    private final OpenRouterAccountSelectionService accountSelection;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             RequestRepository requestRepository, LlmGatewayGenerations generations,
             LlmOpenRouterProvisioner provisioner, AuditService auditService,
-            EntityManager entityManager) {
+            EntityManager entityManager, OpenRouterAccountRepository accountRepository,
+            OpenRouterAccountSelectionService accountSelection) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -70,6 +76,8 @@ public class AdminLlmKeyService {
         this.provisioner = provisioner;
         this.auditService = auditService;
         this.entityManager = entityManager;
+        this.accountRepository = accountRepository;
+        this.accountSelection = accountSelection;
     }
 
     @Transactional(readOnly = true)
@@ -131,6 +139,7 @@ public class AdminLlmKeyService {
                 .map(key -> {
                     Workspace workspace = refs.workspaces().get(key.getWorkspaceId());
                     Org org = refs.orgs().get(key.getOrgId());
+                    OpenRouterAccount account = refs.accounts().get(key.getOpenrouterAccountId());
                     return AdminLlmKeySummaryResponse.from(key,
                             workspace == null ? null : workspace.getPublicId(),
                             workspace == null ? "" : workspace.getName(),
@@ -138,6 +147,8 @@ public class AdminLlmKeyService {
                             org == null ? "" : org.getName(),
                             refs.requests().containsKey(key.getRequestId())
                                     ? refs.requests().get(key.getRequestId()).getPublicId() : null,
+                            account == null ? null : account.getPublicId(),
+                            account == null ? null : account.getName(),
                             now);
                 })
                 .toList();
@@ -151,11 +162,14 @@ public class AdminLlmKeyService {
         Org org = orgRepository.findById(key.getOrgId()).orElse(null);
         UUID requestId = requestRepository.findById(key.getRequestId())
                 .map(Request::getPublicId).orElse(null);
+        OpenRouterAccount account = key.getOpenrouterAccountId() == null ? null
+                : accountRepository.findById(key.getOpenrouterAccountId()).orElse(null);
         return AdminLlmKeyDetailResponse.from(key,
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
                 org == null ? null : org.getPublicId(), org == null ? "" : org.getName(),
-                requestId, Instant.now());
+                requestId, account == null ? null : account.getPublicId(),
+                account == null ? null : account.getName(), Instant.now());
     }
 
     @Transactional
@@ -183,13 +197,20 @@ public class AdminLlmKeyService {
         requireMutableStatus(key, "한도를 변경할");
         boolean moneyChanged = key.getCreditLimit().compareTo(form.getCreditLimit()) != 0
                 || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset());
-        if (actor.role() == UserRole.SYS_MANAGER && moneyChanged) {
+        boolean bindingRequested = form.getOpenrouterAccountId() != null
+                && key.getOpenrouterAccountId() == null;
+        if (actor.role() == UserRole.SYS_MANAGER && (moneyChanged || bindingRequested)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "시스템 운영자는 금액 한도를 변경할 수 없습니다.");
         }
+        OpenRouterAccount account = resolveLimitAccount(key, form);
+        boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
         key.replaceLimits(form.getRpm(), form.getTpm(), form.getConcurrency(),
                 form.getDailyTokens(), form.getCreditLimit(), form.getCreditLimitReset(),
                 Instant.now());
+        if (bindingChanged) {
+            key.bindOpenrouterAccount(account.getId(), Instant.now());
+        }
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rpm", form.getRpm());
         args.put("tpm", form.getTpm());
@@ -197,13 +218,16 @@ public class AdminLlmKeyService {
         args.put("dailyTokens", form.getDailyTokens());
         args.put("creditLimit", form.getCreditLimit());
         args.put("creditLimitReset", form.getCreditLimitReset());
+        args.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.LLM_KEY_LIMITS_UPDATE, "llm_key", key.getPublicId(), args, ip);
         if (moneyChanged && key.getOpenrouterKeyHash() != null) {
             String hash = key.getOpenrouterKeyHash();
             BigDecimal limit = key.getCreditLimit();
             var reset = key.getCreditLimitReset();
-            afterCommit(() -> provisioner.updateLimitAfterChange(hash, limit, reset));
+            long internalKeyId = key.getId();
+            afterCommit(() -> provisioner.updateLimitAfterChange(
+                    internalKeyId, hash, limit, reset));
         }
         return get(actor, keyId);
     }
@@ -223,7 +247,9 @@ public class AdminLlmKeyService {
                 Map.of("reason", reason.strip()), ip);
         if (key.getOpenrouterKeyHash() != null) {
             String hash = key.getOpenrouterKeyHash();
-            afterCommit(() -> provisioner.setDisabledAfterStatusChange(hash, true));
+            long internalKeyId = key.getId();
+            afterCommit(() -> provisioner.setDisabledAfterStatusChange(
+                    internalKeyId, hash, true));
         }
         return get(actor, keyId);
     }
@@ -241,7 +267,9 @@ public class AdminLlmKeyService {
                 AuditService.LLM_KEY_RESUME, "llm_key", key.getPublicId(), Map.of(), ip);
         if (key.getOpenrouterKeyHash() != null) {
             String hash = key.getOpenrouterKeyHash();
-            afterCommit(() -> provisioner.setDisabledAfterStatusChange(hash, false));
+            long internalKeyId = key.getId();
+            afterCommit(() -> provisioner.setDisabledAfterStatusChange(
+                    internalKeyId, hash, false));
         }
         return get(actor, keyId);
     }
@@ -287,7 +315,11 @@ public class AdminLlmKeyService {
         Map<Long, Request> requests = requestRepository.findAllById(keys.stream()
                         .map(LlmApiKey::getRequestId).distinct().toList())
                 .stream().collect(Collectors.toMap(Request::getId, Function.identity()));
-        return new References(workspaces, orgs, requests);
+        Map<Long, OpenRouterAccount> accounts = accountRepository.findAllById(keys.stream()
+                        .map(LlmApiKey::getOpenrouterAccountId).filter(Objects::nonNull)
+                        .distinct().toList())
+                .stream().collect(Collectors.toMap(OpenRouterAccount::getId, Function.identity()));
+        return new References(workspaces, orgs, requests, accounts);
     }
 
     private static void afterCommit(Runnable action) {
@@ -313,7 +345,40 @@ public class AdminLlmKeyService {
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
+    private OpenRouterAccount resolveLimitAccount(LlmApiKey key, AdminLlmKeyLimitsRequest form) {
+        UUID requested = form.getOpenrouterAccountId();
+        if (key.getOpenrouterAccountId() != null) {
+            OpenRouterAccount current = accountRepository.findById(key.getOpenrouterAccountId())
+                    .orElseThrow(AdminLlmKeyService::notFound);
+            if (requested != null && !current.getPublicId().equals(requested)) {
+                throw immutableBinding();
+            }
+            return current;
+        }
+        if (key.isOpenrouterLegacy()) {
+            boolean firstBindingEligible = key.getCreditLimit().signum() <= 0
+                    && key.getOpenrouterKeyHash() == null
+                    && key.getOpenrouterKeyEnc() == null;
+            if (firstBindingEligible) {
+                return accountSelection.select(
+                        key.getOrgId(), form.getCreditLimit(), requested);
+            }
+            if (requested != null) {
+                throw immutableBinding();
+            }
+            return null;
+        }
+        return accountSelection.select(key.getOrgId(), form.getCreditLimit(), requested);
+    }
+
+    private static ApiException immutableBinding() {
+        return new ApiException(HttpStatus.CONFLICT,
+                ErrorCodes.LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE,
+                "OpenRouter account binding을 변경할 수 없습니다",
+                "Account를 옮기려면 새 LLM API key를 발급해 전환해 주세요.");
+    }
+
     private record References(Map<Long, Workspace> workspaces, Map<Long, Org> orgs,
-            Map<Long, Request> requests) {
+            Map<Long, Request> requests, Map<Long, OpenRouterAccount> accounts) {
     }
 }
