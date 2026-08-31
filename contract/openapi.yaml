@@ -8538,6 +8538,12 @@ paths:
               $ref: "#/components/schemas/AdminLlmKeyLimitsRequest"
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "변경된 LLM API 키 상세"
         "503":
           content:
             application/problem+json:
@@ -9453,6 +9459,12 @@ paths:
               $ref: "#/components/schemas/ApproveRequestRequest"
         required: true
       responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestDetailResponse"
+          description: "승인 완료"
         "503":
           content:
             application/problem+json:
