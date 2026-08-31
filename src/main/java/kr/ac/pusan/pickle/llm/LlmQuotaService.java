@@ -86,6 +86,7 @@ public class LlmQuotaService {
              group by k.id, k.quota_exhausted, k.daily_tokens
             having (coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens)
                    is distinct from k.quota_exhausted
+             order by k.id
             """;
 
     private static final String APPLY_SQL =

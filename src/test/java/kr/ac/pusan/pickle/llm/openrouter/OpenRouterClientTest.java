@@ -163,7 +163,8 @@ class OpenRouterClientTest {
                         .withBody("""
                                 {"data": [
                                   {"hash": "h1", "name": "a", "disabled": false, "limit": 5,
-                                   "include_byok_in_limit": true, "usage": 1.25},
+                                   "include_byok_in_limit": true, "usage": 1.25,
+                                   "limit_remaining": 3.75},
                                   {"hash": "h2", "name": "b", "disabled": true}]}
                                 """)));
         server.stubFor(get(urlEqualTo("/keys?include_disabled=true&offset=2"))
@@ -180,6 +181,7 @@ class OpenRouterClientTest {
         // What the key has spent, as they count it — the money figure the
         // console shows so nobody has to open the OpenRouter console.
         assertThat(keys.get(0).usage()).isEqualByComparingTo("1.25");
+        assertThat(keys.get(0).limitRemaining()).isEqualByComparingTo("3.75");
         assertThat(keys.get(1).disabled()).isTrue();
         // Absent reads as false, which the reconciler treats as divergence and
         // repairs. Reading absence as true would hide exactly the state this

@@ -76,6 +76,27 @@ public interface DriftFindingRepository
         return autoResolveNotSeen(kind.name(), seenKeys.toArray(String[]::new), now);
     }
 
+    /** Resolves only one vendor-account namespace after that scope succeeds. */
+    @Transactional
+    @Modifying
+    @Query(value = """
+            update drift_findings
+               set status = 'RESOLVED', resolved_at = :now
+             where kind = cast(:kind as drift_finding_kind)
+               and status = 'OPEN'
+               and dedup_key like :prefix || '%'
+               and dedup_key <> all(:seenKeys)
+            """, nativeQuery = true)
+    int autoResolveNotSeenInScope(@Param("kind") String kind,
+            @Param("prefix") String prefix, @Param("seenKeys") String[] seenKeys,
+            @Param("now") Instant now);
+
+    default int autoResolveNotSeenInScope(DriftFindingKind kind, String prefix,
+            Collection<String> seenKeys, Instant now) {
+        return autoResolveNotSeenInScope(kind.name(), prefix,
+                seenKeys.toArray(String[]::new), now);
+    }
+
     /**
      * Manual resolve: CAS OPEN→RESOLVED recording the admin; 0 rows = already
      * resolved. Native SQL because HQL enum literals render a cast to a type

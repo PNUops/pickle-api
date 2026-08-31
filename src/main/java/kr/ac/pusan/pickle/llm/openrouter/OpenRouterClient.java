@@ -78,12 +78,20 @@ public class OpenRouterClient {
     public record ManagedKey(String hash, String name, boolean disabled,
             @Nullable BigDecimal limit, @Nullable String limitReset,
             boolean includeByokInLimit, @Nullable BigDecimal usage,
-            @Nullable UUID workspaceId) {
+            @Nullable UUID workspaceId, @Nullable BigDecimal limitRemaining) {
 
         public ManagedKey(String hash, String name, boolean disabled,
                 @Nullable BigDecimal limit, @Nullable String limitReset,
                 boolean includeByokInLimit, @Nullable BigDecimal usage) {
-            this(hash, name, disabled, limit, limitReset, includeByokInLimit, usage, null);
+            this(hash, name, disabled, limit, limitReset, includeByokInLimit, usage, null, null);
+        }
+
+        public ManagedKey(String hash, String name, boolean disabled,
+                @Nullable BigDecimal limit, @Nullable String limitReset,
+                boolean includeByokInLimit, @Nullable BigDecimal usage,
+                @Nullable UUID workspaceId) {
+            this(hash, name, disabled, limit, limitReset, includeByokInLimit, usage,
+                    workspaceId, null);
         }
     }
 
@@ -226,7 +234,9 @@ public class OpenRouterClient {
                         entry.path("include_byok_in_limit").asBoolean(false),
                         entry.path("usage").isNumber()
                                 ? entry.path("usage").decimalValue() : null,
-                        uuid(entry, "workspace_id")));
+                        uuid(entry, "workspace_id"),
+                        entry.path("limit_remaining").isNumber()
+                                ? entry.path("limit_remaining").decimalValue() : null));
             }
             offset += data.size();
         }
@@ -252,7 +262,9 @@ public class OpenRouterClient {
                 text(data, "limit_reset"),
                 data.path("include_byok_in_limit").asBoolean(false),
                 data.path("usage").isNumber() ? data.path("usage").decimalValue() : null,
-                returnedWorkspace);
+                returnedWorkspace,
+                data.path("limit_remaining").isNumber()
+                        ? data.path("limit_remaining").decimalValue() : null);
     }
 
     public Credits credits(String managementSecret) {

@@ -47,6 +47,9 @@ public class OpenRouterAccount {
     @Column(name = "vendor_workspace_id")
     private @Nullable UUID vendorWorkspaceId;
 
+    @Column(name = "vendor_identity_key_hash")
+    private @Nullable String vendorIdentityKeyHash;
+
     @Column(name = "created_by", nullable = false, updatable = false)
     private Long createdBy;
 
@@ -85,6 +88,14 @@ public class OpenRouterAccount {
         this.updatedAt = now;
     }
 
+    public void establishVendorIdentityKey(String hash, Instant now) {
+        if (vendorIdentityKeyHash != null && !vendorIdentityKeyHash.equals(hash)) {
+            throw new IllegalStateException("OpenRouter vendor billing identity is immutable");
+        }
+        vendorIdentityKeyHash = hash;
+        updatedAt = now;
+    }
+
     public Long getId() { return id; }
     public UUID getPublicId() { return publicId; }
     public Long getOrgId() { return orgId; }
@@ -93,6 +104,7 @@ public class OpenRouterAccount {
     public @Nullable String getFundingReference() { return fundingReference; }
     public @Nullable String getEvidenceReference() { return evidenceReference; }
     public @Nullable UUID getVendorWorkspaceId() { return vendorWorkspaceId; }
+    public @Nullable String getVendorIdentityKeyHash() { return vendorIdentityKeyHash; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

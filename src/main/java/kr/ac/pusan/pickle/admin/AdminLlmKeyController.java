@@ -54,11 +54,14 @@ public class AdminLlmKeyController {
             @RequestParam(required = false) UUID workspaceId,
             @Parameter(description = "키를 발급한 신청 공개 ID")
             @RequestParam(required = false) UUID requestId,
+            @Parameter(description = "불변 binding된 OpenRouter 사업 account 공개 ID")
+            @RequestParam(required = false) UUID openrouterAccountId,
             @RequestParam(required = false) LlmApiKeyStatus status,
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return service.list(principal, orgId, workspaceId, requestId, status, query, page, size);
+        return service.list(principal, orgId, workspaceId, requestId, openrouterAccountId,
+                status, query, page, size);
     }
 
     @GetMapping("/{keyId}")

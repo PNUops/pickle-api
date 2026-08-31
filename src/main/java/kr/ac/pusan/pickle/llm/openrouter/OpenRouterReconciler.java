@@ -1,19 +1,20 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.provisioning.DriftFindingKind;
 import kr.ac.pusan.pickle.provisioning.DriftFindingRepository;
-import org.jobrunr.jobs.annotations.Job;
-import org.jobrunr.jobs.annotations.Recurring;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,9 +43,20 @@ public class OpenRouterReconciler {
         this.credentialResolver = credentialResolver;
     }
 
-    @Recurring(id = JOB_ID, interval = "PT30M")
-    @Job(name = JOB_ID, retries = 0)
+    /** Pre-V98 queued jobs may still call this signature; keep it legacy-only. */
     public void reconcile() {
+        credentialResolver.legacyAccess().ifPresent(access -> {
+            try {
+                reconcileLegacy(access, Instant.now());
+            } catch (OpenRouterException error) {
+                log.warn("OpenRouter legacy reconcile failed: {}",
+                        OpenRouterErrorClassifier.classify(error));
+            }
+        });
+    }
+
+    /** Exercises multi-scope failure isolation without serving as a scheduled entrypoint. */
+    void reconcileAllScopes() {
         OpenRouterCredentialResolver.ReconciliationAccesses resolved;
         try {
             resolved = credentialResolver.reconciliationScopes();
@@ -68,6 +80,7 @@ public class OpenRouterReconciler {
                 allOrphans.addAll(result.orphans());
                 allStale.addAll(result.stale());
                 allSpends.addAll(result.spends());
+                recordFindings(result.findingObservations(), now);
                 credentialResolver.markReconciled(access, now);
             } catch (OpenRouterException e) {
                 allScopesSucceeded = false;
@@ -87,6 +100,51 @@ public class OpenRouterReconciler {
             log.info("OpenRouter reconcile: {} orphan(s), {} stale across {} account scope(s)",
                     allOrphans.size(), allStale.size(), scopes.size());
         }
+    }
+
+    /**
+     * One account's bounded key observation, used by the durable PAIR worker.
+     * Only this successful scope resolves its own drift namespace; another
+     * account's failure cannot keep old findings open here.
+     */
+    public ScopeObservation reconcileAccount(OpenRouterManagementAccess access,
+            OpenRouterPollRepository.Claim claim, Instant now, boolean baselineExists,
+            Clock clock) {
+        if (access.accountId() == null) {
+            throw new IllegalArgumentException("account reconciliation requires an account scope");
+        }
+        ScopeResult result = reconcileScope(access, now);
+        Instant observedAt = Instant.now(clock);
+        OpenRouterSpendRecorder.AccountRecordResult recorded = spendRecorder.recordAccount(
+                result.spends(), observedAt, baselineExists, claim, () -> {
+                    recordFindings(result.findingObservations(), observedAt);
+                    credentialResolver.markReconciled(access, observedAt);
+                    String prefix = "account:" + access.scopeKey() + ":key:";
+                    findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_ORPHAN,
+                            prefix, result.orphans(), observedAt);
+                    findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_STALE,
+                            prefix, result.stale(), observedAt);
+                });
+        if (!recorded.persisted()) {
+            return new ScopeObservation(result.usageComplete(), false,
+                    recorded.resetBoundary() || result.managedBoundary(), observedAt);
+        }
+        return new ScopeObservation(result.usageComplete(), true,
+                recorded.resetBoundary() || result.managedBoundary(), observedAt);
+    }
+
+    public void reconcileLegacy(OpenRouterManagementAccess access, Instant now) {
+        if (!access.includesLegacyKeys() || access.accountId() != null) {
+            throw new IllegalArgumentException("legacy reconciliation requires the env scope");
+        }
+        ScopeResult result = reconcileScope(access, now);
+        spendRecorder.record(result.spends(), now);
+        recordFindings(result.findingObservations(), now);
+        String prefix = "account:" + access.scopeKey() + ":key:";
+        findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_ORPHAN,
+                prefix, result.orphans(), now);
+        findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_STALE,
+                prefix, result.stale(), now);
     }
 
     private ScopeResult reconcileScope(OpenRouterManagementAccess access, Instant now) {
@@ -116,20 +174,35 @@ public class OpenRouterReconciler {
         List<String> orphanKeys = new ArrayList<>();
         List<String> staleKeys = new ArrayList<>();
         List<OpenRouterSpendRecorder.Spend> spends = new ArrayList<>();
+        List<FindingObservation> findingObservations = new ArrayList<>();
+        boolean usageComplete = true;
+        boolean managedBoundary = false;
+        Set<String> seenRemoteHashes = new HashSet<>();
+        boolean identitySeen = access.identityKeyHash() == null;
         for (OpenRouterClient.ManagedKey managed : remote) {
+            if (!seenRemoteHashes.add(managed.hash())) {
+                throw new OpenRouterException(0, "key listing contained a duplicate hash");
+            }
+            if (managed.hash().equals(access.identityKeyHash())) {
+                identitySeen = true;
+                continue;
+            }
             String dedup = dedup(access, managed.hash());
             LlmApiKey local = localByHash.remove(managed.hash());
             if (local != null && managed.usage() != null) {
                 spends.add(new OpenRouterSpendRecorder.Spend(local.getId(), managed.usage(),
-                        local.getCreditLimit()));
+                        local.getCreditLimit(), managed.limitRemaining()));
+            } else if (local != null) {
+                usageComplete = false;
             }
             if (local == null) {
                 orphanKeys.add(dedup);
-                findings.observe(DriftFindingKind.OPENROUTER_ORPHAN, null, null, null,
+                findingObservations.add(new FindingObservation(
+                        DriftFindingKind.OPENROUTER_ORPHAN,
                         "OpenRouter account에 Pickle 기록과 연결되지 않은 key가 있습니다.",
                         "{\"accountId\":\"%s\",\"disabled\":%s}"
                                 .formatted(access.scopeKey(), managed.disabled()),
-                        dedup, now);
+                        dedup));
                 continue;
             }
 
@@ -170,11 +243,17 @@ public class OpenRouterReconciler {
                 detail.put("limitReapplied", limitReapplied);
                 detail.put("expectedDisabled", shouldBeDisabled);
                 detail.put("statusRepaired", statusRepaired);
-                findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
+                findingObservations.add(new FindingObservation(
+                        DriftFindingKind.OPENROUTER_STALE,
                         staleSummary(divergence, limitReapplied, statusDiverged,
                                 statusRepaired, local.getStatus(), over, shouldBeDisabled),
-                        json(detail), dedup, now);
+                        json(detail), dedup));
             }
+        }
+
+        if (!identitySeen) {
+            throw new OpenRouterException(0,
+                    "vendor billing identity marker is missing from the key listing");
         }
 
         for (LlmApiKey local : localByHash.values()) {
@@ -183,15 +262,25 @@ public class OpenRouterReconciler {
             if (over) {
                 continue;
             }
+            managedBoundary = true;
             String dedup = dedup(access, local.getOpenrouterKeyHash());
             staleKeys.add(dedup);
-            findings.observe(DriftFindingKind.OPENROUTER_STALE, null, null, null,
+            findingObservations.add(new FindingObservation(
+                    DriftFindingKind.OPENROUTER_STALE,
                     "활성 Pickle key의 OpenRouter runtime key가 vendor account에서 사라졌습니다.",
                     "{\"accountId\":\"%s\",\"llmKeyId\":\"%s\",\"direction\":\"missing_remote\"}"
                             .formatted(access.scopeKey(), local.getPublicId()),
-                    dedup, now);
+                    dedup));
         }
-        return new ScopeResult(orphanKeys, staleKeys, spends);
+        return new ScopeResult(orphanKeys, staleKeys, spends, findingObservations,
+                usageComplete, managedBoundary);
+    }
+
+    private void recordFindings(List<FindingObservation> observations, Instant now) {
+        for (FindingObservation observation : observations) {
+            findings.observe(observation.kind(), null, null, null, observation.summary(),
+                    observation.detail(), observation.dedupKey(), now);
+        }
     }
 
     private static @Nullable String limitDivergence(
@@ -239,20 +328,11 @@ public class OpenRouterReconciler {
     }
 
     private static String vendorError(OpenRouterException e) {
-        return credentialError(e).name();
+        return OpenRouterErrorClassifier.classify(e).name();
     }
 
     private static OpenRouterCredentialError credentialError(OpenRouterException e) {
-        if (e.status() == 401 || e.status() == 403) {
-            return OpenRouterCredentialError.CREDENTIAL_ERROR;
-        }
-        if (e.status() == 429) {
-            return OpenRouterCredentialError.THROTTLED;
-        }
-        if (e.status() == 0 || e.status() >= 500) {
-            return OpenRouterCredentialError.VENDOR_UNAVAILABLE;
-        }
-        return OpenRouterCredentialError.VENDOR_REJECTED;
+        return OpenRouterErrorClassifier.classify(e);
     }
 
     /** Small JSON encoder for values generated by this class, never vendor text. */
@@ -269,6 +349,16 @@ public class OpenRouterReconciler {
     }
 
     private record ScopeResult(List<String> orphans, List<String> stale,
-            List<OpenRouterSpendRecorder.Spend> spends) {
+            List<OpenRouterSpendRecorder.Spend> spends,
+            List<FindingObservation> findingObservations, boolean usageComplete,
+            boolean managedBoundary) {
+    }
+
+    private record FindingObservation(DriftFindingKind kind, String summary,
+            String detail, String dedupKey) {
+    }
+
+    public record ScopeObservation(boolean usageComplete, boolean persisted,
+            boolean resetBoundary, Instant observedAt) {
     }
 }

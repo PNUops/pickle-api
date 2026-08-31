@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,16 @@ public class OpenRouterCredentialResolver {
         }
         return legacyProperties.configured()
                 ? Optional.of(envAccess()) : Optional.empty();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<OpenRouterManagementAccess> forAccount(UUID accountPublicId) {
+        return accountRepository.findByPublicId(accountPublicId)
+                .flatMap(account -> databaseAccess(account, false));
+    }
+
+    public Optional<OpenRouterManagementAccess> legacyAccess() {
+        return legacyProperties.configured() ? Optional.of(envAccess()) : Optional.empty();
     }
 
     @Transactional(readOnly = true)
@@ -100,7 +111,8 @@ public class OpenRouterCredentialResolver {
         try {
             String secret = cipher.decrypt(account.getPublicId(), credential.getCredentialEnc());
             return new OpenRouterManagementAccess(account.getPublicId().toString(), account.getId(),
-                    account.getPublicId(), account.getVendorWorkspaceId(), secret,
+                    account.getPublicId(), account.getVendorWorkspaceId(),
+                    account.getVendorIdentityKeyHash(), secret,
                     credential.getId(), includeLegacy);
         } catch (IllegalStateException e) {
             throw new OpenRouterException(0, "management credential is unavailable");
