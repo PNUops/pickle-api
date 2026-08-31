@@ -54,9 +54,15 @@ class OpenRouterAccountCreditsTest {
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_usage_daily");
         jdbcTemplate.update("delete from llm_api_keys");
+        jdbcTemplate.update("""
+                delete from request_reviews
+                 where request_id in (
+                     select id from requests where resource_type = 'LLM_API_KEY')
+                """);
         jdbcTemplate.update("delete from llm_key_request_details");
         jdbcTemplate.update("delete from openrouter_account_credentials");
         jdbcTemplate.update("delete from openrouter_accounts");
+        jdbcTemplate.update("delete from requests where resource_type = 'LLM_API_KEY'");
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         adminId = SeedFixtures.sysadminId(jdbcTemplate);
     }
