@@ -13,9 +13,11 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageResponse;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditRefreshScheduler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,10 +53,13 @@ public class LlmUsageService {
 
     private final JdbcTemplate jdbcTemplate;
     private final LlmQuotaService quotaService;
+    private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
 
-    public LlmUsageService(JdbcTemplate jdbcTemplate, LlmQuotaService quotaService) {
+    public LlmUsageService(JdbcTemplate jdbcTemplate, LlmQuotaService quotaService,
+            OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
         this.jdbcTemplate = jdbcTemplate;
         this.quotaService = quotaService;
+        this.creditRefreshScheduler = creditRefreshScheduler;
     }
 
     @Transactional
@@ -63,6 +68,7 @@ public class LlmUsageService {
                 request.events() == null ? List.of() : request.events();
         Map<String, Long> keyIds = resolveKeyIds(events);
         Map<Long, Instant> lastUsed = new HashMap<>();
+        Set<Long> creditExhaustedKeys = new LinkedHashSet<>();
 
         int accepted = 0;
         int duplicates = 0;
@@ -74,6 +80,7 @@ public class LlmUsageService {
             }
             String eventId = event.eventUuid();
             String status = Texts.sanitizeReported(event.status(), REPORTED_TEXT_MAX);
+            String errorType = Texts.sanitizeReported(event.errorType(), REPORTED_TEXT_MAX);
             Instant requestedAt = parseInstant(event.requestedAt());
             if (eventId == null || eventId.isBlank() || eventId.length() > MAX_EVENT_ID_LENGTH
                     || containsControlChars(eventId) || status == null || requestedAt == null) {
@@ -84,7 +91,7 @@ public class LlmUsageService {
             // are kept with a null key: they are the only trace of a client
             // looping on a bad key.
             Long keyId = event.keyId() == null ? null : keyIds.get(event.keyId().strip());
-            Long insertedId = tryInsert(event, eventId, status, requestedAt, keyId);
+            Long insertedId = tryInsert(event, eventId, status, errorType, requestedAt, keyId);
             if (insertedId == null) {
                 duplicates++;
                 continue;
@@ -92,6 +99,9 @@ public class LlmUsageService {
             accepted++;
             if (keyId != null) {
                 lastUsed.merge(keyId, requestedAt, (a, b) -> a.isAfter(b) ? a : b);
+                if ("credit_exhausted".equals(errorType)) {
+                    creditExhaustedKeys.add(keyId);
+                }
             }
         }
         // In this transaction, so the events and the quota state they imply
@@ -109,6 +119,7 @@ public class LlmUsageService {
         // what costs a transaction.
         quotaService.refresh();
         stampLastUsed(lastUsed);
+        requestCreditRefreshes(creditExhaustedKeys);
         if (rejected > 0) {
             log.warn("LLM usage batch: accepted {}, duplicates {}, rejected {}",
                     accepted, duplicates, rejected);
@@ -120,7 +131,7 @@ public class LlmUsageService {
 
     /** The dedup insert; null means the event id already exists (duplicate). */
     private Long tryInsert(LlmUsageRequest.UsageEvent event, String eventId, String status,
-            Instant requestedAt, Long keyId) {
+            String errorType, Instant requestedAt, Long keyId) {
         return jdbcTemplate.query("""
                 insert into llm_usage_events (event_id, key_id, generation, public_model_name,
                     upstream_ref, attempts, status, error_type, input_tokens, output_tokens,
@@ -133,7 +144,7 @@ public class LlmUsageService {
                 Texts.sanitizeReported(event.publicModelName(), REPORTED_TEXT_MAX),
                 Texts.sanitizeReported(event.upstreamRef(), REPORTED_TEXT_MAX),
                 event.attempts(), status,
-                Texts.sanitizeReported(event.errorType(), REPORTED_TEXT_MAX),
+                errorType,
                 nonNegative(event.inputTokens()), nonNegative(event.outputTokens()),
                 Boolean.TRUE.equals(event.estimated()),
                 nonNegative(event.latencyMs()), event.ttftMs(),
@@ -190,7 +201,8 @@ public class LlmUsageService {
      * order and a late batch must not walk the stamp backwards.
      */
     private void stampLastUsed(Map<Long, Instant> lastUsed) {
-        for (Map.Entry<Long, Instant> entry : lastUsed.entrySet()) {
+        for (Map.Entry<Long, Instant> entry : lastUsed.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey()).toList()) {
             OffsetDateTime at = entry.getValue().atOffset(ZoneOffset.UTC);
             jdbcTemplate.update("""
                     update llm_api_keys
@@ -198,6 +210,22 @@ public class LlmUsageService {
                      where id = ? and (last_used_at is null or last_used_at < ?)
                     """, at, entry.getKey(), at);
         }
+    }
+
+    private void requestCreditRefreshes(Set<Long> keyIds) {
+        if (keyIds.isEmpty()) {
+            return;
+        }
+        String placeholders = String.join(", ",
+                java.util.Collections.nCopies(keyIds.size(), "?"));
+        jdbcTemplate.query("""
+                select distinct a.public_id
+                  from llm_api_keys k
+                  join openrouter_accounts a on a.id = k.openrouter_account_id
+                 where k.id in (%s)
+                """.formatted(placeholders), (RowCallbackHandler) rs ->
+                        creditRefreshScheduler.requestCredits(
+                                rs.getObject("public_id", UUID.class)), keyIds.toArray());
     }
 
     /**

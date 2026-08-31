@@ -329,6 +329,22 @@ class ContractDriftTest {
     }
 
     @Test
+    void accountCreditsPublishUnknownAsNullsAndKeepFreshnessRequired() throws Exception {
+        JsonNode schemas = fetchRuntimeSpec().path("components").path("schemas");
+        JsonNode account = schemas.path("OpenRouterAccountResponse");
+        assertThat(account.path("required").toString()).contains("credits");
+        JsonNode credits = schemas.path("OpenRouterAccountCreditsResponse");
+        assertThat(credits.path("required").toString())
+                .contains("freshness", "keysFreshness");
+        assertThat(credits.path("properties").path("totalCredits").path("type").toString())
+                .contains("number", "null");
+        assertThat(credits.path("properties").path("balance").path("type").toString())
+                .contains("number", "null");
+        assertThat(credits.path("properties").has("managementKey")).isFalse();
+        assertThat(credits.path("properties").has("credentialEnc")).isFalse();
+    }
+
+    @Test
     void runtimeExposesExactlyTheImplementedSet() throws Exception {
         assertThat(endpointsOf(fetchRuntimeSpec(), SERVER_PREFIX))
                 .as("springdoc runtime spec path+method set vs the implemented set")

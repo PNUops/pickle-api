@@ -125,6 +125,11 @@ class AdminOpenRouterAccountTest {
                         "probe-hash", "probe-runtime-secret",
                         "test-openrouter-legacy-management-key".equals(invocation.getArgument(0))
                                 ? LEGACY_WORKSPACE : VENDOR_WORKSPACE));
+        when(client.createKey(anyString(), any(UUID.class), anyString(),
+                eq(BigDecimal.ZERO), isNull(), isNull()))
+                .thenAnswer(invocation -> new OpenRouterClient.CreatedKey(
+                        "identity-" + UUID.randomUUID(), "identity-runtime-secret",
+                        invocation.getArgument(1)));
     }
 
     @Test
@@ -180,8 +185,81 @@ class AdminOpenRouterAccountTest {
         assertThat(active.activeCredential().status()).isEqualTo(OpenRouterCredentialStatus.ACTIVE);
         assertThat(active.rotationCredential()).isNull();
         assertThat(active.eligibleForBinding()).isTrue();
+        assertThat(objectMapper.writeValueAsString(active))
+                .doesNotContain("identity-runtime-secret")
+                .doesNotContain("vendorIdentityKey");
         assertThat(selectionService.select(orgId, BigDecimal.ONE, null).getPublicId())
                 .isEqualTo(created.id());
+    }
+
+    @Test
+    void stageRejectsAnotherWorkspaceFromAnAlreadyRegisteredBillingAccount() {
+        UUID existingWorkspace = UUID.fromString("10000000-0000-4000-8000-000000000002");
+        insertActiveAccount("기존 사업", existingWorkspace, "existing-management-key");
+        OpenRouterAccountResponse candidate = create("새 사업");
+        when(client.createKey(eq("existing-management-key"), eq(existingWorkspace),
+                anyString(), eq(BigDecimal.ZERO), isNull(), any(Instant.class)))
+                .thenReturn(new OpenRouterClient.CreatedKey(
+                        "billing-probe", "billing-runtime", existingWorkspace));
+        when(client.getKey(MANAGEMENT_KEY, existingWorkspace, "billing-probe"))
+                .thenReturn(new OpenRouterClient.ManagedKey(
+                        "billing-probe", "probe", false, BigDecimal.ZERO,
+                        null, true, BigDecimal.ZERO, existingWorkspace));
+
+        assertThatThrownBy(() -> service.stage(sysAdmin, candidate.id(),
+                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "새 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo(
+                            "OPENROUTER_CREDENTIAL_INVALID_STATE");
+                });
+        assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
+                accountRepository.findByPublicId(candidate.id()).orElseThrow().getId()))
+                .isEmpty();
+    }
+
+    @Test
+    void billingIdentityReservationSurvivesDeletingTheLastCredential() {
+        UUID existingWorkspace = UUID.fromString("10000000-0000-4000-8000-000000000003");
+        OpenRouterAccount existing = insertActiveAccount(
+                "예약 사업", existingWorkspace, "existing-management-key");
+        existing.establishVendorIdentityKey("reserved-identity-hash", Instant.now());
+        accountRepository.saveAndFlush(existing);
+        credentialRepository.deleteAll(
+                credentialRepository.findByAccountIdOrderByIdAsc(existing.getId()));
+        credentialRepository.flush();
+        OpenRouterAccountResponse candidate = create("재등록 사업");
+        when(client.getKey(MANAGEMENT_KEY, existingWorkspace, "reserved-identity-hash"))
+                .thenReturn(new OpenRouterClient.ManagedKey(
+                        "reserved-identity-hash", "identity", true, BigDecimal.ZERO,
+                        null, true, BigDecimal.ZERO, existingWorkspace));
+
+        assertThatThrownBy(() -> service.stage(sysAdmin, candidate.id(),
+                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "재등록 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo(
+                            "OPENROUTER_CREDENTIAL_INVALID_STATE");
+                });
+    }
+
+    @Test
+    void preCreditsAccountCannotDeleteItsLastCredentialBeforeIdentityRotation() {
+        OpenRouterAccount existing = insertActiveAccount(
+                "이전 account", VENDOR_WORKSPACE, "existing-management-key");
+        when(client.credits("existing-management-key"))
+                .thenThrow(new OpenRouterException(401, "revoked vendor credential"));
+
+        assertThatThrownBy(() -> service.deleteActive(sysAdmin, existing.getPublicId(),
+                new FinalizeOpenRouterCredentialRequest("이전 account", true), "127.0.0.1"))
+                .isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo(
+                            "OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    assertThat(error.getDetail()).contains("identity marker");
+                });
+        assertThat(credentialRepository.findByAccountIdAndStatus(existing.getId(),
+                OpenRouterCredentialStatus.ACTIVE)).isPresent();
     }
 
     @Test

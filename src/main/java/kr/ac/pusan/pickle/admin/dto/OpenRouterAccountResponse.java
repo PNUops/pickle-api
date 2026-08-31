@@ -31,6 +31,8 @@ public record OpenRouterAccountResponse(
         @Nullable OpenRouterCredentialStateResponse activeCredential,
         @Schema(description = "STAGED 또는 RETIRING credential의 secret-free 상태. 없으면 null")
         @Nullable OpenRouterCredentialStateResponse rotationCredential,
+        @Schema(description = "DB cache에서 읽은 account credits·예상·미관리 지출 관측 상태")
+        OpenRouterAccountCreditsResponse credits,
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")

@@ -267,6 +267,42 @@ Legacy env credential은 여러 기관의 기존 key를 함께 관리하는 전�
 credential의 default vendor workspace를 별도로 probe하며, 같은 결제 account로 판정되거나
 서로 다름을 확인할 수 없으면 등록을 거부합니다. 기존 legacy key는 기관별 별도 vendor
 account에 새 key를 발급해 전환하며 두 scope를 합치지 않습니다.
+첫 ACTIVE 전환은 limit 0·disabled 상태의 `pickle-billing-identity-*` runtime key를 하나 만들고
+hash만 account 행에 불변 reservation으로 남깁니다. 평문은 즉시 버리고 API에 반환하지 않습니다.
+다른 사업 account 등록은 candidate management credential이 기존 marker를 읽을 수 있는지 검사해,
+workspace가 달라도 같은 vendor billing account면 거부합니다. Marker는 마지막 management
+credential을 안전 삭제해도 남고 account `/keys` 대사에서는 Pickle key/orphan 집계에서 제외됩니다.
+Vendor console에서 marker를 지우면 다음 account 대사가 실패하므로 임의 삭제하지 않습니다.
+Marker가 사라지고 그 account에 ACTIVE management credential도 없으면 같은 billing account인지
+증명할 방법이 없으므로 다른 account 등록도 fail-closed로 막습니다. 기존 account credential을 먼저
+복구해 cross-management probe가 다시 가능해져야 합니다.
+V97에서 이미 ACTIVE였던 account는 첫 V98 credential rotation이 marker를 확정합니다. 그 전에도
+ACTIVE credential끼리 cross-management probe로 중복을 막으며, marker가 없는 account의 마지막
+ACTIVE credential 삭제는 거부합니다.
+
+V98부터 ACTIVE account credential은 영속 due/claim을 가진 dispatcher가 관측합니다. `/credits`는
+account별 10분, workspace-filtered `/keys` 전체 대사는 30분이며, 세 번째 credits cycle은 한 claim
+window 안에서 두 응답을 pair로 저장합니다. Dispatcher는 1분마다 DB due만 확인하고 vendor를 더
+자주 호출하지 않습니다. 429·transport·5xx는 account별 exponential backoff와 jitter를 적용합니다.
+새 `credit_exhausted` usage event는 account별 5분 debounce를 거쳐 credits refresh를 요청합니다.
+Credential 활성화·rollback은 이전 credential의 진행 중 claim과 backoff를 무효화하고 credits와
+`/keys` 전체 대사를 즉시 요청합니다. JobRunr 인자에는 account UUID와 claim token만 들어가며 management key는
+worker 실행 시 ACTIVE ciphertext에서 복호화합니다. 화면 응답은 DB cache만 읽고 마지막 성공이
+30분을 넘으면 STALE, 성공 이력이 없으면 UNKNOWN입니다. 잔액은 구매액에서 사용액을 뺀 값이라
+음수도 그대로 반환합니다.
+기존 `llm-openrouter-reconciler` recurring id는 legacy-only 30분 job이 그대로 인계합니다. 새 이름을
+붙이면 JobRunr DB에 옛 all-scope recurring row가 남아 account `/keys`를 pair 밖에서 한 번 더 읽기
+때문입니다. 이미 enqueue된 구 버전 실행도 같은 `reconcile()` signature가 legacy-only로 동작합니다.
+V98 jar가 새 account poll dispatcher recurring row나 poll job을 한 번이라도 등록한 뒤에는 V97 jar로
+rollback하지 않습니다. V97에는 새 JobRunr target class가 없어 영속 recurring·queued job을 실행할 수
+없기 때문입니다. 문제 발생 시 V98 forward-fix 또는 DB restore로 복구합니다.
+
+미관리 지출 baseline은 첫 정상 paired observation에서 확정합니다. Key usage reset은 key별
+누적 ledger로 이어 붙이고 vendor key가 삭제돼도 그 누계를 보존하므로, 현재 `/keys` 합계를 단순히
+빼서 과거 관리 지출을 미관리 지출로 바꾸지 않습니다. Account total이나 paired delta가 뒤로 간
+reset 경계에서는 값을 꾸미지 않고 null로 반환하며 그 관측값을 새 구간 baseline으로 잡습니다.
+그 다음 정상 pair부터 새 구간의 미관리 지출을 다시 계산합니다. Account snapshot과 key spend
+snapshot은 90일 보존하지만 현재 구간 baseline은 account current-state에 남습니다.
 
 Account binding rollout은 V97과 새 jar를
 `PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED=false`로 먼저 배포한 뒤 account 등록, credential

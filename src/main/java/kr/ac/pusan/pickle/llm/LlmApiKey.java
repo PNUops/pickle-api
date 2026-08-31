@@ -159,6 +159,9 @@ public class LlmApiKey {
     @Column(name = "openrouter_usage_at")
     private @Nullable Instant openrouterUsageAt;
 
+    @Column(name = "openrouter_limit_remaining")
+    private @Nullable BigDecimal openrouterLimitRemaining;
+
     @Column(name = "created_by", nullable = false)
     private Long createdBy;
 
@@ -424,6 +427,10 @@ public class LlmApiKey {
 
     public @Nullable Instant getOpenrouterUsageAt() {
         return openrouterUsageAt;
+    }
+
+    public @Nullable BigDecimal getOpenrouterLimitRemaining() {
+        return openrouterLimitRemaining;
     }
 
     public @Nullable Long getOpenrouterAccountId() { return openrouterAccountId; }

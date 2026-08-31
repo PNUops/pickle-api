@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
@@ -32,6 +33,7 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterClient;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditRefreshScheduler;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCredentialError;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCredentialStatus;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterException;
@@ -67,6 +69,8 @@ public class AdminOpenRouterAccountService {
     private final TransactionTemplate tx;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterProperties openRouterProperties;
+    private final OpenRouterAccountCreditsQueryService creditsQuery;
+    private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
@@ -75,7 +79,9 @@ public class AdminOpenRouterAccountService {
             OpenRouterManagementCredentialCipher credentialCipher, AuditService auditService,
             EntityManager entityManager, PlatformTransactionManager transactionManager,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterProperties openRouterProperties) {
+            OpenRouterProperties openRouterProperties,
+            OpenRouterAccountCreditsQueryService creditsQuery,
+            OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
         this.keyRepository = keyRepository;
@@ -87,6 +93,8 @@ public class AdminOpenRouterAccountService {
         this.tx = new TransactionTemplate(transactionManager);
         this.accountSelection = accountSelection;
         this.openRouterProperties = openRouterProperties;
+        this.creditsQuery = creditsQuery;
+        this.creditRefreshScheduler = creditRefreshScheduler;
     }
 
     @Transactional(readOnly = true)
@@ -194,10 +202,13 @@ public class AdminOpenRouterAccountService {
         if (snapshot.getVendorWorkspaceId() == null && openRouterProperties.configured()) {
             UUID legacyWorkspaceId = validateCandidate(
                     snapshot, openRouterProperties.managementKey());
-            if (workspaceId.equals(legacyWorkspaceId)) {
+            if (workspaceId.equals(legacyWorkspaceId)
+                    || sharesManagementScope(snapshot, openRouterProperties.managementKey(),
+                            legacyWorkspaceId, form.managementKey())) {
                 throw legacyWorkspaceConflict();
             }
         }
+        rejectSharedVendorAccount(snapshot, form.managementKey());
         accountRepository.findByVendorWorkspaceId(workspaceId)
                 .filter(other -> !other.getId().equals(snapshot.getId()))
                 .ifPresent(other -> { throw workspaceConflict(); });
@@ -242,48 +253,83 @@ public class AdminOpenRouterAccountService {
         if (snapshot.staged() == null) {
             throw credentialState("활성화할 STAGED credential이 없습니다.");
         }
-        String stagedSecret = decrypt(snapshot.account(), snapshot.staged());
-        String activeSecret = snapshot.active() == null ? null
-                : decrypt(snapshot.account(), snapshot.active());
+        OpenRouterAccountResponse result;
+        AtomicReference<OpenRouterClient.CreatedKey> identityMarker = new AtomicReference<>();
+        AtomicReference<String> identitySecret = new AtomicReference<>();
         try {
-            if (activeSecret != null && sameSecret(activeSecret, stagedSecret)) {
-                throw verificationFailed(OpenRouterCredentialError.CREDENTIAL_ERROR);
-            }
-            validateCandidate(snapshot.account(), stagedSecret);
-            if (activeSecret != null) {
-                crossManagementProbe(snapshot.account(), activeSecret, stagedSecret);
-            }
+            result = tx.execute(status -> {
+                // Serializes the only operation that can make a newly staged
+                // vendor billing account ACTIVE. Without this, two concurrent
+                // first activations can both observe no existing ACTIVE scope.
+                Object identityLock = entityManager.createNativeQuery(
+                        "select pg_try_advisory_xact_lock(6841807811705001)")
+                        .getSingleResult();
+                if (!Boolean.TRUE.equals(identityLock)) {
+                    throw credentialState(
+                            "다른 OpenRouter credential activation이 진행 중입니다. 다시 시도해 주세요.");
+                }
+                String stagedSecret = decrypt(snapshot.account(), snapshot.staged());
+                String activeSecret = snapshot.active() == null ? null
+                        : decrypt(snapshot.account(), snapshot.active());
+                if (activeSecret != null && sameSecret(activeSecret, stagedSecret)) {
+                    throw verificationFailed(OpenRouterCredentialError.CREDENTIAL_ERROR);
+                }
+                validateCandidate(snapshot.account(), stagedSecret);
+                rejectSharedVendorAccount(snapshot.account(), stagedSecret);
+                if (activeSecret != null) {
+                    crossManagementProbe(snapshot.account(), activeSecret, stagedSecret);
+                }
+
+                OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
+                requireActive(locked);
+                List<OpenRouterAccountCredential> credentials =
+                        credentialRepository.findAllWithLockByAccountId(locked.getId());
+                OpenRouterAccountCredential staged = byId(
+                        credentials, snapshot.staged().getId());
+                OpenRouterAccountCredential active = snapshot.active() == null ? null
+                        : byId(credentials, snapshot.active().getId());
+                if (staged.getStatus() != OpenRouterCredentialStatus.STAGED
+                        || (active != null
+                            && active.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
+                    throw credentialState(
+                            "검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
+                }
+                if (locked.getVendorIdentityKeyHash() == null) {
+                    OpenRouterClient.CreatedKey marker = createIdentityMarker(
+                            locked, stagedSecret);
+                    identityMarker.set(marker);
+                    identitySecret.set(stagedSecret);
+                    locked.establishVendorIdentityKey(marker.hash(), Instant.now());
+                }
+                entityManager.createNativeQuery(
+                        "set constraints openrouter_account_credentials_slot_uq deferred")
+                        .executeUpdate();
+                Instant now = Instant.now();
+                if (active != null) {
+                    active.markUsed(now);
+                    active.retire(now);
+                }
+                staged.recordVerificationSuccess(now);
+                staged.activate(now);
+                auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                        AuditService.OPENROUTER_CREDENTIAL_ACTIVATE, "openrouter_account",
+                        locked.getPublicId(), Map.of("rotation", active != null), ip);
+                return response(locked);
+            });
+            identityMarker.set(null);
+            identitySecret.set(null);
         } catch (CredentialVerificationException e) {
+            cleanupIdentityMarker(snapshot.account(), identitySecret.get(),
+                    identityMarker.get());
             recordActivationVerificationFailure(snapshot, e.category());
             throw e;
+        } catch (RuntimeException e) {
+            cleanupIdentityMarker(snapshot.account(), identitySecret.get(),
+                    identityMarker.get());
+            throw e;
         }
-        return tx.execute(status -> {
-            OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
-            requireActive(locked);
-            List<OpenRouterAccountCredential> credentials =
-                    credentialRepository.findAllWithLockByAccountId(locked.getId());
-            OpenRouterAccountCredential staged = byId(credentials, snapshot.staged().getId());
-            OpenRouterAccountCredential active = snapshot.active() == null ? null
-                    : byId(credentials, snapshot.active().getId());
-            if (staged.getStatus() != OpenRouterCredentialStatus.STAGED
-                    || (active != null && active.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
-                throw credentialState("검증 뒤 credential 상태가 바뀌었습니다. 다시 시도해 주세요.");
-            }
-            entityManager.createNativeQuery(
-                    "set constraints openrouter_account_credentials_slot_uq deferred")
-                    .executeUpdate();
-            Instant now = Instant.now();
-            if (active != null) {
-                active.markUsed(now);
-                active.retire(now);
-            }
-            staged.recordVerificationSuccess(now);
-            staged.activate(now);
-            auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                    AuditService.OPENROUTER_CREDENTIAL_ACTIVATE, "openrouter_account",
-                    locked.getPublicId(), Map.of("rotation", active != null), ip);
-            return response(locked);
-        });
+        creditRefreshScheduler.requestAfterCredentialChange(accountId);
+        return result;
     }
 
     @Transactional
@@ -306,7 +352,7 @@ public class AdminOpenRouterAccountService {
         RotationSnapshot snapshot = rotationSnapshot(actor, accountId, form.confirmName());
         validateCredentialNow(snapshot.account(), snapshot.retiring(),
                 OpenRouterCredentialStatus.RETIRING);
-        return tx.execute(status -> {
+        OpenRouterAccountResponse result = tx.execute(status -> {
             OpenRouterAccount account = requireWritableWithLock(actor, accountId);
             List<OpenRouterAccountCredential> credentials =
                     credentialRepository.findAllWithLockByAccountId(account.getId());
@@ -328,6 +374,8 @@ public class AdminOpenRouterAccountService {
                     account.getPublicId(), Map.of(), ip);
             return response(account);
         });
+        creditRefreshScheduler.requestAfterCredentialChange(accountId);
+        return result;
     }
 
     public OpenRouterAccountResponse finalizeRetiring(AuthenticatedUser actor, UUID accountId,
@@ -407,6 +455,115 @@ public class AdminOpenRouterAccountService {
                 } catch (RuntimeException ignored) { }
             }
             throw verificationFailed(classifyVerificationError(e));
+        }
+    }
+
+    private void rejectSharedVendorAccount(OpenRouterAccount account, String candidateSecret) {
+        for (OpenRouterAccount other : accountRepository.findAll()) {
+            if (other.getId().equals(account.getId())
+                    || other.getVendorIdentityKeyHash() == null
+                    || other.getVendorWorkspaceId() == null) {
+                continue;
+            }
+            try {
+                OpenRouterClient.ManagedKey identity = client.getKey(candidateSecret,
+                        other.getVendorWorkspaceId(), other.getVendorIdentityKeyHash());
+                if (identity != null) {
+                    throw credentialState(
+                            "같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+                }
+            } catch (OpenRouterException error) {
+                if (error.status() != 404) {
+                    throw verificationFailed(classifyVerificationError(error));
+                }
+                OpenRouterAccountCredential active = credentialRepository
+                        .findByAccountIdAndStatus(other.getId(),
+                                OpenRouterCredentialStatus.ACTIVE)
+                        .orElse(null);
+                if (active == null) {
+                    throw credentialState(
+                            "기존 account의 vendor identity marker를 확인할 수 없습니다. 먼저 해당 account의 credential을 복구해 주세요.");
+                }
+                if (sharesManagementScope(other, decrypt(other, active),
+                        other.getVendorWorkspaceId(), candidateSecret)) {
+                    throw credentialState(
+                            "같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+                }
+            }
+        }
+        for (OpenRouterAccountCredential credential : credentialRepository
+                .findByStatus(OpenRouterCredentialStatus.ACTIVE)) {
+            if (credential.getAccountId().equals(account.getId())) {
+                continue;
+            }
+            OpenRouterAccount other = accountRepository.findById(credential.getAccountId())
+                    .orElse(null);
+            if (other == null || other.getVendorWorkspaceId() == null
+                    || other.getVendorIdentityKeyHash() != null) {
+                continue;
+            }
+            String existingSecret = decrypt(other, credential);
+            if (sharesManagementScope(other, existingSecret, other.getVendorWorkspaceId(),
+                    candidateSecret)) {
+                throw credentialState("같은 OpenRouter billing account가 이미 등록되어 있습니다.");
+            }
+        }
+    }
+
+    private OpenRouterClient.CreatedKey createIdentityMarker(OpenRouterAccount account,
+            String secret) {
+        OpenRouterClient.CreatedKey created = null;
+        try {
+            created = client.createKey(secret, account.getVendorWorkspaceId(),
+                    "pickle-billing-identity-" + account.getPublicId(), BigDecimal.ZERO,
+                    null, null);
+            if (created == null) {
+                throw new OpenRouterException(0, "identity marker creation returned no key");
+            }
+            requiredWorkspace(account, created.workspaceId());
+            client.setDisabled(secret, account.getVendorWorkspaceId(), created.hash(), true);
+            return created;
+        } catch (OpenRouterException | IllegalStateException error) {
+            cleanupIdentityMarker(account, secret, created);
+            throw verificationFailed(classifyVerificationError(error));
+        }
+    }
+
+    private void cleanupIdentityMarker(OpenRouterAccount account, @Nullable String secret,
+            OpenRouterClient.@Nullable CreatedKey created) {
+        if (secret == null || created == null) {
+            return;
+        }
+        try {
+            client.deleteKey(secret, account.getVendorWorkspaceId(), created.hash());
+        } catch (RuntimeException ignored) { }
+    }
+
+    private boolean sharesManagementScope(OpenRouterAccount owner, String existingSecret,
+            UUID existingWorkspace, String candidateSecret) {
+        OpenRouterClient.CreatedKey created = null;
+        try {
+            created = client.createKey(existingSecret, existingWorkspace,
+                    "pickle-account-identity-probe-" + owner.getPublicId(), BigDecimal.ZERO,
+                    null, Instant.now().plus(Duration.ofMinutes(5)));
+            if (created.workspaceId() == null
+                    || !existingWorkspace.equals(created.workspaceId())) {
+                throw new OpenRouterException(0, "workspace identity mismatch");
+            }
+            return client.getKey(candidateSecret, existingWorkspace, created.hash()) != null;
+        } catch (OpenRouterException error) {
+            if (error.status() == 404) {
+                return false;
+            }
+            throw verificationFailed(classifyVerificationError(error));
+        } catch (IllegalStateException error) {
+            throw verificationFailed(classifyVerificationError(error));
+        } finally {
+            if (created != null) {
+                try {
+                    client.deleteKey(existingSecret, existingWorkspace, created.hash());
+                } catch (RuntimeException ignored) { }
+            }
         }
     }
 
@@ -560,6 +717,10 @@ public class AdminOpenRouterAccountService {
                 != OpenRouterCredentialStatus.ACTIVE)) {
             throw credentialState("Rotation credential을 먼저 취소하거나 finalize해 주세요.");
         }
+        if (account.getVendorIdentityKeyHash() == null) {
+            throw credentialState(
+                    "Vendor identity marker를 확정할 credential rotation이 먼저 필요합니다.");
+        }
         if (keyRepository.countByOpenrouterAccountId(account.getId()) > 0) {
             throw credentialState("Key가 연결된 account의 ACTIVE credential은 삭제할 수 없습니다.");
         }
@@ -650,6 +811,7 @@ public class AdminOpenRouterAccountService {
                 state(active),
                 state(credentials.stream().filter(c -> c.getStatus()
                                 != OpenRouterCredentialStatus.ACTIVE).findFirst().orElse(null)),
+                creditsQuery.get(account),
                 account.getCreatedAt(), account.getUpdatedAt());
     }
 

@@ -82,8 +82,8 @@ public class AdminLlmKeyService {
 
     @Transactional(readOnly = true)
     public PageResponse<AdminLlmKeySummaryResponse> list(AuthenticatedUser actor, UUID orgId,
-            UUID workspaceId, UUID requestId, LlmApiKeyStatus status, String query,
-            int page, int size) {
+            UUID workspaceId, UUID requestId, UUID openrouterAccountId,
+            LlmApiKeyStatus status, String query, int page, int size) {
         Long requestedOrgId = orgId == null ? null
                 : orgRepository.findByPublicId(orgId).map(Org::getId).orElse(null);
         OrgScope scope = AdminOrgScope.read(actor, orgId, requestedOrgId);
@@ -91,10 +91,14 @@ public class AdminLlmKeyService {
                 : workspaceRepository.findByPublicId(workspaceId).map(Workspace::getId).orElse(null);
         Long requestedRequestId = requestId == null ? null
                 : requestRepository.findByPublicId(requestId).map(Request::getId).orElse(null);
+        Long requestedAccountId = openrouterAccountId == null ? null
+                : accountRepository.findByPublicId(openrouterAccountId)
+                        .map(OpenRouterAccount::getId).orElse(null);
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
         if ((!scope.isUnrestricted() && scope.orgIds().isEmpty())
                 || (workspaceId != null && requestedWorkspaceId == null)
-                || (requestId != null && requestedRequestId == null)) {
+                || (requestId != null && requestedRequestId == null)
+                || (openrouterAccountId != null && requestedAccountId == null)) {
             return PageResponse.of(List.of(), Page.empty(pageable));
         }
 
@@ -110,6 +114,10 @@ public class AdminLlmKeyService {
         if (requestedRequestId != null) {
             spec = spec.and((root, ignored, cb) -> cb.equal(root.get("requestId"),
                     requestedRequestId));
+        }
+        if (requestedAccountId != null) {
+            spec = spec.and((root, ignored, cb) -> cb.equal(root.get("openrouterAccountId"),
+                    requestedAccountId));
         }
         if (status != null) {
             if (status == LlmApiKeyStatus.EXPIRED) {

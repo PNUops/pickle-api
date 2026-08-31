@@ -23,6 +23,21 @@ import org.mockito.ArgumentCaptor;
 class OpenRouterReconcilerIsolationTest {
 
     @Test
+    void preUpgradeQueuedEntrypointCannotReconcileAccountScopesOutsideAPair() {
+        LlmApiKeyRepository keys = mock(LlmApiKeyRepository.class);
+        OpenRouterClient client = mock(OpenRouterClient.class);
+        DriftFindingRepository findings = mock(DriftFindingRepository.class);
+        OpenRouterSpendRecorder spends = mock(OpenRouterSpendRecorder.class);
+        OpenRouterCredentialResolver resolver = mock(OpenRouterCredentialResolver.class);
+        when(resolver.legacyAccess()).thenReturn(java.util.Optional.empty());
+
+        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcile();
+
+        verifyNoInteractions(client, spends, findings);
+        verify(resolver, never()).reconciliationScopes();
+    }
+
+    @Test
     void failedActiveScopeRecordsCredentialErrorInsteadOfMarkingReconciled() {
         LlmApiKeyRepository keys = mock(LlmApiKeyRepository.class);
         OpenRouterClient client = mock(OpenRouterClient.class);
@@ -39,7 +54,7 @@ class OpenRouterReconcilerIsolationTest {
         when(client.listKeys("failed-management-key", workspace))
                 .thenThrow(new OpenRouterException(401, "vendor body discarded"));
 
-        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcile();
+        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcileAllScopes();
 
         verify(resolver).markVerificationFailure(
                 eq(access), eq(OpenRouterCredentialError.CREDENTIAL_ERROR), any());
@@ -63,7 +78,7 @@ class OpenRouterReconcilerIsolationTest {
         when(client.listKeys("healthy-management-key", workspace)).thenReturn(List.of());
         when(keys.findByOpenrouterAccountId(2L)).thenReturn(List.of());
 
-        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcile();
+        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcileAllScopes();
 
         verify(client).listKeys("healthy-management-key", workspace);
         verify(resolver).markReconciled(any(), any());
@@ -98,7 +113,7 @@ class OpenRouterReconcilerIsolationTest {
         when(keys.findByOpenrouterAccountId(11L)).thenReturn(List.of(localA));
         when(keys.findByOpenrouterAccountId(12L)).thenReturn(List.of(localB));
 
-        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcile();
+        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcileAllScopes();
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<OpenRouterSpendRecorder.Spend>> captured =
