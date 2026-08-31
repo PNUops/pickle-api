@@ -134,14 +134,15 @@ public class LlmUsageService {
             String errorType, Instant requestedAt, Long keyId) {
         return jdbcTemplate.query("""
                 insert into llm_usage_events (event_id, key_id, generation, public_model_name,
-                    upstream_ref, attempts, status, error_type, input_tokens, output_tokens,
-                    estimated, latency_ms, ttft_ms, requested_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    budget_axis, upstream_ref, attempts, status, error_type, input_tokens,
+                    output_tokens, estimated, latency_ms, ttft_ms, requested_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (event_id) do nothing
                 returning id
                 """, rs -> rs.next() ? rs.getLong(1) : null,
                 eventId, keyId, event.generation(),
                 Texts.sanitizeReported(event.publicModelName(), REPORTED_TEXT_MAX),
+                budgetAxis(event.budgetAxis()),
                 Texts.sanitizeReported(event.upstreamRef(), REPORTED_TEXT_MAX),
                 event.attempts(), status,
                 errorType,
@@ -149,6 +150,15 @@ public class LlmUsageService {
                 Boolean.TRUE.equals(event.estimated()),
                 nonNegative(event.latencyMs()), event.ttftMs(),
                 requestedAt.atOffset(ZoneOffset.UTC));
+    }
+
+    /** Unknown or malformed additive reports remain usable and aggregate as UNKNOWN. */
+    private static String budgetAxis(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.strip();
+        return "TOKEN".equals(stripped) || "CREDIT".equals(stripped) ? stripped : null;
     }
 
     /**

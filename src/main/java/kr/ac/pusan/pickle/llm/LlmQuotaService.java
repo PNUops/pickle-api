@@ -60,15 +60,14 @@ public class LlmQuotaService {
      * to nobody's allowance — charging them to a key would let one client's
      * bad-key loop exhaust somebody else's quota.
      *
-     * <p>Only TOKEN-axis models' events count: the daily token allowance is
+     * <p>Only TOKEN-axis events count: the daily token allowance is
      * the self-serve budget, and commercial (CREDIT-axis) usage answers to the
      * key's money limit instead — summing both here would let paid traffic
-     * drain the self-serve allowance. A passthrough model name is absent from
-     * {@code llm_models} and is CREDIT by construction, so the EXISTS filter
-     * excludes it for free; the cost is that an event whose model row was
-     * later deleted or re-axed is counted by the model's <i>current</i> axis,
-     * which is accepted (the catalogue is append-mostly and rows outlive use
-     * by design).
+     * drain the self-serve allowance. V99 events carry the request-time axis,
+     * which wins even if the catalogue is later re-axed. Null is the additive
+     * old-gateway shape; only those rows fall back to the current catalogue so
+     * the API can deploy before the gateway without temporarily undercounting.
+     * A null-axis passthrough name has no catalogue row and remains excluded.
      */
     private static final String DRIFTED_SQL = """
             select k.id,
@@ -79,9 +78,11 @@ public class LlmQuotaService {
                      on e.key_id = k.id
                     and e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
                     and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
-                    and exists (select 1 from llm_models m
-                                 where m.public_name = e.public_model_name
-                                   and m.budget_axis = 'TOKEN')
+                    and (e.budget_axis = 'TOKEN'
+                         or (e.budget_axis is null and exists (
+                             select 1 from llm_models m
+                              where m.public_name = e.public_model_name
+                                and m.budget_axis = 'TOKEN')))
              where k.daily_tokens is not null
              group by k.id, k.quota_exhausted, k.daily_tokens
             having (coalesce(sum(e.input_tokens + e.output_tokens), 0) >= k.daily_tokens)

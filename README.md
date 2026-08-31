@@ -23,7 +23,8 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **프로비저닝 파이프라인**: 승인된 신청을 받아 VM을 만들고 내부 IP와 초기 계정, 접속
   정보까지 준비합니다.
 - **LLM API 키 관리**: 승인된 신청에서 키를 만들고 발급과 한도, 정지, 재개, 폐기 상태를
-  관리합니다. 관리자 조회는 기관별 역할 범위로 제한합니다.
+  관리합니다. 관리자 조회는 기관별 역할 범위로 제한하며, 7·30·90일 수요와 주요 소비처,
+  실제 한도 차단, usage 전달 신뢰도를 DB cache에서 함께 조회합니다.
 - **기관별 OpenRouter 사업 account**: 한 기관이 사업·재원별 account를 여러 개 등록하고,
   검증된 management credential을 staged overlap으로 교체합니다. 금액 축 key는 승인 시 한
   account에 불변 binding되며 account-bound 호출은 legacy env credential로 fallback하지 않습니다.

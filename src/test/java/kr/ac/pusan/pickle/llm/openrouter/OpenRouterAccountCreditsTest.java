@@ -478,7 +478,7 @@ class OpenRouterAccountCreditsTest {
                 fixture.account().getId(), adminId);
         LlmUsageRequest.UsageEvent event = new LlmUsageRequest.UsageEvent(
                 "credit-trigger-event", 1L, keyPublicId.toString(), "openai/model",
-                "openrouter", 1, "error", "credit_exhausted", 0, 0, false,
+                "CREDIT", "openrouter", 1, "error", "credit_exhausted", 0, 0, false,
                 10L, null, NOW.toString());
 
         assertThat(usageService.ingest(new LlmUsageRequest("test", java.util.List.of(event)))

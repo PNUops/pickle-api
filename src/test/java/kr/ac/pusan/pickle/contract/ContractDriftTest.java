@@ -131,6 +131,7 @@ class ContractDriftTest {
             "POST /admin/llm/keys/{keyId}/resume",
             "GET /admin/llm/status",
             "GET /admin/llm/metrics",
+            "GET /admin/llm/usage",
             "GET /admin/llm/accounts",
             "POST /admin/llm/accounts",
             "GET /admin/llm/accounts/{accountId}",
@@ -342,6 +343,16 @@ class ContractDriftTest {
                 .contains("number", "null");
         assertThat(credits.path("properties").has("managementKey")).isFalse();
         assertThat(credits.path("properties").has("credentialEnc")).isFalse();
+    }
+
+    @Test
+    void llmLimitPressureReasonPublishesTheExactGatewayVocabulary() throws Exception {
+        JsonNode reason = fetchRuntimeSpec().path("components").path("schemas")
+                .path("LlmLimitPressureResponse").path("properties").path("reason");
+        List<String> values = new ArrayList<>();
+        reason.path("enum").forEach(value -> values.add(value.asText()));
+        assertThat(values).containsExactly("quota_exhausted", "credit_exhausted",
+                "rate_limit_requests", "rate_limit_tokens", "rate_limit_concurrency");
     }
 
     @Test

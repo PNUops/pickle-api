@@ -141,7 +141,69 @@ class LlmUsageRollupTest {
         insertEvent("2026-08-20T03:00:00Z", "pickle-general", "OK", 1, 1, 10);
         rollupService.refresh();
 
+        jdbcTemplate.update("update llm_usage_rollup_state set last_success_at = "
+                + "now() - interval '1 day'");
+        Instant before = jdbcTemplate.queryForObject(
+                "select last_success_at from llm_usage_rollup_state", Instant.class);
+
         assertThat(rollupService.refresh()).isZero();
+        Instant after = jdbcTemplate.queryForObject(
+                "select last_success_at from llm_usage_rollup_state", Instant.class);
+        assertThat(after).isAfter(before);
+    }
+
+    @Test
+    void requestTimeAxisAndEstimatedTokensAreRolledUpWithoutInference() {
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name,
+                        budget_axis, status, input_tokens, output_tokens, estimated,
+                        latency_ms, requested_at)
+                values (?, ?, 'pickle-general', 'TOKEN', 'OK', 10, 20, false, 10,
+                            '2026-08-20T03:00:00Z'),
+                       (?, ?, 'vendor/model', 'CREDIT', 'OK', 3, 7, true, 10,
+                            '2026-08-20T03:10:00Z'),
+                       (?, ?, null, null, 'RATE_LIMITED', 0, 0, true, 1,
+                            '2026-08-20T03:20:00Z')
+                """, UUID.randomUUID().toString(), keyId,
+                UUID.randomUUID().toString(), keyId,
+                UUID.randomUUID().toString(), keyId);
+
+        rollupService.refresh();
+
+        Map<String, Object> totals = jdbcTemplate.queryForMap("""
+                select sum(requests) as requests,
+                       sum(token_axis_requests) as token_axis_requests,
+                       sum(credit_axis_requests) as credit_axis_requests,
+                       sum(unknown_axis_requests) as unknown_axis_requests,
+                       sum(estimated_tokens) as estimated_tokens
+                  from llm_usage_daily
+                """);
+        assertThat(((Number) totals.get("requests")).longValue()).isEqualTo(3L);
+        assertThat(((Number) totals.get("token_axis_requests")).longValue()).isEqualTo(1L);
+        assertThat(((Number) totals.get("credit_axis_requests")).longValue()).isEqualTo(1L);
+        assertThat(((Number) totals.get("unknown_axis_requests")).longValue()).isEqualTo(1L);
+        assertThat(((Number) totals.get("estimated_tokens")).longValue()).isEqualTo(10L);
+    }
+
+    @Test
+    void preV99RollupInsertRemainsValidAndBecomesUnknownAxis() {
+        jdbcTemplate.update("""
+                insert into llm_usage_daily
+                       (day, key_id, public_model_name, requests, succeeded,
+                        rate_limited, failed, input_tokens, output_tokens,
+                        estimated_requests, latency_ms_sum)
+                values ('2026-08-20', ?, 'old-writer-model', 2, 2, 0, 0, 3, 4, 0, 10)
+                """, keyId);
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select token_axis_requests, credit_axis_requests,
+                       unknown_axis_requests, estimated_tokens
+                  from llm_usage_daily where public_model_name = 'old-writer-model'
+                """);
+        assertThat(row.get("token_axis_requests")).isEqualTo(0L);
+        assertThat(row.get("credit_axis_requests")).isEqualTo(0L);
+        assertThat(row.get("unknown_axis_requests")).isEqualTo(2L);
+        assertThat(row.get("estimated_tokens")).isNull();
     }
 
     @Test
