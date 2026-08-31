@@ -300,6 +300,15 @@ components:
           - "null"
         name:
           type: "string"
+        openrouterAccountId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        openrouterAccountName:
+          type:
+          - "string"
+          - "null"
         orgId:
           format: "uuid"
           type:
@@ -379,6 +388,12 @@ components:
           type:
           - "integer"
           - "null"
+        openrouterAccountId:
+          description: "금액 축 사업 account. 생략하거나 null이면 기존 binding을 유지합니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
         rpm:
           description: "분당 요청 한도. null이면 서비스 기본값을 따릅니다."
           format: "int32"
@@ -441,6 +456,15 @@ components:
           - "null"
         name:
           type: "string"
+        openrouterAccountId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        openrouterAccountName:
+          type:
+          - "string"
+          - "null"
         orgId:
           format: "uuid"
           type:
@@ -1244,6 +1268,12 @@ components:
           type:
           - "integer"
           - "null"
+        openrouterAccountId:
+          description: "금액 축에 사용할 기관 OpenRouter 사업 account. 하나뿐이면 생략할 수 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
       type: "object"
     ApproveRequestRequest:
       properties:
@@ -1572,6 +1602,16 @@ components:
       - "currentPassword"
       - "newPassword"
       type: "object"
+    ConfirmOpenRouterAccountRequest:
+      properties:
+        confirmName:
+          description: "Account 이름과 정확히 같아야 하는 확인값"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+      required:
+      - "confirmName"
+      type: "object"
     ConsentInput:
       properties:
         docType:
@@ -1658,6 +1698,41 @@ components:
           type:
           - "string"
           - "null"
+      type: "object"
+    CreateOpenRouterAccountRequest:
+      properties:
+        confirmName:
+          description: "오입력 방지를 위해 name과 정확히 같아야 하는 확인값"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        evidenceReference:
+          description: "증빙 참조. 없으면 null"
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        fundingReference:
+          description: "재원 참조. 없으면 null"
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        name:
+          description: "기관 관리자가 구분하는 사업 account 이름"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        orgId:
+          description: "Account를 소유할 기관 공개 ID"
+          format: "uuid"
+          type: "string"
+      required:
+      - "confirmName"
+      - "name"
+      - "orgId"
       type: "object"
     CreateOrgRequest:
       properties:
@@ -2118,6 +2193,21 @@ components:
       required:
       - "field"
       - "message"
+      type: "object"
+    FinalizeOpenRouterCredentialRequest:
+      properties:
+        confirmName:
+          description: "Account 이름과 정확히 같아야 하는 확인값"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        vendorRevocationConfirmed:
+          description: "Vendor console에서 대상 management key를 폐기했으면 true. API는 vendor\
+            \ key를 폐기하지 않습니다."
+          type: "boolean"
+      required:
+      - "confirmName"
+      - "vendorRevocationConfirmed"
       type: "object"
     ForceDeleteVmRequest:
       properties:
@@ -4075,6 +4165,151 @@ components:
       - "expiresAt"
       - "state"
       type: "object"
+    OpenRouterAccountResponse:
+      properties:
+        activeCredential:
+          anyOf:
+          - $ref: "#/components/schemas/OpenRouterCredentialStateResponse"
+          - type: "null"
+          description: "현재 ACTIVE credential의 secret-free 상태. 없으면 null"
+        boundKeyCount:
+          description: "이 account에 불변 binding된 Pickle LLM key 수"
+          format: "int64"
+          type: "integer"
+        createdAt:
+          description: "등록 시각"
+          format: "date-time"
+          type: "string"
+        credentialAvailable:
+          description: "프로비저닝과 대사에 사용할 management credential이 있는지"
+          type: "boolean"
+        eligibleForBinding:
+          description: "현재 positive-credit key binding에 선택할 수 있는지"
+          type: "boolean"
+        evidenceReference:
+          description: "증빙 참조. 없으면 null"
+          type:
+          - "string"
+          - "null"
+        fundingReference:
+          description: "재원 참조. 없으면 null"
+          type:
+          - "string"
+          - "null"
+        id:
+          description: "Account 공개 ID"
+          format: "uuid"
+          type: "string"
+        name:
+          description: "사업 account 이름"
+          type: "string"
+        orgId:
+          description: "소유 기관 공개 ID"
+          format: "uuid"
+          type: "string"
+        orgName:
+          description: "소유 기관 이름"
+          type: "string"
+        rotationCredential:
+          anyOf:
+          - $ref: "#/components/schemas/OpenRouterCredentialStateResponse"
+          - type: "null"
+          description: "STAGED 또는 RETIRING credential의 secret-free 상태. 없으면 null"
+        status:
+          $ref: "#/components/schemas/OpenRouterAccountStatus"
+          description: "Account lifecycle 상태"
+        updatedAt:
+          description: "Metadata 최종 변경 시각"
+          format: "date-time"
+          type: "string"
+      required:
+      - "boundKeyCount"
+      - "createdAt"
+      - "credentialAvailable"
+      - "eligibleForBinding"
+      - "id"
+      - "name"
+      - "orgId"
+      - "orgName"
+      - "status"
+      - "updatedAt"
+      type: "object"
+    OpenRouterAccountStatus:
+      enum:
+      - "ACTIVE"
+      - "ARCHIVED"
+      type: "string"
+    OpenRouterCredentialError:
+      enum:
+      - "CREDENTIAL_ERROR"
+      - "THROTTLED"
+      - "VENDOR_UNAVAILABLE"
+      - "VENDOR_REJECTED"
+      type: "string"
+    OpenRouterCredentialStateResponse:
+      properties:
+        activatedAt:
+          description: "ACTIVE 전환 시각. 활성화 전이면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        createdAt:
+          description: "등록 시각"
+          format: "date-time"
+          type: "string"
+        lastReconciledAt:
+          description: "이 credential로 key reconciliation이 마지막으로 성공한 시각. 성공 전이면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        lastUsedAt:
+          description: "Management API 호출에 마지막으로 사용한 시각. 사용 전이면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        lastVerificationAttemptAt:
+          description: "마지막 검증 시도 시각. 시도 전이면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        retiringAt:
+          description: "RETIRING 전환 시각. 해당 상태가 아니면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        retiringOverdue:
+          description: "RETIRING 상태가 24시간을 넘었는지"
+          type: "boolean"
+        status:
+          $ref: "#/components/schemas/OpenRouterCredentialStatus"
+          description: "Credential lifecycle 상태"
+        verificationError:
+          anyOf:
+          - $ref: "#/components/schemas/OpenRouterCredentialError"
+          - type: "null"
+          description: "마지막 검증 오류 분류. 최근 검증이 성공했으면 null"
+        verifiedAt:
+          description: "마지막 검증 성공 시각. 성공 이력이 없으면 null"
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "createdAt"
+      - "retiringOverdue"
+      - "status"
+      type: "object"
+    OpenRouterCredentialStatus:
+      enum:
+      - "STAGED"
+      - "ACTIVE"
+      - "RETIRING"
+      type: "string"
     OrgDashboardSummaryResponse:
       properties:
         attention:
@@ -5591,6 +5826,23 @@ components:
       - "name"
       - "password"
       type: "object"
+    StageOpenRouterCredentialRequest:
+      properties:
+        confirmName:
+          description: "Account 이름과 정확히 같아야 하는 확인값"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        managementKey:
+          description: "OpenRouter management key. 응답에는 반환되지 않습니다."
+          maxLength: 4096
+          minLength: 0
+          type: "string"
+          writeOnly: true
+      required:
+      - "confirmName"
+      - "managementKey"
+      type: "object"
     SuspendAdminLlmKeyRequest:
       properties:
         reason:
@@ -5884,6 +6136,31 @@ components:
             영향)"
       required:
       - "status"
+      type: "object"
+    UpdateOpenRouterAccountRequest:
+      properties:
+        evidenceReference:
+          description: "새 증빙 참조. 생략하면 유지하고 null이면 지웁니다."
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        fundingReference:
+          description: "새 재원 참조. 생략하면 유지하고 null이면 지웁니다."
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        name:
+          description: "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다."
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        status:
+          $ref: "#/components/schemas/OpenRouterAccountStatus"
+          description: "새 lifecycle 상태. 생략하면 유지하며 null은 허용하지 않습니다."
       type: "object"
     UpdateOrgRequest:
       properties:
@@ -7208,7 +7485,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.54.1"
+  version: "0.55.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -7735,6 +8012,419 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-ip-allocation-controller"
+  /admin/llm/accounts:
+    get:
+      description: "관리 범위의 사업·재원별 OpenRouter account와 credential 상태를 조회합니다. 인증 정보와\
+        \ vendor 내부 식별자는 반환하지 않습니다."
+      operationId: "listAdminLlmAccounts"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/OpenRouterAccountResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 사업 account 목록"
+      tags:
+      - "admin"
+    post:
+      description: "기관에 사업·재원별 account metadata를 등록합니다. 재인증과 이름 확인이 필요하며 management\
+        \ credential은 별도 stage 작업으로 검증합니다."
+      operationId: "createAdminLlmAccount"
+      parameters:
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOpenRouterAccountRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 사업 account 등록"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}:
+    get:
+      description: "관리 범위의 account metadata, binding 가능 여부, 연결된 key 수와 secret-free\
+        \ credential lifecycle 상태를 조회합니다."
+      operationId: "getAdminLlmAccount"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 사업 account 상세"
+      tags:
+      - "admin"
+    patch:
+      description: "이름·재원·증빙 참조·상태 중 보낸 항목만 변경합니다. 활성 또는 미만료 key가 연결된 account는 보관할\
+        \ 수 없습니다."
+      operationId: "updateAdminLlmAccount"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOpenRouterAccountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 사업 account 정보 수정"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/active/delete:
+    post:
+      description: "연결된 key와 rotation이 없고 운영자가 vendor console 폐기를 확인한 경우에만 ACTIVE\
+        \ 암호문을 삭제합니다. API는 vendor management key 자체를 폐기하지 않습니다."
+      operationId: "deleteActiveAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizeOpenRouterCredentialRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "사용하지 않는 OpenRouter credential 삭제"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/retiring/finalize:
+    post:
+      description: "새 ACTIVE credential로 key reconciliation이 성공하고 운영자가 vendor console에\
+        서 이전 management key를 폐기했음을 확인한 뒤 RETIRING 암호문을 삭제합니다."
+      operationId: "finalizeAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizeOpenRouterCredentialRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "이전 OpenRouter credential 정리"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/retiring/rollback:
+    post:
+      description: "재인증과 이름 확인 뒤 현재 ACTIVE를 STAGED로, 이전 RETIRING을 ACTIVE로 원자적으로 되돌\
+        립니다. Vendor credential은 API가 폐기하지 않습니다."
+      operationId: "rollbackAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmOpenRouterAccountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter credential 교체 되돌리기"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/staged:
+    post:
+      description: "재인증과 account 이름 확인 뒤 management 전용 권한과 vendor workspace를 disposable\
+        \ key로 검증하고 STAGED 상태로 저장합니다. 평문과 credential 조각은 응답하지 않습니다."
+      operationId: "stageAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StageOpenRouterCredentialRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 관리 credential 검증 및 대기 등록"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/staged/activate:
+    post:
+      description: "재인증과 이름 확인 뒤 STAGED credential을 다시 검증합니다. 교체 시 기존 ACTIVE가 만든 disposable\
+        \ key를 새 credential로 조회·수정·삭제한 뒤 두 상태를 원자적으로 ACTIVE와 RETIRING으로 전환합니다."
+      operationId: "activateAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmOpenRouterAccountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "대기 중 OpenRouter credential 활성화"
+      tags:
+      - "admin"
+  /admin/llm/accounts/{accountId}/credentials/staged/cancel:
+    post:
+      description: "재인증과 이름 확인 뒤 아직 활성화하지 않은 STAGED credential 암호문을 삭제합니다. ACTIVE\
+        \ credential에는 영향을 주지 않습니다."
+      operationId: "cancelAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmOpenRouterAccountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "대기 중 OpenRouter credential 취소"
+      tags:
+      - "admin"
   /admin/llm/keys:
     get:
       description: "기관과 워크스페이스, 발급 신청, 상태, 검색어로 키를 조회합니다. 키 평문과 해시, 평문 앞부분은 반환하지 않\
@@ -7848,12 +8538,12 @@ paths:
               $ref: "#/components/schemas/AdminLlmKeyLimitsRequest"
         required: true
       responses:
-        "200":
+        "503":
           content:
-            '*/*':
+            application/problem+json:
               schema:
-                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
-          description: "OK"
+                $ref: "#/components/schemas/Problem"
+          description: "OpenRouter account binding 전환 미활성 (`OPENROUTER_ACCOUNT_BINDING_DISABLED`)"
         default:
           content:
             application/problem+json:
@@ -8763,12 +9453,12 @@ paths:
               $ref: "#/components/schemas/ApproveRequestRequest"
         required: true
       responses:
-        "200":
+        "503":
           content:
-            '*/*':
+            application/problem+json:
               schema:
-                $ref: "#/components/schemas/RequestDetailResponse"
-          description: "OK"
+                $ref: "#/components/schemas/Problem"
+          description: "OpenRouter account binding 전환 미활성 (`OPENROUTER_ACCOUNT_BINDING_DISABLED`)"
         default:
           content:
             application/problem+json:

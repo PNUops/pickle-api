@@ -394,9 +394,9 @@ class AdminLlmKeyTest {
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,
                                           token_hash, token_prefix, status, expires_at,
                                           rpm, tpm, concurrency, daily_tokens, credit_limit,
-                                          created_by)
+                                          openrouter_legacy, created_by)
                 values (?, ?, ?, ?, '테스트', ?, ?, ?::llm_api_key_status, ?,
-                        60, 1000, 4, 10000, 1.00, ?)
+                        60, 1000, 4, 10000, 1.00, true, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, name,
                 "PENDING".equals(status) ? null : hash,

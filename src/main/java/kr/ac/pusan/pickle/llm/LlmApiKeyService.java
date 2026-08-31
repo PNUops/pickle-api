@@ -119,7 +119,7 @@ public class LlmApiKeyService {
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
-                            provisioner.deleteAfterRevoke(openrouterKeyHash);
+                            provisioner.deleteAfterRevoke(key.getId(), openrouterKeyHash);
                         }
                     });
         }

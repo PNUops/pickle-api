@@ -5,9 +5,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * OpenRouter key-management link settings ({@code pickle.openrouter.*}). The
- * api provisions one OpenRouter runtime key per pickle key with a money
- * budget, using a management key that can only administer keys — it cannot
- * call completion endpoints, which is what makes storing it here acceptable.
+ * env management key is retained only as the legacy transition source; new
+ * account-bound keys use the encrypted per-account credential keyring.
  *
  * <p>The management key has no default anywhere: when blank the client fails
  * closed at first use (never sends an empty bearer), and the provisioning
@@ -18,13 +17,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param managementKey  management key (PICKLE_OPENROUTER_MGMT_KEY)
  * @param connectTimeout TCP connect timeout (default 5s)
  * @param readTimeout    per-request read timeout (default 30s)
+ * @param accountBindingEnabled whether positive-credit grants may create the
+ *                              first immutable account binding
  */
 @ConfigurationProperties(prefix = "pickle.openrouter")
 public record OpenRouterProperties(
         String baseUrl,
         String managementKey,
         Duration connectTimeout,
-        Duration readTimeout) {
+        Duration readTimeout,
+        boolean accountBindingEnabled) {
 
     public OpenRouterProperties {
         baseUrl = baseUrl != null && !baseUrl.isBlank() ? baseUrl : "https://openrouter.ai/api/v1";

@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
+import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import org.jspecify.annotations.Nullable;
 
@@ -39,6 +40,8 @@ public class AdminLlmKeyLimitsRequest {
 
     private @Nullable CreditLimitReset creditLimitReset;
     private boolean creditLimitResetSet;
+
+    private @Nullable UUID openrouterAccountId;
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
             description = "분당 요청 한도. null이면 서비스 기본값을 따릅니다.")
@@ -104,6 +107,15 @@ public class AdminLlmKeyLimitsRequest {
     public void setCreditLimitReset(@Nullable CreditLimitReset creditLimitReset) {
         this.creditLimitReset = creditLimitReset;
         this.creditLimitResetSet = true;
+    }
+
+    @Schema(description = "금액 축 사업 account. 생략하거나 null이면 기존 binding을 유지합니다.")
+    public @Nullable UUID getOpenrouterAccountId() {
+        return openrouterAccountId;
+    }
+
+    public void setOpenrouterAccountId(@Nullable UUID openrouterAccountId) {
+        this.openrouterAccountId = openrouterAccountId;
     }
 
     @Schema(hidden = true)

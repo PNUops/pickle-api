@@ -253,20 +253,21 @@ class LlmGatewayEndpointTest {
         // is ACTIVE, its money budget positive, and its OpenRouter key
         // provisioned. Every other state omits the member, and omission is
         // what closes the commercial axis for the key.
-        KeyFixture funded = newKey("funded");
+        KeyFixture funded = newLegacyKey("funded");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
-                + "openrouter_key_enc = ? where id = ?",
+                + "openrouter_key_hash = 'hash-funded', openrouter_key_enc = ? where id = ?",
                 credentialCipher.encrypt("sk-or-funded"), funded.id());
-        KeyFixture unfunded = newKey("unfunded");
+        KeyFixture unfunded = newLegacyKey("unfunded");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 0, "
-                + "openrouter_key_enc = ? where id = ?",
+                + "openrouter_key_hash = 'hash-unfunded', openrouter_key_enc = ? where id = ?",
                 credentialCipher.encrypt("sk-or-unfunded"), unfunded.id());
-        KeyFixture unprovisioned = newKey("unprovisioned");
+        KeyFixture unprovisioned = newLegacyKey("unprovisioned");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00 where id = ?",
                 unprovisioned.id());
-        KeyFixture revoked = newKey("revoked-funded");
+        KeyFixture revoked = newLegacyKey("revoked-funded");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
-                + "openrouter_key_enc = ?, status = 'REVOKED', revoked_at = now() "
+                + "openrouter_key_hash = 'hash-revoked', openrouter_key_enc = ?, "
+                + "status = 'REVOKED', revoked_at = now() "
                 + "where id = ?", credentialCipher.encrypt("sk-or-revoked"), revoked.id());
 
         String body = syncFrom(SOURCE, TOKEN, poll(0))
@@ -740,6 +741,12 @@ class LlmGatewayEndpointTest {
         return insertKey(slug, tokenHash, LlmApiKeyTokens.visiblePrefix(plaintext), "ACTIVE");
     }
 
+    private KeyFixture newLegacyKey(String slug) {
+        String plaintext = LlmApiKeyTokens.newToken();
+        return insertKey(slug, LlmApiKeyTokens.hash(plaintext),
+                LlmApiKeyTokens.visiblePrefix(plaintext), "ACTIVE", true);
+    }
+
     /** A key the approval created but the owner has not minted yet. */
     private KeyFixture newPendingKey(String slug) {
         return insertKey(slug, null, null, "PENDING");
@@ -747,6 +754,11 @@ class LlmGatewayEndpointTest {
 
     private KeyFixture insertKey(String slug, String tokenHash, String tokenPrefix,
             String status) {
+        return insertKey(slug, tokenHash, tokenPrefix, status, false);
+    }
+
+    private KeyFixture insertKey(String slug, String tokenHash, String tokenPrefix,
+            String status, boolean openrouterLegacy) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
         String unique = UUID.randomUUID().toString().substring(0, 8);
@@ -766,11 +778,12 @@ class LlmGatewayEndpointTest {
                 """, Long.class, workspaceId, orgId, ownerId, "LLM 키 테스트", "llm-" + slug);
         long id = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name,
-                                          token_hash, token_prefix, status, created_by)
-                values (?, ?, ?, ?, ?, ?, ?::llm_api_key_status, ?)
+                                          token_hash, token_prefix, status, openrouter_legacy,
+                                          created_by)
+                values (?, ?, ?, ?, ?, ?, ?::llm_api_key_status, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "key-" + slug,
-                tokenHash, tokenPrefix, status, ownerId);
+                tokenHash, tokenPrefix, status, openrouterLegacy, ownerId);
         UUID publicId = jdbcTemplate.queryForObject(
                 "select public_id from llm_api_keys where id = ?", UUID.class, id);
         return new KeyFixture(id, publicId, tokenHash);

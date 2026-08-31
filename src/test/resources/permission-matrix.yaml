@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.54.0, 184 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.55.0, 194 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -180,6 +180,16 @@ operations:
   - { id: resumeAdminLlmKey,         method: POST, path: "/admin/llm/keys/{keyId}/resume",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getAdminLlmStatus,         method: GET,  path: "/admin/llm/status",                roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: getAdminLlmMetrics,        method: GET,  path: "/admin/llm/metrics",               roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminLlmAccounts,                  method: GET,   path: "/admin/llm/accounts",                                                   roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createAdminLlmAccount,                 method: POST,  path: "/admin/llm/accounts",                                                   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: getAdminLlmAccount,                    method: GET,   path: "/admin/llm/accounts/{accountId}",                                       roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminLlmAccount,                 method: PATCH, path: "/admin/llm/accounts/{accountId}",                                       roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: stageAdminLlmAccountCredential,        method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/staged",                    roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: activateAdminLlmAccountCredential,     method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/staged/activate",           roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: cancelAdminLlmAccountCredential,       method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/staged/cancel",             roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: rollbackAdminLlmAccountCredential,     method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/retiring/rollback",         roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: finalizeAdminLlmAccountCredential,     method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/retiring/finalize",         roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: deleteActiveAdminLlmAccountCredential, method: POST,  path: "/admin/llm/accounts/{accountId}/credentials/active/delete",             roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
 
   # ── 3.10 Admin — orgs & users ─────────────────────────────────────────────
   - { id: listAdminOrgs,        method: GET,    path: "/admin/orgs",                       roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }

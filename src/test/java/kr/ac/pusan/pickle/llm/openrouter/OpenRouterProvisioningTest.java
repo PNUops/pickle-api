@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.llm.openrouter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -9,7 +10,13 @@ import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import kr.ac.pusan.pickle.common.crypto.CredentialCipher;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKeyService;
@@ -68,7 +75,7 @@ class OpenRouterProvisioningTest {
         Instant expiresAt = Instant.parse("2026-12-31T00:00:00Z");
         jdbcTemplate.update("update llm_api_keys set credit_limit_reset = 'MONTHLY', "
                 + "expires_at = ? where id = ?", java.sql.Timestamp.from(expiresAt), keyId);
-        when(client.createKey(anyString(), any(), any(), any()))
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
                 .thenReturn(new OpenRouterClient.CreatedKey("hash-1", "sk-or-plain"));
         long before = generation();
 
@@ -89,7 +96,8 @@ class OpenRouterProvisioningTest {
         // remote side after our document has stopped serving its credential.
         ArgumentCaptor<BigDecimal> limit = ArgumentCaptor.forClass(BigDecimal.class);
         ArgumentCaptor<Instant> expiry = ArgumentCaptor.forClass(Instant.class);
-        verify(client).createKey(eq(publicIdOf(keyId).toString()), limit.capture(),
+        verify(client).createKey(eq("test-openrouter-legacy-management-key"), eq(null),
+                eq(publicIdOf(keyId).toString()), limit.capture(),
                 eq(CreditLimitReset.MONTHLY), expiry.capture());
         assertThat(limit.getValue()).isEqualByComparingTo("5.00");
         assertThat(expiry.getValue()).isEqualTo(expiresAt);
@@ -98,7 +106,7 @@ class OpenRouterProvisioningTest {
     @Test
     void aFailureIsRecordedWithoutSpendingAGeneration() {
         long keyId = insertKey(new BigDecimal("5.00"), "ACTIVE");
-        when(client.createKey(anyString(), any(), any(), any()))
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
                 .thenThrow(new OpenRouterException(503, "upstream unavailable"));
         long before = generation();
 
@@ -106,7 +114,7 @@ class OpenRouterProvisioningTest {
 
         assertThat(jdbcTemplate.queryForObject(
                 "select openrouter_last_error from llm_api_keys where id = ?",
-                String.class, keyId)).contains("503");
+                String.class, keyId)).isEqualTo("VENDOR_UNAVAILABLE");
         assertThat(jdbcTemplate.queryForObject(
                 "select openrouter_key_hash from llm_api_keys where id = ?",
                 String.class, keyId)).isNull();
@@ -116,13 +124,63 @@ class OpenRouterProvisioningTest {
     }
 
     @Test
-    void unfundedAndRevokedKeysAreNeverProvisioned() {
+    void ineligibleKeysAreRejectedByBothSweepAndDirectEntry() {
         insertKey(BigDecimal.ZERO, "ACTIVE");
-        insertKey(new BigDecimal("5.00"), "REVOKED");
+        long revoked = insertKey(new BigDecimal("5.00"), "REVOKED");
+        long suspended = insertKey(new BigDecimal("5.00"), "SUSPENDED");
+        long expired = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        jdbcTemplate.update("update llm_api_keys set expires_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minusSeconds(1)), expired);
 
+        provisioner.provision(revoked);
+        provisioner.provision(suspended);
+        provisioner.provision(expired);
         provisioner.sweep();
 
-        Mockito.verify(client, Mockito.never()).createKey(anyString(), any(), any(), any());
+        Mockito.verify(client, Mockito.never()).createKey(
+                anyString(), any(), anyString(), any(), any(), any());
+    }
+
+    @Test
+    void concurrentPolicyChangeDeletesTheStaleRemoteKeyWithoutRecordingIt() throws Exception {
+        long keyId = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        CountDownLatch createStarted = new CountDownLatch(1);
+        CountDownLatch releaseCreate = new CountDownLatch(1);
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    createStarted.countDown();
+                    if (!releaseCreate.await(5, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("test create release timed out");
+                    }
+                    return new OpenRouterClient.CreatedKey("hash-race", "runtime-race");
+                });
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            var provisioning = executor.submit(() -> provisioner.provision(keyId));
+            assertThat(createStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            jdbcTemplate.update("""
+                    update llm_api_keys
+                       set status = 'SUSPENDED'::llm_api_key_status,
+                           credit_limit = 7,
+                           credit_limit_reset = 'MONTHLY'
+                     where id = ?
+                    """, keyId);
+            releaseCreate.countDown();
+            provisioning.get(5, TimeUnit.SECONDS);
+
+            verify(client).deleteKey(
+                    "test-openrouter-legacy-management-key", null, "hash-race");
+            assertThat(jdbcTemplate.queryForObject(
+                    "select openrouter_key_hash from llm_api_keys where id = ?",
+                    String.class, keyId)).isNull();
+            assertThat(jdbcTemplate.queryForObject(
+                    "select openrouter_last_error from llm_api_keys where id = ?",
+                    String.class, keyId)).isNull();
+        } finally {
+            releaseCreate.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -141,7 +199,119 @@ class OpenRouterProvisioningTest {
 
         // The service method's transaction committed when it returned, so the
         // after-commit deletion has fired by now.
-        verify(client).deleteKey("hash-r");
+        verify(client).deleteKey("test-openrouter-legacy-management-key", null, "hash-r");
+    }
+
+    @Test
+    void stalePostCommitCallbacksPushTheLatestDatabaseState() {
+        long keyId = insertKey(new BigDecimal("7.00"), "ACTIVE");
+        jdbcTemplate.update("""
+                update llm_api_keys
+                   set openrouter_key_hash = 'hash-current', openrouter_key_enc = ?,
+                       credit_limit_reset = 'MONTHLY'
+                 where id = ?
+                """, credentialCipher.encrypt("runtime-current"), keyId);
+
+        provisioner.updateLimitAfterChange(keyId, "hash-stale", new BigDecimal("2.00"), null);
+        provisioner.setDisabledAfterStatusChange(keyId, "hash-stale", true);
+
+        verify(client).updateLimit("test-openrouter-legacy-management-key", null,
+                "hash-current", new BigDecimal("7.00"), CreditLimitReset.MONTHLY);
+        verify(client).setDisabled("test-openrouter-legacy-management-key", null,
+                "hash-current", false);
+    }
+
+    @Test
+    void lateLimitCallbackReappliesTheLatestDatabaseState() throws Exception {
+        long keyId = insertKey(new BigDecimal("2.00"), "ACTIVE");
+        jdbcTemplate.update("""
+                update llm_api_keys
+                   set openrouter_key_hash = 'hash-converge', openrouter_key_enc = ?
+                 where id = ?
+                """, credentialCipher.encrypt("runtime-converge"), keyId);
+        CountDownLatch oldCallStarted = new CountDownLatch(1);
+        CountDownLatch releaseOldCall = new CountDownLatch(1);
+        List<BigDecimal> vendorWrites = new CopyOnWriteArrayList<>();
+        Mockito.doAnswer(invocation -> {
+            BigDecimal limit = invocation.getArgument(3);
+            vendorWrites.add(limit);
+            if (limit.compareTo(new BigDecimal("2.00")) == 0) {
+                oldCallStarted.countDown();
+                if (!releaseOldCall.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("test limit release timed out");
+                }
+            }
+            return null;
+        }).when(client).updateLimit(anyString(), any(), eq("hash-converge"), any(), any());
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            var oldCallback = executor.submit(() -> provisioner.updateLimitAfterChange(
+                    keyId, "hash-converge", new BigDecimal("2.00"), null));
+            assertThat(oldCallStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            jdbcTemplate.update("""
+                    update llm_api_keys
+                       set credit_limit = 7, credit_limit_reset = 'MONTHLY'
+                     where id = ?
+                    """, keyId);
+            provisioner.updateLimitAfterChange(
+                    keyId, "hash-converge", new BigDecimal("7.00"), CreditLimitReset.MONTHLY);
+
+            releaseOldCall.countDown();
+            oldCallback.get(5, TimeUnit.SECONDS);
+            assertThat(vendorWrites).usingElementComparator(BigDecimal::compareTo)
+                    .containsExactly(new BigDecimal("2.00"), new BigDecimal("7.00"),
+                            new BigDecimal("7.00"));
+        } finally {
+            releaseOldCall.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void lateStatusCallbackReappliesTheLatestDatabaseState() throws Exception {
+        long keyId = insertKey(new BigDecimal("2.00"), "ACTIVE");
+        jdbcTemplate.update("""
+                update llm_api_keys
+                   set openrouter_key_hash = 'hash-status', openrouter_key_enc = ?
+                 where id = ?
+                """, credentialCipher.encrypt("runtime-status"), keyId);
+        CountDownLatch activeCallStarted = new CountDownLatch(1);
+        CountDownLatch releaseActiveCall = new CountDownLatch(1);
+        List<Boolean> vendorWrites = new CopyOnWriteArrayList<>();
+        Mockito.doAnswer(invocation -> {
+            boolean disabled = invocation.getArgument(3);
+            vendorWrites.add(disabled);
+            if (!disabled) {
+                activeCallStarted.countDown();
+                if (!releaseActiveCall.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("test status release timed out");
+                }
+            }
+            return null;
+        }).when(client).setDisabled(anyString(), any(), eq("hash-status"), anyBoolean());
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            var oldCallback = executor.submit(() -> provisioner.setDisabledAfterStatusChange(
+                    keyId, "hash-status", false));
+            assertThat(activeCallStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            jdbcTemplate.update("""
+                    update llm_api_keys
+                       set status = 'SUSPENDED'::llm_api_key_status
+                     where id = ?
+                    """, keyId);
+            provisioner.setDisabledAfterStatusChange(keyId, "hash-status", true);
+
+            releaseActiveCall.countDown();
+            oldCallback.get(5, TimeUnit.SECONDS);
+            assertThat(vendorWrites).containsExactly(false, true, true);
+        } finally {
+            releaseActiveCall.countDown();
+            executor.shutdownNow();
+        }
     }
 
     private long insertKey(BigDecimal creditLimit, String status) {
@@ -160,11 +330,13 @@ class OpenRouterProvisioningTest {
                 """, Long.class, workspaceId, orgId, ownerId, "금액 축 시험", "or-" + unique);
         return jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, token_hash,
-                                          token_prefix, status, credit_limit, created_by)
-                values (?, ?, ?, ?, ?, 'pickle-aa', ?::llm_api_key_status, ?, ?)
+                                          token_prefix, status, credit_limit, openrouter_legacy,
+                                          created_by)
+                values (?, ?, ?, ?, ?, 'pickle-aa', ?::llm_api_key_status, ?, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "key-" + unique,
-                String.format("%064x", requestId), status, creditLimit, ownerId);
+                String.format("%064x", requestId), status, creditLimit,
+                creditLimit.signum() > 0, ownerId);
     }
 
     private UUID publicIdOf(long keyId) {

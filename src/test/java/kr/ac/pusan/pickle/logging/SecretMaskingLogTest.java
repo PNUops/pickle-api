@@ -100,6 +100,7 @@ class SecretMaskingLogTest {
         probe.info("payload {\"password\": \"{}\", \"refreshToken\": \"{}\"}", PASSWORD, "rt-fedcba9876543210");
         probe.info("cloud-init cipassword=vm-secret-pw! secret: hunter2-hunter2");
         probe.info("header Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig");
+        probe.info("payload {\"managementKey\":\"{}\"}", "openrouter-management-secret");
         // 2FA artifacts: recovery codes and the otpauth enrollment URI (carries
         // the Base32 secret) must never surface raw.
         probe.info("mfa disable recoveryCode={} recovery_code={}", "abcd-efgh-jkmn", "pqrs-tuvw-xyz2");
@@ -116,6 +117,7 @@ class SecretMaskingLogTest {
                 .doesNotContain("vm-secret-pw!")
                 .doesNotContain("hunter2-hunter2")
                 .doesNotContain("eyJhbGciOiJIUzI1NiJ9.payload.sig")
+                .doesNotContain("openrouter-management-secret")
                 .doesNotContain("abcd-efgh-jkmn")
                 .doesNotContain("pqrs-tuvw-xyz2")
                 .doesNotContain("JBSWY3DPEHPK3PXP");

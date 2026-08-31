@@ -25,6 +25,8 @@ public record AdminLlmKeySummaryResponse(
         @Nullable CreditLimitReset creditLimitReset,
         @Schema(description = "금액 축이 발급되어 현재 연결되어 있는지")
         boolean creditAxisConnected,
+        @Nullable UUID openrouterAccountId,
+        @Nullable String openrouterAccountName,
         @Nullable UUID workspaceId,
         String workspaceName,
         @Nullable UUID orgId,
@@ -33,11 +35,14 @@ public record AdminLlmKeySummaryResponse(
         Instant createdAt) {
 
     public static AdminLlmKeySummaryResponse from(LlmApiKey key, UUID workspaceId,
-            String workspaceName, UUID orgId, String orgName, UUID requestId, Instant now) {
+            String workspaceName, UUID orgId, String orgName, UUID requestId,
+            @Nullable UUID openrouterAccountId, @Nullable String openrouterAccountName,
+            Instant now) {
         return new AdminLlmKeySummaryResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.effectiveStatus(now), key.getExpiresAt(), key.getLastUsedAt(), key.getRpm(),
                 key.getTpm(), key.getConcurrency(), key.getDailyTokens(), key.getCreditLimit(),
-                key.getCreditLimitReset(), key.isCreditAxisConnected(), workspaceId, workspaceName,
-                orgId, orgName, requestId, key.getCreatedAt());
+                key.getCreditLimitReset(), key.isCreditAxisConnected(), openrouterAccountId,
+                openrouterAccountName, workspaceId, workspaceName, orgId, orgName, requestId,
+                key.getCreatedAt());
     }
 }

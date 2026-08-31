@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
+import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import org.jspecify.annotations.Nullable;
 
@@ -44,5 +45,8 @@ public record ApproveLlmKeyRequestSpec(
         @Nullable BigDecimal grantedCreditLimit,
 
         @Schema(description = "금액 한도 리셋 창. 비우면 리셋 없는 총액 상한입니다. 창은 UTC 자정에 초기화됩니다.")
-        @Nullable CreditLimitReset grantedCreditLimitReset) {
+        @Nullable CreditLimitReset grantedCreditLimitReset,
+
+        @Schema(description = "금액 축에 사용할 기관 OpenRouter 사업 account. 하나뿐이면 생략할 수 있습니다.")
+        @Nullable UUID openrouterAccountId) {
 }

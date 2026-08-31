@@ -210,8 +210,17 @@ pickle:
     # axis, which is the decided failure shape — token-axis service continues.
     base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.ai/api/v1}
     management-key: ${PICKLE_OPENROUTER_MGMT_KEY:}
+    # Irreversible rollout cutoff. Keep false while V96 jar rollback remains
+    # possible; enable only after account credentials are prepared and tested.
+    account-binding-enabled: ${PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED:false}
     connect-timeout: 5s
     read-timeout: 30s
+  openrouter-credential-keyring:
+    # Dedicated AES-256-GCM keyring for DB-stored management credentials.
+    # READ_KEYS is comma-separated keyId=base64(32 bytes). Empty is allowed at
+    # startup; credential mutations then fail closed while other APIs work.
+    write-key-id: ${PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID:}
+    read-keys: ${PICKLE_OPENROUTER_CREDENTIAL_READ_KEYS:}
   proxy-agent:
     # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.

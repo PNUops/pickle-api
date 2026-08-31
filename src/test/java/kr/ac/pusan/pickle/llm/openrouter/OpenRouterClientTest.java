@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import org.junit.jupiter.api.AfterAll;
@@ -54,7 +55,7 @@ class OpenRouterClientTest {
         server.resetAll();
         client = new OpenRouterClient(new OpenRouterProperties(
                 server.baseUrl(), "mgmt-test-secret",
-                Duration.ofSeconds(2), Duration.ofSeconds(5)));
+                Duration.ofSeconds(2), Duration.ofSeconds(5), true));
     }
 
     @Test
@@ -128,7 +129,8 @@ class OpenRouterClientTest {
         assertThatThrownBy(() -> client.createKey("k-3", BigDecimal.ONE, null, null))
                 .isInstanceOfSatisfying(OpenRouterException.class, e -> {
                     assertThat(e.status()).isEqualTo(400);
-                    assertThat(e.getMessage()).contains("invalid limit");
+                    assertThat(e.getMessage()).contains("HTTP 400");
+                    assertThat(e.getMessage()).doesNotContain("invalid limit");
                     assertThat(e.getMessage()).doesNotContain("mgmt-test-secret");
                 });
     }
@@ -191,10 +193,49 @@ class OpenRouterClientTest {
     @Test
     void aBlankManagementKeyFailsClosedBeforeAnyRequest() {
         OpenRouterClient unconfigured = new OpenRouterClient(new OpenRouterProperties(
-                server.baseUrl(), " ", Duration.ofSeconds(1), Duration.ofSeconds(1)));
+                server.baseUrl(), " ", Duration.ofSeconds(1), Duration.ofSeconds(1), true));
         assertThat(unconfigured.configured()).isFalse();
         assertThatThrownBy(() -> unconfigured.deleteKey("h"))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(server.getAllServeEvents()).isEmpty();
+    }
+
+    @Test
+    void explicitWorkspaceIsScopedOnCreateAndListButNotSingleKeyPaths() {
+        UUID workspaceId = UUID.fromString("20000000-0000-4000-8000-000000000001");
+        server.stubFor(post(urlPathEqualTo("/keys"))
+                .willReturn(aResponse().withStatus(201)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"key\":\"runtime\",\"data\":{\"hash\":\"h1\","
+                                + "\"workspace_id\":\"" + workspaceId + "\"}}")));
+        server.stubFor(get(urlEqualTo("/keys?include_disabled=true&offset=0&workspace_id="
+                        + workspaceId))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[]}")));
+        server.stubFor(get(urlEqualTo("/keys/h1"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"hash\":\"h1\",\"workspace_id\":\""
+                                + workspaceId + "\"}}")));
+        server.stubFor(patch(urlEqualTo("/keys/h1"))
+                .willReturn(aResponse().withStatus(200).withBody("{}")));
+        server.stubFor(delete(urlEqualTo("/keys/h1"))
+                .willReturn(aResponse().withStatus(204)));
+
+        OpenRouterClient.CreatedKey created = client.createKey("explicit-secret", workspaceId,
+                "probe", BigDecimal.ZERO, null, null);
+        client.listKeys("explicit-secret", workspaceId);
+        client.getKey("explicit-secret", workspaceId, "h1");
+        client.setDisabled("explicit-secret", workspaceId, "h1", true);
+        client.deleteKey("explicit-secret", workspaceId, "h1");
+
+        assertThat(created.workspaceId()).isEqualTo(workspaceId);
+        server.verify(postRequestedFor(urlPathEqualTo("/keys"))
+                .withRequestBody(matchingJsonPath("$.workspace_id", equalTo(workspaceId.toString())))
+                .withRequestBody(notMatching(".*disabled.*")));
+        assertThat(server.getAllServeEvents().stream()
+                .filter(event -> event.getRequest().getUrl().startsWith("/keys/h1"))
+                .allMatch(event -> !event.getRequest().getUrl().contains("workspace_id"))).isTrue();
     }
 }

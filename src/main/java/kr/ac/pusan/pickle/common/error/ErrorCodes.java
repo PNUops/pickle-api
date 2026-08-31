@@ -80,6 +80,20 @@ public final class ErrorCodes {
     public static final String LLM_KEY_ACCESS_GRANT_EXISTS = "LLM_KEY_ACCESS_GRANT_EXISTS";
     public static final String LLM_KEY_REVOKED = "LLM_KEY_REVOKED";
     public static final String LLM_KEY_INVALID_STATE = "LLM_KEY_INVALID_STATE";
+    public static final String LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE =
+            "LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE";
+    public static final String OPENROUTER_ACCOUNT_BINDING_DISABLED =
+            "OPENROUTER_ACCOUNT_BINDING_DISABLED";
+    public static final String OPENROUTER_ACCOUNT_INVALID_STATE =
+            "OPENROUTER_ACCOUNT_INVALID_STATE";
+    public static final String OPENROUTER_ACCOUNT_CONFIRM_NAME_MISMATCH =
+            "OPENROUTER_ACCOUNT_CONFIRM_NAME_MISMATCH";
+    public static final String OPENROUTER_CREDENTIAL_INVALID_STATE =
+            "OPENROUTER_CREDENTIAL_INVALID_STATE";
+    public static final String OPENROUTER_CREDENTIAL_VERIFICATION_FAILED =
+            "OPENROUTER_CREDENTIAL_VERIFICATION_FAILED";
+    public static final String OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE =
+            "OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE";
     // VM protection settings (contract v0.9.0).
     public static final String VM_DELETION_PROTECTED = "VM_DELETION_PROTECTED";
     public static final String VM_STOP_PROTECTED = "VM_STOP_PROTECTED";

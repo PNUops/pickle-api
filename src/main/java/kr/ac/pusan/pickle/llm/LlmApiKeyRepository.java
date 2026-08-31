@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm;
 
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -15,6 +17,10 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
         JpaSpecificationExecutor<LlmApiKey> {
 
     Optional<LlmApiKey> findByPublicId(UUID publicId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select k from LlmApiKey k where k.id = :id")
+    Optional<LlmApiKey> findWithLockById(@Param("id") long id);
 
     Page<LlmApiKey> findByWorkspaceId(long workspaceId, Pageable pageable);
 
@@ -56,4 +62,20 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
 
     /** Every key that has an OpenRouter half — the reconciler's local side. */
     List<LlmApiKey> findByOpenrouterKeyHashNotNull();
+
+    List<LlmApiKey> findByOpenrouterAccountId(long accountId);
+
+    List<LlmApiKey> findByOpenrouterLegacyTrue();
+
+    long countByOpenrouterAccountId(long accountId);
+
+    @Query(value = """
+            select count(*) from llm_api_keys k
+             where k.openrouter_account_id = :accountId
+               and k.status in ('PENDING'::llm_api_key_status,
+                                'ACTIVE'::llm_api_key_status,
+                                'SUSPENDED'::llm_api_key_status)
+               and (k.expires_at is null or k.expires_at > now())
+            """, nativeQuery = true)
+    long countUnsafeForAccountArchive(@Param("accountId") long accountId);
 }

@@ -9,6 +9,8 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestTypeHandler;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
@@ -30,12 +32,15 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     private final LlmKeyRequestDetailRepository detailRepository;
     private final LlmApiKeyRepository keyRepository;
     private final LlmGatewayGenerations generations;
+    private final OpenRouterAccountSelectionService accountSelection;
 
     public LlmKeyRequestSupport(LlmKeyRequestDetailRepository detailRepository,
-            LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations) {
+            LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
+            OpenRouterAccountSelectionService accountSelection) {
         this.detailRepository = detailRepository;
         this.keyRepository = keyRepository;
         this.generations = generations;
+        this.accountSelection = accountSelection;
     }
 
     @Override
@@ -109,16 +114,20 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     public Materialized materialize(Request request, ApproveRequestRequest form,
             AuthenticatedUser actor) {
         ApproveLlmKeyRequestSpec spec = form.llmKey();
+
+        // The generation row is the global lock for every gateway-document
+        // write. Take it before the account row, matching first limits binding,
+        // so concurrent approval and limits replacement cannot deadlock.
+        generations.bump();
+        OpenRouterAccount account = accountSelection.select(request.getOrgId(),
+                spec.grantedCreditLimit(), spec.openrouterAccountId());
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
-                spec.grantedCreditLimitReset());
+                spec.grantedCreditLimitReset(), account == null ? null : account.getId());
 
-        // Bump before the write, in this transaction: the row lock is what makes
-        // commit order and generation order agree. The key lands PENDING, so
-        // nothing servable changes yet — but the discipline has no exceptions,
-        // because an exception is what a later reader would copy.
-        generations.bump();
+        // The key lands PENDING, so nothing servable changes yet, but it still
+        // follows the same generation-before-document-write discipline.
         LlmApiKey key = keyRepository.save(new LlmApiKey(request.getWorkspaceId(),
                 request.getOrgId(), request.getId(), request.getDisplayName(),
                 detail.getReqPurpose(),
@@ -127,7 +136,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                                 java.time.ZoneId.of("Asia/Seoul")).toInstant(),
                 spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
-                spec.grantedCreditLimitReset(), request.getRequesterId()));
+                spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
+                request.getRequesterId()));
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());
@@ -137,6 +147,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedDailyTokens", spec.grantedDailyTokens());
         auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
         auditArgs.put("grantedCreditLimitReset", spec.grantedCreditLimitReset());
+        auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         return new Materialized(key.getId(), key.getName(), auditArgs, () -> {
         });
     }
