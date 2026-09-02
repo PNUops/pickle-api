@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
@@ -47,6 +49,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import tools.jackson.databind.ObjectMapper;
 
 /** Administrator reads and state changes for LLM API keys. */
 @Service
@@ -63,6 +66,7 @@ public class AdminLlmKeyService {
     private final OpenRouterAccountRepository accountRepository;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAllocationQuery allocationQuery;
+    private final ObjectMapper objectMapper;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -70,7 +74,7 @@ public class AdminLlmKeyService {
             LlmOpenRouterProvisioner provisioner, AuditService auditService,
             EntityManager entityManager, OpenRouterAccountRepository accountRepository,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterAllocationQuery allocationQuery) {
+            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -82,6 +86,7 @@ public class AdminLlmKeyService {
         this.accountRepository = accountRepository;
         this.accountSelection = accountSelection;
         this.allocationQuery = allocationQuery;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -181,7 +186,9 @@ public class AdminLlmKeyService {
                 workspace == null ? "" : workspace.getName(),
                 org == null ? null : org.getPublicId(), org == null ? "" : org.getName(),
                 requestId, account == null ? null : account.getPublicId(),
-                account == null ? null : account.getName(), Instant.now());
+                account == null ? null : account.getName(),
+                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()),
+                Instant.now());
     }
 
     @Transactional
@@ -189,7 +196,7 @@ public class AdminLlmKeyService {
             AdminLlmKeyLimitsRequest form, String ip) {
         if (!form.isComplete()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("limits",
-                    "여섯 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
+                    "일곱 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
         }
         if (form.getCreditLimit() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
@@ -203,17 +210,35 @@ public class AdminLlmKeyService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
                     "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.")));
         }
+        List<FieldValidationError> modelErrors = new ArrayList<>();
+        List<String> allowedModels = CreditModelAllowlist.normalize(form.getCreditAllowedModels(),
+                "creditAllowedModels", modelErrors);
+        if (!modelErrors.isEmpty()) {
+            throw ApiException.validationFailed(modelErrors);
+        }
+        if (!allowedModels.isEmpty() && form.getCreditLimit().signum() <= 0) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
+                    "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다.")));
+        }
         LlmApiKey key = requireWritable(actor, keyId);
         generations.bump();
         entityManager.refresh(key);
         requireMutableStatus(key, "한도를 변경할");
+        // The allow list decides what the money may be spent on, so it belongs on
+        // the money side of this gate rather than beside RPM and TPM. Left out,
+        // a SYS_MANAGER could grant a restricted key every vendor on the market
+        // without touching a single number this branch looks at.
+        boolean allowedModelsChanged = !allowedModels.equals(
+                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()));
         boolean moneyChanged = key.getCreditLimit().compareTo(form.getCreditLimit()) != 0
-                || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset());
+                || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset())
+                || allowedModelsChanged;
         boolean bindingRequested = form.getOpenrouterAccountId() != null
                 && key.getOpenrouterAccountId() == null;
         if (actor.role() == UserRole.SYS_MANAGER && (moneyChanged || bindingRequested)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
-                    "접근 권한이 없습니다", "시스템 운영자는 금액 한도를 변경할 수 없습니다.");
+                    "접근 권한이 없습니다",
+                    "시스템 운영자는 금액 한도와 모델 허용 목록을 변경할 수 없습니다.");
         }
         OpenRouterAccount account = resolveLimitAccount(key, form);
         boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
@@ -233,7 +258,7 @@ public class AdminLlmKeyService {
 
         key.replaceLimits(form.getRpm(), form.getTpm(), form.getConcurrency(),
                 form.getDailyTokens(), form.getCreditLimit(), form.getCreditLimitReset(),
-                Instant.now());
+                CreditModelAllowlist.toJson(objectMapper, allowedModels), Instant.now());
         if (bindingChanged) {
             key.bindOpenrouterAccount(account.getId(), Instant.now());
         }
@@ -244,6 +269,7 @@ public class AdminLlmKeyService {
         args.put("dailyTokens", form.getDailyTokens());
         args.put("creditLimit", form.getCreditLimit());
         args.put("creditLimitReset", form.getCreditLimitReset());
+        args.put("creditAllowedModels", allowedModels);
         args.put("openrouterAccountId", account == null ? null : account.getPublicId());
         args.putAll(allocationRecord);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
+import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountCredential;
@@ -52,6 +54,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
 
 /** Institution-scoped OpenRouter account metadata and management-key rotation. */
 @Service
@@ -72,6 +75,7 @@ public class AdminOpenRouterAccountService {
     private final OpenRouterAccountCreditsQueryService creditsQuery;
     private final OpenRouterAllocationQuery allocationQuery;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
+    private final ObjectMapper objectMapper;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
@@ -82,7 +86,7 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAccountCreditsQueryService creditsQuery,
             OpenRouterAllocationQuery allocationQuery,
-            OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
+            OpenRouterCreditRefreshScheduler creditRefreshScheduler, ObjectMapper objectMapper) {
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
         this.keyRepository = keyRepository;
@@ -96,6 +100,7 @@ public class AdminOpenRouterAccountService {
         this.creditsQuery = creditsQuery;
         this.allocationQuery = allocationQuery;
         this.creditRefreshScheduler = creditRefreshScheduler;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -127,9 +132,17 @@ public class AdminOpenRouterAccountService {
             CreateOpenRouterAccountRequest form, String ip) {
         Org org = requireWritableOrg(actor, form.orgId());
         confirm(form.name().strip(), form.confirmName());
+        List<FieldValidationError> modelErrors = new ArrayList<>();
+        List<String> defaultModels = CreditModelAllowlist.normalize(
+                form.defaultCreditAllowedModels(), "defaultCreditAllowedModels", modelErrors);
+        if (!modelErrors.isEmpty()) {
+            throw ApiException.validationFailed(modelErrors);
+        }
         OpenRouterAccount account = new OpenRouterAccount(org.getId(), form.name().strip(),
                 Texts.blankToNull(form.program()),
                 Texts.blankToNull(form.contact()), actor.id());
+        account.replaceDefaultCreditAllowedModels(
+                CreditModelAllowlist.toJson(objectMapper, defaultModels), Instant.now());
         try {
             return tx.execute(status -> {
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
@@ -181,6 +194,24 @@ public class AdminOpenRouterAccountService {
         if (form.isContactSet()) { auditArgs.put("contact", nextContact); }
         if (form.isStatusSet()) { auditArgs.put("status", nextStatus.name()); }
         account.update(nextName, nextProgram, nextContact, nextStatus, Instant.now());
+        // No generation bump here, and that is deliberate. This default is a
+        // prefill source the approval form copies once; it reaches no issued key
+        // and appears in no gateway document, so bumping would hand the gateway
+        // a byte-identical document and report a change that did not happen.
+        // Every other LLM write in this codebase bumps, which is exactly why
+        // this exception is written down rather than left to be noticed.
+        if (form.isDefaultCreditAllowedModelsSet()) {
+            List<FieldValidationError> modelErrors = new ArrayList<>();
+            List<String> nextModels = CreditModelAllowlist.normalize(
+                    form.getDefaultCreditAllowedModels(), "defaultCreditAllowedModels",
+                    modelErrors);
+            if (!modelErrors.isEmpty()) {
+                throw ApiException.validationFailed(modelErrors);
+            }
+            auditArgs.put("defaultCreditAllowedModels", nextModels);
+            account.replaceDefaultCreditAllowedModels(
+                    CreditModelAllowlist.toJson(objectMapper, nextModels), Instant.now());
+        }
         try {
             accountRepository.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
@@ -817,6 +848,8 @@ public class AdminOpenRouterAccountService {
                 state(credentials.stream().filter(c -> c.getStatus()
                                 != OpenRouterCredentialStatus.ACTIVE).findFirst().orElse(null)),
                 creditsQuery.get(account), allocationResponse(allocation),
+                CreditModelAllowlist.fromJson(objectMapper,
+                        account.getDefaultCreditAllowedModels()),
                 account.getCreatedAt(), account.getUpdatedAt());
     }
 

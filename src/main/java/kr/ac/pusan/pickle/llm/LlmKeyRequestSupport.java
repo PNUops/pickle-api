@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import kr.ac.pusan.pickle.request.RequestTypeHandler;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Everything about a request that is particular to LLM API keys.
@@ -35,16 +37,18 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     private final LlmGatewayGenerations generations;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAllocationQuery allocationQuery;
+    private final ObjectMapper objectMapper;
 
     public LlmKeyRequestSupport(LlmKeyRequestDetailRepository detailRepository,
             LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterAllocationQuery allocationQuery) {
+            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper) {
         this.detailRepository = detailRepository;
         this.keyRepository = keyRepository;
         this.generations = generations;
         this.accountSelection = accountSelection;
         this.allocationQuery = allocationQuery;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -112,6 +116,17 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
                     "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다."));
         }
+        // Same shape, same reason: a model allow list on a key with no money
+        // restricts nothing, because there is nothing on the money axis to
+        // restrict. Saying so beats storing a decision that does not apply.
+        List<String> models = CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+                "llmKey.grantedCreditAllowedModels", errors);
+        if (!models.isEmpty()
+                && (spec.grantedCreditLimit() == null
+                        || spec.grantedCreditLimit().signum() <= 0)) {
+            errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
+                    "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다."));
+        }
     }
 
     @Override
@@ -135,9 +150,18 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 : allocationQuery.grantRecord(account.getId(), spec.grantedCreditLimit());
 
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
+        // Re-normalized rather than carried from validation: this is the value
+        // that gets stored, and reading it from the same function both times is
+        // what keeps the checked list and the saved list the same list.
+        // validateApprove has already refused anything malformed, so the error
+        // sink here stays empty.
+        String creditAllowedModels = CreditModelAllowlist.toJson(objectMapper,
+                CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+                        "llmKey.grantedCreditAllowedModels", new ArrayList<>()));
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
-                spec.grantedCreditLimitReset(), account == null ? null : account.getId());
+                spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
+                creditAllowedModels);
 
         // The key lands PENDING, so nothing servable changes yet, but it still
         // follows the same generation-before-document-write discipline.
@@ -151,6 +175,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
                 spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
                 request.getRequesterId()));
+        key.applyCreditAllowedModels(creditAllowedModels);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());
@@ -160,6 +185,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedDailyTokens", spec.grantedDailyTokens());
         auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
         auditArgs.put("grantedCreditLimitReset", spec.grantedCreditLimitReset());
+        // The resolved list, not what the form sent: an approval prefilled from
+        // an account default has to leave behind what was actually granted,
+        // because the default it came from can change later.
+        auditArgs.put("grantedCreditAllowedModels",
+                CreditModelAllowlist.fromJson(objectMapper, creditAllowedModels));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);
         return new Materialized(key.getId(), key.getName(), auditArgs, () -> {

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.llm.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
@@ -47,6 +48,9 @@ public record LlmKeyDetailResponse(
         @Nullable CreditLimitReset creditLimitReset,
         @Schema(description = "상용 축 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
         boolean creditAxisConnected,
+        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열이면 제한이 "
+                + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다.")
+        List<String> creditAllowedModels,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,
         String workspaceName,
@@ -59,12 +63,13 @@ public record LlmKeyDetailResponse(
         boolean accessManageAllowed) {
 
     public static LlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId, String workspaceName,
-            @Nullable ResourceRole myResourceRole, boolean accessManageAllowed) {
+            List<String> creditAllowedModels, @Nullable ResourceRole myResourceRole,
+            boolean accessManageAllowed) {
         return new LlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.getStatus(), key.getTokenPrefix(), key.getExpiresAt(), key.getLastUsedAt(),
                 key.getRpm(), key.getTpm(), key.getConcurrency(), key.isRecordBodies(),
                 key.getCreditLimit(), key.getCreditLimitReset(), key.isCreditAxisConnected(),
-                workspaceId, workspaceName, key.getCreatedAt(), key.getRevokedAt(),
-                myResourceRole, accessManageAllowed);
+                creditAllowedModels, workspaceId, workspaceName, key.getCreatedAt(),
+                key.getRevokedAt(), myResourceRole, accessManageAllowed);
     }
 }

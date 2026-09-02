@@ -6,12 +6,20 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import org.jspecify.annotations.Nullable;
 
-/** Full replacement of the six limits on an administered LLM key. */
+/**
+ * Full replacement of the seven limits on an administered LLM key.
+ *
+ * <p>Two of them spell "unset" in opposite directions, which is the trap in
+ * this class: {@code creditLimit} refuses null because money has no unlimited,
+ * while a null {@code creditAllowedModels} is exactly unrestricted.
+ */
 public class AdminLlmKeyLimitsRequest {
 
     @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")
@@ -40,6 +48,10 @@ public class AdminLlmKeyLimitsRequest {
 
     private @Nullable CreditLimitReset creditLimitReset;
     private boolean creditLimitResetSet;
+
+    @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
+    private @Nullable List<String> creditAllowedModels;
+    private boolean creditAllowedModelsSet;
 
     private @Nullable UUID openrouterAccountId;
 
@@ -109,6 +121,19 @@ public class AdminLlmKeyLimitsRequest {
         this.creditLimitResetSet = true;
     }
 
+    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+            description = "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 "
+                    + "한도와 달리 null이 0을 뜻하지 않습니다. 교내 서빙 모델은 이 값에 "
+                    + "영향을 받지 않습니다.")
+    public @Nullable List<String> getCreditAllowedModels() {
+        return creditAllowedModels;
+    }
+
+    public void setCreditAllowedModels(@Nullable List<String> creditAllowedModels) {
+        this.creditAllowedModels = creditAllowedModels;
+        this.creditAllowedModelsSet = true;
+    }
+
     @Schema(description = "유료 모델을 결제할 사업 계정. 생략하거나 null이면 기존 연결을 유지합니다.")
     public @Nullable UUID getOpenrouterAccountId() {
         return openrouterAccountId;
@@ -121,6 +146,6 @@ public class AdminLlmKeyLimitsRequest {
     @Schema(hidden = true)
     public boolean isComplete() {
         return rpmSet && tpmSet && concurrencySet && dailyTokensSet
-                && creditLimitSet && creditLimitResetSet;
+                && creditLimitSet && creditLimitResetSet && creditAllowedModelsSet;
     }
 }

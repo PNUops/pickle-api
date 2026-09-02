@@ -24,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Read-only LLM API key views (contract tag {@code llm-keys}). Visibility is
@@ -45,15 +46,17 @@ public class LlmApiKeyQueryService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final WorkspaceRepository workspaceRepository;
     private final ResourceAccessResolver resourceAccessResolver;
+    private final ObjectMapper objectMapper;
 
     public LlmApiKeyQueryService(LlmApiKeyRepository keyRepository,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository,
-            ResourceAccessResolver resourceAccessResolver) {
+            ResourceAccessResolver resourceAccessResolver, ObjectMapper objectMapper) {
         this.keyRepository = keyRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.workspaceRepository = workspaceRepository;
         this.resourceAccessResolver = resourceAccessResolver;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional(readOnly = true)
@@ -135,6 +138,7 @@ public class LlmApiKeyQueryService {
         return LlmKeyDetailResponse.from(key,
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
+                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()),
                 standing.role(), standing.manages());
     }
 }

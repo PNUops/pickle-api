@@ -251,6 +251,77 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("limits"));
     }
 
+    // The money-axis allow list joins the full replacement, so a request that
+    // omits it replaces nothing — the same rule the other six already follow.
+    @Test
+    void creditAllowlistIsPartOfTheFullReplacement() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "허용 목록 키", "ACTIVE", null);
+        Map<String, Object> withoutList = limits(60, "5.00");
+        withoutList.remove("creditAllowedModels");
+        putLimits(key.publicId(), sysAdminToken, withoutList)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+
+        // Stored normalized: lower-cased, trimmed, duplicates gone, order kept.
+        Map<String, Object> messy = limits(60, "5.00");
+        messy.put("creditAllowedModels",
+                java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ", "openai/*"));
+        putLimits(key.publicId(), sysAdminToken, messy)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditAllowedModels.length()").value(2))
+                .andExpect(jsonPath("$.creditAllowedModels[0]").value("openai/*"))
+                .andExpect(jsonPath("$.creditAllowedModels[1]").value("anthropic/claude-sonnet-4"));
+
+        // null is unrestricted here, unlike creditLimit where null is refused.
+        Map<String, Object> cleared = limits(60, "5.00");
+        cleared.put("creditAllowedModels", null);
+        putLimits(key.publicId(), sysAdminToken, cleared)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditAllowedModels.length()").value(0));
+    }
+
+    @Test
+    void creditAllowlistRefusesUnusableEntriesAndNeedsMoney() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "허용 목록 검증 키", "ACTIVE", null);
+        // A bare star would be a second spelling of "unrestricted".
+        Map<String, Object> star = limits(60, "5.00");
+        star.put("creditAllowedModels", java.util.List.of("*"));
+        putLimits(key.publicId(), sysAdminToken, star)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("creditAllowedModels[0]"));
+
+        // Self-serving names are not commercial names; listing one reads as
+        // opening something this list cannot open.
+        Map<String, Object> reserved = limits(60, "5.00");
+        reserved.put("creditAllowedModels", java.util.List.of("pickle-general"));
+        putLimits(key.publicId(), sysAdminToken, reserved)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("creditAllowedModels[0]"));
+
+        // A fence around a budget of zero fences nothing.
+        Map<String, Object> noMoney = limits(60, "0");
+        noMoney.put("creditAllowedModels", java.util.List.of("openai/*"));
+        putLimits(key.publicId(), sysAdminToken, noMoney)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("creditLimit"));
+    }
+
+    // The list decides what the money may be spent on, so it sits on the money
+    // side of the system-operator gate. Left off it, a SYS_MANAGER could open
+    // every vendor on a restricted key without touching a single number.
+    @Test
+    void systemManagerCannotChangeTheCreditAllowlist() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "운영자 게이트 키", "ACTIVE", null);
+        Map<String, Object> widened = limits(60, "1.00");
+        widened.put("creditAllowedModels", java.util.List.of("openai/*"));
+        putLimits(key.publicId(), sysManagerToken, widened)
+                .andExpect(status().isForbidden());
+
+        // The same request without a list change stays allowed for that role.
+        putLimits(key.publicId(), sysManagerToken, limits(60, "1.00"))
+                .andExpect(status().isOk());
+    }
+
     @Test
     void requestApprovalIssueAndAdminLifecycleWorkAsOneFlow() throws Exception {
         Map<String, Object> create = new java.util.LinkedHashMap<>();
@@ -383,6 +454,7 @@ class AdminLlmKeyTest {
         values.put("dailyTokens", 10000);
         values.put("creditLimit", creditLimit);
         values.put("creditLimitReset", null);
+        values.put("creditAllowedModels", java.util.List.of());
         return values;
     }
 

@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
@@ -50,6 +51,16 @@ public class OpenRouterAccount {
     @Column(name = "vendor_identity_key_hash")
     private @Nullable String vendorIdentityKeyHash;
 
+    /**
+     * The money-axis model allow list an approval form prefills from, as a JSON
+     * array. It is a copy source, never an inheritance root: an approval reads
+     * it once and stores the result on the key, so editing it here moves no
+     * already-issued key and writes nothing the gateway polls.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "default_credit_allowed_models", nullable = false, columnDefinition = "jsonb")
+    private String defaultCreditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+
     @Column(name = "created_by", nullable = false, updatable = false)
     private Long createdBy;
 
@@ -78,6 +89,25 @@ public class OpenRouterAccount {
         this.contact = contact;
         this.status = status;
         this.updatedAt = now;
+    }
+
+    /**
+     * Replaces the prefill default.
+     *
+     * <p>Separate from {@link #update} because the caller decides whether the
+     * request carried the member at all, and because this write must not be
+     * mistaken for one that reaches the gateway document — it does not, and
+     * {@code AdminOpenRouterAccountService} says why it takes no generation
+     * bump.
+     */
+    public void replaceDefaultCreditAllowedModels(String models, Instant now) {
+        this.defaultCreditAllowedModels = models;
+        this.updatedAt = now;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    public String getDefaultCreditAllowedModels() {
+        return defaultCreditAllowedModels;
     }
 
     public void discoverVendorWorkspace(UUID vendorWorkspaceId, Instant now) {

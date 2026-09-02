@@ -125,6 +125,20 @@ public class LlmApiKey {
     @Enumerated(EnumType.STRING)
     private @Nullable CreditLimitReset creditLimitReset;
 
+    /**
+     * JSON array of the model patterns this key may spend money on, normalized
+     * by {@link CreditModelAllowlist}. Empty means unrestricted, and there is no
+     * null: the column carries a not-null default so "no restriction" has one
+     * spelling everywhere.
+     *
+     * <p>It governs the CREDIT axis alone. A TOKEN-axis self-serving model is
+     * reachable whatever this says — the list is a money fence, and there is no
+     * money on that axis to fence.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "credit_allowed_models", nullable = false, columnDefinition = "jsonb")
+    private String creditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+
     /** OpenRouter's identifier for this key's own OpenRouter key. */
     @Column(name = "openrouter_key_hash")
     private @Nullable String openrouterKeyHash;
@@ -295,14 +309,27 @@ public class LlmApiKey {
     public void replaceLimits(@Nullable Integer rpm, @Nullable Integer tpm,
             @Nullable Integer concurrency, @Nullable Long dailyTokens,
             BigDecimal creditLimit, @Nullable CreditLimitReset creditLimitReset,
-            Instant when) {
+            String creditAllowedModels, Instant when) {
         this.rpm = rpm;
         this.tpm = tpm;
         this.concurrency = concurrency;
         this.dailyTokens = dailyTokens;
         this.creditLimit = creditLimit;
         this.creditLimitReset = creditLimitReset;
+        this.creditAllowedModels = creditAllowedModels;
         this.updatedAt = when;
+    }
+
+    /**
+     * Sets the money-axis allow list at approval.
+     *
+     * <p>Kept out of the constructor deliberately: that signature already
+     * carries fourteen positional arguments, and a fifteenth String beside
+     * {@code name} and {@code purpose} is the shape a caller transposes without
+     * the compiler noticing.
+     */
+    public void applyCreditAllowedModels(String creditAllowedModels) {
+        this.creditAllowedModels = creditAllowedModels;
     }
 
     /** First binding only. A bound key never moves or clears its vendor account. */
@@ -402,6 +429,11 @@ public class LlmApiKey {
 
     public @Nullable CreditLimitReset getCreditLimitReset() {
         return creditLimitReset;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    public String getCreditAllowedModels() {
+        return creditAllowedModels;
     }
 
     public @Nullable String getOpenrouterKeyHash() {

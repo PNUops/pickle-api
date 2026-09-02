@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.media.Schema;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
@@ -35,6 +36,9 @@ public record OpenRouterAccountResponse(
         OpenRouterAccountCreditsResponse credits,
         @Schema(description = "이 account에 걸린 살아 있는 key의 금액 한도 합계")
         OpenRouterAccountAllocationResponse allocation,
+        @Schema(description = "승인 화면이 프리필에 쓰는 상용 모델 허용 목록 기본값. 복사 원본이지 "
+                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다.")
+        List<String> defaultCreditAllowedModels,
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")
