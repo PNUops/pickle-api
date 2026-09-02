@@ -288,7 +288,12 @@ public class LlmApiKey {
      * would be superstition; those wait a fixed half hour, which is what the
      * account polling path settled on for the same distinction.
      *
-     * <p>The ladder doubles from five minutes to a six-hour ceiling. The
+     * <p>The ladder doubles from five minutes to a six-hour ceiling, and the
+     * spread is added on top of it: the longest a key actually waits is nine
+     * hours, not six. That is intended — at the ceiling the vendor has been
+     * refusing for most of a day and the spread is what keeps the return from
+     * being a batch — but the ceiling and the wait are different numbers and
+     * saying "six hours" for both is how the difference gets lost. The
      * spread is deliberately as wide as the wait rather than a token minute
      * or two: the sweep runs on a five-minute cron and every rung is a
      * multiple of it, so a jitter smaller than one period cannot move two
@@ -306,9 +311,13 @@ public class LlmApiKey {
         // 6 would top out at 320 and the 360 below would never bind.
         int exponent = Math.min(Math.max(failures, 1) - 1, 7);
         long minutes = Math.min(5L << exponent, 360L);
-        // Half the wait, and never less than one sweep period: below that the
-        // spread rounds away to nothing.
-        long spreadSeconds = Math.max(SWEEP_PERIOD.toSeconds(), minutes * 30);
+        // Half the wait, and never less than two sweep periods. One period is
+        // not enough and reads as though it were: a spread exactly one period
+        // wide lands every key in the same bucket, because the sweep fires on
+        // wall-clock ticks and the whole spread then fits between two of them.
+        // Two periods is the narrowest that can put two keys on different
+        // sweeps at the bottom rungs.
+        long spreadSeconds = Math.max(2 * SWEEP_PERIOD.toSeconds(), minutes * 30);
         return Duration.ofMinutes(minutes)
                 .plusSeconds(Math.floorMod(scatter(keyId, failures), spreadSeconds));
     }

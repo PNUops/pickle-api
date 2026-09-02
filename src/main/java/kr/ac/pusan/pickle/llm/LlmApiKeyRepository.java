@@ -83,7 +83,7 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
      * <p>Called when that account gets a working management credential. Every
      * key bound to it will have been failing for the same reason and climbing
      * the same ladder, so without this the fix lands and the keys stay out of
-     * the sweep for as long as their last wait — up to six hours after the
+     * the sweep for as long as their last wait — up to nine hours after the
      * operator has already done everything asked of them.
      *
      * <p>A bulk statement rather than loaded entities: this is two columns on

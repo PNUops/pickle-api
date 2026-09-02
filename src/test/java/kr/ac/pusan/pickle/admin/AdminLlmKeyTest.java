@@ -241,6 +241,39 @@ class AdminLlmKeyTest {
     }
 
     @Test
+    void onlyAMoneyChangeEndsAProvisioningBackoffEarly() throws Exception {
+        // A key that has been refused by the vendor several times is sitting
+        // out a long wait. Replacing the money grant is the usual answer to
+        // whatever caused that, so it makes the key eligible again at once.
+        // Editing a rate limit is not: if any save cleared the wait, one
+        // unrelated edit on one key would release a whole throttled batch
+        // onto the next sweep.
+        Key key = key(orgA.getId(), workspaceA, "백오프 키", "ACTIVE", null);
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 6, "
+                + "openrouter_not_before_at = now() + interval '5 hours' "
+                + "where public_id = ?", key.publicId());
+
+        putLimits(key.publicId(), sysAdminToken, limits(90, "1.00"))
+                .andExpect(status().isOk());
+        assertThat(attemptCount(key.publicId()))
+                .as("the money grant did not move, so the wait stands")
+                .isEqualTo(6);
+
+        putLimits(key.publicId(), sysAdminToken, limits(90, "7.00"))
+                .andExpect(status().isOk());
+        assertThat(attemptCount(key.publicId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_not_before_at from llm_api_keys where public_id = ?",
+                java.sql.Timestamp.class, key.publicId())).isNull();
+    }
+
+    private int attemptCount(UUID publicId) {
+        return jdbcTemplate.queryForObject(
+                "select openrouter_attempt_count from llm_api_keys where public_id = ?",
+                Integer.class, publicId);
+    }
+
+    @Test
     void fullReplacementRequiresEveryLimitProperty() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "완전 교체 키", "ACTIVE", null);
         putLimits(key.publicId(), sysAdminToken, Map.of("rpm", 10))

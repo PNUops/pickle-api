@@ -58,6 +58,10 @@ class OpenRouterProvisioningTest {
     private CredentialCipher credentialCipher;
     @Autowired
     private OpenRouterManagementCredentialCipher managementCipher;
+    @Autowired
+    private kr.ac.pusan.pickle.llm.LlmApiKeyRepository keyRepository;
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
     @MockitoBean
     private OpenRouterClient client;
 
@@ -202,28 +206,57 @@ class OpenRouterProvisioningTest {
 
     @Test
     void theBackoffGrowsToACeilingAndSeparatesKeysBySweep() {
-        // Both keys arrive at the same rung, as a batch refused together does.
-        long first = insertKey(new BigDecimal("5.00"), "ACTIVE");
-        long second = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        // Ids are pinned. The spread is a hash of the key id, so which sweep
+        // any one key lands on is fixed but arbitrary, and two keys chosen at
+        // random share a bucket about one time in thirty-six. A test that
+        // asserts two ids differ is therefore a die roll whose outcome is
+        // decided by how many rows earlier tests happened to insert — the
+        // previous version of this test was exactly that, and so was the one
+        // before it. Pinning makes the arrangement the test asserts about the
+        // arrangement it actually gets.
+        jdbcTemplate.queryForObject(
+                "select setval(pg_get_serial_sequence('llm_api_keys', 'id'), 1000, false)",
+                Long.class);
+        List<Long> batch = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            batch.add(insertKey(new BigDecimal("5.00"), "ACTIVE"));
+        }
+        // All at the same rung, as a batch refused together arrives.
         jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 20 "
-                + "where id in (?, ?)", first, second);
+                + "where id >= ?", batch.getFirst());
         when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
                 .thenThrow(new OpenRouterException(429, "rate limited"));
 
         provisioner.sweep();
 
-        // Past the doubling, so both sit at the six-hour ceiling plus their
-        // own spread. The window allows the full spread, which is half the
-        // wait — the point is the ceiling binds, not that it is exact.
-        assertThat(waitSeconds(first)).isBetween(360L * 60, 540L * 60);
-        assertThat(waitSeconds(second)).isBetween(360L * 60, 540L * 60);
-        // The property that matters is not "different by some seconds" but
-        // "picked up by different sweeps". A spread narrower than the sweep
-        // period reads as a difference here and still returns the whole batch
-        // on one tick, which is the burst this exists to break.
-        assertThat(sweepTick(first))
-                .as("keys refused together must not come back on the same sweep")
-                .isNotEqualTo(sweepTick(second));
+        // The ceiling binds, and the spread rides on top of it: six hours of
+        // wait plus up to half again, which is why the upper bound is nine.
+        for (long keyId : batch) {
+            assertThat(waitSeconds(keyId)).isBetween(360L * 60, 540L * 60);
+        }
+        // The property is not "these two differ by some seconds" but "the
+        // batch does not come back as a batch". Twelve keys over a spread
+        // this wide land on several sweeps; one sweep would mean the spread
+        // is decorative and the burst survives.
+        assertThat(distinctSweepTicks(batch.getFirst()))
+                .as("a batch refused together must not return on one sweep")
+                .isGreaterThanOrEqualTo(6L);
+    }
+
+    /**
+     * How many distinct 5-minute sweeps this batch is spread over, counted in
+     * one statement. One statement means one {@code now()} for every row —
+     * reading the rows separately would compare each against a slightly later
+     * clock, and an offset sitting near a bucket boundary would change bucket
+     * between two reads.
+     */
+    private long distinctSweepTicks(long fromKeyId) {
+        return jdbcTemplate.queryForObject("""
+                select count(distinct floor(
+                           extract(epoch from (openrouter_not_before_at - now())) / 300))
+                  from llm_api_keys
+                 where id >= ? and openrouter_not_before_at is not null
+                """, Long.class, fromKeyId);
     }
 
     @Test
@@ -248,11 +281,58 @@ class OpenRouterProvisioningTest {
                 .createKey(anyString(), any(), anyString(), any(), any(), any());
     }
 
-    /** Which 5-minute sweep first picks the key up again. */
-    private long sweepTick(long keyId) {
-        return waitSeconds(keyId) / (5 * 60);
+    @Test
+    void activatingAnAccountCredentialEndsTheWaitForThatAccountsKeysOnly() {
+        // The whole point of the bulk clear: every key on this account has
+        // been failing for the one reason that was just fixed, so leaving
+        // them to sit out a ladder they climbed for want of this credential
+        // would keep them dark for hours after the operator was done.
+        long waiting = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        long provisioned = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 7, "
+                + "openrouter_not_before_at = now() + interval '5 hours' where id in (?, ?)",
+                waiting, provisioned);
+        // Already has its OpenRouter half: nothing is waiting for it, so the
+        // clear must leave it alone rather than sweep the whole account.
+        jdbcTemplate.update("update llm_api_keys set openrouter_key_hash = 'hash-done', "
+                + "openrouter_key_enc = ? where id = ?",
+                credentialCipher.encrypt("sk-or-done"), provisioned);
+        long untouched = insertKey(new BigDecimal("5.00"), "ACTIVE", insertAccount());
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 7, "
+                + "openrouter_not_before_at = now() + interval '5 hours' where id = ?",
+                untouched);
+
+        // In its own transaction, as the account service runs it: a modifying
+        // query has nowhere to write without one.
+        Integer cleared = new org.springframework.transaction.support.TransactionTemplate(
+                transactionManager).execute(status ->
+                keyRepository.clearOpenrouterBackoffForAccount(accountId));
+        assertThat(cleared).isEqualTo(1);
+
+        assertThat(attemptCount(waiting)).isZero();
+        assertThat(notBefore(waiting)).isNull();
+        assertThat(attemptCount(provisioned))
+                .as("a key that is already provisioned is not waiting for anything")
+                .isEqualTo(7);
+        assertThat(attemptCount(untouched))
+                .as("another account's keys are none of this credential's business")
+                .isEqualTo(7);
+        assertThat(notBefore(untouched)).isNotNull();
     }
 
+    private int attemptCount(long keyId) {
+        return jdbcTemplate.queryForObject(
+                "select openrouter_attempt_count from llm_api_keys where id = ?",
+                Integer.class, keyId);
+    }
+
+    private java.sql.Timestamp notBefore(long keyId) {
+        return jdbcTemplate.queryForObject(
+                "select openrouter_not_before_at from llm_api_keys where id = ?",
+                java.sql.Timestamp.class, keyId);
+    }
+
+    /** Seconds until this key is eligible again. */
     private long waitSeconds(long keyId) {
         return jdbcTemplate.queryForObject(
                 "select floor(extract(epoch from (openrouter_not_before_at - now())))::bigint"
@@ -450,6 +530,15 @@ class OpenRouterProvisioningTest {
     }
 
     private long insertKey(BigDecimal creditLimit, String status) {
+        return insertKey(creditLimit, status, accountId);
+    }
+
+    /**
+     * A key funded by a named account. The binding is set at insert because a
+     * trigger refuses to move it afterwards, which is the rule this platform
+     * wants and the reason a test cannot reassign one.
+     */
+    private long insertKey(BigDecimal creditLimit, String status, long accountId) {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
         String unique = UUID.randomUUID().toString().substring(0, 8);
