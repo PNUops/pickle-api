@@ -237,6 +237,11 @@ public class AdminLlmKeyService {
         if (bindingChanged) {
             key.bindOpenrouterAccount(account.getId(), Instant.now());
         }
+        // Somebody just changed the money grant or its account, which is the
+        // usual answer to whatever made provisioning fail. Make the key
+        // eligible again now rather than leaving it to sit out a wait sized
+        // for a vendor that keeps refusing.
+        key.clearOpenrouterBackoff(Instant.now());
         Map<String, Object> args = new LinkedHashMap<>();
         args.put("rpm", form.getRpm());
         args.put("tpm", form.getTpm());

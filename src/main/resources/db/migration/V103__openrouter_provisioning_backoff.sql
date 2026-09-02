@@ -14,7 +14,9 @@
 -- updated_at was the cheaper-looking option and would have been wrong, since
 -- every other write to the row moves that column.
 alter table llm_api_keys
-    add column openrouter_attempt_count int not null default 0,
+    add column openrouter_attempt_count int not null default 0
+        constraint llm_api_keys_openrouter_attempt_count_check
+            check (openrouter_attempt_count >= 0),
     add column openrouter_not_before_at timestamptz;
 
 comment on column llm_api_keys.openrouter_attempt_count is

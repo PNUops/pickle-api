@@ -324,6 +324,14 @@ public class AdminOpenRouterAccountService {
                     identityMarker.get());
             throw e;
         }
+        // Every key funded by this account fails to provision while the
+        // account has no usable management credential, and each failure
+        // lengthens its own wait. A working credential is now in place, so
+        // the waits are answers to a question that has been resolved: clear
+        // them and let the next sweep try, rather than leaving keys out for
+        // hours after the operator has already fixed the cause.
+        tx.executeWithoutResult(status ->
+                keyRepository.clearOpenrouterBackoffForAccount(snapshot.account().getId()));
         creditRefreshScheduler.requestAfterCredentialChange(accountId);
         return result;
     }
@@ -370,6 +378,14 @@ public class AdminOpenRouterAccountService {
                     account.getPublicId(), Map.of(), ip);
             return response(account);
         });
+        // Every key funded by this account fails to provision while the
+        // account has no usable management credential, and each failure
+        // lengthens its own wait. A working credential is now in place, so
+        // the waits are answers to a question that has been resolved: clear
+        // them and let the next sweep try, rather than leaving keys out for
+        // hours after the operator has already fixed the cause.
+        tx.executeWithoutResult(status ->
+                keyRepository.clearOpenrouterBackoffForAccount(snapshot.account().getId()));
         creditRefreshScheduler.requestAfterCredentialChange(accountId);
         return result;
     }

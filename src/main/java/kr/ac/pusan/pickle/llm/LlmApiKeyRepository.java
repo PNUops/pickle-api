@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -53,9 +54,16 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
      * Revoked and expired keys are excluded: their money axis is over.
      *
      * <p>The backoff term is what stops a vendor refusal from being re-sent
-     * at full batch size every five minutes. A key that has never failed has
-     * a null timestamp and is picked up immediately, so the ordinary case is
-     * unchanged.
+     * every five minutes. A key that has never failed has a null timestamp
+     * and is picked up immediately, so the ordinary case is unchanged.
+     *
+     * <p>{@code batch} bounds how many key creations one sweep can send. The
+     * backoff alone does not: it decides when a key returns, not how many
+     * return at once, and a backlog that accumulates while the vendor is
+     * refusing would otherwise arrive as one burst the moment the wait ends.
+     * The oldest wait goes first, and never-attempted keys ahead of both, so
+     * a capped sweep still drains in a fair order rather than starving
+     * whatever sorts last.
      */
     @Query(value = """
             select * from llm_api_keys k
@@ -64,8 +72,35 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
                and k.status in ('PENDING'::llm_api_key_status, 'ACTIVE'::llm_api_key_status)
                and (k.expires_at is null or k.expires_at > now())
                and (k.openrouter_not_before_at is null or k.openrouter_not_before_at <= now())
+             order by k.openrouter_not_before_at nulls first, k.id
+             limit :batch
             """, nativeQuery = true)
-    List<LlmApiKey> findAwaitingOpenrouterProvisioning();
+    List<LlmApiKey> findAwaitingOpenrouterProvisioning(@Param("batch") int batch);
+
+    /**
+     * Forgets the provisioning backoff on every key funded by one account.
+     *
+     * <p>Called when that account gets a working management credential. Every
+     * key bound to it will have been failing for the same reason and climbing
+     * the same ladder, so without this the fix lands and the keys stay out of
+     * the sweep for as long as their last wait — up to six hours after the
+     * operator has already done everything asked of them.
+     *
+     * <p>A bulk statement rather than loaded entities: this is two columns on
+     * a set of rows, and reading each key in to write it back would be the
+     * one thing that can undo a concurrent limits change.
+     */
+    @Modifying
+    @Query(value = """
+            update llm_api_keys
+               set openrouter_attempt_count = 0,
+                   openrouter_not_before_at = null,
+                   updated_at = now()
+             where openrouter_account_id = :accountId
+               and openrouter_key_hash is null
+               and (openrouter_attempt_count <> 0 or openrouter_not_before_at is not null)
+            """, nativeQuery = true)
+    int clearOpenrouterBackoffForAccount(@Param("accountId") long accountId);
 
     /** Every key that has an OpenRouter half — the reconciler's local side. */
     List<LlmApiKey> findByOpenrouterKeyHashNotNull();

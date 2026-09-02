@@ -201,10 +201,10 @@ class OpenRouterProvisioningTest {
     }
 
     @Test
-    void theBackoffGrowsToACeilingAndIsSpreadAcrossKeys() {
+    void theBackoffGrowsToACeilingAndSeparatesKeysBySweep() {
+        // Both keys arrive at the same rung, as a batch refused together does.
         long first = insertKey(new BigDecimal("5.00"), "ACTIVE");
         long second = insertKey(new BigDecimal("5.00"), "ACTIVE");
-        // Both keys arrive at the same rung, as a batch refused together would.
         jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 20 "
                 + "where id in (?, ?)", first, second);
         when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
@@ -212,18 +212,45 @@ class OpenRouterProvisioningTest {
 
         provisioner.sweep();
 
-        // Far past the doubling, so this is the six-hour ceiling plus jitter.
-        assertThat(waitMinutes(first)).isBetween(360L, 362L);
-        // Refused together, back at different moments: returning as one batch
-        // would re-send the burst that was refused.
-        assertThat(waitMinutes(first) * 60 + waitSeconds(first))
-                .isNotEqualTo(waitMinutes(second) * 60 + waitSeconds(second));
+        // Past the doubling, so both sit at the six-hour ceiling plus their
+        // own spread. The window allows the full spread, which is half the
+        // wait — the point is the ceiling binds, not that it is exact.
+        assertThat(waitSeconds(first)).isBetween(360L * 60, 540L * 60);
+        assertThat(waitSeconds(second)).isBetween(360L * 60, 540L * 60);
+        // The property that matters is not "different by some seconds" but
+        // "picked up by different sweeps". A spread narrower than the sweep
+        // period reads as a difference here and still returns the whole batch
+        // on one tick, which is the burst this exists to break.
+        assertThat(sweepTick(first))
+                .as("keys refused together must not come back on the same sweep")
+                .isNotEqualTo(sweepTick(second));
     }
 
-    private long waitMinutes(long keyId) {
-        return jdbcTemplate.queryForObject(
-                "select floor(extract(epoch from (openrouter_not_before_at - now())) / 60)::bigint"
-                        + " from llm_api_keys where id = ?", Long.class, keyId);
+    @Test
+    void aLocalFaultWaitsAFixedHalfHourInsteadOfClimbingTheVendorLadder() {
+        // No ACTIVE credential on the account: the vendor was never asked, so
+        // there is no rate limit to back off from, and the fix is an operator
+        // action rather than the passage of time.
+        long keyId = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        jdbcTemplate.update("delete from openrouter_account_credentials where account_id = ?",
+                accountId);
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 20 "
+                + "where id = ?", keyId);
+
+        provisioner.sweep();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_last_error from llm_api_keys where id = ?",
+                String.class, keyId)).isEqualTo("ACCOUNT_CREDENTIAL_UNAVAILABLE");
+        // Twenty failures in, and still half an hour rather than six.
+        assertThat(waitSeconds(keyId)).isBetween(29L * 60, 31L * 60);
+        verify(client, times(0))
+                .createKey(anyString(), any(), anyString(), any(), any(), any());
+    }
+
+    /** Which 5-minute sweep first picks the key up again. */
+    private long sweepTick(long keyId) {
+        return waitSeconds(keyId) / (5 * 60);
     }
 
     private long waitSeconds(long keyId) {
