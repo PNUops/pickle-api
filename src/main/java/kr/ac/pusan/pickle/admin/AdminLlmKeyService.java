@@ -375,6 +375,13 @@ public class AdminLlmKeyService {
         if (requested != null) {
             throw immutableBinding();
         }
+        // The same key cannot fund money either, and saying so here is the
+        // difference between a defined refusal and a constraint violation
+        // surfacing as a 500: the write below would set a positive limit on a
+        // row that names no account.
+        if (form.getCreditLimit() != null && form.getCreditLimit().signum() > 0) {
+            throw immutableBinding();
+        }
         return null;
     }
 

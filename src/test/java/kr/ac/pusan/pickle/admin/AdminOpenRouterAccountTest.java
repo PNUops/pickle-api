@@ -683,6 +683,20 @@ class AdminOpenRouterAccountTest {
                 .isInstanceOfSatisfying(ApiException.class, error ->
                         assertThat(error.getCode()).isEqualTo(
                                 "LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE"));
+        // Not naming an account is the same refusal, not a different one. It
+        // is worth its own case because the two halves take different code
+        // paths, and the one that omits the id would otherwise reach the
+        // write and surface a constraint violation as a 500.
+        assertThatThrownBy(() -> adminLlmKeyService.replaceLimits(sysAdmin, strandedRemote,
+                limits(BigDecimal.ONE, null), "127.0.0.1"))
+                .isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo(
+                            "LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE");
+                });
+        // A limit change that asks for no money still works on the same row.
+        assertThat(adminLlmKeyService.replaceLimits(sysAdmin, strandedRemote,
+                limits(BigDecimal.ZERO, null), "127.0.0.1").openrouterAccountId()).isNull();
 
         UUID unbound = insertKey(workspace, request(orgId, workspace, "manager"),
                 BigDecimal.ZERO, null);

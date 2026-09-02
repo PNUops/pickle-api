@@ -36,6 +36,42 @@ delete from llm_usage_events
 delete from llm_api_keys
  where openrouter_legacy and status = 'REVOKED';
 
+-- 1b. The premise, checked rather than assumed. Step 1 deletes only revoked
+--     rows, so a live legacy row survives it and simply loses the marker when
+--     the column goes. For most of them that is the intended cutover and not
+--     a loss: a row with no money and no vendor key is an ordinary unbound
+--     token-only key afterwards, and can still take its first account later.
+--
+--     Two shapes are not that, and the drop would weaken them silently. A
+--     surviving row holding a vendor key loses the legacy-scoped hash
+--     uniqueness (the account-scoped index has no bearing on an account-null
+--     row), becomes unreachable by every management path because `forKey`
+--     answers empty without an account, and can no longer be bound at all. A
+--     surviving row with a positive limit would fail step 5 anyway, and
+--     saying why here beats a bare constraint violation.
+--
+--     Either way the answer is a decision about a key someone is using, so
+--     stop and let a person make it. Measured on the live database on
+--     2026-09-02: thirteen marked rows, eleven revoked and two live, and both
+--     live ones are the harmless shape (no money, no vendor key).
+do $$
+declare
+    stranded bigint;
+begin
+    select count(*) into stranded
+      from llm_api_keys
+     where openrouter_legacy
+       and (credit_limit > 0
+            or openrouter_key_hash is not null
+            or openrouter_key_enc is not null);
+    if stranded > 0 then
+        raise exception
+            'V100 refuses to run: % live legacy OpenRouter key(s) hold money '
+            'or a vendor key. Revoke them, or reissue them under an account, '
+            'before retiring the legacy source.', stranded;
+    end if;
+end $$;
+
 -- 2. The binding trigger, rewritten without the legacy branches. What survives
 --    is the rule that matters: once a key names the account that funds it, that
 --    naming cannot change. Money already spent under one account cannot be made
