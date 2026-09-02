@@ -471,7 +471,16 @@ public class LlmSyncService {
             return null;
         }
         Integer count = nonNegative(active.modelCount());
-        return count == null && "OK".equals(activeStatus(active.status())) ? 0 : count;
+        if (count != null) {
+            return count;
+        }
+        // Written as a statement rather than a conditional expression on
+        // purpose. `? 0 : count` mixes an int literal with an Integer, which
+        // promotes the whole expression to int and unboxes `count` — so the
+        // branch that returns "unknown" threw a NullPointerException instead,
+        // and the sync endpoint answered 500. The two currentReporterCounter
+        // methods above already avoid the same trap, one screen up.
+        return "OK".equals(activeStatus(active.status())) ? Integer.valueOf(0) : null;
     }
 
     /**

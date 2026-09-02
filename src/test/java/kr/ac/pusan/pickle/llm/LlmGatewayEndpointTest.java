@@ -621,6 +621,32 @@ class LlmGatewayEndpointTest {
     }
 
     @Test
+    void anUnprobedUpstreamReportsNoModelCountWithoutFailingTheWholeSync() throws Exception {
+        // A probe that has failed, or has not run yet, reports a status other
+        // than OK and no model count. That pair used to throw on the way in
+        // and answer 500, which cost the gateway every document behind it:
+        // revocations, limit changes and quota flips all stop propagating
+        // while sync is failing, and the gateway keeps serving the last one
+        // it got, so nothing looks broken from outside.
+        Map<String, Object> body = poll(0);
+        body.put("upstreamObservationFormat", 1);
+        body.put("upstreams", List.of(Map.of(
+                "ref", "dgx",
+                "active", Map.of("status", "FAILED", "consecutiveFailures", 3))));
+
+        syncFrom(SOURCE, TOKEN, body).andExpect(status().isOk());
+
+        Map<String, Object> upstream = jdbcTemplate.queryForMap("""
+                select active_status, active_model_count
+                  from llm_upstream_state where ref = 'dgx'
+                """);
+        assertThat(upstream.get("active_status")).isEqualTo("FAILED");
+        assertThat(upstream.get("active_model_count"))
+                .as("unknown stays unknown; only a healthy probe means zero models")
+                .isNull();
+    }
+
+    @Test
     void oldGatewayOmissionPreservesRowsButVersionedEmptyListDeconfiguresThem() throws Exception {
         Map<String, Object> versioned = poll(0);
         versioned.put("upstreamObservationFormat", 1);
