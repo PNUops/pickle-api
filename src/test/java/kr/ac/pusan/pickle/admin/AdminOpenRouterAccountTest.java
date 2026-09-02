@@ -923,11 +923,7 @@ class AdminOpenRouterAccountTest {
 
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-<<<<<<< HEAD
-                orgPublicId, name, "사업 코드", null, name), "127.0.0.1");
-=======
-                orgPublicId, name, "재원", null, null, name), "127.0.0.1");
->>>>>>> 55335e4 (feat: grant a per-key commercial model allow list)
+                orgPublicId, name, "사업 코드", null, null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(

@@ -258,10 +258,13 @@ class LlmGatewayEndpointTest {
     // the key out of self-serving models as a side effect.
     @Test
     void creditModelAllowlistTravelsInTheDocument() throws Exception {
-        KeyFixture fenced = newLegacyKey("fenced");
+        // A positive money limit needs an account binding since the legacy source
+        // was retired, so the fence rides a properly bound key.
+        long account = insertOpenrouterAccount();
+        KeyFixture fenced = newKey("fenced");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
-                + "credit_allowed_models = ?::jsonb where id = ?",
-                "[\"openai/*\", \"anthropic/claude-sonnet-4\"]", fenced.id());
+                + "openrouter_account_id = ?, credit_allowed_models = ?::jsonb where id = ?",
+                account, "[\"openai/*\", \"anthropic/claude-sonnet-4\"]", fenced.id());
 
         syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
         syncFrom(SOURCE, TOKEN, poll(0))

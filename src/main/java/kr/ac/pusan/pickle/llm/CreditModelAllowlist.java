@@ -37,7 +37,7 @@ public final class CreditModelAllowlist {
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
 
-    /** Matches the DB CHECK in V103 — a model name, or a vendor prefix. */
+    /** Matches the DB CHECK in V102 — a model name, or a vendor prefix. */
     private static final Pattern PATTERN =
             Pattern.compile("^[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*|\\*))?$");
 
