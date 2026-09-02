@@ -17,10 +17,10 @@ public record OpenRouterAccountResponse(
         String name,
         @Schema(description = "Account lifecycle 상태")
         OpenRouterAccountStatus status,
-        @Schema(description = "재원 참조. 없으면 null")
-        @Nullable String fundingReference,
-        @Schema(description = "증빙 참조. 없으면 null")
-        @Nullable String evidenceReference,
+        @Schema(description = "이 account가 청구되는 사업. 없으면 null")
+        @Nullable String program,
+        @Schema(description = "이 account를 물어볼 담당자. 없으면 null")
+        @Nullable String contact,
         @Schema(description = "현재 positive-credit key binding에 선택할 수 있는지")
         boolean eligibleForBinding,
         @Schema(description = "이 account에 불변 binding된 Pickle LLM key 수")

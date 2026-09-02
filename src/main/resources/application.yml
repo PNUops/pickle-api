@@ -217,15 +217,12 @@ pickle:
     max-usage-body-bytes: ${PICKLE_LLM_MAX_USAGE_BODY_BYTES:4194304}
     max-bodies-body-bytes: ${PICKLE_LLM_MAX_BODIES_BODY_BYTES:8388608}
   openrouter:
-    # OpenRouter key-management link. A management key can only administer
-    # runtime keys (it cannot call completions); with it blank the client
-    # fails closed and every funded key simply stays unconnected on the money
-    # axis, which is the decided failure shape — token-axis service continues.
+    # OpenRouter key-management link. Every management credential belongs to
+    # one institution account and lives encrypted in the keyring below; there
+    # is no key in configuration. An account whose credential is missing or
+    # unverified simply leaves its funded keys unconnected on the money axis,
+    # which is the decided failure shape — token-axis service continues.
     base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.ai/api/v1}
-    management-key: ${PICKLE_OPENROUTER_MGMT_KEY:}
-    # Irreversible rollout cutoff. Keep false while V96 jar rollback remains
-    # possible; enable only after account credentials are prepared and tested.
-    account-binding-enabled: ${PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED:false}
     connect-timeout: 5s
     read-timeout: 30s
   openrouter-credential-keyring:

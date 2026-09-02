@@ -25,7 +25,6 @@ import org.springframework.stereotype.Component;
 public class OpenRouterReconciler {
 
     private static final Logger log = LoggerFactory.getLogger(OpenRouterReconciler.class);
-    static final String JOB_ID = "llm-openrouter-reconciler";
 
     private final LlmApiKeyRepository keyRepository;
     private final OpenRouterClient client;
@@ -41,18 +40,6 @@ public class OpenRouterReconciler {
         this.findings = findings;
         this.spendRecorder = spendRecorder;
         this.credentialResolver = credentialResolver;
-    }
-
-    /** Pre-V98 queued jobs may still call this signature; keep it legacy-only. */
-    public void reconcile() {
-        credentialResolver.legacyAccess().ifPresent(access -> {
-            try {
-                reconcileLegacy(access, Instant.now());
-            } catch (OpenRouterException error) {
-                log.warn("OpenRouter legacy reconcile failed: {}",
-                        OpenRouterErrorClassifier.classify(error));
-            }
-        });
     }
 
     /** Exercises multi-scope failure isolation without serving as a scheduled entrypoint. */
@@ -133,20 +120,6 @@ public class OpenRouterReconciler {
                 recorded.resetBoundary() || result.managedBoundary(), observedAt);
     }
 
-    public void reconcileLegacy(OpenRouterManagementAccess access, Instant now) {
-        if (!access.includesLegacyKeys() || access.accountId() != null) {
-            throw new IllegalArgumentException("legacy reconciliation requires the env scope");
-        }
-        ScopeResult result = reconcileScope(access, now);
-        spendRecorder.record(result.spends(), now);
-        recordFindings(result.findingObservations(), now);
-        String prefix = "account:" + access.scopeKey() + ":key:";
-        findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_ORPHAN,
-                prefix, result.orphans(), now);
-        findings.autoResolveNotSeenInScope(DriftFindingKind.OPENROUTER_STALE,
-                prefix, result.stale(), now);
-    }
-
     private ScopeResult reconcileScope(OpenRouterManagementAccess access, Instant now) {
         List<OpenRouterClient.ManagedKey> remote = client.listKeys(
                 access.secret(), access.workspaceId());
@@ -158,13 +131,6 @@ public class OpenRouterReconciler {
         Map<String, LlmApiKey> localByHash = new HashMap<>();
         if (access.accountId() != null) {
             for (LlmApiKey key : keyRepository.findByOpenrouterAccountId(access.accountId())) {
-                if (key.getOpenrouterKeyHash() != null) {
-                    localByHash.put(key.getOpenrouterKeyHash(), key);
-                }
-            }
-        }
-        if (access.includesLegacyKeys()) {
-            for (LlmApiKey key : keyRepository.findByOpenrouterLegacyTrue()) {
                 if (key.getOpenrouterKeyHash() != null) {
                     localByHash.put(key.getOpenrouterKeyHash(), key);
                 }

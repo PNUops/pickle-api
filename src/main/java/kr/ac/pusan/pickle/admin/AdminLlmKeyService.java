@@ -363,20 +363,19 @@ public class AdminLlmKeyService {
             }
             return current;
         }
-        if (key.isOpenrouterLegacy()) {
-            boolean firstBindingEligible = key.getCreditLimit().signum() <= 0
-                    && key.getOpenrouterKeyHash() == null
-                    && key.getOpenrouterKeyEnc() == null;
-            if (firstBindingEligible) {
-                return accountSelection.select(
-                        key.getOrgId(), form.getCreditLimit(), requested);
-            }
-            if (requested != null) {
-                throw immutableBinding();
-            }
-            return null;
+        // An unbound row may take its first account only while it has nothing
+        // to leave behind: no money already granted, and no vendor key issued
+        // under a management scope this account would not see.
+        boolean firstBindingEligible = key.getCreditLimit().signum() <= 0
+                && key.getOpenrouterKeyHash() == null
+                && key.getOpenrouterKeyEnc() == null;
+        if (firstBindingEligible) {
+            return accountSelection.select(key.getOrgId(), form.getCreditLimit(), requested);
         }
-        return accountSelection.select(key.getOrgId(), form.getCreditLimit(), requested);
+        if (requested != null) {
+            throw immutableBinding();
+        }
+        return null;
     }
 
     private static ApiException immutableBinding() {

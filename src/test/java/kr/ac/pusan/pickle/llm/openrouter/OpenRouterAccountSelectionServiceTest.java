@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import org.junit.jupiter.api.Test;
 
 class OpenRouterAccountSelectionServiceTest {
@@ -21,24 +20,19 @@ class OpenRouterAccountSelectionServiceTest {
             mock(OpenRouterAccountCredentialRepository.class);
     private final OpenRouterManagementCredentialCipher cipher =
             mock(OpenRouterManagementCredentialCipher.class);
-    private final OpenRouterProperties enabled = new OpenRouterProperties(
-            null, null, null, null, true);
     private final OpenRouterAccountSelectionService service =
-            new OpenRouterAccountSelectionService(accounts, credentials, cipher, enabled);
+            new OpenRouterAccountSelectionService(accounts, credentials, cipher);
 
+    /**
+     * A grant of nothing names no account, and asking for one anyway is the
+     * caller's mistake rather than a silent no-op.
+     */
     @Test
-    void disabledRolloutGateAllowsCreditZeroButRejectsEveryPositiveBinding() {
-        OpenRouterAccountSelectionService disabled = new OpenRouterAccountSelectionService(
-                accounts, credentials, cipher,
-                new OpenRouterProperties(null, null, null, null, false));
-
-        assertThat(disabled.select(1L, BigDecimal.ZERO, null)).isNull();
-        assertBindingDisabled(() -> disabled.select(1L, BigDecimal.ONE, null));
-        assertBindingDisabled(() -> disabled.select(1L, BigDecimal.ONE, UUID.randomUUID()));
-
-        OpenRouterAccount ready = eligible(31L);
-        assertThat(disabled.databaseCredentialAvailable(ready)).isTrue();
-        assertThat(disabled.eligible(ready)).isFalse();
+    void aZeroGrantTakesNoAccountAndRejectsARequestedOne() {
+        assertThat(service.select(1L, BigDecimal.ZERO, null)).isNull();
+        assertThat(service.select(1L, null, null)).isNull();
+        assertThatThrownBy(() -> service.select(1L, BigDecimal.ZERO, UUID.randomUUID()))
+                .isInstanceOf(ApiException.class);
     }
 
     @Test
@@ -126,12 +120,5 @@ class OpenRouterAccountSelectionServiceTest {
         when(account.getPublicId()).thenReturn(UUID.randomUUID());
         when(cipher.decrypt(account.getPublicId(), "cipher-" + id)).thenReturn("secret");
         return account;
-    }
-
-    private static void assertBindingDisabled(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
-        assertThatThrownBy(call).isInstanceOfSatisfying(ApiException.class, error -> {
-            assertThat(error.getStatus().value()).isEqualTo(503);
-            assertThat(error.getCode()).isEqualTo("OPENROUTER_ACCOUNT_BINDING_DISABLED");
-        });
     }
 }

@@ -5,51 +5,40 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Resolves exactly one management source; account-bound rows never use env fallback. */
+/** Resolves the one management credential an account owns; there is no fallback source. */
 @Service
 public class OpenRouterCredentialResolver {
 
     private final OpenRouterAccountRepository accountRepository;
     private final OpenRouterAccountCredentialRepository credentialRepository;
     private final OpenRouterManagementCredentialCipher cipher;
-    private final OpenRouterProperties legacyProperties;
 
     public OpenRouterCredentialResolver(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
-            OpenRouterManagementCredentialCipher cipher, OpenRouterProperties legacyProperties) {
+            OpenRouterManagementCredentialCipher cipher) {
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
         this.cipher = cipher;
-        this.legacyProperties = legacyProperties;
     }
 
     @Transactional(readOnly = true)
     public Optional<OpenRouterManagementAccess> forKey(LlmApiKey key) {
-        if (key.getOpenrouterAccountId() != null) {
-            OpenRouterAccount account = accountRepository.findById(key.getOpenrouterAccountId())
-                    .orElse(null);
-            return account == null ? Optional.empty() : databaseAccess(account, false);
-        }
-        if (!key.isOpenrouterLegacy()) {
+        if (key.getOpenrouterAccountId() == null) {
             return Optional.empty();
         }
-        return legacyProperties.configured()
-                ? Optional.of(envAccess()) : Optional.empty();
+        return accountRepository.findById(key.getOpenrouterAccountId())
+                .flatMap(this::databaseAccess);
     }
 
     @Transactional(readOnly = true)
     public Optional<OpenRouterManagementAccess> forAccount(UUID accountPublicId) {
         return accountRepository.findByPublicId(accountPublicId)
-                .flatMap(account -> databaseAccess(account, false));
-    }
-
-    public Optional<OpenRouterManagementAccess> legacyAccess() {
-        return legacyProperties.configured() ? Optional.of(envAccess()) : Optional.empty();
+                .flatMap(this::databaseAccess);
     }
 
     @Transactional(readOnly = true)
@@ -64,18 +53,23 @@ public class OpenRouterCredentialResolver {
                 continue;
             }
             try {
-                result.add(decrypt(account, credential, false));
+                result.add(decrypt(account, credential));
             } catch (OpenRouterException e) {
                 complete = false;
             }
         }
-        if (legacyProperties.configured()) {
-            result.add(envAccess());
-        }
         return new ReconciliationAccesses(List.copyOf(result), complete);
     }
 
-    @Transactional
+    /**
+     * Bookkeeping only, and the callers make the propagation matter: the
+     * provisioner touches this from after-commit callbacks, where the
+     * caller's transaction is finished but still bound. Joining it there
+     * fails the write and throws back out of the commit hook, so this one
+     * always runs in a transaction of its own. The column write is monotonic,
+     * so committing separately loses nothing.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markUsed(OpenRouterManagementAccess access, Instant when) {
         if (access.credentialId() != null) {
             credentialRepository.touchLastUsed(access.credentialId(), when);
@@ -98,30 +92,24 @@ public class OpenRouterCredentialResolver {
         }
     }
 
-    private Optional<OpenRouterManagementAccess> databaseAccess(OpenRouterAccount account,
-            boolean includeLegacy) {
+    private Optional<OpenRouterManagementAccess> databaseAccess(OpenRouterAccount account) {
         return credentialRepository.findByAccountIdAndStatus(account.getId(),
                         OpenRouterCredentialStatus.ACTIVE)
                 .filter(credential -> credential.getVerifiedAt() != null)
-                .map(credential -> decrypt(account, credential, includeLegacy));
+                .map(credential -> decrypt(account, credential));
     }
 
     private OpenRouterManagementAccess decrypt(OpenRouterAccount account,
-            OpenRouterAccountCredential credential, boolean includeLegacy) {
+            OpenRouterAccountCredential credential) {
         try {
             String secret = cipher.decrypt(account.getPublicId(), credential.getCredentialEnc());
             return new OpenRouterManagementAccess(account.getPublicId().toString(), account.getId(),
                     account.getPublicId(), account.getVendorWorkspaceId(),
                     account.getVendorIdentityKeyHash(), secret,
-                    credential.getId(), includeLegacy);
+                    credential.getId());
         } catch (IllegalStateException e) {
             throw new OpenRouterException(0, "management credential is unavailable");
         }
-    }
-
-    private OpenRouterManagementAccess envAccess() {
-        return new OpenRouterManagementAccess("legacy-env", null, null, null,
-                legacyProperties.managementKey(), null, true);
     }
 
     public record ReconciliationAccesses(List<OpenRouterManagementAccess> scopes,

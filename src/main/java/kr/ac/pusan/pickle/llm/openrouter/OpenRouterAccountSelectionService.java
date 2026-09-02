@@ -6,7 +6,6 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,16 +18,13 @@ public class OpenRouterAccountSelectionService {
     private final OpenRouterAccountRepository repository;
     private final OpenRouterAccountCredentialRepository credentialRepository;
     private final OpenRouterManagementCredentialCipher credentialCipher;
-    private final OpenRouterProperties properties;
 
     public OpenRouterAccountSelectionService(OpenRouterAccountRepository repository,
             OpenRouterAccountCredentialRepository credentialRepository,
-            OpenRouterManagementCredentialCipher credentialCipher,
-            OpenRouterProperties properties) {
+            OpenRouterManagementCredentialCipher credentialCipher) {
         this.repository = repository;
         this.credentialRepository = credentialRepository;
         this.credentialCipher = credentialCipher;
-        this.properties = properties;
     }
 
     @Transactional
@@ -41,12 +37,6 @@ public class OpenRouterAccountSelectionService {
                         "금액 한도가 0보다 클 때만 OpenRouter 사업 account를 선택할 수 있습니다.");
             }
             return null;
-        }
-        if (!properties.accountBindingEnabled()) {
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
-                    ErrorCodes.OPENROUTER_ACCOUNT_BINDING_DISABLED,
-                    "OpenRouter account binding을 사용할 수 없습니다",
-                    "운영 전환이 완료될 때까지 새 금액 축 binding이 중지되어 있습니다.");
         }
         if (requestedAccountId != null) {
             OpenRouterAccount account = repository.findWithLockByPublicId(requestedAccountId)
@@ -75,8 +65,7 @@ public class OpenRouterAccountSelectionService {
 
     @Transactional
     public boolean eligible(OpenRouterAccount account) {
-        if (!properties.accountBindingEnabled()
-                || account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
+        if (account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
             return false;
         }
         return databaseCredentialAvailable(account);

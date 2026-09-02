@@ -23,21 +23,6 @@ import org.mockito.ArgumentCaptor;
 class OpenRouterReconcilerIsolationTest {
 
     @Test
-    void preUpgradeQueuedEntrypointCannotReconcileAccountScopesOutsideAPair() {
-        LlmApiKeyRepository keys = mock(LlmApiKeyRepository.class);
-        OpenRouterClient client = mock(OpenRouterClient.class);
-        DriftFindingRepository findings = mock(DriftFindingRepository.class);
-        OpenRouterSpendRecorder spends = mock(OpenRouterSpendRecorder.class);
-        OpenRouterCredentialResolver resolver = mock(OpenRouterCredentialResolver.class);
-        when(resolver.legacyAccess()).thenReturn(java.util.Optional.empty());
-
-        new OpenRouterReconciler(keys, client, findings, spends, resolver).reconcile();
-
-        verifyNoInteractions(client, spends, findings);
-        verify(resolver, never()).reconciliationScopes();
-    }
-
-    @Test
     void failedActiveScopeRecordsCredentialErrorInsteadOfMarkingReconciled() {
         LlmApiKeyRepository keys = mock(LlmApiKeyRepository.class);
         OpenRouterClient client = mock(OpenRouterClient.class);
@@ -47,7 +32,7 @@ class OpenRouterReconcilerIsolationTest {
         UUID workspace = UUID.fromString("30000000-0000-4000-8000-000000000099");
         OpenRouterManagementAccess access = new OpenRouterManagementAccess(
                 "failed-account", 9L, UUID.randomUUID(), workspace,
-                "failed-management-key", 99L, false);
+                null, "failed-management-key", 99L);
         when(resolver.reconciliationScopes()).thenReturn(
                 new OpenRouterCredentialResolver.ReconciliationAccesses(
                         List.of(access), true));
@@ -71,7 +56,7 @@ class OpenRouterReconcilerIsolationTest {
         UUID workspace = UUID.fromString("30000000-0000-4000-8000-000000000001");
         OpenRouterManagementAccess healthy = new OpenRouterManagementAccess(
                 "healthy-account", 2L, UUID.randomUUID(), workspace,
-                "healthy-management-key", 22L, false);
+                null, "healthy-management-key", 22L);
         when(resolver.reconciliationScopes()).thenReturn(
                 new OpenRouterCredentialResolver.ReconciliationAccesses(
                         List.of(healthy), false));
@@ -96,9 +81,9 @@ class OpenRouterReconcilerIsolationTest {
         UUID firstWorkspace = UUID.fromString("30000000-0000-4000-8000-000000000011");
         UUID secondWorkspace = UUID.fromString("30000000-0000-4000-8000-000000000012");
         OpenRouterManagementAccess first = new OpenRouterManagementAccess(
-                "account-a", 11L, UUID.randomUUID(), firstWorkspace, "secret-a", 101L, false);
+                "account-a", 11L, UUID.randomUUID(), firstWorkspace, null, "secret-a", 101L);
         OpenRouterManagementAccess second = new OpenRouterManagementAccess(
-                "account-b", 12L, UUID.randomUUID(), secondWorkspace, "secret-b", 102L, false);
+                "account-b", 12L, UUID.randomUUID(), secondWorkspace, null, "secret-b", 102L);
         when(resolver.reconciliationScopes()).thenReturn(
                 new OpenRouterCredentialResolver.ReconciliationAccesses(
                         List.of(first, second), true));

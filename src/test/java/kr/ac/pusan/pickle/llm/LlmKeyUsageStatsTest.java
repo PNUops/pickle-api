@@ -277,13 +277,22 @@ class LlmKeyUsageStatsTest {
                 values ('LLM_API_KEY', ?, ?, ?, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, ownerId, "통계 시험", "st-" + unique);
+        // The money-axis cases below raise this key's credit limit, and a
+        // positive limit must name the account funding it.
+        long accountId = jdbcTemplate.queryForObject("""
+                insert into openrouter_accounts (org_id, name, created_by)
+                values (?, ?, ?)
+                returning id
+                """, Long.class, orgId, "통계 시험 사업 " + unique, ownerId);
         long id = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, token_hash,
-                                          token_prefix, status, created_by)
-                values (?, ?, ?, ?, ?, 'pickle-aa', 'ACTIVE'::llm_api_key_status, ?)
+                                          token_prefix, status, openrouter_account_id,
+                                          created_by)
+                values (?, ?, ?, ?, ?, 'pickle-aa', 'ACTIVE'::llm_api_key_status, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "통계 키 " + unique,
-                (UUID.randomUUID() + "" + UUID.randomUUID()).replace("-", ""), ownerId);
+                (UUID.randomUUID() + "" + UUID.randomUUID()).replace("-", ""),
+                accountId, ownerId);
         jdbcTemplate.update("""
                 insert into resource_access_grants
                        (resource_type, resource_id, grantee_type, user_id, role)

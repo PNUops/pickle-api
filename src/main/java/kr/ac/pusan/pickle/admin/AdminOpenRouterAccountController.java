@@ -46,7 +46,7 @@ public class AdminOpenRouterAccountController {
 
     @GetMapping
     @Operation(summary = "OpenRouter 사업 account 목록",
-            description = "관리 범위의 사업·재원별 OpenRouter account와 credential 상태를 조회합니다. 인증 정보와 vendor 내부 식별자는 반환하지 않습니다.")
+            description = "관리 범위의 사업별 OpenRouter account와 credential 상태를 조회합니다. 인증 정보와 vendor 내부 식별자는 반환하지 않습니다.")
     public List<OpenRouterAccountResponse> listAdminLlmAccounts(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) UUID orgId) {
@@ -58,7 +58,7 @@ public class AdminOpenRouterAccountController {
     @PreAuthorize(WRITERS)
     @RequireReauth
     @Operation(summary = "OpenRouter 사업 account 등록",
-            description = "기관에 사업·재원별 account metadata를 등록합니다. 재인증과 이름 확인이 필요하며 management credential은 별도 stage 작업으로 검증합니다.")
+            description = "기관에 사업별 account metadata를 등록합니다. 재인증과 이름 확인이 필요하며 management credential은 별도 stage 작업으로 검증합니다.")
     public OpenRouterAccountResponse createAdminLlmAccount(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody CreateOpenRouterAccountRequest request,
@@ -78,7 +78,7 @@ public class AdminOpenRouterAccountController {
     @PatchMapping("/{accountId}")
     @PreAuthorize(WRITERS)
     @Operation(summary = "OpenRouter 사업 account 정보 수정",
-            description = "이름·재원·증빙 참조·상태 중 보낸 항목만 변경합니다. 활성 또는 미만료 key가 연결된 account는 보관할 수 없습니다.")
+            description = "이름·사업·담당자·상태 중 보낸 항목만 변경합니다. 활성 또는 미만료 key가 연결된 account는 보관할 수 없습니다.")
     public OpenRouterAccountResponse updateAdminLlmAccount(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID accountId,

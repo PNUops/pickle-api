@@ -386,6 +386,16 @@ class AdminLlmKeyTest {
         return values;
     }
 
+    /** One funded account per org, since a money budget must name one. */
+    private long openrouterAccount(long orgId) {
+        return jdbcTemplate.queryForObject("""
+                insert into openrouter_accounts (org_id, name, created_by)
+                values (?, ?, ?)
+                on conflict (org_id, lower(name)) do update set name = excluded.name
+                returning id
+                """, Long.class, orgId, "키 시험 사업", requester.getId());
+    }
+
     private Key key(long orgId, long workspaceId, String name, String status, Instant expiresAt) {
         long requestId = request(orgId, workspaceId, name + " 신청");
         String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
@@ -394,15 +404,15 @@ class AdminLlmKeyTest {
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,
                                           token_hash, token_prefix, status, expires_at,
                                           rpm, tpm, concurrency, daily_tokens, credit_limit,
-                                          openrouter_legacy, created_by)
+                                          openrouter_account_id, created_by)
                 values (?, ?, ?, ?, '테스트', ?, ?, ?::llm_api_key_status, ?,
-                        60, 1000, 4, 10000, 1.00, true, ?)
+                        60, 1000, 4, 10000, 1.00, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, name,
                 "PENDING".equals(status) ? null : hash,
                 "PENDING".equals(status) ? null : prefix, status,
                 expiresAt == null ? null : OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC),
-                requester.getId());
+                openrouterAccount(orgId), requester.getId());
         return new Key(pub("llm_api_keys", id), pub("requests", requestId), hash, prefix);
     }
 

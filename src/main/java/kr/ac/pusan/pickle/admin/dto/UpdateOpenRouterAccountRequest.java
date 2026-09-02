@@ -13,12 +13,12 @@ public class UpdateOpenRouterAccountRequest {
     private boolean nameSet;
 
     @Size(max = 500)
-    private @Nullable String fundingReference;
-    private boolean fundingReferenceSet;
+    private @Nullable String program;
+    private boolean programSet;
 
     @Size(max = 500)
-    private @Nullable String evidenceReference;
-    private boolean evidenceReferenceSet;
+    private @Nullable String contact;
+    private boolean contactSet;
 
     private OpenRouterAccountStatus status;
     private boolean statusSet;
@@ -26,15 +26,15 @@ public class UpdateOpenRouterAccountRequest {
     @Schema(description = "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다.")
     public String getName() { return name; }
     public void setName(@Nullable String name) { this.name = name; this.nameSet = true; }
-    @Schema(description = "새 재원 참조. 생략하면 유지하고 null이면 지웁니다.")
-    public @Nullable String getFundingReference() { return fundingReference; }
-    public void setFundingReference(@Nullable String value) {
-        fundingReference = value; fundingReferenceSet = true;
+    @Schema(description = "새 사업. 생략하면 유지하고 null이면 지웁니다.")
+    public @Nullable String getProgram() { return program; }
+    public void setProgram(@Nullable String value) {
+        program = value; programSet = true;
     }
-    @Schema(description = "새 증빙 참조. 생략하면 유지하고 null이면 지웁니다.")
-    public @Nullable String getEvidenceReference() { return evidenceReference; }
-    public void setEvidenceReference(@Nullable String value) {
-        evidenceReference = value; evidenceReferenceSet = true;
+    @Schema(description = "새 담당자. 생략하면 유지하고 null이면 지웁니다.")
+    public @Nullable String getContact() { return contact; }
+    public void setContact(@Nullable String value) {
+        contact = value; contactSet = true;
     }
     @Schema(description = "새 lifecycle 상태. 생략하면 유지하며 null은 허용하지 않습니다.")
     public OpenRouterAccountStatus getStatus() { return status; }
@@ -43,10 +43,10 @@ public class UpdateOpenRouterAccountRequest {
     }
 
     @Schema(hidden = true) public boolean isNameSet() { return nameSet; }
-    @Schema(hidden = true) public boolean isFundingReferenceSet() { return fundingReferenceSet; }
-    @Schema(hidden = true) public boolean isEvidenceReferenceSet() { return evidenceReferenceSet; }
+    @Schema(hidden = true) public boolean isProgramSet() { return programSet; }
+    @Schema(hidden = true) public boolean isContactSet() { return contactSet; }
     @Schema(hidden = true) public boolean isStatusSet() { return statusSet; }
     @Schema(hidden = true) public boolean hasAny() {
-        return nameSet || fundingReferenceSet || evidenceReferenceSet || statusSet;
+        return nameSet || programSet || contactSet || statusSet;
     }
 }

@@ -13,19 +13,11 @@ public final class OpenRouterManagementAccess {
     private final @Nullable String identityKeyHash;
     private final String secret;
     private final @Nullable Long credentialId;
-    private final boolean includesLegacyKeys;
-
-    OpenRouterManagementAccess(String scopeKey, @Nullable Long accountId,
-            @Nullable UUID accountPublicId, @Nullable UUID workspaceId, String secret,
-            @Nullable Long credentialId, boolean includesLegacyKeys) {
-        this(scopeKey, accountId, accountPublicId, workspaceId, null, secret,
-                credentialId, includesLegacyKeys);
-    }
 
     OpenRouterManagementAccess(String scopeKey, @Nullable Long accountId,
             @Nullable UUID accountPublicId, @Nullable UUID workspaceId,
             @Nullable String identityKeyHash, String secret,
-            @Nullable Long credentialId, boolean includesLegacyKeys) {
+            @Nullable Long credentialId) {
         this.scopeKey = scopeKey;
         this.accountId = accountId;
         this.accountPublicId = accountPublicId;
@@ -33,7 +25,6 @@ public final class OpenRouterManagementAccess {
         this.identityKeyHash = identityKeyHash;
         this.secret = secret;
         this.credentialId = credentialId;
-        this.includesLegacyKeys = includesLegacyKeys;
     }
 
     public String scopeKey() { return scopeKey; }
@@ -43,7 +34,6 @@ public final class OpenRouterManagementAccess {
     public @Nullable String identityKeyHash() { return identityKeyHash; }
     String secret() { return secret; }
     public @Nullable Long credentialId() { return credentialId; }
-    public boolean includesLegacyKeys() { return includesLegacyKeys; }
 
     @Override
     public String toString() {

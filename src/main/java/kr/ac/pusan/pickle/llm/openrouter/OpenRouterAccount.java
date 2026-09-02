@@ -38,11 +38,11 @@ public class OpenRouterAccount {
     @Column(nullable = false)
     private OpenRouterAccountStatus status = OpenRouterAccountStatus.ACTIVE;
 
-    @Column(name = "funding_reference")
-    private @Nullable String fundingReference;
+    @Column(name = "program")
+    private @Nullable String program;
 
-    @Column(name = "evidence_reference")
-    private @Nullable String evidenceReference;
+    @Column(name = "contact")
+    private @Nullable String contact;
 
     @Column(name = "vendor_workspace_id")
     private @Nullable UUID vendorWorkspaceId;
@@ -62,20 +62,20 @@ public class OpenRouterAccount {
     protected OpenRouterAccount() {
     }
 
-    public OpenRouterAccount(long orgId, String name, @Nullable String fundingReference,
-            @Nullable String evidenceReference, long createdBy) {
+    public OpenRouterAccount(long orgId, String name, @Nullable String program,
+            @Nullable String contact, long createdBy) {
         this.orgId = orgId;
         this.name = name;
-        this.fundingReference = fundingReference;
-        this.evidenceReference = evidenceReference;
+        this.program = program;
+        this.contact = contact;
         this.createdBy = createdBy;
     }
 
-    public void update(String name, @Nullable String fundingReference,
-            @Nullable String evidenceReference, OpenRouterAccountStatus status, Instant now) {
+    public void update(String name, @Nullable String program,
+            @Nullable String contact, OpenRouterAccountStatus status, Instant now) {
         this.name = name;
-        this.fundingReference = fundingReference;
-        this.evidenceReference = evidenceReference;
+        this.program = program;
+        this.contact = contact;
         this.status = status;
         this.updatedAt = now;
     }
@@ -101,8 +101,8 @@ public class OpenRouterAccount {
     public Long getOrgId() { return orgId; }
     public String getName() { return name; }
     public OpenRouterAccountStatus getStatus() { return status; }
-    public @Nullable String getFundingReference() { return fundingReference; }
-    public @Nullable String getEvidenceReference() { return evidenceReference; }
+    public @Nullable String getProgram() { return program; }
+    public @Nullable String getContact() { return contact; }
     public @Nullable UUID getVendorWorkspaceId() { return vendorWorkspaceId; }
     public @Nullable String getVendorIdentityKeyHash() { return vendorIdentityKeyHash; }
     public Instant getCreatedAt() { return createdAt; }

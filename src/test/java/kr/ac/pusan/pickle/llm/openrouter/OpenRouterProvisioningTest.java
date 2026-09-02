@@ -54,19 +54,50 @@ class OpenRouterProvisioningTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private CredentialCipher credentialCipher;
+    @Autowired
+    private OpenRouterManagementCredentialCipher managementCipher;
     @MockitoBean
     private OpenRouterClient client;
+
+    /** The management credential this test's account scope decrypts to. */
+    private static final String ACCOUNT_KEY = "provisioner-account-management-key";
+
+    private long accountId;
 
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("delete from llm_usage_events");
+        jdbcTemplate.update("delete from llm_credit_usage_snapshots");
         jdbcTemplate.update("delete from llm_api_keys");
+        jdbcTemplate.update("delete from openrouter_credit_snapshots");
+        jdbcTemplate.update("delete from openrouter_account_credentials");
+        jdbcTemplate.update("delete from openrouter_accounts");
         jdbcTemplate.update("""
                 insert into llm_gateway_state (id, generation, service_enabled)
                 values (true, 1, true)
                 on conflict (id) do update set generation = 1
                 """);
-        when(client.configured()).thenReturn(true);
+        accountId = insertAccount();
+    }
+
+    /** The account every key here is funded by; it has no vendor workspace. */
+    private long insertAccount() {
+        long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
+        long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
+        long id = jdbcTemplate.queryForObject("""
+                insert into openrouter_accounts (org_id, name, created_by)
+                values (?, ?, ?)
+                returning id
+                """, Long.class, orgId, "발급 시험 사업 " + UUID.randomUUID(), ownerId);
+        UUID publicId = jdbcTemplate.queryForObject(
+                "select public_id from openrouter_accounts where id = ?", UUID.class, id);
+        jdbcTemplate.update("""
+                insert into openrouter_account_credentials
+                       (account_id, status, credential_enc, created_by,
+                        activated_at, verified_at)
+                values (?, 'ACTIVE'::openrouter_credential_status, ?, ?, now(), now())
+                """, id, managementCipher.encrypt(publicId, ACCOUNT_KEY), ownerId);
+        return id;
     }
 
     @Test
@@ -96,7 +127,7 @@ class OpenRouterProvisioningTest {
         // remote side after our document has stopped serving its credential.
         ArgumentCaptor<BigDecimal> limit = ArgumentCaptor.forClass(BigDecimal.class);
         ArgumentCaptor<Instant> expiry = ArgumentCaptor.forClass(Instant.class);
-        verify(client).createKey(eq("test-openrouter-legacy-management-key"), eq(null),
+        verify(client).createKey(eq(ACCOUNT_KEY), eq(null),
                 eq(publicIdOf(keyId).toString()), limit.capture(),
                 eq(CreditLimitReset.MONTHLY), expiry.capture());
         assertThat(limit.getValue()).isEqualByComparingTo("5.00");
@@ -169,8 +200,7 @@ class OpenRouterProvisioningTest {
             releaseCreate.countDown();
             provisioning.get(5, TimeUnit.SECONDS);
 
-            verify(client).deleteKey(
-                    "test-openrouter-legacy-management-key", null, "hash-race");
+            verify(client).deleteKey(ACCOUNT_KEY, null, "hash-race");
             assertThat(jdbcTemplate.queryForObject(
                     "select openrouter_key_hash from llm_api_keys where id = ?",
                     String.class, keyId)).isNull();
@@ -199,7 +229,7 @@ class OpenRouterProvisioningTest {
 
         // The service method's transaction committed when it returned, so the
         // after-commit deletion has fired by now.
-        verify(client).deleteKey("test-openrouter-legacy-management-key", null, "hash-r");
+        verify(client).deleteKey(ACCOUNT_KEY, null, "hash-r");
     }
 
     @Test
@@ -215,9 +245,9 @@ class OpenRouterProvisioningTest {
         provisioner.updateLimitAfterChange(keyId, "hash-stale", new BigDecimal("2.00"), null);
         provisioner.setDisabledAfterStatusChange(keyId, "hash-stale", true);
 
-        verify(client).updateLimit("test-openrouter-legacy-management-key", null,
+        verify(client).updateLimit(ACCOUNT_KEY, null,
                 "hash-current", new BigDecimal("7.00"), CreditLimitReset.MONTHLY);
-        verify(client).setDisabled("test-openrouter-legacy-management-key", null,
+        verify(client).setDisabled(ACCOUNT_KEY, null,
                 "hash-current", false);
     }
 
@@ -330,13 +360,12 @@ class OpenRouterProvisioningTest {
                 """, Long.class, workspaceId, orgId, ownerId, "금액 축 시험", "or-" + unique);
         return jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, token_hash,
-                                          token_prefix, status, credit_limit, openrouter_legacy,
-                                          created_by)
+                                          token_prefix, status, credit_limit,
+                                          openrouter_account_id, created_by)
                 values (?, ?, ?, ?, ?, 'pickle-aa', ?::llm_api_key_status, ?, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "key-" + unique,
-                String.format("%064x", requestId), status, creditLimit,
-                creditLimit.signum() > 0, ownerId);
+                String.format("%064x", requestId), status, creditLimit, accountId, ownerId);
     }
 
     private UUID publicIdOf(long keyId) {

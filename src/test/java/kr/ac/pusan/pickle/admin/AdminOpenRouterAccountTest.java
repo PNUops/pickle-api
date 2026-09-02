@@ -77,8 +77,6 @@ class AdminOpenRouterAccountTest {
 
     private static final UUID VENDOR_WORKSPACE =
             UUID.fromString("10000000-0000-4000-8000-000000000001");
-    private static final UUID LEGACY_WORKSPACE =
-            UUID.fromString("10000000-0000-4000-8000-000000000099");
     private static final String MANAGEMENT_KEY = "management-key-must-never-leave-request";
 
     @Autowired private AdminOpenRouterAccountService service;
@@ -121,37 +119,13 @@ class AdminOpenRouterAccountTest {
         when(client.listKeys(anyString(), any(UUID.class))).thenReturn(List.of());
         when(client.createKey(anyString(), any(), anyString(), eq(BigDecimal.ZERO),
                 isNull(), any(Instant.class)))
-                .thenAnswer(invocation -> new OpenRouterClient.CreatedKey(
-                        "probe-hash", "probe-runtime-secret",
-                        "test-openrouter-legacy-management-key".equals(invocation.getArgument(0))
-                                ? LEGACY_WORKSPACE : VENDOR_WORKSPACE));
+                .thenReturn(new OpenRouterClient.CreatedKey(
+                        "probe-hash", "probe-runtime-secret", VENDOR_WORKSPACE));
         when(client.createKey(anyString(), any(UUID.class), anyString(),
                 eq(BigDecimal.ZERO), isNull(), isNull()))
                 .thenAnswer(invocation -> new OpenRouterClient.CreatedKey(
                         "identity-" + UUID.randomUUID(), "identity-runtime-secret",
                         invocation.getArgument(1)));
-    }
-
-    @Test
-    void firstCredentialStageRejectsTheLegacyVendorAccountEvenWithAnotherSecret() {
-        OpenRouterAccountResponse account = create("legacy 중복 사업");
-        when(client.createKey(eq("test-openrouter-legacy-management-key"), any(), anyString(),
-                eq(BigDecimal.ZERO), isNull(), any(Instant.class)))
-                .thenReturn(new OpenRouterClient.CreatedKey(
-                        "legacy-probe", "legacy-runtime", VENDOR_WORKSPACE));
-
-        assertThatThrownBy(() -> service.stage(sysAdmin, account.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "legacy 중복 사업"),
-                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
-                    assertThat(error.getStatus().value()).isEqualTo(409);
-                    assertThat(error.getCode()).isEqualTo("OPENROUTER_ACCOUNT_INVALID_STATE");
-                });
-        assertThat(service.get(sysAdmin, account.id()).rotationCredential()).isNull();
-        assertThat(jdbcTemplate.queryForObject("""
-                select vendor_workspace_id is null
-                  from openrouter_accounts
-                 where public_id = ?
-                """, Boolean.class, account.id())).isTrue();
     }
 
     @Test
@@ -262,72 +236,63 @@ class AdminOpenRouterAccountTest {
                 OpenRouterCredentialStatus.ACTIVE)).isPresent();
     }
 
+    /**
+     * The invariants the schema keeps on its own, after the global source was
+     * retired: a key that can spend money always names the account funding
+     * it, and that naming never moves.
+     *
+     * <p>The approval case is the one worth spelling out. The trigger body
+     * reads the money grant before it reads anything else, so an approval
+     * that names an account commits on a path that never touches the rule
+     * below — which makes it easy to test the wrong half and conclude the
+     * rule holds.</p>
+     */
     @Test
     void databaseRejectsPositiveUnboundCrossOrgAndRebindingWrites() {
         OpenRouterAccount account = accountRepository.findByPublicId(create("사업 A").id()).orElseThrow();
         long workspaceId = workspace(orgId, "바인딩 시험");
         long requestId = request(orgId, workspaceId, "바인딩 시험");
 
-        long oldJarShape = jdbcTemplate.queryForObject("""
+        assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit, created_by)
                 values (?, ?, ?, 'unbound', 1, ?)
-                returning id
-                """, Long.class, workspaceId, orgId, requestId, sysAdmin.id());
-        assertThat(jdbcTemplate.queryForObject(
-                "select openrouter_legacy from llm_api_keys where id = ?",
-                Boolean.class, oldJarShape)).isTrue();
-        long oldJarZero = jdbcTemplate.queryForObject("""
+                """, workspaceId, orgId, requestId, sysAdmin.id()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        long zeroKey = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit, created_by)
-                values (?, ?, ?, 'old-zero', 0, ?)
+                values (?, ?, ?, 'zero', 0, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, sysAdmin.id());
-        jdbcTemplate.update(
-                "update llm_api_keys set credit_limit = 2 where id = ?", oldJarZero);
-        assertThat(jdbcTemplate.queryForObject(
-                "select openrouter_legacy from llm_api_keys where id = ?",
-                Boolean.class, oldJarZero)).isTrue();
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "update llm_api_keys set credit_limit = 2 where id = ?", zeroKey))
+                .isInstanceOf(DataIntegrityViolationException.class);
 
-        long oldApprovalRequest = request(orgId, workspaceId, "old-jar-approval");
-        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            jdbcTemplate.update("""
-                    insert into llm_key_request_details
-                           (request_id, granted_credit_limit)
-                    values (?, 3)
-                    """, oldApprovalRequest);
-            jdbcTemplate.update("""
-                    insert into llm_api_keys
-                           (workspace_id, org_id, request_id, name, credit_limit, created_by)
-                    values (?, ?, ?, 'old-jar-approved', 3, ?)
-                    """, workspaceId, orgId, oldApprovalRequest, sysAdmin.id());
-        });
-        assertThat(jdbcTemplate.queryForObject("""
-                select openrouter_legacy
-                  from llm_api_keys
-                 where request_id = ?
-                """, Boolean.class, oldApprovalRequest)).isTrue();
-
-        long unmaterializedRequest = request(orgId, workspaceId, "missing-account-approval");
+        long unboundApproval = request(orgId, workspaceId, "unbound-approval");
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_key_request_details
                        (request_id, granted_credit_limit)
                 values (?, 3)
-                """, unmaterializedRequest)).isInstanceOf(DataAccessException.class);
+                """, unboundApproval)).isInstanceOf(DataAccessException.class);
 
-        assertThatThrownBy(() -> jdbcTemplate.update("""
-                insert into llm_api_keys
-                       (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_legacy, created_by)
-                values (?, ?, ?, 'new-unbound', 1, false, ?)
-                """, workspaceId, orgId, requestId, sysAdmin.id()))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        long boundApproval = request(orgId, workspaceId, "bound-approval");
+        jdbcTemplate.update("""
+                insert into llm_key_request_details
+                       (request_id, granted_credit_limit, granted_openrouter_account_id)
+                values (?, 3, ?)
+                """, boundApproval, account.getId());
+        assertThat(jdbcTemplate.queryForObject("""
+                select granted_openrouter_account_id
+                  from llm_key_request_details where request_id = ?
+                """, Long.class, boundApproval)).isEqualTo(account.getId());
 
         long keyId = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy, created_by)
-                values (?, ?, ?, 'bound', 1, ?, false, ?)
+                        openrouter_account_id, created_by)
+                values (?, ?, ?, 'bound', 1, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, account.getId(), sysAdmin.id());
         assertThatThrownBy(() -> jdbcTemplate.update(
@@ -340,36 +305,30 @@ class AdminOpenRouterAccountTest {
                 "update llm_api_keys set openrouter_account_id = ? where id = ?",
                 second.getId(), keyId)).isInstanceOf(DataAccessException.class);
 
-        long legacyKey = jdbcTemplate.queryForObject("""
+        long unboundZero = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
-                       (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_legacy, created_by)
-                values (?, ?, ?, 'legacy', 1, true, ?)
+                       (workspace_id, org_id, request_id, name, credit_limit, created_by)
+                values (?, ?, ?, 'to-bind', 0, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, sysAdmin.id());
-        jdbcTemplate.update("""
-                update llm_api_keys
-                   set openrouter_legacy = false, openrouter_account_id = ?
-                 where id = ?
-                """, account.getId(), legacyKey);
+        jdbcTemplate.update(
+                "update llm_api_keys set openrouter_account_id = ? where id = ?",
+                account.getId(), unboundZero);
         assertThat(jdbcTemplate.queryForObject(
                 "select openrouter_account_id from llm_api_keys where id = ?",
-                Long.class, legacyKey)).isEqualTo(account.getId());
+                Long.class, unboundZero)).isEqualTo(account.getId());
 
-        long provisionedLegacy = jdbcTemplate.queryForObject("""
+        long provisionedUnbound = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_key_hash, openrouter_key_enc, openrouter_legacy, created_by)
-                values (?, ?, ?, 'legacy-remote', 1, 'legacy-remote-hash',
-                        'legacy-runtime-ciphertext', true, ?)
+                        openrouter_key_hash, openrouter_key_enc, created_by)
+                values (?, ?, ?, 'remote-unbound', 0, 'stranded-remote-hash',
+                        'stranded-runtime-ciphertext', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, sysAdmin.id());
-        assertThatThrownBy(() -> jdbcTemplate.update("""
-                update llm_api_keys
-                   set openrouter_legacy = false, openrouter_account_id = ?
-                 where id = ?
-                """, account.getId(), provisionedLegacy))
-                .isInstanceOf(DataAccessException.class);
+        assertThatThrownBy(() -> jdbcTemplate.update(
+                "update llm_api_keys set openrouter_account_id = ? where id = ?",
+                account.getId(), provisionedUnbound)).isInstanceOf(DataAccessException.class);
 
         long otherOrgId = jdbcTemplate.queryForObject(
                 "insert into orgs (name) values ('다른 기관') returning id", Long.class);
@@ -378,8 +337,8 @@ class AdminOpenRouterAccountTest {
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy, created_by)
-                values (?, ?, ?, 'cross-org', 1, ?, false, ?)
+                        openrouter_account_id, created_by)
+                values (?, ?, ?, 'cross-org', 1, ?, ?)
                 """, otherWorkspace, otherOrgId, otherRequest, account.getId(), sysAdmin.id()))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
@@ -670,8 +629,8 @@ class AdminOpenRouterAccountTest {
         jdbcTemplate.update("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy, created_by)
-                values (?, ?, ?, 'guard', 0, ?, false, ?)
+                        openrouter_account_id, created_by)
+                values (?, ?, ?, 'guard', 0, ?, ?)
                 """, workspace, orgId, request, internalAccount, sysAdmin.id());
         assertThatThrownBy(() -> service.deleteActive(sysAdmin, account.id(),
                 new FinalizeOpenRouterCredentialRequest("회전 사업", true), "127.0.0.1"))
@@ -707,9 +666,19 @@ class AdminOpenRouterAccountTest {
                 limits(BigDecimal.ONE, first.getPublicId()), "127.0.0.1")
                 .openrouterAccountId()).isEqualTo(first.getPublicId());
 
-        UUID legacyPositive = insertKey(workspace, request(orgId, workspace, "legacy-positive"),
-                BigDecimal.ONE, null);
-        assertThatThrownBy(() -> adminLlmKeyService.replaceLimits(sysAdmin, legacyPositive,
+        // An unbound key that already carries a vendor key was provisioned
+        // under a scope this account cannot see, so it is a new key or
+        // nothing. (An unbound key with money is not a state that exists any
+        // more; the schema refuses it.)
+        UUID strandedRemote = insertKey(workspace, request(orgId, workspace, "stranded-remote"),
+                BigDecimal.ZERO, null);
+        jdbcTemplate.update("""
+                update llm_api_keys
+                   set openrouter_key_hash = 'stranded-hash',
+                       openrouter_key_enc = 'stranded-ciphertext'
+                 where public_id = ?
+                """, strandedRemote);
+        assertThatThrownBy(() -> adminLlmKeyService.replaceLimits(sysAdmin, strandedRemote,
                 limits(BigDecimal.ONE, first.getPublicId()), "127.0.0.1"))
                 .isInstanceOfSatisfying(ApiException.class, error ->
                         assertThat(error.getCode()).isEqualTo(
@@ -869,7 +838,7 @@ class AdminOpenRouterAccountTest {
 
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-                orgPublicId, name, "재원", null, name), "127.0.0.1");
+                orgPublicId, name, "사업 코드", null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(
@@ -898,11 +867,11 @@ class AdminOpenRouterAccountTest {
         long id = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy, created_by)
-                values (?, ?, ?, ?, ?, ?, ?, ?)
+                        openrouter_account_id, created_by)
+                values (?, ?, ?, ?, ?, ?, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, "key-" + UUID.randomUUID(),
-                credit, accountId, accountId == null, sysAdmin.id());
+                credit, accountId, sysAdmin.id());
         return jdbcTemplate.queryForObject(
                 "select public_id from llm_api_keys where id = ?", UUID.class, id);
     }

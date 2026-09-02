@@ -31,9 +31,6 @@ pickle:
     secret: pickle-test-jwt-secret-0123456789abcdef-test
   credentials:
     encryption-key: 4IUuLkNP8ook5VuNU7By7GAq0J8rbFOcEfuExymtueM=
-  openrouter:
-    management-key: test-openrouter-legacy-management-key
-    account-binding-enabled: true
   openrouter-credential-keyring:
     write-key-id: test-v1
     read-keys: test-v1=4IUuLkNP8ook5VuNU7By7GAq0J8rbFOcEfuExymtueM=
