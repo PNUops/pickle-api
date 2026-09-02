@@ -351,13 +351,13 @@ class OpenRouterProvisioningTest {
         long workspaceId = jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
                 returning id
-                """, Long.class, "금액 축 시험 " + unique);
+                """, Long.class, "유료 모델 시험 " + unique);
         long requestId = jdbcTemplate.queryForObject("""
                 insert into requests (resource_type, workspace_id, org_id, requester_id,
                                       purpose, display_name)
                 values ('LLM_API_KEY', ?, ?, ?, ?, ?)
                 returning id
-                """, Long.class, workspaceId, orgId, ownerId, "금액 축 시험", "or-" + unique);
+                """, Long.class, workspaceId, orgId, ownerId, "유료 모델 시험", "or-" + unique);
         return jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, token_hash,
                                           token_prefix, status, credit_limit,

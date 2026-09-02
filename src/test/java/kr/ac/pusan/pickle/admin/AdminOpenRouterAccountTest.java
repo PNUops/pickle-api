@@ -135,7 +135,7 @@ class AdminOpenRouterAccountTest {
         assertThatThrownBy(() -> selectionService.select(orgId, BigDecimal.ONE, created.id()))
                 .isInstanceOfSatisfying(ApiException.class, error ->
                         assertThat(error.getErrors().getFirst().message())
-                                .contains("검증된 management credential"));
+                                .contains("관리용 키"));
 
         OpenRouterAccountResponse staged = service.stage(sysAdmin, created.id(),
                 new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "사업 A"), "127.0.0.1");

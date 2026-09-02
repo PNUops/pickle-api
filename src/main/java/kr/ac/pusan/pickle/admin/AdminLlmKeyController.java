@@ -53,7 +53,7 @@ public class AdminLlmKeyController {
             @RequestParam(required = false) UUID workspaceId,
             @Parameter(description = "키를 발급한 신청 공개 ID")
             @RequestParam(required = false) UUID requestId,
-            @Parameter(description = "불변 binding된 OpenRouter 사업 account 공개 ID")
+            @Parameter(description = "연결된 사업 계정의 공개 ID")
             @RequestParam(required = false) UUID openrouterAccountId,
             @RequestParam(required = false) LlmApiKeyStatus status,
             @RequestParam(required = false) String query,

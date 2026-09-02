@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 public record CreateOpenRouterAccountRequest(
         @Schema(description = "Account를 소유할 기관 공개 ID")
         @NotNull UUID orgId,
-        @Schema(description = "기관 관리자가 구분하는 사업 account 이름")
+        @Schema(description = "기관 관리자가 구분하는 사업 계정 이름")
         @NotBlank @Size(max = 120) String name,
         @Schema(description = "이 account가 청구되는 사업. 없으면 null")
         @Size(max = 500) @Nullable String program,

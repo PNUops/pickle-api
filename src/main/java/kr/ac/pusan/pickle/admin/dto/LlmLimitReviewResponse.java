@@ -29,7 +29,7 @@ public record LlmLimitReviewResponse(
         @Nullable BigDecimal creditLimitRemaining,
         @Nullable Instant creditUsageAt,
         boolean creditAxisConnected,
-        @Schema(description = "불변 binding된 OpenRouter 사업 account. 미결합이면 null")
+        @Schema(description = "연결된 사업 계정. 연결 전이면 null")
         @Nullable UUID openrouterAccountId,
         @Nullable String openrouterAccountName,
         List<LlmLimitPressureResponse> pressure) {

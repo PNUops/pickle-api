@@ -34,7 +34,7 @@ public class OpenRouterAccountSelectionService {
         if (!positive) {
             if (requestedAccountId != null) {
                 throw validation("openrouterAccountId",
-                        "금액 한도가 0보다 클 때만 OpenRouter 사업 account를 선택할 수 있습니다.");
+                        "금액 한도가 0보다 클 때만 사업 계정을 선택할 수 있습니다.");
             }
             return null;
         }
@@ -46,7 +46,7 @@ public class OpenRouterAccountSelectionService {
             }
             if (!eligible(account)) {
                 throw validation("openrouterAccountId",
-                        "검증된 management credential이 있는 활성 account만 사용할 수 있습니다.");
+                        "관리용 키까지 확인된 활성 사업 계정만 사용할 수 있습니다.");
             }
             return account;
         }
@@ -54,11 +54,11 @@ public class OpenRouterAccountSelectionService {
                 orgId, OpenRouterAccountStatus.ACTIVE).stream().filter(this::eligible).toList();
         if (eligible.isEmpty()) {
             throw validation("openrouterAccountId",
-                    "금액 축을 승인하려면 이 기관에 OpenRouter 사업 account가 필요합니다.");
+                    "유료 모델을 승인하려면 이 기관에 사업 계정이 필요합니다.");
         }
         if (eligible.size() > 1) {
             throw validation("openrouterAccountId",
-                    "사용할 OpenRouter 사업 account를 선택해 주세요.");
+                    "어느 사업 계정으로 결제할지 선택해 주세요.");
         }
         return eligible.getFirst();
     }

@@ -13,7 +13,7 @@ public record OpenRouterAccountResponse(
         UUID orgId,
         @Schema(description = "소유 기관 이름")
         String orgName,
-        @Schema(description = "사업 account 이름")
+        @Schema(description = "사업 계정 이름")
         String name,
         @Schema(description = "Account lifecycle 상태")
         OpenRouterAccountStatus status,
@@ -23,7 +23,7 @@ public record OpenRouterAccountResponse(
         @Nullable String contact,
         @Schema(description = "현재 positive-credit key binding에 선택할 수 있는지")
         boolean eligibleForBinding,
-        @Schema(description = "이 account에 불변 binding된 Pickle LLM key 수")
+        @Schema(description = "이 사업 계정에 연결된 LLM API 키 수")
         long boundKeyCount,
         @Schema(description = "프로비저닝과 대사에 사용할 management credential이 있는지")
         boolean credentialAvailable,

@@ -299,7 +299,7 @@ class AdminLlmUsageTest {
 
     @Test
     void limitReviewUsesOnlyExactReasonsAndCarriesAccountDeepLink() throws Exception {
-        Account account = account(orgA, "사업 account");
+        Account account = account(orgA, "사업 계정");
         Key pressured = key(orgA, workspaceA1, "압력 키", 100L, "10", true, account,
                 "5", "5", true);
         Key disconnected = key(orgA, workspaceA2, "미연결 키", null, "20", false, account,

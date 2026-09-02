@@ -189,7 +189,7 @@ public class AdminLlmKeyService {
         }
         if (form.getCreditLimit() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
-                    "금액 한도는 null일 수 없습니다. 금액 축을 닫으려면 0을 보내 주세요.")));
+                    "금액 한도는 null일 수 없습니다. 유료 모델을 닫으려면 0을 보내 주세요.")));
         }
         if (form.getTpm() != null && form.getRpm() != null && form.getTpm() < form.getRpm()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("tpm",
@@ -388,8 +388,8 @@ public class AdminLlmKeyService {
     private static ApiException immutableBinding() {
         return new ApiException(HttpStatus.CONFLICT,
                 ErrorCodes.LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE,
-                "OpenRouter account binding을 변경할 수 없습니다",
-                "Account를 옮기려면 새 LLM API key를 발급해 전환해 주세요.");
+                "연결된 사업 계정은 바꿀 수 없습니다",
+                "다른 사업 계정으로 옮기려면 새 LLM API 키를 발급해 전환해 주세요.");
     }
 
     private record References(Map<Long, Workspace> workspaces, Map<Long, Org> orgs,

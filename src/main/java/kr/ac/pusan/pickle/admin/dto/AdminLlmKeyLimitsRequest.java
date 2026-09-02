@@ -34,7 +34,7 @@ public class AdminLlmKeyLimitsRequest {
 
     @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
     @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
-    @NotNull(message = "금액 한도는 필수입니다. 금액 축을 닫으려면 0을 보내 주세요.")
+    @NotNull(message = "금액 한도는 필수입니다. 유료 모델을 닫으려면 0을 보내 주세요.")
     private BigDecimal creditLimit;
     private boolean creditLimitSet;
 
@@ -88,7 +88,7 @@ public class AdminLlmKeyLimitsRequest {
     }
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-            description = "금액 한도(USD 크레딧). 0이면 금액 축을 닫습니다.")
+            description = "금액 한도(USD 크레딧). 0이면 유료 모델을 닫습니다.")
     public BigDecimal getCreditLimit() {
         return creditLimit;
     }
@@ -109,7 +109,7 @@ public class AdminLlmKeyLimitsRequest {
         this.creditLimitResetSet = true;
     }
 
-    @Schema(description = "금액 축 사업 account. 생략하거나 null이면 기존 binding을 유지합니다.")
+    @Schema(description = "유료 모델을 결제할 사업 계정. 생략하거나 null이면 기존 연결을 유지합니다.")
     public @Nullable UUID getOpenrouterAccountId() {
         return openrouterAccountId;
     }

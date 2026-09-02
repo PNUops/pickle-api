@@ -883,13 +883,13 @@ public class AdminOpenRouterAccountService {
     private static ApiException workspaceConflict() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
                 "Vendor workspace가 이미 등록되어 있습니다",
-                "같은 OpenRouter vendor workspace를 두 사업 account에 등록할 수 없습니다.");
+                "같은 OpenRouter vendor workspace를 두 사업 계정에 등록할 수 없습니다.");
     }
 
     private static ApiException duplicateName() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
                 "같은 이름의 account가 이미 있습니다",
-                "한 기관 안에서는 사업 account 이름을 중복해서 사용할 수 없습니다.");
+                "한 기관 안에서는 사업 계정 이름을 중복해서 사용할 수 없습니다.");
     }
 
     private static CredentialVerificationException verificationFailed(
