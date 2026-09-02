@@ -24,7 +24,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountCredential;
@@ -68,7 +67,6 @@ public class AdminOpenRouterAccountService {
     private final EntityManager entityManager;
     private final TransactionTemplate tx;
     private final OpenRouterAccountSelectionService accountSelection;
-    private final OpenRouterProperties openRouterProperties;
     private final OpenRouterAccountCreditsQueryService creditsQuery;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
 
@@ -79,7 +77,6 @@ public class AdminOpenRouterAccountService {
             OpenRouterManagementCredentialCipher credentialCipher, AuditService auditService,
             EntityManager entityManager, PlatformTransactionManager transactionManager,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterProperties openRouterProperties,
             OpenRouterAccountCreditsQueryService creditsQuery,
             OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
         this.accountRepository = accountRepository;
@@ -92,7 +89,6 @@ public class AdminOpenRouterAccountService {
         this.entityManager = entityManager;
         this.tx = new TransactionTemplate(transactionManager);
         this.accountSelection = accountSelection;
-        this.openRouterProperties = openRouterProperties;
         this.creditsQuery = creditsQuery;
         this.creditRefreshScheduler = creditRefreshScheduler;
     }
@@ -123,8 +119,8 @@ public class AdminOpenRouterAccountService {
         Org org = requireWritableOrg(actor, form.orgId());
         confirm(form.name().strip(), form.confirmName());
         OpenRouterAccount account = new OpenRouterAccount(org.getId(), form.name().strip(),
-                Texts.blankToNull(form.fundingReference()),
-                Texts.blankToNull(form.evidenceReference()), actor.id());
+                Texts.blankToNull(form.program()),
+                Texts.blankToNull(form.contact()), actor.id());
         try {
             return tx.execute(status -> {
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
@@ -161,10 +157,10 @@ public class AdminOpenRouterAccountService {
             throw invalidState("활성, 정지, 발급 대기 또는 미만료 key가 연결된 account는 보관할 수 없습니다.");
         }
         String nextName = form.isNameSet() ? form.getName().strip() : account.getName();
-        String nextFunding = form.isFundingReferenceSet()
-                ? Texts.blankToNull(form.getFundingReference()) : account.getFundingReference();
-        String nextEvidence = form.isEvidenceReferenceSet()
-                ? Texts.blankToNull(form.getEvidenceReference()) : account.getEvidenceReference();
+        String nextProgram = form.isProgramSet()
+                ? Texts.blankToNull(form.getProgram()) : account.getProgram();
+        String nextContact = form.isContactSet()
+                ? Texts.blankToNull(form.getContact()) : account.getContact();
         if (form.isNameSet()) {
             accountRepository.findByOrgIdAndNameIgnoreCase(account.getOrgId(), nextName)
                     .filter(other -> !other.getId().equals(account.getId()))
@@ -172,10 +168,10 @@ public class AdminOpenRouterAccountService {
         }
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         if (form.isNameSet()) { auditArgs.put("name", nextName); }
-        if (form.isFundingReferenceSet()) { auditArgs.put("fundingReference", nextFunding); }
-        if (form.isEvidenceReferenceSet()) { auditArgs.put("evidenceReference", nextEvidence); }
+        if (form.isProgramSet()) { auditArgs.put("program", nextProgram); }
+        if (form.isContactSet()) { auditArgs.put("contact", nextContact); }
         if (form.isStatusSet()) { auditArgs.put("status", nextStatus.name()); }
-        account.update(nextName, nextFunding, nextEvidence, nextStatus, Instant.now());
+        account.update(nextName, nextProgram, nextContact, nextStatus, Instant.now());
         try {
             accountRepository.saveAndFlush(account);
         } catch (DataIntegrityViolationException e) {
@@ -199,15 +195,6 @@ public class AdminOpenRouterAccountService {
                     "OpenRouter management credential 암호화 keyring을 먼저 구성해 주세요.");
         }
         UUID workspaceId = validateCandidate(snapshot, form.managementKey());
-        if (snapshot.getVendorWorkspaceId() == null && openRouterProperties.configured()) {
-            UUID legacyWorkspaceId = validateCandidate(
-                    snapshot, openRouterProperties.managementKey());
-            if (workspaceId.equals(legacyWorkspaceId)
-                    || sharesManagementScope(snapshot, openRouterProperties.managementKey(),
-                            legacyWorkspaceId, form.managementKey())) {
-                throw legacyWorkspaceConflict();
-            }
-        }
         rejectSharedVendorAccount(snapshot, form.managementKey());
         accountRepository.findByVendorWorkspaceId(workspaceId)
                 .filter(other -> !other.getId().equals(snapshot.getId()))
@@ -804,8 +791,8 @@ public class AdminOpenRouterAccountService {
         OpenRouterAccountCredential active = optionalByStatus(credentials,
                 OpenRouterCredentialStatus.ACTIVE);
         return new OpenRouterAccountResponse(account.getPublicId(), org.getPublicId(), org.getName(),
-                account.getName(), account.getStatus(), account.getFundingReference(),
-                account.getEvidenceReference(), accountSelection.eligible(account),
+                account.getName(), account.getStatus(), account.getProgram(),
+                account.getContact(), accountSelection.eligible(account),
                 keyRepository.countByOpenrouterAccountId(account.getId()),
                 accountSelection.databaseCredentialAvailable(account),
                 state(active),
@@ -896,20 +883,13 @@ public class AdminOpenRouterAccountService {
     private static ApiException workspaceConflict() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
                 "Vendor workspace가 이미 등록되어 있습니다",
-                "같은 OpenRouter vendor workspace를 두 사업 account에 등록할 수 없습니다.");
-    }
-
-    private static ApiException legacyWorkspaceConflict() {
-        return new ApiException(HttpStatus.CONFLICT,
-                ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
-                "Legacy OpenRouter account는 사업 account로 등록할 수 없습니다",
-                "전역 legacy transition source와 다른 OpenRouter 결제 account를 사용해 주세요.");
+                "같은 OpenRouter vendor workspace를 두 사업 계정에 등록할 수 없습니다.");
     }
 
     private static ApiException duplicateName() {
         return new ApiException(HttpStatus.CONFLICT, ErrorCodes.OPENROUTER_ACCOUNT_INVALID_STATE,
                 "같은 이름의 account가 이미 있습니다",
-                "한 기관 안에서는 사업 account 이름을 중복해서 사용할 수 없습니다.");
+                "한 기관 안에서는 사업 계정 이름을 중복해서 사용할 수 없습니다.");
     }
 
     private static CredentialVerificationException verificationFailed(

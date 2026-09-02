@@ -65,8 +65,6 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
 
     List<LlmApiKey> findByOpenrouterAccountId(long accountId);
 
-    List<LlmApiKey> findByOpenrouterLegacyTrue();
-
     long countByOpenrouterAccountId(long accountId);
 
     @Query(value = """

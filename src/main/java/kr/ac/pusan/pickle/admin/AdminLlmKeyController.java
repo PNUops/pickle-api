@@ -7,7 +7,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -54,7 +53,7 @@ public class AdminLlmKeyController {
             @RequestParam(required = false) UUID workspaceId,
             @Parameter(description = "키를 발급한 신청 공개 ID")
             @RequestParam(required = false) UUID requestId,
-            @Parameter(description = "불변 binding된 OpenRouter 사업 account 공개 ID")
+            @Parameter(description = "연결된 사업 계정의 공개 ID")
             @RequestParam(required = false) UUID openrouterAccountId,
             @RequestParam(required = false) LlmApiKeyStatus status,
             @RequestParam(required = false) String query,
@@ -77,15 +76,9 @@ public class AdminLlmKeyController {
     @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 한도 교체",
             description = "여섯 한도 값을 한 번에 교체합니다. 시스템 운영자는 금액과 리셋 창을 바꿀 수 없습니다.")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
-                content = @Content(mediaType = "application/json",
-                        schema = @Schema(implementation = AdminLlmKeyDetailResponse.class))),
-        @ApiResponse(responseCode = "503",
-                description = "OpenRouter account binding 전환 미활성 (`OPENROUTER_ACCOUNT_BINDING_DISABLED`)",
-                content = @Content(mediaType = "application/problem+json",
-                        schema = @Schema(ref = "#/components/schemas/Problem")))
-    })
+    @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
+            content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
     public AdminLlmKeyDetailResponse replaceAdminLlmKeyLimits(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,

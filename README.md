@@ -25,9 +25,10 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **LLM API 키 관리**: 승인된 신청에서 키를 만들고 발급과 한도, 정지, 재개, 폐기 상태를
   관리합니다. 관리자 조회는 기관별 역할 범위로 제한하며, 7·30·90일 수요와 주요 소비처,
   실제 한도 차단, usage 전달 신뢰도를 DB cache에서 함께 조회합니다.
-- **기관별 OpenRouter 사업 account**: 한 기관이 사업·재원별 account를 여러 개 등록하고,
+- **기관별 OpenRouter 사업 account**: 한 기관이 사업별 account를 여러 개 등록하고,
   검증된 management credential을 staged overlap으로 교체합니다. 금액 축 key는 승인 시 한
-  account에 불변 binding되며 account-bound 호출은 legacy env credential로 fallback하지 않습니다.
+  account에 불변 binding되며, 그 account의 credential 말고 쓸 수 있는 관리 자격증명은
+  없습니다.
 - **LLM 서비스 관측**: 게이트웨이의 5초 sync 자기보고에서 upstream별 실제 요청 상태와
   별도 `/models` probe, catalog 비교, usage 전송 queue를 현재 상태로 저장합니다. 관리자
   `GET /api/v1/admin/llm/status`와 `/metrics`는 DB와 raw usage event만 읽으며 upstream을
@@ -248,26 +249,17 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_GATEWAY_SOURCE_IP` | `/internal/llm` 허용 출발지 | `172.30.1.40` |
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
-| `PICKLE_OPENROUTER_MGMT_KEY` | V97 이전 key를 이관하는 동안만 쓰는 legacy OpenRouter management key. Account-bound key는 이 값으로 fallback하지 않음 | 없음 |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
-| `PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED` | 새 양수 CREDIT 승인과 최초 account binding을 허용하는 비가역 rollout cutoff | `false` |
 | `PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID` | DB에 저장할 account별 management credential을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 credential 쓰기는 거부 | 없음 |
 | `PICKLE_OPENROUTER_CREDENTIAL_READ_KEYS` | `keyId=base64-32-byte-key`를 쉼표로 나열한 전용 복호화 keyring. write key도 반드시 포함 | 없음 |
 
 OpenRouter management credential keyring에서 read key를 제거하려면 DB의 어떤 암호문 frame도
 그 key id를 참조하지 않는지 먼저 확인해야 합니다. 현재 자동 재암호화 잡은 없으므로 기존
 암호문을 새 key id로 바꾸는 경로는 vendor credential을 다시 stage하고 rotation하는 절차뿐입니다.
-V97의 `openrouter_legacy` 기본값은 old jar rollback 호환을 위해 account-null key 전체에
-적용됩니다. Remote key가 없는 행만 최초 양수 전환 때 account에 binding할 수 있습니다.
-이미 remote key가 있는 legacy 행은 새 account의 새 Pickle key로 전환한 뒤 기존 key를
-폐기해야 합니다. 0-credit이고 remote key가 없는 행에서 표식을 제거하는 정리는 old jar가
-rollback 대상에서 빠진 뒤에만 합니다.
-Legacy env credential은 여러 기관의 기존 key를 함께 관리하는 전역 transition scope이며
-`openrouter_accounts` 행이나 관리자 UI account로 표현하지 않습니다. Account-bound key는
-복호화 가능한 DB ACTIVE credential만 사용합니다. 첫 credential stage는 legacy env
-credential의 default vendor workspace를 별도로 probe하며, 같은 결제 account로 판정되거나
-서로 다름을 확인할 수 없으면 등록을 거부합니다. 기존 legacy key는 기관별 별도 vendor
-account에 새 key를 발급해 전환하며 두 scope를 합치지 않습니다.
+V100부터 관리 자격증명의 출처는 account credential 하나뿐입니다. 금액 한도가 0보다 큰
+key는 반드시 account를 지정해야 하고 그 지정은 바뀌지 않으며, 이미 remote key가 있는
+미결합 key는 account에 묶지 않고 새 key를 발급해 전환합니다. Account 호출은 복호화
+가능한 DB ACTIVE credential만 사용합니다.
 첫 ACTIVE 전환은 limit 0·disabled 상태의 `pickle-billing-identity-*` runtime key를 하나 만들고
 hash만 account 행에 불변 reservation으로 남깁니다. 평문은 즉시 버리고 API에 반환하지 않습니다.
 다른 사업 account 등록은 candidate management credential이 기존 marker를 읽을 수 있는지 검사해,
@@ -291,9 +283,9 @@ Credential 활성화·rollback은 이전 credential의 진행 중 claim과 backo
 worker 실행 시 ACTIVE ciphertext에서 복호화합니다. 화면 응답은 DB cache만 읽고 마지막 성공이
 30분을 넘으면 STALE, 성공 이력이 없으면 UNKNOWN입니다. 잔액은 구매액에서 사용액을 뺀 값이라
 음수도 그대로 반환합니다.
-기존 `llm-openrouter-reconciler` recurring id는 legacy-only 30분 job이 그대로 인계합니다. 새 이름을
-붙이면 JobRunr DB에 옛 all-scope recurring row가 남아 account `/keys`를 pair 밖에서 한 번 더 읽기
-때문입니다. 이미 enqueue된 구 버전 실행도 같은 `reconcile()` signature가 legacy-only로 동작합니다.
+Account `/keys` 대사는 이 dispatcher만 수행합니다. `llm-openrouter-reconciler` recurring row는
+V100 배포와 함께 `jobrunr_recurring_jobs`에서 삭제합니다. JobRunr는 사라진 잡의 등록 행을
+스스로 지우지 않으므로, 남겨 두면 실행될 때마다 없는 target을 찾아 실패합니다.
 V98 jar가 새 account poll dispatcher recurring row나 poll job을 한 번이라도 등록한 뒤에는 V97 jar로
 rollback하지 않습니다. V97에는 새 JobRunr target class가 없어 영속 recurring·queued job을 실행할 수
 없기 때문입니다. 문제 발생 시 V98 forward-fix 또는 DB restore로 복구합니다.
@@ -305,12 +297,9 @@ reset 경계에서는 값을 꾸미지 않고 null로 반환하며 그 관측값
 그 다음 정상 pair부터 새 구간의 미관리 지출을 다시 계산합니다. Account snapshot과 key spend
 snapshot은 90일 보존하지만 현재 구간 baseline은 account current-state에 남습니다.
 
-Account binding rollout은 V97과 새 jar를
-`PICKLE_OPENROUTER_ACCOUNT_BINDING_ENABLED=false`로 먼저 배포한 뒤 account 등록, credential
-검증과 운영 smoke를 끝내고 진행합니다. 그 다음 값을 `true`로 켜는 순간이 비가역적인 jar
-rollback cutoff입니다. 최초 account-bound key가 생긴 뒤에는 V96 jar로 되돌리지 않으며,
-문제 발생 시 새 jar의 forward-fix 또는 DB restore로 복구합니다. Flag를 다시 `false`로 내려도
-이미 생성된 account binding을 legacy env account로 안전하게 되돌릴 수는 없습니다.
+V100은 contract migration이라 `openrouter_legacy` 컬럼을 지우며, 그 컬럼을 non-null로
+매핑하는 이전 jar는 결과 스키마에서 기동하지 않습니다. 배포 전에 DB 백업 지점을 먼저
+잡습니다. 롤백 경로는 forward-fix 또는 DB restore입니다.
 
 ### 시드 계정 (dev/test 전용, 멱등)
 

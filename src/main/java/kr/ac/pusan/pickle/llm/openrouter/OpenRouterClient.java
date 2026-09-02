@@ -44,14 +44,12 @@ public class OpenRouterClient {
     private static final Logger log = LoggerFactory.getLogger(OpenRouterClient.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
-    /** Pagination backstop for {@link #listKeys()} — see the loop's comment. */
+    /** Pagination backstop for the key listing — see the loop's comment. */
     private static final int MAX_KEY_PAGES = 200;
 
-    private final OpenRouterProperties properties;
     private final RestClient restClient;
 
     public OpenRouterClient(OpenRouterProperties properties) {
-        this.properties = properties;
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().connectTimeout(properties.connectTimeout()).build());
         factory.setReadTimeout(properties.readTimeout());
@@ -59,11 +57,6 @@ public class OpenRouterClient {
                 .baseUrl(properties.baseUrl())
                 .requestFactory(factory)
                 .build();
-    }
-
-    /** Whether a management key is configured at all. */
-    public boolean configured() {
-        return properties.configured();
     }
 
     /**
@@ -108,17 +101,12 @@ public class OpenRouterClient {
     }
 
     /**
-     * {@code POST /keys}. The name is the pickle key's public id, which is
-     * what makes the OpenRouter console row traceable back to the console.
-     * The expiry mirrors the pickle key's, so a key that lapses here lapses
-     * there too without anyone sweeping.
+     * {@code POST /keys} under one account's management credential. The name
+     * is the pickle key's public id, which is what makes the OpenRouter
+     * console row traceable back to the console. The expiry mirrors the
+     * pickle key's, so a key that lapses here lapses there too without
+     * anyone sweeping.
      */
-    public CreatedKey createKey(String name, BigDecimal limit,
-            @Nullable CreditLimitReset reset, @Nullable Instant expiresAt) {
-        return createKey(legacySecret(), null, name, limit, reset, expiresAt);
-    }
-
-    /** Account-scoped key creation using an explicit management credential. */
     public CreatedKey createKey(String managementSecret, @Nullable UUID workspaceId,
             String name, BigDecimal limit, @Nullable CreditLimitReset reset,
             @Nullable Instant expiresAt) {
@@ -147,10 +135,6 @@ public class OpenRouterClient {
     }
 
     /** {@code PATCH /keys/{hash}} — flip the disabled flag. */
-    public void setDisabled(String hash, boolean disabled) {
-        setDisabled(legacySecret(), null, hash, disabled);
-    }
-
     public void setDisabled(String managementSecret, @Nullable UUID workspaceId,
             String hash, boolean disabled) {
         exchange(managementSecret, HttpMethod.PATCH, keyPath(hash),
@@ -168,10 +152,6 @@ public class OpenRouterClient {
      * bounding anything the moment a provider key is attached to the account:
      * the ceiling still shows in our console and governs nothing.
      */
-    public void updateLimit(String hash, BigDecimal limit, @Nullable CreditLimitReset reset) {
-        updateLimit(legacySecret(), null, hash, limit, reset);
-    }
-
     public void updateLimit(String managementSecret, @Nullable UUID workspaceId,
             String hash, BigDecimal limit, @Nullable CreditLimitReset reset) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -182,10 +162,6 @@ public class OpenRouterClient {
     }
 
     /** {@code DELETE /keys/{hash}}. A 404 counts as done — it is already gone. */
-    public void deleteKey(String hash) {
-        deleteKey(legacySecret(), null, hash);
-    }
-
     public void deleteKey(String managementSecret, @Nullable UUID workspaceId, String hash) {
         try {
             exchange(managementSecret, HttpMethod.DELETE, keyPath(hash),
@@ -201,10 +177,6 @@ public class OpenRouterClient {
      * {@code GET /keys} — every managed key, walking the offset pagination to
      * the end. The reconciler's raw material: what OpenRouter believes exists.
      */
-    public List<ManagedKey> listKeys() {
-        return listKeys(legacySecret(), null);
-    }
-
     public List<ManagedKey> listKeys(String managementSecret, @Nullable UUID workspaceId) {
         List<ManagedKey> keys = new ArrayList<>();
         int offset = 0;
@@ -277,11 +249,6 @@ public class OpenRouterClient {
                 data.path("total_usage").decimalValue());
     }
 
-    /** Legacy env credential wrapper retained only for the global transition scope. */
-    public Credits credits() {
-        return credits(legacySecret());
-    }
-
     private JsonNode exchange(String managementSecret, HttpMethod method, String path,
             @Nullable Object body,
             int... acceptable) {
@@ -308,14 +275,6 @@ public class OpenRouterClient {
         } catch (ResourceAccessException e) {
             throw new OpenRouterException(0, "transport failure");
         }
-    }
-
-    private String legacySecret() {
-        if (!properties.configured()) {
-            throw new IllegalStateException("OpenRouter management key is not configured: set "
-                    + "PICKLE_OPENROUTER_MGMT_KEY (pickle.openrouter.management-key)");
-        }
-        return properties.managementKey();
     }
 
     private static String authorizationHeader(String managementSecret) {

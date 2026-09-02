@@ -23,7 +23,7 @@ public record AdminLlmKeySummaryResponse(
         @Nullable Long dailyTokens,
         BigDecimal creditLimit,
         @Nullable CreditLimitReset creditLimitReset,
-        @Schema(description = "금액 축이 발급되어 현재 연결되어 있는지")
+        @Schema(description = "유료 모델이 발급되어 현재 연결되어 있는지")
         boolean creditAxisConnected,
         @Schema(description = "OpenRouter가 마지막으로 보고한 현재 limit window 사용액. 미관측이면 null")
         @Nullable BigDecimal creditUsage,

@@ -266,12 +266,12 @@ public class LlmOpenRouterProvisioner {
 
     private record ProvisioningIntent(BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset, @Nullable Instant expiresAt,
-            LlmApiKeyStatus effectiveStatus, @Nullable Long accountId, boolean legacy) {
+            LlmApiKeyStatus effectiveStatus, @Nullable Long accountId) {
 
         private static ProvisioningIntent capture(LlmApiKey key, Instant now) {
             return new ProvisioningIntent(key.getCreditLimit(), key.getCreditLimitReset(),
                     key.getExpiresAt(), key.effectiveStatus(now),
-                    key.getOpenrouterAccountId(), key.isOpenrouterLegacy());
+                    key.getOpenrouterAccountId());
         }
 
         private boolean initiallyEligible(LlmApiKey key) {
@@ -286,8 +286,7 @@ public class LlmOpenRouterProvisioner {
                     && Objects.equals(key.getCreditLimitReset(), creditLimitReset)
                     && Objects.equals(key.getExpiresAt(), expiresAt)
                     && allowed(key.effectiveStatus(now))
-                    && Objects.equals(key.getOpenrouterAccountId(), accountId)
-                    && key.isOpenrouterLegacy() == legacy;
+                    && Objects.equals(key.getOpenrouterAccountId(), accountId);
         }
 
         private static boolean allowed(LlmApiKeyStatus status) {
@@ -296,40 +295,33 @@ public class LlmOpenRouterProvisioner {
     }
 
     private record LimitPush(String hash, BigDecimal limit,
-            @Nullable CreditLimitReset reset, @Nullable Long accountId, boolean legacy) {
+            @Nullable CreditLimitReset reset, @Nullable Long accountId) {
 
         private static LimitPush capture(LlmApiKey key) {
             return new LimitPush(key.getOpenrouterKeyHash(), key.getCreditLimit(),
-                    key.getCreditLimitReset(), key.getOpenrouterAccountId(),
-                    key.isOpenrouterLegacy());
+                    key.getCreditLimitReset(), key.getOpenrouterAccountId());
         }
 
         private boolean matches(@Nullable LlmApiKey key) {
             return key != null && Objects.equals(key.getOpenrouterKeyHash(), hash)
                     && key.getCreditLimit().compareTo(limit) == 0
                     && Objects.equals(key.getCreditLimitReset(), reset)
-                    && sameSource(key, accountId, legacy);
+                    && Objects.equals(key.getOpenrouterAccountId(), accountId);
         }
     }
 
-    private record StatusPush(String hash, boolean disabled,
-            @Nullable Long accountId, boolean legacy) {
+    private record StatusPush(String hash, boolean disabled, @Nullable Long accountId) {
 
         private static StatusPush capture(LlmApiKey key, Instant now) {
             return new StatusPush(key.getOpenrouterKeyHash(),
                     key.effectiveStatus(now) != LlmApiKeyStatus.ACTIVE,
-                    key.getOpenrouterAccountId(), key.isOpenrouterLegacy());
+                    key.getOpenrouterAccountId());
         }
 
         private boolean matches(@Nullable LlmApiKey key, Instant now) {
             return key != null && Objects.equals(key.getOpenrouterKeyHash(), hash)
                     && (key.effectiveStatus(now) != LlmApiKeyStatus.ACTIVE) == disabled
-                    && sameSource(key, accountId, legacy);
+                    && Objects.equals(key.getOpenrouterAccountId(), accountId);
         }
-    }
-
-    private static boolean sameSource(LlmApiKey key, @Nullable Long accountId, boolean legacy) {
-        return Objects.equals(key.getOpenrouterAccountId(), accountId)
-                && key.isOpenrouterLegacy() == legacy;
     }
 }

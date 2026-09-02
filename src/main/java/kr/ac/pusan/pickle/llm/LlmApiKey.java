@@ -139,13 +139,9 @@ public class LlmApiKey {
     @Column(name = "openrouter_last_error")
     private @Nullable String openrouterLastError;
 
-    /** Immutable vendor-account binding; null only for token-only or legacy rows. */
+    /** Immutable vendor-account binding; null only for a token-only row. */
     @Column(name = "openrouter_account_id")
     private @Nullable Long openrouterAccountId;
-
-    /** Transition marker for rows still administered by the legacy env credential. */
-    @Column(name = "openrouter_legacy", nullable = false)
-    private boolean openrouterLegacy;
 
     /**
      * What OpenRouter last reported this key had spent, and when that was read.
@@ -207,7 +203,6 @@ public class LlmApiKey {
         this.creditLimit = creditLimit == null ? BigDecimal.ZERO : creditLimit;
         this.creditLimitReset = creditLimitReset;
         this.openrouterAccountId = openrouterAccountId;
-        this.openrouterLegacy = openrouterAccountId == null;
         this.createdBy = createdBy;
     }
 
@@ -315,10 +310,14 @@ public class LlmApiKey {
         if (openrouterAccountId != null && openrouterAccountId != accountId) {
             throw new IllegalStateException("OpenRouter account binding is immutable");
         }
-        if (openrouterLegacy && (openrouterKeyHash != null || openrouterKeyEnc != null)) {
-            throw new IllegalStateException("provisioned legacy OpenRouter keys require cutover");
+        // An unbound row that already holds a vendor key was provisioned
+        // somewhere else; binding it now would leave that spend behind under
+        // a management scope this account cannot see. The same rule is a
+        // trigger on llm_api_keys, and this is its entity-side twin.
+        if (openrouterAccountId == null
+                && (openrouterKeyHash != null || openrouterKeyEnc != null)) {
+            throw new IllegalStateException("a provisioned OpenRouter key cannot be bound");
         }
-        openrouterLegacy = false;
         openrouterAccountId = accountId;
         updatedAt = when;
     }
@@ -434,8 +433,6 @@ public class LlmApiKey {
     }
 
     public @Nullable Long getOpenrouterAccountId() { return openrouterAccountId; }
-
-    public boolean isOpenrouterLegacy() { return openrouterLegacy; }
 
     public boolean isRecordBodies() {
         return recordBodies;

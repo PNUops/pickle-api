@@ -6,7 +6,6 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,16 +18,13 @@ public class OpenRouterAccountSelectionService {
     private final OpenRouterAccountRepository repository;
     private final OpenRouterAccountCredentialRepository credentialRepository;
     private final OpenRouterManagementCredentialCipher credentialCipher;
-    private final OpenRouterProperties properties;
 
     public OpenRouterAccountSelectionService(OpenRouterAccountRepository repository,
             OpenRouterAccountCredentialRepository credentialRepository,
-            OpenRouterManagementCredentialCipher credentialCipher,
-            OpenRouterProperties properties) {
+            OpenRouterManagementCredentialCipher credentialCipher) {
         this.repository = repository;
         this.credentialRepository = credentialRepository;
         this.credentialCipher = credentialCipher;
-        this.properties = properties;
     }
 
     @Transactional
@@ -38,15 +34,9 @@ public class OpenRouterAccountSelectionService {
         if (!positive) {
             if (requestedAccountId != null) {
                 throw validation("openrouterAccountId",
-                        "금액 한도가 0보다 클 때만 OpenRouter 사업 account를 선택할 수 있습니다.");
+                        "금액 한도가 0보다 클 때만 사업 계정을 선택할 수 있습니다.");
             }
             return null;
-        }
-        if (!properties.accountBindingEnabled()) {
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
-                    ErrorCodes.OPENROUTER_ACCOUNT_BINDING_DISABLED,
-                    "OpenRouter account binding을 사용할 수 없습니다",
-                    "운영 전환이 완료될 때까지 새 금액 축 binding이 중지되어 있습니다.");
         }
         if (requestedAccountId != null) {
             OpenRouterAccount account = repository.findWithLockByPublicId(requestedAccountId)
@@ -56,7 +46,7 @@ public class OpenRouterAccountSelectionService {
             }
             if (!eligible(account)) {
                 throw validation("openrouterAccountId",
-                        "검증된 management credential이 있는 활성 account만 사용할 수 있습니다.");
+                        "관리용 키까지 확인된 활성 사업 계정만 사용할 수 있습니다.");
             }
             return account;
         }
@@ -64,19 +54,18 @@ public class OpenRouterAccountSelectionService {
                 orgId, OpenRouterAccountStatus.ACTIVE).stream().filter(this::eligible).toList();
         if (eligible.isEmpty()) {
             throw validation("openrouterAccountId",
-                    "금액 축을 승인하려면 이 기관에 OpenRouter 사업 account가 필요합니다.");
+                    "유료 모델을 승인하려면 이 기관에 사업 계정이 필요합니다.");
         }
         if (eligible.size() > 1) {
             throw validation("openrouterAccountId",
-                    "사용할 OpenRouter 사업 account를 선택해 주세요.");
+                    "어느 사업 계정으로 결제할지 선택해 주세요.");
         }
         return eligible.getFirst();
     }
 
     @Transactional
     public boolean eligible(OpenRouterAccount account) {
-        if (!properties.accountBindingEnabled()
-                || account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
+        if (account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
             return false;
         }
         return databaseCredentialAvailable(account);

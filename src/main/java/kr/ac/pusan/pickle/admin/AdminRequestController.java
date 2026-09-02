@@ -5,7 +5,6 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -79,15 +78,9 @@ public class AdminRequestController {
 
     @PostMapping("/{requestId}/approve")
     @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "승인 완료",
-                content = @Content(mediaType = "application/json",
-                        schema = @Schema(implementation = RequestDetailResponse.class))),
-        @ApiResponse(responseCode = "503",
-                description = "OpenRouter account binding 전환 미활성 (`OPENROUTER_ACCOUNT_BINDING_DISABLED`)",
-                content = @Content(mediaType = "application/problem+json",
-                        schema = @Schema(ref = "#/components/schemas/Problem")))
-    })
+    @ApiResponse(responseCode = "200", description = "승인 완료",
+            content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = RequestDetailResponse.class)))
     public RequestDetailResponse approveRequest(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID requestId,
             @Valid @RequestBody ApproveRequestRequest request,

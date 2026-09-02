@@ -82,8 +82,6 @@ public final class ErrorCodes {
     public static final String LLM_KEY_INVALID_STATE = "LLM_KEY_INVALID_STATE";
     public static final String LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE =
             "LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE";
-    public static final String OPENROUTER_ACCOUNT_BINDING_DISABLED =
-            "OPENROUTER_ACCOUNT_BINDING_DISABLED";
     public static final String OPENROUTER_ACCOUNT_INVALID_STATE =
             "OPENROUTER_ACCOUNT_INVALID_STATE";
     public static final String OPENROUTER_ACCOUNT_CONFIRM_NAME_MISMATCH =

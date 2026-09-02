@@ -132,8 +132,8 @@ class AdminLlmUsageTest {
 
     @Test
     void fixedWindowsAxisCoverageAndQualityUseKstRollups() throws Exception {
-        Key key = key(orgA, workspaceA1, "수요 키", 100L, "10", false, null,
-                "2", "8", true);
+        Key key = key(orgA, workspaceA1, "수요 키", 100L, "10", false,
+                account(orgA, "수요 사업"), "2", "8", true);
         Instant today = atKst(LocalDate.now(ClockConfig.KST), 12);
         event(key.id(), tokenModel, "TOKEN", null, 10, 20, false, today);
         event(key.id(), "vendor/model", "CREDIT", null, 4, 6, true,
@@ -299,7 +299,7 @@ class AdminLlmUsageTest {
 
     @Test
     void limitReviewUsesOnlyExactReasonsAndCarriesAccountDeepLink() throws Exception {
-        Account account = account(orgA, "사업 account");
+        Account account = account(orgA, "사업 계정");
         Key pressured = key(orgA, workspaceA1, "압력 키", 100L, "10", true, account,
                 "5", "5", true);
         Key disconnected = key(orgA, workspaceA2, "미연결 키", null, "20", false, account,
@@ -442,15 +442,15 @@ class AdminLlmUsageTest {
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, token_hash, token_prefix,
                         status, daily_tokens, credit_limit, quota_exhausted,
-                        openrouter_account_id, openrouter_legacy,
+                        openrouter_account_id,
                         openrouter_key_hash, openrouter_key_enc,
                         openrouter_usage, openrouter_limit_remaining, openrouter_usage_at,
                         created_by)
                 values (?, ?, ?, ?, ?, 'pickle-test', 'ACTIVE', ?, ?::numeric, false,
-                        ?, ?, ?, ?, ?::numeric, ?::numeric, ?, ?)
+                        ?, ?, ?, ?::numeric, ?::numeric, ?, ?)
                 returning public_id
                 """, UUID.class, workspace.getId(), org.getId(), requestId, name, hash,
-                dailyTokens, creditLimit, accountId, accountId == null,
+                dailyTokens, creditLimit, accountId,
                 remoteHash, remoteEnc, creditUsage, creditRemaining,
                 observed ? Timestamp.from(Instant.now()) : null, owner.getId());
         long id = SeedFixtures.internalId(jdbcTemplate, "llm_api_keys", publicId);

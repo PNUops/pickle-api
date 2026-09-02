@@ -36,6 +36,9 @@ import org.junit.jupiter.api.Test;
  */
 class OpenRouterClientTest {
 
+    /** The account-scoped management credential every call here presents. */
+    private static final String SECRET = "mgmt-test-secret";
+
     private static WireMockServer server;
     private OpenRouterClient client;
 
@@ -54,8 +57,7 @@ class OpenRouterClientTest {
     void setUp() {
         server.resetAll();
         client = new OpenRouterClient(new OpenRouterProperties(
-                server.baseUrl(), "mgmt-test-secret",
-                Duration.ofSeconds(2), Duration.ofSeconds(5), true));
+                server.baseUrl(), Duration.ofSeconds(2), Duration.ofSeconds(5)));
     }
 
     @Test
@@ -69,7 +71,7 @@ class OpenRouterClientTest {
                                  "data": {"hash": "abc123", "name": "k-1"}}
                                 """)));
 
-        OpenRouterClient.CreatedKey created = client.createKey("k-1",
+        OpenRouterClient.CreatedKey created = client.createKey(SECRET, null, "k-1",
                 new BigDecimal("5.00"), CreditLimitReset.MONTHLY,
                 Instant.parse("2026-12-31T00:00:00Z"));
 
@@ -97,7 +99,7 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"data\": {\"hash\": \"h9\"}}")));
 
-        client.updateLimit("h9", new BigDecimal("7.50"), CreditLimitReset.DAILY);
+        client.updateLimit(SECRET, null, "h9", new BigDecimal("7.50"), CreditLimitReset.DAILY);
 
         server.verify(patchRequestedFor(urlPathEqualTo("/keys/h9"))
                 .withRequestBody(matchingJsonPath("$[?(@.limit == 7.50)]"))
@@ -112,7 +114,7 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"key\": \"sk-or-x\", \"data\": {\"hash\": \"h\"}}")));
 
-        client.createKey("k-2", BigDecimal.ONE, null, null);
+        client.createKey(SECRET, null, "k-2", BigDecimal.ONE, null, null);
 
         server.verify(postRequestedFor(urlPathEqualTo("/keys"))
                 .withRequestBody(notMatching(".*limit_reset.*"))
@@ -126,7 +128,7 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"error\": {\"message\": \"invalid limit\"}}")));
 
-        assertThatThrownBy(() -> client.createKey("k-3", BigDecimal.ONE, null, null))
+        assertThatThrownBy(() -> client.createKey(SECRET, null, "k-3", BigDecimal.ONE, null, null))
                 .isInstanceOfSatisfying(OpenRouterException.class, e -> {
                     assertThat(e.status()).isEqualTo(400);
                     assertThat(e.getMessage()).contains("HTTP 400");
@@ -142,7 +144,7 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"data\": {\"hash\": \"h\"}}")));
 
-        assertThatThrownBy(() -> client.createKey("k-4", BigDecimal.ONE, null, null))
+        assertThatThrownBy(() -> client.createKey(SECRET, null, "k-4", BigDecimal.ONE, null, null))
                 .isInstanceOf(OpenRouterException.class);
     }
 
@@ -152,7 +154,7 @@ class OpenRouterClientTest {
                 .willReturn(aResponse().withStatus(404)
                         .withBody("{\"error\": {\"message\": \"not found\"}}")));
 
-        client.deleteKey("gone"); // no throw: the desired state holds
+        client.deleteKey(SECRET, null, "gone"); // no throw: the desired state holds
     }
 
     @Test
@@ -172,7 +174,7 @@ class OpenRouterClientTest {
                         .withHeader("Content-Type", "application/json")
                         .withBody("{\"data\": []}")));
 
-        List<OpenRouterClient.ManagedKey> keys = client.listKeys();
+        List<OpenRouterClient.ManagedKey> keys = client.listKeys(SECRET, null);
 
         assertThat(keys).hasSize(2);
         assertThat(keys.get(0).hash()).isEqualTo("h1");
@@ -192,12 +194,13 @@ class OpenRouterClientTest {
         assertThat(keys.get(1).usage()).isNull();
     }
 
+    /**
+     * A scope whose credential came back empty must never reach the wire: an
+     * empty bearer is a request that looks authenticated and is not.
+     */
     @Test
-    void aBlankManagementKeyFailsClosedBeforeAnyRequest() {
-        OpenRouterClient unconfigured = new OpenRouterClient(new OpenRouterProperties(
-                server.baseUrl(), " ", Duration.ofSeconds(1), Duration.ofSeconds(1), true));
-        assertThat(unconfigured.configured()).isFalse();
-        assertThatThrownBy(() -> unconfigured.deleteKey("h"))
+    void aBlankManagementCredentialFailsClosedBeforeAnyRequest() {
+        assertThatThrownBy(() -> client.deleteKey(" ", null, "h"))
                 .isInstanceOf(IllegalStateException.class);
         assertThat(server.getAllServeEvents()).isEmpty();
     }

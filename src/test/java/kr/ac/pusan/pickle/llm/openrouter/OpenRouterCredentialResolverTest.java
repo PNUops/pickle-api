@@ -3,27 +3,25 @@ package kr.ac.pusan.pickle.llm.openrouter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import kr.ac.pusan.pickle.config.OpenRouterProperties;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import org.junit.jupiter.api.Test;
 
 class OpenRouterCredentialResolverTest {
 
     @Test
-    void accountBoundMissingOrBadCredentialNeverFallsBackToEnv() {
+    void accountBoundKeyResolvesOnlyItsOwnVerifiedCredential() {
         OpenRouterAccountRepository accounts = mock(OpenRouterAccountRepository.class);
         OpenRouterAccountCredentialRepository credentials =
                 mock(OpenRouterAccountCredentialRepository.class);
         OpenRouterManagementCredentialCipher cipher = mock(OpenRouterManagementCredentialCipher.class);
-        OpenRouterProperties legacy = new OpenRouterProperties(
-                null, "legacy-env-secret", null, null, false);
         OpenRouterCredentialResolver resolver =
-                new OpenRouterCredentialResolver(accounts, credentials, cipher, legacy);
+                new OpenRouterCredentialResolver(accounts, credentials, cipher);
         LlmApiKey key = mock(LlmApiKey.class);
         when(key.getOpenrouterAccountId()).thenReturn(7L);
         OpenRouterAccount account = mock(OpenRouterAccount.class);
@@ -49,25 +47,25 @@ class OpenRouterCredentialResolverTest {
         OpenRouterManagementAccess access = resolver.forKey(key).orElseThrow();
         assertThat(access.accountId()).isEqualTo(7L);
         assertThat(access.secret()).isEqualTo("db-management-secret");
-        assertThat(access.includesLegacyKeys()).isFalse();
     }
 
+    /**
+     * An unbound key has no management source at all. There used to be a
+     * global one to fall back to, and the point of this case is that asking
+     * for a key without an account now stops before it reaches any store.
+     */
     @Test
-    void explicitLegacyKeyUsesTheSoleLegacyEnvSource() {
+    void unboundKeyResolvesNoManagementSourceAtAll() {
         OpenRouterAccountRepository accounts = mock(OpenRouterAccountRepository.class);
         OpenRouterAccountCredentialRepository credentials =
                 mock(OpenRouterAccountCredentialRepository.class);
         OpenRouterManagementCredentialCipher cipher = mock(OpenRouterManagementCredentialCipher.class);
-        OpenRouterProperties legacy = new OpenRouterProperties(
-                null, "legacy-env-secret", null, null, false);
         OpenRouterCredentialResolver resolver =
-                new OpenRouterCredentialResolver(accounts, credentials, cipher, legacy);
+                new OpenRouterCredentialResolver(accounts, credentials, cipher);
         LlmApiKey key = mock(LlmApiKey.class);
         when(key.getOpenrouterAccountId()).thenReturn(null);
-        when(key.isOpenrouterLegacy()).thenReturn(true);
-        OpenRouterManagementAccess access = resolver.forKey(key).orElseThrow();
-        assertThat(access.scopeKey()).isEqualTo("legacy-env");
-        assertThat(access.secret()).isEqualTo("legacy-env-secret");
-        assertThat(access.includesLegacyKeys()).isTrue();
+
+        assertThat(resolver.forKey(key)).isEmpty();
+        verifyNoInteractions(accounts, credentials, cipher);
     }
 }

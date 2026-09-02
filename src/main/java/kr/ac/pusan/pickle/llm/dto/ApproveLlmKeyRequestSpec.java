@@ -47,6 +47,6 @@ public record ApproveLlmKeyRequestSpec(
         @Schema(description = "금액 한도 리셋 창. 비우면 리셋 없는 총액 상한입니다. 창은 UTC 자정에 초기화됩니다.")
         @Nullable CreditLimitReset grantedCreditLimitReset,
 
-        @Schema(description = "금액 축에 사용할 기관 OpenRouter 사업 account. 하나뿐이면 생략할 수 있습니다.")
+        @Schema(description = "유료 모델을 결제할 기관 사업 계정. 하나뿐이면 생략할 수 있습니다.")
         @Nullable UUID openrouterAccountId) {
 }

@@ -256,9 +256,9 @@ class OpenRouterAccountCreditsTest {
         long keyId = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy,
+                        openrouter_account_id,
                         openrouter_key_hash, openrouter_key_enc, created_by)
-                values (?, ?, ?, 'stale-claim-key', 10, ?, false, 'stale-hash',
+                values (?, ?, ?, 'stale-claim-key', 10, ?, 'stale-hash',
                         'ciphertext', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId,
@@ -301,9 +301,9 @@ class OpenRouterAccountCreditsTest {
         long keyId = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy,
+                        openrouter_account_id,
                         openrouter_key_hash, openrouter_key_enc, created_by)
-                values (?, ?, ?, 'ledger-key', 20, ?, false, 'hash-ledger',
+                values (?, ?, ?, 'ledger-key', 20, ?, 'hash-ledger',
                         'ciphertext', ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId,
@@ -471,8 +471,8 @@ class OpenRouterAccountCreditsTest {
         UUID keyPublicId = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, credit_limit,
-                        openrouter_account_id, openrouter_legacy, created_by)
-                values (?, ?, ?, 'trigger-key', 20, ?, false, ?)
+                        openrouter_account_id, created_by)
+                values (?, ?, ?, 'trigger-key', 20, ?, ?)
                 returning public_id
                 """, UUID.class, workspaceId, orgId, requestId,
                 fixture.account().getId(), adminId);

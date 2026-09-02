@@ -189,7 +189,7 @@ public class AdminLlmKeyService {
         }
         if (form.getCreditLimit() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
-                    "금액 한도는 null일 수 없습니다. 금액 축을 닫으려면 0을 보내 주세요.")));
+                    "금액 한도는 null일 수 없습니다. 유료 모델을 닫으려면 0을 보내 주세요.")));
         }
         if (form.getTpm() != null && form.getRpm() != null && form.getTpm() < form.getRpm()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("tpm",
@@ -363,27 +363,33 @@ public class AdminLlmKeyService {
             }
             return current;
         }
-        if (key.isOpenrouterLegacy()) {
-            boolean firstBindingEligible = key.getCreditLimit().signum() <= 0
-                    && key.getOpenrouterKeyHash() == null
-                    && key.getOpenrouterKeyEnc() == null;
-            if (firstBindingEligible) {
-                return accountSelection.select(
-                        key.getOrgId(), form.getCreditLimit(), requested);
-            }
-            if (requested != null) {
-                throw immutableBinding();
-            }
-            return null;
+        // An unbound row may take its first account only while it has nothing
+        // to leave behind: no money already granted, and no vendor key issued
+        // under a management scope this account would not see.
+        boolean firstBindingEligible = key.getCreditLimit().signum() <= 0
+                && key.getOpenrouterKeyHash() == null
+                && key.getOpenrouterKeyEnc() == null;
+        if (firstBindingEligible) {
+            return accountSelection.select(key.getOrgId(), form.getCreditLimit(), requested);
         }
-        return accountSelection.select(key.getOrgId(), form.getCreditLimit(), requested);
+        if (requested != null) {
+            throw immutableBinding();
+        }
+        // The same key cannot fund money either, and saying so here is the
+        // difference between a defined refusal and a constraint violation
+        // surfacing as a 500: the write below would set a positive limit on a
+        // row that names no account.
+        if (form.getCreditLimit() != null && form.getCreditLimit().signum() > 0) {
+            throw immutableBinding();
+        }
+        return null;
     }
 
     private static ApiException immutableBinding() {
         return new ApiException(HttpStatus.CONFLICT,
                 ErrorCodes.LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE,
-                "OpenRouter account binding을 변경할 수 없습니다",
-                "Account를 옮기려면 새 LLM API key를 발급해 전환해 주세요.");
+                "연결된 사업 계정은 바꿀 수 없습니다",
+                "다른 사업 계정으로 옮기려면 새 LLM API 키를 발급해 전환해 주세요.");
     }
 
     private record References(Map<Long, Workspace> workspaces, Map<Long, Org> orgs,
