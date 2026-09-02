@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -139,6 +140,14 @@ public class LlmApiKey {
     @Column(name = "openrouter_last_error")
     private @Nullable String openrouterLastError;
 
+    /** Consecutive failed provisioning attempts; sizes the wait below. */
+    @Column(name = "openrouter_attempt_count", nullable = false)
+    private int openrouterAttemptCount;
+
+    /** No provisioning attempt before this; null means eligible now. */
+    @Column(name = "openrouter_not_before_at")
+    private @Nullable Instant openrouterNotBeforeAt;
+
     /** Immutable vendor-account binding; null only for a token-only row. */
     @Column(name = "openrouter_account_id")
     private @Nullable Long openrouterAccountId;
@@ -216,13 +225,41 @@ public class LlmApiKey {
         this.openrouterKeyEnc = keyEnc;
         this.openrouterProvisionedAt = when;
         this.openrouterLastError = null;
+        this.openrouterAttemptCount = 0;
+        this.openrouterNotBeforeAt = null;
         this.updatedAt = when;
     }
 
-    /** A provisioning attempt failed; the key stays usable on the token axis. */
+    /**
+     * A provisioning attempt failed; the key stays usable on the token axis.
+     * The wait until the next attempt grows with consecutive failures, so a
+     * vendor that is refusing is not asked again on the same five-minute
+     * cadence that produced the refusal.
+     */
     public void recordOpenrouterFailure(String error, Instant when) {
         this.openrouterLastError = error;
+        this.openrouterAttemptCount++;
+        this.openrouterNotBeforeAt = when.plus(openrouterBackoff(openrouterAttemptCount, id));
         this.updatedAt = when;
+    }
+
+    /**
+     * How long to wait after {@code failures} consecutive failures: doubling
+     * from five minutes to a six-hour ceiling, with a per-key spread so that a
+     * batch refused together does not return together and reproduce the burst
+     * that was refused. The shape follows the account polling path, which has
+     * had it since it was written; the floor is the sweep's own period,
+     * because a shorter wait would not change when the next attempt happens.
+     */
+    private static Duration openrouterBackoff(int failures, @Nullable Long keyId) {
+        // The exponent cap has to let the doubling reach past the ceiling,
+        // or the ceiling is decoration: from a five-minute floor, stopping at
+        // 6 would top out at 320 and the 360 below would never bind.
+        int exponent = Math.min(Math.max(failures, 1) - 1, 7);
+        long minutes = Math.min(5L << exponent, 360L);
+        long jitterSeconds = Math.floorMod(
+                Long.hashCode((keyId == null ? 0L : keyId) * 31 + failures), 121);
+        return Duration.ofMinutes(minutes).plusSeconds(jitterSeconds);
     }
 
     /**

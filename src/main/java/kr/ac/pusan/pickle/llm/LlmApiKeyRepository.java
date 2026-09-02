@@ -47,9 +47,15 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
     long countByWorkspaceIdAndStatusNot(long workspaceId, LlmApiKeyStatus status);
 
     /**
-     * Funded keys whose OpenRouter half does not exist yet — the provisioning
-     * sweep's worklist (the partial index from V88 serves exactly this shape).
+     * Funded keys whose OpenRouter half does not exist yet and whose backoff
+     * has elapsed — the provisioning sweep's worklist (the partial index from
+     * V88 serves this shape; the added predicate only narrows it further).
      * Revoked and expired keys are excluded: their money axis is over.
+     *
+     * <p>The backoff term is what stops a vendor refusal from being re-sent
+     * at full batch size every five minutes. A key that has never failed has
+     * a null timestamp and is picked up immediately, so the ordinary case is
+     * unchanged.
      */
     @Query(value = """
             select * from llm_api_keys k
@@ -57,6 +63,7 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
                and k.credit_limit > 0
                and k.status in ('PENDING'::llm_api_key_status, 'ACTIVE'::llm_api_key_status)
                and (k.expires_at is null or k.expires_at > now())
+               and (k.openrouter_not_before_at is null or k.openrouter_not_before_at <= now())
             """, nativeQuery = true)
     List<LlmApiKey> findAwaitingOpenrouterProvisioning();
 

@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -152,6 +154,82 @@ class OpenRouterProvisioningTest {
         assertThat(generation())
                 .as("nothing the document carries changed")
                 .isEqualTo(before);
+    }
+
+    @Test
+    void aRefusedKeyDropsOutOfTheSweepUntilItsBackoffElapses() {
+        long keyId = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
+                .thenThrow(new OpenRouterException(429, "rate limited"));
+
+        provisioner.sweep();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_last_error from llm_api_keys where id = ?",
+                String.class, keyId)).isEqualTo("THROTTLED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_attempt_count from llm_api_keys where id = ?",
+                Integer.class, keyId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_not_before_at > now() from llm_api_keys where id = ?",
+                Boolean.class, keyId))
+                .as("a refused key must not be asked again on the next tick")
+                .isTrue();
+
+        // The next sweep must not even reach the vendor: re-sending a refused
+        // batch on the same cadence is what the backoff exists to stop.
+        provisioner.sweep();
+        verify(client, times(1))
+                .createKey(anyString(), any(), anyString(), any(), any(), any());
+
+        // Once the wait has passed the key is picked up again, and a success
+        // clears both the counter and the wait.
+        jdbcTemplate.update("update llm_api_keys set openrouter_not_before_at = now() "
+                + "- interval '1 minute' where id = ?", keyId);
+        reset(client);
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
+                .thenReturn(new OpenRouterClient.CreatedKey("hash-after-backoff", "sk-or-later"));
+
+        provisioner.sweep();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_attempt_count from llm_api_keys where id = ?",
+                Integer.class, keyId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_not_before_at from llm_api_keys where id = ?",
+                java.sql.Timestamp.class, keyId)).isNull();
+    }
+
+    @Test
+    void theBackoffGrowsToACeilingAndIsSpreadAcrossKeys() {
+        long first = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        long second = insertKey(new BigDecimal("5.00"), "ACTIVE");
+        // Both keys arrive at the same rung, as a batch refused together would.
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 20 "
+                + "where id in (?, ?)", first, second);
+        when(client.createKey(anyString(), any(), anyString(), any(), any(), any()))
+                .thenThrow(new OpenRouterException(429, "rate limited"));
+
+        provisioner.sweep();
+
+        // Far past the doubling, so this is the six-hour ceiling plus jitter.
+        assertThat(waitMinutes(first)).isBetween(360L, 362L);
+        // Refused together, back at different moments: returning as one batch
+        // would re-send the burst that was refused.
+        assertThat(waitMinutes(first) * 60 + waitSeconds(first))
+                .isNotEqualTo(waitMinutes(second) * 60 + waitSeconds(second));
+    }
+
+    private long waitMinutes(long keyId) {
+        return jdbcTemplate.queryForObject(
+                "select floor(extract(epoch from (openrouter_not_before_at - now())) / 60)::bigint"
+                        + " from llm_api_keys where id = ?", Long.class, keyId);
+    }
+
+    private long waitSeconds(long keyId) {
+        return jdbcTemplate.queryForObject(
+                "select floor(extract(epoch from (openrouter_not_before_at - now())))::bigint"
+                        + " from llm_api_keys where id = ?", Long.class, keyId);
     }
 
     @Test
