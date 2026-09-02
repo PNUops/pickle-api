@@ -33,6 +33,8 @@ public record OpenRouterAccountResponse(
         @Nullable OpenRouterCredentialStateResponse rotationCredential,
         @Schema(description = "DB cache에서 읽은 account credits·예상·미관리 지출 관측 상태")
         OpenRouterAccountCreditsResponse credits,
+        @Schema(description = "이 account에 걸린 살아 있는 key의 금액 한도 합계")
+        OpenRouterAccountAllocationResponse allocation,
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")

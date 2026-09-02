@@ -4639,6 +4639,57 @@ components:
       - "expiresAt"
       - "state"
       type: "object"
+    OpenRouterAccountAllocationResponse:
+      description: "이 account에 걸린 살아 있는 key의 금액 한도 합계"
+      properties:
+        awaitingProvisionKeyCount:
+          description: "아직 프로비저닝되지 않아 vendor에 한도가 걸리지 않은 key 수"
+          format: "int64"
+          type: "integer"
+        committedCreditLimit:
+          description: "네 갈래 합계를 모두 더한 값. 다음 리셋 전까지 이 잔액에서 빠져나갈 수 있는 최대 금액"
+          type: "number"
+        committedDaily:
+          description: "일간 리셋 key의 한도 합. 창마다 다시 채워진다"
+          type: "number"
+        committedKeyCount:
+          description: "합계에 들어간 살아 있는 key 수"
+          format: "int64"
+          type: "integer"
+        committedMonthly:
+          description: "월간 리셋 key의 한도 합. 창마다 다시 채워진다"
+          type: "number"
+        committedTotalCap:
+          description: "리셋 창이 없는 key의 한도 합. 한 번 나가고 끝나는 채무"
+          type: "number"
+        committedUsage:
+          description: "살아 있는 key의 reset-aware 누적 사용액 합. 현재 창 사용액이 아니라 account baseline\
+            \ 뒤 누계"
+          type: "number"
+        committedWeekly:
+          description: "주간 리셋 key의 한도 합. 창마다 다시 채워진다"
+          type: "number"
+        remainingCommitment:
+          description: "Key마다 한도에서 현재 limit window 사용액을 뺀 값을 0에서 끊어 더한 합. 사용액 보고가\
+            \ 없는 key는 한도 전액으로 세므로 상한"
+          type: "number"
+        usageUnreportedKeyCount:
+          description: "프로비저닝됐지만 사용액 보고가 아직 없는 key 수. 0이 아니면 remainingCommitment는\
+            \ 실측이 아니라 상한"
+          format: "int64"
+          type: "integer"
+      required:
+      - "awaitingProvisionKeyCount"
+      - "committedCreditLimit"
+      - "committedDaily"
+      - "committedKeyCount"
+      - "committedMonthly"
+      - "committedTotalCap"
+      - "committedUsage"
+      - "committedWeekly"
+      - "remainingCommitment"
+      - "usageUnreportedKeyCount"
+      type: "object"
     OpenRouterAccountCreditsResponse:
       properties:
         accountUsageSinceBaseline:
@@ -4773,6 +4824,9 @@ components:
           - $ref: "#/components/schemas/OpenRouterCredentialStateResponse"
           - type: "null"
           description: "현재 ACTIVE credential의 secret-free 상태. 없으면 null"
+        allocation:
+          $ref: "#/components/schemas/OpenRouterAccountAllocationResponse"
+          description: "이 account에 걸린 살아 있는 key의 금액 한도 합계"
         boundKeyCount:
           description: "이 사업 계정에 연결된 LLM API 키 수"
           format: "int64"
@@ -4827,6 +4881,7 @@ components:
           format: "date-time"
           type: "string"
       required:
+      - "allocation"
       - "boundKeyCount"
       - "createdAt"
       - "credentialAvailable"
@@ -8109,7 +8164,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.58.0"
+  version: "0.59.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:

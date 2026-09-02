@@ -15,6 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
+import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountAllocationResponse;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountResponse;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterCredentialStateResponse;
 import kr.ac.pusan.pickle.admin.dto.StageOpenRouterCredentialRequest;
@@ -31,6 +32,7 @@ import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountCredentialRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterClient;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditRefreshScheduler;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCredentialError;
@@ -68,6 +70,7 @@ public class AdminOpenRouterAccountService {
     private final TransactionTemplate tx;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAccountCreditsQueryService creditsQuery;
+    private final OpenRouterAllocationQuery allocationQuery;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
@@ -78,6 +81,7 @@ public class AdminOpenRouterAccountService {
             EntityManager entityManager, PlatformTransactionManager transactionManager,
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAccountCreditsQueryService creditsQuery,
+            OpenRouterAllocationQuery allocationQuery,
             OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
@@ -90,6 +94,7 @@ public class AdminOpenRouterAccountService {
         this.tx = new TransactionTemplate(transactionManager);
         this.accountSelection = accountSelection;
         this.creditsQuery = creditsQuery;
+        this.allocationQuery = allocationQuery;
         this.creditRefreshScheduler = creditRefreshScheduler;
     }
 
@@ -106,7 +111,11 @@ public class AdminOpenRouterAccountService {
                 .sorted(Comparator.comparing(OpenRouterAccount::getName,
                         String.CASE_INSENSITIVE_ORDER))
                 .toList();
-        return accounts.stream().map(this::response).toList();
+        Map<Long, OpenRouterAllocationQuery.Allocation> allocations = allocationQuery.forAccounts(
+                accounts.stream().map(OpenRouterAccount::getId).toList());
+        return accounts.stream()
+                .map(account -> response(account, allocations.get(account.getId())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -785,6 +794,15 @@ public class AdminOpenRouterAccountService {
     }
 
     private OpenRouterAccountResponse response(OpenRouterAccount account) {
+        return response(account, allocationQuery.forAccount(account.getId()));
+    }
+
+    /**
+     * The list path gathers every account's allocation in one pass and hands it
+     * in; every other path asks about the single account it is answering about.
+     */
+    private OpenRouterAccountResponse response(OpenRouterAccount account,
+            OpenRouterAllocationQuery.Allocation allocation) {
         Org org = orgRepository.findById(account.getOrgId()).orElseThrow();
         List<OpenRouterAccountCredential> credentials =
                 credentialRepository.findByAccountIdOrderByIdAsc(account.getId());
@@ -798,8 +816,18 @@ public class AdminOpenRouterAccountService {
                 state(active),
                 state(credentials.stream().filter(c -> c.getStatus()
                                 != OpenRouterCredentialStatus.ACTIVE).findFirst().orElse(null)),
-                creditsQuery.get(account),
+                creditsQuery.get(account), allocationResponse(allocation),
                 account.getCreatedAt(), account.getUpdatedAt());
+    }
+
+    private static OpenRouterAccountAllocationResponse allocationResponse(
+            OpenRouterAllocationQuery.Allocation allocation) {
+        return new OpenRouterAccountAllocationResponse(allocation.committedCreditLimit(),
+                allocation.committedTotalCap(), allocation.committedDaily(),
+                allocation.committedWeekly(), allocation.committedMonthly(),
+                allocation.committedKeyCount(), allocation.remainingCommitment(),
+                allocation.committedUsage(), allocation.awaitingProvisionKeyCount(),
+                allocation.usageUnreportedKeyCount());
     }
 
     private static @Nullable OpenRouterCredentialStateResponse state(
