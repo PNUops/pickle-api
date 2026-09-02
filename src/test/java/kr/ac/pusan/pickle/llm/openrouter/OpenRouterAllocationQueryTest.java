@@ -338,9 +338,9 @@ class OpenRouterAllocationQueryTest {
                 insert into llm_api_keys
                        (workspace_id, org_id, request_id, name, token_hash, credit_limit,
                         credit_limit_reset, status, expires_at, openrouter_account_id,
-                        openrouter_legacy, openrouter_key_hash, openrouter_key_enc,
+                        openrouter_key_hash, openrouter_key_enc,
                         openrouter_usage, openrouter_usage_at, created_by)
-                values (?, ?, ?, ?, ?, ?::numeric, ?, ?::llm_api_key_status, ?, ?, false, ?, ?,
+                values (?, ?, ?, ?, ?, ?::numeric, ?, ?::llm_api_key_status, ?, ?, ?, ?,
                         ?::numeric, ?, ?)
                 """, workspaceId, orgId, request(workspaceId), "key-" + UUID.randomUUID(),
                 "PENDING".equals(status) ? null : "token-" + UUID.randomUUID(),
