@@ -57,14 +57,16 @@ public class OpenRouterAllocationQuery {
                        filter (where credit_limit_reset = 'WEEKLY'), 0) as committed_weekly,
                    coalesce(sum(credit_limit)
                        filter (where credit_limit_reset = 'MONTHLY'), 0) as committed_monthly,
-                   count(*) as committed_key_count,
+                   count(*) filter (where credit_limit > 0) as committed_key_count,
                    coalesce(sum(greatest(credit_limit
                        - coalesce(openrouter_usage, 0), 0)), 0) as remaining_commitment,
                    coalesce(sum(openrouter_accounted_usage), 0) as committed_usage,
                    count(*) filter (
-                       where openrouter_key_hash is null) as awaiting_provision_key_count,
+                       where credit_limit > 0
+                         and openrouter_key_hash is null) as awaiting_provision_key_count,
                    count(*) filter (
-                       where openrouter_key_hash is not null
+                       where credit_limit > 0
+                         and openrouter_key_hash is not null
                          and openrouter_usage is null) as usage_unreported_key_count
               from llm_api_keys
              where openrouter_account_id = any(?::bigint[])
@@ -136,7 +138,7 @@ public class OpenRouterAllocationQuery {
     @Transactional(readOnly = true)
     public ObservedBalance balance(long accountId) {
         List<ObservedBalance> rows = jdbcTemplate.query("""
-                select credits_total, credits_usage, credits_observed_at
+                select credits_total, credits_usage, credits_observed_at, credits_error
                   from openrouter_accounts
                  where id = ?
                 """, (rs, rowNum) -> {
@@ -145,36 +147,47 @@ public class OpenRouterAllocationQuery {
             Timestamp observedAt = rs.getTimestamp("credits_observed_at");
             return new ObservedBalance(
                     total == null || usage == null ? null : total.subtract(usage),
-                    observedAt == null ? null : observedAt.toInstant());
+                    observedAt == null ? null : observedAt.toInstant(),
+                    rs.getString("credits_error"));
         }, accountId);
-        return rows.isEmpty() ? new ObservedBalance(null, null) : rows.get(0);
+        return rows.isEmpty() ? new ObservedBalance(null, null, null) : rows.get(0);
     }
 
     /**
      * What a money-axis grant looked like against its account, for the record it
-     * leaves behind. Over-allocating on purpose is allowed — most holders never
-     * spend their whole limit — so nothing here refuses anything; it exists so
-     * that "why did this account run dry" has an answer later.
+     * leaves behind. Over-allocating on purpose is allowed, since most holders
+     * never spend their whole limit, so nothing here refuses anything; it exists
+     * so that "why did this account run dry" has an answer later.
      *
-     * <p>{@code delta} is what this write changes the commitment by, and it is
-     * the caller's arithmetic because only the caller knows what its own write
-     * does: an approval adds a key that is not counted yet, while a limits
-     * replacement swaps one figure for another on a key already counted.
-     * {@code overAllocated} is null, not false, when the balance has never been
-     * observed: not knowing is not the same as being within.
+     * <p>The comparison is <em>remaining</em> commitment against the balance,
+     * not the committed total. The balance is already net of what these keys
+     * have spent, so measuring the whole promise against it would charge the
+     * same dollars twice and report an account as over-allocated while it can
+     * still cover every outstanding claim.
+     *
+     * <p>{@code delta} is what this write adds to the commitment, and it is the
+     * caller's arithmetic because only the caller knows what its own write does:
+     * an approval adds a key that is not counted yet, while a limits replacement
+     * swaps one figure for another on a key already counted. {@code overAllocated}
+     * is null, not false, when the balance has never been observed: not knowing
+     * is not the same as being within. The observation time and the last error
+     * travel with it because a figure read three days ago and failing to refresh
+     * since is not the same evidence as one read a minute ago.
      */
     @Transactional(readOnly = true)
     public Map<String, Object> grantRecord(long accountId, BigDecimal delta) {
         Allocation allocation = forAccount(accountId);
         ObservedBalance balance = balance(accountId);
-        BigDecimal projectedCommitment = allocation.committedCreditLimit().add(delta);
+        BigDecimal projected = allocation.remainingCommitment().add(delta);
         Map<String, Object> record = new LinkedHashMap<>();
         record.put("accountCommittedCreditLimit", allocation.committedCreditLimit());
-        record.put("accountProjectedCreditLimit", projectedCommitment);
+        record.put("accountRemainingCommitment", allocation.remainingCommitment());
+        record.put("accountProjectedRemainingCommitment", projected);
         record.put("accountBalance", balance.amount());
         record.put("accountBalanceObservedAt", balance.observedAt());
+        record.put("accountBalanceError", balance.error());
         record.put("overAllocated", balance.amount() == null ? null
-                : projectedCommitment.compareTo(balance.amount()) > 0);
+                : projected.compareTo(balance.amount()) > 0);
         return record;
     }
 
@@ -207,7 +220,14 @@ public class OpenRouterAllocationQuery {
                 BigDecimal.ZERO, 0L, 0L);
     }
 
-    /** A cached balance and when it was read, both null when never observed. */
-    public record ObservedBalance(@Nullable BigDecimal amount, @Nullable Instant observedAt) {
+    /**
+     * A cached balance, when it was read, and the classification of the last
+     * failed attempt. Amount and time are null together when the vendor has
+     * never answered; an error alongside a non-null amount means the figure is
+     * real but the polling behind it is currently failing, which is what makes
+     * an old {@code observedAt} worth recording next to a verdict.
+     */
+    public record ObservedBalance(@Nullable BigDecimal amount, @Nullable Instant observedAt,
+            @Nullable String error) {
     }
 }

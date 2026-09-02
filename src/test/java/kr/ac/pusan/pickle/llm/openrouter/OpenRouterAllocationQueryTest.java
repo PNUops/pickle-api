@@ -235,22 +235,94 @@ class OpenRouterAllocationQueryTest {
         Map<String, Object> unobserved = allocationQuery.grantRecord(account, new BigDecimal("20"));
         assertThat((BigDecimal) unobserved.get("accountCommittedCreditLimit"))
                 .isEqualByComparingTo("90");
-        assertThat((BigDecimal) unobserved.get("accountProjectedCreditLimit"))
+        assertThat((BigDecimal) unobserved.get("accountProjectedRemainingCommitment"))
                 .isEqualByComparingTo("110");
         assertThat(unobserved.get("accountBalance")).isNull();
         assertThat(unobserved.get("overAllocated")).isNull();
 
-        jdbcTemplate.update("""
-                update openrouter_accounts
-                   set credits_total = 100, credits_usage = 0, credits_observed_at = now(),
-                       credits_last_success_at = now()
-                 where id = ?
-                """, account);
+        observedBalance(account, "100");
 
         assertThat(allocationQuery.grantRecord(account, new BigDecimal("20")).get("overAllocated"))
                 .isEqualTo(true);
         assertThat(allocationQuery.grantRecord(account, new BigDecimal("10")).get("overAllocated"))
                 .isEqualTo(false);
+    }
+
+    /**
+     * A key whose money axis is closed holds no money, so it is neither counted
+     * nor waiting for anything. The binding is immutable, so such keys stay on
+     * the account forever once the limit is taken to zero, and counting them
+     * would report "thirty keys" on an account that has committed nothing.
+     */
+    @Test
+    void aKeyWithNoMoneyIsNeitherCountedNorAwaitingProvisioning() {
+        long account = account("closed-axis");
+        key(account, "10", null, "ACTIVE", "hash-open", null, null);
+        key(account, "0", null, "ACTIVE", null, null, null);
+
+        OpenRouterAllocationQuery.Allocation allocation = allocationQuery.forAccount(account);
+
+        assertThat(allocation.committedCreditLimit()).isEqualByComparingTo("10");
+        assertThat(allocation.committedKeyCount()).isEqualTo(1);
+        assertThat(allocation.awaitingProvisionKeyCount()).isZero();
+    }
+
+    /**
+     * The balance is already net of what these keys have spent, so the verdict
+     * measures what they can <em>still</em> draw against it. Measuring the whole
+     * promise instead would charge the same dollars twice and call an account
+     * over-allocated while it can cover every outstanding claim.
+     */
+    @Test
+    void theVerdictComparesWhatIsStillDrawableAndNotTheWholePromise() {
+        long account = account("no-double-count");
+        key(account, "10", null, "ACTIVE", "hash-spent", "8", null);
+        observedBalance(account, "92");
+
+        Map<String, Object> record = allocationQuery.grantRecord(account, new BigDecimal("90"));
+
+        assertThat((BigDecimal) record.get("accountCommittedCreditLimit"))
+                .isEqualByComparingTo("10");
+        assertThat((BigDecimal) record.get("accountRemainingCommitment"))
+                .isEqualByComparingTo("2");
+        assertThat((BigDecimal) record.get("accountProjectedRemainingCommitment"))
+                .isEqualByComparingTo("92");
+        // 2 + 90 == 92 exactly: equal is not over.
+        assertThat(record.get("overAllocated")).isEqualTo(false);
+        assertThat(allocationQuery.grantRecord(account, new BigDecimal("91")).get("overAllocated"))
+                .isEqualTo(true);
+    }
+
+    /**
+     * The classification of a failing poll travels with the figure. A balance
+     * read three days ago and failing to refresh since is not the same evidence
+     * as one read a minute ago, and the record has to let a later reader tell.
+     */
+    @Test
+    void theRecordCarriesTheObservationTimeAndTheLastPollError() {
+        long account = account("stale-balance");
+        key(account, "10", null, "ACTIVE", "hash-stale", null, null);
+        observedBalance(account, "5");
+        jdbcTemplate.update("""
+                update openrouter_accounts
+                   set credits_error = 'THROTTLED'::openrouter_credential_error
+                 where id = ?
+                """, account);
+
+        Map<String, Object> record = allocationQuery.grantRecord(account, BigDecimal.ZERO);
+
+        assertThat(record.get("accountBalanceObservedAt")).isNotNull();
+        assertThat(record.get("accountBalanceError")).isEqualTo("THROTTLED");
+        assertThat(record.get("overAllocated")).isEqualTo(true);
+    }
+
+    private void observedBalance(long accountId, String balance) {
+        jdbcTemplate.update("""
+                update openrouter_accounts
+                   set credits_total = ?::numeric, credits_usage = 0,
+                       credits_observed_at = now(), credits_last_success_at = now()
+                 where id = ?
+                """, balance, accountId);
     }
 
     private long account(String name) {
@@ -264,16 +336,18 @@ class OpenRouterAllocationQueryTest {
         long workspaceId = workspace();
         jdbcTemplate.update("""
                 insert into llm_api_keys
-                       (workspace_id, org_id, request_id, name, credit_limit,
+                       (workspace_id, org_id, request_id, name, token_hash, credit_limit,
                         credit_limit_reset, status, expires_at, openrouter_account_id,
                         openrouter_legacy, openrouter_key_hash, openrouter_key_enc,
-                        openrouter_usage, created_by)
-                values (?, ?, ?, ?, ?::numeric, ?, ?::llm_api_key_status, ?, ?, false, ?, ?,
-                        ?::numeric, ?)
+                        openrouter_usage, openrouter_usage_at, created_by)
+                values (?, ?, ?, ?, ?, ?::numeric, ?, ?::llm_api_key_status, ?, ?, false, ?, ?,
+                        ?::numeric, ?, ?)
                 """, workspaceId, orgId, request(workspaceId), "key-" + UUID.randomUUID(),
+                "PENDING".equals(status) ? null : "token-" + UUID.randomUUID(),
                 creditLimit, reset, status,
                 expiresAt == null ? null : java.sql.Timestamp.from(expiresAt),
-                accountId, keyHash, keyHash == null ? null : "ciphertext", windowUsage, adminId);
+                accountId, keyHash, keyHash == null ? null : "ciphertext", windowUsage,
+                windowUsage == null ? null : java.sql.Timestamp.from(Instant.now()), adminId);
     }
 
     private long workspace() {

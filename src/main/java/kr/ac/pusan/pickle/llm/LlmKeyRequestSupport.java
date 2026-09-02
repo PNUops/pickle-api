@@ -126,9 +126,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         OpenRouterAccount account = accountSelection.select(request.getOrgId(),
                 spec.grantedCreditLimit(), spec.openrouterAccountId());
         // Read the account's standing commitment before the new key is written,
-        // so the record says what had already been promised when this decision
-        // was made. After the generation bump and the account lock, never before:
-        // a read that jumps the serialization point sees the queue it skipped.
+        // so the record says what was still outstanding when this decision was
+        // made. After the generation bump, never before: that row lock is the
+        // serialization point, and a read in front of it sees the queue it
+        // skipped. (The account row itself is only locked when the approver
+        // named an account; auto-selection does not lock it.)
         Map<String, Object> allocationRecord = account == null ? Map.of()
                 : allocationQuery.grantRecord(account.getId(), spec.grantedCreditLimit());
 
