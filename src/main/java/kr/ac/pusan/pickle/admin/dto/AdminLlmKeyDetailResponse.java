@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
@@ -40,12 +41,14 @@ public record AdminLlmKeyDetailResponse(
         String orgName,
         @Nullable UUID requestId,
         Instant createdAt,
-        @Nullable Instant revokedAt) {
+        @Nullable Instant revokedAt,
+        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열은 제한 없음")
+        List<String> creditAllowedModels) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,
             String workspaceName, UUID orgId, String orgName, UUID requestId,
             @Nullable UUID openrouterAccountId, @Nullable String openrouterAccountName,
-            Instant now) {
+            List<String> creditAllowedModels, Instant now) {
         return new AdminLlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.effectiveStatus(now), key.getExpiresAt(), key.getLastUsedAt(), key.getRpm(),
                 key.getTpm(), key.getConcurrency(), key.getDailyTokens(), key.isQuotaExhausted(),
@@ -53,6 +56,6 @@ public record AdminLlmKeyDetailResponse(
                 key.getOpenrouterUsage(), key.getOpenrouterUsageAt(),
                 key.getOpenrouterLimitRemaining(), openrouterAccountId, openrouterAccountName,
                 workspaceId, workspaceName, orgId, orgName, requestId, key.getCreatedAt(),
-                key.getRevokedAt());
+                key.getRevokedAt(), creditAllowedModels);
     }
 }

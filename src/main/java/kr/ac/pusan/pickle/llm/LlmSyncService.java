@@ -110,7 +110,8 @@ public class LlmSyncService {
                    k.credit_limit, k.openrouter_key_enc,
                    -- Same clock as the row filters below, so "still live" means
                    -- one thing across this statement. Read by creditPending().
-                   (k.expires_at is null or k.expires_at > now()) as not_expired
+                   (k.expires_at is null or k.expires_at > now()) as not_expired,
+                   k.credit_allowed_models::text as credit_allowed_models
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -550,8 +551,16 @@ public class LlmSyncService {
                         "EXPIRED".equals(status) ? "ACTIVE" : status,
                         expiresAt == null ? null : expiresAt.toInstant(),
                         // No RESTRICTED model exists yet; empty reaches PUBLIC
-                        // models only, which is the fail-closed default.
+                        // models only, which is the fail-closed default. This is
+                        // the curation axis and stays separate from the money
+                        // axis below: filling it here would lock a key out of
+                        // self-serving models, which is not what restricting
+                        // commercial spending means.
                         List.of(),
+                        // The money axis. Empty is unrestricted, and a TOKEN-axis
+                        // model ignores it entirely.
+                        CreditModelAllowlist.fromJson(objectMapper,
+                                rs.getString("credit_allowed_models")),
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),
                                 rs.getObject("concurrency", Integer.class)),

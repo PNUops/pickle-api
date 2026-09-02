@@ -194,6 +194,11 @@ class LlmGatewayEndpointTest {
                 .andExpect(jsonPath("$.keys[0].quotaExhausted").value(false))
                 .andExpect(jsonPath("$.keys[0].recordBodies").value(false))
                 .andExpect(jsonPath("$.keys[0].allowedModels").isArray())
+                // The money fence rides alongside the curation list and stays
+                // separate from it. A later round that merges the two would
+                // silently lock every fenced key out of self-serving models.
+                .andExpect(jsonPath("$.keys[0].creditAllowedModels").isArray())
+                .andExpect(jsonPath("$.keys[0].creditAllowedModels.length()").value(0))
                 .andReturn().getResponse().getContentAsString();
         // Both members present — models as an EMPTY ARRAY (a real state: no
         // catalogue rows exist yet), never omitted alongside a present keys.
@@ -246,6 +251,30 @@ class LlmGatewayEndpointTest {
         } finally {
             jdbcTemplate.update("update llm_upstreams set enabled = true where passthrough");
         }
+    }
+
+    // The money fence reaches the gateway as stored, and it reaches it on its
+    // own field: allowedModels stays empty, because filling that one would lock
+    // the key out of self-serving models as a side effect.
+    @Test
+    void creditModelAllowlistTravelsInTheDocument() throws Exception {
+        // A positive money limit needs an account binding since the legacy source
+        // was retired, so the fence rides a properly bound key.
+        long account = insertOpenrouterAccount();
+        KeyFixture fenced = newKey("fenced");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ?, credit_allowed_models = ?::jsonb where id = ?",
+                account, "[\"openai/*\", \"anthropic/claude-sonnet-4\"]", fenced.id());
+
+        syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
+        syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].creditAllowedModels[0]").value("openai/*"))
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].creditAllowedModels[1]").value("anthropic/claude-sonnet-4"))
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].allowedModels[0]").doesNotExist());
     }
 
     @Test

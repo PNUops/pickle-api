@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.llm.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
+import java.util.List;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import org.jspecify.annotations.Nullable;
@@ -44,13 +45,19 @@ public record LlmKeyRequestSpecResponse(
         @Nullable BigDecimal grantedCreditLimit,
 
         @Schema(description = "금액 한도 리셋 창. 비어 있으면 리셋 없는 총액 상한입니다.")
-        @Nullable CreditLimitReset grantedCreditLimitReset) {
+        @Nullable CreditLimitReset grantedCreditLimitReset,
 
-    public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail) {
+        @Schema(description = "부여된 상용(금액) 축 모델 허용 목록. 빈 배열이면 제한이 없습니다. "
+                + "어떤 모델을 열지는 신청자가 요구하는 값이 아니라 승인자가 정하는 값이라 "
+                + "희망 쪽 짝이 없습니다.")
+        List<String> grantedCreditAllowedModels) {
+
+    public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
+            List<String> grantedCreditAllowedModels) {
         return new LlmKeyRequestSpecResponse(detail.getReqPurpose(), detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
                 detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
-                detail.getGrantedCreditLimitReset());
+                detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels);
     }
 }

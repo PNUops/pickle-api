@@ -7,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,6 +62,16 @@ public class LlmKeyRequestDetail {
     @Column(name = "granted_openrouter_account_id")
     private @Nullable Long grantedOpenrouterAccountId;
 
+    /**
+     * The money-axis model allow list the reviewer granted, as a JSON array.
+     * Empty means unrestricted. Unlike the numbers above it has no requested
+     * counterpart: which models to open is the reviewer's decision, not
+     * something an applicant asks for.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "granted_credit_allowed_models", nullable = false, columnDefinition = "jsonb")
+    private String grantedCreditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+
     protected LlmKeyRequestDetail() {
     }
 
@@ -80,12 +92,15 @@ public class LlmKeyRequestDetail {
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset) {
-        grant(rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, null);
+        grant(rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, null,
+                CreditModelAllowlist.EMPTY_JSON);
     }
 
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
-            @Nullable CreditLimitReset creditLimitReset, @Nullable Long openrouterAccountId) {
+            @Nullable CreditLimitReset creditLimitReset, @Nullable Long openrouterAccountId,
+            String creditAllowedModels) {
+        this.grantedCreditAllowedModels = creditAllowedModels;
         this.grantedRpm = rpm;
         this.grantedTpm = tpm;
         this.grantedConcurrency = concurrency;
@@ -101,6 +116,11 @@ public class LlmKeyRequestDetail {
 
     public Long getRequestId() {
         return requestId;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    public String getGrantedCreditAllowedModels() {
+        return grantedCreditAllowedModels;
     }
 
     public @Nullable String getReqPurpose() {

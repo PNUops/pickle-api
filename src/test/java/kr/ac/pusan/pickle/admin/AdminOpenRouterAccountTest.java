@@ -752,6 +752,43 @@ class AdminOpenRouterAccountTest {
         assertBindingSelectionLock(true);
     }
 
+    // Approval is the only path by which a key is ever created, so the line that
+    // puts the fence on the key row is the line the whole feature rests on. The
+    // request detail, the audit and every screen read the reviewer's decision
+    // from elsewhere, and all of them stay correct if that one line is lost —
+    // only the row the gateway serves goes quietly back to unrestricted.
+    @Test
+    void approvalStoresTheGrantedFenceOnTheKeyTheGatewayServes() {
+        OpenRouterAccount account = insertActiveAccount(
+                "fence 사업", UUID.randomUUID(), "sk-or-v1-fence");
+        long workspaceId = workspace(orgId, "fence");
+        long requestId = request(orgId, workspaceId, "approval-fence");
+        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+                requestId);
+        Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
+
+        // Inside a transaction, like the approval endpoint: the request detail is
+        // an existing row, so its grant lands by dirty checking at flush.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                requestSupport.materialize(approvalRequest, new ApproveRequestRequest(
+                        null, null, null, null,
+                        new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
+                                null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 "),
+                                account.getPublicId())), sysAdmin));
+
+        // The row the sync document is built from — not the request detail.
+        String onKey = jdbcTemplate.queryForObject(
+                "select credit_allowed_models::text from llm_api_keys where request_id = ?",
+                String.class, requestId);
+        assertThat(onKey).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+
+        // And the approval history, which is what the screens read back.
+        String onDetail = jdbcTemplate.queryForObject(
+                "select granted_credit_allowed_models::text from llm_key_request_details "
+                        + "where request_id = ?", String.class, requestId);
+        assertThat(onDetail).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+    }
+
     @Test
     void approvalAndFirstLimitsBindingShareGenerationThenAccountLockOrder() throws Exception {
         OpenRouterAccount account = insertActiveAccount(
@@ -764,7 +801,7 @@ class AdminOpenRouterAccountTest {
         ApproveRequestRequest approvalForm = new ApproveRequestRequest(
                 null, null, null, null,
                 new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
-                        null, account.getPublicId()));
+                        null, null, account.getPublicId()));
         UUID firstBinding = insertKey(workspaceId,
                 request(orgId, workspaceId, "limits-lock-order"), BigDecimal.ZERO, null);
 
@@ -850,9 +887,43 @@ class AdminOpenRouterAccountTest {
         }
     }
 
+    // The default is a prefill source for the approval form, so it must round
+    // trip through create, patch and read — and it must NOT bump the gateway
+    // generation, because it reaches no issued key and appears in no document.
+    // Every other LLM write here bumps, which is why this is pinned: a later
+    // round that "fixes" the missing bump would be turning a copy source into a
+    // runtime inheritance root, and every already-issued key's spending
+    // permission would start moving when an administrator edits a form.
+    @Test
+    void accountDefaultModelListRoundTripsWithoutTouchingTheGateway() {
+        jdbcTemplate.update("insert into llm_gateway_state (id, generation, service_enabled) "
+                + "values (true, 1, true) on conflict (id) do update set generation = 1");
+        OpenRouterAccountResponse created = create("기본 목록 account");
+        assertThat(created.defaultCreditAllowedModels()).isEmpty();
+
+        UpdateOpenRouterAccountRequest form = new UpdateOpenRouterAccountRequest();
+        form.setDefaultCreditAllowedModels(java.util.List.of("OpenAI/*", " openai/* "));
+        OpenRouterAccountResponse updated =
+                service.update(sysAdmin, created.id(), form, "127.0.0.1");
+        // Normalized the same way the key's own list is: lower-cased, deduped.
+        assertThat(updated.defaultCreditAllowedModels()).containsExactly("openai/*");
+        assertThat(service.get(sysAdmin, created.id()).defaultCreditAllowedModels())
+                .containsExactly("openai/*");
+
+        Long generation = jdbcTemplate.queryForObject(
+                "select generation from llm_gateway_state where id", Long.class);
+        assertThat(generation).isEqualTo(1L);
+
+        // An empty list clears it; the form opens blank from the next approval.
+        UpdateOpenRouterAccountRequest cleared = new UpdateOpenRouterAccountRequest();
+        cleared.setDefaultCreditAllowedModels(java.util.List.of());
+        assertThat(service.update(sysAdmin, created.id(), cleared, "127.0.0.1")
+                .defaultCreditAllowedModels()).isEmpty();
+    }
+
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-                orgPublicId, name, "사업 코드", null, name), "127.0.0.1");
+                orgPublicId, name, "사업 코드", null, null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(
@@ -898,6 +969,7 @@ class AdminOpenRouterAccountTest {
         request.setDailyTokens(10000L);
         request.setCreditLimit(credit);
         request.setCreditLimitReset(null);
+        request.setCreditAllowedModels(null);
         request.setOpenrouterAccountId(accountId);
         return request;
     }

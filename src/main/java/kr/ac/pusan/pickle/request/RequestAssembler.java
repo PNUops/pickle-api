@@ -24,11 +24,13 @@ import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import kr.ac.pusan.pickle.request.dto.RequestReviewResponse;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetailRepository;
+import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
 import kr.ac.pusan.pickle.request.vm.dto.VmRequestSpecResponse;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Builds contract {@code RequestDetail} payloads: resolves workspace/org/user
@@ -47,6 +49,7 @@ public class RequestAssembler {
     private final OsImageRepository osImageRepository;
     private final VmFlavorRepository vmFlavorRepository;
     private final NodeRepository nodeRepository;
+    private final ObjectMapper objectMapper;
 
     public RequestAssembler(RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository,
@@ -54,7 +57,8 @@ public class RequestAssembler {
             WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, UserRepository userRepository,
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
-            NodeRepository nodeRepository) {
+            NodeRepository nodeRepository, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
         this.llmKeyDetailRepository = llmKeyDetailRepository;
@@ -136,7 +140,9 @@ public class RequestAssembler {
                             flavors.get(vmDetail.getFlavorId()),
                             images.get(vmDetail.getGrantedImageId()),
                             nodes.get(vmDetail.getNodeId())) : null,
-                    llmKeyDetail != null ? LlmKeyRequestSpecResponse.from(llmKeyDetail) : null,
+                    llmKeyDetail != null ? LlmKeyRequestSpecResponse.from(llmKeyDetail,
+                            CreditModelAllowlist.fromJson(objectMapper,
+                                    llmKeyDetail.getGrantedCreditAllowedModels())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;

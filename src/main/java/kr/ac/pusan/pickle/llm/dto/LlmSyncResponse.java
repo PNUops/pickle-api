@@ -87,6 +87,10 @@ public sealed interface LlmSyncResponse {
             String status,
             Instant expiresAt,
             List<String> allowedModels,
+            // The money axis, separate from allowedModels above on purpose: this
+            // one governs CREDIT-axis models only, so a key restricted here
+            // keeps its self-serving access. Empty means unrestricted.
+            List<String> creditAllowedModels,
             KeyLimits limits,
             boolean quotaExhausted,
             boolean recordBodies,
