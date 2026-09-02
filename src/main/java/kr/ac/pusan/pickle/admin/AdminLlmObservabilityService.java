@@ -60,7 +60,7 @@ public class AdminLlmObservabilityService {
     private static final String LOCAL_REJECTION_TYPES = """
             'missing_api_key', 'invalid_api_key', 'api_key_expired', 'api_key_revoked',
             'account_suspended', 'quota_exhausted', 'credit_unavailable',
-            'credit_exhausted', 'service_disabled', 'model_not_found',
+            'credit_pending', 'credit_exhausted', 'service_disabled', 'model_not_found',
             'model_not_allowed', 'rate_limit_requests', 'rate_limit_tokens',
             'rate_limit_concurrency', 'server_busy', 'request_too_large',
             'input_too_long', 'output_limit_exceeded', 'invalid_json',

@@ -107,7 +107,10 @@ public class LlmSyncService {
                      where u.passthrough and u.enabled) as passthrough_ref,
                    k.public_id, k.token_hash, k.status::text as status, k.expires_at,
                    k.rpm, k.tpm, k.concurrency, k.quota_exhausted, k.record_bodies,
-                   k.credit_limit, k.openrouter_key_enc
+                   k.credit_limit, k.openrouter_key_enc,
+                   -- Same clock as the row filters below, so "still live" means
+                   -- one thing across this statement. Read by creditPending().
+                   (k.expires_at is null or k.expires_at > now()) as not_expired
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -550,6 +553,9 @@ public class LlmSyncService {
                         // generation the gateway polls on.
                         rs.getBoolean("quota_exhausted"),
                         rs.getBoolean("record_bodies"),
+                        creditPending(status, rs.getBoolean("not_expired"),
+                                rs.getBigDecimal("credit_limit"),
+                                rs.getString("openrouter_key_enc")),
                         credentialsFor(publicId.toString(), status,
                                 rs.getBigDecimal("credit_limit"),
                                 rs.getString("openrouter_key_enc"))));
@@ -578,6 +584,37 @@ public class LlmSyncService {
      * the whole document: revocations must keep flowing even when one row is
      * corrupt, and the loss is visible on the key's own commercial axis.</p>
      */
+    /**
+     * Whether this key's missing credential is a wait rather than an answer:
+     * the money budget is granted and the OpenRouter key has not been created
+     * yet. The provisioner attempts it the moment the budget lands and the
+     * sweep retries after that, so this state ends on its own.
+     *
+     * <p>Deliberately narrower than "{@link #credentialsFor} returned null".
+     * That happens for four reasons and only this one heals: a key that is
+     * not ACTIVE is not waiting on provisioning, a zero budget was never
+     * granted one, and a ciphertext that will not decrypt is a fault an
+     * operator has to repair. Telling a caller to wait for any of those
+     * would be a promise nothing keeps.
+     *
+     * <p>{@code notExpired} is what keeps that true rather than nearly true.
+     * A key expired by timestamp can still carry status ACTIVE in the column
+     * and still reach the document (rows stay for 30 days past expiry), and
+     * the provisioning sweep skips it — so without it the flag would promise
+     * a wait that never ends. The gateway happens to settle expiry during
+     * authentication, before any budget check could read the flag, but that
+     * is an ordering downstream of here and not something this should lean
+     * on. The condition mirrors the sweep's worklist instead, which is the
+     * only thing that makes the flag's promise good. It comes from the query
+     * rather than a Java clock so that every "still live" in this statement
+     * is decided by one clock.
+     */
+    private static boolean creditPending(String status, boolean notExpired,
+            @Nullable BigDecimal creditLimit, @Nullable String keyEnc) {
+        return "ACTIVE".equals(status) && notExpired && keyEnc == null
+                && creditLimit != null && creditLimit.signum() > 0;
+    }
+
     private @Nullable Map<String, String> credentialsFor(String keyId, String status,
             @Nullable BigDecimal creditLimit, @Nullable String keyEnc) {
         if (!"ACTIVE".equals(status) || keyEnc == null

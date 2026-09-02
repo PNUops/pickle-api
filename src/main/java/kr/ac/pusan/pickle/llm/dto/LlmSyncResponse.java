@@ -90,6 +90,16 @@ public sealed interface LlmSyncResponse {
             KeyLimits limits,
             boolean quotaExhausted,
             boolean recordBodies,
+            // Why the credential below is missing, for the one missing-reason
+            // that resolves on its own: a positive money budget whose
+            // OpenRouter key has not been created yet. The gateway needs it
+            // because omission alone cannot tell "never granted" from
+            // "granted, not delivered yet", and those two deserve different
+            // sentences — one tells the caller to apply for a budget, the
+            // other to wait. False for every other reason the member is
+            // absent, a ciphertext that will not decrypt included: that one
+            // does not heal on its own and must not read as "almost ready".
+            boolean creditPending,
             // The one usable secret in the document: upstream ref (lowercase)
             // to the bearer this key presents there, decrypted at serve time.
             // Included only while the key is truly ACTIVE with a positive
