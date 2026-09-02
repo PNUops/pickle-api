@@ -42,53 +42,6 @@ public class OpenRouterReconciler {
         this.credentialResolver = credentialResolver;
     }
 
-    /** Exercises multi-scope failure isolation without serving as a scheduled entrypoint. */
-    void reconcileAllScopes() {
-        OpenRouterCredentialResolver.ReconciliationAccesses resolved;
-        try {
-            resolved = credentialResolver.reconciliationScopes();
-        } catch (OpenRouterException e) {
-            log.warn("OpenRouter credential resolution failed; keeping existing findings");
-            return;
-        }
-        List<OpenRouterManagementAccess> scopes = resolved.scopes();
-        if (scopes.isEmpty()) {
-            return;
-        }
-        Instant now = Instant.now();
-        List<String> allOrphans = new ArrayList<>();
-        List<String> allStale = new ArrayList<>();
-        List<OpenRouterSpendRecorder.Spend> allSpends = new ArrayList<>();
-        boolean allScopesSucceeded = resolved.complete();
-
-        for (OpenRouterManagementAccess access : scopes) {
-            try {
-                ScopeResult result = reconcileScope(access, now);
-                allOrphans.addAll(result.orphans());
-                allStale.addAll(result.stale());
-                allSpends.addAll(result.spends());
-                recordFindings(result.findingObservations(), now);
-                credentialResolver.markReconciled(access, now);
-            } catch (OpenRouterException e) {
-                allScopesSucceeded = false;
-                credentialResolver.markVerificationFailure(
-                        access, credentialError(e), now);
-                log.warn("OpenRouter reconcile scope {} failed; its findings remain open: {}",
-                        access.scopeKey(), vendorError(e));
-            }
-        }
-
-        spendRecorder.record(allSpends, now);
-        if (allScopesSucceeded) {
-            findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_ORPHAN, allOrphans, now);
-            findings.autoResolveNotSeen(DriftFindingKind.OPENROUTER_STALE, allStale, now);
-        }
-        if (!allOrphans.isEmpty() || !allStale.isEmpty()) {
-            log.info("OpenRouter reconcile: {} orphan(s), {} stale across {} account scope(s)",
-                    allOrphans.size(), allStale.size(), scopes.size());
-        }
-    }
-
     /**
      * One account's bounded key observation, used by the durable PAIR worker.
      * Only this successful scope resolves its own drift namespace; another

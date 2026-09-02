@@ -1,8 +1,6 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
@@ -39,26 +37,6 @@ public class OpenRouterCredentialResolver {
     public Optional<OpenRouterManagementAccess> forAccount(UUID accountPublicId) {
         return accountRepository.findByPublicId(accountPublicId)
                 .flatMap(this::databaseAccess);
-    }
-
-    @Transactional(readOnly = true)
-    public ReconciliationAccesses reconciliationScopes() {
-        List<OpenRouterManagementAccess> result = new ArrayList<>();
-        boolean complete = true;
-        for (OpenRouterAccountCredential credential : credentialRepository
-                .findByStatus(OpenRouterCredentialStatus.ACTIVE)) {
-            OpenRouterAccount account = accountRepository.findById(credential.getAccountId())
-                    .orElse(null);
-            if (account == null || credential.getVerifiedAt() == null) {
-                continue;
-            }
-            try {
-                result.add(decrypt(account, credential));
-            } catch (OpenRouterException e) {
-                complete = false;
-            }
-        }
-        return new ReconciliationAccesses(List.copyOf(result), complete);
     }
 
     /**
@@ -110,9 +88,5 @@ public class OpenRouterCredentialResolver {
         } catch (IllegalStateException e) {
             throw new OpenRouterException(0, "management credential is unavailable");
         }
-    }
-
-    public record ReconciliationAccesses(List<OpenRouterManagementAccess> scopes,
-            boolean complete) {
     }
 }

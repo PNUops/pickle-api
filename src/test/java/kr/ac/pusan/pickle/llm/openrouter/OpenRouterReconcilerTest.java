@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -8,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -27,6 +29,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * (theirs, unexplained) and a zombie (ours over, theirs alive) land as drift
  * findings; the zombie is disabled; a healthy pairing is untouched; and a
  * resolved mismatch auto-resolves on the next cycle.
+ *
+ * <p>These drive {@code reconcileAccount}, which is the entry point the poll
+ * dispatcher's worker actually calls. Driving anything else here would leave
+ * the production path untested while the assertions still passed.</p>
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -42,10 +48,15 @@ class OpenRouterReconcilerTest {
     private JdbcTemplate jdbcTemplate;
     @Autowired
     private OpenRouterManagementCredentialCipher cipher;
+    @Autowired
+    private OpenRouterPollRepository polls;
+    @Autowired
+    private OpenRouterCredentialResolver credentialResolver;
     @MockitoBean
     private OpenRouterClient client;
 
     private long accountId;
+    private UUID accountPublicId;
 
     @BeforeEach
     void setUp() {
@@ -73,15 +84,43 @@ class OpenRouterReconcilerTest {
                 values (?, ?, ?)
                 returning id
                 """, Long.class, orgId, "대사 시험 사업 " + UUID.randomUUID(), ownerId);
-        UUID publicId = jdbcTemplate.queryForObject(
+        accountPublicId = jdbcTemplate.queryForObject(
                 "select public_id from openrouter_accounts where id = ?", UUID.class, id);
         jdbcTemplate.update("""
                 insert into openrouter_account_credentials
                        (account_id, status, credential_enc, created_by,
                         activated_at, verified_at)
                 values (?, 'ACTIVE'::openrouter_credential_status, ?, ?, now(), now())
-                """, id, cipher.encrypt(publicId, ACCOUNT_KEY), ownerId);
+                """, id, cipher.encrypt(accountPublicId, ACCOUNT_KEY), ownerId);
         return id;
+    }
+
+    /**
+     * One reconciliation cycle over this test's account, the way the poll
+     * worker runs it. The claim is released afterwards so a test can run a
+     * second cycle; in production the worker's own success or abandon call
+     * does that.
+     */
+    private void reconcile() {
+        OpenRouterManagementAccess access =
+                credentialResolver.forAccount(accountPublicId).orElseThrow();
+        OpenRouterPollRepository.Claim claim = polls.claim(accountId, Instant.now());
+        assertThat(claim).as("the account should be claimable for a poll").isNotNull();
+        OpenRouterReconciler.ScopeObservation observation;
+        try {
+            observation = reconciler.reconcileAccount(access, claim, Instant.now(),
+                    polls.baselineExists(claim), Clock.systemUTC());
+        } finally {
+            polls.abandon(claim);
+        }
+        // Every database assertion in this file sits behind the claim gate:
+        // when `recordAccount` cannot confirm the claim it writes nothing, runs
+        // no findings, and says so only through this flag. A test that expects
+        // an absence would then pass without the cycle having happened, so the
+        // flag is checked here rather than left to each case to remember.
+        assertThat(observation.persisted())
+                .as("the cycle must have committed, or an absence proves nothing")
+                .isTrue();
     }
 
     @Test
@@ -94,7 +133,7 @@ class OpenRouterReconcilerTest {
                 new OpenRouterClient.ManagedKey("hash-zombie", "zombie", false, null, null, true, null),
                 new OpenRouterClient.ManagedKey("hash-orphan", "who-is-this", false, null, null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(openFindings("OPENROUTER_ORPHAN")).containsExactly("hash-orphan");
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-zombie");
@@ -110,7 +149,7 @@ class OpenRouterReconcilerTest {
         insertKey("ACTIVE", "hash-vanished");
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of());
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-vanished");
     }
@@ -125,7 +164,7 @@ class OpenRouterReconcilerTest {
                 new OpenRouterClient.ManagedKey("hash-resumed", "r", true,
                         new BigDecimal("5"), null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         verify(client).setDisabled(ACCOUNT_KEY, null,
                 "hash-suspended", true);
@@ -146,7 +185,7 @@ class OpenRouterReconcilerTest {
                 "hash-combined", "combined", false,
                 new BigDecimal("99"), null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         verify(client).updateLimit(ACCOUNT_KEY, null,
                 "hash-combined", new BigDecimal("5.00"), null);
@@ -163,13 +202,13 @@ class OpenRouterReconcilerTest {
         insertKey("REVOKED", "hash-z");
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(
                 new OpenRouterClient.ManagedKey("hash-z", "z", false, null, null, true, null)));
-        reconciler.reconcileAllScopes();
+        reconcile();
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-z");
 
         // Now OpenRouter reports it disabled: the drift no longer holds.
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(
                 new OpenRouterClient.ManagedKey("hash-z", "z", true, null, null, true, null)));
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
     }
@@ -183,7 +222,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-drifted", "d", false, new BigDecimal("99"), null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         verify(client).updateLimit(ACCOUNT_KEY, null,
                 "hash-drifted", new BigDecimal("5.00"), null);
@@ -197,7 +236,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-ok", "ok", false, new BigDecimal("5"), null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         verify(client, never()).updateLimit(anyString(), any(), anyString(), any(), any());
         assertThat(openFindings("OPENROUTER_STALE")).isEmpty();
@@ -214,7 +253,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-uncounted", "u", false, new BigDecimal("5"), null, false, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         verify(client).updateLimit(ACCOUNT_KEY, null,
                 "hash-uncounted", new BigDecimal("5.00"), null);
@@ -237,7 +276,7 @@ class OpenRouterReconcilerTest {
                 .when(client).setDisabled(ACCOUNT_KEY, null,
                         "hash-stubborn", true);
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         String summary = jdbcTemplate.queryForObject(
                 "select summary from drift_findings where dedup_key like '%:key:hash-stubborn'",
@@ -254,7 +293,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-spender", "s", false, new BigDecimal("5"), null, true, new BigDecimal("1.75"))));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(jdbcTemplate.queryForObject(
                 "select openrouter_usage from llm_api_keys where id = ?", BigDecimal.class, id))
@@ -275,7 +314,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-silent", "s", false, new BigDecimal("5"), null, true, null)));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(jdbcTemplate.queryForObject(
                 "select openrouter_usage from llm_api_keys where id = ?", BigDecimal.class, id))
@@ -291,7 +330,7 @@ class OpenRouterReconcilerTest {
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(new OpenRouterClient.ManagedKey(
                 "hash-both", "b", false, new BigDecimal("99"), null, true, new BigDecimal("3.00"))));
 
-        reconciler.reconcileAllScopes();
+        reconcile();
 
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-both");
         assertThat(jdbcTemplate.queryForObject(
@@ -304,12 +343,15 @@ class OpenRouterReconcilerTest {
         insertKey("REVOKED", "hash-kept");
         when(client.listKeys(ACCOUNT_KEY, null)).thenReturn(List.of(
                 new OpenRouterClient.ManagedKey("hash-kept", "kept", false, null, null, true, null)));
-        reconciler.reconcileAllScopes();
+        reconcile();
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");
 
         when(client.listKeys(ACCOUNT_KEY, null))
                 .thenThrow(new OpenRouterException(503, "down"));
-        reconciler.reconcileAllScopes();
+        // The failure travels out to the poll worker, which records it against
+        // the account's own failure axis. Swallowing it here would let the
+        // worker treat a vendor outage as a completed observation.
+        assertThatThrownBy(this::reconcile).isInstanceOf(OpenRouterException.class);
 
         // A failed read must not resolve anything for free.
         assertThat(openFindings("OPENROUTER_STALE")).containsExactly("hash-kept");

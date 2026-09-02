@@ -17,8 +17,19 @@
 -- non-null, so the jar running before this one cannot start against the result.
 -- Take a database backup point first; there is no rollback.
 
--- 1. The surviving legacy rows. All of them are revoked test keys, and the
---    operator confirmed the whole deployment is test data during this period.
+-- 0. Everything below reads `llm_api_keys` to decide what is safe, and the
+--    last step rewrites its shape. Without this lock those two see different
+--    databases: the check in step 1b takes its own READ COMMITTED snapshot,
+--    neither it nor the delete blocks an insert, and `drop column` does not
+--    take ACCESS EXCLUSIVE until it runs at the end. A legacy row committed by
+--    another session in that window is invisible to the check and present
+--    after the drop, which is the one row the check exists to stop. That is
+--    not theoretical here: another session created keys in this table while
+--    this migration was being written.
+lock table llm_api_keys in access exclusive mode;
+
+-- 1. The revoked legacy rows. The operator confirmed the whole deployment is
+--    test data during this period; step 1b decides what may survive.
 --    The predicate is descriptive rather than a list of ids so that a database
 --    which never carried them simply matches nothing.
 --
@@ -57,18 +68,28 @@ delete from llm_api_keys
 do $$
 declare
     stranded bigint;
+    ids text;
 begin
-    select count(*) into stranded
+    -- The status filter is not redundant with step 1. Without it this reads
+    -- "any marked row", which is only the same set because the delete ran
+    -- first, and a check that depends on a neighbour's ordering to mean what
+    -- it says is a check that will eventually mean something else.
+    select count(*), string_agg(public_id::text, ', ' order by id)
+      into stranded, ids
       from llm_api_keys
      where openrouter_legacy
+       and status <> 'REVOKED'
        and (credit_limit > 0
             or openrouter_key_hash is not null
             or openrouter_key_enc is not null);
     if stranded > 0 then
+        -- Naming them matters: this message is the only output this block
+        -- ever produces, and it reaches someone whose deployment just
+        -- stopped. A bare count leaves them writing the query themselves.
         raise exception
             'V100 refuses to run: % live legacy OpenRouter key(s) hold money '
-            'or a vendor key. Revoke them, or reissue them under an account, '
-            'before retiring the legacy source.', stranded;
+            'or a vendor key (%). Revoke them, or reissue them under an '
+            'account, before retiring the legacy source.', stranded, ids;
     end if;
 end $$;
 
