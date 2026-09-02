@@ -24,6 +24,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.result.JsonPathResultMatchers;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -293,6 +294,52 @@ class LlmGatewayEndpointTest {
         assertThat(body).doesNotContain("sk-or-unfunded").doesNotContain("sk-or-revoked");
         assertThat(body).doesNotContain("v1:"); // no ciphertext leaks either
         assertThat(body.split("upstreamCredentials", -1)).hasSize(2);
+    }
+
+    @Test
+    void creditPendingMarksOnlyTheGrantedBudgetStillWaitingForItsKey() throws Exception {
+        // Omitting the credential says "no commercial axis" and nothing more,
+        // but the gateway has to answer two different sentences: apply for a
+        // budget, or wait for the one you were granted. Only the second is a
+        // wait, so only the second is flagged.
+        long account = insertOpenrouterAccount();
+        KeyFixture waiting = newKey("waiting");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ? where id = ?", account, waiting.id());
+        KeyFixture unfunded = newKey("no-budget");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 0 where id = ?",
+                unfunded.id());
+        KeyFixture provisioned = newKey("already-provisioned");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ?, "
+                + "openrouter_key_hash = 'hash-done', openrouter_key_enc = ? where id = ?",
+                account, credentialCipher.encrypt("sk-or-done"), provisioned.id());
+        // Funded and unprovisioned, but revoked: the sweep will never pick it
+        // up, so promising a wait would be a promise nothing keeps.
+        KeyFixture revoked = newKey("revoked-waiting");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ?, "
+                + "status = 'REVOKED', revoked_at = now() where id = ?", account, revoked.id());
+        // The same trap wearing an ACTIVE status: expiry is a timestamp, not a
+        // column flip, so this row still reads ACTIVE and still reaches the
+        // document. The sweep skips it, so the flag must too.
+        KeyFixture expired = newKey("expired-waiting");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ?, "
+                + "expires_at = now() - interval '1 day' where id = ?", account, expired.id());
+
+        syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(pending(waiting).value(true))
+                .andExpect(pending(unfunded).value(false))
+                .andExpect(pending(provisioned).value(false))
+                .andExpect(pending(revoked).value(false))
+                .andExpect(pending(expired).value(false));
+    }
+
+    /** The {@code creditPending} member of one key in the served document. */
+    private static JsonPathResultMatchers pending(KeyFixture key) {
+        return jsonPath("$.keys[?(@.keyId=='%s')].creditPending".formatted(key.publicId()));
     }
 
     @Test
