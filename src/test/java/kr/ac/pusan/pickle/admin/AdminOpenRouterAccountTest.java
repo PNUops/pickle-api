@@ -752,6 +752,43 @@ class AdminOpenRouterAccountTest {
         assertBindingSelectionLock(true);
     }
 
+    // Approval is the only path by which a key is ever created, so the line that
+    // puts the fence on the key row is the line the whole feature rests on. The
+    // request detail, the audit and every screen read the reviewer's decision
+    // from elsewhere, and all of them stay correct if that one line is lost —
+    // only the row the gateway serves goes quietly back to unrestricted.
+    @Test
+    void approvalStoresTheGrantedFenceOnTheKeyTheGatewayServes() {
+        OpenRouterAccount account = insertActiveAccount(
+                "fence 사업", UUID.randomUUID(), "sk-or-v1-fence");
+        long workspaceId = workspace(orgId, "fence");
+        long requestId = request(orgId, workspaceId, "approval-fence");
+        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+                requestId);
+        Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
+
+        // Inside a transaction, like the approval endpoint: the request detail is
+        // an existing row, so its grant lands by dirty checking at flush.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                requestSupport.materialize(approvalRequest, new ApproveRequestRequest(
+                        null, null, null, null,
+                        new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
+                                null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 "),
+                                account.getPublicId())), sysAdmin));
+
+        // The row the sync document is built from — not the request detail.
+        String onKey = jdbcTemplate.queryForObject(
+                "select credit_allowed_models::text from llm_api_keys where request_id = ?",
+                String.class, requestId);
+        assertThat(onKey).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+
+        // And the approval history, which is what the screens read back.
+        String onDetail = jdbcTemplate.queryForObject(
+                "select granted_credit_allowed_models::text from llm_key_request_details "
+                        + "where request_id = ?", String.class, requestId);
+        assertThat(onDetail).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+    }
+
     @Test
     void approvalAndFirstLimitsBindingShareGenerationThenAccountLockOrder() throws Exception {
         OpenRouterAccount account = insertActiveAccount(

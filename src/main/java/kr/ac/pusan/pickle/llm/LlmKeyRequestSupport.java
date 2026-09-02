@@ -165,7 +165,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
 
         // The key lands PENDING, so nothing servable changes yet, but it still
         // follows the same generation-before-document-write discipline.
-        LlmApiKey key = keyRepository.save(new LlmApiKey(request.getWorkspaceId(),
+        LlmApiKey key = new LlmApiKey(request.getWorkspaceId(),
                 request.getOrgId(), request.getId(), request.getDisplayName(),
                 detail.getReqPurpose(),
                 form.grantedEndDate() == null ? null
@@ -174,8 +174,14 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
                 spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
-                request.getRequesterId()));
+                request.getRequesterId());
+        // Set before the insert, not after it. Setting it afterwards left the
+        // value to dirty checking, so the row the gateway serves came out empty
+        // — unrestricted — wherever the flush did not happen to follow. Every
+        // other surface reads the reviewer's decision from the request detail
+        // and looked correct, which is what made it quiet.
         key.applyCreditAllowedModels(creditAllowedModels);
+        key = keyRepository.save(key);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());

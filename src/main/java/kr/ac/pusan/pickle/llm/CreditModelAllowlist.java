@@ -37,7 +37,7 @@ public final class CreditModelAllowlist {
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
 
-    /** Matches the DB CHECK in V100 — a model name, or a vendor prefix. */
+    /** Matches the DB CHECK in V103 — a model name, or a vendor prefix. */
     private static final Pattern PATTERN =
             Pattern.compile("^[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*|\\*))?$");
 
@@ -101,6 +101,11 @@ public final class CreditModelAllowlist {
             }
             kept.add(value);
         }
+        // Unreachable through the request DTOs, which carry @Size(max = 50) on
+        // the raw list, and deduplication only shrinks it. Kept because this
+        // method is the one place that decides what a stored list may be, and a
+        // future caller that is not a validated DTO would otherwise have no
+        // bound at all.
         if (kept.size() > MAX_ENTRIES) {
             errors.add(new FieldValidationError(field,
                     "모델은 최대 " + MAX_ENTRIES + "개까지 허용할 수 있습니다."));
