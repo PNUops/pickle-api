@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestTypeHandler;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
@@ -33,14 +34,17 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     private final LlmApiKeyRepository keyRepository;
     private final LlmGatewayGenerations generations;
     private final OpenRouterAccountSelectionService accountSelection;
+    private final OpenRouterAllocationQuery allocationQuery;
 
     public LlmKeyRequestSupport(LlmKeyRequestDetailRepository detailRepository,
             LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
-            OpenRouterAccountSelectionService accountSelection) {
+            OpenRouterAccountSelectionService accountSelection,
+            OpenRouterAllocationQuery allocationQuery) {
         this.detailRepository = detailRepository;
         this.keyRepository = keyRepository;
         this.generations = generations;
         this.accountSelection = accountSelection;
+        this.allocationQuery = allocationQuery;
     }
 
     @Override
@@ -121,6 +125,15 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         generations.bump();
         OpenRouterAccount account = accountSelection.select(request.getOrgId(),
                 spec.grantedCreditLimit(), spec.openrouterAccountId());
+        // Read the account's standing commitment before the new key is written,
+        // so the record says what was still outstanding when this decision was
+        // made. After the generation bump, never before: that row lock is the
+        // serialization point, and a read in front of it sees the queue it
+        // skipped. (The account row itself is only locked when the approver
+        // named an account; auto-selection does not lock it.)
+        Map<String, Object> allocationRecord = account == null ? Map.of()
+                : allocationQuery.grantRecord(account.getId(), spec.grantedCreditLimit());
+
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
@@ -148,6 +161,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
         auditArgs.put("grantedCreditLimitReset", spec.grantedCreditLimitReset());
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
+        auditArgs.putAll(allocationRecord);
         return new Materialized(key.getId(), key.getName(), auditArgs, () -> {
         });
     }

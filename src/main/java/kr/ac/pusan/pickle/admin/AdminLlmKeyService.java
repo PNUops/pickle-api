@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -61,13 +62,15 @@ public class AdminLlmKeyService {
     private final EntityManager entityManager;
     private final OpenRouterAccountRepository accountRepository;
     private final OpenRouterAccountSelectionService accountSelection;
+    private final OpenRouterAllocationQuery allocationQuery;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             RequestRepository requestRepository, LlmGatewayGenerations generations,
             LlmOpenRouterProvisioner provisioner, AuditService auditService,
             EntityManager entityManager, OpenRouterAccountRepository accountRepository,
-            OpenRouterAccountSelectionService accountSelection) {
+            OpenRouterAccountSelectionService accountSelection,
+            OpenRouterAllocationQuery allocationQuery) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -78,6 +81,7 @@ public class AdminLlmKeyService {
         this.entityManager = entityManager;
         this.accountRepository = accountRepository;
         this.accountSelection = accountSelection;
+        this.allocationQuery = allocationQuery;
     }
 
     @Transactional(readOnly = true)
@@ -213,6 +217,20 @@ public class AdminLlmKeyService {
         }
         OpenRouterAccount account = resolveLimitAccount(key, form);
         boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
+
+        // Read the account's standing commitment before the key is mutated. The
+        // key's own old limit is already inside that sum when it is bound to the
+        // same account — requireMutableStatus has just established that it is
+        // live — so what this write changes is the difference, not the new figure.
+        // A key binding for the first time is not in the sum yet and adds all of it.
+        Map<String, Object> allocationRecord = Map.of();
+        if (account != null) {
+            BigDecimal counted = Objects.equals(key.getOpenrouterAccountId(), account.getId())
+                    ? key.getCreditLimit() : BigDecimal.ZERO;
+            allocationRecord = allocationQuery.grantRecord(account.getId(),
+                    form.getCreditLimit().subtract(counted));
+        }
+
         key.replaceLimits(form.getRpm(), form.getTpm(), form.getConcurrency(),
                 form.getDailyTokens(), form.getCreditLimit(), form.getCreditLimitReset(),
                 Instant.now());
@@ -227,6 +245,7 @@ public class AdminLlmKeyService {
         args.put("creditLimit", form.getCreditLimit());
         args.put("creditLimitReset", form.getCreditLimitReset());
         args.put("openrouterAccountId", account == null ? null : account.getPublicId());
+        args.putAll(allocationRecord);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.LLM_KEY_LIMITS_UPDATE, "llm_key", key.getPublicId(), args, ip);
         if (moneyChanged && key.getOpenrouterKeyHash() != null) {
