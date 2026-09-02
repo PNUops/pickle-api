@@ -41,8 +41,17 @@ public record CreateRequestRequest(
         @Size(max = 2000, message = "기타 참고 사항은 2000자 이하여야 합니다.")
         @Nullable String extraNote,
 
-        @Nullable LocalDate reqStartDate,
+        /**
+         * 고른 기간 항목({@code GET /request-periods}). 직접 날짜를 적었으면 비운다.
+         * 값이 있으면 종료일은 서버가 그 항목에서 복사하므로 {@code reqEndDate}와 함께
+         * 보낼 수 없다.
+         */
+        @Nullable UUID periodPresetId,
 
+        /**
+         * 직접 적은 종료일. 기간 항목을 고르지 않았다면 필수다. 무기한은 종료일이 없는
+         * 기간 항목으로만 요청할 수 있고, 이 필드를 비우는 것으로는 요청되지 않는다.
+         */
         @Nullable LocalDate reqEndDate,
 
         // 신청하는 리소스의 이름. 종류를 가리지 않고 필수이며, 이 신청을 가리키는

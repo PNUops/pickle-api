@@ -63,11 +63,21 @@ public class Request {
     @Column(name = "extra_note")
     private String extraNote;
 
-    @Column(name = "req_start_date")
-    private LocalDate reqStartDate;
-
+    /**
+     * The period this request asks for. Null is the indefinite period, which a
+     * requester can only reach by picking a catalogue row that carries no end
+     * date -- the form itself has no way to leave this blank.
+     */
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;
+
+    /**
+     * Which catalogue row the end date was copied from, or null when it was
+     * typed. The date is copied rather than joined so that an operator
+     * correcting next term's date does not move a request already submitted.
+     */
+    @Column(name = "req_period_preset_id")
+    private Long reqPeriodPresetId;
 
     /**
      * Requester-chosen name for the resource; seeds its settings at approval.
@@ -96,7 +106,7 @@ public class Request {
 
     public Request(ResourceType resourceType, Long workspaceId, Long orgId, Long requesterId,
             String purpose, String courseOrProject, String extraNote,
-            LocalDate reqStartDate, LocalDate reqEndDate, String displayName) {
+            LocalDate reqEndDate, Long reqPeriodPresetId, String displayName) {
         this.resourceType = resourceType;
         this.workspaceId = workspaceId;
         this.orgId = orgId;
@@ -104,8 +114,8 @@ public class Request {
         this.purpose = purpose;
         this.courseOrProject = courseOrProject;
         this.extraNote = extraNote;
-        this.reqStartDate = reqStartDate;
         this.reqEndDate = reqEndDate;
+        this.reqPeriodPresetId = reqPeriodPresetId;
         this.displayName = displayName;
     }
 
@@ -145,8 +155,8 @@ public class Request {
         return extraNote;
     }
 
-    public LocalDate getReqStartDate() {
-        return reqStartDate;
+    public Long getReqPeriodPresetId() {
+        return reqPeriodPresetId;
     }
 
     public LocalDate getReqEndDate() {

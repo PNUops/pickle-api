@@ -21,6 +21,12 @@ public interface OsImageRepository extends JpaRepository<OsImage, Long> {
      * the tie-break between rows the first two keys cannot separate (per-node
      * copies and superseded revisions of one release).</p>
      *
+     * <p>The version runs newest first. The request form asks for the family
+     * before the version, and the answer to "which version" is the current one
+     * unless you have a reason -- so the newest sits at the top of that second
+     * choice and is what the form preselects. Ascending was right while every
+     * image was one card in a single flat list.</p>
+     *
      * <p>The release is sorted as the number sequence it is, not as text:
      * {@code '9' > '10'} in text order, which would misplace Rocky the moment
      * it enters the catalog. The {@code chk_os_images_os_version} check
@@ -28,7 +34,7 @@ public interface OsImageRepository extends JpaRepository<OsImage, Long> {
      * makes this cast total for every row the table can hold.</p>
      */
     String DISPLAY_ORDER =
-            " order by os_family asc, string_to_array(os_version, '.')::int[] asc, id asc";
+            " order by os_family asc, string_to_array(os_version, '.')::int[] desc, id asc";
 
     @Query(value = "select * from os_images where status = cast(:status as catalog_status)"
             + DISPLAY_ORDER, nativeQuery = true)

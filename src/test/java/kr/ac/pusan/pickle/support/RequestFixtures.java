@@ -36,14 +36,14 @@ public final class RequestFixtures {
         return requestId;
     }
 
-    /** A submitted VM request carrying a requested period. */
+    /** A submitted VM request carrying a requested end date. */
     public static long insertVmRequest(JdbcTemplate jdbc, long workspaceId, long orgId,
             long requesterId, String purpose, Long imageId, int vcpu, int memoryMb, int diskGb,
-            String startDate, String endDate) {
+            String endDate) {
         long requestId = insertVmRequest(jdbc, workspaceId, orgId, requesterId, purpose, imageId,
                 vcpu, memoryMb, diskGb);
-        jdbc.update("update requests set req_start_date = cast(? as date),"
-                + " req_end_date = cast(? as date) where id = ?", startDate, endDate, requestId);
+        jdbc.update("update requests set req_end_date = cast(? as date) where id = ?",
+                endDate, requestId);
         return requestId;
     }
 

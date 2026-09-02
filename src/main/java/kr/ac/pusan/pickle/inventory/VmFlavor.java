@@ -54,6 +54,13 @@ public class VmFlavor {
 
     private String notes;
 
+    /**
+     * 신청 화면에서의 자리. 사양이 크기 사다리에서 모양별로 바뀌면서 수치로는 순서를
+     * 유도할 수 없게 됐다. 무엇을 먼저 보여 줄지는 관리자가 정한다.
+     */
+    @Column(name = "display_order", nullable = false)
+    private int displayOrder;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(nullable = false, columnDefinition = "catalog_status")
@@ -71,7 +78,7 @@ public class VmFlavor {
     }
 
     public VmFlavor(String name, String displayName, int vcpu, int memoryMb, int diskGb,
-            CatalogStatus status, String notes) {
+            CatalogStatus status, String notes, int displayOrder) {
         this.name = name;
         this.displayName = displayName;
         this.vcpu = vcpu;
@@ -79,6 +86,7 @@ public class VmFlavor {
         this.diskGb = diskGb;
         this.status = status;
         this.notes = notes;
+        this.displayOrder = displayOrder;
     }
 
     public Long getId() {
@@ -113,6 +121,10 @@ public class VmFlavor {
         return notes;
     }
 
+    public int getDisplayOrder() {
+        return displayOrder;
+    }
+
     public CatalogStatus getStatus() {
         return status;
     }
@@ -137,6 +149,10 @@ public class VmFlavor {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public void setDisplayOrder(int displayOrder) {
+        this.displayOrder = displayOrder;
     }
 
     public void setStatus(CatalogStatus status) {

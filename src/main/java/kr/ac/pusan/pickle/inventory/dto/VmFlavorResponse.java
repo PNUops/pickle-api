@@ -5,7 +5,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import org.jspecify.annotations.Nullable;
 
-/** Contract schema {@code VmFlavor} — spec preset (v0.23.0 axis split). */
+/** Contract schema {@code VmFlavor}: a spec the request form offers. */
 public record VmFlavorResponse(
         UUID id,
         String name,
@@ -14,11 +14,12 @@ public record VmFlavorResponse(
         int memoryMb,
         int diskGb,
         CatalogStatus status,
-        @Nullable String notes) {
+        @Nullable String notes,
+        int displayOrder) {
 
     public static VmFlavorResponse from(VmFlavor flavor) {
         return new VmFlavorResponse(flavor.getPublicId(), flavor.getName(), flavor.getDisplayName(),
                 flavor.getVcpu(), flavor.getMemoryMb(), flavor.getDiskGb(), flavor.getStatus(),
-                flavor.getNotes());
+                flavor.getNotes(), flavor.getDisplayOrder());
     }
 }

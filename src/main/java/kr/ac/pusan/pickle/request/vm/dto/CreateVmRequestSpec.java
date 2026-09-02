@@ -16,8 +16,13 @@ public record CreateVmRequestSpec(
         @NotNull(message = "OS 이미지(imageId)를 지정해 주세요.")
         UUID imageId,
 
-        @NotNull(message = "사양 프리셋(flavorId)을 지정해 주세요.")
-        UUID flavorId,
+        /**
+         * 고른 사양. 프리셋을 쓰지 않고 값을 직접 적었다면 비운다 -- 그때는
+         * {@code specReason}이 필수가 된다. 규칙이 카탈로그가 아니라 사용자가 고른
+         * 경로를 따르게 하려는 것이다: 가장 큰 프리셋을 대신 실어 보내면, 관리자가
+         * 더 큰 프리셋을 하나 추가하는 순간 사유 없이 통과하는 신청이 생긴다.
+         */
+        @Nullable UUID flavorId,
 
         @NotNull(message = "요청 vCPU 수를 입력해 주세요.")
         @Min(value = 1, message = "vCPU는 1 이상이어야 합니다.")

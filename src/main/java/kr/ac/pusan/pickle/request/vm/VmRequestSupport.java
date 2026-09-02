@@ -4,6 +4,8 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Map;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
@@ -13,7 +15,9 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
+import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
@@ -27,6 +31,7 @@ import kr.ac.pusan.pickle.request.vm.dto.CreateVmRequestSpec;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
+import org.jspecify.annotations.Nullable;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.scheduling.JobScheduler;
 import org.springframework.http.HttpStatus;
@@ -83,19 +88,22 @@ public class VmRequestSupport implements RequestTypeHandler {
         // no longer be chosen is a validation error.
         OsImage image = imageRepository.findByPublicId(spec.imageId())
                 .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
-        VmFlavor flavor = flavorRepository.findByPublicId(spec.flavorId())
-                .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
+        // 사양을 직접 적은 신청은 프리셋을 가리키지 않는다. 그때는 사유가 무조건 필요하다.
+        VmFlavor flavor = spec.flavorId() == null ? null
+                : flavorRepository.findByPublicId(spec.flavorId())
+                        .orElseThrow(() -> notFound("해당 사양이 존재하지 않습니다."));
         boolean axesActive = true;
         if (image.getStatus() != CatalogStatus.ACTIVE) {
             errors.add(new FieldValidationError("vm.imageId", "더 이상 선택할 수 없는 OS 이미지입니다."));
             axesActive = false;
         }
-        if (flavor.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("vm.flavorId", "더 이상 선택할 수 없는 사양 프리셋입니다."));
+        if (flavor != null && flavor.getStatus() != CatalogStatus.ACTIVE) {
+            errors.add(new FieldValidationError("vm.flavorId", "더 이상 선택할 수 없는 사양입니다."));
             axesActive = false;
         }
         if (axesActive) {
             validateSpec(spec, image, flavor, errors);
+            validateFitsSomeNode(spec, errors);
         }
         validateSlug(Texts.blankToNull(spec.desiredSlug()), errors);
     }
@@ -103,9 +111,11 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public void saveDetail(Request request, CreateRequestRequest form) {
         CreateVmRequestSpec spec = form.vm();
-        // validateCreate already 404'd on an unknown reference, so both resolve.
+        // validateCreate already 404'd on an unknown reference, so these resolve.
         long imageId = imageRepository.findByPublicId(spec.imageId()).orElseThrow().getId();
-        long flavorId = flavorRepository.findByPublicId(spec.flavorId()).orElseThrow().getId();
+        // 사양을 직접 적은 신청은 가리키는 프리셋이 없다.
+        Long flavorId = spec.flavorId() == null ? null
+                : flavorRepository.findByPublicId(spec.flavorId()).orElseThrow().getId();
         detailRepository.save(new VmRequestDetail(request.getId(), imageId, flavorId,
                 spec.reqVcpu(), spec.reqMemoryMb(), spec.reqDiskGb(),
                 Texts.blankToNull(spec.specReason()), Texts.blankToNull(spec.desiredSlug())));
@@ -247,22 +257,71 @@ public class VmRequestSupport implements RequestTypeHandler {
 
     /**
      * Axis-split validation (V58): the hard floor is the OS image's
-     * {@code minDiskGb}; the spec-reason baseline is the chosen flavor's
-     * values — requesting below a preset stays free, exceeding it needs a
-     * reason (same semantics the OS defaults carried before the split).
+     * {@code minDiskGb}, and the spec-reason baseline is whichever spec was
+     * chosen. Asking for less than the chosen spec stays free and exceeding it
+     * needs a reason, which is what the OS defaults meant before the split.
+     *
+     * <p>A null flavor is the request that chose nothing and typed its own
+     * numbers. That one always needs a reason, because the requirement follows
+     * the path the requester took rather than the catalogue: pinning it to the
+     * largest published spec would mean an operator adding a larger one
+     * silently switches the requirement off.</p>
      */
-    private static void validateSpec(CreateVmRequestSpec spec, OsImage image, VmFlavor flavor,
-            List<FieldValidationError> errors) {
+    private static void validateSpec(CreateVmRequestSpec spec, OsImage image,
+            @Nullable VmFlavor flavor, List<FieldValidationError> errors) {
         if (spec.reqDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("vm.reqDiskGb",
                     "이 OS의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
-        boolean exceedsFlavor = spec.reqVcpu() > flavor.getVcpu()
-                || spec.reqMemoryMb() > flavor.getMemoryMb()
-                || spec.reqDiskGb() > flavor.getDiskGb();
-        if (exceedsFlavor && Texts.blankToNull(spec.specReason()) == null) {
+        if (Texts.blankToNull(spec.specReason()) != null) {
+            return;
+        }
+        // 규칙이 사용자가 고른 경로를 따른다: 준비된 사양을 고르지 않았으면 언제나 사유가
+        // 필요하고, 골랐다면 그것을 넘을 때만 필요하다. 카탈로그가 판정 기준이 되면
+        // 관리자가 더 큰 사양을 하나 만드는 것만으로 사유 요구가 조용히 사라진다.
+        if (flavor == null) {
             errors.add(new FieldValidationError("vm.specReason",
-                    "선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
+                    "사양을 직접 적을 때는 사유를 입력해야 합니다."));
+        } else if (spec.reqVcpu() > flavor.getVcpu()
+                || spec.reqMemoryMb() > flavor.getMemoryMb()
+                || spec.reqDiskGb() > flavor.getDiskGb()) {
+            errors.add(new FieldValidationError("vm.specReason",
+                    "선택한 사양을 초과하는 신청에는 사유를 입력해야 합니다."));
+        }
+    }
+
+    /**
+     * 어느 노드도 담을 수 없는 사양인지.
+     *
+     * <p>배치는 메모리를 경성 필터로 쓰므로, 물리적으로 수용 불가능한 사양이 승인되면
+     * VM 이 배치 단계에서 오류로 주차한다. 그것을 신청 시점에 돌려보낸다. 정책 상한이
+     * 아니라 물리 상한이라 설정 키가 필요 없고, 노드가 늘면 저절로 넓어진다.</p>
+     *
+     * <p>디스크는 씬 프로비저닝이라 <em>합계</em>가 용량을 넘는 것이 정상이다. 그래서
+     * 여기서 보는 것은 요청 한 건이 어느 노드의 풀보다 큰 경우뿐이고, 용량을 재지 않은
+     * 노드({@code diskCapacityGb == null})는 그 판정에서 빠진다.</p>
+     */
+    private void validateFitsSomeNode(CreateVmRequestSpec spec,
+            List<FieldValidationError> errors) {
+        List<Node> nodes = nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE);
+        if (nodes.isEmpty()) {
+            return;
+        }
+        long maxMemoryMb = nodes.stream().mapToLong(Node::getMemoryMb).max().orElse(0);
+        if (spec.reqMemoryMb() > maxMemoryMb) {
+            errors.add(new FieldValidationError("vm.reqMemoryMb",
+                    "요청한 메모리를 수용할 수 있는 노드가 없습니다. 가장 큰 노드의 메모리는 "
+                            + maxMemoryMb + "MiB입니다."));
+        }
+        OptionalLong maxDiskGb = nodes.stream()
+                .map(Node::getDiskCapacityGb)
+                .filter(Objects::nonNull)
+                .mapToLong(Long::longValue)
+                .max();
+        if (maxDiskGb.isPresent() && spec.reqDiskGb() > maxDiskGb.getAsLong()) {
+            errors.add(new FieldValidationError("vm.reqDiskGb",
+                    "요청한 디스크를 수용할 수 있는 노드가 없습니다. 가장 큰 노드의 디스크는 "
+                            + maxDiskGb.getAsLong() + "GiB입니다."));
         }
     }
 

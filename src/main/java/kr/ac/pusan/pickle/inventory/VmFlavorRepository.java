@@ -12,16 +12,15 @@ public interface VmFlavorRepository extends JpaRepository<VmFlavor, Long> {
     Optional<VmFlavor> findByPublicId(UUID publicId);
 
     /**
-     * Display order of the spec presets: smallest first, on the three numbers
-     * that make a preset what it is, with the id as the last tie-break.
+     * Display order of the specs, stated rather than derived.
      *
-     * <p>The presets have no family axis to group by; size is the axis the
-     * student is choosing along, so the list reads as a scale instead of as the
-     * order an operator happened to create them in. Ascending also puts the
-     * modest preset in front of the generous one, which is the direction the
-     * quota policy wants a hesitant requester nudged.</p>
+     * <p>Sorting by size was right while the specs were a ladder from small to
+     * large. They are shapes now -- one leaning on cores, one on memory -- and
+     * no arithmetic says which of those comes first. So the order is a column
+     * the admin screen writes, with the id as the tie-break so the list never
+     * wobbles between requests.</p>
      */
-    Sort DISPLAY_ORDER = Sort.by("vcpu", "memoryMb", "diskGb", "id");
+    Sort DISPLAY_ORDER = Sort.by("displayOrder", "id");
 
     default List<VmFlavor> findByStatusInDisplayOrder(CatalogStatus status) {
         return findByStatus(status, DISPLAY_ORDER);

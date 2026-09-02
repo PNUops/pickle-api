@@ -30,8 +30,11 @@ public record RequestDetailResponse(
         String purpose,
         @Nullable String courseOrProject,
         @Nullable String extraNote,
-        @Nullable LocalDate reqStartDate,
+        @Schema(description = "신청한 사용 종료일. 값이 없으면 무기한을 요청한 것입니다.")
         @Nullable LocalDate reqEndDate,
+        @Schema(description = "종료일을 고른 기간 항목의 이름. 직접 적었으면 null입니다.",
+                example = "2026학년도 1학기")
+        @Nullable String periodName,
         String displayName,
         RequestStatus status,
         @Nullable RequestReviewResponse review,

@@ -8,10 +8,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -329,6 +331,7 @@ class AdminLlmKeyTest {
         create.put("workspaceId", pub("workspaces", workspaceA));
         create.put("orgId", orgA.getPublicId());
         create.put("purpose", "관리자 vertical flow");
+        create.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         create.put("displayName", "vertical-flow-key");
         create.put("llmKey", Map.of("usagePlan", "통합 검증", "reqRpm", 30,
                 "reqTpm", 3000, "reqDailyTokens", 30000));

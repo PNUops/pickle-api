@@ -257,16 +257,23 @@ class PublishingTest {
                 .andExpect(jsonPath("$.errors[0].field").value("subdomain"));
     }
 
+    /**
+     * The request form's domain axis was retired, and V104 dropped the two
+     * columns it wrote. A name planted on the origin request used to be the way
+     * a fallback could creep back into publishing; there is now no column to
+     * plant it in, which is a stronger guarantee than the old test's — so what
+     * is checked here is that the columns really are gone, alongside the 422
+     * that publishing without a name still answers.
+     */
     @Test
-    void publishIgnoresAnyRequestFormName() throws Exception {
-        // The request form stopped carrying a domain axis: a historical
-        // desired_subdomain on the origin request must NOT resurface as a
-        // fallback — a body without a name is 422, period.
+    void publishHasNoRequestFormNameToFallBackOn() throws Exception {
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from information_schema.columns
+                 where table_name = 'vm_request_details'
+                   and column_name in ('desired_subdomain', 'root_domain')
+                """, Integer.class)).isZero();
+
         long vmId = publishableVm(null, null, VmStatus.RUNNING);
-        jdbcTemplate.update("""
-                update vm_request_details set desired_subdomain = 'team-ghost', root_domain = 'pusan.dev'
-                 where request_id = (select request_id from vms where id = ?)
-                """, vmId);
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/domains")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"port\":80}"))
