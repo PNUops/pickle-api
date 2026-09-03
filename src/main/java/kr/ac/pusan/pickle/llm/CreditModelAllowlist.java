@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import org.jspecify.annotations.Nullable;
@@ -91,7 +92,7 @@ public final class CreditModelAllowlist {
             if (entry == null || entry.isBlank()) {
                 continue;
             }
-            String value = entry.trim().toLowerCase(java.util.Locale.ROOT);
+            String value = entry.trim().toLowerCase(Locale.ROOT);
             String at = field + "[" + i + "]";
             if (value.getBytes(StandardCharsets.UTF_8).length > MAX_ENTRY_BYTES) {
                 errors.add(new FieldValidationError(at, "모델 이름이 너무 깁니다."));
@@ -135,8 +136,13 @@ public final class CreditModelAllowlist {
      * {@code ~pickle-general} — a name this list is not allowed to hold,
      * slipping past the guard on one character.
      */
-    public static boolean isReserved(String lowerName) {
-        String bare = lowerName.startsWith("~") ? lowerName.substring(1) : lowerName;
+    public static boolean isReserved(String name) {
+        // Lower-cased here rather than trusted from the caller. normalize()
+        // already does it, but this method is public and a future caller that
+        // skips it would get a guard that a capital letter walks past. The
+        // gateway's counterpart lowers defensively for the same reason.
+        String bare = name.toLowerCase(Locale.ROOT);
+        bare = bare.startsWith("~") ? bare.substring(1) : bare;
         for (String prefix : RESERVED_PREFIXES) {
             if (bare.startsWith(prefix)) {
                 return true;

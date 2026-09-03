@@ -773,20 +773,23 @@ class AdminOpenRouterAccountTest {
                 requestSupport.materialize(approvalRequest, new ApproveRequestRequest(
                         null, null, null, null,
                         new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
-                                null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 "),
+                                null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ",
+                                        "~Anthropic/Claude-Sonnet-Latest"),
                                 account.getPublicId())), sysAdmin));
 
         // The row the sync document is built from — not the request detail.
         String onKey = jdbcTemplate.queryForObject(
                 "select credit_allowed_models::text from llm_api_keys where request_id = ?",
                 String.class, requestId);
-        assertThat(onKey).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+        assertThat(onKey).isEqualTo(
+                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]");
 
         // And the approval history, which is what the screens read back.
         String onDetail = jdbcTemplate.queryForObject(
                 "select granted_credit_allowed_models::text from llm_key_request_details "
                         + "where request_id = ?", String.class, requestId);
-        assertThat(onDetail).isEqualTo("[\"openai/*\", \"anthropic/claude-sonnet-4\"]");
+        assertThat(onDetail).isEqualTo(
+                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]");
     }
 
     @Test

@@ -51,6 +51,24 @@ class CreditModelAllowlistTest {
     }
 
     /**
+     * The comparison is lower-cased on both halves of the guard. A vendor name
+     * arriving capitalized must survive, and a self-serving name arriving
+     * capitalized under a tilde must still be caught — the two cases meet only
+     * here, and the gateway's own guard pins the same pair.
+     */
+    @Test
+    void lowercasesBeforeJudgingEitherHalf() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        List<String> kept = normalize(List.of("~Anthropic/Claude-Sonnet-Latest"), errors);
+        assertThat(errors).isEmpty();
+        assertThat(kept).containsExactly("~anthropic/claude-sonnet-latest");
+
+        List<FieldValidationError> reservedErrors = new ArrayList<>();
+        normalize(List.of("~PICKLE-general"), reservedErrors);
+        assertThat(reservedErrors).isNotEmpty();
+    }
+
+    /**
      * The reserved guard compares after stripping the tilde. Without that,
      * widening the pattern would let a self-serving name into a list that may
      * hold commercial names only, past the guard on one character.
