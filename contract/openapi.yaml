@@ -1834,12 +1834,12 @@ components:
           - "string"
           - "null"
         useCampusModels:
-          description: "교내 자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다."
+          description: "자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다."
           type:
           - "boolean"
           - "null"
         useCommercialModels:
-          description: "유료(상용) 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다."
+          description: "유료 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다."
           type:
           - "boolean"
           - "null"
@@ -3266,7 +3266,7 @@ components:
           - "string"
           - "null"
         useCampusModels:
-          description: "신청자가 교내 자체 서빙 모델을 쓰겠다고 했는지."
+          description: "신청자가 자체 서빙 모델을 쓰겠다고 했는지."
           type: "boolean"
         useCommercialModels:
           description: "신청자가 유료 모델을 쓰겠다고 했는지."

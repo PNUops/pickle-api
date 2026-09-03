@@ -74,7 +74,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // 쓰겠다는 것인지 하나는 말해야 한다.
         if (!useCampus(spec) && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.useCampusModels",
-                    "교내 모델과 유료 모델 중 최소 하나는 선택해 주세요."));
+                    "자체 서빙 모델과 유료 모델 중 최소 하나는 선택해 주세요."));
         }
         if (spec.reqCreditLimit() != null && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.reqCreditLimit",
@@ -82,7 +82,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         }
     }
 
-    /** 비우면 쓰는 것으로 본다. 교내 모델만 쓰는 신청이 보통이다. */
+    /** 비우면 쓰는 것으로 본다. 자체 서빙 모델만 쓰는 신청이 보통이다. */
     private static boolean useCampus(CreateLlmKeyRequestSpec spec) {
         return !Boolean.FALSE.equals(spec.useCampusModels());
     }

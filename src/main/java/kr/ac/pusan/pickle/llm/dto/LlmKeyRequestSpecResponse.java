@@ -29,7 +29,7 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "희망 일일 토큰 수")
         @Nullable Long reqDailyTokens,
 
-        @Schema(description = "신청자가 교내 자체 서빙 모델을 쓰겠다고 했는지.")
+        @Schema(description = "신청자가 자체 서빙 모델을 쓰겠다고 했는지.")
         boolean useCampusModels,
 
         @Schema(description = "신청자가 유료 모델을 쓰겠다고 했는지.")

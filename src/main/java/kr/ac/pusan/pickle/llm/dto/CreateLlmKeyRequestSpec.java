@@ -22,10 +22,10 @@ public record CreateLlmKeyRequestSpec(
          * 어느 축을 쓰겠다는 것인지. 한도가 비어 있는 것으로는 알 수 없다 -- 빈 한도는
          * "서비스 기본값"이라는 뜻이지 "그 축은 안 쓴다"는 뜻이 아니다.
          */
-        @Schema(description = "교내 자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다.")
+        @Schema(description = "자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다.")
         @Nullable Boolean useCampusModels,
 
-        @Schema(description = "유료(상용) 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다.")
+        @Schema(description = "유료 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다.")
         @Nullable Boolean useCommercialModels,
 
         @Schema(description = "희망 금액 한도(USD). 유료 모델을 쓸 때만 적습니다.",
