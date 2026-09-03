@@ -37,9 +37,22 @@ public final class CreditModelAllowlist {
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
 
-    /** Matches the DB CHECK in V102 — a model name, or a vendor prefix. */
+    /**
+     * Matches the DB CHECK installed by V102 and widened by V106 — a model
+     * name, or a vendor prefix, either one optionally carrying the vendor's
+     * leading tilde.
+     *
+     * <p>The tilde admits floating aliases like {@code
+     * ~anthropic/claude-sonnet-latest}, which always resolve to the newest
+     * model of a family. They route through passthrough already, so a fence
+     * that could not spell them left a restricted key narrower than an
+     * unrestricted one, and "pin this course to the latest Sonnet" could not
+     * be expressed at all. {@code ~anthropic/*} and {@code anthropic/*} stay
+     * separate prefixes: an alias points at a model that changes underneath
+     * it, so opening a vendor must not admit a moving target nobody chose.
+     */
     private static final Pattern PATTERN =
-            Pattern.compile("^[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*|\\*))?$");
+            Pattern.compile("^~?[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*|\\*))?$");
 
     /**
      * Self-serving model prefixes. A name starting with one of these is served
@@ -114,10 +127,18 @@ public final class CreditModelAllowlist {
         return List.copyOf(kept);
     }
 
-    /** Whether the name belongs to a self-serving prefix. */
+    /**
+     * Whether the name belongs to a self-serving prefix.
+     *
+     * <p>A leading tilde is stripped before comparing. Without that, widening
+     * the pattern to admit floating aliases would also admit
+     * {@code ~pickle-general} — a name this list is not allowed to hold,
+     * slipping past the guard on one character.
+     */
     public static boolean isReserved(String lowerName) {
+        String bare = lowerName.startsWith("~") ? lowerName.substring(1) : lowerName;
         for (String prefix : RESERVED_PREFIXES) {
-            if (lowerName.startsWith(prefix)) {
+            if (bare.startsWith(prefix)) {
                 return true;
             }
         }
