@@ -16,7 +16,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
-import org.jspecify.annotations.Nullable;
 
 /**
  * A usage period the request form offers (request_period_presets, V104).
@@ -26,9 +25,10 @@ import org.jspecify.annotations.Nullable;
  * The admin console owns the write path, the same arrangement
  * {@code vm_flavors} has and for the same reason.</p>
  *
- * <p>A null {@link #endDate} is the indefinite period. It exists as a row
- * rather than as a checkbox on the form so that whether anyone may request a
- * resource that never expires stays an operator decision.</p>
+ * <p>Every offered period ends. A resource that must not expire is asked for
+ * on the form itself, which leaves {@code requests.req_end_date} null; keeping
+ * this catalogue dated means no row here can quietly become the one that grants
+ * an unending resource.</p>
  */
 @Entity
 @Table(name = "request_period_presets")
@@ -49,9 +49,8 @@ public class RequestPeriodPreset {
     @Column(name = "display_name", nullable = false)
     private String displayName;
 
-    /** null이면 무기한. */
-    @Column(name = "end_date")
-    private @Nullable LocalDate endDate;
+    @Column(name = "end_date", nullable = false)
+    private LocalDate endDate;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -72,7 +71,7 @@ public class RequestPeriodPreset {
     protected RequestPeriodPreset() {
     }
 
-    public RequestPeriodPreset(String name, String displayName, @Nullable LocalDate endDate,
+    public RequestPeriodPreset(String name, String displayName, LocalDate endDate,
             CatalogStatus status, int displayOrder) {
         this.name = name;
         this.displayName = displayName;
@@ -83,7 +82,7 @@ public class RequestPeriodPreset {
 
     /** Whether this row still names a period a new request could sit inside. */
     public boolean isOfferableOn(LocalDate today) {
-        return status == CatalogStatus.ACTIVE && (endDate == null || !endDate.isBefore(today));
+        return status == CatalogStatus.ACTIVE && !endDate.isBefore(today);
     }
 
     public Long getId() {
@@ -102,7 +101,7 @@ public class RequestPeriodPreset {
         return displayName;
     }
 
-    public @Nullable LocalDate getEndDate() {
+    public LocalDate getEndDate() {
         return endDate;
     }
 
@@ -120,7 +119,7 @@ public class RequestPeriodPreset {
         this.displayName = displayName;
     }
 
-    public void setEndDate(@Nullable LocalDate endDate) {
+    public void setEndDate(LocalDate endDate) {
         this.endDate = endDate;
     }
 

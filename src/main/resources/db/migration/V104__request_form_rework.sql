@@ -6,11 +6,12 @@
 --
 -- So the period becomes a small catalogue. An operator publishes the periods on
 -- offer ("2026 1학기", "여름방학"), the requester picks one, and typing a date
--- stays available for the case the catalogue does not cover. A row whose
--- end_date is null is the indefinite period, which is how a campus service that
--- must not expire gets requested: it exists only if an operator publishes it,
--- so "who may ask for indefinite" stays an operator decision rather than a
--- checkbox on the form.
+-- stays available for the case the catalogue does not cover.
+--
+-- Every published period ends. A service that must not expire is asked for on
+-- the form itself, and requests.req_end_date stays null for it. Keeping the
+-- catalogue dated means a preset can never quietly become the row that grants
+-- an unending VM.
 --
 -- The start date goes away entirely. Nothing scheduled on it: no query filtered
 -- by it, no provisioning path read it, and approval enqueues the build
@@ -41,9 +42,9 @@ create table request_period_presets (
     public_id     uuid not null default gen_random_uuid(),
     name          text not null,
     display_name  text not null,
-    -- null = 무기한. The column is the only place that distinguishes an
-    -- indefinite period from a dated one.
-    end_date      date,
+    -- Every offered period ends; indefinite is asked for on the form, not
+    -- published as a row.
+    end_date      date not null,
     status        catalog_status not null default 'ACTIVE',
     display_order int not null default 0,
     created_at    timestamptz not null default now(),
@@ -65,12 +66,18 @@ alter table requests
     add column req_period_preset_id bigint references request_period_presets (id);
 
 comment on column requests.req_period_preset_id is
-    '신청 시점에 고른 기간 항목. 직접 입력한 경우 null이고, 무기한이면 req_end_date가 null이다.';
+    '신청 시점에 고른 기간 항목. 직접 입력이나 무기한이면 null이다.';
 
 -- The start date and the constraint that was its only consumer.
+--
+-- course_or_project goes with it, for the same reason and with one more: the
+-- workspace already names the group a request belongs to, and it is a row the
+-- requester made and named. The column was written on submit, shown on the
+-- detail page, and read by nothing else.
 alter table requests
     drop constraint chk_requests_date_order,
-    drop column req_start_date;
+    drop column req_start_date,
+    drop column course_or_project;
 
 alter table vm_request_details
     drop column desired_subdomain,

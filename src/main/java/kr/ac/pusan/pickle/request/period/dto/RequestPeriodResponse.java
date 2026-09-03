@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
-import org.jspecify.annotations.Nullable;
 
 /** Contract schema {@code RequestPeriod}: a usage period the request form offers. */
 public record RequestPeriodResponse(
@@ -12,8 +11,8 @@ public record RequestPeriodResponse(
 
         @Schema(description = "화면에 보이는 이름", example = "2026학년도 1학기") String displayName,
 
-        @Schema(description = "이 기간의 종료일. 값이 없으면 무기한입니다.", example = "2026-06-30")
-        @Nullable LocalDate endDate) {
+        @Schema(description = "이 기간의 종료일", example = "2026-06-30")
+        LocalDate endDate) {
 
     public static RequestPeriodResponse from(RequestPeriodPreset preset) {
         return new RequestPeriodResponse(preset.getPublicId(), preset.getDisplayName(),

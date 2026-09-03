@@ -150,14 +150,14 @@ class AdminRequestPeriodTest {
         String mixedCase = uniqueName();
         jdbcTemplate.update("""
                 insert into request_period_presets (name, display_name, end_date, display_order)
-                values (?, '대소문자 확인', null, 44)
+                values (?, '대소문자 확인', current_date + 30, 44)
                 """, mixedCase.toUpperCase());
         mockMvc.perform(post("/api/v1/admin/request-periods")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "%s", "displayName": "소문자로 다시"}
-                                """.formatted(mixedCase)))
+                                {"name": "%s", "displayName": "소문자로 다시", "endDate": "%s"}
+                                """.formatted(mixedCase, today().plusMonths(1))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("name"))
                 .andExpect(jsonPath("$.errors[0].message").value("이미 사용 중인 기간 이름입니다."));
@@ -167,50 +167,33 @@ class AdminRequestPeriodTest {
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "Spring Term", "displayName": "잘못된 이름"}
-                                """))
+                                {"name": "Spring Term", "displayName": "잘못된 이름",
+                                 "endDate": "%s"}
+                                """.formatted(today().plusMonths(1))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("name"));
     }
 
     /**
-     * 무기한은 종료일을 비운 항목으로만 존재한다. 신청 화면의 체크박스가 아니라 운영자가
-     * 발행한 행이라, 만료되지 않는 리소스를 누가 신청할 수 있는지가 운영자의 결정으로
-     * 남는다.
+     * 발행되는 기간은 모두 끝나는 날이 있다. 만료되지 않는 리소스는 신청 화면에서
+     * 직접 요청하고, 카탈로그의 어느 행도 그것을 조용히 내주지 못한다.
      */
     @Test
-    void aPeriodCreatedWithNoEndDateIsTheIndefiniteOne() throws Exception {
-        String name = uniqueName();
+    void aPeriodMustCarryAnEndDate() throws Exception {
         mockMvc.perform(post("/api/v1/admin/request-periods")
                         .header("Authorization", "Bearer " + sysAdminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "%s", "displayName": "무기한 (연구실 서버)", "displayOrder": 20}
-                                """.formatted(name)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.endDate").value((Object) null))
-                // 종료일이 없으면 지날 날짜도 없다
-                .andExpect(jsonPath("$.expired").value(false));
-
-        UUID id = publicIdOf(name);
-        mockMvc.perform(get("/api/v1/request-periods")
-                        .header("Authorization", "Bearer " + sysViewerToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(id) + ".displayName").value("무기한 (연구실 서버)"))
-                .andExpect(jsonPath(byId(id) + ".endDate").value((Object) null));
-    }
-
-    @Test
-    void partialEditMovesTheDateAndClearsItOnlyWhenAsked() throws Exception {
-        UUID id = insertPeriod("이번 방학", today().plusMonths(2), "ACTIVE", 30);
-
-        // 지우기와 지정은 서로 반대라 함께 올 수 없다 — 어느 쪽을 쓸지 정할 수 없다
-        patchPeriod(id, sysAdminToken, """
-                {"endDate": "%s", "clearEndDate": true}
-                """.formatted(today().plusMonths(3)))
+                                {"name": "%s", "displayName": "연구실 서버", "displayOrder": 20}
+                                """.formatted(uniqueName())))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("endDate"));
+    }
+
+    @Test
+    void partialEditMovesTheDate() throws Exception {
+        UUID id = insertPeriod("이번 방학", today().plusMonths(2), "ACTIVE", 30);
 
         // 빈 본문은 편집이 아니라 아무 요청도 아니다
         patchPeriod(id, sysAdminToken, "{}")
@@ -225,17 +208,6 @@ class AdminRequestPeriodTest {
                 .andExpect(jsonPath("$.endDate").value(today().plusMonths(4).toString()))
                 .andExpect(jsonPath("$.displayName").value("이번 방학"))
                 .andExpect(jsonPath("$.displayOrder").value(30));
-
-        // clearEndDate 단독이면 무기한이 되고, 신청 화면에도 그렇게 나간다
-        patchPeriod(id, sysAdminToken, "{\"clearEndDate\": true}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.endDate").value((Object) null))
-                .andExpect(jsonPath("$.expired").value(false));
-        mockMvc.perform(get("/api/v1/request-periods")
-                        .header("Authorization", "Bearer " + sysViewerToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(byId(id) + ".endDate")
-                        .value((Object) null));
 
         patchPeriod(SeedFixtures.UNKNOWN_ID, sysAdminToken, "{\"displayOrder\": 1}")
                 .andExpect(status().isNotFound())
@@ -270,7 +242,7 @@ class AdminRequestPeriodTest {
     }
 
     /**
-     * 학기와 방학과 무기한 사이에는 먼저랄 것이 없다. 순서는 계산되는 것이 아니라
+     * 학기와 방학 사이에는 먼저랄 것이 없다. 순서는 계산되는 것이 아니라
      * 운영자가 말하는 것이고, 그 말이 신청 화면에 그대로 나타나야 한다.
      */
     @Test
@@ -278,14 +250,14 @@ class AdminRequestPeriodTest {
         UUID id = insertPeriod("추가 기간", today().plusMonths(5), "ACTIVE", 50);
 
         assertThat(offeredPeriodNames())
-                .containsSubsequence("이번 학기", "이번 방학", "무기한 (교내 서비스)", "추가 기간");
+                .containsSubsequence("이번 학기", "이번 방학", "추가 기간");
 
         patchPeriod(id, sysAdminToken, "{\"displayOrder\": -50}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayOrder").value(-50));
 
         assertThat(offeredPeriodNames())
-                .containsSubsequence("추가 기간", "이번 학기", "이번 방학", "무기한 (교내 서비스)");
+                .containsSubsequence("추가 기간", "이번 학기", "이번 방학");
     }
 
     @Test
@@ -308,22 +280,20 @@ class AdminRequestPeriodTest {
                 .andExpect(status().isOk());
         assertThat(auditCount("request-period.update", id)).isEqualTo(1);
 
-        // 이미 날짜가 없는 항목에 clearEndDate 를 다시 보내는 것도 무변경이다
-        patchPeriod(id, sysAdminToken, "{\"clearEndDate\": true}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.endDate").value((Object) null));
-        assertThat(auditCount("request-period.update", id)).isEqualTo(2);
-        patchPeriod(id, sysAdminToken, "{\"clearEndDate\": true}")
+        // 같은 날짜를 다시 보내는 것도 무변경이다
+        patchPeriod(id, sysAdminToken, """
+                {"endDate": "%s"}
+                """.formatted(today().plusMonths(2)))
                 .andExpect(status().isOk());
-        assertThat(auditCount("request-period.update", id)).isEqualTo(2);
+        assertThat(auditCount("request-period.update", id)).isEqualTo(1);
     }
 
     @Test
     void readsAreSysTierAndWritesAreSysAdminOnly() throws Exception {
         UUID id = insertPeriod("권한 확인 기간", today().plusMonths(2), "ACTIVE", 34);
         String create = """
-                {"name": "%s", "displayName": "권한 확인 생성"}
-                """.formatted(uniqueName());
+                {"name": "%s", "displayName": "권한 확인 생성", "endDate": "%s"}
+                """.formatted(uniqueName(), today().plusMonths(2));
 
         // 읽기는 sys 계층 전체, 기관 관리자는 이 카탈로그에 닿지 못한다
         mockMvc.perform(get("/api/v1/admin/request-periods")

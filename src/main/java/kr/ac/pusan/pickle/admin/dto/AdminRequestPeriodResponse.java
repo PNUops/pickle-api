@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Contract schema {@code AdminRequestPeriod}: a usage period as the operator
@@ -17,7 +16,7 @@ public record AdminRequestPeriodResponse(
         UUID id,
         String name,
         String displayName,
-        @Schema(description = "종료일. 값이 없으면 무기한입니다.") @Nullable LocalDate endDate,
+        @Schema(description = "종료일") LocalDate endDate,
         CatalogStatus status,
         @Schema(description = "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다.")
         int displayOrder,

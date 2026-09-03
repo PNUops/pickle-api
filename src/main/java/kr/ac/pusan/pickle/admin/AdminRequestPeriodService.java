@@ -82,12 +82,7 @@ public class AdminRequestPeriodService {
             UpdateRequestPeriodRequest request, String ip) {
         RequestPeriodPreset preset = repository.findByPublicId(periodId)
                 .orElseThrow(() -> notFound("해당 사용 기간이 존재하지 않습니다."));
-        boolean clearing = Boolean.TRUE.equals(request.clearEndDate());
-        if (clearing && request.endDate() != null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
-                    "종료일을 지우면서 동시에 지정할 수는 없습니다.")));
-        }
-        if (request.displayName() == null && request.endDate() == null && !clearing
+        if (request.displayName() == null && request.endDate() == null
                 && request.status() == null && request.displayOrder() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("displayName",
                     "변경할 필드를 최소 1개 지정해야 합니다.")));
@@ -98,12 +93,7 @@ public class AdminRequestPeriodService {
             changes.put("displayName", preset.getDisplayName() + " -> " + request.displayName());
             preset.setDisplayName(request.displayName());
         }
-        if (clearing) {
-            if (preset.getEndDate() != null) {
-                changes.put("endDate", preset.getEndDate() + " -> 무기한");
-                preset.setEndDate(null);
-            }
-        } else if (request.endDate() != null && !request.endDate().equals(preset.getEndDate())) {
+        if (request.endDate() != null && !request.endDate().equals(preset.getEndDate())) {
             changes.put("endDate", preset.getEndDate() + " -> " + request.endDate());
             preset.setEndDate(request.endDate());
         }

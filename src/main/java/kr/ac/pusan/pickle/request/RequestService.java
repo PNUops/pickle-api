@@ -125,7 +125,7 @@ public class RequestService {
         }
 
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(), org.getId(),
-                actor.id(), form.purpose().strip(), Texts.blankToNull(form.courseOrProject()),
+                actor.id(), form.purpose().strip(),
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
@@ -249,6 +249,15 @@ public class RequestService {
      */
     private ResolvedPeriod resolvePeriod(CreateRequestRequest form,
             List<FieldValidationError> errors) {
+        // 무기한은 값이 없는 상태가 아니라 하나의 값이다. 빠뜨린 종료일과 겹치지
+        // 않도록 다른 두 필드와 함께 오는 것을 막는다.
+        if (Boolean.TRUE.equals(form.reqIndefinite())) {
+            if (form.periodPresetId() != null || form.reqEndDate() != null) {
+                errors.add(new FieldValidationError("reqIndefinite",
+                        "무기한으로 신청할 때는 기간이나 종료일을 함께 보내지 않습니다."));
+            }
+            return new ResolvedPeriod(null, null);
+        }
         if (form.periodPresetId() != null) {
             if (form.reqEndDate() != null) {
                 errors.add(new FieldValidationError("reqEndDate",
@@ -270,7 +279,8 @@ public class RequestService {
 
         LocalDate endDate = form.reqEndDate();
         if (endDate == null) {
-            errors.add(new FieldValidationError("reqEndDate", "사용 종료일을 정해 주세요."));
+            errors.add(new FieldValidationError("reqEndDate",
+                    "사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
             return new ResolvedPeriod(null, null);
         }
         LocalDate today = ClockConfig.todayKst(clock);

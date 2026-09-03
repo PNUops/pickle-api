@@ -71,16 +71,16 @@ public class VmSlugPolicy {
         String value = slug.toLowerCase(Locale.ROOT);
         if (!SLUG.matcher(value).matches()) {
             errors.add(new FieldValidationError(field,
-                    "호스트명(슬러그)은 3~40자의 소문자·숫자·하이픈이어야 합니다 (하이픈으로 시작/끝 불가)."));
+                    "소문자와 숫자, 하이픈만 쓸 수 있고 3~40자여야 합니다. 하이픈으로 시작하거나 끝낼 수 없습니다."));
             return;
         }
         if (settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS).contains(value)) {
             errors.add(new FieldValidationError(field,
-                    "'" + value + "'은(는) 사용할 수 없는 예약어입니다."));
+                    "'" + value + "'은(는) 예약된 이름이라 쓸 수 없습니다."));
         }
         if (settingsService.stringList(SettingsService.PROFANITY_SUBDOMAINS).stream()
                 .anyMatch(value::contains)) {
-            errors.add(new FieldValidationError(field, "사용할 수 없는 단어가 포함된 호스트명입니다."));
+            errors.add(new FieldValidationError(field, "쓸 수 없는 단어가 들어 있습니다."));
         }
     }
 }

@@ -934,11 +934,9 @@ components:
           format: "int32"
           type: "integer"
         endDate:
-          description: "종료일. 값이 없으면 무기한입니다."
+          description: "종료일"
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         expired:
           description: "종료일이 이미 지나 신청 화면에 나오지 않는 항목인지."
           type: "boolean"
@@ -952,6 +950,7 @@ components:
       required:
       - "displayName"
       - "displayOrder"
+      - "endDate"
       - "expired"
       - "id"
       - "name"
@@ -1931,27 +1930,20 @@ components:
           - "integer"
           - "null"
         endDate:
-          description: "종료일. 비우면 무기한 항목이 되고, 신청자가 그것을 고를 수 있게 됩니다."
+          description: "종료일. 모든 기간 항목은 끝나는 날이 있습니다."
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         name:
           minLength: 1
           pattern: "^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$|^[a-z0-9]$"
           type: "string"
       required:
       - "displayName"
+      - "endDate"
       - "name"
       type: "object"
     CreateRequestRequest:
       properties:
-        courseOrProject:
-          maxLength: 200
-          minLength: 0
-          type:
-          - "string"
-          - "null"
         displayName:
           maxLength: 100
           minLength: 0
@@ -1982,6 +1974,12 @@ components:
           format: "date"
           type:
           - "string"
+          - "null"
+        reqIndefinite:
+          description: "true면 종료일 없이 신청합니다. reqEndDate·periodPresetId와 함께 보낼 수 없습니\
+            다."
+          type:
+          - "boolean"
           - "null"
         type:
           $ref: "#/components/schemas/ResourceType"
@@ -6132,10 +6130,6 @@ components:
       type: "object"
     RequestDetailResponse:
       properties:
-        courseOrProject:
-          type:
-          - "string"
-          - "null"
         createdAt:
           format: "date-time"
           type: "string"
@@ -6241,18 +6235,17 @@ components:
           example: "2026학년도 1학기"
           type: "string"
         endDate:
-          description: "이 기간의 종료일. 값이 없으면 무기한입니다."
+          description: "이 기간의 종료일"
           example: "2026-06-30"
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         id:
           description: "기간 항목 식별자"
           format: "uuid"
           type: "string"
       required:
       - "displayName"
+      - "endDate"
       - "id"
       type: "object"
     RequestReviewResponse:
@@ -7118,11 +7111,6 @@ components:
       type: "object"
     UpdateRequestPeriodRequest:
       properties:
-        clearEndDate:
-          description: "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다."
-          type:
-          - "boolean"
-          - "null"
         displayName:
           maxLength: 100
           minLength: 0
@@ -7135,7 +7123,7 @@ components:
           - "integer"
           - "null"
         endDate:
-          description: "종료일. 무기한으로 바꾸려면 clearEndDate를 씁니다."
+          description: "새 종료일"
           format: "date"
           type:
           - "string"

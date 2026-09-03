@@ -171,7 +171,7 @@ public class VmRequestSupport implements RequestTypeHandler {
             slugPolicy.validateSlug(grantedSlug, "vm.grantedSlug", errors);
             if (errors.size() == slugErrorsBefore && vmRepository.existsByHostname(grantedSlug)) {
                 errors.add(new FieldValidationError("vm.grantedSlug",
-                        "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
+                        "이미 쓰고 있는 이름입니다. 다른 이름을 적거나 비워서 자동으로 정하게 하세요."));
             }
         }
     }

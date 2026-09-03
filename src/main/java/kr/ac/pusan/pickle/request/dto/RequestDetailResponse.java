@@ -28,7 +28,6 @@ public record RequestDetailResponse(
         @Nullable UUID requesterId,
         String requesterName,
         String purpose,
-        @Nullable String courseOrProject,
         @Nullable String extraNote,
         @Schema(description = "신청한 사용 종료일. 값이 없으면 무기한을 요청한 것입니다.")
         @Nullable LocalDate reqEndDate,

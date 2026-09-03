@@ -547,7 +547,7 @@ class RequestTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"))
-                .andExpect(jsonPath("$.errors[0].message").value("사용 종료일을 정해 주세요."));
+                .andExpect(jsonPath("$.errors[0].message").value("사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
 
         // 항목과 날짜를 함께 보내면 → 422
         postJson("/api/v1/requests", requesterToken,
@@ -574,20 +574,25 @@ class RequestTest {
     }
 
     /**
-     * 무기한은 종료일이 없는 기간 항목으로만 요청되고, 지난 항목은 행이 남아 있어도
-     * 고를 수 없다. 날짜가 절대값이라 지난 학기의 행은 아무도 고를 수 없는 선택지다.
+     * 무기한은 신청 화면에서 직접 요청한다. **비어 있는 종료일이 곧 무기한인 것이
+     * 아니라 그 값이 무기한이므로**, 빠뜨린 종료일과 겹치지 않게 나머지 두 필드와
+     * 함께 오는 것을 막는다. 그리고 지난 항목은 행이 남아 있어도 고를 수 없다.
      */
     @Test
-    void indefinitePresetLeavesNoEndDateAndAnExpiredOneIsRefused() throws Exception {
+    void indefiniteIsAskedForDirectlyAndAnExpiredPresetIsRefused() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-period-x2");
-        RequestPeriodPreset indefinite = presetByName("indefinite");
-        assertThat(indefinite.getEndDate()).isNull();
 
-        postJson("/api/v1/requests", requesterToken,
-                withPreset(workspaceId, indefinite.getPublicId()))
+        postJson("/api/v1/requests", requesterToken, withIndefinite(workspaceId))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.reqEndDate").value((Object) null))
-                .andExpect(jsonPath("$.periodName").value(indefinite.getDisplayName()));
+                .andExpect(jsonPath("$.periodName").value((Object) null));
+
+        // 무기한과 종료일이 함께 오면 어느 쪽을 쓸지 정할 수 없다
+        postJson("/api/v1/requests", requesterToken,
+                with(withIndefinite(workspaceId), "reqEndDate",
+                        today().plusMonths(1).toString()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqIndefinite"));
 
         RequestPeriodPreset expired = periodRepository.save(new RequestPeriodPreset(
                 "vmr-expired", "지난 학기", today().minusDays(1), CatalogStatus.ACTIVE, 90));
@@ -605,9 +610,7 @@ class RequestTest {
                             .header("Authorization", "Bearer " + requesterToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[?(@.id == '%s')]".formatted(expired.getPublicId()))
-                            .isEmpty())
-                    .andExpect(jsonPath("$[?(@.id == '%s')]".formatted(indefinite.getPublicId()))
-                            .isNotEmpty());
+                            .isEmpty());
         } finally {
             periodRepository.delete(expired);
         }
@@ -725,6 +728,14 @@ class RequestTest {
         with(body, "vm.reqVcpu", flavor.getVcpu());
         with(body, "vm.reqMemoryMb", flavor.getMemoryMb());
         with(body, "vm.reqDiskGb", flavor.getDiskGb());
+        return body;
+    }
+
+    /** The same body asking for a period that never ends. */
+    private Map<String, Object> withIndefinite(long workspaceId) {
+        Map<String, Object> body = validBody(workspaceId);
+        body.remove("reqEndDate");
+        body.put("reqIndefinite", true);
         return body;
     }
 

@@ -336,8 +336,7 @@ public class DevDataSeeder implements ApplicationRunner {
         jdbcTemplate.update("insert into request_period_presets (name, display_name, end_date,"
                 + " display_order) values"
                 + " ('term', '이번 학기', current_date + interval '4 months', 1),"
-                + " ('vacation', '이번 방학', current_date + interval '2 months', 2),"
-                + " ('indefinite', '무기한 (교내 서비스)', null, 3)");
+                + " ('vacation', '이번 방학', current_date + interval '2 months', 2)");
         log.info("Empty inventory: seeded the development request periods");
     }
 

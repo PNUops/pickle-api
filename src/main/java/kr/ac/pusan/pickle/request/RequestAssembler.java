@@ -150,7 +150,7 @@ public class RequestAssembler {
                     org != null ? org.getPublicId() : null, org != null ? org.getName() : null,
                     requester != null ? requester.getPublicId() : null,
                     requester != null ? requester.getName() : "탈퇴 회원",
-                    request.getPurpose(), request.getCourseOrProject(), request.getExtraNote(),
+                    request.getPurpose(), request.getExtraNote(),
                     request.getReqEndDate(),
                     periodName(periods, request.getReqPeriodPresetId()),
                     request.getDisplayName(),

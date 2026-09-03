@@ -246,8 +246,8 @@ class ReferenceDataTest {
     }
 
     /**
-     * 신청 화면의 기간 축. 관리자가 등록한 순서대로 나오고, 종료일이 없는 항목은
-     * 무기한이라 그 자리에 null 이 실린다.
+     * 신청 화면의 기간 축. 관리자가 등록한 순서대로 나오고, 모든 항목이 끝나는
+     * 날을 싣는다.
      */
     @Test
     void listsOfferablePeriodsInTheirStatedOrder() throws Exception {
@@ -256,9 +256,9 @@ class ReferenceDataTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$[*].displayName").value(org.hamcrest.Matchers.contains(
-                        "이번 학기", "이번 방학", "무기한 (교내 서비스)")))
+                        "이번 학기", "이번 방학")))
                 .andExpect(jsonPath("$[0].endDate").isNotEmpty())
-                .andExpect(jsonPath("$[2].endDate").value((Object) null))
+                .andExpect(jsonPath("$[1].endDate").isNotEmpty())
                 .andExpect(jsonPath("$[0].id").isNotEmpty());
     }
 

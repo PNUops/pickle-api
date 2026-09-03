@@ -57,9 +57,6 @@ public class Request {
     @Column(nullable = false)
     private String purpose;
 
-    @Column(name = "course_or_project")
-    private String courseOrProject;
-
     @Column(name = "extra_note")
     private String extraNote;
 
@@ -105,14 +102,13 @@ public class Request {
     }
 
     public Request(ResourceType resourceType, Long workspaceId, Long orgId, Long requesterId,
-            String purpose, String courseOrProject, String extraNote,
+            String purpose, String extraNote,
             LocalDate reqEndDate, Long reqPeriodPresetId, String displayName) {
         this.resourceType = resourceType;
         this.workspaceId = workspaceId;
         this.orgId = orgId;
         this.requesterId = requesterId;
         this.purpose = purpose;
-        this.courseOrProject = courseOrProject;
         this.extraNote = extraNote;
         this.reqEndDate = reqEndDate;
         this.reqPeriodPresetId = reqPeriodPresetId;
@@ -145,10 +141,6 @@ public class Request {
 
     public String getPurpose() {
         return purpose;
-    }
-
-    public String getCourseOrProject() {
-        return courseOrProject;
     }
 
     public String getExtraNote() {

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
@@ -21,8 +22,9 @@ public record CreateRequestPeriodRequest(
         @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
         String displayName,
 
-        @Schema(description = "종료일. 비우면 무기한 항목이 되고, 신청자가 그것을 고를 수 있게 됩니다.")
-        @Nullable LocalDate endDate,
+        @Schema(description = "종료일. 모든 기간 항목은 끝나는 날이 있습니다.")
+        @NotNull(message = "종료일을 정해 주세요.")
+        LocalDate endDate,
 
         @Schema(description = "표시 순서. 비우면 0입니다.")
         @Nullable Integer displayOrder) {

@@ -19,11 +19,8 @@ public record UpdateRequestPeriodRequest(
         @Size(max = 100, message = "표시명은 100자 이하여야 합니다.")
         @Nullable String displayName,
 
-        @Schema(description = "종료일. 무기한으로 바꾸려면 clearEndDate를 씁니다.")
+        @Schema(description = "새 종료일")
         @Nullable LocalDate endDate,
-
-        @Schema(description = "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다.")
-        @Nullable Boolean clearEndDate,
 
         @Nullable CatalogStatus status,
 
