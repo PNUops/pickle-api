@@ -70,6 +70,26 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("llmKey.reqTpm",
                     "분당 토큰 수는 분당 요청 수보다 작을 수 없습니다."));
         }
+        // 축은 다르다. 한도와 달리 비워 둔 것이 "기본값"을 뜻하지 않으므로, 무엇을
+        // 쓰겠다는 것인지 하나는 말해야 한다.
+        if (!useCampus(spec) && !useCommercial(spec)) {
+            errors.add(new FieldValidationError("llmKey.useCampusModels",
+                    "교내 모델과 유료 모델 중 최소 하나는 선택해 주세요."));
+        }
+        if (spec.reqCreditLimit() != null && !useCommercial(spec)) {
+            errors.add(new FieldValidationError("llmKey.reqCreditLimit",
+                    "유료 모델을 쓰지 않는 신청에는 금액을 적을 수 없습니다."));
+        }
+    }
+
+    /** 비우면 쓰는 것으로 본다. 교내 모델만 쓰는 신청이 보통이다. */
+    private static boolean useCampus(CreateLlmKeyRequestSpec spec) {
+        return !Boolean.FALSE.equals(spec.useCampusModels());
+    }
+
+    /** 비우면 쓰지 않는 것으로 본다. 돈이 드는 축은 명시적으로 켠다. */
+    private static boolean useCommercial(CreateLlmKeyRequestSpec spec) {
+        return Boolean.TRUE.equals(spec.useCommercialModels());
     }
 
     @Override
@@ -77,7 +97,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         CreateLlmKeyRequestSpec spec = form.llmKey();
         detailRepository.save(new LlmKeyRequestDetail(request.getId(),
                 Texts.blankToNull(spec.usagePlan()), spec.reqRpm(), spec.reqTpm(),
-                spec.reqDailyTokens()));
+                spec.reqDailyTokens(), useCampus(spec), useCommercial(spec),
+                spec.reqCreditLimit()));
     }
 
     @Override
@@ -87,6 +108,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             args.put("reqRpm", detail.getReqRpm());
             args.put("reqTpm", detail.getReqTpm());
             args.put("reqDailyTokens", detail.getReqDailyTokens());
+            args.put("reqUseCampus", detail.isReqUseCampus());
+            args.put("reqUseCommercial", detail.isReqUseCommercial());
         });
         return args;
     }

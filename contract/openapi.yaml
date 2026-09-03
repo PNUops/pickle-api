@@ -1796,6 +1796,14 @@ components:
       type: "object"
     CreateLlmKeyRequestSpec:
       properties:
+        reqCreditLimit:
+          description: "희망 금액 한도(USD). 유료 모델을 쓸 때만 적습니다."
+          example: 20.0
+          maximum: 100000.0
+          minimum: 0.01
+          type:
+          - "number"
+          - "null"
         reqDailyTokens:
           description: "희망 일일 토큰 수. 비우면 서비스 기본값을 받습니다."
           format: "int64"
@@ -1824,6 +1832,16 @@ components:
           minLength: 0
           type:
           - "string"
+          - "null"
+        useCampusModels:
+          description: "교내 자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다."
+          type:
+          - "boolean"
+          - "null"
+        useCommercialModels:
+          description: "유료(상용) 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다."
+          type:
+          - "boolean"
           - "null"
       type: "object"
     CreateOpenRouterAccountRequest:
@@ -3219,6 +3237,11 @@ components:
           type:
           - "integer"
           - "null"
+        reqCreditLimit:
+          description: "신청자가 요청한 금액 한도(USD). 유료를 쓰지 않는 신청은 비어 있습니다."
+          type:
+          - "number"
+          - "null"
         reqDailyTokens:
           description: "희망 일일 토큰 수"
           format: "int64"
@@ -3242,8 +3265,16 @@ components:
           type:
           - "string"
           - "null"
+        useCampusModels:
+          description: "신청자가 교내 자체 서빙 모델을 쓰겠다고 했는지."
+          type: "boolean"
+        useCommercialModels:
+          description: "신청자가 유료 모델을 쓰겠다고 했는지."
+          type: "boolean"
       required:
       - "grantedCreditAllowedModels"
+      - "useCampusModels"
+      - "useCommercialModels"
       type: "object"
     LlmKeySummaryResponse:
       properties:
@@ -7924,14 +7955,22 @@ components:
       type: "object"
     VmPeriodUpdateRequest:
       properties:
+        clearEndDate:
+          description: "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다."
+          type:
+          - "boolean"
+          - "null"
         endDate:
+          description: "새 종료일. 무기한으로 바꾸려면 clearEndDate를 씁니다."
           format: "date"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         startDate:
           format: "date"
-          type: "string"
-      required:
-      - "endDate"
+          type:
+          - "string"
+          - "null"
       type: "object"
     VmRequestSpecResponse:
       properties:

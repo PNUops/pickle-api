@@ -29,6 +29,15 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "희망 일일 토큰 수")
         @Nullable Long reqDailyTokens,
 
+        @Schema(description = "신청자가 교내 자체 서빙 모델을 쓰겠다고 했는지.")
+        boolean useCampusModels,
+
+        @Schema(description = "신청자가 유료 모델을 쓰겠다고 했는지.")
+        boolean useCommercialModels,
+
+        @Schema(description = "신청자가 요청한 금액 한도(USD). 유료를 쓰지 않는 신청은 비어 있습니다.")
+        @Nullable BigDecimal reqCreditLimit,
+
         @Schema(description = "부여 분당 요청 수. 비어 있으면 서비스 기본값입니다.")
         @Nullable Integer grantedRpm,
 
@@ -55,7 +64,8 @@ public record LlmKeyRequestSpecResponse(
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
             List<String> grantedCreditAllowedModels) {
         return new LlmKeyRequestSpecResponse(detail.getReqPurpose(), detail.getReqRpm(),
-                detail.getReqTpm(), detail.getReqDailyTokens(), detail.getGrantedRpm(),
+                detail.getReqTpm(), detail.getReqDailyTokens(), detail.isReqUseCampus(),
+                detail.isReqUseCommercial(), detail.getReqCreditLimit(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
                 detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
                 detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels);
