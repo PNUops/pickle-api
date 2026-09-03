@@ -291,12 +291,15 @@ class RequestTest {
     }
 
     /**
-     * 준비된 사양을 고르지 않은 신청은 사유가 무조건 필요하다. 판정 기준이 카탈로그가
-     * 아니라 사용자가 고른 경로이므로, 더 큰 사양이 하나 생겨도 사유 요구가 사라지지
-     * 않는다.
+     * 직접 적은 사양은 **바닥값을 넘을 때** 사유가 필요하다. 판정 기준이 카탈로그가
+     * 아니라 고정 상수이므로, 더 큰 사양이 하나 생겨도 사유 요구가 사라지지 않는다.
+     *
+     * <p>직접 적었다는 것만으로 사유를 요구하지는 않는다. 바닥값은 어느 프리셋보다도
+     * 작아서 프리셋으로는 요청할 수 없는 크기이고, 거기에 사유를 요구하면 작게
+     * 쓰겠다는 사람에게만 문턱을 세우는 셈이 된다.</p>
      */
     @Test
-    void aHandWrittenSpecAlwaysNeedsAReason() throws Exception {
+    void aHandWrittenSpecNeedsAReasonOnlyAboveTheBase() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-freeform-x1");
 
         postJson("/api/v1/requests", requesterToken, freeformBody(workspaceId))
@@ -304,7 +307,7 @@ class RequestTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
-                        .value("사양을 직접 적을 때는 사유를 입력해야 합니다."));
+                        .value("기본값보다 큰 사양을 직접 적을 때는 사유를 입력해야 합니다."));
 
         // 사유가 있으면 어떤 사양도 가리키지 않은 채로 접수된다
         postJson("/api/v1/requests", requesterToken, with(freeformBody(workspaceId),
@@ -313,6 +316,25 @@ class RequestTest {
                 .andExpect(jsonPath("$.vm.flavorId").value((Object) null))
                 .andExpect(jsonPath("$.vm.flavorName").value((Object) null))
                 .andExpect(jsonPath("$.vm.specReason").isNotEmpty());
+
+        // 바닥값 그대로면 사유 없이 접수된다
+        Map<String, Object> atBase = commonBody(workspaceId);
+        with(atBase, "vm.reqVcpu", 1);
+        with(atBase, "vm.reqMemoryMb", 1024);
+        with(atBase, "vm.reqDiskGb", 32);
+        postJson("/api/v1/requests", requesterToken, atBase)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.vm.flavorId").value((Object) null))
+                .andExpect(jsonPath("$.vm.specReason").value((Object) null));
+
+        // 반 GiB 단위도 바닥값을 넘으면 사유가 필요하다
+        Map<String, Object> halfStep = commonBody(workspaceId);
+        with(halfStep, "vm.reqVcpu", 1);
+        with(halfStep, "vm.reqMemoryMb", 1536);
+        with(halfStep, "vm.reqDiskGb", 32);
+        postJson("/api/v1/requests", requesterToken, halfStep)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
     }
 
     /**

@@ -267,6 +267,19 @@ public class VmRequestSupport implements RequestTypeHandler {
      * largest published spec would mean an operator adding a larger one
      * silently switches the requirement off.</p>
      */
+    /**
+     * 사양을 직접 적는 신청의 바닥값.
+     *
+     * <p>**콘솔의 같은 상수와 맞춰야 한다**(`vm-wizard.tsx`의 `CUSTOM_BASE`). 화면은 이
+     * 값에서 출발해 늘릴 축만 켜게 하고, 서버는 이 값을 넘을 때만 사유를 요구한다. 두
+     * 값이 어긋나면 화면이 사유를 묻지 않은 신청이 422로 튕기거나, 그 반대가 된다.
+     * 카탈로그 행이 아니라 고정 상수인 것이 요점이다 — 관리자가 사양을 추가해도
+     * 판정이 움직이지 않는다.</p>
+     */
+    static final int CUSTOM_BASE_VCPU = 1;
+    static final int CUSTOM_BASE_MEMORY_MB = 1024;
+    static final int CUSTOM_BASE_DISK_GB = 32;
+
     private static void validateSpec(CreateVmRequestSpec spec, OsImage image,
             @Nullable VmFlavor flavor, List<FieldValidationError> errors) {
         if (spec.reqDiskGb() < image.getMinDiskGb()) {
@@ -276,12 +289,21 @@ public class VmRequestSupport implements RequestTypeHandler {
         if (Texts.blankToNull(spec.specReason()) != null) {
             return;
         }
-        // 규칙이 사용자가 고른 경로를 따른다: 준비된 사양을 고르지 않았으면 언제나 사유가
-        // 필요하고, 골랐다면 그것을 넘을 때만 필요하다. 카탈로그가 판정 기준이 되면
+        // 규칙이 사용자가 고른 경로를 따른다: 준비된 사양을 골랐으면 그것을 넘을 때,
+        // 직접 적었으면 바닥값을 넘을 때 사유가 필요하다. 카탈로그가 판정 기준이 되면
         // 관리자가 더 큰 사양을 하나 만드는 것만으로 사유 요구가 조용히 사라진다.
+        //
+        // **직접 적었다는 것만으로는 검토 대상이 아니다.** 바닥값은 어느 프리셋보다도
+        // 작으므로, 그대로 낸 신청은 준비된 어느 사양보다 적게 달라는 신청이다. 거기에
+        // 사유를 요구하면 작게 쓰겠다는 사람에게만 문턱을 세우는 셈이 된다.
         if (flavor == null) {
-            errors.add(new FieldValidationError("vm.specReason",
-                    "사양을 직접 적을 때는 사유를 입력해야 합니다."));
+            int baseDisk = Math.max(CUSTOM_BASE_DISK_GB, image.getMinDiskGb());
+            if (spec.reqVcpu() > CUSTOM_BASE_VCPU
+                    || spec.reqMemoryMb() > CUSTOM_BASE_MEMORY_MB
+                    || spec.reqDiskGb() > baseDisk) {
+                errors.add(new FieldValidationError("vm.specReason",
+                        "기본값보다 큰 사양을 직접 적을 때는 사유를 입력해야 합니다."));
+            }
         } else if (spec.reqVcpu() > flavor.getVcpu()
                 || spec.reqMemoryMb() > flavor.getMemoryMb()
                 || spec.reqDiskGb() > flavor.getDiskGb()) {
