@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -153,6 +154,29 @@ public class LlmApiKey {
     @Column(name = "openrouter_last_error")
     private @Nullable String openrouterLastError;
 
+    /**
+     * The provisioning sweep's period. The backoff spread is measured against
+     * it: a wait that differs by less than one period puts two keys on the
+     * same sweep, which is not a spread at all.
+     */
+    private static final Duration SWEEP_PERIOD = Duration.ofMinutes(5);
+
+    /**
+     * What a fault on our side waits. Fixed rather than climbing, and short
+     * enough that fixing the credential is felt quickly. Mirrors the account
+     * polling path, which uses the same half hour for everything that is not
+     * the vendor throttling or down.
+     */
+    private static final Duration LOCAL_FAULT_BACKOFF = Duration.ofMinutes(30);
+
+    /** Consecutive failed provisioning attempts; sizes the wait below. */
+    @Column(name = "openrouter_attempt_count", nullable = false)
+    private int openrouterAttemptCount;
+
+    /** No provisioning attempt before this; null means eligible now. */
+    @Column(name = "openrouter_not_before_at")
+    private @Nullable Instant openrouterNotBeforeAt;
+
     /** Immutable vendor-account binding; null only for a token-only row. */
     @Column(name = "openrouter_account_id")
     private @Nullable Long openrouterAccountId;
@@ -230,13 +254,104 @@ public class LlmApiKey {
         this.openrouterKeyEnc = keyEnc;
         this.openrouterProvisionedAt = when;
         this.openrouterLastError = null;
+        this.openrouterAttemptCount = 0;
+        this.openrouterNotBeforeAt = null;
         this.updatedAt = when;
     }
 
-    /** A provisioning attempt failed; the key stays usable on the token axis. */
-    public void recordOpenrouterFailure(String error, Instant when) {
+    /**
+     * A provisioning attempt failed; the key stays usable on the token axis.
+     * The wait until the next attempt grows with consecutive failures, so a
+     * vendor that is refusing is not asked again on the same five-minute
+     * cadence that produced the refusal.
+     *
+     * <p>{@code vendorRefused} says whether OpenRouter is the one saying no.
+     * A local fault waits a fixed half hour instead of climbing a ladder
+     * built for a rate limit it never touched.
+     */
+    public void recordOpenrouterFailure(String error, boolean vendorRefused, Instant when) {
         this.openrouterLastError = error;
+        this.openrouterAttemptCount++;
+        this.openrouterNotBeforeAt = when.plus(
+                openrouterBackoff(openrouterAttemptCount, vendorRefused, id));
         this.updatedAt = when;
+    }
+
+    /**
+     * Forgets a run of failed provisioning attempts, so the next sweep tries
+     * again at once. Called where somebody changed the thing the failure was
+     * probably about: a wait sized for a vendor that keeps refusing is the
+     * wrong answer to an operator who has just fixed the cause, and before
+     * this backoff existed such a key was retried within five minutes.
+     */
+    public void clearOpenrouterBackoff(Instant when) {
+        if (openrouterAttemptCount == 0 && openrouterNotBeforeAt == null) {
+            return;
+        }
+        this.openrouterAttemptCount = 0;
+        this.openrouterNotBeforeAt = null;
+        this.updatedAt = when;
+    }
+
+    /**
+     * How long to wait after {@code failures} consecutive failures.
+     *
+     * <p>Only a vendor that is refusing gets the ladder. A local fault —
+     * no usable management credential, a rejected one — never reached
+     * OpenRouter at all, so doubling against a rate limit it did not hit
+     * would be superstition; those wait a fixed half hour, which is what the
+     * account polling path settled on for the same distinction.
+     *
+     * <p>The ladder doubles from five minutes to a six-hour ceiling, and the
+     * spread is added on top of it: the longest a key actually waits is nine
+     * hours, not six. That is intended — at the ceiling the vendor has been
+     * refusing for most of a day and the spread is what keeps the return from
+     * being a batch — but the ceiling and the wait are different numbers and
+     * saying "six hours" for both is how the difference gets lost. The
+     * spread is deliberately as wide as the wait rather than a token minute
+     * or two: the sweep runs on a five-minute cron and every rung is a
+     * multiple of it, so a jitter smaller than one period cannot move two
+     * keys onto different sweeps. Keys refused together would come back
+     * together and re-send the burst that was refused, which is the thing
+     * this exists to stop.
+     */
+    private static Duration openrouterBackoff(int failures, boolean vendorRefused,
+            @Nullable Long keyId) {
+        if (!vendorRefused) {
+            return LOCAL_FAULT_BACKOFF;
+        }
+        // The exponent cap has to let the doubling reach past the ceiling,
+        // or the ceiling is decoration: from a five-minute floor, stopping at
+        // 6 would top out at 320 and the 360 below would never bind.
+        int exponent = Math.min(Math.max(failures, 1) - 1, 7);
+        long minutes = Math.min(5L << exponent, 360L);
+        // Half the wait, and never less than two sweep periods. One period is
+        // not enough and reads as though it were: a spread exactly one period
+        // wide lands every key in the same bucket, because the sweep fires on
+        // wall-clock ticks and the whole spread then fits between two of them.
+        // Two periods is the narrowest that can put two keys on different
+        // sweeps at the bottom rungs.
+        long spreadSeconds = Math.max(2 * SWEEP_PERIOD.toSeconds(), minutes * 30);
+        return Duration.ofMinutes(minutes)
+                .plusSeconds(Math.floorMod(scatter(keyId, failures), spreadSeconds));
+    }
+
+    /**
+     * Turns a key id into a spread offset that neighbouring ids do not share.
+     *
+     * <p>The obvious {@code hashCode} of a small arithmetic combination is
+     * near enough to the identity that consecutive ids come out a fixed few
+     * seconds apart, which lands them in the same sweep and leaves the batch
+     * exactly as clustered as it was. Keys are created in runs and their ids
+     * are consecutive, so that is the normal case rather than a corner. This
+     * is the SplitMix64 finalizer, whose whole job is that a step of one in
+     * means an unrelated value out.
+     */
+    private static long scatter(@Nullable Long keyId, int failures) {
+        long z = (keyId == null ? 0L : keyId) * 0x9E3779B97F4A7C15L + failures;
+        z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
+        z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
+        return z ^ (z >>> 31);
     }
 
     /**

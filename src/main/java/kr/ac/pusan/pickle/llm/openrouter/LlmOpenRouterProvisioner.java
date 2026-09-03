@@ -45,6 +45,14 @@ public class LlmOpenRouterProvisioner {
 
     static final String JOB_ID = "llm-openrouter-provisioner";
 
+    /**
+     * Key creations one sweep may send. Sized for the ordinary case rather
+     * than the worst one: approvals arrive a few at a time, so this is only
+     * reached after a stretch of vendor refusals, and draining such a backlog
+     * over half an hour costs nobody anything.
+     */
+    static final int SWEEP_BATCH = 20;
+
     private final LlmApiKeyRepository keyRepository;
     private final OpenRouterClient client;
     private final CredentialCipher credentialCipher;
@@ -66,12 +74,17 @@ public class LlmOpenRouterProvisioner {
 
     /**
      * Every 5 minutes: the money axis connects within one sweep of being
-     * granted, and a failed attempt is retried on the next one.
+     * granted, and a failed attempt returns once its backoff has elapsed.
+     *
+     * <p>Bounded per run. OpenRouter rate-limits key creation and publishes
+     * no number, so the size of one burst is a thing worth deciding rather
+     * than inheriting from however many keys happen to be waiting. A backlog
+     * drains over several sweeps instead of arriving as one batch.
      */
     @Recurring(id = JOB_ID, cron = "*/5 * * * *", zoneId = "Asia/Seoul")
     @Job(name = JOB_ID, retries = 0)
     public void sweep() {
-        List<LlmApiKey> waiting = keyRepository.findAwaitingOpenrouterProvisioning();
+        List<LlmApiKey> waiting = keyRepository.findAwaitingOpenrouterProvisioning(SWEEP_BATCH);
         for (LlmApiKey key : waiting) {
             provision(key.getId());
         }
@@ -94,9 +107,7 @@ public class LlmOpenRouterProvisioner {
         }
         OpenRouterManagementAccess access = accessForKey(key);
         if (access == null) {
-            tx.executeWithoutResult(status -> keyRepository.findById(keyId)
-                    .ifPresent(fresh -> fresh.recordOpenrouterFailure(
-                            "ACCOUNT_CREDENTIAL_UNAVAILABLE", Instant.now())));
+            recordFailure(keyId, "ACCOUNT_CREDENTIAL_UNAVAILABLE");
             return;
         }
         try {
@@ -147,10 +158,7 @@ public class LlmOpenRouterProvisioner {
             credentialResolver.markUsed(access, Instant.now());
             log.info("provisioned an OpenRouter key for llm key {}", key.getPublicId());
         } catch (OpenRouterException e) {
-            tx.executeWithoutResult(status -> keyRepository.findById(keyId)
-                    .ifPresent(fresh -> fresh.recordOpenrouterFailure(
-                            vendorError(e),
-                            Instant.now())));
+            recordFailure(keyId, vendorError(e));
             log.warn("OpenRouter provisioning failed for llm key {}: {}",
                     key.getPublicId(), vendorError(e));
         }
@@ -239,6 +247,22 @@ public class LlmOpenRouterProvisioner {
                 + "the reconciler will repair it", POST_COMMIT_CONVERGENCE_ATTEMPTS);
     }
 
+    /**
+     * Records a failed attempt and the wait it earns.
+     *
+     * <p>Under the row lock, not a plain read: Hibernate flushes every column
+     * of the entity it loaded, so an unlocked write here would reinstate the
+     * limits, status and expiry as they were a few milliseconds ago and
+     * silently undo an administrator's change that committed in between. The
+     * success path guards the same hazard the same way; a failure has no more
+     * right to overwrite somebody else's write than a success does.
+     */
+    private void recordFailure(long keyId, String error) {
+        tx.executeWithoutResult(status -> keyRepository.findWithLockById(keyId)
+                .ifPresent(fresh -> fresh.recordOpenrouterFailure(
+                        error, vendorRefused(error), Instant.now())));
+    }
+
     private void deleteWithAccess(OpenRouterManagementAccess access, String hash) {
         try {
             client.deleteKey(access.secret(), access.workspaceId(), hash);
@@ -262,6 +286,17 @@ public class LlmOpenRouterProvisioner {
         if (e.status() == 429) { return "THROTTLED"; }
         if (e.status() == 0 || e.status() >= 500) { return "VENDOR_UNAVAILABLE"; }
         return "VENDOR_REJECTED";
+    }
+
+    /**
+     * Whether the vendor is the one refusing, which is the only case the
+     * growing backoff is for. A credential OpenRouter rejected is a fact
+     * about our configuration, not about their capacity, and it is fixed by
+     * a person rather than by waiting longer — so it takes the fixed local
+     * wait alongside the credential we never managed to load.
+     */
+    private static boolean vendorRefused(String error) {
+        return "THROTTLED".equals(error) || "VENDOR_UNAVAILABLE".equals(error);
     }
 
     private record ProvisioningIntent(BigDecimal creditLimit,
