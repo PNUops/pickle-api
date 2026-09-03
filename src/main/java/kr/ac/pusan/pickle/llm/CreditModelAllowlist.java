@@ -39,7 +39,7 @@ public final class CreditModelAllowlist {
     public static final String EMPTY_JSON = "[]";
 
     /**
-     * Matches the DB CHECK installed by V102 and widened by V106 — a model
+     * Matches the DB CHECK installed by V102 and widened by V104 — a model
      * name, or a vendor prefix, either one optionally carrying the vendor's
      * leading tilde.
      *
