@@ -258,7 +258,7 @@ class PublishingTest {
     }
 
     /**
-     * The request form's domain axis was retired, and V104 dropped the two
+     * The request form's domain axis was retired, and V105 dropped the two
      * columns it wrote. A name planted on the origin request used to be the way
      * a fallback could creep back into publishing; there is now no column to
      * plant it in, which is a stronger guarantee than the old test's — so what

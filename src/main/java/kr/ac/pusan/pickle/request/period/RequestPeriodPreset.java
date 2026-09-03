@@ -18,7 +18,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A usage period the request form offers (request_period_presets, V104).
+ * A usage period the request form offers (request_period_presets, V105).
  *
  * <p>Rows are operator policy against a real calendar, not seed data: a term
  * ends on a date somebody has to look up, and next year's date is different.

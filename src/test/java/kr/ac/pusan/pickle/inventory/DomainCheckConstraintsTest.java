@@ -90,7 +90,7 @@ class DomainCheckConstraintsTest {
 
     /**
      * The reversed-dates constraint guarded a start date nothing ever read, and
-     * V104 dropped the column and the constraint together. What is left to
+     * V105 dropped the column and the constraint together. What is left to
      * check at this layer is that both are actually gone: a stale column would
      * keep taking writes, and a stale constraint would refuse rows the form can
      * now produce. The end date's own rules moved to the service, where the

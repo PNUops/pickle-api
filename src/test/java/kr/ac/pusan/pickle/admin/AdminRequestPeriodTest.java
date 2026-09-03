@@ -32,7 +32,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Usage-period catalogue (V104), the request form's third axis: the sys-tier
+ * Usage-period catalogue (V105), the request form's third axis: the sys-tier
  * list, the SYS_ADMIN-only create/edit with change-only auditing, and the
  * asymmetry that is the reason this catalogue exists — the admin list carries
  * periods whose date has passed, the request form does not.
