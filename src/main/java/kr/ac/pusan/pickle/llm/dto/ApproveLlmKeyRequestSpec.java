@@ -49,7 +49,7 @@ public record ApproveLlmKeyRequestSpec(
         @Schema(description = "금액 한도 리셋 창. 비우면 리셋 없는 총액 상한입니다. 창은 UTC 자정에 초기화됩니다.")
         @Nullable CreditLimitReset grantedCreditLimitReset,
 
-        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 교내 서빙 "
+        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 자체 서빙 "
                 + "모델은 이 목록과 무관합니다. 항목은 모델 이름 또는 벤더 프리픽스"
                 + "(예: openai/*)입니다.")
         @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")

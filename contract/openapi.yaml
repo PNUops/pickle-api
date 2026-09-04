@@ -396,7 +396,7 @@ components:
           - "null"
         creditAllowedModels:
           description: "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 한도와 달리 null이 0을 뜻하\
-            지 않습니다. 교내 서빙 모델은 이 값에 영향을 받지 않습니다."
+            지 않습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
           items:
             type: "string"
           maxItems: 50
@@ -1321,7 +1321,7 @@ components:
           - "integer"
           - "null"
         grantedCreditAllowedModels:
-          description: "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 교내 서빙 모델은 이 목록과 무관합니다. 항\
+          description: "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 자체 서빙 모델은 이 목록과 무관합니다. 항\
             목은 모델 이름 또는 벤더 프리픽스(예: openai/*)입니다."
           items:
             type: "string"
@@ -8233,7 +8233,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.60.0"
+  version: "0.60.1"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
