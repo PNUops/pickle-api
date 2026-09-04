@@ -15,13 +15,18 @@ import org.jspecify.annotations.Nullable;
  * vendor is unreachable. A screen that cannot tell them apart shows the same
  * blank for both, and the approver types a name without knowing whether the
  * list they are ignoring is broken or simply new.
+ *
+ * <p><b>Freshness alone does not separate them.</b> A refresh that has never
+ * succeeded reads UNKNOWN whether it has never run or has failed every hour
+ * since the deploy. {@code lastError} and {@code consecutiveFailures} are what
+ * tell those apart, which is why they are on the wire rather than in a log.
  */
 @Schema(description = "OpenRouter 모델 카탈로그 캐시. 승인 화면의 모델 선택 후보이며, "
         + "이 목록이 비어 있어도 모델 이름을 직접 입력할 수 있습니다.")
 public record OpenRouterCatalogueResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "캐시에 남아 있는 모델. 벤더 목록에서 사라진 모델은 제외됩니다.")
-        List<CatalogueModel> models,
+        List<OpenRouterCatalogueModel> models,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "마지막 성공 기준 신선도. 갱신 주기의 세 배를 넘기면 STALE, "
                         + "성공한 적이 없으면 UNKNOWN입니다.")
@@ -38,7 +43,7 @@ public record OpenRouterCatalogueResponse(
 
     /** One model as the picker shows it. */
     @Schema(description = "카탈로그의 모델 한 건.")
-    public record CatalogueModel(
+    public record OpenRouterCatalogueModel(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                     description = "허용 목록에 그대로 넣을 수 있는 모델 이름.")
             String id,

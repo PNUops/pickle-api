@@ -29,7 +29,7 @@ public class OpenRouterCatalogueRepository {
     }
 
     /** One catalogue row as the console reads it. */
-    public record CatalogueRow(String modelId, String displayName, @Nullable String description,
+    public record CatalogueRow(String modelId, String displayName,
             @Nullable Integer contextLength, @Nullable BigDecimal promptPrice,
             @Nullable BigDecimal completionPrice, boolean listed) {
     }
@@ -63,17 +63,16 @@ public class OpenRouterCatalogueRepository {
         List<Object[]> batch = new ArrayList<>(models.size());
         for (OpenRouterClient.VendorModel model : models) {
             String id = model.id().toLowerCase(Locale.ROOT);
-            batch.add(new Object[] {id, model.name(), model.description(), model.contextLength(),
+            batch.add(new Object[] {id, model.name(), model.contextLength(),
                     model.promptPrice(), model.completionPrice(), at, at});
         }
         jdbc.batchUpdate("""
-                insert into openrouter_catalogue_model (model_id, display_name, description,
+                insert into openrouter_catalogue_model (model_id, display_name,
                         context_length, prompt_price, completion_price, first_seen_at,
                         last_listed_at, listed, delisted_at)
-                     values (?, ?, ?, ?, ?, ?, ?, ?, true, null)
+                     values (?, ?, ?, ?, ?, ?, ?, true, null)
                 on conflict (model_id) do update
                     set display_name     = excluded.display_name,
-                        description      = excluded.description,
                         context_length   = excluded.context_length,
                         prompt_price     = excluded.prompt_price,
                         completion_price = excluded.completion_price,
@@ -105,15 +104,20 @@ public class OpenRouterCatalogueRepository {
     }
 
     /**
-     * Records a failed refresh without touching the listing.
+     * Records a failed refresh without touching the listing, and returns how
+     * many have now failed in a row.
      *
      * <p>{@code last_success_at} is left where it was on purpose: it is the
      * clock freshness is judged against, and moving it on a failure would make
      * a stale list look current.
+     *
+     * <p>The count is returned rather than merely stored because the caller
+     * decides from it whether this failure is worth surfacing outside the
+     * database.
      */
-    public void recordFailure(String reason, Instant now) {
+    public int recordFailure(String reason, Instant now) {
         Timestamp at = Timestamp.from(now);
-        jdbc.update("""
+        Integer failures = jdbc.queryForObject("""
                 insert into openrouter_catalogue_state (id, last_attempt_at, last_error,
                         consecutive_failures)
                      values (true, ?, ?, 1)
@@ -121,7 +125,9 @@ public class OpenRouterCatalogueRepository {
                     set last_attempt_at      = excluded.last_attempt_at,
                         last_error           = excluded.last_error,
                         consecutive_failures = openrouter_catalogue_state.consecutive_failures + 1
-                """, at, reason);
+                returning consecutive_failures
+                """, Integer.class, at, reason);
+        return failures == null ? 1 : failures;
     }
 
     public CatalogueState state() {
@@ -146,13 +152,13 @@ public class OpenRouterCatalogueRepository {
     /** Listed models, cheapest completion price first, unknown prices last. */
     public List<CatalogueRow> listed() {
         return jdbc.query("""
-                select model_id, display_name, description, context_length, prompt_price,
+                select model_id, display_name, context_length, prompt_price,
                        completion_price, listed
                   from openrouter_catalogue_model
                  where listed
                  order by completion_price asc nulls last, model_id asc
                 """, (rs, i) -> new CatalogueRow(rs.getString("model_id"),
-                        rs.getString("display_name"), rs.getString("description"),
+                        rs.getString("display_name"),
                         rs.getObject("context_length", Integer.class),
                         rs.getBigDecimal("prompt_price"), rs.getBigDecimal("completion_price"),
                         rs.getBoolean("listed")));

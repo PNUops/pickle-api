@@ -37,8 +37,9 @@ public class AdminLlmObservabilityController {
     @Operation(operationId = "listAdminOpenRouterModels", summary = "유료 모델 카탈로그",
             description = "승인 화면에서 고를 수 있는 유료 모델 후보와 그 가격을 조회합니다. "
                     + "캐시만 읽으므로 이 호출이 벤더를 부르지 않으며, 목록이 비어 있거나 오래됐어도 "
-                    + "모델 이름을 직접 입력해 승인할 수 있습니다. 응답의 신선도로 «아직 갱신된 적 없음»과 "
-                    + "«벤더를 못 부르는 중»을 구분합니다.")
+                    + "모델 이름을 직접 입력해 승인할 수 있습니다. 목록이 빈 이유는 신선도 하나로 갈리지 "
+                    + "않습니다. 한 번도 못 가져온 것과 계속 실패하는 것이 둘 다 UNKNOWN이므로, "
+                    + "lastError와 consecutiveFailures를 함께 읽어야 구분됩니다.")
     public OpenRouterCatalogueResponse openRouterModels() {
         return catalogue.catalogue();
     }

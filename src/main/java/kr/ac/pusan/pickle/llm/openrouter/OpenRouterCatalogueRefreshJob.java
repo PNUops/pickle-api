@@ -36,7 +36,22 @@ public class OpenRouterCatalogueRefreshJob {
      * where a newly released model matters to anybody. Approval does not wait on
      * it: a model the cache has not seen can still be typed.
      */
-    private static final Duration INTERVAL = Duration.ofHours(1);
+    static final String INTERVAL_ISO = "PT1H";
+
+    /**
+     * Parsed from the same string the annotation uses. Two literals would let
+     * someone tune the schedule and silently move the staleness threshold with
+     * it, or not move it — which is what the comment on the threshold claims
+     * cannot happen.
+     */
+    private static final Duration INTERVAL = Duration.parse(INTERVAL_ISO);
+
+    /**
+     * Consecutive failures before the job stops swallowing them. Three at an
+     * hourly cadence is three hours, which is also when the catalogue turns
+     * STALE — the screen and the alarm start saying something at the same time.
+     */
+    private static final int ESCALATE_AFTER = 3;
 
     private static final Logger log = LoggerFactory.getLogger(OpenRouterCatalogueRefreshJob.class);
 
@@ -51,30 +66,79 @@ public class OpenRouterCatalogueRefreshJob {
         this.clock = clock;
     }
 
-    @Recurring(id = JOB_ID, interval = "PT1H")
+    @Recurring(id = JOB_ID, interval = INTERVAL_ISO)
     @Job(name = JOB_ID, retries = 0)
     public void refresh() {
         Instant now = Instant.now(clock);
-        List<OpenRouterClient.VendorModel> models;
         try {
-            models = client.catalogue();
+            List<OpenRouterClient.VendorModel> models = client.catalogue();
+            // Inside the try on purpose. The write can fail on its own — a
+            // constraint the vendor's data violates, a column that will not
+            // hold a value — and if it escapes, nothing records the failure:
+            // the state row stays untouched and the screen says "not fetched
+            // yet", which is the message a brand-new deployment shows. A
+            // refresh that fails forever must not look like one that has not
+            // run yet.
+            catalogue.replaceListing(models, now);
+            log.info("OpenRouter catalogue refreshed with {} models", models.size());
         } catch (OpenRouterException e) {
             // The vendor's own words are not stored: the column is shown to an
-            // administrator, and a vendor body can carry anything. The status
-            // and the classification are enough to tell "they are down" from
-            // "we cannot reach them".
-            String reason = OpenRouterErrorClassifier.classify(e).name()
-                    + " (HTTP " + e.status() + ")";
-            catalogue.recordFailure(reason, now);
+            // administrator and a vendor body can carry anything.
+            String reason = describe(e);
             log.warn("OpenRouter catalogue refresh failed: {}", reason);
-            return;
+            escalate(catalogue.recordFailure(reason, now), reason);
         } catch (RuntimeException e) {
-            catalogue.recordFailure("UNEXPECTED", now);
             log.warn("OpenRouter catalogue refresh failed unexpectedly", e);
-            return;
+            escalate(catalogue.recordFailure("UNEXPECTED", now), "UNEXPECTED");
         }
-        catalogue.replaceListing(models, now);
-        log.info("OpenRouter catalogue refreshed with {} models", models.size());
+    }
+
+    /**
+     * Lets a sustained failure out of this method, so that something already
+     * watched notices.
+     *
+     * <p>Catching everything and recording it in a column is the right answer
+     * for one bad hour and the wrong one for a broken week: the row is read by
+     * a screen nobody is required to open, while a job that returns normally is
+     * indistinguishable from a healthy one. The host health check counts
+     * {@code FAILED} JobRunr rows every ten minutes, so throwing is what turns
+     * "the picker is empty and nobody knows why" into a line somebody already
+     * reads.
+     *
+     * <p>It throws on the third consecutive failure rather than the first
+     * because a single vendor blip is ordinary and should not raise anything;
+     * three hours of them is not. The state row keeps the whole history either
+     * way, so nothing is lost by staying quiet at first.
+     */
+    private static void escalate(int consecutiveFailures, String reason) {
+        if (consecutiveFailures >= ESCALATE_AFTER) {
+            throw new IllegalStateException("OpenRouter catalogue refresh has failed "
+                    + consecutiveFailures + " times in a row: " + reason);
+        }
+    }
+
+    /**
+     * The shared classifier is not used here, and the reason is that it reads
+     * 401 and 403 as {@code CREDENTIAL_ERROR}. This call carries no credential,
+     * so that bucket cannot be true of it: a refusal at those statuses is an
+     * address or region block, and telling an administrator their credential is
+     * wrong would send them to rotate a key that is not involved.
+     */
+    private static String describe(OpenRouterException e) {
+        int status = e.status();
+        String bucket;
+        if (status == 0) {
+            bucket = "UNREACHABLE";
+        } else if (status == 429) {
+            bucket = "THROTTLED";
+        } else if (status >= 500) {
+            bucket = "VENDOR_UNAVAILABLE";
+        } else if (status == 401 || status == 403) {
+            bucket = "BLOCKED";
+        } else {
+            bucket = "VENDOR_REJECTED";
+        }
+        return bucket + " (HTTP " + status + ")";
     }
 
     /** The cadence, exposed so the freshness threshold is derived rather than repeated. */

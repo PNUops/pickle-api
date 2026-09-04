@@ -108,9 +108,8 @@ public class OpenRouterClient {
      * and dearest model is four orders of magnitude, and the reason an approver
      * is shown this list at all is to see that difference.
      */
-    public record VendorModel(String id, String name, @Nullable String description,
-            @Nullable Integer contextLength, @Nullable BigDecimal promptPrice,
-            @Nullable BigDecimal completionPrice) {
+    public record VendorModel(String id, String name, @Nullable Integer contextLength,
+            @Nullable BigDecimal promptPrice, @Nullable BigDecimal completionPrice) {
     }
 
     /**
@@ -292,7 +291,6 @@ public class OpenRouterClient {
             String name = text(entry, "name");
             JsonNode pricing = entry.path("pricing");
             models.add(new VendorModel(id.trim(), name == null ? id.trim() : name,
-                    text(entry, "description"),
                     entry.path("context_length").isNumber()
                             ? entry.path("context_length").asInt() : null,
                     price(pricing, "prompt"), price(pricing, "completion")));
@@ -300,13 +298,30 @@ public class OpenRouterClient {
         if (models.isEmpty()) {
             throw new OpenRouterException(0, "model catalogue answered without any usable models");
         }
+        // The vendor states how many models it has. Today the whole set arrives
+        // in one response and `links.next` is null, but reading only page one
+        // would not merely store a short list: replaceListing treats anything
+        // absent as delisted, so a truncation switches those models off. This is
+        // the posture listKeys already takes toward a partial view.
+        JsonNode total = node.path("total_count");
+        if (total.isNumber() && total.asInt() != data.size()) {
+            throw new OpenRouterException(0, "model catalogue answered a partial page");
+        }
         return List.copyOf(models);
     }
 
     /**
-     * Prices arrive as decimal strings, not numbers, and a missing or
-     * unparseable one reads as unknown rather than as free. Zero is a real
-     * value the vendor uses for its free tier, so it must survive.
+     * Prices arrive as decimal strings, not numbers, and the field carries
+     * three meanings rather than two.
+     *
+     * <p>A number is a price and <b>zero is a real one</b> — the vendor's free
+     * tier — so it must survive. Missing or unparseable is unknown. And
+     * <b>negative is the vendor's sentinel for "priced by whatever model this
+     * routes to"</b>: the router entries ({@code openrouter/auto} and its
+     * siblings, five of 427 when this was written) all publish {@code "-1"}.
+     * That is not a price and must not be stored as one. It parses cleanly, so
+     * it reached the column's non-negative CHECK and would have failed every
+     * refresh against a listing this complete.
      */
     private static @Nullable BigDecimal price(JsonNode pricing, String field) {
         JsonNode value = pricing.path(field);
@@ -315,7 +330,8 @@ public class OpenRouterClient {
             return null;
         }
         try {
-            return new BigDecimal(raw.trim());
+            BigDecimal parsed = new BigDecimal(raw.trim());
+            return parsed.signum() < 0 ? null : parsed;
         } catch (NumberFormatException e) {
             return null;
         }
@@ -332,7 +348,11 @@ public class OpenRouterClient {
                                 return tree(responseBody);
                             }
                         }
-                        throw new OpenRouterException(status, errorText(status));
+                        // Not errorText: that says "management request", and
+                        // this is the one call in the class that carries no
+                        // management credential.
+                        throw new OpenRouterException(status,
+                                "public request rejected with HTTP " + status);
                     });
         } catch (ResourceAccessException e) {
             throw new OpenRouterException(0, "transport failure");

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.llm.openrouter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -37,7 +38,7 @@ class OpenRouterCatalogueTest {
     }
 
     private static OpenRouterClient.VendorModel model(String id, String completion) {
-        return new OpenRouterClient.VendorModel(id, "Name of " + id, "desc", 128000,
+        return new OpenRouterClient.VendorModel(id, "Name of " + id, 128000,
                 new BigDecimal("0.0000001"),
                 completion == null ? null : new BigDecimal(completion));
     }
@@ -51,7 +52,7 @@ class OpenRouterCatalogueTest {
         refreshJob.refresh();
 
         OpenRouterCatalogueResponse response = service.catalogue();
-        assertThat(response.models()).extracting(OpenRouterCatalogueResponse.CatalogueModel::id)
+        assertThat(response.models()).extracting(OpenRouterCatalogueResponse.OpenRouterCatalogueModel::id)
                 .containsExactly("openai/gpt-4o-mini", "~anthropic/claude-sonnet-latest");
         assertThat(response.freshness()).isEqualTo(OpenRouterCreditsFreshness.FRESH);
         assertThat(response.consecutiveFailures()).isZero();
@@ -86,7 +87,7 @@ class OpenRouterCatalogueTest {
         refreshJob.refresh();
 
         assertThat(service.catalogue().models())
-                .extracting(OpenRouterCatalogueResponse.CatalogueModel::id)
+                .extracting(OpenRouterCatalogueResponse.OpenRouterCatalogueModel::id)
                 .containsExactly("openai/gpt-4o-mini");
         assertThat(jdbcTemplate.queryForObject(
                 "select listed from openrouter_catalogue_model where model_id = 'vendor/retired'",
@@ -149,6 +150,90 @@ class OpenRouterCatalogueTest {
         assertThat(response.freshness()).isEqualTo(OpenRouterCreditsFreshness.UNKNOWN);
         assertThat(response.lastSuccessAt()).isNull();
         assertThat(response.consecutiveFailures()).isZero();
+    }
+
+    /**
+     * The write failing is a failed refresh, not a state nobody records.
+     *
+     * <p>This is the shape that shipped as a defect: the vendor publishes a
+     * negative sentinel on its router models, it parsed as a price, and the
+     * column refused it. With the write outside the try the exception escaped
+     * the job, {@code recordFailure} never ran, and the screen said "not
+     * fetched yet" — the message a brand-new deployment shows — every hour,
+     * forever.
+     */
+    @Test
+    void aWriteThatFailsIsRecordedAsAFailure() {
+        when(client.catalogue()).thenReturn(List.of(
+                new OpenRouterClient.VendorModel("vendor/impossible", "Impossible", 1000,
+                        new BigDecimal("-1"), new BigDecimal("-1"))));
+
+        refreshJob.refresh();
+
+        OpenRouterCatalogueResponse response = service.catalogue();
+        assertThat(response.consecutiveFailures())
+                .describedAs("a write that throws must leave a recorded failure, not silence")
+                .isEqualTo(1);
+        assertThat(response.lastError()).isEqualTo("UNEXPECTED");
+        assertThat(response.lastAttemptAt()).isNotNull();
+        assertThat(response.lastSuccessAt()).isNull();
+    }
+
+    /**
+     * A refusal at 401 or 403 on a call that carries no credential is not a
+     * credential problem. Saying so would send an administrator to rotate a key
+     * that is not involved.
+     */
+    @Test
+    void aBlockedRequestIsNotReportedAsACredentialProblem() {
+        when(client.catalogue()).thenThrow(new OpenRouterException(403, "forbidden"));
+        refreshJob.refresh();
+
+        assertThat(service.catalogue().lastError())
+                .isEqualTo("BLOCKED (HTTP 403)")
+                .doesNotContain("CREDENTIAL");
+    }
+
+    /**
+     * A sustained failure has to leave this method, or nothing outside the
+     * database ever learns about it.
+     *
+     * <p>Catching everything and writing a column is right for one bad hour and
+     * wrong for a broken week: a job that returns normally looks healthy, and
+     * the row is read by a screen nobody must open. The host health check counts
+     * FAILED JobRunr rows every ten minutes, so throwing is what makes a
+     * permanently empty picker visible to somebody.
+     */
+    @Test
+    void aSustainedFailureIsAllowedOutOfTheJob() {
+        when(client.catalogue()).thenThrow(new OpenRouterException(503, "down"));
+
+        // The first two stay quiet: one vendor blip an hour apart is ordinary.
+        refreshJob.refresh();
+        refreshJob.refresh();
+        assertThat(service.catalogue().consecutiveFailures()).isEqualTo(2);
+
+        assertThatThrownBy(() -> refreshJob.refresh())
+                .describedAs("the third in a row must escape so a watched counter moves")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("3 times in a row");
+        assertThat(service.catalogue().consecutiveFailures()).isEqualTo(3);
+    }
+
+    /** A success clears the count, so a recovered vendor stops raising. */
+    @Test
+    void aSuccessClearsTheFailureCount() {
+        when(client.catalogue()).thenThrow(new OpenRouterException(503, "down"));
+        refreshJob.refresh();
+        refreshJob.refresh();
+
+        // doReturn, not when(...): the mock is already stubbed to throw, and
+        // when(client.catalogue()) would call it during stubbing.
+        doReturn(List.of(model("openai/gpt-4o-mini", "0.0000006"))).when(client).catalogue();
+        refreshJob.refresh();
+
+        assertThat(service.catalogue().consecutiveFailures()).isZero();
+        assertThat(service.catalogue().lastError()).isNull();
     }
 
     /** The vendor's error body is not stored; the classification is. */

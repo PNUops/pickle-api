@@ -41,11 +41,16 @@ create table openrouter_catalogue_state (
 create table openrouter_catalogue_model (
     model_id            text primary key,
     display_name        text not null,
-    description         text,
     context_length      int,
     -- Vendor prices are per token and span four orders of magnitude, so the
-    -- scale is generous and the column stays exact. Null is unknown, and zero
-    -- is a real value the vendor uses for its free tier.
+    -- scale is generous and the column stays exact.
+    --
+    -- The field carries three meanings, not two. Null is unknown. Zero is a
+    -- real price, the vendor's free tier. And the vendor publishes a negative
+    -- sentinel for its router entries, which are priced by whatever model they
+    -- route to; that is not a price, so the reader turns it into null and this
+    -- constraint refuses it if the reader ever stops.
+    
     prompt_price        numeric(20, 12),
     completion_price    numeric(20, 12),
     listed              boolean not null default true,

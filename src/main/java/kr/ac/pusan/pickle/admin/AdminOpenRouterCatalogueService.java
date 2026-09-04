@@ -53,9 +53,9 @@ public class AdminOpenRouterCatalogueService {
 
     public OpenRouterCatalogueResponse catalogue() {
         OpenRouterCatalogueRepository.CatalogueState state = catalogue.state();
-        List<OpenRouterCatalogueResponse.CatalogueModel> models = catalogue.listed().stream()
-                .map(row -> new OpenRouterCatalogueResponse.CatalogueModel(row.modelId(),
-                        row.displayName(), perMillion(row.promptPrice()),
+        List<OpenRouterCatalogueResponse.OpenRouterCatalogueModel> models = catalogue.listed().stream()
+                .map(row -> new OpenRouterCatalogueResponse.OpenRouterCatalogueModel(
+                        row.modelId(), row.displayName(), perMillion(row.promptPrice()),
                         perMillion(row.completionPrice()), row.contextLength()))
                 .toList();
         return new OpenRouterCatalogueResponse(models, freshness(state.lastSuccessAt()),
