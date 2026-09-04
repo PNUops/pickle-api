@@ -9,8 +9,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What a VM request asks for, nested under {@code vm} in the create body.
- * Cross-field rules (spec reason against the chosen preset, the OS image's
- * minimum disk, slug availability) are validated in the service.
+ * Cross-field rules (the spec reason against whichever baseline the chosen path
+ * sets, the OS image's minimum disk, slug availability) are validated in the
+ * service.
  */
 public record CreateVmRequestSpec(
         @NotNull(message = "OS 이미지(imageId)를 지정해 주세요.")

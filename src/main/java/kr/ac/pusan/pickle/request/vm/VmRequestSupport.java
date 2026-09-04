@@ -257,23 +257,6 @@ public class VmRequestSupport implements RequestTypeHandler {
     }
 
     /**
-     * Axis-split validation (V58): the hard floor is the OS image's
-     * {@code minDiskGb}, and the spec-reason baseline is whichever spec was
-     * chosen. Asking for less than the chosen spec stays free and exceeding it
-     * needs a reason, which is what the OS defaults meant before the split.
-     *
-     * <p>A null flavor is the request that chose nothing and typed its own
-     * numbers. Its baseline is the fixed floor below, <b>not</b> a reason on
-     * every typed request: the floor is smaller on at least one axis than
-     * anything published, so a request that stays at it is asking for less than
-     * the catalogue offers, and charging that a justification would put the
-     * only hurdle in front of the people asking for the least.</p>
-     *
-     * <p>Either way the requirement follows the path the requester took rather
-     * than the catalogue. Pinning it to the largest published spec would mean an
-     * operator adding a larger one silently switches the requirement off.</p>
-     */
-    /**
      * 사양을 직접 적는 신청의 바닥값.
      *
      * <p>**콘솔의 같은 상수와 맞춰야 한다**(`vm-wizard.tsx`의 `CUSTOM_BASE`). 화면은 이
@@ -286,6 +269,32 @@ public class VmRequestSupport implements RequestTypeHandler {
     static final int CUSTOM_BASE_MEMORY_MB = 1024;
     static final int CUSTOM_BASE_DISK_GB = 32;
 
+    /**
+     * Axis-split validation (V58). Two independent rules live here.
+     *
+     * <p><b>The hard floor</b> is the OS image's {@code minDiskGb}: below it the
+     * request is rejected outright, reason or no reason.</p>
+     *
+     * <p><b>The reason baseline</b> is whichever path the requester took. With a
+     * spec chosen, it is that spec's numbers, except that its disk is raised to
+     * the OS minimum when that is larger — otherwise meeting what the OS demands
+     * would itself require a justification, and the screen has no field to fix
+     * on that path. With nothing chosen, it is the fixed floor above, raised the
+     * same way on disk. Asking for less than the baseline is always free.</p>
+     *
+     * <p>A null flavor therefore does <b>not</b> mean a reason is required. That
+     * reading is the one to guard against: the floor was picked to sit under
+     * every published spec, so a request that stays at it asks for less than the
+     * catalogue offers, and charging it a justification would put the only
+     * hurdle in front of the people asking for the least. (Whether the floor
+     * still sits under every row is a property of the catalogue an operator
+     * edits, not of this code — the rule holds either way, only that argument
+     * for it would stop.)</p>
+     *
+     * <p>Both baselines follow the requester's path rather than the catalogue.
+     * Pinning the typed path to the largest published spec would mean an
+     * operator adding a larger one silently switches the requirement off.</p>
+     */
     private static void validateSpec(CreateVmRequestSpec spec, OsImage image,
             @Nullable VmFlavor flavor, List<FieldValidationError> errors) {
         if (spec.reqDiskGb() < image.getMinDiskGb()) {
