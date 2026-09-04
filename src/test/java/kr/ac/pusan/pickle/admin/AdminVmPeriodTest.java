@@ -212,6 +212,44 @@ class AdminVmPeriodTest {
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
 
+    /**
+     * 승인 시점에는 무기한을 줄 수 있었는데 이미 만들어진 VM 은 바꿀 수 없었다. 기간이
+     * 한 방향으로만 움직이던 구멍이다. 종료일이 없는 VM 은 만료 조회가 전부 걸러 내므로
+     * 만료 예고도 자동 정지도 받지 않는다.
+     */
+    @Test
+    void clearingTheEndDateMakesAnExistingVmIndefinite() throws Exception {
+        long vmId = createVm(orgId, workspaceId, "RUNNING", today.plusDays(10));
+
+        // 둘을 함께 보내면 어느 쪽이 이겼는지 호출자가 알 수 없다.
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"endDate\": \"%s\", \"clearEndDate\": true}"
+                                .formatted(today.plusDays(30))))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("endDate"));
+
+        // 기간 변경인데 기간을 말하지 않은 요청도 거절한다.
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("endDate"));
+
+        mockMvc.perform(patch("/api/v1/admin/vms/{id}/period", pub("vms", vmId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"clearEndDate\": true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endDate").doesNotExist());
+
+        Integer remaining = jdbcTemplate.queryForObject(
+                "select count(*) from vms where id = ? and end_date is null", Integer.class, vmId);
+        assertThat(remaining).isEqualTo(1);
+    }
+
     @Test
     void orgAdminIsMaskedFromOtherOrgsVmsAndUsersAreForbidden() throws Exception {
         Org otherOrg = orgRepository.findFirstByNameOrderByIdAsc("기간 테스트 타기관").orElseGet(() ->

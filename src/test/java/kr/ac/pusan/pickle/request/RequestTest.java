@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +20,11 @@ import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPresetRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.ReauthTestSupport;
@@ -75,6 +79,9 @@ class RequestTest {
     private VmFlavorRepository flavorRepository;
 
     @Autowired
+    private RequestPeriodPresetRepository periodRepository;
+
+    @Autowired
     private NodeRepository nodeRepository;
 
     @Autowired
@@ -96,8 +103,8 @@ class RequestTest {
     private String outsiderToken;
     private Org org;
     private OsImage image;
-    private VmFlavor basicFlavor;
-    private VmFlavor smallFlavor;
+    private VmFlavor memoryFlavor;
+    private VmFlavor cpuFlavor;
 
     @BeforeEach
     void setUp() {
@@ -113,14 +120,25 @@ class RequestTest {
         image = imageRepository.findAll().stream()
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
-        basicFlavor = flavorByName("basic");
-        smallFlavor = flavorByName("small");
+        memoryFlavor = flavorByName("highmem");
+        cpuFlavor = flavorByName("highcpu");
     }
 
     private VmFlavor flavorByName(String name) {
         return flavorRepository.findAll().stream()
                 .filter(f -> f.getName().equals(name))
                 .findFirst().orElseThrow();
+    }
+
+    private RequestPeriodPreset presetByName(String name) {
+        return periodRepository.findAll().stream()
+                .filter(p -> p.getName().equals(name))
+                .findFirst().orElseThrow();
+    }
+
+    /** Today in the timezone the end date is judged against. */
+    private static LocalDate today() {
+        return LocalDate.now(ClockConfig.KST);
     }
 
     @Test
@@ -140,7 +158,7 @@ class RequestTest {
                 .andExpect(jsonPath("$.requesterId").value(requester.getPublicId().toString()))
                 .andExpect(jsonPath("$.requesterName").value("신청자"))
                 .andExpect(jsonPath("$.vm.imageId").value(image.getPublicId().toString()))
-                .andExpect(jsonPath("$.vm.flavorId").value(basicFlavor.getPublicId().toString()));
+                .andExpect(jsonPath("$.vm.flavorId").value(memoryFlavor.getPublicId().toString()));
 
         // any member may ask — what a request costs is decided at approval,
         // and reaching the resulting VM is the access list's business
@@ -166,7 +184,7 @@ class RequestTest {
                 .andExpect(status().isNotFound());
         postJson("/api/v1/requests", requesterToken, with(validBody(workspaceId), "vm.flavorId", SeedFixtures.UNKNOWN_ID))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.detail").value("해당 사양 프리셋이 존재하지 않습니다."));
+                .andExpect(jsonPath("$.detail").value("해당 사양이 존재하지 않습니다."));
 
         // DISABLED image → 422
         OsImage disabled = imageRepository.save(new OsImage("vmr-disabled", "비활성 OS 이미지",
@@ -194,22 +212,14 @@ class RequestTest {
         postJson("/api/v1/requests", requesterToken, bigWithReason)
                 .andExpect(status().isCreated());
 
-        // end date before start date → 422
-        Map<String, Object> badDates = validBody(workspaceId);
-        badDates.put("reqStartDate", "2026-08-01");
-        badDates.put("reqEndDate", "2026-07-01");
-        postJson("/api/v1/requests", requesterToken, badDates)
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
-
-        // the form carries no domain axis (contract v0.29.0): a submitted
-        // desiredSubdomain is an unknown field, ignored — nothing is reserved
-        // and the response echoes null (the field survives for OLD requests)
+        // the form carries no domain axis: a submitted desiredSubdomain is an
+        // unknown field, ignored — nothing is reserved, and the detail no
+        // longer carries the two columns the axis used to write
         postJson("/api/v1/requests", requesterToken,
                 with(validBody(workspaceId), "desiredSubdomain", "vmr-ignored-x1"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.vm.desiredSubdomain").value((Object) null))
-                .andExpect(jsonPath("$.vm.rootDomain").value((Object) null));
+                .andExpect(jsonPath("$.vm.desiredSubdomain").doesNotExist())
+                .andExpect(jsonPath("$.vm.rootDomain").doesNotExist());
 
         // missing purpose → 422
         Map<String, Object> noPurpose = validBody(workspaceId);
@@ -231,56 +241,134 @@ class RequestTest {
     /**
      * Axis split (v0.23.0): the spec-reason baseline is the CHOSEN flavor, not
      * a per-OS default — the same numbers pass or need a reason depending on
-     * which preset the body names. The disk floor stays the OS image's.
+     * which spec the body names. The disk floor stays the OS image's.
+     *
+     * <p>The two seeded specs are shapes rather than sizes ({@code highcpu} is
+     * 2 vCPU / 1024MiB, {@code highmem} 1 vCPU / 2048MiB), so neither contains
+     * the other — which is exactly what makes "the baseline is the one you
+     * chose" observable in both directions.</p>
      */
     @Test
     void specReasonBaselineFollowsTheChosenFlavor() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-flavor-x1");
 
-        // 'small' as-is (1 vCPU / 1024MiB / 10GiB) → 201, no reason needed
-        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, smallFlavor))
+        // 'highcpu' as-is (2 vCPU / 1024MiB / 32GiB) → 201, no reason needed
+        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, cpuFlavor))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.vm.flavorId").value(smallFlavor.getPublicId().toString()))
-                .andExpect(jsonPath("$.vm.reqVcpu").value(1));
+                .andExpect(jsonPath("$.vm.flavorId").value(cpuFlavor.getPublicId().toString()))
+                .andExpect(jsonPath("$.vm.reqVcpu").value(2));
 
-        // each axis independently: 2 vCPU exceeds 'small' → specReason required
+        // each axis independently: over 'highcpu' on any one of them → reason
         postJson("/api/v1/requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "vm.reqVcpu", 2))
+                with(bodyFor(workspaceId, cpuFlavor), "vm.reqVcpu", 4))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
                 .andExpect(jsonPath("$.errors[0].message")
-                        .value("선택한 사양 프리셋을 초과하는 신청에는 사유(specReason)를 입력해야 합니다."));
+                        .value("선택한 사양을 초과하는 신청에는 사유를 입력해야 합니다."));
         postJson("/api/v1/requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "vm.reqMemoryMb", 2048))
+                with(bodyFor(workspaceId, cpuFlavor), "vm.reqMemoryMb", 2048))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
         postJson("/api/v1/requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "vm.reqDiskGb", 20))
+                with(bodyFor(workspaceId, cpuFlavor), "vm.reqDiskGb", 64))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
 
-        // the very same spec against 'basic' (2 / 2048 / 20) is free
-        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, basicFlavor))
+        // the very same numbers (1 / 2048 / 32) are free against 'highmem' and
+        // need a reason against 'highcpu' — only the chosen spec differs
+        postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, memoryFlavor))
                 .andExpect(status().isCreated());
-
-        // the disk floor is the OS image's min, not the preset's
         postJson("/api/v1/requests", requesterToken,
-                with(bodyFor(workspaceId, smallFlavor), "vm.reqDiskGb", 5))
+                with(bodyFor(workspaceId, memoryFlavor), "vm.flavorId", cpuFlavor.getPublicId()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
+
+        // the disk floor is the OS image's min, not the chosen spec's
+        postJson("/api/v1/requests", requesterToken,
+                with(bodyFor(workspaceId, cpuFlavor), "vm.reqDiskGb", 5))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.reqDiskGb"));
+    }
+
+    /**
+     * 직접 적은 사양은 **바닥값을 넘을 때** 사유가 필요하다. 판정 기준이 카탈로그가
+     * 아니라 고정 상수이므로, 더 큰 사양이 하나 생겨도 사유 요구가 사라지지 않는다.
+     *
+     * <p>직접 적었다는 것만으로 사유를 요구하지는 않는다. 바닥값은 어느 프리셋보다도
+     * 작아서 프리셋으로는 요청할 수 없는 크기이고, 거기에 사유를 요구하면 작게
+     * 쓰겠다는 사람에게만 문턱을 세우는 셈이 된다.</p>
+     */
+    @Test
+    void aHandWrittenSpecNeedsAReasonOnlyAboveTheBase() throws Exception {
+        long workspaceId = createTeam(requesterToken, "vmr-freeform-x1");
+
+        postJson("/api/v1/requests", requesterToken, freeformBody(workspaceId))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("기본값보다 큰 사양을 직접 적을 때는 사유를 입력해야 합니다."));
+
+        // 사유가 있으면 어떤 사양도 가리키지 않은 채로 접수된다
+        postJson("/api/v1/requests", requesterToken, with(freeformBody(workspaceId),
+                "vm.specReason", "준비된 사양에 없는 3 vCPU 조합이 필요합니다."))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.vm.flavorId").value((Object) null))
+                .andExpect(jsonPath("$.vm.flavorName").value((Object) null))
+                .andExpect(jsonPath("$.vm.specReason").isNotEmpty());
+
+        // 바닥값 그대로면 사유 없이 접수된다
+        Map<String, Object> atBase = commonBody(workspaceId);
+        with(atBase, "vm.reqVcpu", 1);
+        with(atBase, "vm.reqMemoryMb", 1024);
+        with(atBase, "vm.reqDiskGb", 32);
+        postJson("/api/v1/requests", requesterToken, atBase)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.vm.flavorId").value((Object) null))
+                .andExpect(jsonPath("$.vm.specReason").value((Object) null));
+
+        // 반 GiB 단위도 바닥값을 넘으면 사유가 필요하다
+        Map<String, Object> halfStep = commonBody(workspaceId);
+        with(halfStep, "vm.reqVcpu", 1);
+        with(halfStep, "vm.reqMemoryMb", 1536);
+        with(halfStep, "vm.reqDiskGb", 32);
+        postJson("/api/v1/requests", requesterToken, halfStep)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("vm.specReason"));
+    }
+
+    /**
+     * 배치는 메모리를 경성 필터로 쓴다. 어느 노드도 담을 수 없는 신청은 승인해도 배치에서
+     * 멈추므로 신청 시점에 돌려보낸다. 정책 상한이 아니라 물리 상한이라 노드가 늘면 저절로
+     * 넓어진다.
+     */
+    @Test
+    void aSpecNoNodeCouldHoldIsRefused() throws Exception {
+        long workspaceId = createTeam(requesterToken, "vmr-capacity-x1");
+        long maxNodeMemoryMb = jdbcTemplate.queryForObject(
+                "select max(memory_mb) from nodes where status = 'ACTIVE'::node_status", Long.class);
+
+        // 사유까지 붙여도 통과하지 못한다 — 물리적으로 담을 곳이 없다
+        Map<String, Object> body = with(with(freeformBody(workspaceId),
+                "vm.specReason", "대용량 메모리 실험이 필요합니다."),
+                "vm.reqMemoryMb", (int) (maxNodeMemoryMb + 1024));
+        postJson("/api/v1/requests", requesterToken, body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("vm.reqMemoryMb"));
     }
 
     @Test
     void retiredFlavorIsRejectedAndBothAxesReportIndependently() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-flavor-x2");
-        VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 프리셋", 2, 2048, 20,
-                CatalogStatus.DISABLED, null));
+        VmFlavor retired = flavorRepository.save(new VmFlavor("vmr-retired", "은퇴 사양", 2, 2048, 20,
+                CatalogStatus.DISABLED, null, 90));
 
         postJson("/api/v1/requests", requesterToken, bodyFor(workspaceId, retired))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].field").value("vm.flavorId"))
-                .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양 프리셋입니다."));
+                .andExpect(jsonPath("$.errors[0].message").value("더 이상 선택할 수 없는 사양입니다."));
 
         // both axes retired → one error per axis, and the spec check is skipped
         OsImage retiredImage = imageRepository.save(new OsImage("vmr-disabled-os",
@@ -454,6 +542,102 @@ class RequestTest {
                 .andExpect(jsonPath("$.vm.desiredSlug").value("vmr-slug-mine"));
     }
 
+    /**
+     * 사용 기간은 필수다. 관리자가 등록한 기간 항목을 고르거나 종료일을 직접 적거나
+     * 둘 중 하나여야 하고, 두 값이 함께 오면 어느 쪽을 기록할지 정할 수 없으므로 거부한다.
+     */
+    @Test
+    void usagePeriodComesFromEitherAPresetOrADate() throws Exception {
+        long workspaceId = createTeam(requesterToken, "vmr-period-x1");
+        RequestPeriodPreset term = presetByName("term");
+
+        // 항목을 고르면 종료일은 서버가 그 항목에서 복사하고, 이름이 함께 실린다
+        postJson("/api/v1/requests", requesterToken, withPreset(workspaceId, term.getPublicId()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reqEndDate").value(term.getEndDate().toString()))
+                .andExpect(jsonPath("$.periodName").value(term.getDisplayName()));
+
+        // 직접 적었으면 가리키는 항목이 없다
+        postJson("/api/v1/requests", requesterToken, validBody(workspaceId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.periodName").value((Object) null));
+
+        // 아무 기간도 없는 신청 → 422
+        Map<String, Object> noPeriod = validBody(workspaceId);
+        noPeriod.remove("reqEndDate");
+        postJson("/api/v1/requests", requesterToken, noPeriod)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"))
+                .andExpect(jsonPath("$.errors[0].message").value("사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
+
+        // 항목과 날짜를 함께 보내면 → 422
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "periodPresetId", term.getPublicId()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
+
+        // 존재하지 않는 항목 → 404 (워크스페이스·기관·이미지와 같은 취급)
+        postJson("/api/v1/requests", requesterToken,
+                withPreset(workspaceId, SeedFixtures.UNKNOWN_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.detail").value("해당 사용 기간이 존재하지 않습니다."));
+
+        // 직접 적는 종료일은 과거일 수 없고 2년을 넘을 수 없다
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "reqEndDate", today().minusDays(1).toString()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
+        postJson("/api/v1/requests", requesterToken,
+                with(validBody(workspaceId), "reqEndDate", today().plusYears(2).plusDays(1).toString()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqEndDate"));
+    }
+
+    /**
+     * 무기한은 신청 화면에서 직접 요청한다. **비어 있는 종료일이 곧 무기한인 것이
+     * 아니라 그 값이 무기한이므로**, 빠뜨린 종료일과 겹치지 않게 나머지 두 필드와
+     * 함께 오는 것을 막는다. 그리고 지난 항목은 행이 남아 있어도 고를 수 없다.
+     */
+    @Test
+    void indefiniteIsAskedForDirectlyAndAnExpiredPresetIsRefused() throws Exception {
+        long workspaceId = createTeam(requesterToken, "vmr-period-x2");
+
+        postJson("/api/v1/requests", requesterToken, withIndefinite(workspaceId))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.reqEndDate").value((Object) null))
+                .andExpect(jsonPath("$.periodName").value((Object) null));
+
+        // 무기한과 종료일이 함께 오면 어느 쪽을 쓸지 정할 수 없다
+        postJson("/api/v1/requests", requesterToken,
+                with(withIndefinite(workspaceId), "reqEndDate",
+                        today().plusMonths(1).toString()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("reqIndefinite"));
+
+        RequestPeriodPreset expired = periodRepository.save(new RequestPeriodPreset(
+                "vmr-expired", "지난 학기", today().minusDays(1), CatalogStatus.ACTIVE, 90));
+        try {
+            postJson("/api/v1/requests", requesterToken,
+                    withPreset(workspaceId, expired.getPublicId()))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.errors[0].field").value("periodPresetId"))
+                    .andExpect(jsonPath("$.errors[0].message")
+                            .value("더 이상 신청할 수 없는 사용 기간입니다."));
+
+            // 신청 화면의 기간 목록에도 나오지 않는다
+            mockMvc.perform(get("/api/v1/request-periods")
+                            .header("Authorization", "Bearer " + requesterToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[?(@.id == '%s')]".formatted(expired.getPublicId()))
+                            .isEmpty());
+        } finally {
+            periodRepository.delete(expired);
+        }
+    }
+
     @Test
     void listAndDetailVisibilityFollowsMembership() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-visib-x1");
@@ -555,24 +739,60 @@ class RequestTest {
         assertThat(audits).isEqualTo(2);
     }
 
-    /** A body prefilled from the chosen flavor — exactly what the wizard posts. */
+    /** A body prefilled from the chosen spec — exactly what the wizard posts. */
     private Map<String, Object> validBody(long workspaceId) {
-        return bodyFor(workspaceId, basicFlavor);
+        return bodyFor(workspaceId, memoryFlavor);
     }
 
     private Map<String, Object> bodyFor(long workspaceId, VmFlavor flavor) {
+        Map<String, Object> body = commonBody(workspaceId);
+        with(body, "vm.flavorId", flavor.getPublicId());
+        with(body, "vm.reqVcpu", flavor.getVcpu());
+        with(body, "vm.reqMemoryMb", flavor.getMemoryMb());
+        with(body, "vm.reqDiskGb", flavor.getDiskGb());
+        return body;
+    }
+
+    /** The same body asking for a period that never ends. */
+    private Map<String, Object> withIndefinite(long workspaceId) {
+        Map<String, Object> body = validBody(workspaceId);
+        body.remove("reqEndDate");
+        body.put("reqIndefinite", true);
+        return body;
+    }
+
+    /** The same body with the period coming from a catalogue row instead of a date. */
+    private Map<String, Object> withPreset(long workspaceId, UUID presetId) {
+        Map<String, Object> body = validBody(workspaceId);
+        body.remove("reqEndDate");
+        body.put("periodPresetId", presetId);
+        return body;
+    }
+
+    /** A body that names no spec — the numbers are written by hand. */
+    private Map<String, Object> freeformBody(long workspaceId) {
+        Map<String, Object> body = commonBody(workspaceId);
+        with(body, "vm.reqVcpu", 3);
+        with(body, "vm.reqMemoryMb", 3072);
+        with(body, "vm.reqDiskGb", 32);
+        return body;
+    }
+
+    /**
+     * Everything a request carries whatever it asks for. The period is a plain
+     * end date inside the two-year ceiling; the tests about the period itself
+     * replace it.
+     */
+    private Map<String, Object> commonBody(long workspaceId) {
         Map<String, Object> vm = new HashMap<>();
         vm.put("imageId", image.getPublicId());
-        vm.put("flavorId", flavor.getPublicId());
-        vm.put("reqVcpu", flavor.getVcpu());
-        vm.put("reqMemoryMb", flavor.getMemoryMb());
-        vm.put("reqDiskGb", flavor.getDiskGb());
         Map<String, Object> body = new HashMap<>();
         body.put("type", "VM");
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", org.getPublicId());
         body.put("purpose", "수업 실습용 서버");
         body.put("displayName", "실습 서버");
+        body.put("reqEndDate", today().plusMonths(4).toString());
         body.put("vm", vm);
         return body;
     }

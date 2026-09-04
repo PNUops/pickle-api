@@ -9,10 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -464,6 +466,42 @@ class AdminLlmKeyTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * 축은 한도와 다르다. 빈 한도는 서비스 기본값이라는 뜻이지만 빈 축은 무엇을 달라는
+     * 것인지 말하지 않은 것이다. 금액은 유료 축을 켠 신청만 담을 수 있다.
+     */
+    @Test
+    void theRequestSaysWhichAxesItIsForAndOnlyThenCarriesAnAmount() throws Exception {
+        Map<String, Object> base = new java.util.LinkedHashMap<>();
+        base.put("type", "LLM_API_KEY");
+        base.put("workspaceId", pub("workspaces", workspaceA));
+        base.put("orgId", orgA.getPublicId());
+        base.put("purpose", "축 검증");
+        base.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
+        base.put("displayName", "axis-key");
+
+        Map<String, Object> noAxis = new java.util.LinkedHashMap<>(base);
+        noAxis.put("llmKey", Map.of("useCampusModels", false, "useCommercialModels", false));
+        postJson("/api/v1/requests", requesterToken, noAxis)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("llmKey.useCampusModels"));
+
+        Map<String, Object> amountWithoutAxis = new java.util.LinkedHashMap<>(base);
+        amountWithoutAxis.put("llmKey",
+                Map.of("useCommercialModels", false, "reqCreditLimit", 20));
+        postJson("/api/v1/requests", requesterToken, amountWithoutAxis)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("llmKey.reqCreditLimit"));
+
+        Map<String, Object> both = new java.util.LinkedHashMap<>(base);
+        both.put("llmKey", Map.of("useCampusModels", true, "useCommercialModels", true,
+                "reqCreditLimit", 20));
+        postJson("/api/v1/requests", requesterToken, both)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.llmKey.useCommercialModels").value(true))
+                .andExpect(jsonPath("$.llmKey.reqCreditLimit").value(20.00));
+    }
+
     @Test
     void requestApprovalIssueAndAdminLifecycleWorkAsOneFlow() throws Exception {
         Map<String, Object> create = new java.util.LinkedHashMap<>();
@@ -471,12 +509,17 @@ class AdminLlmKeyTest {
         create.put("workspaceId", pub("workspaces", workspaceA));
         create.put("orgId", orgA.getPublicId());
         create.put("purpose", "관리자 vertical flow");
+        create.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         create.put("displayName", "vertical-flow-key");
-        create.put("llmKey", Map.of("usagePlan", "통합 검증", "reqRpm", 30,
+        // 축을 비우면 자체 서빙 모델만 쓰는 보통의 신청이다.
+        create.put("llmKey", Map.of("reqRpm", 30,
                 "reqTpm", 3000, "reqDailyTokens", 30000));
         String created = postJson("/api/v1/requests", requesterToken, create)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("LLM_API_KEY"))
+                .andExpect(jsonPath("$.llmKey.useCampusModels").value(true))
+                .andExpect(jsonPath("$.llmKey.useCommercialModels").value(false))
+                .andExpect(jsonPath("$.llmKey.reqCreditLimit").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         UUID requestId = UUID.fromString(objectMapper.readTree(created).get("id").asString());
 

@@ -108,6 +108,8 @@ public class AuditService {
     public static final String OS_IMAGE_STATUS_UPDATE = "os_image.status_update";
     public static final String FLAVOR_CREATE = "flavor.create";
     public static final String FLAVOR_UPDATE = "flavor.update";
+    public static final String REQUEST_PERIOD_CREATE = "request-period.create";
+    public static final String REQUEST_PERIOD_UPDATE = "request-period.update";
     public static final String NODE_STATUS_UPDATE = "node.status_update";
     // Operations (contract tag admin).
     public static final String DRIFT_RESOLVE = "drift.resolve";

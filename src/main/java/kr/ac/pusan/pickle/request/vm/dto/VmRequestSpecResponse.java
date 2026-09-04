@@ -36,8 +36,6 @@ public record VmRequestSpecResponse(
         int reqDiskGb,
         @Nullable String specReason,
         @Nullable String desiredSlug,
-        @Nullable String desiredSubdomain,
-        @Nullable String rootDomain,
         @Nullable VmGrantedSpecResponse granted) {
 
     public static VmRequestSpecResponse from(VmRequestDetail detail, OsImage image,
@@ -53,7 +51,6 @@ public record VmRequestSpecResponse(
                 flavor == null ? null : flavor.getPublicId(),
                 flavor == null ? null : flavor.getDisplayName(),
                 detail.getReqVcpu(), detail.getReqMemoryMb(), detail.getReqDiskGb(),
-                detail.getSpecReason(), detail.getDesiredSlug(), detail.getDesiredSubdomain(),
-                detail.getRootDomain(), granted);
+                detail.getSpecReason(), detail.getDesiredSlug(), granted);
     }
 }

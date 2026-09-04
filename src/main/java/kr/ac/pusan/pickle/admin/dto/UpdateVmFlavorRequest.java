@@ -29,6 +29,9 @@ public record UpdateVmFlavorRequest(
         @Size(max = 2000, message = "비고는 2000자 이하여야 합니다.")
         @Nullable String notes,
 
-        @Schema(description = "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 신청·VM 무영향)")
-        @Nullable CatalogStatus status) {
+        @Schema(description = "ACTIVE = 신청 화면에 노출, DISABLED = 은퇴 (기존 신청과 VM 무영향)")
+        @Nullable CatalogStatus status,
+
+        @Schema(description = "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다.")
+        @Nullable Integer displayOrder) {
 }

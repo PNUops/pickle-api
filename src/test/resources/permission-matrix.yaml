@@ -81,6 +81,7 @@ operations:
   - { id: listOrgs,             method: GET,    path: "/orgs",                        roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listOsImages,        method: GET,    path: "/os-images",                   roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listVmFlavors,        method: GET,    path: "/vm-flavors",                  roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listRequestPeriods,   method: GET,    path: "/request-periods",             roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: requestOptions,    method: GET,    path: "/meta/request-options",        roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.4 Workspaces (workspace-role-scoped, service level) ─────────────────────────
@@ -255,6 +256,9 @@ operations:
   - { id: listAdminVmFlavors,   method: GET,   path: "/admin/vm-flavors",               roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: createAdminVmFlavor,  method: POST,  path: "/admin/vm-flavors",               roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: updateAdminVmFlavor,  method: PATCH, path: "/admin/vm-flavors/{flavorId}",    roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: listAdminRequestPeriods,  method: GET,    path: "/admin/request-periods",                roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: createAdminRequestPeriod, method: POST,   path: "/admin/request-periods",                roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
+  - { id: updateAdminRequestPeriod, method: PATCH,  path: "/admin/request-periods/{periodId}",     roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: deny, SYS_ADMIN: allow } }
   - { id: listIpAllocations,    method: GET,  path: "/admin/ip-allocations",  roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
 
   # ── 3.18 Admin — notifications ops (SYS tier) ─────────────────────────────

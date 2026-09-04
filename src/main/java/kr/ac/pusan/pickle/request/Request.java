@@ -57,17 +57,25 @@ public class Request {
     @Column(nullable = false)
     private String purpose;
 
-    @Column(name = "course_or_project")
-    private String courseOrProject;
-
     @Column(name = "extra_note")
     private String extraNote;
 
-    @Column(name = "req_start_date")
-    private LocalDate reqStartDate;
-
+    /**
+     * The period this request asks for. Null means the request asked to never
+     * expire, and the form says so with its own field rather than by leaving
+     * this blank: a forgotten date and a deliberate one are indistinguishable
+     * here, so the body carries the distinction the column cannot.
+     */
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;
+
+    /**
+     * Which catalogue row the end date was copied from, or null when it was
+     * typed. The date is copied rather than joined so that an operator
+     * correcting next term's date does not move a request already submitted.
+     */
+    @Column(name = "req_period_preset_id")
+    private Long reqPeriodPresetId;
 
     /**
      * Requester-chosen name for the resource; seeds its settings at approval.
@@ -95,17 +103,16 @@ public class Request {
     }
 
     public Request(ResourceType resourceType, Long workspaceId, Long orgId, Long requesterId,
-            String purpose, String courseOrProject, String extraNote,
-            LocalDate reqStartDate, LocalDate reqEndDate, String displayName) {
+            String purpose, String extraNote,
+            LocalDate reqEndDate, Long reqPeriodPresetId, String displayName) {
         this.resourceType = resourceType;
         this.workspaceId = workspaceId;
         this.orgId = orgId;
         this.requesterId = requesterId;
         this.purpose = purpose;
-        this.courseOrProject = courseOrProject;
         this.extraNote = extraNote;
-        this.reqStartDate = reqStartDate;
         this.reqEndDate = reqEndDate;
+        this.reqPeriodPresetId = reqPeriodPresetId;
         this.displayName = displayName;
     }
 
@@ -137,16 +144,12 @@ public class Request {
         return purpose;
     }
 
-    public String getCourseOrProject() {
-        return courseOrProject;
-    }
-
     public String getExtraNote() {
         return extraNote;
     }
 
-    public LocalDate getReqStartDate() {
-        return reqStartDate;
+    public Long getReqPeriodPresetId() {
+        return reqPeriodPresetId;
     }
 
     public LocalDate getReqEndDate() {

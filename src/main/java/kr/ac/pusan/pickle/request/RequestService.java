@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.request;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,6 +17,9 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPresetRepository;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
@@ -28,6 +33,7 @@ import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.domain.PageRequest;
@@ -45,6 +51,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RequestService {
 
+    /**
+     * 직접 적는 종료일의 상한. 기간 항목이 덮지 못하는 경우를 위한 안전장치이고,
+     * 이보다 긴 기간은 항목으로 만들어 주는 것이 맞다.
+     */
+    private static final int MAX_CUSTOM_PERIOD_YEARS = 2;
+
     private final RequestRepository requestRepository;
     private final RequestAssembler assembler;
     private final Map<ResourceType, RequestTypeHandler> handlers;
@@ -54,11 +66,14 @@ public class RequestService {
     private final AuditService auditService;
     private final AuditIds auditIds;
     private final NotificationService notificationService;
+    private final RequestPeriodPresetRepository periodPresetRepository;
+    private final Clock clock;
 
     public RequestService(RequestRepository requestRepository, RequestAssembler assembler,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
-            AuditService auditService, AuditIds auditIds, NotificationService notificationService) {
+            AuditService auditService, AuditIds auditIds, NotificationService notificationService,
+            RequestPeriodPresetRepository periodPresetRepository, Clock clock) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.handlers = handlers.stream()
@@ -69,6 +84,8 @@ public class RequestService {
         this.auditService = auditService;
         this.auditIds = auditIds;
         this.notificationService = notificationService;
+        this.periodPresetRepository = periodPresetRepository;
+        this.clock = clock;
     }
 
     /** The handler for a type, or a validation failure naming the unknown type. */
@@ -101,15 +118,15 @@ public class RequestService {
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
-        validateDates(form, errors);
+        ResolvedPeriod period = resolvePeriod(form, errors);
         handler.validateCreate(form, errors);
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
 
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(), org.getId(),
-                actor.id(), form.purpose().strip(), Texts.blankToNull(form.courseOrProject()),
-                Texts.blankToNull(form.extraNote()), form.reqStartDate(), form.reqEndDate(),
+                actor.id(), form.purpose().strip(),
+                Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
 
@@ -212,11 +229,68 @@ public class RequestService {
         return PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
     }
 
-    private static void validateDates(CreateRequestRequest form, List<FieldValidationError> errors) {
-        if (form.reqStartDate() != null && form.reqEndDate() != null
-                && form.reqEndDate().isBefore(form.reqStartDate())) {
-            errors.add(new FieldValidationError("reqEndDate", "종료일은 시작일 이후여야 합니다."));
+    /**
+     * 요청한 사용 기간. 종료일은 고른 항목에서 복사하거나 직접 적은 값이고,
+     * {@code presetId}는 그 값이 어디서 왔는지만 기록한다.
+     */
+    private record ResolvedPeriod(@Nullable LocalDate endDate, @Nullable Long presetId) {
+    }
+
+    /**
+     * 기간 항목을 고른 경우와 직접 적은 경우를 한 값으로 정리한다.
+     *
+     * <p>종료일을 필수로 두면서 달력만 주면 모든 날짜를 여기서 검사해야 하는데, 실제 기간은
+     * 대개 운영자가 이미 아는 학기나 방학이다. 그래서 고르는 쪽을 기본 경로로 두고 직접
+     * 입력을 남겨 둔다. 무기한은 카탈로그가 아니라 {@code reqIndefinite}가 싣는다.</p>
+     *
+     * <p>고른 항목의 종료일은 신청 행에 복사한다. 다음 학기에 운영자가 항목의 날짜를
+     * 고쳐도 이미 낸 신청의 기간이 따라 움직이면 안 되기 때문이다.</p>
+     */
+    private ResolvedPeriod resolvePeriod(CreateRequestRequest form,
+            List<FieldValidationError> errors) {
+        // 무기한은 값이 없는 상태가 아니라 하나의 값이다. 빠뜨린 종료일과 겹치지
+        // 않도록 다른 두 필드와 함께 오는 것을 막는다.
+        if (Boolean.TRUE.equals(form.reqIndefinite())) {
+            if (form.periodPresetId() != null || form.reqEndDate() != null) {
+                errors.add(new FieldValidationError("reqIndefinite",
+                        "무기한으로 신청할 때는 기간이나 종료일을 함께 보내지 않습니다."));
+            }
+            return new ResolvedPeriod(null, null);
         }
+        if (form.periodPresetId() != null) {
+            if (form.reqEndDate() != null) {
+                errors.add(new FieldValidationError("reqEndDate",
+                        "기간을 골랐을 때는 종료일을 따로 보내지 않습니다."));
+                return new ResolvedPeriod(null, null);
+            }
+            RequestPeriodPreset preset = periodPresetRepository
+                    .findByPublicId(form.periodPresetId()).orElse(null);
+            if (preset == null) {
+                throw notFound("해당 사용 기간이 존재하지 않습니다.");
+            }
+            if (!preset.isOfferableOn(ClockConfig.todayKst(clock))) {
+                errors.add(new FieldValidationError("periodPresetId",
+                        "더 이상 신청할 수 없는 사용 기간입니다."));
+                return new ResolvedPeriod(null, null);
+            }
+            return new ResolvedPeriod(preset.getEndDate(), preset.getId());
+        }
+
+        LocalDate endDate = form.reqEndDate();
+        if (endDate == null) {
+            errors.add(new FieldValidationError("reqEndDate",
+                    "사용 종료일을 정해 주세요. 끝나지 않는 기간이 필요하면 무기한을 고릅니다."));
+            return new ResolvedPeriod(null, null);
+        }
+        LocalDate today = ClockConfig.todayKst(clock);
+        if (endDate.isBefore(today)) {
+            errors.add(new FieldValidationError("reqEndDate", "종료일은 오늘 이후여야 합니다."));
+        } else if (endDate.isAfter(today.plusYears(MAX_CUSTOM_PERIOD_YEARS))) {
+            errors.add(new FieldValidationError("reqEndDate",
+                    "직접 적는 종료일은 " + MAX_CUSTOM_PERIOD_YEARS
+                            + "년 이내여야 합니다. 더 긴 기간이 필요하면 사용 목적에 적어 주세요."));
+        }
+        return new ResolvedPeriod(endDate, null);
     }
 
     private static ApiException notFound(String detail) {

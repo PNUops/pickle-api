@@ -24,6 +24,7 @@ import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import org.springframework.http.HttpStatus;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -67,29 +68,58 @@ public class VmPeriodService {
         Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
         long vmId = vm.getId();
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
-        validateDates(request.endDate(), newStart);
+        LocalDate newEnd = resolveEndDate(request, newStart);
         requireNotDeletionBound(vm);
-        if (vmRepository.updatePeriod(vmId, newStart, request.endDate(), EXCLUDED_STATUSES,
+        if (vmRepository.updatePeriod(vmId, newStart, newEnd, EXCLUDED_STATUSES,
                 Instant.now()) == 0) {
             // raced with a schedule-delete/delete accept — same 409 as the pre-check
             throw deletionBound();
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PERIOD_UPDATE, actor.id(), VmActorKind.ADMIN,
                 "기간 변경: %s ~ %s → %s ~ %s".formatted(
-                        vm.getStartDate(), vm.getEndDate(), newStart, request.endDate())));
+                        vm.getStartDate(), vm.getEndDate(), newStart, periodLabel(newEnd))));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.VM_PERIOD_UPDATE, "vm", vm.getPublicId(),
                 Map.of("old", Map.of("startDate", String.valueOf(vm.getStartDate()),
                                 "endDate", String.valueOf(vm.getEndDate())),
                         "new", Map.of("startDate", String.valueOf(newStart),
-                                "endDate", String.valueOf(request.endDate()))),
+                                "endDate", String.valueOf(newEnd))),
                 ip);
         // Admin period edit is org-scoped, not workspace-membership-scoped, so the
         // requester holds no grant on this VM → myResourceRole null.
         return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
     }
 
-    private void validateDates(LocalDate endDate, LocalDate startDate) {
+    /** 감사와 이벤트 본문에서 종료일 없는 기간을 부르는 말. */
+    private static String periodLabel(@Nullable LocalDate endDate) {
+        return endDate == null ? "무기한" : endDate.toString();
+    }
+
+    /**
+     * 새 종료일. 지우기를 요청했으면 null이고, 그것이 무기한이다.
+     *
+     * <p>둘을 함께 받지 않는 것은 어느 쪽이 이겼는지 호출자가 알 수 없게 되기
+     * 때문이다. 둘 다 없는 요청도 거절한다. 기간 변경인데 기간을 말하지 않았다.</p>
+     */
+    private @Nullable LocalDate resolveEndDate(VmPeriodUpdateRequest request,
+            @Nullable LocalDate startDate) {
+        boolean clearing = Boolean.TRUE.equals(request.clearEndDate());
+        if (clearing && request.endDate() != null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
+                    "종료일을 지우면서 동시에 지정할 수는 없습니다.")));
+        }
+        if (clearing) {
+            return null;
+        }
+        if (request.endDate() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
+                    "종료일을 정하거나 무기한으로 바꿔 주세요.")));
+        }
+        validateDates(request.endDate(), startDate);
+        return request.endDate();
+    }
+
+    private void validateDates(LocalDate endDate, @Nullable LocalDate startDate) {
         LocalDate today = ClockConfig.todayKst(clock);
         if (endDate.isBefore(today)) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",

@@ -83,21 +83,33 @@ class DomainCheckConstraintsTest {
 
     @Test
     void nonPositiveRequestSpecIsRejected() {
-        assertThatThrownBy(() -> insertRequest(0, 1024, 10, null, null))
+        assertThatThrownBy(() -> insertRequest(0, 1024, 10))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("chk_vm_request_details_positive_specs");
     }
 
+    /**
+     * The reversed-dates constraint guarded a start date nothing ever read, and
+     * V105 dropped the column and the constraint together. What is left to
+     * check at this layer is that both are actually gone: a stale column would
+     * keep taking writes, and a stale constraint would refuse rows the form can
+     * now produce. The end date's own rules moved to the service, where the
+     * request tests cover them.
+     */
     @Test
-    void reversedRequestDatesAreRejected() {
-        assertThatThrownBy(() -> insertRequest(1, 1024, 10, "2026-08-01", "2026-07-01"))
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("chk_requests_date_order");
+    void requestStartDateAndItsDateOrderConstraintAreGone() {
+        assertThat(jdbc.queryForObject("""
+                select count(*) from information_schema.columns
+                 where table_name = 'requests' and column_name = 'req_start_date'
+                """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "select count(*) from pg_constraint where conname = 'chk_requests_date_order'",
+                Integer.class)).isZero();
     }
 
     @Test
     void nonPositiveVmSpecIsRejected() {
-        long requestId = insertRequest(1, 1024, 10, null, null);
+        long requestId = insertRequest(1, 1024, 10);
         String hostname = "chk-vm-" + UUID.randomUUID().toString().substring(0, 12);
         assertThatThrownBy(() -> jdbc.update("""
                 insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
@@ -110,7 +122,7 @@ class DomainCheckConstraintsTest {
 
     @Test
     void partialGrantedSpecIsRejected() {
-        long requestId = insertRequest(1, 1024, 10, null, null);
+        long requestId = insertRequest(1, 1024, 10);
         // A granted spec that is present but incomplete (no image) must fail:
         // the constraint moved to the detail row with the columns it guards.
         assertThatThrownBy(() -> jdbc.update("""
@@ -126,7 +138,7 @@ class DomainCheckConstraintsTest {
     void rejectReviewWithNullGrantsIsAccepted() {
         // The mirror case: a REJECT leaves every granted column null and must
         // pass both the review's own constraints and the detail row's.
-        long requestId = insertRequest(1, 1024, 10, null, null);
+        long requestId = insertRequest(1, 1024, 10);
         int inserted = jdbc.update("""
                 insert into request_reviews (request_id, reviewer_id, decision, comment)
                 values (?, ?, 'REJECT', '반려 사유')
@@ -159,8 +171,8 @@ class DomainCheckConstraintsTest {
                 osFamily, osVersion, sshUsername, nodeId);
     }
 
-    private long insertRequest(int vcpu, int memoryMb, int diskGb, String start, String end) {
+    private long insertRequest(int vcpu, int memoryMb, int diskGb) {
         return RequestFixtures.insertVmRequest(jdbc, workspaceId, orgId, requesterId, "제약 테스트",
-                imageId, vcpu, memoryMb, diskGb, start, end);
+                imageId, vcpu, memoryMb, diskGb);
     }
 }
