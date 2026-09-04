@@ -231,6 +231,16 @@ pickle:
     # startup; credential mutations then fail closed while other APIs work.
     write-key-id: ${PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID:}
     read-keys: ${PICKLE_OPENROUTER_CREDENTIAL_READ_KEYS:}
+  llm-body-keyring:
+    # Dedicated AES-256-GCM keyring for captured prompt and response text. A
+    # separate key from CredentialCipher on purpose: that one already opens
+    # four datasets and has no rotation path.
+    # READ_KEYS is comma-separated keyId=base64(32 bytes). Empty is allowed at
+    # startup -- capture is off by default, so the service must not depend on
+    # this key to boot. With no write key, ingest stores nothing and reads
+    # report the affected rows as unreadable.
+    write-key-id: ${PICKLE_LLM_BODY_WRITE_KEY_ID:}
+    read-keys: ${PICKLE_LLM_BODY_READ_KEYS:}
   proxy-agent:
     # Reverse-proxy control link to proxy-agent. pickle-api is the
     # client; a JobRunr job pushes desired routing state to the agent on LXC 100.

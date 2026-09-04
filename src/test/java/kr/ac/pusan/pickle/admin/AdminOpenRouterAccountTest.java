@@ -102,6 +102,7 @@ class AdminOpenRouterAccountTest {
     void setUp() {
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_credit_usage_snapshots");
+        jdbcTemplate.update("delete from llm_request_bodies");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from llm_key_request_details");
         jdbcTemplate.update("delete from openrouter_account_credentials");

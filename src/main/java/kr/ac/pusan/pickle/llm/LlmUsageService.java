@@ -43,7 +43,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class LlmUsageService {
 
-    /** The contract bound on the opaque event id. */
+    /**
+     * The contract bound on the opaque event id. The body-ingest path applies
+     * the same bound from this constant: a body accepted under a looser one
+     * could never join the event it belongs to.
+     */
     static final int MAX_EVENT_ID_LENGTH = 64;
 
     /** Cap on any reported free-text field persisted here. */
@@ -243,7 +247,12 @@ public class LlmUsageService {
      * have failed the whole batch, so the field arrives as a string and an
      * unparseable one rejects only its own event.
      */
-    private static Instant parseInstant(String value) {
+    /**
+     * Deliberately lenient: a single unparseable timestamp must cost its own
+     * record, never the batch. Package-private because the body-ingest path
+     * reads the same gateway field and must read it the same way.
+     */
+    static Instant parseInstant(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
@@ -254,7 +263,8 @@ public class LlmUsageService {
         }
     }
 
-    private static boolean containsControlChars(String value) {
+    /** Shared with the body-ingest path, which guards the same event id. */
+    static boolean containsControlChars(String value) {
         for (int i = 0; i < value.length(); i++) {
             if (Character.isISOControl(value.charAt(i))) {
                 return true;

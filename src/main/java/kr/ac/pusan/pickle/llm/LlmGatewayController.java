@@ -3,13 +3,11 @@ package kr.ac.pusan.pickle.llm;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.Valid;
 import kr.ac.pusan.pickle.llm.dto.LlmBodiesRequest;
+import kr.ac.pusan.pickle.llm.dto.LlmBodiesResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,14 +25,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/internal/llm")
 public class LlmGatewayController {
 
-    private static final Logger log = LoggerFactory.getLogger(LlmGatewayController.class);
-
     private final LlmSyncService llmSyncService;
     private final LlmUsageService llmUsageService;
+    private final LlmBodyIngestService llmBodyIngestService;
 
-    public LlmGatewayController(LlmSyncService llmSyncService, LlmUsageService llmUsageService) {
+    public LlmGatewayController(LlmSyncService llmSyncService, LlmUsageService llmUsageService,
+            LlmBodyIngestService llmBodyIngestService) {
         this.llmSyncService = llmSyncService;
         this.llmUsageService = llmUsageService;
+        this.llmBodyIngestService = llmBodyIngestService;
     }
 
     @PostMapping("/sync")
@@ -55,20 +54,19 @@ public class LlmGatewayController {
     }
 
     /**
-     * Accepts and counts opted-in prompt/response records, and deliberately
-     * stores nothing. That is a chosen state, not an unfinished one: the
-     * storage, its encryption key and its retention policy are a later round
-     * gated on a privacy-policy revision, and until that decision exists no
-     * captured text may be persisted anywhere on this side. Answering 2xx
-     * keeps the gateway's bounded in-memory queue draining (it drops rather
-     * than blocks, and never spools these to its disk), so turning storage on
-     * later is purely an api-side change.
+     * Stores opted-in prompt and response records.
+     *
+     * <p>No {@code @Valid} here for the same reason as {@code /usage}, and the
+     * cost of getting it wrong is higher: a non-2xx makes the gateway drop the
+     * batch, and this channel keeps nothing on disk and never re-sends. A
+     * refused batch is text destroyed. Per-record problems are counted into
+     * the tally instead and the batch answers 2xx.</p>
+     *
+     * <p>The gateway discards this response body, so the tally is for this
+     * side's log and its tests.</p>
      */
     @PostMapping("/bodies")
-    public ResponseEntity<Void> bodies(@RequestBody LlmBodiesRequest request) {
-        int count = request.records() == null ? 0 : request.records().size();
-        log.info("LLM bodies batch: accepted and discarded {} records (storage deferred "
-                + "pending the privacy-policy decision)", count);
-        return ResponseEntity.noContent().build();
+    public LlmBodiesResponse bodies(@RequestBody LlmBodiesRequest request) {
+        return llmBodyIngestService.ingest(request);
     }
 }

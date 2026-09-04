@@ -37,6 +37,7 @@ class LlmUsageRetentionSweeperTest {
         jdbcTemplate.update("delete from llm_usage_daily");
         jdbcTemplate.update("delete from llm_usage_rollup_state");
         jdbcTemplate.update("delete from llm_usage_events");
+        jdbcTemplate.update("delete from llm_request_bodies");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from settings where key = ?",
                 SettingsService.LLM_USAGE_RETENTION_DAYS);
