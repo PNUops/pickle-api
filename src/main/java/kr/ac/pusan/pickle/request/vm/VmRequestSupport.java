@@ -88,7 +88,8 @@ public class VmRequestSupport implements RequestTypeHandler {
         // no longer be chosen is a validation error.
         OsImage image = imageRepository.findByPublicId(spec.imageId())
                 .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
-        // 사양을 직접 적은 신청은 프리셋을 가리키지 않는다. 그때는 사유가 무조건 필요하다.
+        // 사양을 직접 적은 신청은 카탈로그 행을 가리키지 않는다. 사유가 언제 필요한지는
+        // validateSpec 이 정한다 — 직접 적었다는 것만으로는 필요하지 않다.
         VmFlavor flavor = spec.flavorId() == null ? null
                 : flavorRepository.findByPublicId(spec.flavorId())
                         .orElseThrow(() -> notFound("해당 사양이 존재하지 않습니다."));
@@ -262,10 +263,15 @@ public class VmRequestSupport implements RequestTypeHandler {
      * needs a reason, which is what the OS defaults meant before the split.
      *
      * <p>A null flavor is the request that chose nothing and typed its own
-     * numbers. That one always needs a reason, because the requirement follows
-     * the path the requester took rather than the catalogue: pinning it to the
-     * largest published spec would mean an operator adding a larger one
-     * silently switches the requirement off.</p>
+     * numbers. Its baseline is the fixed floor below, <b>not</b> a reason on
+     * every typed request: the floor is smaller on at least one axis than
+     * anything published, so a request that stays at it is asking for less than
+     * the catalogue offers, and charging that a justification would put the
+     * only hurdle in front of the people asking for the least.</p>
+     *
+     * <p>Either way the requirement follows the path the requester took rather
+     * than the catalogue. Pinning it to the largest published spec would mean an
+     * operator adding a larger one silently switches the requirement off.</p>
      */
     /**
      * 사양을 직접 적는 신청의 바닥값.

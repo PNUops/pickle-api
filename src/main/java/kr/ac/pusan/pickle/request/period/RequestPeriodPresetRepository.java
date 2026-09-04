@@ -15,12 +15,11 @@ public interface RequestPeriodPresetRepository extends JpaRepository<RequestPeri
     /**
      * Display order of the periods on offer.
      *
-     * <p>There is no arithmetic that orders a term against a vacation against
-     * an indefinite period, and sorting by end date would put next year's term
-     * behind this year's vacation in a list nobody reads that way. So the order
-     * is stated rather than derived, and the admin screen is where it is
-     * stated. The id is the tie-break so the list never wobbles between
-     * requests.</p>
+     * <p>There is no arithmetic that orders a term against a vacation, and
+     * sorting by end date would put next year's term behind this year's
+     * vacation in a list nobody reads that way. So the order is stated rather
+     * than derived, and the admin screen is where it is stated. The id is the
+     * tie-break so the list never wobbles between requests.</p>
      */
     Sort DISPLAY_ORDER = Sort.by("displayOrder", "id");
 
