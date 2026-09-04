@@ -129,8 +129,11 @@ public class LlmBodyCipher {
      *
      * <ul>
      *   <li>the key's public id, so rewriting a row's {@code key_id} to point
-     *       at your own key yields something that will not decrypt -- a second
-     *       layer under the access check, outside the code that performs it;
+     *       at your own key yields something that will not decrypt. This is a
+     *       second layer under the access check rather than a replacement for
+     *       it: the row would still be <i>listed</i> under the key it now names,
+     *       because listing filters on the key and only the reading is bound.
+     *       What the binding buys is that the text stays shut;
      *   <li>the event id, so a ciphertext cannot be moved to another row;
      *   <li>the field, because a row carries two ciphertexts and without it
      *       they are interchangeable. The OpenRouter precedent had one value

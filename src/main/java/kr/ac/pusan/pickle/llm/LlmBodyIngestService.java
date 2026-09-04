@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -46,7 +45,9 @@ import tools.jackson.databind.ObjectMapper;
  *       would make body ingest the one writer that reaches a key row without
  *       taking the counter first, which is exactly the ordering
  *       {@link LlmUsageService} documents as deadlock-prone. Its key lookup is
- *       a plain select.</li>
+ *       a plain select. Each insert still takes the foreign key's KEY SHARE on
+ *       the key row, but only for its own statement, and that is compatible
+ *       with the FOR NO KEY UPDATE the quota and last-used writers take.</li>
  * </ul>
  */
 @Service
@@ -74,7 +75,16 @@ public class LlmBodyIngestService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
+    /**
+     * Deliberately not {@code @Transactional}. Wrapping the batch looks tidier
+     * and is wrong here: Postgres aborts a transaction on a statement error, so
+     * catching one record's failure and carrying on leaves every later
+     * statement failing too, and the COMMIT then rolls back silently while the
+     * reply still reports what it accepted. The gateway discards a batch it was
+     * told about, so that combination destroys the text and calls it success.
+     * Each record therefore stands on its own statement, which is what "one
+     * record's failure must not cost the batch" actually requires.
+     */
     public LlmBodiesResponse ingest(LlmBodiesRequest request) {
         List<LlmBodiesRequest.BodyRecord> records =
                 request.records() == null ? List.of() : request.records();

@@ -245,12 +245,9 @@ public class LlmUsageService {
     /**
      * Lenient per-event timestamp parse: a value Jackson could not bind would
      * have failed the whole batch, so the field arrives as a string and an
-     * unparseable one rejects only its own event.
-     */
-    /**
-     * Deliberately lenient: a single unparseable timestamp must cost its own
-     * record, never the batch. Package-private because the body-ingest path
-     * reads the same gateway field and must read it the same way.
+     * unparseable one rejects only its own event. Package-private because the
+     * body-ingest path reads the same gateway field and must read it the same
+     * way.
      */
     static Instant parseInstant(String value) {
         if (value == null || value.isBlank()) {

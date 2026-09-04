@@ -164,6 +164,27 @@ class LlmBodyIngestTest {
     }
 
     @Test
+    void aRecordThatFailsInsideTheDatabaseDoesNotTakeTheBatchWithIt() throws Exception {
+        // Postgres aborts a transaction on a statement error, so catching the
+        // exception per record and carrying on leaves every later statement
+        // failing too -- and the COMMIT then rolls back silently, with the
+        // reply still saying accepted. The gateway discards a batch it was
+        // told about, so that combination destroys text and reports success.
+        UUID key = recordingKey();
+        Map<String, Object> poison = record(key, "evt-poison", messages("hi"), "a");
+        // Parses as an instant, does not fit timestamptz.
+        poison.put("requestedAt", "+300000-01-01T00:00:00Z");
+
+        bodies(batch(record(key, "evt-first", messages(PROMPT_TEXT), "answer"),
+                poison,
+                record(key, "evt-third", messages("third"), "answer")))
+                .andExpect(status().isOk());
+
+        // Whatever the tally says, it must match what is actually stored.
+        assertThat(eventIds()).containsExactlyInAnyOrder("evt-first", "evt-third");
+    }
+
+    @Test
     void aRepeatedEventIdIsADuplicateAndLeavesTheStoredBytesAlone() throws Exception {
         UUID key = recordingKey();
         bodies(batch(record(key, "evt-1", messages(PROMPT_TEXT), "answer")))
@@ -232,6 +253,11 @@ class LlmBodyIngestTest {
     }
 
     // -- helpers ------------------------------------------------------------
+
+    private java.util.List<String> eventIds() {
+        return jdbcTemplate.queryForList(
+                "select event_id from llm_request_bodies order by event_id", String.class);
+    }
 
     private long bodyCount() {
         return jdbcTemplate.queryForObject("select count(*) from llm_request_bodies", Long.class);

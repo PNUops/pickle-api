@@ -14,6 +14,8 @@ import kr.ac.pusan.pickle.llm.dto.LlmKeyBodyDetailResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBodySummaryResponse;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +41,8 @@ import tools.jackson.databind.ObjectMapper;
  */
 @Service
 public class LlmKeyBodyService {
+
+    private static final Logger log = LoggerFactory.getLogger(LlmKeyBodyService.class);
 
     /**
      * How much of each side a list row carries. Enough to recognise a record,
@@ -101,9 +105,14 @@ public class LlmKeyBodyService {
         List<LlmKeyBodySummaryResponse> rows = jdbcTemplate.query(LIST_SQL,
                 (rs, rowNum) -> summary(read(rs, key.getPublicId())),
                 key.getId(), size, (long) page * size);
+        // The ids, not just how many. A page carries previews, and a preview of
+        // a short prompt is the whole prompt, so this call can disclose text --
+        // "somebody listed page 2" would leave nobody able to say what was
+        // actually seen. Bounded by the page size, which is capped at 50.
         auditService.record(actor.id(), actor.role().name(), AuditService.LLM_KEY_BODY_LIST,
                 "llm_key", key.getPublicId(),
-                Map.of("page", page, "size", size, "returned", rows.size()), ip);
+                Map.of("page", page, "size", size, "returned", rows.size(),
+                        "records", rows.stream().map(r -> r.id().toString()).toList()), ip);
         return PageResponse.of(rows, new PageImpl<>(rows, PageRequest.of(page, size),
                 total == null ? 0 : total));
     }
@@ -120,12 +129,11 @@ public class LlmKeyBodyService {
         Row row = rows.get(0);
         auditService.record(actor.id(), actor.role().name(), AuditService.LLM_KEY_BODY_READ,
                 "llm_key_body", row.publicId(), Map.of("keyId", key.getPublicId().toString()), ip);
-        boolean readable = cipher.canRead(row.cipherKeyId());
+        Opened opened = open(row);
         return new LlmKeyBodyDetailResponse(row.publicId(), row.eventId(), row.requestedAt(),
                 row.receivedAt(), row.requestTruncated(), row.responseTruncated(),
-                row.requestBytes(), row.responseBytes(), readable,
-                readable ? requestNode(row) : null,
-                readable ? decrypt(row, LlmBodyCipher.Field.RESPONSE, row.responseEnc()) : null);
+                row.requestBytes(), row.responseBytes(), opened.readable(),
+                opened.readable() ? parse(opened.request()) : null, opened.response());
     }
 
     /**
@@ -144,29 +152,47 @@ public class LlmKeyBodyService {
     }
 
     private LlmKeyBodySummaryResponse summary(Row row) {
-        boolean readable = cipher.canRead(row.cipherKeyId());
-        String request = readable ? plainRequestPreviewSource(row) : null;
-        String response = readable
-                ? decrypt(row, LlmBodyCipher.Field.RESPONSE, row.responseEnc()) : null;
+        Opened opened = open(row);
         return new LlmKeyBodySummaryResponse(row.publicId(), row.eventId(), row.requestedAt(),
                 row.receivedAt(), row.requestTruncated(), row.responseTruncated(),
-                row.requestBytes(), row.responseBytes(), readable,
-                preview(request), preview(response));
+                row.requestBytes(), row.responseBytes(), opened.readable(),
+                preview(opened.request()), preview(opened.response()));
     }
 
     /**
-     * The prompt as text for previewing. A messages array previews better as
-     * its concatenated text than as raw JSON, but building that here would put
-     * a second, drifting interpretation of the shape next to the one the client
-     * already has to implement for the detail view. The raw JSON is honest and
-     * recognisable at 200 characters.
+     * Decrypts both halves and says whether the row could be read at all.
+     *
+     * <p>{@code readable} is false when the text did not come back, not merely
+     * when the keyring lacks the entry the row names. The two are worth
+     * separating because they look identical from outside otherwise: a row
+     * whose {@code key_id} was repointed at another key still appears in that
+     * key's list — the listing filters on the key, and the binding only stops
+     * the reading — and it would then report itself readable with both fields
+     * null, which the contract defines as "nothing was recorded". Failing to
+     * open stored text is not the same as there being none.
      */
-    private String plainRequestPreviewSource(Row row) {
-        return decrypt(row, LlmBodyCipher.Field.REQUEST, row.requestEnc());
+    private Opened open(Row row) {
+        if (!cipher.canRead(row.cipherKeyId())) {
+            return new Opened(false, null, null);
+        }
+        boolean failed = false;
+        String request = null;
+        String response = null;
+        if (row.requestEnc() != null) {
+            request = decrypt(row, LlmBodyCipher.Field.REQUEST, row.requestEnc());
+            failed = request == null;
+        }
+        if (row.responseEnc() != null) {
+            response = decrypt(row, LlmBodyCipher.Field.RESPONSE, row.responseEnc());
+            failed |= response == null;
+        }
+        return failed ? new Opened(false, null, null) : new Opened(true, request, response);
     }
 
-    private JsonNode requestNode(Row row) {
-        String json = decrypt(row, LlmBodyCipher.Field.REQUEST, row.requestEnc());
+    private record Opened(boolean readable, String request, String response) {
+    }
+
+    private JsonNode parse(String json) {
         if (json == null) {
             return null;
         }
@@ -175,17 +201,24 @@ public class LlmKeyBodyService {
         } catch (JacksonException e) {
             // Stored text that will not parse is a defect, not a 500 for the
             // reader: the rest of the record is still worth showing.
+            log.warn("stored LLM body did not parse as JSON");
             return null;
         }
     }
 
+    /**
+     * Null on failure, with a line in the log. Silence here would be the worst
+     * of the options: a row that cannot be opened is either a retired key or
+     * something having moved underneath it, and both are things an operator
+     * has to be able to notice. The event id is safe to name; the text is not.
+     */
     private String decrypt(Row row, LlmBodyCipher.Field field, String stored) {
-        if (stored == null) {
-            return null;
-        }
         try {
             return cipher.decrypt(row.keyPublicId(), row.eventId(), field, stored);
         } catch (RuntimeException e) {
+            log.warn("LLM body {} of event {} did not decrypt under key {}",
+                    field.name().toLowerCase(java.util.Locale.ROOT), row.eventId(),
+                    row.cipherKeyId());
             return null;
         }
     }
@@ -202,10 +235,10 @@ public class LlmKeyBodyService {
     }
 
     /**
-     * The key's public id travels into every row because it is half the AAD:
-     * a ciphertext only opens under the key it was written for, so a row
-     * repointed at another key in the database fails to decrypt rather than
-     * showing up in that key's list.
+     * The key's public id travels into every row because it is half the AAD: a
+     * ciphertext only opens under the key it was written for. That bounds what
+     * a repointed row can give up, not whether it appears — the listing filters
+     * on {@code key_id}, so such a row does show under its new key, unreadable.
      */
     private Row read(java.sql.ResultSet rs, UUID keyPublicId) throws java.sql.SQLException {
         return new Row(

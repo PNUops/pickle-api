@@ -123,6 +123,61 @@ class LlmKeyBodyReadTest {
     }
 
     @Test
+    void theListCarriesPreviewsAndCutsThemAtTheDocumentedLength() throws Exception {
+        // Nothing else asserts preview content, so a summary that returned null
+        // for both would have passed the whole suite.
+        long keyId = issuedKey("\ubbf8\ub9ac\ubcf4\uae30 \ud0a4");
+        String longAnswer = "\uac00".repeat(500);
+        insertBody(keyId, "evt-long", PROMPT, longAnswer, false, false);
+
+        String body = mockMvc.perform(get(bodiesPath(keyId))
+                        .header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].requestPreview")
+                        .value(org.hamcrest.Matchers.containsString("you are helpful")))
+                .andReturn().getResponse().getContentAsString();
+
+        String preview = objectMapper.readTree(body)
+                .get("content").get(0).get("responsePreview").asString();
+        assertThat(preview).hasSize(200).isEqualTo("\uac00".repeat(200));
+        // The list is a finding aid, not a reading surface: the tail stays behind
+        // the detail call, which is the one that asks for reauthentication.
+        assertThat(body).doesNotContain(longAnswer);
+    }
+
+    @Test
+    void aByteCountIsBytesAndNotCharacters() throws Exception {
+        long keyId = issuedKey("\ubc14\uc774\ud2b8 \ud0a4");
+        insertBody(keyId, "evt-bytes", PROMPT, ANSWER, false, false);
+
+        mockMvc.perform(get(bodiesPath(keyId))
+                        .header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].responseBytes")
+                        .value(ANSWER.getBytes(StandardCharsets.UTF_8).length));
+    }
+
+    @Test
+    void aRecordMovedUnderAnotherKeyReadsAsUnreadableRatherThanEmpty() throws Exception {
+        // The binding stops the reading, not the listing: such a row does appear
+        // under the key it now names. What must not happen is that it claims to
+        // be readable with no text, which the contract defines as "nothing was
+        // recorded" -- tampering would then be indistinguishable from an empty
+        // exchange.
+        long mine = issuedKey("\uc774\ub3d9 \ub300\uc0c1 \ud0a4");
+        long theirs = issuedKey("\uc6d0\ub798 \ud0a4");
+        UUID moved = insertBody(theirs, "evt-moved", PROMPT, ANSWER, false, false);
+        jdbcTemplate.update("update llm_request_bodies set key_id = ? where public_id = ?",
+                mine, moved);
+
+        mockMvc.perform(get(bodiesPath(mine))
+                        .header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].readable").value(false))
+                .andExpect(jsonPath("$.content[0].requestPreview").doesNotExist());
+    }
+
+    @Test
     void oneKeysRecordCannotBeReachedThroughAnother() throws Exception {
         // The failure this guards is a detail query that finds the row by its
         // own id and then authorizes whatever key it belongs to. Both keys here
@@ -285,7 +340,12 @@ class LlmKeyBodyReadTest {
                 cipher.encrypt(keyPublicId, eventId, LlmBodyCipher.Field.REQUEST, requestJson),
                 cipher.encrypt(keyPublicId, eventId, LlmBodyCipher.Field.RESPONSE, response),
                 requestTruncated, responseTruncated,
-                requestJson.length(), response.length(),
+                // Bytes, not characters. The column and the contract both say
+                // bytes, and a Korean fixture makes the two differ by three
+                // times -- a mock that gets this wrong would let an assertion
+                // on the column pass while the server was wrong.
+                requestJson.getBytes(StandardCharsets.UTF_8).length,
+                response.getBytes(StandardCharsets.UTF_8).length,
                 java.sql.Timestamp.from(Instant.now()));
         return publicId;
     }
