@@ -1,8 +1,11 @@
 package kr.ac.pusan.pickle.llm;
 
+import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -10,13 +13,17 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyBodyDetailResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyBodySummaryResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyDetailResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeySummaryResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,12 +44,14 @@ public class LlmKeyController {
     private final LlmApiKeyQueryService queryService;
     private final LlmApiKeyService keyService;
     private final LlmKeyUsageService usageService;
+    private final LlmKeyBodyService bodyService;
 
     public LlmKeyController(LlmApiKeyQueryService queryService, LlmApiKeyService keyService,
-            LlmKeyUsageService usageService) {
+            LlmKeyUsageService usageService, LlmKeyBodyService bodyService) {
         this.queryService = queryService;
         this.keyService = keyService;
         this.usageService = usageService;
+        this.bodyService = bodyService;
     }
 
     @GetMapping
@@ -77,6 +86,46 @@ public class LlmKeyController {
             @Parameter(description = "오늘을 포함해 거슬러 올라갈 일수")
             @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days) {
         return usageService.trend(principal, keyId, days);
+    }
+
+    @GetMapping("/{keyId}/bodies")
+    @Operation(summary = "기록된 본문 목록",
+            description = "본문 기록을 켠 동안 이 키로 오간 프롬프트와 응답의 목록입니다. "
+                    + "각 줄에는 앞부분만 담기고, 전문은 개별 조회로 봅니다. "
+                    + "**이 키에 접근 권한이 있는 사람은 모두 읽을 수 있습니다** — 게이트웨이는 "
+                    + "키를 인증할 뿐 보낸 사람이 누구인지 알지 못하므로 열람 단위가 사람이 "
+                    + "아니라 키입니다. 기록은 30일 동안 보관하고 지난 것부터 지웁니다. "
+                    + "본문 기록을 끈 뒤에도 이미 기록된 것은 보관 기간까지 그대로 보입니다.")
+    public ResponseEntity<PageResponse<LlmKeyBodySummaryResponse>> listLlmKeyBodies(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @Parameter(description = "한 번에 가져올 개수. 한 건이 최대 320 KiB라 통상 목록보다 "
+                    + "상한이 낮습니다.")
+            @RequestParam(defaultValue = "20") @Min(1) @Max(50) int size,
+            HttpServletRequest httpRequest) {
+        // no-store on both: the rows carry what somebody typed, and a shared
+        // or proxy cache is not a place for it.
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(bodyService.list(principal, keyId, page, size, clientIp(httpRequest)));
+    }
+
+    @GetMapping("/{keyId}/bodies/{bodyId}")
+    @RequireReauth
+    @Operation(summary = "기록된 본문 상세",
+            description = "기록 한 건의 전문입니다. `request`는 보통 보낸 messages 배열 "
+                    + "그대로이고, 길이 제한에 걸린 경우에는 앞부분을 담은 문자열입니다. "
+                    + "저장된 본문을 그대로 돌려주므로 **재인증이 필요합니다** "
+                    + "(X-Reauth-Token). 목록 조회에는 필요하지 않습니다.")
+    public ResponseEntity<LlmKeyBodyDetailResponse> getLlmKeyBody(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId,
+            @PathVariable UUID bodyId,
+            HttpServletRequest httpRequest) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(bodyService.get(principal, keyId, bodyId, clientIp(httpRequest)));
     }
 
     @PostMapping("/{keyId}/token")

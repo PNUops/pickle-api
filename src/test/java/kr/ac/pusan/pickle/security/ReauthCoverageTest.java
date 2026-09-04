@@ -40,6 +40,13 @@ class ReauthCoverageTest {
      * The operator-approved sudo-mode surface: destructive VM operations, VM
      * credential reveal/rotation, every SSH-key write plus the private-key
      * download, and workspace membership changes.
+     *
+     * <p>The one read in this set that is not a credential is a captured
+     * prompt. It belongs here for the same reason as the VM password: the
+     * response is stored text handed back in full, and unlike a password it
+     * cannot be rotated after it leaks. Its list endpoint is deliberately
+     * absent — that one is how people find a record, and training a step-up
+     * prompt into ordinary browsing is its own hazard.
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
             "POST /admin/relays/{relayId}/token",
@@ -62,6 +69,7 @@ class ReauthCoverageTest {
             // Minting or replacing a key's secret hands somebody a working
             // credential, and revoking takes one away; both step up the way
             // reading a VM password does.
+            "GET /llm-keys/{keyId}/bodies/{bodyId}",
             "POST /llm-keys/{keyId}/token",
             "POST /llm-keys/{keyId}/revoke",
             "DELETE /vms/{vmId}",

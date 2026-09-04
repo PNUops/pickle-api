@@ -83,6 +83,15 @@ public class AuditService {
     public static final String LLM_KEY_ISSUE = "llm_key.issue";
     public static final String LLM_KEY_REVOKE = "llm_key.revoke";
     public static final String LLM_KEY_UPDATE = "llm_key.update";
+    /**
+     * Someone opened a stored prompt or answer in full. Audited because the
+     * readers are a key's whole access list and the text is whatever a person
+     * typed: "who read what, and when" is the only account anyone can give
+     * afterwards. The list call is audited separately — it carries previews,
+     * so it is a partial read rather than none.
+     */
+    public static final String LLM_KEY_BODY_READ = "llm_key.body_read";
+    public static final String LLM_KEY_BODY_LIST = "llm_key.body_list";
     public static final String LLM_KEY_LIMITS_UPDATE = "llm_key.limits_update";
     public static final String LLM_KEY_SUSPEND = "llm_key.suspend";
     public static final String LLM_KEY_RESUME = "llm_key.resume";
