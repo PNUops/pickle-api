@@ -13,6 +13,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.common.openapi.OpenApiConfig;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -149,7 +150,11 @@ class PermissionMatrixTest {
         Map<String, Op> matrix = loadMatrix();
         Set<String> runtime = runtimeOps().keySet();
 
-        assertThat(matrix).as("permission-matrix.yaml op count (contract v0.57.0)").hasSize(195);
+        // The version in this label is read from the constant rather than typed:
+        // it had said v0.57.0 for four contract bumps, which is how a label
+        // stops describing what it labels.
+        assertThat(matrix).as("permission-matrix.yaml op count (contract v%s)",
+                OpenApiConfig.CONTRACT_VERSION).hasSize(196);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());

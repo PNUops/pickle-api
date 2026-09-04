@@ -101,6 +101,19 @@ public class OpenRouterClient {
     }
 
     /**
+     * One row of the vendor's public model catalogue.
+     *
+     * <p>Prices are per token as the vendor states them, kept as {@link
+     * BigDecimal} rather than scaled here: the difference between the cheapest
+     * and dearest model is four orders of magnitude, and the reason an approver
+     * is shown this list at all is to see that difference.
+     */
+    public record VendorModel(String id, String name, @Nullable String description,
+            @Nullable Integer contextLength, @Nullable BigDecimal promptPrice,
+            @Nullable BigDecimal completionPrice) {
+    }
+
+    /**
      * {@code POST /keys} under one account's management credential. The name
      * is the pickle key's public id, which is what makes the OpenRouter
      * console row traceable back to the console. The expiry mirrors the
@@ -247,6 +260,83 @@ public class OpenRouterClient {
         }
         return new Credits(data.path("total_credits").decimalValue(),
                 data.path("total_usage").decimalValue());
+    }
+
+    /**
+     * {@code GET /models}, the vendor's public catalogue.
+     *
+     * <p>The only call here that carries no credential, and deliberately so.
+     * This list is the same for everybody, so borrowing an account's management
+     * secret would tie a global catalogue to one tenant's credential health:
+     * that account lapsing would empty the list for every institution. The
+     * vendor serves it unauthenticated with {@code max-age=300}.
+     *
+     * <p>A row with no usable id is skipped rather than failing the fetch — one
+     * malformed entry in four hundred should cost that entry, not the refresh.
+     * An empty or unparseable document is a different matter and throws, because
+     * "the vendor returned nothing" must not be storable as "the vendor has no
+     * models".
+     */
+    public List<VendorModel> catalogue() {
+        JsonNode node = exchangeUnauthenticated(HttpMethod.GET, "/models", 200);
+        JsonNode data = node.path("data");
+        if (!data.isArray() || data.isEmpty()) {
+            throw new OpenRouterException(0, "model catalogue answered without any models");
+        }
+        List<VendorModel> models = new ArrayList<>(data.size());
+        for (JsonNode entry : data) {
+            String id = text(entry, "id");
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            String name = text(entry, "name");
+            JsonNode pricing = entry.path("pricing");
+            models.add(new VendorModel(id.trim(), name == null ? id.trim() : name,
+                    text(entry, "description"),
+                    entry.path("context_length").isNumber()
+                            ? entry.path("context_length").asInt() : null,
+                    price(pricing, "prompt"), price(pricing, "completion")));
+        }
+        if (models.isEmpty()) {
+            throw new OpenRouterException(0, "model catalogue answered without any usable models");
+        }
+        return List.copyOf(models);
+    }
+
+    /**
+     * Prices arrive as decimal strings, not numbers, and a missing or
+     * unparseable one reads as unknown rather than as free. Zero is a real
+     * value the vendor uses for its free tier, so it must survive.
+     */
+    private static @Nullable BigDecimal price(JsonNode pricing, String field) {
+        JsonNode value = pricing.path(field);
+        String raw = value.isString() ? value.asString() : null;
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private JsonNode exchangeUnauthenticated(HttpMethod method, String path, int... acceptable) {
+        try {
+            return restClient.method(method).uri(path).accept(MediaType.APPLICATION_JSON)
+                    .exchange((req, response) -> {
+                        String responseBody = readBody(response.getBody());
+                        int status = response.getStatusCode().value();
+                        for (int ok : acceptable) {
+                            if (status == ok) {
+                                return tree(responseBody);
+                            }
+                        }
+                        throw new OpenRouterException(status, errorText(status));
+                    });
+        } catch (ResourceAccessException e) {
+            throw new OpenRouterException(0, "transport failure");
+        }
     }
 
     private JsonNode exchange(String managementSecret, HttpMethod method, String path,
