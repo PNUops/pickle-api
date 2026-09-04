@@ -5,7 +5,6 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import org.jspecify.annotations.Nullable;
 
@@ -33,10 +32,6 @@ public record CreateLlmKeyRequestSpec(
         @DecimalMin(value = "0.01", message = "금액 한도는 0보다 커야 합니다.")
         @DecimalMax(value = "100000.00", message = "금액 한도가 너무 큽니다.")
         @Nullable BigDecimal reqCreditLimit,
-
-        @Schema(description = "이 Key를 어디에 쓸지. 기본 한도로 충분하면 비워 두어도 됩니다.")
-        @Size(max = 2000, message = "사용 계획은 2000자 이하여야 합니다.")
-        @Nullable String usagePlan,
 
         @Schema(description = "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다.")
         @Min(value = 1, message = "분당 요청 수는 1 이상이어야 합니다.")

@@ -29,10 +29,15 @@ alter table llm_key_request_details
         check (req_use_campus or req_use_commercial),
     -- 유료를 쓰지 않겠다면서 금액을 적는 것은 앞뒤가 맞지 않는다.
     add constraint llm_key_request_details_req_credit_axis_check
-        check (req_credit_limit is null or req_use_commercial);
+        check (req_credit_limit is null or req_use_commercial),
+    -- 이 종류만 용도를 따로 물었는데, 신청서 공통의 사용 목적이 같은 질문이다.
+    -- 두 칸이 연달아 같은 것을 물으면 신청자는 어느 쪽에 무엇을 쓸지 알 수 없고,
+    -- 검토하는 쪽은 두 글을 다 읽고 나서야 같은 말인 것을 안다. 발급되는 키의
+    -- 용도는 이제 requests.purpose에서 온다.
+    drop column req_purpose;
 
 comment on column llm_key_request_details.req_use_campus is
-    '신청자가 교내 자체 서빙 모델을 쓰겠다고 했는지.';
+    '신청자가 자체 서빙 모델을 쓰겠다고 했는지.';
 comment on column llm_key_request_details.req_use_commercial is
     '신청자가 유료(상용) 모델을 쓰겠다고 했는지. 금액은 req_credit_limit이 든다.';
 comment on column llm_key_request_details.req_credit_limit is

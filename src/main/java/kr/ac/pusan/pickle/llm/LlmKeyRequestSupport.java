@@ -7,7 +7,6 @@ import java.util.Map;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
@@ -96,7 +95,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     public void saveDetail(Request request, CreateRequestRequest form) {
         CreateLlmKeyRequestSpec spec = form.llmKey();
         detailRepository.save(new LlmKeyRequestDetail(request.getId(),
-                Texts.blankToNull(spec.usagePlan()), spec.reqRpm(), spec.reqTpm(),
+                spec.reqRpm(), spec.reqTpm(),
                 spec.reqDailyTokens(), useCampus(spec), useCommercial(spec),
                 spec.reqCreditLimit()));
     }
@@ -190,7 +189,9 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // follows the same generation-before-document-write discipline.
         LlmApiKey key = new LlmApiKey(request.getWorkspaceId(),
                 request.getOrgId(), request.getId(), request.getDisplayName(),
-                detail.getReqPurpose(),
+                // 발급되는 키의 용도는 신청서의 사용 목적이다. 종류마다 용도를 따로
+                // 묻던 칸을 없앴다 — 같은 질문을 연달아 두 번 하고 있었다.
+                request.getPurpose(),
                 form.grantedEndDate() == null ? null
                         : form.grantedEndDate().plusDays(1).atStartOfDay(
                                 java.time.ZoneId.of("Asia/Seoul")).toInstant(),

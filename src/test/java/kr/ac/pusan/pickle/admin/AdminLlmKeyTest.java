@@ -370,7 +370,7 @@ class AdminLlmKeyTest {
         create.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         create.put("displayName", "vertical-flow-key");
         // 축을 비우면 자체 서빙 모델만 쓰는 보통의 신청이다.
-        create.put("llmKey", Map.of("usagePlan", "통합 검증", "reqRpm", 30,
+        create.put("llmKey", Map.of("reqRpm", 30,
                 "reqTpm", 3000, "reqDailyTokens", 30000));
         String created = postJson("/api/v1/requests", requesterToken, create)
                 .andExpect(status().isCreated())

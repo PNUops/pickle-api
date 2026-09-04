@@ -17,9 +17,6 @@ import org.jspecify.annotations.Nullable;
  * decision, not an omission.
  */
 public record LlmKeyRequestSpecResponse(
-        @Schema(description = "사용 계획")
-        @Nullable String usagePlan,
-
         @Schema(description = "희망 분당 요청 수")
         @Nullable Integer reqRpm,
 
@@ -63,7 +60,7 @@ public record LlmKeyRequestSpecResponse(
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
             List<String> grantedCreditAllowedModels) {
-        return new LlmKeyRequestSpecResponse(detail.getReqPurpose(), detail.getReqRpm(),
+        return new LlmKeyRequestSpecResponse(detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.isReqUseCampus(),
                 detail.isReqUseCommercial(), detail.getReqCreditLimit(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),

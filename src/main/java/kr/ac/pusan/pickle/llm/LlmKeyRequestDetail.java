@@ -28,9 +28,6 @@ public class LlmKeyRequestDetail {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "req_purpose")
-    private @Nullable String reqPurpose;
-
     @Column(name = "req_rpm")
     private @Nullable Integer reqRpm;
 
@@ -88,11 +85,10 @@ public class LlmKeyRequestDetail {
     protected LlmKeyRequestDetail() {
     }
 
-    public LlmKeyRequestDetail(long requestId, @Nullable String reqPurpose, @Nullable Integer reqRpm,
+    public LlmKeyRequestDetail(long requestId, @Nullable Integer reqRpm,
             @Nullable Integer reqTpm, @Nullable Long reqDailyTokens, boolean reqUseCampus,
             boolean reqUseCommercial, @Nullable BigDecimal reqCreditLimit) {
         this.requestId = requestId;
-        this.reqPurpose = reqPurpose;
         this.reqRpm = reqRpm;
         this.reqTpm = reqTpm;
         this.reqDailyTokens = reqDailyTokens;
@@ -150,10 +146,6 @@ public class LlmKeyRequestDetail {
     /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
     public String getGrantedCreditAllowedModels() {
         return grantedCreditAllowedModels;
-    }
-
-    public @Nullable String getReqPurpose() {
-        return reqPurpose;
     }
 
     public @Nullable Integer getReqRpm() {
