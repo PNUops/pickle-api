@@ -250,8 +250,20 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
+| `PICKLE_LLM_BODY_WRITE_KEY_ID` | 기록된 프롬프트·응답 본문을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 **본문을 저장하지 않고 배치를 통째로 버립니다** | 없음 |
+| `PICKLE_LLM_BODY_READ_KEYS` | `keyId=base64-32-byte-key`를 쉼표로 나열한 본문 전용 복호화 keyring. write key도 반드시 포함 | 없음 |
 | `PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID` | DB에 저장할 account별 management credential을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 credential 쓰기는 거부 | 없음 |
 | `PICKLE_OPENROUTER_CREDENTIAL_READ_KEYS` | `keyId=base64-32-byte-key`를 쉼표로 나열한 전용 복호화 keyring. write key도 반드시 포함 | 없음 |
+
+본문 keyring은 VM 비밀번호를 여는 `PICKLE_CREDENTIALS_KEY`와 **별도의 키**입니다. 기존 키는
+이미 여러 데이터셋을 열고 회전 경로가 없어, 거기에 본문을 얹으면 되돌릴 수 없게 폭발 반경이
+넓어집니다. 비어 있어도 기동에 실패하지 않는 것은 의도입니다 — 본문 기록은 기본이 꺼진
+선택 기능이라 그 키 때문에 서비스 전체가 못 뜨면 잘못된 결합입니다. 대신 그 상태에서는
+적재가 `keyring unconfigured` 한 줄을 남기고 배치를 저장 없이 버리며, 읽기는 해당 기록을
+`readable: false`로 돌려줍니다. **로그를 보지 않으면 정상 동작과 구별되지 않으므로, 본문
+기록을 켜기 전에 이 두 변수가 실제로 설정돼 있는지 확인하십시오.** read key를 내릴 때는
+`llm_request_bodies.cipher_key_id`에 그 key id를 참조하는 행이 남아 있지 않은지 먼저
+확인합니다.
 
 OpenRouter management credential keyring에서 read key를 제거하려면 DB의 어떤 암호문 frame도
 그 key id를 참조하지 않는지 먼저 확인해야 합니다. 현재 자동 재암호화 잡은 없으므로 기존

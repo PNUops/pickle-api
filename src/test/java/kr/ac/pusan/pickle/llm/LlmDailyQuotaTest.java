@@ -83,6 +83,7 @@ class LlmDailyQuotaTest {
     void setUp() {
         ((MutableClock) clock).set(NOON_KST);
         jdbcTemplate.update("delete from llm_usage_events");
+        jdbcTemplate.update("delete from llm_request_bodies");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from llm_models");
         // The allowance counts only TOKEN-axis models' events, so the fixture

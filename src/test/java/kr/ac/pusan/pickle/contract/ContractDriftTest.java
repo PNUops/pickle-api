@@ -272,6 +272,8 @@ class ContractDriftTest {
             "GET /llm-keys",
             "GET /llm-keys/{keyId}",
             "GET /llm-keys/{keyId}/usage",
+            "GET /llm-keys/{keyId}/bodies",
+            "GET /llm-keys/{keyId}/bodies/{bodyId}",
             "PATCH /llm-keys/{keyId}",
             "POST /llm-keys/{keyId}/token",
             "POST /llm-keys/{keyId}/revoke",

@@ -64,6 +64,7 @@ class OpenRouterReconcilerTest {
                 + "('OPENROUTER_ORPHAN'::drift_finding_kind, 'OPENROUTER_STALE'::drift_finding_kind)");
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_credit_usage_snapshots");
+        jdbcTemplate.update("delete from llm_request_bodies");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from openrouter_credit_snapshots");
         jdbcTemplate.update("delete from openrouter_account_credentials");

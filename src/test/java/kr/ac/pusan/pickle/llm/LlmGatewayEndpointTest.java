@@ -35,7 +35,7 @@ import tools.jackson.databind.ObjectMapper;
  * carries {@code models} and {@code keys} together; a reported generation
  * above ours raises ours instead of being discarded); usage ingest (per-event
  * rejection never a 4xx, event-id dedup, unattributed events kept); and the
- * bodies channel's deliberate accept-and-discard.
+ * separation of the bodies channel from the usage table.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -68,6 +68,7 @@ class LlmGatewayEndpointTest {
         // The counter is a single shared row and the usage/key/model tables
         // are this suite's own; all start empty so each test sees exactly the
         // state it arranges. (audit_logs is append-only and stays.)
+        jdbcTemplate.update("delete from llm_request_bodies");
         jdbcTemplate.update("delete from llm_usage_events");
         jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from llm_models");
@@ -138,7 +139,7 @@ class LlmGatewayEndpointTest {
     void rateBucketsAreOnePerSubPath() throws Exception {
         syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
         usage(Map.of("events", List.of())).andExpect(status().isOk());
-        bodies(Map.of("records", List.of())).andExpect(status().isNoContent());
+        bodies(Map.of("records", List.of())).andExpect(status().isOk());
         List<String> scopes = jdbcTemplate.queryForList("""
                 select distinct scope from auth_rate_limits
                  where subject = 'gateway' and scope like 'llm_%'
@@ -578,10 +579,11 @@ class LlmGatewayEndpointTest {
     // ── bodies channel ──────────────────────────────────────────────────────
 
     @Test
-    void bodiesAreAcceptedAndDeliberatelyNotStored() throws Exception {
-        // 2xx keeps the gateway's bounded queue draining; storage is a later
-        // round gated on the privacy-policy decision, so acceptance leaves no
-        // row anywhere.
+    void capturedTextNeverLandsInTheUsageTable() throws Exception {
+        // The two channels stay separate at the destination as well as on the
+        // wire. This record names no key, so nothing stores it either way --
+        // what is pinned here is that it does not become a usage event.
+        // Storage itself lives in LlmBodyIngestTest.
         bodies(Map.of("records", List.of(Map.of(
                         "eventUuid", "evt-b1",
                         "requestedAt", "2026-08-10T20:03:57Z",
@@ -589,7 +591,8 @@ class LlmGatewayEndpointTest {
                         "response", "hi",
                         "requestTruncated", false,
                         "responseTruncated", false))))
-                .andExpect(status().isNoContent());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.skipped").value(1));
         Long usageRows = jdbcTemplate.queryForObject(
                 "select count(*) from llm_usage_events", Long.class);
         assertThat(usageRows).isZero();
