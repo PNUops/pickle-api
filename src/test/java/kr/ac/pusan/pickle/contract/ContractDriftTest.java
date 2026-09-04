@@ -132,6 +132,7 @@ class ContractDriftTest {
             "GET /admin/llm/status",
             "GET /admin/llm/metrics",
             "GET /admin/llm/usage",
+            "GET /admin/llm/openrouter-models",
             "GET /admin/llm/accounts",
             "POST /admin/llm/accounts",
             "GET /admin/llm/accounts/{accountId}",

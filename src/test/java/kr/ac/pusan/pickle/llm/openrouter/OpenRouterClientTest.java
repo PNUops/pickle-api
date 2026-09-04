@@ -243,4 +243,89 @@ class OpenRouterClientTest {
                 .filter(event -> event.getRequest().getUrl().startsWith("/keys/h1"))
                 .allMatch(event -> !event.getRequest().getUrl().contains("workspace_id"))).isTrue();
     }
+
+    /**
+     * The public catalogue: no bearer, three price meanings, and a refusal
+     * rather than a short list.
+     *
+     * <p>The negative case is the one that shipped as a defect. The vendor
+     * publishes {@code "-1"} on its router entries, meaning "priced by whatever
+     * this routes to". It parses as a number, so it reached the storage layer
+     * and failed a non-negative CHECK there — which made every refresh fail
+     * against a listing this complete, with nothing recording why.
+     */
+    @Test
+    void catalogueReadsThreePriceMeaningsAndSendsNoCredential() {
+        server.stubFor(get(urlPathEqualTo("/models"))
+                .withHeader("Authorization", notMatching(".*"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"total_count": 3, "data": [
+                                  {"id": "openai/gpt-4o-mini", "name": "Mini",
+                                   "context_length": 128000,
+                                   "pricing": {"prompt": "0.00000015", "completion": "0.0000006"}},
+                                  {"id": "vendor/free", "name": "Free",
+                                   "pricing": {"prompt": "0", "completion": "0"}},
+                                  {"id": "openrouter/auto", "name": "Auto",
+                                   "pricing": {"prompt": "-1", "completion": "-1"}}
+                                ]}""")));
+
+        List<OpenRouterClient.VendorModel> models = client.catalogue();
+
+        assertThat(models).extracting(OpenRouterClient.VendorModel::id)
+                .containsExactly("openai/gpt-4o-mini", "vendor/free", "openrouter/auto");
+        // A price, a real zero, and a sentinel that is not a price.
+        assertThat(models.get(0).completionPrice()).isEqualByComparingTo("0.0000006");
+        assertThat(models.get(1).completionPrice()).isEqualByComparingTo("0");
+        assertThat(models.get(2).completionPrice())
+                .describedAs("a negative sentinel is unknown, not a price")
+                .isNull();
+        assertThat(models.get(2).promptPrice()).isNull();
+    }
+
+    @Test
+    void catalogueRefusesAPartialPage() {
+        server.stubFor(get(urlPathEqualTo("/models"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"total_count": 400, "data": [
+                                  {"id": "openai/gpt-4o-mini", "name": "Mini",
+                                   "pricing": {"prompt": "0.1", "completion": "0.2"}}
+                                ]}""")));
+
+        // Storing page one would not merely be incomplete: the listing replace
+        // treats every absent model as delisted.
+        assertThatThrownBy(() -> client.catalogue())
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("partial page");
+    }
+
+    @Test
+    void catalogueRefusesAnAnswerWithNoModels() {
+        for (String body : List.of("{\"data\": []}", "{}", "not json at all")) {
+            server.stubFor(get(urlPathEqualTo("/models"))
+                    .willReturn(aResponse().withStatus(200)
+                            .withHeader("Content-Type", "application/json").withBody(body)));
+
+            assertThatThrownBy(() -> client.catalogue())
+                    .describedAs("body %s must not read as an empty catalogue", body)
+                    .isInstanceOf(OpenRouterException.class);
+        }
+    }
+
+    /** The vendor body never reaches the exception, here as everywhere else. */
+    @Test
+    void catalogueDoesNotPropagateTheVendorBody() {
+        server.stubFor(get(urlPathEqualTo("/models"))
+                .willReturn(aResponse().withStatus(403)
+                        .withBody("blocked: region KR, ticket 12345")));
+
+        assertThatThrownBy(() -> client.catalogue())
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("public request rejected with HTTP 403")
+                .hasMessageNotContaining("ticket")
+                .hasMessageNotContaining("management");
+    }
 }

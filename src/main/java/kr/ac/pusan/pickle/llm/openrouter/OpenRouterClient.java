@@ -101,6 +101,18 @@ public class OpenRouterClient {
     }
 
     /**
+     * One row of the vendor's public model catalogue.
+     *
+     * <p>Prices are per token as the vendor states them, kept as {@link
+     * BigDecimal} rather than scaled here: the difference between the cheapest
+     * and dearest model is four orders of magnitude, and the reason an approver
+     * is shown this list at all is to see that difference.
+     */
+    public record VendorModel(String id, String name, @Nullable Integer contextLength,
+            @Nullable BigDecimal promptPrice, @Nullable BigDecimal completionPrice) {
+    }
+
+    /**
      * {@code POST /keys} under one account's management credential. The name
      * is the pickle key's public id, which is what makes the OpenRouter
      * console row traceable back to the console. The expiry mirrors the
@@ -247,6 +259,104 @@ public class OpenRouterClient {
         }
         return new Credits(data.path("total_credits").decimalValue(),
                 data.path("total_usage").decimalValue());
+    }
+
+    /**
+     * {@code GET /models}, the vendor's public catalogue.
+     *
+     * <p>The only call here that carries no credential, and deliberately so.
+     * This list is the same for everybody, so borrowing an account's management
+     * secret would tie a global catalogue to one tenant's credential health:
+     * that account lapsing would empty the list for every institution. The
+     * vendor serves it unauthenticated with {@code max-age=300}.
+     *
+     * <p>A row with no usable id is skipped rather than failing the fetch — one
+     * malformed entry in four hundred should cost that entry, not the refresh.
+     * An empty or unparseable document is a different matter and throws, because
+     * "the vendor returned nothing" must not be storable as "the vendor has no
+     * models".
+     */
+    public List<VendorModel> catalogue() {
+        JsonNode node = exchangeUnauthenticated(HttpMethod.GET, "/models", 200);
+        JsonNode data = node.path("data");
+        if (!data.isArray() || data.isEmpty()) {
+            throw new OpenRouterException(0, "model catalogue answered without any models");
+        }
+        List<VendorModel> models = new ArrayList<>(data.size());
+        for (JsonNode entry : data) {
+            String id = text(entry, "id");
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            String name = text(entry, "name");
+            JsonNode pricing = entry.path("pricing");
+            models.add(new VendorModel(id.trim(), name == null ? id.trim() : name,
+                    entry.path("context_length").isNumber()
+                            ? entry.path("context_length").asInt() : null,
+                    price(pricing, "prompt"), price(pricing, "completion")));
+        }
+        if (models.isEmpty()) {
+            throw new OpenRouterException(0, "model catalogue answered without any usable models");
+        }
+        // The vendor states how many models it has. Today the whole set arrives
+        // in one response and `links.next` is null, but reading only page one
+        // would not merely store a short list: replaceListing treats anything
+        // absent as delisted, so a truncation switches those models off. This is
+        // the posture listKeys already takes toward a partial view.
+        JsonNode total = node.path("total_count");
+        if (total.isNumber() && total.asInt() != data.size()) {
+            throw new OpenRouterException(0, "model catalogue answered a partial page");
+        }
+        return List.copyOf(models);
+    }
+
+    /**
+     * Prices arrive as decimal strings, not numbers, and the field carries
+     * three meanings rather than two.
+     *
+     * <p>A number is a price and <b>zero is a real one</b> — the vendor's free
+     * tier — so it must survive. Missing or unparseable is unknown. And
+     * <b>negative is the vendor's sentinel for "priced by whatever model this
+     * routes to"</b>: the router entries ({@code openrouter/auto} and its
+     * siblings, five of 427 when this was written) all publish {@code "-1"}.
+     * That is not a price and must not be stored as one. It parses cleanly, so
+     * it reached the column's non-negative CHECK and would have failed every
+     * refresh against a listing this complete.
+     */
+    private static @Nullable BigDecimal price(JsonNode pricing, String field) {
+        JsonNode value = pricing.path(field);
+        String raw = value.isString() ? value.asString() : null;
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            BigDecimal parsed = new BigDecimal(raw.trim());
+            return parsed.signum() < 0 ? null : parsed;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private JsonNode exchangeUnauthenticated(HttpMethod method, String path, int... acceptable) {
+        try {
+            return restClient.method(method).uri(path).accept(MediaType.APPLICATION_JSON)
+                    .exchange((req, response) -> {
+                        String responseBody = readBody(response.getBody());
+                        int status = response.getStatusCode().value();
+                        for (int ok : acceptable) {
+                            if (status == ok) {
+                                return tree(responseBody);
+                            }
+                        }
+                        // Not errorText: that says "management request", and
+                        // this is the one call in the class that carries no
+                        // management credential.
+                        throw new OpenRouterException(status,
+                                "public request rejected with HTTP " + status);
+                    });
+        } catch (ResourceAccessException e) {
+            throw new OpenRouterException(0, "transport failure");
+        }
     }
 
     private JsonNode exchange(String managementSecret, HttpMethod method, String path,
