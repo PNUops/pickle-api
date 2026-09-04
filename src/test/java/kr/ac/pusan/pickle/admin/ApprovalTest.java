@@ -7,10 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
@@ -110,7 +112,7 @@ class ApprovalTest {
                 .filter(t -> t.getName().equals("ubuntu-24.04") && t.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
         flavor = flavorRepository.findAll().stream()
-                .filter(f -> f.getName().equals("basic"))
+                .filter(f -> f.getName().equals("highmem"))
                 .findFirst().orElseThrow();
     }
 
@@ -326,7 +328,7 @@ class ApprovalTest {
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.grantedSlug"))
                 .andExpect(jsonPath("$.errors[0].message").value(
-                        "이미 사용 중인 호스트명(슬러그)입니다. 다른 값을 입력하거나 비워서 자동 생성하세요."));
+                        "이미 쓰고 있는 이름입니다. 다른 이름을 적거나 비워서 자동으로 정하게 하세요."));
         mockMvc.perform(get("/api/v1/admin/requests/" + pub("requests", requestId))
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
@@ -701,6 +703,7 @@ class ApprovalTest {
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", pub("orgs", orgId));
         body.put("purpose", "승인 흐름 테스트");
+        body.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         // Every request carries a name. Callers whose subject is the name pass
         // their own; the rest take this one so the body is valid.
         body.put("displayName", displayName != null ? displayName : "승인 테스트 서버");

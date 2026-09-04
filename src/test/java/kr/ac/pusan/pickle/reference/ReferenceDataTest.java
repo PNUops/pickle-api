@@ -35,9 +35,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 /**
  * Reference data per contract: GET /orgs (ACTIVE only; hidden orgs filtered
- * for USER tokens, visible to manager tiers), the two request axes
- * GET /os-images (OS catalog) and GET /vm-flavors (spec presets), both
- * ACTIVE only, and GET /meta/request-options (settings-backed).
+ * for USER tokens, visible to manager tiers), the request form's axes
+ * GET /os-images (OS catalog), GET /vm-flavors (specs) and
+ * GET /request-periods (usage periods), all offerable-only, and
+ * GET /meta/request-options (settings-backed).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -82,7 +83,7 @@ class ReferenceDataTest {
     @Test
     void referenceEndpointsRequireAuthentication() throws Exception {
         for (String path : new String[] {"/api/v1/orgs", "/api/v1/os-images", "/api/v1/vm-flavors",
-                "/api/v1/meta/request-options"}) {
+                "/api/v1/request-periods", "/api/v1/meta/request-options"}) {
             mockMvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
@@ -158,14 +159,14 @@ class ReferenceDataTest {
     /**
      * The wizard's OS axis reads as a rule, not as the order an operator
      * happened to register rows in: distribution alphabetically, release
-     * ascending as a number. The rows below are inserted in an order that
-     * defeats both of the ways this can be got wrong — Rocky 10 lands before
-     * Rocky 9 (so id order would show 10 first) and the release strings sort
-     * the same way as text ('10' &lt; '9'), so only numeric release order puts 9
-     * ahead of 10. The older Ubuntu is registered last for the same reason.
+     * descending as a number so the newest sits at the top of its family. The
+     * rows below defeat both of the ways this can be got wrong — Rocky 10 is
+     * registered before Rocky 9 (so id order would show 10 first for the wrong
+     * reason) and the release strings sort the other way as text ('10' &lt;
+     * '9'), so only numeric release order puts 10 ahead of 9.
      */
     @Test
-    void osCatalogIsOrderedByFamilyThenReleaseAsNumbers() throws Exception {
+    void osCatalogIsOrderedByFamilyThenNewestReleaseFirst() throws Exception {
         Long nodeId = osImageRepository.findAll().getFirst().getNodeId();
         List<OsImage> added = osImageRepository.saveAll(List.of(
                 new OsImage("rocky-10", "Rocky Linux 10", "rocky", "10", "rocky",
@@ -181,31 +182,35 @@ class ReferenceDataTest {
                             .header("Authorization", "Bearer " + accessToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[*].name").value(org.hamcrest.Matchers.contains(
-                            "debian-13", "rocky-9", "rocky-10",
-                            "ubuntu-20.04", "ubuntu-24.04")));
+                            "debian-13", "rocky-10", "rocky-9",
+                            "ubuntu-24.04", "ubuntu-20.04")));
         } finally {
             osImageRepository.deleteAll(added);
         }
     }
 
     /**
-     * The spec axis has no family to group by, so it reads as a scale: the
-     * three preset numbers ascending. The two rows below are registered after
-     * the presets and must still bracket them.
+     * The spec axis carries no scale to sort by — the seeded rows are shapes
+     * (compute heavy, memory heavy), and no arithmetic says which of those
+     * comes first. So the order is the stated one, and the two rows below are
+     * registered last with display orders that must still bracket the seeded
+     * pair.
      */
     @Test
-    void flavorsAreOrderedBySizeNotByRegistration() throws Exception {
+    void flavorsAreOrderedByTheirStatedDisplayOrder() throws Exception {
         List<VmFlavor> added = vmFlavorRepository.saveAll(List.of(
-                new VmFlavor("ref-order-huge", "정렬 확인용 특대형", 8, 16384, 80,
-                        CatalogStatus.ACTIVE, "정렬 확인용"),
-                new VmFlavor("ref-order-tiny", "정렬 확인용 초소형", 1, 512, 5,
-                        CatalogStatus.ACTIVE, "정렬 확인용")));
+                new VmFlavor("ref-order-last", "정렬 확인용 마지막", 8, 16384, 80,
+                        CatalogStatus.ACTIVE, "정렬 확인용", 900),
+                new VmFlavor("ref-order-first", "정렬 확인용 처음", 1, 512, 5,
+                        CatalogStatus.ACTIVE, "정렬 확인용", -900)));
         try {
             mockMvc.perform(get("/api/v1/vm-flavors")
                             .header("Authorization", "Bearer " + accessToken))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$[*].name").value(org.hamcrest.Matchers.contains(
-                            "ref-order-tiny", "small", "basic", "large", "ref-order-huge")));
+                            "ref-order-first", "highcpu", "highmem", "ref-order-last")))
+                    .andExpect(jsonPath("$[1].displayOrder").value(1))
+                    .andExpect(jsonPath("$[2].displayOrder").value(2));
         } finally {
             vmFlavorRepository.deleteAll(added);
         }
@@ -213,34 +218,48 @@ class ReferenceDataTest {
 
     @Test
     void listsOnlyActiveFlavorsWithTheirSpecs() throws Exception {
-        // a retired preset must not surface in the wizard list
+        // a retired spec must not surface in the wizard list
         if (vmFlavorRepository.findByStatus(CatalogStatus.DISABLED).isEmpty()) {
-            vmFlavorRepository.save(new VmFlavor("ref-retired", "은퇴 프리셋", 8, 16384, 80,
-                    CatalogStatus.DISABLED, null));
+            vmFlavorRepository.save(new VmFlavor("ref-retired", "은퇴 사양", 8, 16384, 80,
+                    CatalogStatus.DISABLED, null, 800));
         }
 
         mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[?(@.name == 'ref-retired')]").isEmpty())
-                // V58 presets, ordered by id
-                .andExpect(jsonPath("$[0].name").value("small"))
-                .andExpect(jsonPath("$[0].displayName").value("소형"))
-                .andExpect(jsonPath("$[0].vcpu").value(1))
+                // the two seeded shapes, in the order the operator stated
+                .andExpect(jsonPath("$[0].name").value("highcpu"))
+                .andExpect(jsonPath("$[0].displayName").value("컴퓨팅 최적화"))
+                .andExpect(jsonPath("$[0].vcpu").value(2))
                 .andExpect(jsonPath("$[0].memoryMb").value(1024))
-                .andExpect(jsonPath("$[0].diskGb").value(10))
+                .andExpect(jsonPath("$[0].diskGb").value(32))
+                .andExpect(jsonPath("$[0].displayOrder").value(1))
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].notes").isNotEmpty())
-                .andExpect(jsonPath("$[1].name").value("basic"))
-                .andExpect(jsonPath("$[1].displayName").value("기본형"))
-                .andExpect(jsonPath("$[1].vcpu").value(2))
+                .andExpect(jsonPath("$[1].name").value("highmem"))
+                .andExpect(jsonPath("$[1].displayName").value("메모리 최적화"))
+                .andExpect(jsonPath("$[1].vcpu").value(1))
                 .andExpect(jsonPath("$[1].memoryMb").value(2048))
-                .andExpect(jsonPath("$[1].diskGb").value(20))
-                .andExpect(jsonPath("$[2].name").value("large"))
-                .andExpect(jsonPath("$[2].displayName").value("대형"))
-                .andExpect(jsonPath("$[2].vcpu").value(4))
-                .andExpect(jsonPath("$[2].memoryMb").value(8192))
-                .andExpect(jsonPath("$[2].diskGb").value(40));
+                .andExpect(jsonPath("$[1].diskGb").value(32))
+                .andExpect(jsonPath("$[1].displayOrder").value(2));
+    }
+
+    /**
+     * 신청 화면의 기간 축. 관리자가 등록한 순서대로 나오고, 모든 항목이 끝나는
+     * 날을 싣는다.
+     */
+    @Test
+    void listsOfferablePeriodsInTheirStatedOrder() throws Exception {
+        mockMvc.perform(get("/api/v1/request-periods")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$[*].displayName").value(org.hamcrest.Matchers.contains(
+                        "이번 학기", "이번 방학")))
+                .andExpect(jsonPath("$[0].endDate").isNotEmpty())
+                .andExpect(jsonPath("$[1].endDate").isNotEmpty())
+                .andExpect(jsonPath("$[0].id").isNotEmpty());
     }
 
     @Test

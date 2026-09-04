@@ -8,8 +8,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -76,7 +78,7 @@ class AdminInventoryTest {
                 returning id
                 """, Long.class, imageName, nodeId);
         flavorId = jdbcTemplate.queryForObject(
-                "select id from vm_flavors where name = 'basic'", Long.class);
+                "select id from vm_flavors where name = 'highmem'", Long.class);
     }
 
     @Test
@@ -112,8 +114,9 @@ class AdminInventoryTest {
     @Test
     void adminOsImageListFollowsTheWizardDisplayOrder() throws Exception {
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
-        // registered newest-release-first and retired, so id order and text
-        // order on the release string would both put Rocky 10 ahead of Rocky 9
+        // registered newest-release-first, so id order agrees with the display
+        // order here; the release strings sort the other way as text ('10' < '9'),
+        // so only numeric release order keeps Rocky 10 ahead of Rocky 9
         String rocky10 = insertImage(nodeId, "rocky", "10", "DISABLED");
         String rocky9 = insertImage(nodeId, "rocky", "9", "ACTIVE");
         String debian13 = insertImage(nodeId, "debian", "13", "ACTIVE");
@@ -125,7 +128,7 @@ class AdminInventoryTest {
         List<String> names = JsonPath.read(body, "$[*].name");
 
         // imageName is the setUp row, an ubuntu 24.04 — last of the four families
-        assertThat(names).containsSubsequence(debian13, rocky9, rocky10, imageName);
+        assertThat(names).containsSubsequence(debian13, rocky10, rocky9, imageName);
     }
 
     @Test
@@ -185,9 +188,11 @@ class AdminInventoryTest {
                                 {"type": "VM", "workspaceId": "%s", "orgId": "%s",
                                  "purpose": "은퇴 OS 이미지 거부 확인",
                                  "displayName": "은퇴 이미지 확인",
-                                 "vm": {"imageId": "%s", "flavorId": "%s", "reqVcpu": 2,
-                                        "reqMemoryMb": 2048, "reqDiskGb": 20}}
+                                 "reqEndDate": "%s",
+                                 "vm": {"imageId": "%s", "flavorId": "%s", "reqVcpu": 1,
+                                        "reqMemoryMb": 2048, "reqDiskGb": 32}}
                                 """.formatted(pub("workspaces", workspaceId), pub("orgs", orgId),
+                                LocalDate.now(ClockConfig.KST).plusMonths(4),
                                 pub("os_images", imageId), pub("vm_flavors", flavorId))))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("vm.imageId"));

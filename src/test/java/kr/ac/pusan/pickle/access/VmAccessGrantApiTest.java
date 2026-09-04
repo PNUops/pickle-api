@@ -12,11 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
@@ -130,7 +132,7 @@ class VmAccessGrantApiTest {
                         && candidate.getStatus() == CatalogStatus.ACTIVE)
                 .findFirst().orElseThrow();
         flavor = flavorRepository.findAll().stream()
-                .filter(candidate -> candidate.getName().equals("basic"))
+                .filter(candidate -> candidate.getName().equals("highmem"))
                 .findFirst().orElseThrow();
 
         // A fresh workspace per test: several tests remove people from it, and a
@@ -721,6 +723,7 @@ class VmAccessGrantApiTest {
         body.put("workspaceId", pub("workspaces", workspaceId));
         body.put("orgId", pub("orgs", orgId));
         body.put("purpose", "접근 권한 테스트용 신청");
+        body.put("reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString());
         body.put("displayName", "접근 권한 테스트 서버");
         body.put("vm", vm);
         String response = mockMvc.perform(post("/api/v1/requests")

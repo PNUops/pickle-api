@@ -241,6 +241,7 @@ public class DevDataSeeder implements ApplicationRunner {
         seedIpPool(nodeId);
         seedOsImage(nodeId);
         seedVmFlavors();
+        seedRequestPeriods();
         seedRelay();
         seedPlatformCertificate();
     }
@@ -301,7 +302,8 @@ public class DevDataSeeder implements ApplicationRunner {
      * operator sets against real hardware, and the admin console can create and edit
      * them, so production has a write path and needs no seed. Development and test do
      * not go through that console, and several test classes resolve a preset named
-     * {@code basic}, so an empty table there is a suite that cannot run.</p>
+     * {@code highmem} or {@code highcpu}, so an empty table there is a suite that
+     * cannot run.</p>
      */
     private void seedVmFlavors() {
         Integer flavors = jdbcTemplate.queryForObject("select count(*) from vm_flavors", Integer.class);
@@ -309,11 +311,33 @@ public class DevDataSeeder implements ApplicationRunner {
             return;
         }
         jdbcTemplate.update("insert into vm_flavors (name, display_name, vcpu, memory_mb,"
-                + " disk_gb, notes) values"
-                + " ('small', '소형', 1, 1024, 10, '봇, 크론 작업 등 초소형 서비스에 적합합니다.'),"
-                + " ('basic', '기본형', 2, 2048, 20, '대부분의 수업·동아리 프로젝트에 적합합니다.'),"
-                + " ('large', '대형', 4, 8192, 40, '대형 스펙은 신청 시 사용 사유를 반드시 적어 주세요.')");
-        log.info("Empty inventory: seeded the development spec presets");
+                + " disk_gb, display_order, notes) values"
+                + " ('highcpu', '컴퓨팅 최적화', 2, 1024, 32, 1,"
+                + " '연산을 많이 쓰는 작업에 맞습니다.'),"
+                + " ('highmem', '메모리 최적화', 1, 2048, 32, 2,"
+                + " '메모리를 많이 쓰는 작업에 맞습니다.')");
+        log.info("Empty inventory: seeded the development specs");
+    }
+
+    /**
+     * 개발과 테스트용 사용 기간 몇 줄.
+     *
+     * <p>운영에서는 마이그레이션도 이 시더도 기간을 넣지 않는다. 어떤 학기와 방학을
+     * 제공할지는 실제 달력을 보는 운영자의 정책이고 날짜가 절대값이라 학기마다 갱신해야
+     * 하며, 관리자 콘솔이 쓰기 경로를 갖는다. 개발과 테스트는 그 콘솔을 거치지 않으므로
+     * 빈 표는 신청 화면을 걸어 볼 수 없는 상태가 된다.</p>
+     */
+    private void seedRequestPeriods() {
+        Integer periods = jdbcTemplate.queryForObject(
+                "select count(*) from request_period_presets", Integer.class);
+        if (periods == null || periods > 0) {
+            return;
+        }
+        jdbcTemplate.update("insert into request_period_presets (name, display_name, end_date,"
+                + " display_order) values"
+                + " ('term', '이번 학기', current_date + interval '4 months', 1),"
+                + " ('vacation', '이번 방학', current_date + interval '2 months', 2)");
+        log.info("Empty inventory: seeded the development request periods");
     }
 
     private void seedRelay() {

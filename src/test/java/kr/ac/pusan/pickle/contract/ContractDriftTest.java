@@ -243,6 +243,10 @@ class ContractDriftTest {
             "GET /admin/vm-flavors",
             "POST /admin/vm-flavors",
             "PATCH /admin/vm-flavors/{flavorId}",
+            "GET /request-periods",
+            "GET /admin/request-periods",
+            "POST /admin/request-periods",
+            "PATCH /admin/request-periods/{periodId}",
             // Relay port forwarding + 교내 IP (contract v0.27.0).
             "GET /vms/{vmId}/port-forwardings",
             "POST /vms/{vmId}/port-forwardings",

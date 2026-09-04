@@ -7,7 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
@@ -28,10 +30,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Spec-preset catalog (contract v0.23.0), the request form's second axis: the
+ * Spec catalog (contract v0.23.0), the request form's second axis: the
  * sys-tier list (all statuses, unlike the ACTIVE-only public list), the
  * SYS_ADMIN-only create/edit with change-only auditing, and the public list's
- * ACTIVE-only id ordering the wizard renders.
+ * ACTIVE-only display ordering the wizard renders.
  */
 @SpringBootTest(properties = "jobrunr.background-job-server.enabled=false")
 @AutoConfigureMockMvc
@@ -66,8 +68,9 @@ class AdminVmFlavorTest {
         userToken = jwtService.createAccessToken(ensureUser("avf.user@pusan.ac.kr", UserRole.USER));
         flavorName = "avf-" + UUID.randomUUID().toString().substring(0, 8);
         flavorId = jdbcTemplate.queryForObject("""
-                insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, status)
-                values (?, '프리셋 편집 테스트', 2, 2048, 20, 'ACTIVE'::catalog_status)
+                insert into vm_flavors (name, display_name, vcpu, memory_mb, disk_gb, status,
+                                        display_order)
+                values (?, '사양 편집 테스트', 2, 2048, 20, 'ACTIVE'::catalog_status, 5)
                 returning id
                 """, Long.class, flavorName);
     }
@@ -84,7 +87,8 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath(byId(flavorId) + ".name").value(flavorName))
                 .andExpect(jsonPath(byId(flavorId) + ".vcpu").value(2))
                 .andExpect(jsonPath(byId(flavorId) + ".memoryMb").value(2048))
-                .andExpect(jsonPath(byId(flavorId) + ".diskGb").value(20));
+                .andExpect(jsonPath(byId(flavorId) + ".diskGb").value(20))
+                .andExpect(jsonPath(byId(flavorId) + ".displayOrder").value(5));
 
         mockMvc.perform(get("/api/v1/vm-flavors")
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -98,17 +102,25 @@ class AdminVmFlavorTest {
     }
 
     @Test
-    void publicFlavorListIsActiveOnlyAndOrderedBySize() throws Exception {
-        // every authenticated role reads the wizard list, smallest preset first.
-        // The row this class creates carries basic's exact spec, so it lands on
-        // the id tie-break right behind basic rather than at the end of the list.
+    void publicFlavorListIsActiveOnlyAndFollowsDisplayOrder() throws Exception {
+        // every authenticated role reads the wizard list, in the order the
+        // operator stated. The row this class creates carries display order 5,
+        // so it sits behind the two seeded shapes however big its numbers are.
+        assertThat(publicFlavorNames())
+                .containsSubsequence("highcpu", "highmem", flavorName);
         mockMvc.perform(get("/api/v1/vm-flavors").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].name").value("small"))
-                .andExpect(jsonPath("$[1].name").value("basic"))
-                .andExpect(jsonPath("$[2].name").value(flavorName))
-                .andExpect(jsonPath("$[3].name").value("large"))
                 .andExpect(jsonPath(byId(flavorId) + ".status").value("ACTIVE"));
+
+        // moving it ahead of them is one field, and the list follows immediately
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayOrder\": -1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayOrder").value(-1));
+        assertThat(publicFlavorNames())
+                .containsSubsequence(flavorName, "highcpu", "highmem");
 
         jdbcTemplate.update("update vm_flavors set status = 'DISABLED'::catalog_status where id = ?",
                 flavorId);
@@ -122,7 +134,7 @@ class AdminVmFlavorTest {
         String name = "avf-new-" + UUID.randomUUID().toString().substring(0, 8);
         String body = """
                 {"name": "%s", "displayName": "초대형", "vcpu": 8, "memoryMb": 16384,
-                 "diskGb": 80, "notes": "GPU 없는 대형 배치 작업용입니다."}
+                 "diskGb": 80, "notes": "GPU 없는 대형 배치 작업용입니다.", "displayOrder": 7}
                 """.formatted(name);
 
         mockMvc.perform(post("/api/v1/admin/vm-flavors")
@@ -141,6 +153,7 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath("$.vcpu").value(8))
                 .andExpect(jsonPath("$.memoryMb").value(16384))
                 .andExpect(jsonPath("$.diskGb").value(80))
+                .andExpect(jsonPath("$.displayOrder").value(7))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.notes").isNotEmpty())
                 .andExpect(jsonPath("$.id").isNotEmpty());
@@ -168,6 +181,18 @@ class AdminVmFlavorTest {
                                 """))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("name"));
+
+        // 순서를 적지 않은 사양은 0번 자리에서 시작한다 — 관리자가 나중에 옮긴다
+        String unordered = "avf-unordered-" + UUID.randomUUID().toString().substring(0, 8);
+        mockMvc.perform(post("/api/v1/admin/vm-flavors")
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "%s", "displayName": "순서 미지정", "vcpu": 1,
+                                 "memoryMb": 1024, "diskGb": 10}
+                                """.formatted(unordered)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.displayOrder").value(0));
     }
 
     @Test
@@ -242,6 +267,21 @@ class AdminVmFlavorTest {
                 .andExpect(jsonPath("$.notes").value("대형 배치 작업용입니다."));
         assertThat(auditCount("flavor.update", flavorId)).isEqualTo(2);
 
+        // 표시 순서도 같은 규칙을 따른다: 바뀌면 감사 기록, 같은 값이면 무시
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayOrder\": 3}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayOrder").value(3));
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(3);
+        mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
+                        .header("Authorization", "Bearer " + sysAdminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayOrder\": 3}"))
+                .andExpect(status().isOk());
+        assertThat(auditCount("flavor.update", flavorId)).isEqualTo(3);
+
         // an empty body is a no-op request, not an edit → 422
         mockMvc.perform(patch("/api/v1/admin/vm-flavors/{id}", pub("vm_flavors", flavorId))
                         .header("Authorization", "Bearer " + sysAdminToken)
@@ -259,6 +299,15 @@ class AdminVmFlavorTest {
     }
 
     // ── fixtures ───────────────────────────────────────────────────────────
+
+    /** The wizard list's names, in the order it renders them. */
+    private List<String> publicFlavorNames() throws Exception {
+        String body = mockMvc.perform(get("/api/v1/vm-flavors")
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$[*].name");
+    }
 
     private String byId(long id) {
         return "$[?(@.id == '%s')]".formatted(pub("vm_flavors", id));

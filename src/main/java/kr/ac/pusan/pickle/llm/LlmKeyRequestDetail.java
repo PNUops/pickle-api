@@ -28,9 +28,6 @@ public class LlmKeyRequestDetail {
     @Column(name = "request_id")
     private Long requestId;
 
-    @Column(name = "req_purpose")
-    private @Nullable String reqPurpose;
-
     @Column(name = "req_rpm")
     private @Nullable Integer reqRpm;
 
@@ -39,6 +36,19 @@ public class LlmKeyRequestDetail {
 
     @Column(name = "req_daily_tokens")
     private @Nullable Long reqDailyTokens;
+
+    /**
+     * 신청자가 고른 축. 한도가 비어 있는 것으로는 알 수 없다 -- 빈 한도는 서비스
+     * 기본값이라는 뜻이지 그 축을 안 쓰겠다는 뜻이 아니다.
+     */
+    @Column(name = "req_use_campus", nullable = false)
+    private boolean reqUseCampus = true;
+
+    @Column(name = "req_use_commercial", nullable = false)
+    private boolean reqUseCommercial;
+
+    @Column(name = "req_credit_limit")
+    private @Nullable BigDecimal reqCreditLimit;
 
     @Column(name = "granted_rpm")
     private @Nullable Integer grantedRpm;
@@ -75,13 +85,28 @@ public class LlmKeyRequestDetail {
     protected LlmKeyRequestDetail() {
     }
 
-    public LlmKeyRequestDetail(long requestId, @Nullable String reqPurpose, @Nullable Integer reqRpm,
-            @Nullable Integer reqTpm, @Nullable Long reqDailyTokens) {
+    public LlmKeyRequestDetail(long requestId, @Nullable Integer reqRpm,
+            @Nullable Integer reqTpm, @Nullable Long reqDailyTokens, boolean reqUseCampus,
+            boolean reqUseCommercial, @Nullable BigDecimal reqCreditLimit) {
         this.requestId = requestId;
-        this.reqPurpose = reqPurpose;
         this.reqRpm = reqRpm;
         this.reqTpm = reqTpm;
         this.reqDailyTokens = reqDailyTokens;
+        this.reqUseCampus = reqUseCampus;
+        this.reqUseCommercial = reqUseCommercial;
+        this.reqCreditLimit = reqCreditLimit;
+    }
+
+    public boolean isReqUseCampus() {
+        return reqUseCampus;
+    }
+
+    public boolean isReqUseCommercial() {
+        return reqUseCommercial;
+    }
+
+    public @Nullable BigDecimal getReqCreditLimit() {
+        return reqCreditLimit;
     }
 
     /**
@@ -121,10 +146,6 @@ public class LlmKeyRequestDetail {
     /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
     public String getGrantedCreditAllowedModels() {
         return grantedCreditAllowedModels;
-    }
-
-    public @Nullable String getReqPurpose() {
-        return reqPurpose;
     }
 
     public @Nullable Integer getReqRpm() {

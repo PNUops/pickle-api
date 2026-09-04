@@ -135,7 +135,8 @@ public class AdminInventoryService {
         try {
             flavor = vmFlavorRepository.saveAndFlush(new VmFlavor(request.name(),
                     request.displayName(), request.vcpu(), request.memoryMb(), request.diskGb(),
-                    CatalogStatus.ACTIVE, Texts.blankToNull(request.notes())));
+                    CatalogStatus.ACTIVE, Texts.blankToNull(request.notes()),
+                    request.displayOrder() == null ? 0 : request.displayOrder()));
         } catch (DataIntegrityViolationException raced) {
             throw nameTaken();
         }
@@ -156,7 +157,8 @@ public class AdminInventoryService {
         VmFlavor flavor = vmFlavorRepository.findByPublicId(flavorId)
                 .orElseThrow(() -> notFound("해당 사양 프리셋이 존재하지 않습니다."));
         if (request.displayName() == null && request.vcpu() == null && request.memoryMb() == null
-                && request.diskGb() == null && request.notes() == null && request.status() == null) {
+                && request.diskGb() == null && request.notes() == null && request.status() == null
+                && request.displayOrder() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("displayName",
                     "변경할 필드를 최소 1개 지정해야 합니다.")));
         }
@@ -184,6 +186,10 @@ public class AdminInventoryService {
         if (request.notes() != null && !Objects.equals(notes, flavor.getNotes())) {
             changes.put("notes", "updated");
             flavor.setNotes(notes);
+        }
+        if (request.displayOrder() != null && request.displayOrder() != flavor.getDisplayOrder()) {
+            changes.put("displayOrder", flavor.getDisplayOrder() + " -> " + request.displayOrder());
+            flavor.setDisplayOrder(request.displayOrder());
         }
         if (request.status() != null && request.status() != flavor.getStatus()) {
             changes.put("status", flavor.getStatus().name() + " -> " + request.status().name());

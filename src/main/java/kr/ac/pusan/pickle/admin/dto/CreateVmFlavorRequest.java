@@ -35,5 +35,7 @@ public record CreateVmFlavorRequest(
         Integer diskGb,
 
         @Size(max = 2000, message = "비고는 2000자 이하여야 합니다.")
-        @Nullable String notes) {
+        @Nullable String notes,
+
+        @Nullable Integer displayOrder) {
 }

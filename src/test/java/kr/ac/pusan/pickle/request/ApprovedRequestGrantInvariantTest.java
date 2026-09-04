@@ -76,8 +76,7 @@ class ApprovedRequestGrantInvariantTest {
         Long committed = transactionTemplate.execute(status -> {
             long requestId = submitRequest("LLM_API_KEY");
             jdbcTemplate.update(
-                    "insert into llm_key_request_details (request_id, req_purpose) values (?, ?)",
-                    requestId, "수업 과제");
+                    "insert into llm_key_request_details (request_id) values (?)", requestId);
             approve(requestId);
             return requestId;
         });

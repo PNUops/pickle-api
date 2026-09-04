@@ -44,19 +44,6 @@ public class VmRequestDetail {
     @Column(name = "desired_slug")
     private String desiredSlug;
 
-    /**
-     * Historical only: the request form stopped carrying a domain axis in
-     * contract v0.29.0 (domains are attached to the VM afterwards), so new
-     * rows store null. The columns stay because past requests recorded a
-     * wish here and the detail view still shows it when present.
-     */
-    @Column(name = "desired_subdomain")
-    private String desiredSubdomain;
-
-    /** Historical only — see {@link #desiredSubdomain}. */
-    @Column(name = "root_domain")
-    private String rootDomain;
-
     @Column(name = "granted_vcpu")
     private Integer grantedVcpu;
 
@@ -127,14 +114,6 @@ public class VmRequestDetail {
 
     public String getDesiredSlug() {
         return desiredSlug;
-    }
-
-    public String getDesiredSubdomain() {
-        return desiredSubdomain;
-    }
-
-    public String getRootDomain() {
-        return rootDomain;
     }
 
     public Integer getGrantedVcpu() {

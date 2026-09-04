@@ -11,10 +11,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.github.tomakehurst.wiremock.client.WireMock;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
@@ -163,7 +165,7 @@ class ProvisioningEndToEndTest {
         JsonNode image = findBy(images, "name", "ubuntu-24.04");
         long imageId = SeedFixtures.internalId(jdbcTemplate, "os_images", UUID.fromString(image.get("id").asString()));
         JsonNode flavors = getJson("/api/v1/vm-flavors", userToken);
-        JsonNode flavor = findBy(flavors, "name", "basic");
+        JsonNode flavor = findBy(flavors, "name", "highmem");
         long flavorId = SeedFixtures.internalId(jdbcTemplate, "vm_flavors", UUID.fromString(flavor.get("id").asString()));
 
         // 5. submit the vm-request pre-filled with the chosen preset's specs
@@ -173,6 +175,7 @@ class ProvisioningEndToEndTest {
                 "orgId", pub("orgs", orgId),
                 "purpose", "종단 검증용 서버",
                 "displayName", "종단 검증 서버",
+                "reqEndDate", LocalDate.now(ClockConfig.KST).plusMonths(4).toString(),
                 "vm", Map.of(
                         "imageId", pub("os_images", imageId),
                         "flavorId", pub("vm_flavors", flavorId),

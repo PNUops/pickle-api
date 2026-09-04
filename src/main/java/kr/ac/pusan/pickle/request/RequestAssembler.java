@@ -21,6 +21,9 @@ import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
+import org.jspecify.annotations.Nullable;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
+import kr.ac.pusan.pickle.request.period.RequestPeriodPresetRepository;
 import kr.ac.pusan.pickle.request.dto.RequestReviewResponse;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetailRepository;
@@ -49,6 +52,7 @@ public class RequestAssembler {
     private final OsImageRepository osImageRepository;
     private final VmFlavorRepository vmFlavorRepository;
     private final NodeRepository nodeRepository;
+    private final RequestPeriodPresetRepository periodPresetRepository;
     private final ObjectMapper objectMapper;
 
     public RequestAssembler(RequestReviewRepository reviewRepository,
@@ -57,7 +61,8 @@ public class RequestAssembler {
             WorkspaceRepository workspaceRepository,
             OrgRepository orgRepository, UserRepository userRepository,
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
-            NodeRepository nodeRepository, ObjectMapper objectMapper) {
+            NodeRepository nodeRepository, RequestPeriodPresetRepository periodPresetRepository,
+            ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
@@ -68,6 +73,17 @@ public class RequestAssembler {
         this.osImageRepository = osImageRepository;
         this.vmFlavorRepository = vmFlavorRepository;
         this.nodeRepository = nodeRepository;
+        this.periodPresetRepository = periodPresetRepository;
+    }
+
+    /** 고른 기간의 이름. 직접 적었거나 항목이 사라졌으면 null이다. */
+    private static @Nullable String periodName(Map<Long, RequestPeriodPreset> periods,
+            @Nullable Long presetId) {
+        if (presetId == null) {
+            return null;
+        }
+        RequestPeriodPreset preset = periods.get(presetId);
+        return preset == null ? null : preset.getDisplayName();
     }
 
     public RequestDetailResponse toDetail(Request request) {
@@ -112,6 +128,11 @@ public class RequestAssembler {
                 vmDetails.values().stream().map(VmRequestDetail::getFlavorId))), VmFlavor::getId);
         Map<Long, Node> nodes = byId(nodeRepository.findAllById(ids(
                 vmDetails.values().stream().map(VmRequestDetail::getNodeId))), Node::getId);
+        // 고른 기간의 이름. 종료일 자체는 신청 행에 복사돼 있으므로 이 조회가 비어도
+        // 기간은 그대로 읽히고, 이름 자리만 비게 된다.
+        Map<Long, RequestPeriodPreset> periods = byId(periodPresetRepository.findAllById(ids(
+                requests.stream().map(Request::getReqPeriodPresetId))),
+                RequestPeriodPreset::getId);
 
         List<RequestDetailResponse> details = new ArrayList<>(requests.size());
         for (Request request : requests) {
@@ -129,8 +150,10 @@ public class RequestAssembler {
                     org != null ? org.getPublicId() : null, org != null ? org.getName() : null,
                     requester != null ? requester.getPublicId() : null,
                     requester != null ? requester.getName() : "탈퇴 회원",
-                    request.getPurpose(), request.getCourseOrProject(), request.getExtraNote(),
-                    request.getReqStartDate(), request.getReqEndDate(), request.getDisplayName(),
+                    request.getPurpose(), request.getExtraNote(),
+                    request.getReqEndDate(),
+                    periodName(periods, request.getReqPeriodPresetId()),
+                    request.getDisplayName(),
                     request.getStatus(),
                     review != null
                             ? RequestReviewResponse.from(review, users.get(review.getReviewerId()))
