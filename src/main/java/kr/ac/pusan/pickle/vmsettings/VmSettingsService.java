@@ -405,10 +405,8 @@ public class VmSettingsService {
         map.put(DELETION_PROTECTION, new VmSettingDef(DELETION_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
                 ResourceRole.OWNER, "삭제 보호",
-                "켜면 본인·관리자 일반·강제 삭제 접수가 모두 거부됩니다(논리적 잠금 — 파기 "
-                        + "시점에도 재확인). 이와 별개로 모든 VM은 Proxmox 네이티브 protection "
-                        + "플래그로 하이퍼바이저 수준에서 상시 보호되며, 실제 파기 직전에만 "
-                        + "플랫폼이 해제합니다. 삭제하려면 먼저 이 설정을 해제하세요.",
+                "켜면 본인과 관리자의 삭제 접수가 강제 삭제까지 모두 거부됩니다. "
+                        + "삭제하려면 먼저 이 설정을 해제하세요.",
                 AuditService.VM_SETTING_UPDATE));
         map.put(STOP_PROTECTION, new VmSettingDef(STOP_PROTECTION,
                 VmSettingValueType.BOOLEAN, null, mapper.valueToTree(Boolean.FALSE),
