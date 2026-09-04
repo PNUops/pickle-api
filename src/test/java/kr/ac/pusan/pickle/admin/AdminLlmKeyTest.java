@@ -339,6 +339,53 @@ class AdminLlmKeyTest {
                 .isEqualByComparingTo("3.00");
     }
 
+    @Test
+    void fundingAKeyAsksForItsOpenrouterHalfWithoutWaitingForTheSweep() throws Exception {
+        // The money grant is useless until the OpenRouter key exists, and the
+        // sweep that creates one runs every five minutes. A key funded now and
+        // tried now would otherwise refuse every commercial model for those
+        // minutes while looking correctly configured on every screen.
+        long account = openrouterAccount(orgA.getId(), "즉시 발급 사업");
+        activateManagementCredential(account);
+        Key key = unboundKey(orgA.getId(), workspaceA, "즉시 발급 키");
+        int before = provisionJobs();
+
+        Map<String, Object> body = new java.util.LinkedHashMap<>(limits(70, "3.00"));
+        body.put("openrouterAccountId", pub("openrouter_accounts", account).toString());
+        putLimits(key.publicId(), sysAdminToken, body).andExpect(status().isOk());
+
+        assertThat(provisionJobs() - before)
+                .as("the grant should ask for the key, not leave it to the sweep")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aGrantOfNoMoneyAsksForNothing() throws Exception {
+        // Zero is a real state, not a smaller number: the commercial axis is
+        // closed and there is nothing to provision. Enqueuing here would send
+        // the vendor a request for a key nobody may use.
+        Key key = unboundKey(orgA.getId(), workspaceA, "토큰 전용 키");
+        int before = provisionJobs();
+
+        putLimits(key.publicId(), sysAdminToken, limits(70, "0")).andExpect(status().isOk());
+
+        assertThat(provisionJobs() - before).isZero();
+    }
+
+    /**
+     * Enqueued grant-time provisioning attempts, counted as a delta. The
+     * background server is off in tests, so the row is the evidence that the
+     * hook ran; running it would need a live vendor. The table is shared by
+     * every test in this class and several of them now fund a key, so the
+     * absolute count belongs to the whole suite and only the change is this
+     * test's own.
+     */
+    private int provisionJobs() {
+        return jdbcTemplate.queryForObject(
+                "select count(*) from jobrunr_jobs where jobsignature like '%.provision(%'",
+                Integer.class);
+    }
+
     /** The newest audit detail for one key and action, as a map. */
     private Map<String, Object> auditDetail(UUID keyPublicId, String action) {
         String json = jdbcTemplate.queryForObject("""

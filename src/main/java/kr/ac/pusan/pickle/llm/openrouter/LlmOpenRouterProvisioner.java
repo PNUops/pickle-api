@@ -20,14 +20,26 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Provisions one OpenRouter runtime key per funded pickle key, by sweep.
+ * Provisions one OpenRouter runtime key per funded pickle key.
  *
- * <p>A sweep rather than an approval-time call, deliberately: the operator
- * decided (2026-08-24) that OpenRouter being down must not block key issuance
- * — the key lands usable on the token axis and the money axis connects when
- * it can. A sweep gives that retry for free, covers a limit granted later to
- * an existing key by the same mechanism, and keeps the external HTTP call out
- * of the approval transaction.</p>
+ * <p>Two things start an attempt: the moment a key is granted a positive
+ * money budget (an approval, or a limits change that raises it above zero),
+ * and a sweep behind that. Both enter through {@link #provision(long)}, which
+ * re-reads the key and settles eligibility itself, so neither has to know
+ * what the other did.
+ *
+ * <p>The operator's 2026-08-24 constraint holds and is the reason the shape
+ * is this and not a call inside the approval: OpenRouter being down must not
+ * block key issuance. The key lands usable on the token axis and the money
+ * axis connects when it can. Both entry points run after their transaction
+ * has committed, and neither can fail the write that granted the budget.
+ *
+ * <p>The sweep is what makes that promise good — it is the retry for every
+ * attempt that failed or never ran, and the only thing that finds a key whose
+ * enqueue was lost. It was the sole path until 2026-09-04, and the five
+ * minutes it imposed on a fresh approval were being read as a fault in the
+ * platform: for those minutes a correctly configured key refused every
+ * commercial model.</p>
  *
  * <p>The create call runs OUTSIDE any DB transaction (it is slow and remote);
  * only the short write that lands the hash and ciphertext is transactional,
@@ -44,6 +56,13 @@ public class LlmOpenRouterProvisioner {
     private static final int POST_COMMIT_CONVERGENCE_ATTEMPTS = 3;
 
     static final String JOB_ID = "llm-openrouter-provisioner";
+
+    /**
+     * The durable job name for a single grant-time attempt. Separate from the
+     * sweep's, so a queue or a dashboard shows which of the two entry points
+     * a given attempt came from.
+     */
+    static final String PROVISION_JOB_NAME = "llm-openrouter-provision";
 
     /**
      * Key creations one sweep may send. Sized for the ordinary case rather
@@ -97,7 +116,19 @@ public class LlmOpenRouterProvisioner {
      * another's success and a slow remote call never holds a DB lock. The
      * transactions are programmatic because the sweep calls this on the same
      * bean, where an annotation would be silently skipped.
+     *
+     * <p>{@code retries = 0} because the sweep already is the retry, on a
+     * schedule chosen for a vendor that rate-limits key creation and does not
+     * publish the limit. JobRunr's default would add a second, faster retry
+     * loop nobody sized, and a refusal would then be re-sent on two clocks.
+     *
+     * <p>This does not consult the failure backoff, which only filters the
+     * sweep's worklist. Deliberate: the callers that reach here directly are
+     * a grant and a limits change, and a person acting is new information the
+     * last refusal does not cover. A failure from such an attempt still
+     * lengthens the wait for the sweep behind it.
      */
+    @Job(name = PROVISION_JOB_NAME, retries = 0)
     public void provision(long keyId) {
         LlmApiKey key = keyRepository.findById(keyId).orElse(null);
         ProvisioningIntent intent = key == null ? null

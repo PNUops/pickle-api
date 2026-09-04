@@ -9,6 +9,7 @@ import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
+import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
@@ -16,6 +17,9 @@ import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestTypeHandler;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import org.jobrunr.scheduling.JobScheduler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
@@ -31,23 +35,30 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class LlmKeyRequestSupport implements RequestTypeHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(LlmKeyRequestSupport.class);
+
     private final LlmKeyRequestDetailRepository detailRepository;
     private final LlmApiKeyRepository keyRepository;
     private final LlmGatewayGenerations generations;
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAllocationQuery allocationQuery;
     private final ObjectMapper objectMapper;
+    private final LlmOpenRouterProvisioner provisioner;
+    private final JobScheduler jobScheduler;
 
     public LlmKeyRequestSupport(LlmKeyRequestDetailRepository detailRepository,
             LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper) {
+            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
+            LlmOpenRouterProvisioner provisioner, JobScheduler jobScheduler) {
         this.detailRepository = detailRepository;
         this.keyRepository = keyRepository;
         this.generations = generations;
         this.accountSelection = accountSelection;
         this.allocationQuery = allocationQuery;
         this.objectMapper = objectMapper;
+        this.provisioner = provisioner;
+        this.jobScheduler = jobScheduler;
     }
 
     @Override
@@ -222,7 +233,39 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 CreditModelAllowlist.fromJson(objectMapper, creditAllowedModels));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);
-        return new Materialized(key.getId(), key.getName(), auditArgs, () -> {
-        });
+        // A money budget is useless until its OpenRouter key exists, and the
+        // sweep that creates one runs every five minutes — long enough that a
+        // student trying a commercial model straight after approval reads the
+        // refusal as a fault in the platform. Ask for it now instead. The
+        // sweep stays behind this as the retry, so the 2026-08-24 decision
+        // that OpenRouter must never block issuance is intact: this runs only
+        // after the approval has already committed.
+        long keyId = key.getId();
+        boolean funded = key.getCreditLimit().signum() > 0;
+        return new Materialized(key.getId(), key.getName(), auditArgs,
+                () -> { if (funded) { provisionNow(keyId); } });
+    }
+
+    /**
+     * Enqueues the provisioning attempt, after commit. Durable rather than
+     * inline for the reason the VM handler gives at the same seam — JobRunr's
+     * storage provider commits on its own connection, so an in-transaction
+     * enqueue can outlive a rollback — and because the remote call carries a
+     * 30-second read timeout that has no business holding the approver's
+     * response open.
+     *
+     * <p>Failures are swallowed deliberately. Losing this enqueue costs at
+     * most one sweep interval, which is exactly where we were before it
+     * existed; letting it escape would turn an approval that already
+     * committed into a 500 and tell the approver their approval failed when
+     * it did not.
+     */
+    private void provisionNow(long keyId) {
+        try {
+            jobScheduler.enqueue(() -> provisioner.provision(keyId));
+        } catch (RuntimeException e) {
+            log.warn("could not enqueue OpenRouter provisioning for the approved llm key; "
+                    + "the sweep will pick it up", e);
+        }
     }
 }
