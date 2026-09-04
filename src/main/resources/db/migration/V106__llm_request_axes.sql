@@ -30,6 +30,9 @@ alter table llm_key_request_details
     -- 유료를 쓰지 않겠다면서 금액을 적는 것은 앞뒤가 맞지 않는다.
     add constraint llm_key_request_details_req_credit_axis_check
         check (req_credit_limit is null or req_use_commercial),
+    -- 접수돼 있는 신청의 사용 계획 글이 함께 사라진다. 검토자는 그 신청의
+    -- requests.purpose 만 보게 되는데, 시험 데이터뿐이라 잃을 것이 없다(운영자 확인).
+    --
     -- 이 종류만 용도를 따로 물었는데, 신청서 공통의 사용 목적이 같은 질문이다.
     -- 두 칸이 연달아 같은 것을 물으면 신청자는 어느 쪽에 무엇을 쓸지 알 수 없고,
     -- 검토하는 쪽은 두 글을 다 읽고 나서야 같은 말인 것을 안다. 발급되는 키의

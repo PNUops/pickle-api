@@ -306,7 +306,10 @@ public class VmRequestSupport implements RequestTypeHandler {
             }
         } else if (spec.reqVcpu() > flavor.getVcpu()
                 || spec.reqMemoryMb() > flavor.getMemoryMb()
-                || spec.reqDiskGb() > flavor.getDiskGb()) {
+                // 고른 사양의 디스크가 OS 최소치보다 작으면 그 최소치가 바닥이다.
+                // 올리지 않으면 OS가 요구하는 크기를 맞춘 것만으로 사유를 요구하게 되고,
+                // 화면에는 그 사양에서 고칠 칸이 없어 되돌아갈 곳 없는 422가 된다.
+                || spec.reqDiskGb() > Math.max(flavor.getDiskGb(), image.getMinDiskGb())) {
             errors.add(new FieldValidationError("vm.specReason",
                     "선택한 사양을 초과하는 신청에는 사유를 입력해야 합니다."));
         }

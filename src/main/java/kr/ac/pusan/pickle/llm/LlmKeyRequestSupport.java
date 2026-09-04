@@ -73,7 +73,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // 쓰겠다는 것인지 하나는 말해야 한다.
         if (!useCampus(spec) && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.useCampusModels",
-                    "자체 서빙 모델과 유료 모델 중 최소 하나는 선택해 주세요."));
+                    "Pickle LLM과 유료 모델 중 최소 하나는 선택해 주세요."));
         }
         if (spec.reqCreditLimit() != null && !useCommercial(spec)) {
             errors.add(new FieldValidationError("llmKey.reqCreditLimit",

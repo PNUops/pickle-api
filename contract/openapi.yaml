@@ -13241,7 +13241,8 @@ paths:
       - "os-image-controller"
   /request-periods:
     get:
-      description: "관리자가 등록한 기간 중 오늘 기준으로 아직 끝나지 않은 것만 돌려줍니다. 종료일이 없는 항목은 무기한입니다."
+      description: "관리자가 등록한 기간 중 오늘 기준으로 아직 끝나지 않은 것만 돌려줍니다. 모든 항목이 종료일을 가집니다. 끝나\
+        지 않는 기간은 신청 본문의 reqIndefinite로 요청합니다."
       operationId: "listRequestPeriods"
       responses:
         "200":

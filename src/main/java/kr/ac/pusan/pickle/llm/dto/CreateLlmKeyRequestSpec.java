@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.llm.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
@@ -31,6 +32,9 @@ public record CreateLlmKeyRequestSpec(
                 example = "20.00")
         @DecimalMin(value = "0.01", message = "금액 한도는 0보다 커야 합니다.")
         @DecimalMax(value = "100000.00", message = "금액 한도가 너무 큽니다.")
+        // 열이 numeric(12,2)이라 셋째 자리는 저장되면서 반올림된다. 막지 않으면
+        // 0.015를 적은 사람이 0.02로 적힌 신청을 돌려받는다. 부여 쪽과 같은 규칙이다.
+        @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
         @Nullable BigDecimal reqCreditLimit,
 
         @Schema(description = "희망 분당 요청 수. 비우면 서비스 기본값을 받습니다.")

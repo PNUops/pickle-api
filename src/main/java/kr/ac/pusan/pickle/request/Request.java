@@ -61,9 +61,10 @@ public class Request {
     private String extraNote;
 
     /**
-     * The period this request asks for. Null is the indefinite period, which a
-     * requester can only reach by picking a catalogue row that carries no end
-     * date -- the form itself has no way to leave this blank.
+     * The period this request asks for. Null means the request asked to never
+     * expire, and the form says so with its own field rather than by leaving
+     * this blank: a forgotten date and a deliberate one are indistinguishable
+     * here, so the body carries the distinction the column cannot.
      */
     @Column(name = "req_end_date")
     private LocalDate reqEndDate;

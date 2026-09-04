@@ -45,7 +45,8 @@ public class RequestPeriodController {
     @GetMapping
     @Operation(summary = "신청 가능한 사용 기간 목록",
             description = "관리자가 등록한 기간 중 오늘 기준으로 아직 끝나지 않은 것만 돌려줍니다."
-                    + " 종료일이 없는 항목은 무기한입니다.")
+                    + " 모든 항목이 종료일을 가집니다. 끝나지 않는 기간은 신청 본문의"
+                    + " reqIndefinite로 요청합니다.")
     @Transactional(readOnly = true)
     public List<RequestPeriodResponse> listRequestPeriods() {
         // KST 달력 날짜 — 종료일은 KST 자정까지 유효하다는 계약과 같은 기준이다.
