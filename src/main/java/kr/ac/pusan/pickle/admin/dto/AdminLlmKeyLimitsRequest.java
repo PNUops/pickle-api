@@ -123,7 +123,7 @@ public class AdminLlmKeyLimitsRequest {
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
             description = "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 "
-                    + "한도와 달리 null이 0을 뜻하지 않습니다. 교내 서빙 모델은 이 값에 "
+                    + "한도와 달리 null이 0을 뜻하지 않습니다. 자체 서빙 모델은 이 값에 "
                     + "영향을 받지 않습니다.")
     public @Nullable List<String> getCreditAllowedModels() {
         return creditAllowedModels;

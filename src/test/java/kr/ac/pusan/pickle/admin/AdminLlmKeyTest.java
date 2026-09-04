@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -14,6 +15,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -60,6 +62,8 @@ class AdminLlmKeyTest {
     private OrgRepository orgRepository;
     @Autowired
     private WorkspaceRepository workspaceRepository;
+    @Autowired
+    private OpenRouterManagementCredentialCipher managementCipher;
 
     private Org orgA;
     private Org orgB;
@@ -240,6 +244,144 @@ class AdminLlmKeyTest {
                         + "('llm_key.limits_update', 'llm_key.suspend', 'llm_key.resume')",
                 Long.class, active.publicId().toString());
         assertThat(audits).isEqualTo(4);
+    }
+
+    @Test
+    void onlyAMoneyChangeEndsAProvisioningBackoffEarly() throws Exception {
+        // A key that has been refused by the vendor several times is sitting
+        // out a long wait. Replacing the money grant is the usual answer to
+        // whatever caused that, so it makes the key eligible again at once.
+        // Editing a rate limit is not: if any save cleared the wait, one
+        // unrelated edit on one key would release a whole throttled batch
+        // onto the next sweep.
+        Key key = key(orgA.getId(), workspaceA, "백오프 키", "ACTIVE", null);
+        jdbcTemplate.update("update llm_api_keys set openrouter_attempt_count = 6, "
+                + "openrouter_not_before_at = now() + interval '5 hours' "
+                + "where public_id = ?", key.publicId());
+
+        putLimits(key.publicId(), sysAdminToken, limits(90, "1.00"))
+                .andExpect(status().isOk());
+        assertThat(attemptCount(key.publicId()))
+                .as("the money grant did not move, so the wait stands")
+                .isEqualTo(6);
+
+        putLimits(key.publicId(), sysAdminToken, limits(90, "7.00"))
+                .andExpect(status().isOk());
+        assertThat(attemptCount(key.publicId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select openrouter_not_before_at from llm_api_keys where public_id = ?",
+                java.sql.Timestamp.class, key.publicId())).isNull();
+    }
+
+    private int attemptCount(UUID publicId) {
+        return jdbcTemplate.queryForObject(
+                "select openrouter_attempt_count from llm_api_keys where public_id = ?",
+                Integer.class, publicId);
+    }
+
+    /**
+     * A limit change records what the account already owed and what this write
+     * makes of it. The subtraction is the part worth pinning: the key's own
+     * current limit is already inside the account's total, so raising 1.00 to
+     * 5.00 adds 4.00 and not 5.00. Getting that wrong invents headroom that
+     * does not exist, and nothing else in the round checks it.
+     */
+    @Test
+    void aLimitChangeRecordsTheDeltaAgainstTheAccountAndNotTheNewFigure() throws Exception {
+        // An account of its own. Nothing clears this schema between test
+        // methods, so the shared fixture account carries every key the rest of
+        // the class has made and its sum would be a running total of the whole
+        // run rather than a statement about the one key under test.
+        long account = openrouterAccount(orgA.getId(), "배정 기록 사업");
+        Key key = key(orgA.getId(), workspaceA, "배정 기록 키", "ACTIVE", null, account);
+
+        putLimits(key.publicId(), sysAdminToken, limits(70, "5.00"))
+                .andExpect(status().isOk());
+
+        Map<String, Object> detail = auditDetail(key.publicId(), "llm_key.limits_update");
+        // The fixture key holds 1.00 and is the only money key on its account.
+        assertThat(new BigDecimal(detail.get("accountCommittedCreditLimit").toString()))
+                .isEqualByComparingTo("1.00");
+        assertThat(new BigDecimal(detail.get("accountRemainingCommitment").toString()))
+                .isEqualByComparingTo("1.00");
+        // 1.00 - 1.00 + 5.00, not 1.00 + 5.00.
+        assertThat(new BigDecimal(detail.get("accountProjectedRemainingCommitment").toString()))
+                .isEqualByComparingTo("5.00");
+        // The account has never been polled, so the verdict is unknown rather
+        // than false: not knowing is not the same as being within.
+        assertThat(detail.get("accountBalance")).isNull();
+        assertThat(detail.get("overAllocated")).isNull();
+    }
+
+    /**
+     * A key binding to an account for the first time is not in that account's
+     * total yet, so the whole grant is new money. Subtracting its current limit
+     * here would report headroom the account does not have.
+     */
+    @Test
+    void aFirstBindingAddsTheWholeGrantBecauseTheKeyIsNotCountedYet() throws Exception {
+        // Also its own account, and for the same reason as above: this one has
+        // to hold nothing so that the whole grant is visibly the whole sum.
+        // A first binding goes through account selection, which only offers an
+        // account whose management credential has been verified.
+        long account = openrouterAccount(orgA.getId(), "최초 연결 사업");
+        activateManagementCredential(account);
+        Key key = unboundKey(orgA.getId(), workspaceA, "최초 연결 키");
+
+        Map<String, Object> body = new java.util.LinkedHashMap<>(limits(70, "3.00"));
+        body.put("openrouterAccountId", pub("openrouter_accounts", account).toString());
+        putLimits(key.publicId(), sysAdminToken, body).andExpect(status().isOk());
+
+        Map<String, Object> detail = auditDetail(key.publicId(), "llm_key.limits_update");
+        assertThat(new BigDecimal(detail.get("accountCommittedCreditLimit").toString()))
+                .isEqualByComparingTo("0");
+        assertThat(new BigDecimal(detail.get("accountProjectedRemainingCommitment").toString()))
+                .isEqualByComparingTo("3.00");
+    }
+
+    /** The newest audit detail for one key and action, as a map. */
+    private Map<String, Object> auditDetail(UUID keyPublicId, String action) {
+        String json = jdbcTemplate.queryForObject("""
+                select detail::text from audit_logs
+                 where target_id = ? and action = ?
+                 order by id desc limit 1
+                """, String.class, keyPublicId.toString(), action);
+        assertThat(json).as("audit detail for %s", action).isNotNull();
+        return objectMapper.readValue(json, new tools.jackson.core.type.TypeReference<>() {});
+    }
+
+    /** A key with the money axis closed and no account, ready for a first binding. */
+    private Key unboundKey(long orgId, long workspaceId, String name) {
+        long requestId = request(orgId, workspaceId, name + " 신청");
+        String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
+        long id = jdbcTemplate.queryForObject("""
+                insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,
+                                          token_hash, token_prefix, status,
+                                          rpm, tpm, concurrency, daily_tokens, credit_limit,
+                                          created_by)
+                values (?, ?, ?, ?, '테스트', ?, ?, 'ACTIVE'::llm_api_key_status,
+                        60, 1000, 4, 10000, 0, ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requestId, name,
+                hash, "pickle-" + hash.substring(0, 6), requester.getId());
+        return new Key(pub("llm_api_keys", id), pub("requests", requestId), hash,
+                "pickle-" + hash.substring(0, 6));
+    }
+
+    /**
+     * Marks an account usable as a binding target. Selection refuses an account
+     * whose management credential has not been verified, so an account row on
+     * its own is not enough to name in a grant.
+     */
+    private void activateManagementCredential(long accountId) {
+        jdbcTemplate.update("""
+                insert into openrouter_account_credentials (account_id, status, credential_enc,
+                                                            created_by, activated_at, verified_at)
+                values (?, 'ACTIVE'::openrouter_credential_status, ?, ?, now(), now())
+                """, accountId,
+                managementCipher.encrypt(pub("openrouter_accounts", accountId),
+                        "management-credential-fixture"),
+                requester.getId());
     }
 
     @Test
@@ -503,15 +645,25 @@ class AdminLlmKeyTest {
 
     /** One funded account per org, since a money budget must name one. */
     private long openrouterAccount(long orgId) {
+        return openrouterAccount(orgId, "키 시험 사업");
+    }
+
+    /** A named account, for a test that needs an allocation sum of its own. */
+    private long openrouterAccount(long orgId, String name) {
         return jdbcTemplate.queryForObject("""
                 insert into openrouter_accounts (org_id, name, created_by)
                 values (?, ?, ?)
                 on conflict (org_id, lower(name)) do update set name = excluded.name
                 returning id
-                """, Long.class, orgId, "키 시험 사업", requester.getId());
+                """, Long.class, orgId, name, requester.getId());
     }
 
     private Key key(long orgId, long workspaceId, String name, String status, Instant expiresAt) {
+        return key(orgId, workspaceId, name, status, expiresAt, openrouterAccount(orgId));
+    }
+
+    private Key key(long orgId, long workspaceId, String name, String status, Instant expiresAt,
+            long accountId) {
         long requestId = request(orgId, workspaceId, name + " 신청");
         String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
         String prefix = "pickle-" + hash.substring(0, 6);
@@ -527,7 +679,7 @@ class AdminLlmKeyTest {
                 "PENDING".equals(status) ? null : hash,
                 "PENDING".equals(status) ? null : prefix, status,
                 expiresAt == null ? null : OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC),
-                openrouterAccount(orgId), requester.getId());
+                accountId, requester.getId());
         return new Key(pub("llm_api_keys", id), pub("requests", requestId), hash, prefix);
     }
 

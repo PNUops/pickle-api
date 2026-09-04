@@ -396,7 +396,7 @@ components:
           - "null"
         creditAllowedModels:
           description: "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 한도와 달리 null이 0을 뜻하\
-            지 않습니다. 교내 서빙 모델은 이 값에 영향을 받지 않습니다."
+            지 않습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
           items:
             type: "string"
           maxItems: 50
@@ -925,37 +925,6 @@ components:
       - "name"
       - "tokenIssued"
       type: "object"
-    AdminRequestPeriodResponse:
-      properties:
-        displayName:
-          type: "string"
-        displayOrder:
-          description: "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다."
-          format: "int32"
-          type: "integer"
-        endDate:
-          description: "종료일"
-          format: "date"
-          type: "string"
-        expired:
-          description: "종료일이 이미 지나 신청 화면에 나오지 않는 항목인지."
-          type: "boolean"
-        id:
-          format: "uuid"
-          type: "string"
-        name:
-          type: "string"
-        status:
-          $ref: "#/components/schemas/CatalogStatus"
-      required:
-      - "displayName"
-      - "displayOrder"
-      - "endDate"
-      - "expired"
-      - "id"
-      - "name"
-      - "status"
-      type: "object"
     AdminRouteView:
       properties:
         appliedAt:
@@ -1352,7 +1321,7 @@ components:
           - "integer"
           - "null"
         grantedCreditAllowedModels:
-          description: "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 교내 서빙 모델은 이 목록과 무관합니다. 항\
+          description: "이 키가 쓸 수 있는 유료 모델 목록. 비우면 제한이 없고, 자체 서빙 모델은 이 목록과 무관합니다. 항\
             목은 모델 이름 또는 벤더 프리픽스(예: openai/*)입니다."
           items:
             type: "string"
@@ -1795,14 +1764,6 @@ components:
       type: "object"
     CreateLlmKeyRequestSpec:
       properties:
-        reqCreditLimit:
-          description: "희망 금액 한도(USD). 유료 모델을 쓸 때만 적습니다."
-          example: 20.0
-          maximum: 100000.0
-          minimum: 0.01
-          type:
-          - "number"
-          - "null"
         reqDailyTokens:
           description: "희망 일일 토큰 수. 비우면 서비스 기본값을 받습니다."
           format: "int64"
@@ -1825,15 +1786,12 @@ components:
           type:
           - "integer"
           - "null"
-        useCampusModels:
-          description: "자체 서빙 모델을 쓸지. 비우면 사용으로 봅니다."
+        usagePlan:
+          description: "이 Key를 어디에 쓸지. 기본 한도로 충분하면 비워 두어도 됩니다."
+          maxLength: 2000
+          minLength: 0
           type:
-          - "boolean"
-          - "null"
-        useCommercialModels:
-          description: "유료 모델을 쓸지. 비우면 사용하지 않는 것으로 봅니다."
-          type:
-          - "boolean"
+          - "string"
           - "null"
       type: "object"
     CreateOpenRouterAccountRequest:
@@ -1910,33 +1868,14 @@ components:
       - "proto"
       - "targetPort"
       type: "object"
-    CreateRequestPeriodRequest:
-      properties:
-        displayName:
-          maxLength: 100
-          minLength: 0
-          type: "string"
-        displayOrder:
-          description: "표시 순서. 비우면 0입니다."
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        endDate:
-          description: "종료일. 모든 기간 항목은 끝나는 날이 있습니다."
-          format: "date"
-          type: "string"
-        name:
-          minLength: 1
-          pattern: "^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$|^[a-z0-9]$"
-          type: "string"
-      required:
-      - "displayName"
-      - "endDate"
-      - "name"
-      type: "object"
     CreateRequestRequest:
       properties:
+        courseOrProject:
+          maxLength: 200
+          minLength: 0
+          type:
+          - "string"
+          - "null"
         displayName:
           maxLength: 100
           minLength: 0
@@ -1954,11 +1893,6 @@ components:
         orgId:
           format: "uuid"
           type: "string"
-        periodPresetId:
-          format: "uuid"
-          type:
-          - "string"
-          - "null"
         purpose:
           maxLength: 2000
           minLength: 0
@@ -1968,11 +1902,10 @@ components:
           type:
           - "string"
           - "null"
-        reqIndefinite:
-          description: "true면 종료일 없이 신청합니다. reqEndDate·periodPresetId와 함께 보낼 수 없습니\
-            다."
+        reqStartDate:
+          format: "date"
           type:
-          - "boolean"
+          - "string"
           - "null"
         type:
           $ref: "#/components/schemas/ResourceType"
@@ -2018,11 +1951,6 @@ components:
           maxLength: 100
           minLength: 0
           type: "string"
-        displayOrder:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
         memoryMb:
           format: "int32"
           minimum: 256
@@ -2057,9 +1985,7 @@ components:
           - "null"
         flavorId:
           format: "uuid"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         imageId:
           format: "uuid"
           type: "string"
@@ -2082,6 +2008,7 @@ components:
           - "string"
           - "null"
       required:
+      - "flavorId"
       - "imageId"
       - "reqDiskGb"
       - "reqMemoryMb"
@@ -3228,11 +3155,6 @@ components:
           type:
           - "integer"
           - "null"
-        reqCreditLimit:
-          description: "신청자가 요청한 금액 한도(USD). 유료를 쓰지 않는 신청은 비어 있습니다."
-          type:
-          - "number"
-          - "null"
         reqDailyTokens:
           description: "희망 일일 토큰 수"
           format: "int64"
@@ -3251,16 +3173,13 @@ components:
           type:
           - "integer"
           - "null"
-        useCampusModels:
-          description: "신청자가 자체 서빙 모델을 쓰겠다고 했는지."
-          type: "boolean"
-        useCommercialModels:
-          description: "신청자가 유료 모델을 쓰겠다고 했는지."
-          type: "boolean"
+        usagePlan:
+          description: "사용 계획"
+          type:
+          - "string"
+          - "null"
       required:
       - "grantedCreditAllowedModels"
-      - "useCampusModels"
-      - "useCommercialModels"
       type: "object"
     LlmKeySummaryResponse:
       properties:
@@ -6118,6 +6037,10 @@ components:
       type: "object"
     RequestDetailResponse:
       properties:
+        courseOrProject:
+          type:
+          - "string"
+          - "null"
         createdAt:
           format: "date-time"
           type: "string"
@@ -6142,16 +6065,14 @@ components:
           - "null"
         orgName:
           type: "string"
-        periodName:
-          description: "종료일을 고른 기간 항목의 이름. 직접 적었으면 null입니다."
-          example: "2026학년도 1학기"
-          type:
-          - "string"
-          - "null"
         purpose:
           type: "string"
         reqEndDate:
-          description: "신청한 사용 종료일. 값이 없으면 무기한을 요청한 것입니다."
+          format: "date"
+          type:
+          - "string"
+          - "null"
+        reqStartDate:
           format: "date"
           type:
           - "string"
@@ -6215,26 +6136,6 @@ components:
       - "allowedRootDomains"
       - "reservedSubdomains"
       - "sshHost"
-      type: "object"
-    RequestPeriodResponse:
-      properties:
-        displayName:
-          description: "화면에 보이는 이름"
-          example: "2026학년도 1학기"
-          type: "string"
-        endDate:
-          description: "이 기간의 종료일"
-          example: "2026-06-30"
-          format: "date"
-          type: "string"
-        id:
-          description: "기간 항목 식별자"
-          format: "uuid"
-          type: "string"
-      required:
-      - "displayName"
-      - "endDate"
-      - "id"
       type: "object"
     RequestReviewResponse:
       properties:
@@ -7097,30 +6998,6 @@ components:
           - "string"
           - "null"
       type: "object"
-    UpdateRequestPeriodRequest:
-      properties:
-        displayName:
-          maxLength: 100
-          minLength: 0
-          type:
-          - "string"
-          - "null"
-        displayOrder:
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
-        endDate:
-          description: "새 종료일"
-          format: "date"
-          type:
-          - "string"
-          - "null"
-        status:
-          anyOf:
-          - $ref: "#/components/schemas/CatalogStatus"
-          - type: "null"
-      type: "object"
     UpdateResourceAccessGrantRequest:
       properties:
         role:
@@ -7148,12 +7025,6 @@ components:
           type:
           - "string"
           - "null"
-        displayOrder:
-          description: "신청 화면에서의 표시 순서. 값이 같으면 먼저 만든 것이 앞에 옵니다."
-          format: "int32"
-          type:
-          - "integer"
-          - "null"
         memoryMb:
           format: "int32"
           minimum: 256
@@ -7170,7 +7041,7 @@ components:
           anyOf:
           - $ref: "#/components/schemas/CatalogStatus"
           - type: "null"
-          description: "ACTIVE = 신청 화면에 노출, DISABLED = 은퇴 (기존 신청과 VM 무영향)"
+          description: "ACTIVE = 신청 위저드에 노출, DISABLED = 은퇴 (기존 신청·VM 무영향)"
         vcpu:
           format: "int32"
           minimum: 1
@@ -7757,9 +7628,6 @@ components:
           type: "integer"
         displayName:
           type: "string"
-        displayOrder:
-          format: "int32"
-          type: "integer"
         id:
           format: "uuid"
           type: "string"
@@ -7780,7 +7648,6 @@ components:
       required:
       - "diskGb"
       - "displayName"
-      - "displayOrder"
       - "id"
       - "memoryMb"
       - "name"
@@ -7931,26 +7798,22 @@ components:
       type: "object"
     VmPeriodUpdateRequest:
       properties:
-        clearEndDate:
-          description: "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다."
-          type:
-          - "boolean"
-          - "null"
         endDate:
-          description: "새 종료일. 무기한으로 바꾸려면 clearEndDate를 씁니다."
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
         startDate:
           format: "date"
-          type:
-          - "string"
-          - "null"
+          type: "string"
+      required:
+      - "endDate"
       type: "object"
     VmRequestSpecResponse:
       properties:
         desiredSlug:
+          type:
+          - "string"
+          - "null"
+        desiredSubdomain:
           type:
           - "string"
           - "null"
@@ -7983,6 +7846,10 @@ components:
         reqVcpu:
           format: "int32"
           type: "integer"
+        rootDomain:
+          type:
+          - "string"
+          - "null"
         specReason:
           type:
           - "string"
@@ -8366,7 +8233,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.61.0"
+  version: "0.60.1"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -10301,80 +10168,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-relay-controller"
-  /admin/request-periods:
-    get:
-      operationId: "listAdminRequestPeriods"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/AdminRequestPeriodResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-request-period-controller"
-    post:
-      operationId: "createAdminRequestPeriod"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateRequestPeriodRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AdminRequestPeriodResponse"
-          description: "Created"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-request-period-controller"
-  /admin/request-periods/{periodId}:
-    patch:
-      operationId: "updateAdminRequestPeriod"
-      parameters:
-      - in: "path"
-        name: "periodId"
-        required: true
-        schema:
-          format: "uuid"
-          type: "string"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateRequestPeriodRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/AdminRequestPeriodResponse"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      tags:
-      - "admin-request-period-controller"
   /admin/requests:
     get:
       operationId: "listAdminRequests"
@@ -13239,29 +13032,6 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "os-image-controller"
-  /request-periods:
-    get:
-      description: "관리자가 등록한 기간 중 오늘 기준으로 아직 끝나지 않은 것만 돌려줍니다. 모든 항목이 종료일을 가집니다. 끝나\
-        지 않는 기간은 신청 본문의 reqIndefinite로 요청합니다."
-      operationId: "listRequestPeriods"
-      responses:
-        "200":
-          content:
-            '*/*':
-              schema:
-                items:
-                  $ref: "#/components/schemas/RequestPeriodResponse"
-                type: "array"
-          description: "OK"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      summary: "신청 가능한 사용 기간 목록"
-      tags:
-      - "request-period-controller"
   /requests:
     get:
       operationId: "listRequests"
