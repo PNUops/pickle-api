@@ -63,8 +63,11 @@ class LlmBodyKeyringUnconfiguredTest {
     void theApiStartsAndTheBatchIsAcceptedButNothingIsKept() throws Exception {
         // Starting at all is half the assertion: capture is an off-by-default
         // option, so its key must never be able to stop the service booting.
+        // Only this suite's own table. Deleting the keys as well would make the
+        // class order-dependent -- they are the parent of several tables, so
+        // the delete would succeed or fail according to what an earlier class
+        // left behind. Nothing here needs them gone.
         jdbcTemplate.update("delete from llm_request_bodies");
-        jdbcTemplate.update("delete from llm_api_keys");
         UUID key = recordingKey();
 
         Map<String, Object> record = new HashMap<>();

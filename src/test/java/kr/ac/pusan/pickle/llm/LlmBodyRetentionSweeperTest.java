@@ -32,10 +32,23 @@ class LlmBodyRetentionSweeperTest {
 
     private long keyId;
 
+    /**
+     * Clears this suite's own table and leaves {@code llm_api_keys} alone.
+     *
+     * <p>It used to delete the keys too, which made the class order-dependent:
+     * keys are the parent of several tables, so whether the delete succeeded
+     * depended on whether an earlier class in the same embedded Postgres had
+     * left rows in one of them. It passed alone and failed in a full run.
+     *
+     * <p>Adding the missing children to the list would fix today's failure and
+     * rot the same way the moment another table references a key. Nothing here
+     * needs the keys gone: every assertion counts rows in
+     * {@code llm_request_bodies}, which this does clear, and each test inserts
+     * its own key.
+     */
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("delete from llm_request_bodies");
-        jdbcTemplate.update("delete from llm_api_keys");
         jdbcTemplate.update("delete from settings where key = ?",
                 SettingsService.LLM_USAGE_RETENTION_DAYS);
         keyId = insertKey();
