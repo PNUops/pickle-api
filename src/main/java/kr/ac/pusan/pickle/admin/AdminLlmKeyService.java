@@ -39,6 +39,9 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
+import org.jobrunr.scheduling.JobScheduler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -55,6 +58,8 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class AdminLlmKeyService {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminLlmKeyService.class);
+
     private final LlmApiKeyRepository keyRepository;
     private final WorkspaceRepository workspaceRepository;
     private final OrgRepository orgRepository;
@@ -67,6 +72,7 @@ public class AdminLlmKeyService {
     private final OpenRouterAccountSelectionService accountSelection;
     private final OpenRouterAllocationQuery allocationQuery;
     private final ObjectMapper objectMapper;
+    private final JobScheduler jobScheduler;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -74,7 +80,8 @@ public class AdminLlmKeyService {
             LlmOpenRouterProvisioner provisioner, AuditService auditService,
             EntityManager entityManager, OpenRouterAccountRepository accountRepository,
             OpenRouterAccountSelectionService accountSelection,
-            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper) {
+            OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
+            JobScheduler jobScheduler) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -87,6 +94,7 @@ public class AdminLlmKeyService {
         this.accountSelection = accountSelection;
         this.allocationQuery = allocationQuery;
         this.objectMapper = objectMapper;
+        this.jobScheduler = jobScheduler;
     }
 
     @Transactional(readOnly = true)
@@ -293,6 +301,20 @@ public class AdminLlmKeyService {
             long internalKeyId = key.getId();
             afterCommit(() -> provisioner.updateLimitAfterChange(
                     internalKeyId, hash, limit, reset));
+        } else if (moneyChanged && key.getCreditLimit().signum() > 0) {
+            // First money on a key with no OpenRouter half yet. The branch
+            // above cannot serve it — there is no hash to update — and
+            // without this the key waits for the sweep, which is the same
+            // several-minute silence a fresh approval used to get.
+            long internalKeyId = key.getId();
+            afterCommit(() -> {
+                try {
+                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                } catch (RuntimeException e) {
+                    log.warn("could not enqueue OpenRouter provisioning for a newly funded "
+                            + "llm key; the sweep will pick it up", e);
+                }
+            });
         }
         return get(actor, keyId);
     }
