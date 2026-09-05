@@ -42,16 +42,16 @@ public record LlmKeyDetailResponse(
         @Nullable Integer concurrency,
         @Schema(description = "프롬프트·응답 본문 기록 여부")
         boolean recordBodies,
-        @Schema(description = "상용(금액) 축 한도, USD 크레딧. 0이면 상용 모델을 쓸 수 없습니다.")
+        @Schema(description = "유료 모델 한도, USD 크레딧. 0이면 유료 모델을 쓸 수 없습니다.")
         BigDecimal creditLimit,
         @Schema(description = "금액 한도 리셋 창. null이면 리셋 없는 총액 상한입니다. 창은 UTC 자정 기준입니다.")
         @Nullable CreditLimitReset creditLimitReset,
-        @Schema(description = "상용 축 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
+        @Schema(description = "유료 모델 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
         boolean creditAxisConnected,
-        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열이면 제한이 "
+        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열이면 제한이 "
                 + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다.")
         List<String> creditAllowedModels,
-        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열이면 차단이 "
+        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열이면 차단이 "
                 + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다.")
         List<String> creditDeniedModels,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")

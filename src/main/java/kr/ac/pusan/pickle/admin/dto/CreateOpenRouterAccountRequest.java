@@ -17,11 +17,11 @@ public record CreateOpenRouterAccountRequest(
         @Size(max = 500) @Nullable String program,
         @Schema(description = "이 account를 물어볼 담당자. 없으면 null")
         @Size(max = 500) @Nullable String contact,
-        @Schema(description = "승인 화면 프리필에 쓸 상용 모델 허용 목록 기본값. 비우면 제한 없음이 "
+        @Schema(description = "승인 화면 프리필에 쓸 유료 모델 허용 목록 기본값. 비우면 제한 없음이 "
                 + "기본이 됩니다.")
         @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
         @Nullable List<String> defaultCreditAllowedModels,
-        @Schema(description = "승인 화면 프리필에 쓸 상용 모델 차단 목록 기본값. 비우면 차단 "
+        @Schema(description = "승인 화면 프리필에 쓸 유료 모델 차단 목록 기본값. 비우면 차단 "
                 + "없음이 기본이 됩니다.")
         @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
         @Nullable List<String> defaultCreditDeniedModels,

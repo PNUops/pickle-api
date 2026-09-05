@@ -51,7 +51,7 @@ public class UpdateOpenRouterAccountRequest {
         this.status = status; statusSet = true;
     }
 
-    @Schema(description = "새 상용 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
+    @Schema(description = "새 유료 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
             + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
             + "영향이 없습니다.")
     public @Nullable List<String> getDefaultCreditAllowedModels() {
@@ -62,7 +62,7 @@ public class UpdateOpenRouterAccountRequest {
         defaultCreditAllowedModels = value; defaultCreditAllowedModelsSet = true;
     }
 
-    @Schema(description = "새 상용 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
+    @Schema(description = "새 유료 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
             + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
             + "영향이 없습니다.")
     public @Nullable List<String> getDefaultCreditDeniedModels() {

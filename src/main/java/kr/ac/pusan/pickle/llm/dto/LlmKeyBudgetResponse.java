@@ -22,13 +22,13 @@ public record LlmKeyBudgetResponse(
                 쓸 수 없습니다.""")
         @Nullable Long dailyTokens,
         @Schema(description = """
-                오늘(KST) 자체 서빙 모델에 쓴 입출력 토큰 합계. 상용 모델 사용은 금액 \
+                오늘(KST) 자체 서빙 모델에 쓴 입출력 토큰 합계. 유료 모델 사용은 금액 \
                 한도에 계상되므로 여기 들어가지 않습니다. 사용량 전송이 배치라 방금 쓴 만큼은 \
                 아직 반영되지 않았을 수 있습니다.""")
         long todayTokens,
         @Schema(description = "한도에 도달해 자체 서빙 모델 요청이 거절되고 있는 상태.")
         boolean quotaExhausted,
-        @Schema(description = "상용 모델에 쓸 수 있는 금액 한도(USD). 0이면 상용 모델을 쓸 수 없습니다.")
+        @Schema(description = "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다.")
         BigDecimal creditLimit,
         @Schema(description = """
                 OpenRouter가 보고한 현재 limit window 사용액(USD). DAILY/WEEKLY/MONTHLY \

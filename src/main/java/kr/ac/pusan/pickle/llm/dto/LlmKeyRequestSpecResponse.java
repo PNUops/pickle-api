@@ -47,18 +47,18 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "부여 일일 토큰 수. 비어 있으면 일일 한도가 없습니다. 0이면 자체 서빙(토큰) 축을 쓸 수 없습니다.")
         @Nullable Long grantedDailyTokens,
 
-        @Schema(description = "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 상용(금액) 축을 쓸 수 없습니다.")
+        @Schema(description = "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 유료 모델을 쓸 수 없습니다.")
         @Nullable BigDecimal grantedCreditLimit,
 
         @Schema(description = "금액 한도 리셋 창. 비어 있으면 리셋 없는 총액 상한입니다.")
         @Nullable CreditLimitReset grantedCreditLimitReset,
 
-        @Schema(description = "부여된 상용(금액) 축 모델 허용 목록. 빈 배열이면 제한이 없습니다. "
+        @Schema(description = "부여된 유료 모델 허용 목록. 빈 배열이면 제한이 없습니다. "
                 + "어떤 모델을 열지는 신청자가 요구하는 값이 아니라 승인자가 정하는 값이라 "
                 + "희망 쪽 짝이 없습니다.")
         List<String> grantedCreditAllowedModels,
 
-        @Schema(description = "부여된 상용(금액) 축 모델 차단 목록. 빈 배열이면 차단이 없습니다. "
+        @Schema(description = "부여된 유료 모델 차단 목록. 빈 배열이면 차단이 없습니다. "
                 + "허용 목록과 함께 걸리면 차단이 이깁니다.")
         List<String> grantedCreditDeniedModels) {
 

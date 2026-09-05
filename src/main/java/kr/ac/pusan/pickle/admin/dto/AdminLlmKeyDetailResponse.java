@@ -42,9 +42,9 @@ public record AdminLlmKeyDetailResponse(
         @Nullable UUID requestId,
         Instant createdAt,
         @Nullable Instant revokedAt,
-        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열은 제한 없음")
+        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열은 제한 없음")
         List<String> creditAllowedModels,
-        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열은 차단 없음. "
+        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열은 차단 없음. "
                 + "허용 목록과 함께 걸리면 차단이 이긴다.")
         List<String> creditDeniedModels) {
 
