@@ -271,21 +271,27 @@ public final class CreditModelPatterns {
      *
      * <p><b>Empty is not the safe reading on the deny side.</b> An unreadable
      * allow list read as empty opens every model; an unreadable deny list read
-     * as empty opens exactly the models somebody refused. The judgement that
-     * covers both is the gateway's, and it is to drop the whole key rather than
-     * to skip the entry — the conclusion is the same for the two lists and the
-     * reason is opposite: an allow list that loses entries becomes unlimited,
-     * a deny list that loses entries stops blocking. This method stays lenient
-     * because it is on the reading side of a constrained column and the
-     * gateway's loader is where a malformed document is judged.
+     * as empty opens exactly the models somebody refused.
      *
-     * <p><b>What is unsafe here is the display, not the enforcement.</b> The two
-     * sides read the same broken value in opposite directions: this one shows
-     * "nothing is blocked", while the gateway drops the key entirely, so the key
-     * can call nothing at all. An approver reading the screen and a user hitting
-     * the gateway get contradictory answers and neither is told. That is what
-     * {@code source} is for — without a key in the log there is no way to answer
-     * "why does this key not work", which is the only form the report arrives in.
+     * <p><b>Nothing downstream catches that, and it is worth being exact about
+     * why.</b> The gateway does drop a key whose document it cannot parse, but
+     * it never sees this one: the sync document is built through this same
+     * method, so a malformed column is already an empty array by the time it is
+     * serialized. The gateway is handed a well-formed empty deny list and goes
+     * on serving the key. So the two sides do not contradict each other — they
+     * agree on "nothing is blocked", which is the wrong answer reached quietly
+     * from both ends, and the refusal an approver recorded is simply gone.
+     * {@code LlmGatewayEndpointTest} pins that behaviour rather than leaving it
+     * to be guessed at.
+     *
+     * <p>The leniency stays anyway, because the reachable states do not justify
+     * the alternative: the column is not null and CHECK-constrained to a JSON
+     * array, so only a write from outside the application produces one, and
+     * throwing here would take down every screen that lists keys — including the
+     * one an approver would use to repair the row. What the situation gets
+     * instead is the WARN below, which is why {@code source} is a parameter:
+     * this arrives as "why does this key behave oddly", and a warning without a
+     * key in it cannot answer that.
      */
     public static List<String> fromJson(ObjectMapper mapper, @Nullable String stored,
             String source) {
@@ -296,8 +302,8 @@ public final class CreditModelPatterns {
             JsonNode node = mapper.readTree(stored);
             if (!node.isArray()) {
                 log.warn("stored credit model list for {} is not a JSON array; reading it as "
-                        + "empty, which this screen shows as no restriction while the gateway "
-                        + "refuses the key outright", source);
+                        + "empty, so every screen and the gateway document alike report no "
+                        + "restriction and a recorded refusal stops being applied", source);
                 return List.of();
             }
             List<String> models = new ArrayList<>(node.size());
@@ -314,8 +320,8 @@ public final class CreditModelPatterns {
             return List.copyOf(models);
         } catch (JacksonException e) {
             log.warn("could not parse the stored credit model list for {}; reading it as empty, "
-                    + "which this screen shows as no restriction while the gateway refuses the "
-                    + "key outright", source, e);
+                    + "so every screen and the gateway document alike report no restriction and "
+                    + "a recorded refusal stops being applied", source, e);
             return List.of();
         }
     }

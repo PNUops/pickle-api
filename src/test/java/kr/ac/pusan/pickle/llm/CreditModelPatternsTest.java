@@ -146,10 +146,14 @@ class CreditModelPatternsTest {
      * outside the application, and throwing would take down every screen that
      * lists keys — including the one an approver would use to repair the row.
      *
-     * <p>What it costs is that the screen then says "nothing is blocked" while
-     * the gateway, judging the same broken value, refuses the key outright. Both
-     * are silent, and they disagree, which is why each of these paths logs the
-     * key at WARN. The test pins the leniency; the log is what makes it findable.
+     * <p>What it costs is that the refusal disappears everywhere at once. The
+     * gateway does drop a key whose document it cannot parse, but it never sees
+     * this one: the sync document is built through this same method, so the
+     * malformed value has already become an empty array before it is sent. Every
+     * surface then agrees that nothing is blocked, which is why each of these
+     * paths logs the key at WARN — agreement is not evidence here, and the log
+     * is the only thing that marks it. The test pins the leniency; the document
+     * side is pinned in {@code LlmGatewayEndpointTest}.
      */
     @Test
     void readsAnUnreadableStoredValueAsEmptyRatherThanThrowing() {

@@ -300,6 +300,52 @@ class LlmGatewayEndpointTest {
         assertThat(body).contains("\"creditDeniedModels\":[\"openai/*-pro\"]");
     }
 
+    /**
+     * What actually happens to a stored list this side cannot read: the gateway
+     * is served an empty one and goes on serving the key.
+     *
+     * <p>Worth pinning because the obvious guess is the opposite. The gateway
+     * does drop a key whose document it cannot parse — but it never gets the
+     * chance here, because the document is built through the same lenient
+     * reader, so the malformed value is already an empty array by the time it is
+     * serialized. The two sides do not disagree; they agree on "nothing is
+     * blocked", which is the wrong answer arrived at quietly from both ends. The
+     * WARN log is the only thing that marks it.
+     *
+     * <p>Reaching this state takes a write from outside the application: the
+     * column is not null and V109's CHECK requires a JSON array. The constraint
+     * is dropped and restored here for that reason, which is also why this is a
+     * documented behaviour rather than a live hole.
+     */
+    @Test
+    void anUnreadableStoredDenyListReachesTheGatewayAsEmpty() throws Exception {
+        long account = insertOpenrouterAccount();
+        KeyFixture corrupt = newKey("corrupt-deny");
+        jdbcTemplate.update("alter table llm_api_keys "
+                + "drop constraint llm_api_keys_credit_denied_models_check");
+        try {
+            jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                    + "openrouter_account_id = ?, credit_denied_models = ?::jsonb where id = ?",
+                    account, "{\"not\":\"an array\"}", corrupt.id());
+
+            syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
+            String body = syncFrom(SOURCE, TOKEN, poll(0))
+                    .andExpect(status().isOk())
+                    // The key is served, not dropped.
+                    .andExpect(jsonPath("$.keys[?(@.keyId=='" + corrupt.publicId()
+                            + "')].keyId").exists())
+                    .andReturn().getResponse().getContentAsString();
+            // And its fence arrives empty, which reads as "blocks nothing".
+            assertThat(body).contains("\"creditDeniedModels\":[]");
+        } finally {
+            jdbcTemplate.update("update llm_api_keys set credit_denied_models = '[]'::jsonb "
+                    + "where id = ?", corrupt.id());
+            jdbcTemplate.update("alter table llm_api_keys "
+                    + "add constraint llm_api_keys_credit_denied_models_check "
+                    + "check (llm_credit_model_patterns_valid(credit_denied_models))");
+        }
+    }
+
     @Test
     void upstreamCredentialTravelsOnlyForActiveFundedProvisionedKeys() throws Exception {
         // The one usable secret in the document: present exactly when the key
