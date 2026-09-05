@@ -196,7 +196,7 @@ public final class CreditModelPatterns {
      * vendor half. Until both land here, the screen that lists what a key may
      * call <em>over-reports</em> — it cannot subtract a denied model, and it
      * narrows by the older grammar. That round owns moving this method and the
-     * case table in {@code CreditModelAllowlistTest}, which is kept input for
+     * case table in {@code CreditModelPatternsTest}, which is kept input for
      * input with the gateway's own table. <b>Keeping those two tables equal is
      * the only thing holding this copy together</b>, so move them together or
      * the divergence will be silent: every case in a stale table still passes.

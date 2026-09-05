@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -168,6 +169,69 @@ class LlmKeyModelsTest {
                 .andExpect(jsonPath("$.paid.allowedPatterns.length()").value(2));
     }
 
+    /**
+     * A denied model must not be listed as callable. This is the assertion the
+     * whole deny list rests on from the screen's side: the gateway refuses the
+     * call regardless, so leaving it out here does not let anybody spend
+     * anything — what it does is show a reviewer a model the key cannot use,
+     * and reviewers approve against this listing. A wrong row here becomes a
+     * decision, not just a wrong pixel.
+     *
+     * <p>The two lists overlap on purpose: {@code openai/gpt-4o} is inside
+     * {@code openai/*} and denied, so it can only be absent because the deny
+     * list removed it. The surviving sibling is asserted by name as well — a
+     * test that only says a row is missing also passes when the listing is
+     * empty for some unrelated reason, and the denied name must be one the
+     * fixture actually seeds or the assertion is true no matter what the
+     * server does.
+     */
+    @Test
+    void aDeniedModelIsNotListedEvenWhenTheAllowListCoversIt() throws Exception {
+        seedCatalogue(Instant.now());
+        UUID keyId = createKey("차단 목록 키", "5.00", "hash-denied",
+                "[\"openai/*\"]", "[\"openai/gpt-4o\"]");
+
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.models[*].id",
+                        Matchers.not(Matchers.hasItem("openai/gpt-4o"))))
+                .andExpect(jsonPath("$.paid.models[*].id",
+                        Matchers.hasItem("openai/gpt-5.6-luna")))
+                .andExpect(jsonPath("$.paid.models.length()").value(1));
+    }
+
+    /**
+     * The deny list narrows on its own, with no allow list to hide behind. An
+     * empty allow list means "every model", so this is the case where the only
+     * thing standing between the catalogue and the screen is the deny list.
+     */
+    @Test
+    void aDenyListNarrowsAnOtherwiseUnrestrictedKey() throws Exception {
+        seedCatalogue(Instant.now());
+        UUID unrestricted = createKey("차단 없는 키", "5.00", "hash-open", null);
+        UUID denied = createKey("차단만 있는 키", "5.00", "hash-denyonly", null,
+                "[\"openai/*\"]");
+
+        int all = countModels(unrestricted);
+        int left = countModels(denied);
+        assertThat(left)
+                .describedAs("the deny list must remove the openai rows, not nothing")
+                .isLessThan(all);
+
+        mockMvc.perform(get(url(denied)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.models[*].id",
+                        Matchers.not(Matchers.hasItem(Matchers.startsWith("openai/")))));
+    }
+
+    private int countModels(UUID keyId) throws Exception {
+        String body = mockMvc.perform(get(url(keyId))
+                        .header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(body).get("paid").get("models").size();
+    }
+
     @Test
     void aListingThatNeverArrivedIsSaidPlainlyRatherThanShownEmpty() throws Exception {
         UUID keyId = createKey("캐시 없는 키", "5.00", "hash-unknown", null);
@@ -286,6 +350,11 @@ class LlmKeyModelsTest {
 
     private UUID createKey(String name, String creditLimit, String openrouterKeyHash,
             String allowedModels) {
+        return createKey(name, creditLimit, openrouterKeyHash, allowedModels, null);
+    }
+
+    private UUID createKey(String name, String creditLimit, String openrouterKeyHash,
+            String allowedModels, String deniedModels) {
         long requestId = jdbcTemplate.queryForObject("""
                 insert into requests (resource_type, workspace_id, org_id, requester_id, purpose,
                                       display_name)
@@ -299,8 +368,10 @@ class LlmKeyModelsTest {
                                           token_hash, token_prefix, status, created_by,
                                           credit_limit, openrouter_account_id,
                                           openrouter_key_hash, openrouter_key_enc,
-                                          credit_allowed_models)
+                                          credit_allowed_models,
+                                          credit_denied_models)
                 values (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?::numeric, ?, ?, ?,
+                        coalesce(?::jsonb, '[]'::jsonb),
                         coalesce(?::jsonb, '[]'::jsonb))
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, name, name + " 용도", hash,
@@ -310,7 +381,8 @@ class LlmKeyModelsTest {
                 // The hash and its ciphertext are one fact: the schema refuses
                 // a key that carries one without the other.
                 openrouterKeyHash == null ? null : "enc-" + openrouterKeyHash,
-                allowedModels);
+                allowedModels,
+                deniedModels);
         jdbcTemplate.update("""
                 insert into resource_access_grants
                        (resource_type, resource_id, grantee_type, user_id, role)
