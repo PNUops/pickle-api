@@ -56,7 +56,7 @@ public final class PassthroughEndpoints {
 
     /**
      * The closed vocabulary, matching the {@code in} list of the DB CHECK
-     * installed by V110. Both sides have to move together; the CHECK is what
+     * installed by V111. Both sides have to move together; the CHECK is what
      * actually refuses a bad write, and this is what tells a reviewer why.
      */
     public static final Set<String> KNOWN = Set.of(IMAGES, EMBEDDINGS);
