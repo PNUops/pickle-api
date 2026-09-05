@@ -41,7 +41,7 @@ public record ApproveLlmKeyRequestSpec(
         @Min(value = 0, message = "일일 토큰 수는 0 이상이어야 합니다.")
         @Nullable Long grantedDailyTokens,
 
-        @Schema(description = "부여 금액 한도(USD 크레딧). 비우거나 0이면 상용(금액) 축을 쓸 수 없습니다.")
+        @Schema(description = "부여 금액 한도(USD 크레딧). 비우거나 0이면 유료 모델을 쓸 수 없습니다.")
         @DecimalMin(value = "0", message = "금액 한도는 0 이상이어야 합니다.")
         @Digits(integer = 10, fraction = 2, message = "금액 한도는 소수점 둘째 자리까지 입력해 주세요.")
         @Nullable BigDecimal grantedCreditLimit,

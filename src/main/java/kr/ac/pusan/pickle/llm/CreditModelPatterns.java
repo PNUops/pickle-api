@@ -126,7 +126,7 @@ public final class CreditModelPatterns {
             }
             if (isReserved(value)) {
                 errors.add(new FieldValidationError(at,
-                        "자체 서빙 모델은 이 목록의 대상이 아닙니다. 상용 모델 이름을 적어 주세요."));
+                        "자체 서빙 모델은 이 목록의 대상이 아닙니다. 유료 모델 이름을 적어 주세요."));
                 continue;
             }
             if (!PATTERN.matcher(value).matches()) {

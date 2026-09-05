@@ -272,7 +272,7 @@ components:
           format: "date-time"
           type: "string"
         creditAllowedModels:
-          description: "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열은 제한 없음"
+          description: "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열은 제한 없음"
           items:
             type: "string"
           type: "array"
@@ -280,8 +280,7 @@ components:
           description: "유료 모델이 발급되어 현재 연결되어 있는지"
           type: "boolean"
         creditDeniedModels:
-          description: "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열은 차단 없음. 허용 목록과 함께 걸리면 차\
-            단이 이긴다."
+          description: "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열은 차단 없음. 허용 목록과 함께 걸리면 차단이 이긴다."
           items:
             type: "string"
           type: "array"
@@ -1390,7 +1389,7 @@ components:
           - "array"
           - "null"
         grantedCreditLimit:
-          description: "부여 금액 한도(USD 크레딧). 비우거나 0이면 상용(금액) 축을 쓸 수 없습니다."
+          description: "부여 금액 한도(USD 크레딧). 비우거나 0이면 유료 모델을 쓸 수 없습니다."
           minimum: 0
           type:
           - "number"
@@ -1886,7 +1885,7 @@ components:
           - "string"
           - "null"
         defaultCreditAllowedModels:
-          description: "승인 화면 프리필에 쓸 상용 모델 허용 목록 기본값. 비우면 제한 없음이 기본이 됩니다."
+          description: "승인 화면 프리필에 쓸 유료 모델 허용 목록 기본값. 비우면 제한 없음이 기본이 됩니다."
           items:
             type: "string"
           maxItems: 50
@@ -1895,7 +1894,7 @@ components:
           - "array"
           - "null"
         defaultCreditDeniedModels:
-          description: "승인 화면 프리필에 쓸 상용 모델 차단 목록 기본값. 비우면 차단 없음이 기본이 됩니다."
+          description: "승인 화면 프리필에 쓸 유료 모델 차단 목록 기본값. 비우면 차단 없음이 기본이 됩니다."
           items:
             type: "string"
           maxItems: 50
@@ -3083,7 +3082,7 @@ components:
           - "string"
           - "null"
         creditLimit:
-          description: "상용 모델에 쓸 수 있는 금액 한도(USD). 0이면 상용 모델을 쓸 수 없습니다."
+          description: "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다."
           type: "number"
         creditUsage:
           description: "OpenRouter가 보고한 현재 limit window 사용액(USD). DAILY/WEEKLY/MONTHLY\
@@ -3107,7 +3106,7 @@ components:
           description: "한도에 도달해 자체 서빙 모델 요청이 거절되고 있는 상태."
           type: "boolean"
         todayTokens:
-          description: "오늘(KST) 자체 서빙 모델에 쓴 입출력 토큰 합계. 상용 모델 사용은 금액 한도에 계상되므로 여기 들\
+          description: "오늘(KST) 자체 서빙 모델에 쓴 입출력 토큰 합계. 유료 모델 사용은 금액 한도에 계상되므로 여기 들\
             어가지 않습니다. 사용량 전송이 배치라 방금 쓴 만큼은 아직 반영되지 않았을 수 있습니다."
           format: "int64"
           type: "integer"
@@ -3145,22 +3144,22 @@ components:
           format: "date-time"
           type: "string"
         creditAllowedModels:
-          description: "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열이면 제한이 없습니다. 자체 서빙 모델은 이\
-            \ 목록과 무관하게 쓸 수 있습니다."
+          description: "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열이면 제한이 없습니다. 자체 서빙 모델은 이 목록과 무관하\
+            게 쓸 수 있습니다."
           items:
             type: "string"
           type: "array"
         creditAxisConnected:
-          description: "상용 축 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다."
+          description: "유료 모델 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다."
           type: "boolean"
         creditDeniedModels:
-          description: "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸\
-            리면 차단이 이깁니다."
+          description: "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸리면 차단이 이\
+            깁니다."
           items:
             type: "string"
           type: "array"
         creditLimit:
-          description: "상용(금액) 축 한도, USD 크레딧. 0이면 상용 모델을 쓸 수 없습니다."
+          description: "유료 모델 한도, USD 크레딧. 0이면 유료 모델을 쓸 수 없습니다."
           type: "number"
         creditLimitReset:
           anyOf:
@@ -3365,19 +3364,18 @@ components:
           - "integer"
           - "null"
         grantedCreditAllowedModels:
-          description: "부여된 상용(금액) 축 모델 허용 목록. 빈 배열이면 제한이 없습니다. 어떤 모델을 열지는 신청자가 요구\
-            하는 값이 아니라 승인자가 정하는 값이라 희망 쪽 짝이 없습니다."
+          description: "부여된 유료 모델 허용 목록. 빈 배열이면 제한이 없습니다. 어떤 모델을 열지는 신청자가 요구하는 값이\
+            \ 아니라 승인자가 정하는 값이라 희망 쪽 짝이 없습니다."
           items:
             type: "string"
           type: "array"
         grantedCreditDeniedModels:
-          description: "부여된 상용(금액) 축 모델 차단 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸리면 차단이\
-            \ 이깁니다."
+          description: "부여된 유료 모델 차단 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다."
           items:
             type: "string"
           type: "array"
         grantedCreditLimit:
-          description: "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 상용(금액) 축을 쓸 수 없습니다."
+          description: "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 유료 모델을 쓸 수 없습니다."
           type:
           - "number"
           - "null"
@@ -5157,13 +5155,13 @@ components:
           $ref: "#/components/schemas/OpenRouterAccountCreditsResponse"
           description: "DB cache에서 읽은 account credits·예상·미관리 지출 관측 상태"
         defaultCreditAllowedModels:
-          description: "승인 화면이 프리필에 쓰는 상용 모델 허용 목록 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도\
+          description: "승인 화면이 프리필에 쓰는 유료 모델 허용 목록 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도\
             \ 이미 발급된 키는 그대로입니다."
           items:
             type: "string"
           type: "array"
         defaultCreditDeniedModels:
-          description: "승인 화면이 프리필에 쓰는 상용 모델 차단 목록 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도\
+          description: "승인 화면이 프리필에 쓰는 유료 모델 차단 목록 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도\
             \ 이미 발급된 키는 그대로입니다."
           items:
             type: "string"
@@ -7374,7 +7372,7 @@ components:
           - "string"
           - "null"
         defaultCreditAllowedModels:
-          description: "새 상용 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
+          description: "새 유료 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
             기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
           items:
             type: "string"
@@ -7384,7 +7382,7 @@ components:
           - "array"
           - "null"
         defaultCreditDeniedModels:
-          description: "새 상용 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
+          description: "새 유료 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
             기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
           items:
             type: "string"
