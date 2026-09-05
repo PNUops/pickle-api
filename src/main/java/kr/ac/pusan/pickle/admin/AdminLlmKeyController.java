@@ -87,7 +87,7 @@ public class AdminLlmKeyController {
     @PutMapping("/{keyId}/limits")
     @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 한도 교체",
-            description = "여섯 한도 값을 한 번에 교체합니다. 시스템 운영자는 금액과 리셋 창을 바꿀 수 없습니다.")
+            description = "아홉 한도 값을 한 번에 교체합니다. 시스템 운영자는 금액과 리셋 창, 모델 목록, 기능 권한을 바꿀 수 없습니다.")
     @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
             content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))

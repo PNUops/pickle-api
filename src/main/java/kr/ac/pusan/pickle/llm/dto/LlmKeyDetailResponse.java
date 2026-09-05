@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -9,6 +10,7 @@ import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -54,6 +56,12 @@ public record LlmKeyDetailResponse(
         @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열이면 차단이 "
                 + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다.")
         List<String> creditDeniedModels,
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS}),
+                arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열이면 "
+                        + "기능을 하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록은 채워야 "
+                        + "열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."))
+        List<String> passthroughEndpoints,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,
         String workspaceName,
@@ -67,12 +75,14 @@ public record LlmKeyDetailResponse(
 
     public static LlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId, String workspaceName,
             List<String> creditAllowedModels, List<String> creditDeniedModels,
+            List<String> passthroughEndpoints,
             @Nullable ResourceRole myResourceRole, boolean accessManageAllowed) {
         return new LlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.getStatus(), key.getTokenPrefix(), key.getExpiresAt(), key.getLastUsedAt(),
                 key.getRpm(), key.getTpm(), key.getConcurrency(), key.isRecordBodies(),
                 key.getCreditLimit(), key.getCreditLimitReset(), key.isCreditAxisConnected(),
-                creditAllowedModels, creditDeniedModels, workspaceId, workspaceName,
+                creditAllowedModels, creditDeniedModels, passthroughEndpoints,
+                workspaceId, workspaceName,
                 key.getCreatedAt(), key.getRevokedAt(), myResourceRole, accessManageAllowed);
     }
 }

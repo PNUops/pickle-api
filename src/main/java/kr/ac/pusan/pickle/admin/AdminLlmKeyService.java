@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.llm.CreditModelPatterns;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
@@ -203,6 +204,8 @@ public class AdminLlmKeyService {
                         "llm key " + key.getPublicId()),
                 CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
                         "llm key " + key.getPublicId()),
+                PassthroughEndpoints.fromJson(objectMapper, key.getPassthroughEndpoints(),
+                        "llm key " + key.getPublicId()),
                 Instant.now());
     }
 
@@ -211,7 +214,7 @@ public class AdminLlmKeyService {
             AdminLlmKeyLimitsRequest form, String ip) {
         if (!form.isComplete()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("limits",
-                    "여덟 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
+                    "아홉 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
         }
         if (form.getCreditLimit() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
@@ -230,6 +233,8 @@ public class AdminLlmKeyService {
                 "creditAllowedModels", modelErrors);
         List<String> deniedModels = CreditModelPatterns.normalize(form.getCreditDeniedModels(),
                 "creditDeniedModels", modelErrors);
+        List<String> passthroughEndpoints = PassthroughEndpoints.normalize(
+                form.getPassthroughEndpoints(), "passthroughEndpoints", modelErrors);
         if (!modelErrors.isEmpty()) {
             throw ApiException.validationFailed(modelErrors);
         }
@@ -257,15 +262,22 @@ public class AdminLlmKeyService {
         boolean deniedModelsChanged = !deniedModels.equals(
                 CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
                         "llm key " + key.getPublicId()));
+        // The passthrough list belongs on the same side of the gate and for a
+        // sharper reason than the two above: it is the only one that grants. A
+        // SYS_MANAGER left outside this branch could hand a key image
+        // generation, which settles per image, without moving any number here.
+        boolean passthroughChanged = !passthroughEndpoints.equals(
+                PassthroughEndpoints.fromJson(objectMapper, key.getPassthroughEndpoints(),
+                        "llm key " + key.getPublicId()));
         boolean moneyChanged = key.getCreditLimit().compareTo(form.getCreditLimit()) != 0
                 || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset())
-                || allowedModelsChanged || deniedModelsChanged;
+                || allowedModelsChanged || deniedModelsChanged || passthroughChanged;
         boolean bindingRequested = form.getOpenrouterAccountId() != null
                 && key.getOpenrouterAccountId() == null;
         if (actor.role() == UserRole.SYS_MANAGER && (moneyChanged || bindingRequested)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다",
-                    "시스템 운영자는 금액 한도와 모델 허용·차단 목록을 변경할 수 없습니다.");
+                    "시스템 운영자는 금액 한도와 모델 목록, 기능 권한을 변경할 수 없습니다.");
         }
         OpenRouterAccount account = resolveLimitAccount(key, form);
         boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
@@ -287,6 +299,8 @@ public class AdminLlmKeyService {
                 form.getDailyTokens(), form.getCreditLimit(), form.getCreditLimitReset(),
                 CreditModelPatterns.toJson(objectMapper, allowedModels),
                 CreditModelPatterns.toJson(objectMapper, deniedModels), Instant.now());
+        key.applyPassthroughEndpoints(
+                PassthroughEndpoints.toJson(objectMapper, passthroughEndpoints));
         if (bindingChanged) {
             key.bindOpenrouterAccount(account.getId(), Instant.now());
         }
@@ -311,6 +325,11 @@ public class AdminLlmKeyService {
         args.put("creditLimitReset", form.getCreditLimitReset());
         args.put("creditAllowedModels", allowedModels);
         args.put("creditDeniedModels", deniedModels);
+        // The reason this list sits inside the money gate above is the reason it
+        // has to be here: it changes the shape of what a key may spend on
+        // without moving any number, so an audit record that carries the numbers
+        // and not this one cannot answer who opened image generation.
+        args.put("passthroughEndpoints", passthroughEndpoints);
         args.put("openrouterAccountId", account == null ? null : account.getPublicId());
         args.putAll(allocationRecord);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

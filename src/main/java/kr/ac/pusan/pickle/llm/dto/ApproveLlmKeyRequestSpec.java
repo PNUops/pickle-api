@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,6 +62,14 @@ public record ApproveLlmKeyRequestSpec(
                 + "0이어도 남습니다. 자체 서빙 모델은 이 목록과 무관합니다.")
         @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
         @Nullable List<String> grantedCreditDeniedModels,
+
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS}),
+                arraySchema = @Schema(description = "이 키에 부여할 기능 권한. 비우면 기능을 "
+                        + "하나도 쓸 수 없습니다. 모델 목록과 반대로 이 목록은 채워야 "
+                        + "열립니다. 채팅과 모델 조회는 이 목록과 무관합니다."))
+        @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
+        @Nullable List<String> grantedPassthroughEndpoints,
 
         @Schema(description = "유료 모델을 결제할 기관 사업 계정. 하나뿐이면 생략할 수 있습니다.")
         @Nullable UUID openrouterAccountId) {

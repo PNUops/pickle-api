@@ -153,6 +153,24 @@ public class LlmApiKey {
     @Column(name = "credit_denied_models", nullable = false, columnDefinition = "jsonb")
     private String creditDeniedModels = CreditModelPatterns.EMPTY_JSON;
 
+    /**
+     * JSON array of the passthrough capabilities this key may reach, normalized
+     * by {@link PassthroughEndpoints}.
+     *
+     * <p><b>Empty means none of them</b>, which is the opposite of the two
+     * lists above and the whole reason this is a third column rather than a
+     * third meaning on one of them. A path nobody granted must not open by the
+     * mere act of the gateway learning to serve it.
+     *
+     * <p>It governs only the paths the passthrough surface adds. Chat
+     * completions and the model catalogue are outside it and keep the fences
+     * they already have, so an empty list takes nothing away from a key that
+     * exists now.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "passthrough_endpoints", nullable = false, columnDefinition = "jsonb")
+    private String passthroughEndpoints = PassthroughEndpoints.EMPTY_JSON;
+
     /** OpenRouter's identifier for this key's own OpenRouter key. */
     @Column(name = "openrouter_key_hash")
     private @Nullable String openrouterKeyHash;
@@ -470,6 +488,21 @@ public class LlmApiKey {
         this.creditDeniedModels = creditDeniedModels;
     }
 
+    /**
+     * Sets the passthrough capability list, at approval and at administrator
+     * replacement alike.
+     *
+     * <p><b>Its own method rather than a ninth argument to
+     * {@link #replaceLimits}</b>, and a third String beside the two model lists
+     * is exactly why. That signature already documents transposition as the
+     * hazard its ordering creates; a third adjacent JSON array would make two
+     * transpositions available instead of one, and this one inverts a grant
+     * rather than a restriction.
+     */
+    public void applyPassthroughEndpoints(String passthroughEndpoints) {
+        this.passthroughEndpoints = passthroughEndpoints;
+    }
+
     /** First binding only. A bound key never moves or clears its vendor account. */
     public void bindOpenrouterAccount(long accountId, Instant when) {
         if (openrouterAccountId != null && openrouterAccountId != accountId) {
@@ -577,6 +610,11 @@ public class LlmApiKey {
     /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getCreditDeniedModels() {
         return creditDeniedModels;
+    }
+
+    /** The stored JSON array; read it with {@link PassthroughEndpoints#fromJson}. */
+    public String getPassthroughEndpoints() {
+        return passthroughEndpoints;
     }
 
     public @Nullable String getOpenrouterKeyHash() {
