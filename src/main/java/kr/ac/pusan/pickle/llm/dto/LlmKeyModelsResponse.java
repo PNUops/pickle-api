@@ -66,11 +66,25 @@ public record LlmKeyModelsResponse(
     @Schema(description = "유료 모델과 그 목록의 상태")
     public record PaidModels(
             @Schema(description = "사용 가능 여부") PaidAccess access,
-            @Schema(description = "이 키의 모델 허용 목록. 비어 있으면 제한 없음")
+            @Schema(description = "이 키의 모델 허용 목록. 비어 있으면 허용 쪽 제한이 없습니다.")
             List<String> allowedPatterns,
+            @Schema(description = "이 키의 모델 차단 목록. 비어 있으면 차단하는 모델이 없습니다. "
+                    + "허용 목록과 함께 걸리면 차단이 이깁니다.")
+            List<String> deniedPatterns,
             @Schema(description = "호출할 수 있는 모델") List<PaidModel> models,
-            @Schema(description = "허용 목록에 있지만 지금 목록에서 찾지 못한 이름")
-            List<String> unmatchedPatterns,
+            @Schema(description = "허용 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
+                    + "오타이거나, 벤더가 내린 모델이거나, 목록이 오래된 것입니다.")
+            List<String> unmatchedAllowedPatterns,
+            // Deliberately not worded as a warning. A deny rule that matches
+            // nothing today is as likely to be pre-emptive as mistyped — the
+            // catalogue grows several models a week, and blocking a tier before
+            // it ships is half the reason this round added wildcards. Wording it
+            // as a problem gets a reviewer to delete a rule they meant, and the
+            // consequence of that arrives later, on the day the model appears.
+            @Schema(description = "차단 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
+                    + "지금은 아무 모델도 막지 않고 있다는 뜻이며, 아직 나오지 않은 모델을 "
+                    + "미리 막아 둔 경우에도 여기에 나옵니다.")
+            List<String> unmatchedDeniedPatterns,
             @Schema(description = "목록의 신선도") CatalogFreshness catalogFreshness,
             @Schema(description = "목록을 마지막으로 가져온 시각. 한 번도 성공하지 못했으면 비어 있습니다")
             @Nullable Instant catalogObservedAt) {

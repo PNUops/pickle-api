@@ -164,8 +164,8 @@ class LlmKeyModelsTest {
                         Matchers.everyItem(Matchers.startsWith("openai/"))))
                 // A pattern the listing cannot satisfy is said out loud. Left
                 // silent, a withdrawn model looks like an empty allow list.
-                .andExpect(jsonPath("$.paid.unmatchedPatterns.length()").value(1))
-                .andExpect(jsonPath("$.paid.unmatchedPatterns[0]").value("vendor/gone"))
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns.length()").value(1))
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns[0]").value("vendor/gone"))
                 .andExpect(jsonPath("$.paid.allowedPatterns.length()").value(2));
     }
 
@@ -250,6 +250,66 @@ class LlmKeyModelsTest {
         mockMvc.perform(get(url(neither)).header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.paid.access").value("UNRESTRICTED"));
+    }
+
+    /**
+     * The two lists are reported symmetrically, and a key narrowed only by a
+     * deny list has somewhere to show it.
+     *
+     * <p>This is the state that made the label a problem in the first place:
+     * {@code LISTED} with an empty {@code allowedPatterns} would say "narrowed
+     * to a list" while showing no list at all, which moves the contradiction
+     * rather than removing it. The pattern goes in {@code deniedPatterns}, so
+     * the label and the fields agree.
+     */
+    @Test
+    void aDenyOnlyKeyReportsItsPatternsOnTheDenySide() throws Exception {
+        seedCatalogue(Instant.now());
+        UUID keyId = createKey("차단만 있는 대칭 키", "5.00", "hash-symmetry", null,
+                "[\"openai/*\"]");
+
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.access").value("LISTED"))
+                .andExpect(jsonPath("$.paid.allowedPatterns.length()").value(0))
+                .andExpect(jsonPath("$.paid.deniedPatterns.length()").value(1))
+                .andExpect(jsonPath("$.paid.deniedPatterns[0]").value("openai/*"))
+                // The listing really did narrow: the non-openai row survives and
+                // the openai ones are gone. Asserting only the patterns would
+                // pass even if the deny list were carried but never applied.
+                .andExpect(jsonPath("$.paid.models.length()").value(1))
+                .andExpect(jsonPath("$.paid.models[0].id").value("tinyvendor/cheap-8b"));
+    }
+
+    /**
+     * A deny rule matching nothing today is reported as a fact, not a fault.
+     *
+     * <p>The case is deliberately a well-formed pattern for a model tier the
+     * catalogue does not carry yet — blocking something before it ships is a
+     * thing reviewers do, and this round added wildcards partly so they could.
+     * Using a typo here would make the field read as an error report, and a
+     * reviewer who reads it that way deletes a rule they meant to keep; the
+     * cost of that arrives on the day the model appears.
+     */
+    @Test
+    void aDenyRuleMatchingNothingIsReportedWithoutCallingItAMistake() throws Exception {
+        seedCatalogue(Instant.now());
+        UUID keyId = createKey("선제 차단 키", "5.00", "hash-preemptive",
+                "[\"openai/*\"]", "[\"openai/*-pro\"]");
+
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.unmatchedDeniedPatterns.length()").value(1))
+                .andExpect(jsonPath("$.paid.unmatchedDeniedPatterns[0]").value("openai/*-pro"))
+                // The allow side is untouched by it, and both openai rows the
+                // fixture seeds are still reachable — the rule blocks nothing
+                // today, which is exactly what the field is saying.
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns.length()").value(0))
+                .andExpect(jsonPath("$.paid.models.length()").value(2))
+                .andExpect(jsonPath("$.paid.models[*].id",
+                        Matchers.hasItem("openai/gpt-4o")))
+                .andExpect(jsonPath("$.paid.models[*].id",
+                        Matchers.hasItem("openai/gpt-5.6-luna")));
     }
 
     private int countModels(UUID keyId) throws Exception {

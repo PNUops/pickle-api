@@ -180,19 +180,17 @@ public class LlmKeyModelService {
                 .filter(row -> !matchesAny(denied, row.modelId()))
                 .toList();
 
-        // An allow-list entry that matched nothing is worth saying out loud. It
-        // means a typo, a model the vendor withdrew, or a listing too old to
-        // hold it — the server cannot tell which, so it reports the fact and
-        // leaves the reading to the person who wrote the entry.
-        List<String> unmatched = new ArrayList<>();
-        for (String pattern : patterns) {
-            if (rows.stream().noneMatch(row -> CreditModelPatterns.matches(pattern, row.modelId()))) {
-                unmatched.add(pattern);
-            }
-        }
-
+        // An entry that matched nothing is worth saying out loud on either
+        // list, but the two facts do not mean the same thing and the response
+        // keeps them apart. On the allow side it is mostly a typo, a model the
+        // vendor withdrew, or a listing too old to hold it. On the deny side it
+        // is equally likely to be deliberate: blocking a tier before it ships
+        // is a thing reviewers do, and the catalogue gains models weekly. The
+        // server cannot tell which, so it reports the fact and leaves the
+        // reading to the person who wrote the entry.
         return new LlmKeyModelsResponse.PaidModels(access(key, patterns, denied), patterns,
-                sorted(reachable), unmatched, freshness, state.lastSuccessAt());
+                denied, sorted(reachable), unmatchedAgainst(patterns, rows),
+                unmatchedAgainst(denied, rows), freshness, state.lastSuccessAt());
     }
 
     /**
@@ -216,6 +214,18 @@ public class LlmKeyModelService {
         // list and has to decide which of the two to believe.
         return patterns.isEmpty() && denied.isEmpty()
                 ? PaidAccess.UNRESTRICTED : PaidAccess.LISTED;
+    }
+
+    /** The entries of one list that no catalogue row answers to. */
+    private static List<String> unmatchedAgainst(List<String> patterns,
+            List<OpenRouterCatalogueRepository.CatalogueRow> rows) {
+        List<String> unmatched = new ArrayList<>();
+        for (String pattern : patterns) {
+            if (rows.stream().noneMatch(row -> CreditModelPatterns.matches(pattern, row.modelId()))) {
+                unmatched.add(pattern);
+            }
+        }
+        return unmatched;
     }
 
     private static boolean matchesAny(List<String> patterns, String modelId) {
