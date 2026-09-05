@@ -1,10 +1,12 @@
 package kr.ac.pusan.pickle.llm.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.util.List;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -60,16 +62,22 @@ public record LlmKeyRequestSpecResponse(
 
         @Schema(description = "부여된 유료 모델 차단 목록. 빈 배열이면 차단이 없습니다. "
                 + "허용 목록과 함께 걸리면 차단이 이깁니다.")
-        List<String> grantedCreditDeniedModels) {
+        List<String> grantedCreditDeniedModels,
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS}),
+                arraySchema = @Schema(description = "승인자가 부여한 기능 권한. 빈 배열은 "
+                        + "부여하지 않았다는 뜻이다."))
+        List<String> grantedPassthroughEndpoints) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
-            List<String> grantedCreditAllowedModels, List<String> grantedCreditDeniedModels) {
+            List<String> grantedCreditAllowedModels, List<String> grantedCreditDeniedModels,
+            List<String> grantedPassthroughEndpoints) {
         return new LlmKeyRequestSpecResponse(detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.isReqUseCampus(),
                 detail.isReqUseCommercial(), detail.getReqCreditLimit(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
                 detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
                 detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels,
-                grantedCreditDeniedModels);
+                grantedCreditDeniedModels, grantedPassthroughEndpoints);
     }
 }

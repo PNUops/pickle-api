@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -11,18 +12,25 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Full replacement of the eight limits on an administered LLM key.
+ * Full replacement of the nine limits on an administered LLM key.
  *
- * <p>Two of them spell "unset" in opposite directions, which is the trap in
+ * <p>Three of them spell "unset" in different directions, which is the trap in
  * this class: {@code creditLimit} refuses null because money has no unlimited,
  * while a null {@code creditAllowedModels} is exactly unrestricted.
  *
  * <p>{@code creditDeniedModels} is the eighth and reads the other way round
  * from the seventh: a null or empty allow list opens everything, a null or
  * empty deny list closes nothing.
+ *
+ * <p>{@code passthroughEndpoints} is the ninth and is the only one of the three
+ * lists that grants rather than restricts. Null or empty there is not
+ * "unrestricted" and not "blocks nothing" but <b>none of them</b>: a key with
+ * an empty list reaches no passthrough path at all. Reading it like either of
+ * the two above inverts what an administrator meant.
  */
 public class AdminLlmKeyLimitsRequest {
 
@@ -60,6 +68,10 @@ public class AdminLlmKeyLimitsRequest {
     @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
     private @Nullable List<String> creditDeniedModels;
     private boolean creditDeniedModelsSet;
+
+    @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
+    private @Nullable List<String> passthroughEndpoints;
+    private boolean passthroughEndpointsSet;
 
     private @Nullable UUID openrouterAccountId;
 
@@ -155,6 +167,22 @@ public class AdminLlmKeyLimitsRequest {
         this.creditDeniedModelsSet = true;
     }
 
+    @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+            PassthroughEndpoints.EMBEDDINGS}),
+            arraySchema = @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                    description = "이 키에 부여할 기능 권한. 빈 배열이나 null이면 기능을 "
+                            + "하나도 쓸 수 없습니다. 모델 목록 둘과 반대로 이 목록은 "
+                            + "채워야 열립니다. 채팅과 모델 조회는 이 값에 영향을 받지 "
+                            + "않습니다."))
+    public @Nullable List<String> getPassthroughEndpoints() {
+        return passthroughEndpoints;
+    }
+
+    public void setPassthroughEndpoints(@Nullable List<String> passthroughEndpoints) {
+        this.passthroughEndpoints = passthroughEndpoints;
+        this.passthroughEndpointsSet = true;
+    }
+
     @Schema(description = "유료 모델을 결제할 사업 계정. 생략하거나 null이면 기존 연결을 유지합니다.")
     public @Nullable UUID getOpenrouterAccountId() {
         return openrouterAccountId;
@@ -168,6 +196,6 @@ public class AdminLlmKeyLimitsRequest {
     public boolean isComplete() {
         return rpmSet && tpmSet && concurrencySet && dailyTokensSet
                 && creditLimitSet && creditLimitResetSet && creditAllowedModelsSet
-                && creditDeniedModelsSet;
+                && creditDeniedModelsSet && passthroughEndpointsSet;
     }
 }

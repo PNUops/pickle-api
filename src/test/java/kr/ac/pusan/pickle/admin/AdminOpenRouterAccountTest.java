@@ -781,7 +781,7 @@ class AdminOpenRouterAccountTest {
                                 null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ",
                                         "~Anthropic/Claude-Sonnet-Latest"),
                                 java.util.List.of("openai/*-pro", " OpenAI/o1* "),
-                                account.getPublicId())), sysAdmin));
+                                null, account.getPublicId())), sysAdmin));
 
         String allowed =
                 "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]";
@@ -817,7 +817,7 @@ class AdminOpenRouterAccountTest {
         Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
         ApproveRequestRequest form = new ApproveRequestRequest(null, null, null, null,
                 new ApproveLlmKeyRequestSpec(null, null, null, null, null, null, null,
-                        java.util.List.of("openai/*-pro"), null));
+                        java.util.List.of("openai/*-pro"), null, null));
 
         java.util.List<kr.ac.pusan.pickle.common.error.FieldValidationError> errors =
                 new java.util.ArrayList<>();
@@ -837,7 +837,7 @@ class AdminOpenRouterAccountTest {
         requestSupport.validateApprove(approvalRequest, new ApproveRequestRequest(
                 null, null, null, null,
                 new ApproveLlmKeyRequestSpec(null, null, null, null, null, null,
-                        java.util.List.of("openai/*-pro"), null, null)), allowErrors);
+                        java.util.List.of("openai/*-pro"), null, null, null)), allowErrors);
         assertThat(allowErrors).isNotEmpty();
     }
 
@@ -853,7 +853,7 @@ class AdminOpenRouterAccountTest {
         ApproveRequestRequest approvalForm = new ApproveRequestRequest(
                 null, null, null, null,
                 new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
-                        null, null, null, account.getPublicId()));
+                        null, null, null, null, account.getPublicId()));
         UUID firstBinding = insertKey(workspaceId,
                 request(orgId, workspaceId, "limits-lock-order"), BigDecimal.ZERO, null);
 
@@ -1002,7 +1002,7 @@ class AdminOpenRouterAccountTest {
 
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-                orgPublicId, name, "사업 코드", null, null, null, name), "127.0.0.1");
+                orgPublicId, name, "사업 코드", null, null, null, null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(
@@ -1050,6 +1050,7 @@ class AdminOpenRouterAccountTest {
         request.setCreditLimitReset(null);
         request.setCreditAllowedModels(null);
         request.setCreditDeniedModels(null);
+        request.setPassthroughEndpoints(null);
         request.setOpenrouterAccountId(accountId);
         return request;
     }

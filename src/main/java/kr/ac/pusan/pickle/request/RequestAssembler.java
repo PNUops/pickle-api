@@ -28,6 +28,7 @@ import kr.ac.pusan.pickle.request.dto.RequestReviewResponse;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetailRepository;
 import kr.ac.pusan.pickle.llm.CreditModelPatterns;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
@@ -169,6 +170,9 @@ public class RequestAssembler {
                                     "request " + request.getPublicId()),
                             CreditModelPatterns.fromJson(objectMapper,
                                     llmKeyDetail.getGrantedCreditDeniedModels(),
+                                    "request " + request.getPublicId()),
+                            PassthroughEndpoints.fromJson(objectMapper,
+                                    llmKeyDetail.getGrantedPassthroughEndpoints(),
                                     "request " + request.getPublicId())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }

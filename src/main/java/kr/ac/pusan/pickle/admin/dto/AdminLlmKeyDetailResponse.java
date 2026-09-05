@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -8,6 +9,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
 
 /** Secret-free administrator detail for one LLM API key. */
@@ -46,12 +48,18 @@ public record AdminLlmKeyDetailResponse(
         List<String> creditAllowedModels,
         @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열은 차단 없음. "
                 + "허용 목록과 함께 걸리면 차단이 이긴다.")
-        List<String> creditDeniedModels) {
+        List<String> creditDeniedModels,
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS}),
+                arraySchema = @Schema(description = "이 키에 부여된 기능 권한. 빈 배열은 "
+                        + "부여 없음. 모델 목록 둘과 반대로 채워야 열린다."))
+        List<String> passthroughEndpoints) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,
             String workspaceName, UUID orgId, String orgName, UUID requestId,
             @Nullable UUID openrouterAccountId, @Nullable String openrouterAccountName,
-            List<String> creditAllowedModels, List<String> creditDeniedModels, Instant now) {
+            List<String> creditAllowedModels, List<String> creditDeniedModels,
+            List<String> passthroughEndpoints, Instant now) {
         return new AdminLlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.effectiveStatus(now), key.getExpiresAt(), key.getLastUsedAt(), key.getRpm(),
                 key.getTpm(), key.getConcurrency(), key.getDailyTokens(), key.isQuotaExhausted(),
@@ -59,6 +67,7 @@ public record AdminLlmKeyDetailResponse(
                 key.getOpenrouterUsage(), key.getOpenrouterUsageAt(),
                 key.getOpenrouterLimitRemaining(), openrouterAccountId, openrouterAccountName,
                 workspaceId, workspaceName, orgId, orgName, requestId, key.getCreatedAt(),
-                key.getRevokedAt(), creditAllowedModels, creditDeniedModels);
+                key.getRevokedAt(), creditAllowedModels, creditDeniedModels,
+                passthroughEndpoints);
     }
 }

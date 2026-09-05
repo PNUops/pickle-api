@@ -206,6 +206,13 @@ class LlmGatewayEndpointTest {
                 // be the same document, and only one of them is true.
                 .andExpect(jsonPath("$.keys[0].creditDeniedModels").isArray())
                 .andExpect(jsonPath("$.keys[0].creditDeniedModels.length()").value(0))
+                // The passthrough list travels beside them and is an empty
+                // array here too, but empty means the opposite: no passthrough
+                // path at all rather than no restriction. A key that nobody
+                // granted anything is the ordinary state, so this is what most
+                // documents carry.
+                .andExpect(jsonPath("$.keys[0].passthroughEndpoints").isArray())
+                .andExpect(jsonPath("$.keys[0].passthroughEndpoints.length()").value(0))
                 .andReturn().getResponse().getContentAsString();
         // Both members present — models as an EMPTY ARRAY (a real state: no
         // catalogue rows exist yet), never omitted alongside a present keys.
@@ -298,6 +305,37 @@ class LlmGatewayEndpointTest {
         // member arrives as "nothing is blocked" with nothing to say so. Pin
         // the spelling itself, not only the value behind it.
         assertThat(body).contains("\"creditDeniedModels\":[\"openai/*-pro\"]");
+    }
+
+    /**
+     * The passthrough list travels under its own name and with its own values.
+     *
+     * <p>Pinned separately from the two above because it is the one whose empty
+     * value grants nothing. A member renamed or dropped on this axis arrives as
+     * "no passthrough path", which is silent in the other direction from the
+     * model lists: nothing opens that should not, but a grant an approver
+     * recorded simply does not happen.
+     */
+    @Test
+    void thePassthroughListTravelsInTheDocument() throws Exception {
+        long account = insertOpenrouterAccount();
+        KeyFixture granted = newKey("passthrough");
+        jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
+                + "openrouter_account_id = ?, passthrough_endpoints = ?::jsonb where id = ?",
+                account, "[\"images\"]", granted.id());
+
+        syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
+        String body = syncFrom(SOURCE, TOKEN, poll(0))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + granted.publicId()
+                        + "')].passthroughEndpoints[0]").value("images"))
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + granted.publicId()
+                        + "')].passthroughEndpoints[1]").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        // The spelling itself, not only the value behind it: the gateway
+        // ignores a member it does not know, so a rename arrives as a key that
+        // was granted nothing and says nothing about why.
+        assertThat(body).contains("\"passthroughEndpoints\":[\"images\"]");
     }
 
     /**

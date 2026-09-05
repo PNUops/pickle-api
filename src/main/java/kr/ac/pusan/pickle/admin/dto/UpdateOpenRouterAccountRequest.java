@@ -1,8 +1,10 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -31,6 +33,10 @@ public class UpdateOpenRouterAccountRequest {
     @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
     private @Nullable List<String> defaultCreditDeniedModels;
     private boolean defaultCreditDeniedModelsSet;
+
+    @Size(max = 20, message = "기능은 최대 20개까지 허용할 수 있습니다.")
+    private @Nullable List<String> defaultPassthroughEndpoints;
+    private boolean defaultPassthroughEndpointsSet;
 
     @Schema(description = "새 account 이름. 생략하면 유지하며 null은 허용하지 않습니다.")
     public String getName() { return name; }
@@ -73,6 +79,19 @@ public class UpdateOpenRouterAccountRequest {
         defaultCreditDeniedModels = value; defaultCreditDeniedModelsSet = true;
     }
 
+    @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+            PassthroughEndpoints.EMBEDDINGS}),
+            arraySchema = @Schema(description = "새 기능 권한 기본값. 생략하면 유지하고, "
+                    + "null이나 빈 배열이면 기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 "
+                    + "바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."))
+    public @Nullable List<String> getDefaultPassthroughEndpoints() {
+        return defaultPassthroughEndpoints;
+    }
+
+    public void setDefaultPassthroughEndpoints(@Nullable List<String> value) {
+        defaultPassthroughEndpoints = value; defaultPassthroughEndpointsSet = true;
+    }
+
     @Schema(hidden = true) public boolean isNameSet() { return nameSet; }
     @Schema(hidden = true) public boolean isProgramSet() { return programSet; }
     @Schema(hidden = true) public boolean isContactSet() { return contactSet; }
@@ -83,8 +102,12 @@ public class UpdateOpenRouterAccountRequest {
     @Schema(hidden = true) public boolean isDefaultCreditDeniedModelsSet() {
         return defaultCreditDeniedModelsSet;
     }
+    @Schema(hidden = true) public boolean isDefaultPassthroughEndpointsSet() {
+        return defaultPassthroughEndpointsSet;
+    }
     @Schema(hidden = true) public boolean hasAny() {
         return nameSet || programSet || contactSet || statusSet
-                || defaultCreditAllowedModelsSet || defaultCreditDeniedModelsSet;
+                || defaultCreditAllowedModelsSet || defaultCreditDeniedModelsSet
+                || defaultPassthroughEndpointsSet;
     }
 }

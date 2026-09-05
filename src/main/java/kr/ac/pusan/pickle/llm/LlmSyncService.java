@@ -112,7 +112,8 @@ public class LlmSyncService {
                    -- one thing across this statement. Read by creditPending().
                    (k.expires_at is null or k.expires_at > now()) as not_expired,
                    k.credit_allowed_models::text as credit_allowed_models,
-                   k.credit_denied_models::text as credit_denied_models
+                   k.credit_denied_models::text as credit_denied_models,
+                   k.passthrough_endpoints::text as passthrough_endpoints
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -568,6 +569,15 @@ public class LlmSyncService {
                         // lists disagree.
                         CreditModelPatterns.fromJson(objectMapper,
                                 rs.getString("credit_denied_models"),
+                                "llm key " + publicId),
+                        // The passthrough surface, and the one list here whose
+                        // empty value grants nothing rather than restricting
+                        // nothing. An unreadable row therefore closes those
+                        // paths for this key, which is the safe direction and
+                        // the opposite of what the same leniency costs the two
+                        // lists above.
+                        PassthroughEndpoints.fromJson(objectMapper,
+                                rs.getString("passthrough_endpoints"),
                                 "llm key " + publicId),
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),
