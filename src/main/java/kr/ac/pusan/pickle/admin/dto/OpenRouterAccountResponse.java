@@ -1,9 +1,11 @@
 package kr.ac.pusan.pickle.admin.dto;
 
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
-import io.swagger.v3.oas.annotations.media.Schema;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -42,6 +44,12 @@ public record OpenRouterAccountResponse(
         @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 차단 목록 기본값. 복사 원본이지 "
                 + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다.")
         List<String> defaultCreditDeniedModels,
+        @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
+                PassthroughEndpoints.EMBEDDINGS}),
+                arraySchema = @Schema(description = "승인 화면이 프리필에 쓰는 기능 권한 "
+                        + "기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도 이미 발급된 "
+                        + "키는 그대로입니다."))
+        List<String> defaultPassthroughEndpoints,
         @Schema(description = "등록 시각")
         Instant createdAt,
         @Schema(description = "Metadata 최종 변경 시각")

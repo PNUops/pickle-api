@@ -142,6 +142,8 @@ public class LlmApiKeyQueryService {
                         "llm key " + key.getPublicId()),
                 CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
                         "llm key " + key.getPublicId()),
+                PassthroughEndpoints.fromJson(objectMapper, key.getPassthroughEndpoints(),
+                        "llm key " + key.getPublicId()),
                 standing.role(), standing.manages());
     }
 }

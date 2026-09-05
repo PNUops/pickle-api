@@ -92,6 +92,15 @@ public class LlmKeyRequestDetail {
     @Column(name = "granted_credit_denied_models", nullable = false, columnDefinition = "jsonb")
     private String grantedCreditDeniedModels = CreditModelPatterns.EMPTY_JSON;
 
+    /**
+     * The passthrough capabilities the reviewer granted, as a JSON array.
+     * Empty means none were granted, which is the opposite of the two lists
+     * above: they restrict when filled, this one grants.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "granted_passthrough_endpoints", nullable = false, columnDefinition = "jsonb")
+    private String grantedPassthroughEndpoints = PassthroughEndpoints.EMPTY_JSON;
+
     protected LlmKeyRequestDetail() {
     }
 
@@ -167,6 +176,23 @@ public class LlmKeyRequestDetail {
     /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getGrantedCreditDeniedModels() {
         return grantedCreditDeniedModels;
+    }
+
+    /**
+     * Records the granted passthrough capabilities.
+     *
+     * <p>Its own method rather than a further argument to {@link #grant}: that
+     * signature already documents transposition as the hazard its two trailing
+     * JSON arrays create, and a third would grant a surface rather than
+     * restrict one.
+     */
+    public void grantPassthroughEndpoints(String passthroughEndpoints) {
+        this.grantedPassthroughEndpoints = passthroughEndpoints;
+    }
+
+    /** The stored JSON array; read it with {@link PassthroughEndpoints#fromJson}. */
+    public String getGrantedPassthroughEndpoints() {
+        return grantedPassthroughEndpoints;
     }
 
     public @Nullable Integer getReqRpm() {

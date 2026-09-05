@@ -167,6 +167,14 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // one moment it costs nothing to keep.
         CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
                 "llmKey.grantedCreditDeniedModels", errors);
+        // Format only, and deliberately no "needs money" rule either, but for a
+        // different reason than the deny list above. This list grants rather
+        // than restricts, so an entry with no money behind it opens a path the
+        // key cannot pay to use — which already fails closed at the credential
+        // check. Refusing it here would instead make the column impossible to
+        // fill before a key is funded.
+        PassthroughEndpoints.normalize(spec.grantedPassthroughEndpoints(),
+                "llmKey.grantedPassthroughEndpoints", errors);
     }
 
     @Override
@@ -201,10 +209,14 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         String creditDeniedModels = CreditModelPatterns.toJson(objectMapper,
                 CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
                         "llmKey.grantedCreditDeniedModels", new ArrayList<>()));
+        String passthroughEndpoints = PassthroughEndpoints.toJson(objectMapper,
+                PassthroughEndpoints.normalize(spec.grantedPassthroughEndpoints(),
+                        "llmKey.grantedPassthroughEndpoints", new ArrayList<>()));
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
                 spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
                 creditAllowedModels, creditDeniedModels);
+        detail.grantPassthroughEndpoints(passthroughEndpoints);
 
         // The key lands PENDING, so nothing servable changes yet, but it still
         // follows the same generation-before-document-write discipline.
@@ -226,6 +238,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // other surface reads the reviewer's decision from the request detail
         // and looked correct, which is what made it quiet.
         key.applyCreditModelLists(creditAllowedModels, creditDeniedModels);
+        // Before the insert for the same reason. The failure mode here is the
+        // mirror of the one above: a list that arrives after the flush leaves
+        // the served row empty, which on this axis means the reviewer's grant
+        // silently did not happen rather than a restriction silently lifting.
+        key.applyPassthroughEndpoints(passthroughEndpoints);
         key = keyRepository.save(key);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
@@ -244,6 +261,9 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                         "llm key " + key.getPublicId()));
         auditArgs.put("grantedCreditDeniedModels",
                 CreditModelPatterns.fromJson(objectMapper, creditDeniedModels,
+                        "llm key " + key.getPublicId()));
+        auditArgs.put("grantedPassthroughEndpoints",
+                PassthroughEndpoints.fromJson(objectMapper, passthroughEndpoints,
                         "llm key " + key.getPublicId()));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);

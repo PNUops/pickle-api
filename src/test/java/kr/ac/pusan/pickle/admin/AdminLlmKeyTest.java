@@ -763,6 +763,32 @@ class AdminLlmKeyTest {
     }
 
     /**
+     * The passthrough list sits on the same side of that gate, and for a
+     * sharper reason: it is the only one of the three that grants. Left off it,
+     * a SYS_MANAGER could hand a key image generation, which settles per image
+     * rather than per token, without moving any number the gate looks at.
+     */
+    @Test
+    void systemManagerCannotChangeThePassthroughEndpoints() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "운영자 기능 권한 키", "ACTIVE", null);
+        Map<String, Object> widened = limits(60, "1.00");
+        widened.put("passthroughEndpoints", java.util.List.of("images"));
+        putLimits(key.publicId(), sysManagerToken, widened)
+                .andExpect(status().isForbidden());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints")).isEqualTo("[]");
+
+        // And from the other direction: taking a granted capability away is a
+        // change too, so a system operator cannot quietly close one either.
+        Map<String, Object> granted = limits(60, "1.00");
+        granted.put("passthroughEndpoints", java.util.List.of("images"));
+        putLimits(key.publicId(), sysAdminToken, granted).andExpect(status().isOk());
+        putLimits(key.publicId(), sysManagerToken, limits(60, "1.00"))
+                .andExpect(status().isForbidden());
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"images\"]");
+    }
+
+    /**
      * 축은 한도와 다르다. 빈 한도는 서비스 기본값이라는 뜻이지만 빈 축은 무엇을 달라는
      * 것인지 말하지 않은 것이다. 금액은 유료 축을 켠 신청만 담을 수 있다.
      */
@@ -937,10 +963,104 @@ class AdminLlmKeyTest {
         values.put("creditLimitReset", null);
         values.put("creditAllowedModels", java.util.List.of());
         values.put("creditDeniedModels", java.util.List.of());
+        values.put("passthroughEndpoints", java.util.List.of());
         return values;
     }
 
-    /** The two money-axis list columns as the gateway would read them. */
+    /**
+     * The ninth limit is required like the other eight, and its empty value
+     * means the opposite of theirs.
+     */
+    @Test
+    void passthroughEndpointsAreRequiredAndDefaultToNone() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "기능 권한 키", "ACTIVE", null);
+
+        // A key that nobody granted anything reaches no passthrough path. The
+        // column default carries that, so this holds before any write.
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints")).isEqualTo("[]");
+
+        Map<String, Object> without = limits(60, "5.00");
+        without.remove("passthroughEndpoints");
+        putLimits(key.publicId(), sysAdminToken, without)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+
+        // null and the empty array are the same value here, as they are for the
+        // two model lists, and all three spell it as an empty stored array. What
+        // differs is what that value means, which the next test pins.
+        Map<String, Object> nulled = limits(60, "5.00");
+        nulled.put("passthroughEndpoints", null);
+        putLimits(key.publicId(), sysAdminToken, nulled)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passthroughEndpoints.length()").value(0));
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints")).isEqualTo("[]");
+    }
+
+    /**
+     * Granting reaches the key row, which is what the gateway reads. The
+     * response is the detail projection and would look right either way.
+     */
+    @Test
+    void grantedPassthroughEndpointsReachTheKeyRow() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "기능 권한 부여 키", "ACTIVE", null);
+        Map<String, Object> granted = limits(60, "5.00");
+        // Sent unnormalized on purpose, so the assertions below distinguish the
+        // stored and recorded value from what the form carried: casing, padding
+        // and a repeat all have to be gone, and the typed order has to survive.
+        granted.put("passthroughEndpoints",
+                java.util.List.of(" Images ", "embeddings", "images"));
+        putLimits(key.publicId(), sysAdminToken, granted)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passthroughEndpoints.length()").value(2));
+
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"images\", \"embeddings\"]");
+
+        // The audit has to carry it too, and for the same reason the value sits
+        // behind the system-operator gate: it changes what an amount may be
+        // spent on without moving the amount, so a record holding the numbers
+        // and not this one cannot answer who opened image generation. The
+        // recorded value is the normalized one, not what the form sent.
+        assertThat(auditDetail(key.publicId(), "llm_key.limits_update")
+                .get("passthroughEndpoints")).isEqualTo(java.util.List.of("images", "embeddings"));
+    }
+
+    /**
+     * The vocabulary is closed, and an unknown token is an error rather than a
+     * silent drop. Dropping it would save a form granting less than the
+     * approver read on the screen.
+     */
+    @Test
+    void unknownPassthroughEndpointIsRefused() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "기능 권한 오타 키", "ACTIVE", null);
+        Map<String, Object> typo = limits(60, "5.00");
+        typo.put("passthroughEndpoints", java.util.List.of("image"));
+        putLimits(key.publicId(), sysAdminToken, typo)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("passthroughEndpoints[0]"));
+
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints")).isEqualTo("[]");
+    }
+
+    /**
+     * Unlike the model allow list this one saves at an amount of zero. It
+     * grants a surface rather than restricting one, and a path the key cannot
+     * pay for already fails closed at the credential check.
+     */
+    @Test
+    void passthroughEndpointsSaveWithNoMoney() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "기능 권한 무금액 키", "ACTIVE", null);
+        Map<String, Object> noMoney = limits(60, "0");
+        noMoney.put("passthroughEndpoints", java.util.List.of("images"));
+        putLimits(key.publicId(), sysAdminToken, noMoney)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passthroughEndpoints[0]").value("images"));
+
+        assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
+                .isEqualTo("[\"images\"]");
+    }
+
+    /** The three per-key list columns as the gateway would read them. */
     private String storedModels(UUID keyPublicId, String column) {
         return jdbcTemplate.queryForObject(
                 "select " + column + "::text from llm_api_keys where public_id = ?",

@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.llm.CreditModelPatterns;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
@@ -65,6 +66,11 @@ public class OpenRouterAccount {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "default_credit_denied_models", nullable = false, columnDefinition = "jsonb")
     private String defaultCreditDeniedModels = CreditModelPatterns.EMPTY_JSON;
+
+    /** The passthrough capability prefill, on the same copy-once terms. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "default_passthrough_endpoints", nullable = false, columnDefinition = "jsonb")
+    private String defaultPassthroughEndpoints = PassthroughEndpoints.EMPTY_JSON;
 
     @Column(name = "created_by", nullable = false, updatable = false)
     private Long createdBy;
@@ -124,6 +130,17 @@ public class OpenRouterAccount {
     /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getDefaultCreditDeniedModels() {
         return defaultCreditDeniedModels;
+    }
+
+    /** Replaces the passthrough prefill default. Same reasoning as the two above. */
+    public void replaceDefaultPassthroughEndpoints(String endpoints, Instant now) {
+        this.defaultPassthroughEndpoints = endpoints;
+        this.updatedAt = now;
+    }
+
+    /** The stored JSON array; read it with {@link PassthroughEndpoints#fromJson}. */
+    public String getDefaultPassthroughEndpoints() {
+        return defaultPassthroughEndpoints;
     }
 
     public void discoverVendorWorkspace(UUID vendorWorkspaceId, Instant now) {
