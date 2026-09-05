@@ -180,39 +180,78 @@ public final class CreditModelPatterns {
      * <p><b>This is the second piece of gateway knowledge duplicated here</b>,
      * and unlike the reserved prefixes above it is not a courtesy: a screen that
      * lists what a key may call has to agree with the fence, or it shows models
-     * the call will refuse. The rule is the gateway's, transcribed: an exact
-     * name, or one vendor opened by a trailing {@code /*}. A bare {@code *}
-     * matches nothing — "everything" is spelled by an empty list, and a second
-     * spelling of one state is how a state count grows past what anyone reasons
-     * about. A leading {@code ~} is an ordinary character, so {@code ~vendor/*}
-     * and {@code vendor/*} stay separate prefixes.
+     * the call will refuse. The rule is the gateway's, transcribed step for
+     * step, and the case table in {@code CreditModelPatternsTest} is kept input
+     * for input with the gateway's own. <b>Keeping those two tables equal is the
+     * only thing holding this copy together</b>, so move them together or the
+     * divergence will be silent: every case in a stale table still passes.
+     *
+     * <p>The model segment takes four shapes — an exact name, a trailing star,
+     * a leading star, or a bare star for the whole vendor. Two of them carry a
+     * rule that is easy to lose:
+     *
+     * <ul>
+     * <li><b>A trailing star stands for nothing at all</b>, as a glob's does, so
+     * {@code openai/gpt-5*} reaches {@code openai/gpt-5} itself. Requiring a
+     * character made the wider-looking pattern the narrower one, which is the
+     * kind of surprise nobody debugs.</li>
+     * <li><b>A leading star sees through a variant suffix.</b> {@code :batch}
+     * and {@code :free} name the same model at a different price, so
+     * {@code openai/*-pro} must reach {@code openai/gpt-5-pro:batch} — without
+     * that it catches the cheap spelling and misses the expensive one.</li>
+     * </ul>
+     *
+     * <p>The separator rule stays beside the trailing star: {@code openai/gpt-5-*}
+     * reaches {@code openai/gpt-5} even though the two are not in a prefix
+     * relation. A bare {@code *} matches nothing — "everything" is spelled by an
+     * empty list, and passthrough can synthesize a model named exactly that. A
+     * leading {@code ~} is an ordinary character, so {@code ~vendor/*} and
+     * {@code vendor/*} stay separate prefixes.
      *
      * <p>Both sides lower-case before comparing. A change to the gateway's
      * matcher wants a change here in the same unit of work.
-     *
-     * <p><b>Two such changes are known to be coming</b> (agreed with the round
-     * that is writing them, 2026-09-05): a deny list beside the allow list, and
-     * a wider pattern grammar with leading and trailing wildcards inside the
-     * vendor half. Until both land here, the screen that lists what a key may
-     * call <em>over-reports</em> — it cannot subtract a denied model, and it
-     * narrows by the older grammar. That round owns moving this method and the
-     * case table in {@code CreditModelPatternsTest}, which is kept input for
-     * input with the gateway's own table. <b>Keeping those two tables equal is
-     * the only thing holding this copy together</b>, so move them together or
-     * the divergence will be silent: every case in a stale table still passes.
      */
     public static boolean matches(String pattern, String modelName) {
-        if (pattern.isEmpty() || "*".equals(pattern)) {
+        String p = pattern.toLowerCase(Locale.ROOT);
+        String n = modelName.toLowerCase(Locale.ROOT);
+        if (p.isEmpty() || "*".equals(p)) {
             return false;
         }
-        String lowerName = modelName.toLowerCase(Locale.ROOT);
-        String lowerPattern = pattern.toLowerCase(Locale.ROOT);
-        if (lowerPattern.endsWith("/*")) {
-            String prefix = lowerPattern.substring(0, lowerPattern.length() - 2);
-            return !prefix.isEmpty() && lowerName.startsWith(prefix + "/")
-                    && lowerName.length() > prefix.length() + 1;
+        int slash = p.indexOf('/');
+        if (slash < 0) {
+            return p.equals(n);
         }
-        return lowerPattern.equals(lowerName);
+        String prefix = p.substring(0, slash) + "/";
+        if (!n.startsWith(prefix)) {
+            return false;
+        }
+        String rest = n.substring(prefix.length());
+        if (rest.isEmpty()) {
+            return false;
+        }
+        String seg = p.substring(slash + 1);
+        if ("*".equals(seg)) {
+            return true;
+        }
+        if (seg.startsWith("*")) {
+            String tail = seg.substring(1);
+            int colon = rest.indexOf(':');
+            String base = colon < 0 ? rest : rest.substring(0, colon);
+            return rest.endsWith(tail) || base.endsWith(tail);
+        }
+        if (seg.endsWith("*")) {
+            String stem = seg.substring(0, seg.length() - 1);
+            if (rest.startsWith(stem)) {
+                return true;
+            }
+            // The separator rule: a stem ending in one of these also names the
+            // model without it, so "openai/gpt-5-*" reaches "openai/gpt-5".
+            // Prefix matching alone cannot, because the two are not prefixes.
+            return !stem.isEmpty()
+                    && "-.:".indexOf(stem.charAt(stem.length() - 1)) >= 0
+                    && rest.equals(stem.substring(0, stem.length() - 1));
+        }
+        return rest.equals(seg);
     }
 
     /** The stored form. Never null, so the column's not-null holds trivially. */

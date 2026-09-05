@@ -224,6 +224,34 @@ class LlmKeyModelsTest {
                         Matchers.not(Matchers.hasItem(Matchers.startsWith("openai/")))));
     }
 
+    /**
+     * A key narrowed only by a deny list is LISTED, not UNRESTRICTED.
+     *
+     * <p>UNRESTRICTED asserts that nothing but money bounds what the key may
+     * call, which is false the moment somebody refuses a model. Answering from
+     * the allow list alone would leave the label and the list below it saying
+     * opposite things on the same screen, and a reviewer approves against that
+     * screen — so the summary being wrong is worse than it looks, because the
+     * summary is the part people read.
+     */
+    @Test
+    void aKeyNarrowedOnlyByADenyListIsNotCalledUnrestricted() throws Exception {
+        seedCatalogue(Instant.now());
+        UUID denyOnly = createKey("차단만 있는 라벨 키", "5.00", "hash-denylabel", null,
+                "[\"openai/*\"]");
+        UUID neither = createKey("두 목록 모두 빈 키", "5.00", "hash-nolabel", null);
+
+        mockMvc.perform(get(url(denyOnly)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.access").value("LISTED"));
+        // The other half of the rule: with neither list set the label is still
+        // UNRESTRICTED, so this is a narrowing test rather than one that just
+        // stopped the value from ever appearing.
+        mockMvc.perform(get(url(neither)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.access").value("UNRESTRICTED"));
+    }
+
     private int countModels(UUID keyId) throws Exception {
         String body = mockMvc.perform(get(url(keyId))
                         .header("Authorization", "Bearer " + keyOwnerToken))

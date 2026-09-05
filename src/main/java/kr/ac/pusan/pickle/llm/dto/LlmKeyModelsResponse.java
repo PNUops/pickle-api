@@ -45,15 +45,21 @@ public record LlmKeyModelsResponse(
      * the one most likely to be looking, because what it needs next is to know
      * what to ask for.
      */
-    @Schema(description = "유료 모델 사용 가능 여부")
+    @Schema(description = "유료 모델 사용 가능 여부. LISTED는 허용 목록과 차단 목록 중 "
+            + "어느 쪽으로든 좁혀진 상태이고, UNRESTRICTED는 두 목록이 모두 비어 금액만이 "
+            + "경계인 상태입니다.")
     public enum PaidAccess {
         /** No money budget yet. The list is what the holder would be asking for. */
         NONE,
         /** Budget granted, its upstream credential still being created. */
         PENDING,
-        /** No allow list, so the whole cached listing is in reach. */
+        /** Neither list is set, so the whole cached listing is in reach. */
         UNRESTRICTED,
-        /** An allow list narrows it to the models below. */
+        /**
+         * A list narrows it to the models below — either one. A deny list alone
+         * is still a narrowing, and calling that state unrestricted would put a
+         * label above the listing that its own contents contradict.
+         */
         LISTED
     }
 

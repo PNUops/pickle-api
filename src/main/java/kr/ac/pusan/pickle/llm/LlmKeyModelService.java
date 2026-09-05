@@ -191,7 +191,7 @@ public class LlmKeyModelService {
             }
         }
 
-        return new LlmKeyModelsResponse.PaidModels(access(key, patterns), patterns,
+        return new LlmKeyModelsResponse.PaidModels(access(key, patterns, denied), patterns,
                 sorted(reachable), unmatched, freshness, state.lastSuccessAt());
     }
 
@@ -200,14 +200,22 @@ public class LlmKeyModelService {
      * that holder needs next is to know what to ask for, and a request for
      * something they cannot name is a request they cannot make.
      */
-    private PaidAccess access(LlmApiKey key, List<String> patterns) {
+    private PaidAccess access(LlmApiKey key, List<String> patterns, List<String> denied) {
         if (key.getCreditLimit().signum() <= 0) {
             return PaidAccess.NONE;
         }
         if (!key.isCreditAxisConnected()) {
             return PaidAccess.PENDING;
         }
-        return patterns.isEmpty() ? PaidAccess.UNRESTRICTED : PaidAccess.LISTED;
+        // Either list makes this a listing. UNRESTRICTED asserts that nothing
+        // but money bounds what the key may call, and on a key with a deny list
+        // that assertion is false: something was refused, somebody refused it,
+        // and the refusal is stored on the row. Answering from the allow list
+        // alone would be true to the question this method asks itself and false
+        // to the one a reviewer reads, who sees the label above the narrowed
+        // list and has to decide which of the two to believe.
+        return patterns.isEmpty() && denied.isEmpty()
+                ? PaidAccess.UNRESTRICTED : PaidAccess.LISTED;
     }
 
     private static boolean matchesAny(List<String> patterns, String modelId) {

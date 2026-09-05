@@ -190,9 +190,15 @@ class CreditModelPatternsTest {
     }
 
     /**
-     * The cases are the gateway's own, transcribed. Two matchers that must
+     * The cases are the gateway's own, transcribed input for input from
+     * {@code internal/snapshot/credit_allowlist_test.go}. Two matchers that must
      * agree need one table of truths, and the screen that lists what a key may
      * call is only right while they do.
+     *
+     * <p><b>Compare this table against that file, not against a remembered
+     * count.</b> Neither side has ever been a superset of the other, so a row
+     * count says nothing about whether they agree, and a stale table is silent:
+     * every case still in it passes.
      */
     @Test
     void matchesTheSameNamesTheGatewayWould() {
@@ -202,12 +208,33 @@ class CreditModelPatternsTest {
                 new Case("openai/gpt-4o-mini", "openai/gpt-4o", false),
                 new Case("openai/*", "openai/gpt-4o", true),
                 new Case("openai/*", "openai/a/b", true),
+                // Trailing star: prefix, and the separator rule beside it.
+                new Case("openai/gpt-5-*", "openai/gpt-5-pro", true),
+                new Case("openai/gpt-5-*", "openai/gpt-5", true),
+                new Case("openai/gpt-5-*", "openai/gpt-5:batch", false),
+                new Case("openai/gpt-5*", "openai/gpt-5:batch", true),
+                // A star stands for nothing at all, as a glob's does. Without
+                // this the wider-looking pattern would be the narrower one.
+                new Case("openai/gpt-5*", "openai/gpt-5", true),
+                new Case("openai/gpt-5-*", "openai/gpt-4o", false),
+                // Leading star, and its variant-suffix rule: ":batch" and
+                // ":free" are the same model at another price, so a fence that
+                // misses them catches the cheap spelling and not the dear one.
+                new Case("openai/*-pro", "openai/gpt-5-pro", true),
+                new Case("openai/*-pro", "openai/gpt-5-pro:batch", true),
+                new Case("openai/*-pro", "openai/gpt-5-pro:free", true),
+                new Case("openai/*-pro", "openai/gpt-5-nano", false),
+                // A leading star does not reach the bare tail on its own.
+                new Case("openai/*-pro", "openai/pro", false),
+                new Case("openai/*-pro", "anthropic/claude-opus-pro", false),
+                new Case("pickle-general", "pickle-general", true),
                 new Case("openai/*", "anthropic/claude", false),
                 // A vendor boundary, not a string prefix.
                 new Case("openai/*", "openai-mirror/gpt-4o", false),
                 // The half after the slash may not be empty.
                 new Case("openai/*", "openai/", false),
-                // "Everything" is spelled by an empty list, never by a star.
+                // "Everything" is spelled by an empty list, never by a star —
+                // and passthrough can synthesize a model named exactly that.
                 new Case("*", "openai/gpt-4o", false),
                 new Case("*", "*", false),
                 new Case("", "openai/gpt-4o", false),

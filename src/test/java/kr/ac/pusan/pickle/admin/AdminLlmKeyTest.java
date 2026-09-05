@@ -272,6 +272,14 @@ class AdminLlmKeyTest {
         // has had this assertion all along (putLimits and suspend, below); the
         // read side is where a deny list, which is an approver's decision about
         // what a key may spend on, would have leaked.
+        //
+        // The model-listing test below now also passes through this guard and
+        // would catch the same deletion. That is not a reason to drop these
+        // lines: it covers the guard incidentally, on its way somewhere else,
+        // so the guard would go bare again the moment that test moves or its
+        // route changes, and nothing would say so. Being covered because
+        // somebody else's path happens to run through you is coincidence, not
+        // coverage.
         mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId())
                         .header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isNotFound());
