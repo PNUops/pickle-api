@@ -10,7 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
@@ -59,7 +59,12 @@ public class OpenRouterAccount {
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "default_credit_allowed_models", nullable = false, columnDefinition = "jsonb")
-    private String defaultCreditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+    private String defaultCreditAllowedModels = CreditModelPatterns.EMPTY_JSON;
+
+    /** The money-axis deny list prefill, on the same copy-once terms. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "default_credit_denied_models", nullable = false, columnDefinition = "jsonb")
+    private String defaultCreditDeniedModels = CreditModelPatterns.EMPTY_JSON;
 
     @Column(name = "created_by", nullable = false, updatable = false)
     private Long createdBy;
@@ -105,9 +110,20 @@ public class OpenRouterAccount {
         this.updatedAt = now;
     }
 
-    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getDefaultCreditAllowedModels() {
         return defaultCreditAllowedModels;
+    }
+
+    /** Replaces the deny-list prefill default. Same reasoning as the allow one. */
+    public void replaceDefaultCreditDeniedModels(String models, Instant now) {
+        this.defaultCreditDeniedModels = models;
+        this.updatedAt = now;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
+    public String getDefaultCreditDeniedModels() {
+        return defaultCreditDeniedModels;
     }
 
     public void discoverVendorWorkspace(UUID vendorWorkspaceId, Instant now) {

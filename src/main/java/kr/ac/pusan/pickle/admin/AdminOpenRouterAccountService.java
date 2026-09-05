@@ -26,7 +26,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
-import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountCredential;
@@ -133,8 +133,10 @@ public class AdminOpenRouterAccountService {
         Org org = requireWritableOrg(actor, form.orgId());
         confirm(form.name().strip(), form.confirmName());
         List<FieldValidationError> modelErrors = new ArrayList<>();
-        List<String> defaultModels = CreditModelAllowlist.normalize(
+        List<String> defaultModels = CreditModelPatterns.normalize(
                 form.defaultCreditAllowedModels(), "defaultCreditAllowedModels", modelErrors);
+        List<String> defaultDeniedModels = CreditModelPatterns.normalize(
+                form.defaultCreditDeniedModels(), "defaultCreditDeniedModels", modelErrors);
         if (!modelErrors.isEmpty()) {
             throw ApiException.validationFailed(modelErrors);
         }
@@ -142,7 +144,9 @@ public class AdminOpenRouterAccountService {
                 Texts.blankToNull(form.program()),
                 Texts.blankToNull(form.contact()), actor.id());
         account.replaceDefaultCreditAllowedModels(
-                CreditModelAllowlist.toJson(objectMapper, defaultModels), Instant.now());
+                CreditModelPatterns.toJson(objectMapper, defaultModels), Instant.now());
+        account.replaceDefaultCreditDeniedModels(
+                CreditModelPatterns.toJson(objectMapper, defaultDeniedModels), Instant.now());
         try {
             return tx.execute(status -> {
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
@@ -202,7 +206,7 @@ public class AdminOpenRouterAccountService {
         // this exception is written down rather than left to be noticed.
         if (form.isDefaultCreditAllowedModelsSet()) {
             List<FieldValidationError> modelErrors = new ArrayList<>();
-            List<String> nextModels = CreditModelAllowlist.normalize(
+            List<String> nextModels = CreditModelPatterns.normalize(
                     form.getDefaultCreditAllowedModels(), "defaultCreditAllowedModels",
                     modelErrors);
             if (!modelErrors.isEmpty()) {
@@ -210,7 +214,19 @@ public class AdminOpenRouterAccountService {
             }
             auditArgs.put("defaultCreditAllowedModels", nextModels);
             account.replaceDefaultCreditAllowedModels(
-                    CreditModelAllowlist.toJson(objectMapper, nextModels), Instant.now());
+                    CreditModelPatterns.toJson(objectMapper, nextModels), Instant.now());
+        }
+        if (form.isDefaultCreditDeniedModelsSet()) {
+            List<FieldValidationError> modelErrors = new ArrayList<>();
+            List<String> nextModels = CreditModelPatterns.normalize(
+                    form.getDefaultCreditDeniedModels(), "defaultCreditDeniedModels",
+                    modelErrors);
+            if (!modelErrors.isEmpty()) {
+                throw ApiException.validationFailed(modelErrors);
+            }
+            auditArgs.put("defaultCreditDeniedModels", nextModels);
+            account.replaceDefaultCreditDeniedModels(
+                    CreditModelPatterns.toJson(objectMapper, nextModels), Instant.now());
         }
         try {
             accountRepository.saveAndFlush(account);
@@ -864,8 +880,12 @@ public class AdminOpenRouterAccountService {
                 state(credentials.stream().filter(c -> c.getStatus()
                                 != OpenRouterCredentialStatus.ACTIVE).findFirst().orElse(null)),
                 creditsQuery.get(account), allocationResponse(allocation),
-                CreditModelAllowlist.fromJson(objectMapper,
-                        account.getDefaultCreditAllowedModels()),
+                CreditModelPatterns.fromJson(objectMapper,
+                        account.getDefaultCreditAllowedModels(),
+                        "openrouter account " + account.getPublicId()),
+                CreditModelPatterns.fromJson(objectMapper,
+                        account.getDefaultCreditDeniedModels(),
+                        "openrouter account " + account.getPublicId()),
                 account.getCreatedAt(), account.getUpdatedAt());
     }
 

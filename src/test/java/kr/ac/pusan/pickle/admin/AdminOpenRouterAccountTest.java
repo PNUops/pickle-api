@@ -753,13 +753,17 @@ class AdminOpenRouterAccountTest {
         assertBindingSelectionLock(true);
     }
 
-    // Approval is the only path by which a key is ever created, so the line that
-    // puts the fence on the key row is the line the whole feature rests on. The
-    // request detail, the audit and every screen read the reviewer's decision
-    // from elsewhere, and all of them stay correct if that one line is lost —
+    // Approval is the only path by which a key is ever created, so the lines that
+    // put the two fences on the key row are the lines the whole feature rests on.
+    // The request detail, the audit and every screen read the reviewer's decision
+    // from elsewhere, and all of them stay correct if those lines are lost —
     // only the row the gateway serves goes quietly back to unrestricted.
+    //
+    // The two lists carry different values on purpose: they are both JSON arrays
+    // of the same shape, so a transposed pair compiles, stores and reads back
+    // fine, and inverts what the key may spend on.
     @Test
-    void approvalStoresTheGrantedFenceOnTheKeyTheGatewayServes() {
+    void approvalStoresTheGrantedFencesOnTheKeyTheGatewayServes() {
         OpenRouterAccount account = insertActiveAccount(
                 "fence 사업", UUID.randomUUID(), "sk-or-v1-fence");
         long workspaceId = workspace(orgId, "fence");
@@ -776,21 +780,65 @@ class AdminOpenRouterAccountTest {
                         new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
                                 null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ",
                                         "~Anthropic/Claude-Sonnet-Latest"),
+                                java.util.List.of("openai/*-pro", " OpenAI/o1* "),
                                 account.getPublicId())), sysAdmin));
 
+        String allowed =
+                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]";
+        String denied = "[\"openai/*-pro\", \"openai/o1*\"]";
+
         // The row the sync document is built from — not the request detail.
-        String onKey = jdbcTemplate.queryForObject(
+        assertThat(jdbcTemplate.queryForObject(
                 "select credit_allowed_models::text from llm_api_keys where request_id = ?",
-                String.class, requestId);
-        assertThat(onKey).isEqualTo(
-                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]");
+                String.class, requestId)).isEqualTo(allowed);
+        assertThat(jdbcTemplate.queryForObject(
+                "select credit_denied_models::text from llm_api_keys where request_id = ?",
+                String.class, requestId)).isEqualTo(denied);
 
         // And the approval history, which is what the screens read back.
-        String onDetail = jdbcTemplate.queryForObject(
+        assertThat(jdbcTemplate.queryForObject(
                 "select granted_credit_allowed_models::text from llm_key_request_details "
-                        + "where request_id = ?", String.class, requestId);
-        assertThat(onDetail).isEqualTo(
-                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]");
+                        + "where request_id = ?", String.class, requestId)).isEqualTo(allowed);
+        assertThat(jdbcTemplate.queryForObject(
+                "select granted_credit_denied_models::text from llm_key_request_details "
+                        + "where request_id = ?", String.class, requestId)).isEqualTo(denied);
+    }
+
+    // A refusal is true at an amount of zero, and stays true the day somebody
+    // funds the key without reopening the approval. The allow list has the
+    // opposite rule — it needs money to mean anything — so the pair is easy to
+    // make uniform by accident, and uniform is wrong here.
+    @Test
+    void approvalKeepsTheDenyListWithNoMoneyGranted() {
+        long workspaceId = workspace(orgId, "deny-no-money");
+        long requestId = request(orgId, workspaceId, "approval-deny-no-money");
+        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)",
+                requestId);
+        Request approvalRequest = requestRepository.findById(requestId).orElseThrow();
+        ApproveRequestRequest form = new ApproveRequestRequest(null, null, null, null,
+                new ApproveLlmKeyRequestSpec(null, null, null, null, null, null, null,
+                        java.util.List.of("openai/*-pro"), null));
+
+        java.util.List<kr.ac.pusan.pickle.common.error.FieldValidationError> errors =
+                new java.util.ArrayList<>();
+        requestSupport.validateApprove(approvalRequest, form, errors);
+        assertThat(errors).isEmpty();
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                requestSupport.materialize(approvalRequest, form, sysAdmin));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select credit_denied_models::text from llm_api_keys where request_id = ?",
+                String.class, requestId)).isEqualTo("[\"openai/*-pro\"]");
+        // The allow list still refuses the same shape, which is what makes the
+        // asymmetry a decision rather than an oversight.
+        java.util.List<kr.ac.pusan.pickle.common.error.FieldValidationError> allowErrors =
+                new java.util.ArrayList<>();
+        requestSupport.validateApprove(approvalRequest, new ApproveRequestRequest(
+                null, null, null, null,
+                new ApproveLlmKeyRequestSpec(null, null, null, null, null, null,
+                        java.util.List.of("openai/*-pro"), null, null)), allowErrors);
+        assertThat(allowErrors).isNotEmpty();
     }
 
     @Test
@@ -805,7 +853,7 @@ class AdminOpenRouterAccountTest {
         ApproveRequestRequest approvalForm = new ApproveRequestRequest(
                 null, null, null, null,
                 new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
-                        null, null, account.getPublicId()));
+                        null, null, null, account.getPublicId()));
         UUID firstBinding = insertKey(workspaceId,
                 request(orgId, workspaceId, "limits-lock-order"), BigDecimal.ZERO, null);
 
@@ -925,9 +973,36 @@ class AdminOpenRouterAccountTest {
                 .defaultCreditAllowedModels()).isEmpty();
     }
 
+    // The deny default rides the same copy-once path, and the patch tracks it
+    // separately: setting one list must not clear the other, which is the shape
+    // a shared "models were sent" flag would break.
+    @Test
+    void accountDenyDefaultRoundTripsIndependentlyOfTheAllowDefault() {
+        OpenRouterAccountResponse created = create("차단 기본 목록 account");
+        assertThat(created.defaultCreditDeniedModels()).isEmpty();
+
+        UpdateOpenRouterAccountRequest both = new UpdateOpenRouterAccountRequest();
+        both.setDefaultCreditAllowedModels(java.util.List.of("openai/*"));
+        both.setDefaultCreditDeniedModels(java.util.List.of("OpenAI/*-Pro", " openai/*-pro "));
+        OpenRouterAccountResponse updated =
+                service.update(sysAdmin, created.id(), both, "127.0.0.1");
+        assertThat(updated.defaultCreditAllowedModels()).containsExactly("openai/*");
+        assertThat(updated.defaultCreditDeniedModels()).containsExactly("openai/*-pro");
+
+        // Touching only the allow list leaves the deny default standing.
+        UpdateOpenRouterAccountRequest allowOnly = new UpdateOpenRouterAccountRequest();
+        allowOnly.setDefaultCreditAllowedModels(java.util.List.of("anthropic/*"));
+        OpenRouterAccountResponse after =
+                service.update(sysAdmin, created.id(), allowOnly, "127.0.0.1");
+        assertThat(after.defaultCreditAllowedModels()).containsExactly("anthropic/*");
+        assertThat(after.defaultCreditDeniedModels()).containsExactly("openai/*-pro");
+        assertThat(service.get(sysAdmin, created.id()).defaultCreditDeniedModels())
+                .containsExactly("openai/*-pro");
+    }
+
     private OpenRouterAccountResponse create(String name) {
         return service.create(sysAdmin, new CreateOpenRouterAccountRequest(
-                orgPublicId, name, "사업 코드", null, null, name), "127.0.0.1");
+                orgPublicId, name, "사업 코드", null, null, null, name), "127.0.0.1");
     }
 
     private OpenRouterManagementAccess accessForBoundKey(
@@ -974,6 +1049,7 @@ class AdminOpenRouterAccountTest {
         request.setCreditLimit(credit);
         request.setCreditLimitReset(null);
         request.setCreditAllowedModels(null);
+        request.setCreditDeniedModels(null);
         request.setOpenrouterAccountId(accountId);
         return request;
     }

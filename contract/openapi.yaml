@@ -279,6 +279,12 @@ components:
         creditAxisConnected:
           description: "유료 모델이 발급되어 현재 연결되어 있는지"
           type: "boolean"
+        creditDeniedModels:
+          description: "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열은 차단 없음. 허용 목록과 함께 걸리면 차\
+            단이 이긴다."
+          items:
+            type: "string"
+          type: "array"
         creditLimit:
           type: "number"
         creditLimitRemaining:
@@ -376,6 +382,7 @@ components:
       - "createdAt"
       - "creditAllowedModels"
       - "creditAxisConnected"
+      - "creditDeniedModels"
       - "creditLimit"
       - "id"
       - "name"
@@ -397,6 +404,16 @@ components:
         creditAllowedModels:
           description: "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 한도와 달리 null이 0을 뜻하\
             지 않습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
+          items:
+            type: "string"
+          maxItems: 50
+          minItems: 0
+          type:
+          - "array"
+          - "null"
+        creditDeniedModels:
+          description: "유료 모델 차단 목록. 빈 배열이나 null이면 차단하는 모델이 없습니다. 허용 목록과 함께 걸리면 차단\
+            이 이깁니다. 허용 목록과 달리 금액 한도가 0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
           items:
             type: "string"
           maxItems: 50
@@ -444,6 +461,7 @@ components:
       required:
       - "concurrency"
       - "creditAllowedModels"
+      - "creditDeniedModels"
       - "creditLimit"
       - "creditLimitReset"
       - "dailyTokens"
@@ -1361,6 +1379,16 @@ components:
           type:
           - "array"
           - "null"
+        grantedCreditDeniedModels:
+          description: "이 키가 쓸 수 없는 유료 모델 목록. 비우면 차단하는 모델이 없고, 허용 목록과 함께 걸리면 차단이 이\
+            깁니다. 허용 목록과 달리 금액 한도가 0이어도 남습니다. 자체 서빙 모델은 이 목록과 무관합니다."
+          items:
+            type: "string"
+          maxItems: 50
+          minItems: 0
+          type:
+          - "array"
+          - "null"
         grantedCreditLimit:
           description: "부여 금액 한도(USD 크레딧). 비우거나 0이면 상용(금액) 축을 쓸 수 없습니다."
           minimum: 0
@@ -1859,6 +1887,15 @@ components:
           - "null"
         defaultCreditAllowedModels:
           description: "승인 화면 프리필에 쓸 상용 모델 허용 목록 기본값. 비우면 제한 없음이 기본이 됩니다."
+          items:
+            type: "string"
+          maxItems: 50
+          minItems: 0
+          type:
+          - "array"
+          - "null"
+        defaultCreditDeniedModels:
+          description: "승인 화면 프리필에 쓸 상용 모델 차단 목록 기본값. 비우면 차단 없음이 기본이 됩니다."
           items:
             type: "string"
           maxItems: 50
@@ -3116,6 +3153,12 @@ components:
         creditAxisConnected:
           description: "상용 축 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다."
           type: "boolean"
+        creditDeniedModels:
+          description: "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸\
+            리면 차단이 이깁니다."
+          items:
+            type: "string"
+          type: "array"
         creditLimit:
           description: "상용(금액) 축 한도, USD 크레딧. 0이면 상용 모델을 쓸 수 없습니다."
           type: "number"
@@ -3193,6 +3236,7 @@ components:
       - "createdAt"
       - "creditAllowedModels"
       - "creditAxisConnected"
+      - "creditDeniedModels"
       - "creditLimit"
       - "id"
       - "name"
@@ -3326,6 +3370,12 @@ components:
           items:
             type: "string"
           type: "array"
+        grantedCreditDeniedModels:
+          description: "부여된 상용(금액) 축 모델 차단 목록. 빈 배열이면 차단이 없습니다. 허용 목록과 함께 걸리면 차단이\
+            \ 이깁니다."
+          items:
+            type: "string"
+          type: "array"
         grantedCreditLimit:
           description: "부여 금액 한도(USD 크레딧). 비어 있거나 0이면 상용(금액) 축을 쓸 수 없습니다."
           type:
@@ -3385,6 +3435,7 @@ components:
           type: "boolean"
       required:
       - "grantedCreditAllowedModels"
+      - "grantedCreditDeniedModels"
       - "useCampusModels"
       - "useCommercialModels"
       type: "object"
@@ -5111,6 +5162,12 @@ components:
           items:
             type: "string"
           type: "array"
+        defaultCreditDeniedModels:
+          description: "승인 화면이 프리필에 쓰는 상용 모델 차단 목록 기본값. 복사 원본이지 상속원이 아니라서 여기를 바꿔도\
+            \ 이미 발급된 키는 그대로입니다."
+          items:
+            type: "string"
+          type: "array"
         eligibleForBinding:
           description: "현재 positive-credit key binding에 선택할 수 있는지"
           type: "boolean"
@@ -5152,6 +5209,7 @@ components:
       - "credentialAvailable"
       - "credits"
       - "defaultCreditAllowedModels"
+      - "defaultCreditDeniedModels"
       - "eligibleForBinding"
       - "id"
       - "name"
@@ -6079,7 +6137,8 @@ components:
       - "totalPages"
       type: "object"
     PaidAccess:
-      description: "유료 모델 사용 가능 여부"
+      description: "유료 모델 사용 가능 여부. LISTED는 허용 목록과 차단 목록 중 어느 쪽으로든 좁혀진 상태이고, UNRESTRICTED는\
+        \ 두 목록이 모두 비어 금액만이 경계인 상태입니다."
       enum:
       - "NONE"
       - "PENDING"
@@ -6123,7 +6182,7 @@ components:
           $ref: "#/components/schemas/PaidAccess"
           description: "사용 가능 여부"
         allowedPatterns:
-          description: "이 키의 모델 허용 목록. 비어 있으면 제한 없음"
+          description: "이 키의 모델 허용 목록. 비어 있으면 허용 쪽 제한이 없습니다."
           items:
             type: "string"
           type: "array"
@@ -6136,13 +6195,26 @@ components:
           type:
           - "string"
           - "null"
+        deniedPatterns:
+          description: "이 키의 모델 차단 목록. 비어 있으면 차단하는 모델이 없습니다. 허용 목록과 함께 걸리면 차단이 이깁니\
+            다."
+          items:
+            type: "string"
+          type: "array"
         models:
           description: "호출할 수 있는 모델"
           items:
             $ref: "#/components/schemas/PaidModel"
           type: "array"
-        unmatchedPatterns:
-          description: "허용 목록에 있지만 지금 목록에서 찾지 못한 이름"
+        unmatchedAllowedPatterns:
+          description: "허용 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. 오타이거나, 벤더가 내린 모델이거나, 목록이 오\
+            래된 것입니다."
+          items:
+            type: "string"
+          type: "array"
+        unmatchedDeniedPatterns:
+          description: "차단 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. 지금은 아무 모델도 막지 않고 있다는 뜻이며,\
+            \ 아직 나오지 않은 모델을 미리 막아 둔 경우에도 여기에 나옵니다."
           items:
             type: "string"
           type: "array"
@@ -6150,8 +6222,10 @@ components:
       - "access"
       - "allowedPatterns"
       - "catalogFreshness"
+      - "deniedPatterns"
       - "models"
-      - "unmatchedPatterns"
+      - "unmatchedAllowedPatterns"
+      - "unmatchedDeniedPatterns"
       type: "object"
     PasswordResetConfirmRequest:
       properties:
@@ -7301,6 +7375,16 @@ components:
           - "null"
         defaultCreditAllowedModels:
           description: "새 상용 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
+            기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
+          items:
+            type: "string"
+          maxItems: 50
+          minItems: 0
+          type:
+          - "array"
+          - "null"
+        defaultCreditDeniedModels:
+          description: "새 상용 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 기본값을 지웁니다. 이 쓰\
             기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 영향이 없습니다."
           items:
             type: "string"
@@ -8682,7 +8766,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.64.0"
+  version: "0.65.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:

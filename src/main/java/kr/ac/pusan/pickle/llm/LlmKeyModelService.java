@@ -154,30 +154,43 @@ public class LlmKeyModelService {
     }
 
     private LlmKeyModelsResponse.PaidModels paid(LlmApiKey key) {
-        List<String> patterns =
-                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels());
+        List<String> patterns = CreditModelPatterns.fromJson(objectMapper,
+                key.getCreditAllowedModels(), "llm key " + key.getPublicId());
         OpenRouterCatalogueRepository.CatalogueState state = catalogue.state();
         CatalogFreshness freshness = translate(OpenRouterCreditsFreshness.of(
                 state.lastSuccessAt(), OpenRouterCatalogueRefreshJob.staleAfter(), clock));
 
+        List<String> denied = CreditModelPatterns.fromJson(objectMapper,
+                key.getCreditDeniedModels(), "llm key " + key.getPublicId());
+
+        // Both fences narrow here, in the order the gateway applies them: the
+        // allow list decides what is in scope, then the deny list removes from
+        // it, and deny wins wherever the two name the same model. Subtracting
+        // second is what makes that true — a denied model listed here would be
+        // a model this screen promises and the gateway refuses.
+        //
+        // The subtraction belongs in this method and nowhere else. Both the
+        // administrative route and the holder's answer from this one
+        // computation, so a second copy would let the two screens disagree
+        // about a fence, and the one an approver reads is the one that decides
+        // what gets granted.
         List<OpenRouterCatalogueRepository.CatalogueRow> rows = catalogue.listed();
-        List<OpenRouterCatalogueRepository.CatalogueRow> reachable = patterns.isEmpty()
-                ? rows
-                : rows.stream().filter(row -> matchesAny(patterns, row.modelId())).toList();
+        List<OpenRouterCatalogueRepository.CatalogueRow> reachable = rows.stream()
+                .filter(row -> patterns.isEmpty() || matchesAny(patterns, row.modelId()))
+                .filter(row -> !matchesAny(denied, row.modelId()))
+                .toList();
 
-        // An allow-list entry that matched nothing is worth saying out loud. It
-        // means a typo, a model the vendor withdrew, or a listing too old to
-        // hold it — the server cannot tell which, so it reports the fact and
-        // leaves the reading to the person who wrote the entry.
-        List<String> unmatched = new ArrayList<>();
-        for (String pattern : patterns) {
-            if (rows.stream().noneMatch(row -> CreditModelAllowlist.matches(pattern, row.modelId()))) {
-                unmatched.add(pattern);
-            }
-        }
-
-        return new LlmKeyModelsResponse.PaidModels(access(key, patterns), patterns,
-                sorted(reachable), unmatched, freshness, state.lastSuccessAt());
+        // An entry that matched nothing is worth saying out loud on either
+        // list, but the two facts do not mean the same thing and the response
+        // keeps them apart. On the allow side it is mostly a typo, a model the
+        // vendor withdrew, or a listing too old to hold it. On the deny side it
+        // is equally likely to be deliberate: blocking a tier before it ships
+        // is a thing reviewers do, and the catalogue gains models weekly. The
+        // server cannot tell which, so it reports the fact and leaves the
+        // reading to the person who wrote the entry.
+        return new LlmKeyModelsResponse.PaidModels(access(key, patterns, denied), patterns,
+                denied, sorted(reachable), unmatchedAgainst(patterns, rows),
+                unmatchedAgainst(denied, rows), freshness, state.lastSuccessAt());
     }
 
     /**
@@ -185,18 +198,38 @@ public class LlmKeyModelService {
      * that holder needs next is to know what to ask for, and a request for
      * something they cannot name is a request they cannot make.
      */
-    private PaidAccess access(LlmApiKey key, List<String> patterns) {
+    private PaidAccess access(LlmApiKey key, List<String> patterns, List<String> denied) {
         if (key.getCreditLimit().signum() <= 0) {
             return PaidAccess.NONE;
         }
         if (!key.isCreditAxisConnected()) {
             return PaidAccess.PENDING;
         }
-        return patterns.isEmpty() ? PaidAccess.UNRESTRICTED : PaidAccess.LISTED;
+        // Either list makes this a listing. UNRESTRICTED asserts that nothing
+        // but money bounds what the key may call, and on a key with a deny list
+        // that assertion is false: something was refused, somebody refused it,
+        // and the refusal is stored on the row. Answering from the allow list
+        // alone would be true to the question this method asks itself and false
+        // to the one a reviewer reads, who sees the label above the narrowed
+        // list and has to decide which of the two to believe.
+        return patterns.isEmpty() && denied.isEmpty()
+                ? PaidAccess.UNRESTRICTED : PaidAccess.LISTED;
+    }
+
+    /** The entries of one list that no catalogue row answers to. */
+    private static List<String> unmatchedAgainst(List<String> patterns,
+            List<OpenRouterCatalogueRepository.CatalogueRow> rows) {
+        List<String> unmatched = new ArrayList<>();
+        for (String pattern : patterns) {
+            if (rows.stream().noneMatch(row -> CreditModelPatterns.matches(pattern, row.modelId()))) {
+                unmatched.add(pattern);
+            }
+        }
+        return unmatched;
     }
 
     private static boolean matchesAny(List<String> patterns, String modelId) {
-        return patterns.stream().anyMatch(pattern -> CreditModelAllowlist.matches(pattern, modelId));
+        return patterns.stream().anyMatch(pattern -> CreditModelPatterns.matches(pattern, modelId));
     }
 
     private static List<LlmKeyModelsResponse.PaidModel> sorted(

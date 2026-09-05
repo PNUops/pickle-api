@@ -27,7 +27,7 @@ import kr.ac.pusan.pickle.request.period.RequestPeriodPresetRepository;
 import kr.ac.pusan.pickle.request.dto.RequestReviewResponse;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetail;
 import kr.ac.pusan.pickle.llm.LlmKeyRequestDetailRepository;
-import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
 import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
@@ -164,8 +164,12 @@ public class RequestAssembler {
                             images.get(vmDetail.getGrantedImageId()),
                             nodes.get(vmDetail.getNodeId())) : null,
                     llmKeyDetail != null ? LlmKeyRequestSpecResponse.from(llmKeyDetail,
-                            CreditModelAllowlist.fromJson(objectMapper,
-                                    llmKeyDetail.getGrantedCreditAllowedModels())) : null,
+                            CreditModelPatterns.fromJson(objectMapper,
+                                    llmKeyDetail.getGrantedCreditAllowedModels(),
+                                    "request " + request.getPublicId()),
+                            CreditModelPatterns.fromJson(objectMapper,
+                                    llmKeyDetail.getGrantedCreditDeniedModels(),
+                                    "request " + request.getPublicId())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;

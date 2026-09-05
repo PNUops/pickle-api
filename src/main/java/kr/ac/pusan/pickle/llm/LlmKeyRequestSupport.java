@@ -152,7 +152,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // Same shape, same reason: a model allow list on a key with no money
         // restricts nothing, because there is nothing on the money axis to
         // restrict. Saying so beats storing a decision that does not apply.
-        List<String> models = CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+        List<String> models = CreditModelPatterns.normalize(spec.grantedCreditAllowedModels(),
                 "llmKey.grantedCreditAllowedModels", errors);
         if (!models.isEmpty()
                 && (spec.grantedCreditLimit() == null
@@ -160,6 +160,13 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("llmKey.grantedCreditLimit",
                     "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다."));
         }
+        // The deny list is checked for format and nothing else. It carries no
+        // "needs money" rule, because a refusal is true at an amount of zero and
+        // stays true when somebody funds the key later without reopening this
+        // form — the shape above would throw the reviewer's refusal away at the
+        // one moment it costs nothing to keep.
+        CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
+                "llmKey.grantedCreditDeniedModels", errors);
     }
 
     @Override
@@ -188,13 +195,16 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // what keeps the checked list and the saved list the same list.
         // validateApprove has already refused anything malformed, so the error
         // sink here stays empty.
-        String creditAllowedModels = CreditModelAllowlist.toJson(objectMapper,
-                CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+        String creditAllowedModels = CreditModelPatterns.toJson(objectMapper,
+                CreditModelPatterns.normalize(spec.grantedCreditAllowedModels(),
                         "llmKey.grantedCreditAllowedModels", new ArrayList<>()));
+        String creditDeniedModels = CreditModelPatterns.toJson(objectMapper,
+                CreditModelPatterns.normalize(spec.grantedCreditDeniedModels(),
+                        "llmKey.grantedCreditDeniedModels", new ArrayList<>()));
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
                 spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
-                creditAllowedModels);
+                creditAllowedModels, creditDeniedModels);
 
         // The key lands PENDING, so nothing servable changes yet, but it still
         // follows the same generation-before-document-write discipline.
@@ -215,7 +225,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // — unrestricted — wherever the flush did not happen to follow. Every
         // other surface reads the reviewer's decision from the request detail
         // and looked correct, which is what made it quiet.
-        key.applyCreditAllowedModels(creditAllowedModels);
+        key.applyCreditModelLists(creditAllowedModels, creditDeniedModels);
         key = keyRepository.save(key);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
@@ -230,7 +240,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // an account default has to leave behind what was actually granted,
         // because the default it came from can change later.
         auditArgs.put("grantedCreditAllowedModels",
-                CreditModelAllowlist.fromJson(objectMapper, creditAllowedModels));
+                CreditModelPatterns.fromJson(objectMapper, creditAllowedModels,
+                        "llm key " + key.getPublicId()));
+        auditArgs.put("grantedCreditDeniedModels",
+                CreditModelPatterns.fromJson(objectMapper, creditDeniedModels,
+                        "llm key " + key.getPublicId()));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);
         // A money budget is useless until its OpenRouter key exists, and the

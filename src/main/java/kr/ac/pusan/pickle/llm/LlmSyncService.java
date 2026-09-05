@@ -111,7 +111,8 @@ public class LlmSyncService {
                    -- Same clock as the row filters below, so "still live" means
                    -- one thing across this statement. Read by creditPending().
                    (k.expires_at is null or k.expires_at > now()) as not_expired,
-                   k.credit_allowed_models::text as credit_allowed_models
+                   k.credit_allowed_models::text as credit_allowed_models,
+                   k.credit_denied_models::text as credit_denied_models
               from llm_gateway_state s
               left join llm_api_keys k
                 on k.token_hash is not null
@@ -559,8 +560,15 @@ public class LlmSyncService {
                         List.of(),
                         // The money axis. Empty is unrestricted, and a TOKEN-axis
                         // model ignores it entirely.
-                        CreditModelAllowlist.fromJson(objectMapper,
-                                rs.getString("credit_allowed_models")),
+                        CreditModelPatterns.fromJson(objectMapper,
+                                rs.getString("credit_allowed_models"),
+                                "llm key " + publicId),
+                        // Its opposite, on its own member. Empty blocks nothing,
+                        // and the gateway lets this side win where the two
+                        // lists disagree.
+                        CreditModelPatterns.fromJson(objectMapper,
+                                rs.getString("credit_denied_models"),
+                                "llm key " + publicId),
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),
                                 rs.getObject("concurrency", Integer.class)),

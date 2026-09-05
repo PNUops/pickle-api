@@ -19,7 +19,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.llm.CreditModelAllowlist;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
@@ -199,7 +199,10 @@ public class AdminLlmKeyService {
                 org == null ? null : org.getPublicId(), org == null ? "" : org.getName(),
                 requestId, account == null ? null : account.getPublicId(),
                 account == null ? null : account.getName(),
-                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels(),
+                        "llm key " + key.getPublicId()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
+                        "llm key " + key.getPublicId()),
                 Instant.now());
     }
 
@@ -208,7 +211,7 @@ public class AdminLlmKeyService {
             AdminLlmKeyLimitsRequest form, String ip) {
         if (!form.isComplete()) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("limits",
-                    "일곱 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
+                    "여덟 한도 값을 모두 보내 주세요. 한도를 비우려면 null을 명시해 주세요.")));
         }
         if (form.getCreditLimit() == null) {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
@@ -223,8 +226,10 @@ public class AdminLlmKeyService {
                     "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.")));
         }
         List<FieldValidationError> modelErrors = new ArrayList<>();
-        List<String> allowedModels = CreditModelAllowlist.normalize(form.getCreditAllowedModels(),
+        List<String> allowedModels = CreditModelPatterns.normalize(form.getCreditAllowedModels(),
                 "creditAllowedModels", modelErrors);
+        List<String> deniedModels = CreditModelPatterns.normalize(form.getCreditDeniedModels(),
+                "creditDeniedModels", modelErrors);
         if (!modelErrors.isEmpty()) {
             throw ApiException.validationFailed(modelErrors);
         }
@@ -232,25 +237,35 @@ public class AdminLlmKeyService {
             throw ApiException.validationFailed(List.of(new FieldValidationError("creditLimit",
                     "모델 허용 목록을 두려면 0보다 큰 금액 한도가 필요합니다.")));
         }
+        // No matching rule for the deny list, and the omission is the decision.
+        // An allow list with no money behind it restricts nothing, so it reads
+        // as a form the reviewer misfilled. A deny list at an amount of zero
+        // still says something true — and says it about tomorrow, when somebody
+        // funds the key without reopening this screen.
         LlmApiKey key = requireWritable(actor, keyId);
         generations.bump();
         entityManager.refresh(key);
         requireMutableStatus(key, "한도를 변경할");
-        // The allow list decides what the money may be spent on, so it belongs on
+        // Both lists decide what the money may be spent on, so they belong on
         // the money side of this gate rather than beside RPM and TPM. Left out,
         // a SYS_MANAGER could grant a restricted key every vendor on the market
-        // without touching a single number this branch looks at.
+        // without touching a single number this branch looks at — or, through
+        // the deny list, could lift a refusal the same way.
         boolean allowedModelsChanged = !allowedModels.equals(
-                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()));
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels(),
+                        "llm key " + key.getPublicId()));
+        boolean deniedModelsChanged = !deniedModels.equals(
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
+                        "llm key " + key.getPublicId()));
         boolean moneyChanged = key.getCreditLimit().compareTo(form.getCreditLimit()) != 0
                 || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset())
-                || allowedModelsChanged;
+                || allowedModelsChanged || deniedModelsChanged;
         boolean bindingRequested = form.getOpenrouterAccountId() != null
                 && key.getOpenrouterAccountId() == null;
         if (actor.role() == UserRole.SYS_MANAGER && (moneyChanged || bindingRequested)) {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다",
-                    "시스템 운영자는 금액 한도와 모델 허용 목록을 변경할 수 없습니다.");
+                    "시스템 운영자는 금액 한도와 모델 허용·차단 목록을 변경할 수 없습니다.");
         }
         OpenRouterAccount account = resolveLimitAccount(key, form);
         boolean bindingChanged = key.getOpenrouterAccountId() == null && account != null;
@@ -270,7 +285,8 @@ public class AdminLlmKeyService {
 
         key.replaceLimits(form.getRpm(), form.getTpm(), form.getConcurrency(),
                 form.getDailyTokens(), form.getCreditLimit(), form.getCreditLimitReset(),
-                CreditModelAllowlist.toJson(objectMapper, allowedModels), Instant.now());
+                CreditModelPatterns.toJson(objectMapper, allowedModels),
+                CreditModelPatterns.toJson(objectMapper, deniedModels), Instant.now());
         if (bindingChanged) {
             key.bindOpenrouterAccount(account.getId(), Instant.now());
         }
@@ -294,6 +310,7 @@ public class AdminLlmKeyService {
         args.put("creditLimit", form.getCreditLimit());
         args.put("creditLimitReset", form.getCreditLimitReset());
         args.put("creditAllowedModels", allowedModels);
+        args.put("creditDeniedModels", deniedModels);
         args.put("openrouterAccountId", account == null ? null : account.getPublicId());
         args.putAll(allocationRecord);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

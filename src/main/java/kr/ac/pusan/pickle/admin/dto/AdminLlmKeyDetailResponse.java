@@ -43,12 +43,15 @@ public record AdminLlmKeyDetailResponse(
         Instant createdAt,
         @Nullable Instant revokedAt,
         @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열은 제한 없음")
-        List<String> creditAllowedModels) {
+        List<String> creditAllowedModels,
+        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열은 차단 없음. "
+                + "허용 목록과 함께 걸리면 차단이 이긴다.")
+        List<String> creditDeniedModels) {
 
     public static AdminLlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId,
             String workspaceName, UUID orgId, String orgName, UUID requestId,
             @Nullable UUID openrouterAccountId, @Nullable String openrouterAccountName,
-            List<String> creditAllowedModels, Instant now) {
+            List<String> creditAllowedModels, List<String> creditDeniedModels, Instant now) {
         return new AdminLlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.effectiveStatus(now), key.getExpiresAt(), key.getLastUsedAt(), key.getRpm(),
                 key.getTpm(), key.getConcurrency(), key.getDailyTokens(), key.isQuotaExhausted(),
@@ -56,6 +59,6 @@ public record AdminLlmKeyDetailResponse(
                 key.getOpenrouterUsage(), key.getOpenrouterUsageAt(),
                 key.getOpenrouterLimitRemaining(), openrouterAccountId, openrouterAccountName,
                 workspaceId, workspaceName, orgId, orgName, requestId, key.getCreatedAt(),
-                key.getRevokedAt(), creditAllowedModels);
+                key.getRevokedAt(), creditAllowedModels, creditDeniedModels);
     }
 }
