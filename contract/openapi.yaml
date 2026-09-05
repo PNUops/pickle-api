@@ -3449,7 +3449,7 @@ components:
           - "integer"
           - "null"
         grantedPassthroughEndpoints:
-          description: "승인자가 부여한 기능 권한. 빈 배열은 부여하지 않았다는 뜻이다."
+          description: "승인자가 부여한 기능 권한. 빈 배열이면 부여된 기능이 없습니다."
           items:
             enum:
             - "images"

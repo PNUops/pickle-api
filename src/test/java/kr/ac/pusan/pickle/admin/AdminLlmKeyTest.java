@@ -1004,13 +1004,25 @@ class AdminLlmKeyTest {
     void grantedPassthroughEndpointsReachTheKeyRow() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "기능 권한 부여 키", "ACTIVE", null);
         Map<String, Object> granted = limits(60, "5.00");
-        granted.put("passthroughEndpoints", java.util.List.of("images", "embeddings"));
+        // Sent unnormalized on purpose, so the assertions below distinguish the
+        // stored and recorded value from what the form carried: casing, padding
+        // and a repeat all have to be gone, and the typed order has to survive.
+        granted.put("passthroughEndpoints",
+                java.util.List.of(" Images ", "embeddings", "images"));
         putLimits(key.publicId(), sysAdminToken, granted)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.passthroughEndpoints.length()").value(2));
 
         assertThat(storedModels(key.publicId(), "passthrough_endpoints"))
                 .isEqualTo("[\"images\", \"embeddings\"]");
+
+        // The audit has to carry it too, and for the same reason the value sits
+        // behind the system-operator gate: it changes what an amount may be
+        // spent on without moving the amount, so a record holding the numbers
+        // and not this one cannot answer who opened image generation. The
+        // recorded value is the normalized one, not what the form sent.
+        assertThat(auditDetail(key.publicId(), "llm_key.limits_update")
+                .get("passthroughEndpoints")).isEqualTo(java.util.List.of("images", "embeddings"));
     }
 
     /**
@@ -1048,7 +1060,7 @@ class AdminLlmKeyTest {
                 .isEqualTo("[\"images\"]");
     }
 
-    /** The two money-axis list columns as the gateway would read them. */
+    /** The three per-key list columns as the gateway would read them. */
     private String storedModels(UUID keyPublicId, String column) {
         return jdbcTemplate.queryForObject(
                 "select " + column + "::text from llm_api_keys where public_id = ?",

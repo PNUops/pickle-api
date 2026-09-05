@@ -65,8 +65,8 @@ public record LlmKeyRequestSpecResponse(
         List<String> grantedCreditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
                 PassthroughEndpoints.EMBEDDINGS}),
-                arraySchema = @Schema(description = "승인자가 부여한 기능 권한. 빈 배열은 "
-                        + "부여하지 않았다는 뜻이다."))
+                arraySchema = @Schema(description = "승인자가 부여한 기능 권한. 빈 배열이면 "
+                        + "부여된 기능이 없습니다."))
         List<String> grantedPassthroughEndpoints) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
