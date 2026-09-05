@@ -21,6 +21,10 @@ public record CreateOpenRouterAccountRequest(
                 + "기본이 됩니다.")
         @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
         @Nullable List<String> defaultCreditAllowedModels,
+        @Schema(description = "승인 화면 프리필에 쓸 상용 모델 차단 목록 기본값. 비우면 차단 "
+                + "없음이 기본이 됩니다.")
+        @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+        @Nullable List<String> defaultCreditDeniedModels,
         @Schema(description = "오입력 방지를 위해 name과 정확히 같아야 하는 확인값")
         @NotBlank @Size(max = 120) String confirmName) {
 }

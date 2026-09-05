@@ -43,9 +43,17 @@ public final class CreditModelPatterns {
     public static final String EMPTY_JSON = "[]";
 
     /**
-     * Matches the DB CHECK installed by V102 and widened by V104 — a model
-     * name, or a vendor prefix, either one optionally carrying the vendor's
-     * leading tilde.
+     * Matches the DB CHECK installed by V102 and widened by V104 and V109 — a
+     * model name or a vendor prefix, optionally carrying the vendor's leading
+     * tilde, with at most one star in the segment after the slash.
+     *
+     * <p>The segment takes four shapes: an exact name, a name with a trailing
+     * star, a leading star with a non-empty tail ending alphanumeric, or a bare
+     * star for the whole vendor. The vendor half takes no star at all, because
+     * vendor names are prefixes of one another — {@code meta} and {@code
+     * meta-llama}, {@code bytedance} and {@code bytedance-seed} — so {@code
+     * openai*} would reach a vendor nobody named. The slash itself stays
+     * optional: vendorless names exist and are in use.
      *
      * <p>The tilde admits floating aliases like {@code
      * ~anthropic/claude-sonnet-latest}, which always resolve to the newest
@@ -56,8 +64,9 @@ public final class CreditModelPatterns {
      * separate prefixes: an alias points at a model that changes underneath
      * it, so opening a vendor must not admit a moving target nobody chose.
      */
-    private static final Pattern PATTERN =
-            Pattern.compile("^~?[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*|\\*))?$");
+    private static final Pattern PATTERN = Pattern.compile(
+            "^~?[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*\\*?"
+                    + "|\\*[a-z0-9._:-]*[a-z0-9]|\\*))?$");
 
     /**
      * Self-serving model prefixes. A name starting with one of these is served
@@ -103,8 +112,12 @@ public final class CreditModelPatterns {
                 continue;
             }
             if ("*".equals(value)) {
+                // Said without naming a direction: this method serves both the
+                // allow list and the deny list, and "leave it empty to allow
+                // everything" is false advice on the second one.
                 errors.add(new FieldValidationError(at,
-                        "모든 모델을 허용하려면 목록을 비워 주세요. '*' 하나만 적을 수는 없습니다."));
+                        "'*' 하나만 적을 수는 없습니다. 목록을 비우면 이 목록은 아무것도 제한하지 "
+                                + "않고, 한 벤더 전체는 'openai/*'처럼 적습니다."));
                 continue;
             }
             if (isReserved(value)) {
@@ -114,7 +127,9 @@ public final class CreditModelPatterns {
             }
             if (!PATTERN.matcher(value).matches()) {
                 errors.add(new FieldValidationError(at,
-                        "모델 이름 또는 벤더 프리픽스(예: openai/*) 형식이어야 합니다."));
+                        "모델 이름(예: openai/gpt-4o-mini), 벤더 전체(예: openai/*), 또는 "
+                                + "와일드카드를 하나 포함한 모델 패턴(예: openai/gpt-5-*, "
+                                + "openai/*-pro) 형식이어야 합니다."));
                 continue;
             }
             kept.add(value);
@@ -210,6 +225,16 @@ public final class CreditModelPatterns {
      * happen to a value written outside the application, and failing a whole
      * key list over one unreadable row would take the service down for a
      * problem that belongs to one key.
+     *
+     * <p><b>Empty is not the safe reading on the deny side.</b> An unreadable
+     * allow list read as empty opens every model; an unreadable deny list read
+     * as empty opens exactly the models somebody refused. The judgement that
+     * covers both is the gateway's, and it is to drop the whole key rather than
+     * to skip the entry — the conclusion is the same for the two lists and the
+     * reason is opposite: an allow list that loses entries becomes unlimited,
+     * a deny list that loses entries stops blocking. This method stays lenient
+     * because it is on the reading side of a constrained column and the
+     * gateway's loader is where a malformed document is judged.
      */
     public static List<String> fromJson(ObjectMapper mapper, @Nullable String stored) {
         if (stored == null || stored.isBlank()) {

@@ -135,6 +135,8 @@ public class AdminOpenRouterAccountService {
         List<FieldValidationError> modelErrors = new ArrayList<>();
         List<String> defaultModels = CreditModelPatterns.normalize(
                 form.defaultCreditAllowedModels(), "defaultCreditAllowedModels", modelErrors);
+        List<String> defaultDeniedModels = CreditModelPatterns.normalize(
+                form.defaultCreditDeniedModels(), "defaultCreditDeniedModels", modelErrors);
         if (!modelErrors.isEmpty()) {
             throw ApiException.validationFailed(modelErrors);
         }
@@ -143,6 +145,8 @@ public class AdminOpenRouterAccountService {
                 Texts.blankToNull(form.contact()), actor.id());
         account.replaceDefaultCreditAllowedModels(
                 CreditModelPatterns.toJson(objectMapper, defaultModels), Instant.now());
+        account.replaceDefaultCreditDeniedModels(
+                CreditModelPatterns.toJson(objectMapper, defaultDeniedModels), Instant.now());
         try {
             return tx.execute(status -> {
                 OpenRouterAccount saved = accountRepository.saveAndFlush(account);
@@ -210,6 +214,18 @@ public class AdminOpenRouterAccountService {
             }
             auditArgs.put("defaultCreditAllowedModels", nextModels);
             account.replaceDefaultCreditAllowedModels(
+                    CreditModelPatterns.toJson(objectMapper, nextModels), Instant.now());
+        }
+        if (form.isDefaultCreditDeniedModelsSet()) {
+            List<FieldValidationError> modelErrors = new ArrayList<>();
+            List<String> nextModels = CreditModelPatterns.normalize(
+                    form.getDefaultCreditDeniedModels(), "defaultCreditDeniedModels",
+                    modelErrors);
+            if (!modelErrors.isEmpty()) {
+                throw ApiException.validationFailed(modelErrors);
+            }
+            auditArgs.put("defaultCreditDeniedModels", nextModels);
+            account.replaceDefaultCreditDeniedModels(
                     CreditModelPatterns.toJson(objectMapper, nextModels), Instant.now());
         }
         try {
@@ -866,6 +882,8 @@ public class AdminOpenRouterAccountService {
                 creditsQuery.get(account), allocationResponse(allocation),
                 CreditModelPatterns.fromJson(objectMapper,
                         account.getDefaultCreditAllowedModels()),
+                CreditModelPatterns.fromJson(objectMapper,
+                        account.getDefaultCreditDeniedModels()),
                 account.getCreatedAt(), account.getUpdatedAt());
     }
 

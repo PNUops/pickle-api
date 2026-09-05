@@ -528,14 +528,22 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("limits"));
     }
 
-    // The money-axis allow list joins the full replacement, so a request that
-    // omits it replaces nothing — the same rule the other six already follow.
+    // Both money-axis lists join the full replacement, so a request that omits
+    // either replaces nothing — the same rule the other six already follow.
+    // Without the deny half in isComplete() a body missing it saves quietly with
+    // the list emptied, which is the direction that opens a blocked model.
     @Test
-    void creditAllowlistIsPartOfTheFullReplacement() throws Exception {
+    void creditModelListsArePartOfTheFullReplacement() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "허용 목록 키", "ACTIVE", null);
         Map<String, Object> withoutList = limits(60, "5.00");
         withoutList.remove("creditAllowedModels");
         putLimits(key.publicId(), sysAdminToken, withoutList)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("limits"));
+
+        Map<String, Object> withoutDenyList = limits(60, "5.00");
+        withoutDenyList.remove("creditDeniedModels");
+        putLimits(key.publicId(), sysAdminToken, withoutDenyList)
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("limits"));
 
@@ -583,16 +591,146 @@ class AdminLlmKeyTest {
                 .andExpect(jsonPath("$.errors[0].field").value("creditLimit"));
     }
 
-    // The list decides what the money may be spent on, so it sits on the money
-    // side of the system-operator gate. Left off it, a SYS_MANAGER could open
-    // every vendor on a restricted key without touching a single number.
+    // A deny list restricts something at every amount, including zero: "this key
+    // may not call that model" stays true with no budget, and stays true the day
+    // somebody funds the key without reopening this screen. The allow list has
+    // the opposite rule, so making the pair uniform is the easy mistake.
     @Test
-    void systemManagerCannotChangeTheCreditAllowlist() throws Exception {
+    void creditDenylistSavesWithNoMoneyAndReachesTheKeyRow() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "차단 목록 무금액 키", "ACTIVE", null);
+        Map<String, Object> noMoney = limits(60, "0");
+        noMoney.put("creditDeniedModels", java.util.List.of("openai/*-pro"));
+        putLimits(key.publicId(), sysAdminToken, noMoney)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditDeniedModels.length()").value(1))
+                .andExpect(jsonPath("$.creditDeniedModels[0]").value("openai/*-pro"));
+
+        // The response is the detail projection; the gateway reads the row.
+        assertThat(storedModels(key.publicId(), "credit_denied_models"))
+                .isEqualTo("[\"openai/*-pro\"]");
+
+        // The allow list still refuses the same shape at zero, which is what
+        // makes the asymmetry a decision rather than an oversight.
+        Map<String, Object> allowNoMoney = limits(60, "0");
+        allowNoMoney.put("creditAllowedModels", java.util.List.of("openai/*"));
+        putLimits(key.publicId(), sysAdminToken, allowNoMoney)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[0].field").value("creditLimit"));
+    }
+
+    // The two lists are JSON arrays of the same shape sitting next to each other
+    // through the DTO, the service, the entity setter and the SQL, so a
+    // transposed pair compiles and stores and reads back cleanly while inverting
+    // what the key may spend on. Different values on each side is what catches it.
+    @Test
+    void theTwoCreditListsLandInTheirOwnColumns() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "두 목록 키", "ACTIVE", null);
+        Map<String, Object> both = limits(60, "5.00");
+        both.put("creditAllowedModels", java.util.List.of("openai/*"));
+        both.put("creditDeniedModels", java.util.List.of("openai/*-pro", "openai/o1*"));
+        putLimits(key.publicId(), sysAdminToken, both)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditAllowedModels[0]").value("openai/*"))
+                .andExpect(jsonPath("$.creditDeniedModels[0]").value("openai/*-pro"))
+                .andExpect(jsonPath("$.creditDeniedModels[1]").value("openai/o1*"));
+
+        assertThat(storedModels(key.publicId(), "credit_allowed_models"))
+                .isEqualTo("[\"openai/*\"]");
+        assertThat(storedModels(key.publicId(), "credit_denied_models"))
+                .isEqualTo("[\"openai/*-pro\", \"openai/o1*\"]");
+    }
+
+    /**
+     * The widened syntax has to clear the database CHECK, not only the Java
+     * regex. A unit test on the normalizer never reaches the constraint, and a
+     * round that widened only one of the two left the other refusing what the
+     * screen had just accepted — visible solely as a write that fails at commit.
+     */
+    @Test
+    void widenedWildcardSyntaxPassesTheDatabaseCheck() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "와일드카드 키", "ACTIVE", null);
+        // Trailing star, leading star, whole vendor, plain name and a floating
+        // alias — every shape the matcher knows, on both columns at once.
+        java.util.List<String> allowed = java.util.List.of(
+                "openai/gpt-5-*", "anthropic/*", "openai/gpt-4o-mini",
+                "~anthropic/claude-sonnet-latest");
+        java.util.List<String> denied = java.util.List.of(
+                "openai/*-pro", "openai/gpt-5*", "mistralai/*");
+        Map<String, Object> body = limits(60, "5.00");
+        body.put("creditAllowedModels", allowed);
+        body.put("creditDeniedModels", denied);
+        putLimits(key.publicId(), sysAdminToken, body).andExpect(status().isOk());
+
+        assertThat(storedModels(key.publicId(), "credit_allowed_models"))
+                .contains("openai/gpt-5-*").contains("~anthropic/claude-sonnet-latest");
+        assertThat(storedModels(key.publicId(), "credit_denied_models"))
+                .contains("openai/*-pro").contains("openai/gpt-5*");
+
+        // The pre-existing syntax keeps saving; widening must not narrow.
+        Map<String, Object> old = limits(60, "5.00");
+        old.put("creditAllowedModels", java.util.List.of("openai/gpt-4o-mini", "openai/*"));
+        putLimits(key.publicId(), sysAdminToken, old).andExpect(status().isOk());
+    }
+
+    /**
+     * Every shape the syntax drops, refused at the moment it is stored rather
+     * than left to match nothing later. The star-only entry has its own message
+     * because it is the one somebody types meaning "everything".
+     */
+    @Test
+    void creditListsRefuseTheShapesTheSyntaxDrops() throws Exception {
+        Key key = key(orgA.getId(), workspaceA, "문법 거부 키", "ACTIVE", null);
+        for (String bad : java.util.List.of("*", "openai*", "openai/*gpt*", "openai/**",
+                "openai/*-", "~openai*")) {
+            Map<String, Object> body = limits(60, "5.00");
+            body.put("creditDeniedModels", java.util.List.of(bad));
+            putLimits(key.publicId(), sysAdminToken, body)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.errors[0].field").value("creditDeniedModels[0]"));
+        }
+
+        // A self-serving name is not a commercial name on either list, and the
+        // reserved guard strips a leading tilde before comparing — without that
+        // the widened leading position would let one through on one character.
+        for (String reserved : java.util.List.of("pickle-general", "~pickle-general",
+                "pnu-general", "~pnu-general")) {
+            Map<String, Object> body = limits(60, "5.00");
+            body.put("creditDeniedModels", java.util.List.of(reserved));
+            putLimits(key.publicId(), sysAdminToken, body)
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.errors[0].field").value("creditDeniedModels[0]"));
+        }
+
+        // Uppercase is normalized, not refused.
+        Map<String, Object> shouty = limits(60, "5.00");
+        shouty.put("creditDeniedModels", java.util.List.of("OPENAI/*-PRO"));
+        putLimits(key.publicId(), sysAdminToken, shouty)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.creditDeniedModels[0]").value("openai/*-pro"));
+    }
+
+    // The lists decide what the money may be spent on, so they sit on the money
+    // side of the system-operator gate. Left off it, a SYS_MANAGER could open
+    // every vendor on a restricted key without touching a single number — or,
+    // through the deny list, could lift a refusal the same way.
+    @Test
+    void systemManagerCannotChangeEitherCreditModelList() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "운영자 게이트 키", "ACTIVE", null);
         Map<String, Object> widened = limits(60, "1.00");
         widened.put("creditAllowedModels", java.util.List.of("openai/*"));
         putLimits(key.publicId(), sysManagerToken, widened)
                 .andExpect(status().isForbidden());
+
+        // Same gate from the other direction: dropping a refusal is a money
+        // change too, and it is the half a gate written around "allow" misses.
+        Key denied = key(orgA.getId(), workspaceA, "운영자 차단 키", "ACTIVE", null);
+        Map<String, Object> fenced = limits(60, "1.00");
+        fenced.put("creditDeniedModels", java.util.List.of("openai/*-pro"));
+        putLimits(denied.publicId(), sysAdminToken, fenced).andExpect(status().isOk());
+        putLimits(denied.publicId(), sysManagerToken, limits(60, "1.00"))
+                .andExpect(status().isForbidden());
+        assertThat(storedModels(denied.publicId(), "credit_denied_models"))
+                .isEqualTo("[\"openai/*-pro\"]");
 
         // The same request without a list change stays allowed for that role.
         putLimits(key.publicId(), sysManagerToken, limits(60, "1.00"))
@@ -773,7 +911,15 @@ class AdminLlmKeyTest {
         values.put("creditLimit", creditLimit);
         values.put("creditLimitReset", null);
         values.put("creditAllowedModels", java.util.List.of());
+        values.put("creditDeniedModels", java.util.List.of());
         return values;
+    }
+
+    /** The two money-axis list columns as the gateway would read them. */
+    private String storedModels(UUID keyPublicId, String column) {
+        return jdbcTemplate.queryForObject(
+                "select " + column + "::text from llm_api_keys where public_id = ?",
+                String.class, keyPublicId);
     }
 
     /** One funded account per org, since a money budget must name one. */

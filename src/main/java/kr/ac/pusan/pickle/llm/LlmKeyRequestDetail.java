@@ -82,6 +82,16 @@ public class LlmKeyRequestDetail {
     @Column(name = "granted_credit_allowed_models", nullable = false, columnDefinition = "jsonb")
     private String grantedCreditAllowedModels = CreditModelPatterns.EMPTY_JSON;
 
+    /**
+     * The money-axis model deny list the reviewer granted, as a JSON array.
+     * Empty means nothing was blocked. Like the allow list it has no requested
+     * counterpart, and unlike it there is no rule tying it to a positive
+     * amount: a refusal holds at any amount.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "granted_credit_denied_models", nullable = false, columnDefinition = "jsonb")
+    private String grantedCreditDeniedModels = CreditModelPatterns.EMPTY_JSON;
+
     protected LlmKeyRequestDetail() {
     }
 
@@ -118,14 +128,20 @@ public class LlmKeyRequestDetail {
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset) {
         grant(rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, null,
-                CreditModelPatterns.EMPTY_JSON);
+                CreditModelPatterns.EMPTY_JSON, CreditModelPatterns.EMPTY_JSON);
     }
 
+    /**
+     * The last two arguments are the allowed list and then the denied list. They
+     * are both JSON arrays of the same shape, so only their order tells them
+     * apart and transposing them inverts the reviewer's decision.
+     */
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset, @Nullable Long openrouterAccountId,
-            String creditAllowedModels) {
+            String creditAllowedModels, String creditDeniedModels) {
         this.grantedCreditAllowedModels = creditAllowedModels;
+        this.grantedCreditDeniedModels = creditDeniedModels;
         this.grantedRpm = rpm;
         this.grantedTpm = tpm;
         this.grantedConcurrency = concurrency;
@@ -146,6 +162,11 @@ public class LlmKeyRequestDetail {
     /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getGrantedCreditAllowedModels() {
         return grantedCreditAllowedModels;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
+    public String getGrantedCreditDeniedModels() {
+        return grantedCreditDeniedModels;
     }
 
     public @Nullable Integer getReqRpm() {

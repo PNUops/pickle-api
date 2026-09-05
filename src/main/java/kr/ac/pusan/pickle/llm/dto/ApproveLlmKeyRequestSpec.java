@@ -55,6 +55,12 @@ public record ApproveLlmKeyRequestSpec(
         @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
         @Nullable List<String> grantedCreditAllowedModels,
 
+        @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 비우면 차단하는 모델이 없고, "
+                + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
+                + "0이어도 남습니다. 자체 서빙 모델은 이 목록과 무관합니다.")
+        @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+        @Nullable List<String> grantedCreditDeniedModels,
+
         @Schema(description = "유료 모델을 결제할 기관 사업 계정. 하나뿐이면 생략할 수 있습니다.")
         @Nullable UUID openrouterAccountId) {
 }

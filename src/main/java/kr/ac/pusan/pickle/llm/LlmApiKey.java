@@ -140,6 +140,19 @@ public class LlmApiKey {
     @Column(name = "credit_allowed_models", nullable = false, columnDefinition = "jsonb")
     private String creditAllowedModels = CreditModelPatterns.EMPTY_JSON;
 
+    /**
+     * JSON array of the model patterns this key may <em>not</em> spend money on,
+     * same syntax and same normalizer as the list above. Empty means nothing is
+     * blocked; where both lists name a model the deny side wins.
+     *
+     * <p>Unlike the allow list this one survives a money limit of zero. "This
+     * key may not call that model" is true at any amount, and stays true if
+     * somebody funds the key tomorrow.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "credit_denied_models", nullable = false, columnDefinition = "jsonb")
+    private String creditDeniedModels = CreditModelPatterns.EMPTY_JSON;
+
     /** OpenRouter's identifier for this key's own OpenRouter key. */
     @Column(name = "openrouter_key_hash")
     private @Nullable String openrouterKeyHash;
@@ -420,11 +433,19 @@ public class LlmApiKey {
         this.updatedAt = when;
     }
 
-    /** Replaces every independently managed limit in one write. */
+    /**
+     * Replaces every independently managed limit in one write.
+     *
+     * <p>The last two arguments are the allowed list and then the denied list,
+     * both JSON arrays of the same shape, so nothing but their order tells them
+     * apart at a call site and transposing them inverts the fence. The
+     * administrator replacement test asserts both stored columns against
+     * different values for exactly that reason.
+     */
     public void replaceLimits(@Nullable Integer rpm, @Nullable Integer tpm,
             @Nullable Integer concurrency, @Nullable Long dailyTokens,
             BigDecimal creditLimit, @Nullable CreditLimitReset creditLimitReset,
-            String creditAllowedModels, Instant when) {
+            String creditAllowedModels, String creditDeniedModels, Instant when) {
         this.rpm = rpm;
         this.tpm = tpm;
         this.concurrency = concurrency;
@@ -432,19 +453,21 @@ public class LlmApiKey {
         this.creditLimit = creditLimit;
         this.creditLimitReset = creditLimitReset;
         this.creditAllowedModels = creditAllowedModels;
+        this.creditDeniedModels = creditDeniedModels;
         this.updatedAt = when;
     }
 
     /**
-     * Sets the money-axis allow list at approval.
+     * Sets the money-axis model lists at approval.
      *
      * <p>Kept out of the constructor deliberately: that signature already
-     * carries fourteen positional arguments, and a fifteenth String beside
-     * {@code name} and {@code purpose} is the shape a caller transposes without
+     * carries fourteen positional arguments, and further Strings beside
+     * {@code name} and {@code purpose} are the shape a caller transposes without
      * the compiler noticing.
      */
-    public void applyCreditAllowedModels(String creditAllowedModels) {
+    public void applyCreditModelLists(String creditAllowedModels, String creditDeniedModels) {
         this.creditAllowedModels = creditAllowedModels;
+        this.creditDeniedModels = creditDeniedModels;
     }
 
     /** First binding only. A bound key never moves or clears its vendor account. */
@@ -549,6 +572,11 @@ public class LlmApiKey {
     /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getCreditAllowedModels() {
         return creditAllowedModels;
+    }
+
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
+    public String getCreditDeniedModels() {
+        return creditDeniedModels;
     }
 
     public @Nullable String getOpenrouterKeyHash() {

@@ -14,11 +14,15 @@ import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Full replacement of the seven limits on an administered LLM key.
+ * Full replacement of the eight limits on an administered LLM key.
  *
  * <p>Two of them spell "unset" in opposite directions, which is the trap in
  * this class: {@code creditLimit} refuses null because money has no unlimited,
  * while a null {@code creditAllowedModels} is exactly unrestricted.
+ *
+ * <p>{@code creditDeniedModels} is the eighth and reads the other way round
+ * from the seventh: a null or empty allow list opens everything, a null or
+ * empty deny list closes nothing.
  */
 public class AdminLlmKeyLimitsRequest {
 
@@ -52,6 +56,10 @@ public class AdminLlmKeyLimitsRequest {
     @Size(max = 50, message = "모델은 최대 50개까지 허용할 수 있습니다.")
     private @Nullable List<String> creditAllowedModels;
     private boolean creditAllowedModelsSet;
+
+    @Size(max = 50, message = "모델은 최대 50개까지 차단할 수 있습니다.")
+    private @Nullable List<String> creditDeniedModels;
+    private boolean creditDeniedModelsSet;
 
     private @Nullable UUID openrouterAccountId;
 
@@ -134,6 +142,19 @@ public class AdminLlmKeyLimitsRequest {
         this.creditAllowedModelsSet = true;
     }
 
+    @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+            description = "유료 모델 차단 목록. 빈 배열이나 null이면 차단하는 모델이 없습니다. "
+                    + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
+                    + "0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다.")
+    public @Nullable List<String> getCreditDeniedModels() {
+        return creditDeniedModels;
+    }
+
+    public void setCreditDeniedModels(@Nullable List<String> creditDeniedModels) {
+        this.creditDeniedModels = creditDeniedModels;
+        this.creditDeniedModelsSet = true;
+    }
+
     @Schema(description = "유료 모델을 결제할 사업 계정. 생략하거나 null이면 기존 연결을 유지합니다.")
     public @Nullable UUID getOpenrouterAccountId() {
         return openrouterAccountId;
@@ -146,6 +167,7 @@ public class AdminLlmKeyLimitsRequest {
     @Schema(hidden = true)
     public boolean isComplete() {
         return rpmSet && tpmSet && concurrencySet && dailyTokensSet
-                && creditLimitSet && creditLimitResetSet && creditAllowedModelsSet;
+                && creditLimitSet && creditLimitResetSet && creditAllowedModelsSet
+                && creditDeniedModelsSet;
     }
 }

@@ -56,15 +56,20 @@ public record LlmKeyRequestSpecResponse(
         @Schema(description = "부여된 상용(금액) 축 모델 허용 목록. 빈 배열이면 제한이 없습니다. "
                 + "어떤 모델을 열지는 신청자가 요구하는 값이 아니라 승인자가 정하는 값이라 "
                 + "희망 쪽 짝이 없습니다.")
-        List<String> grantedCreditAllowedModels) {
+        List<String> grantedCreditAllowedModels,
+
+        @Schema(description = "부여된 상용(금액) 축 모델 차단 목록. 빈 배열이면 차단이 없습니다. "
+                + "허용 목록과 함께 걸리면 차단이 이깁니다.")
+        List<String> grantedCreditDeniedModels) {
 
     public static LlmKeyRequestSpecResponse from(LlmKeyRequestDetail detail,
-            List<String> grantedCreditAllowedModels) {
+            List<String> grantedCreditAllowedModels, List<String> grantedCreditDeniedModels) {
         return new LlmKeyRequestSpecResponse(detail.getReqRpm(),
                 detail.getReqTpm(), detail.getReqDailyTokens(), detail.isReqUseCampus(),
                 detail.isReqUseCommercial(), detail.getReqCreditLimit(), detail.getGrantedRpm(),
                 detail.getGrantedTpm(), detail.getGrantedConcurrency(),
                 detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
-                detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels);
+                detail.getGrantedCreditLimitReset(), grantedCreditAllowedModels,
+                grantedCreditDeniedModels);
     }
 }

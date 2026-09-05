@@ -165,7 +165,9 @@ public class RequestAssembler {
                             nodes.get(vmDetail.getNodeId())) : null,
                     llmKeyDetail != null ? LlmKeyRequestSpecResponse.from(llmKeyDetail,
                             CreditModelPatterns.fromJson(objectMapper,
-                                    llmKeyDetail.getGrantedCreditAllowedModels())) : null,
+                                    llmKeyDetail.getGrantedCreditAllowedModels()),
+                            CreditModelPatterns.fromJson(objectMapper,
+                                    llmKeyDetail.getGrantedCreditDeniedModels())) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;

@@ -91,6 +91,12 @@ public sealed interface LlmSyncResponse {
             // one governs CREDIT-axis models only, so a key restricted here
             // keeps its self-serving access. Empty means unrestricted.
             List<String> creditAllowedModels,
+            // The other half of the money fence, same syntax, opposite meaning:
+            // empty blocks nothing, and where both lists name a model the deny
+            // side wins. Sent as its own member rather than folded into the one
+            // above because "not listed" and "listed as refused" are different
+            // decisions and only the gateway can combine them.
+            List<String> creditDeniedModels,
             KeyLimits limits,
             boolean quotaExhausted,
             boolean recordBodies,

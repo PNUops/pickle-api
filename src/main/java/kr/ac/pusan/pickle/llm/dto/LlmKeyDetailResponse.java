@@ -51,6 +51,9 @@ public record LlmKeyDetailResponse(
         @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 있는 모델 목록. 빈 배열이면 제한이 "
                 + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다.")
         List<String> creditAllowedModels,
+        @Schema(description = "상용(금액) 축에서 이 키가 쓸 수 없는 모델 목록. 빈 배열이면 차단이 "
+                + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다.")
+        List<String> creditDeniedModels,
         @Schema(description = "소유 워크스페이스. 행이 사라진 경우에만 null입니다.")
         @Nullable UUID workspaceId,
         String workspaceName,
@@ -63,13 +66,13 @@ public record LlmKeyDetailResponse(
         boolean accessManageAllowed) {
 
     public static LlmKeyDetailResponse from(LlmApiKey key, UUID workspaceId, String workspaceName,
-            List<String> creditAllowedModels, @Nullable ResourceRole myResourceRole,
-            boolean accessManageAllowed) {
+            List<String> creditAllowedModels, List<String> creditDeniedModels,
+            @Nullable ResourceRole myResourceRole, boolean accessManageAllowed) {
         return new LlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.getStatus(), key.getTokenPrefix(), key.getExpiresAt(), key.getLastUsedAt(),
                 key.getRpm(), key.getTpm(), key.getConcurrency(), key.isRecordBodies(),
                 key.getCreditLimit(), key.getCreditLimitReset(), key.isCreditAxisConnected(),
-                creditAllowedModels, workspaceId, workspaceName, key.getCreatedAt(),
-                key.getRevokedAt(), myResourceRole, accessManageAllowed);
+                creditAllowedModels, creditDeniedModels, workspaceId, workspaceName,
+                key.getCreatedAt(), key.getRevokedAt(), myResourceRole, accessManageAllowed);
     }
 }

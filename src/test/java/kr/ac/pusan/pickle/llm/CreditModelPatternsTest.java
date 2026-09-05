@@ -88,6 +88,72 @@ class CreditModelPatternsTest {
     }
 
     /**
+     * The four shapes the model segment takes, copied from the matcher's own
+     * case table so the three repositories that implement it stay pinned to one
+     * list: exact name, trailing star, leading star, whole vendor.
+     */
+    @Test
+    void keepsEveryWildcardShapeTheMatcherKnows() {
+        List<String> shapes = List.of(
+                "openai/gpt-4o-mini", "openai/*", "openai/gpt-5-*", "openai/gpt-5*",
+                "openai/*-pro", "~anthropic/claude-sonnet-latest", "~openai/*",
+                "anthropic/claude-3.5-sonnet:beta", "pickle_general/x");
+        for (String shape : shapes) {
+            List<FieldValidationError> errors = new ArrayList<>();
+            List<String> kept = normalize(List.of(shape), errors);
+            assertThat(errors).describedAs("entry %s must be kept", shape).isEmpty();
+            assertThat(kept).containsExactly(shape);
+        }
+    }
+
+    /**
+     * What the syntax drops at the moment of storing. The vendor half takes no
+     * star at all: vendor names are prefixes of one another (meta and
+     * meta-llama, bytedance and bytedance-seed), so {@code openai*} would reach
+     * a vendor nobody named. One star per entry, and a leading star needs a
+     * non-empty tail that ends alphanumeric.
+     */
+    @Test
+    void refusesTheShapesTheSyntaxDrops() {
+        for (String bad : List.of("*", "openai*", "openai/*gpt*", "openai/**",
+                "openai/*-", "~openai*", "openai/-*", "openai/*.", "/gpt-4o")) {
+            List<FieldValidationError> errors = new ArrayList<>();
+            normalize(List.of(bad), errors);
+            assertThat(errors)
+                    .describedAs("entry %s must be refused", bad)
+                    .isNotEmpty();
+        }
+    }
+
+    /**
+     * Uppercase is a normalization target, not a rejection — the gateway
+     * compares against a lower-cased name, so a pattern stored with capitals
+     * would match nothing rather than fail loudly.
+     */
+    @Test
+    void lowercasesTheWidenedShapesRatherThanRefusingThem() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        assertThat(normalize(List.of("OpenAI/*-Pro", "OPENAI/GPT-5-*"), errors))
+                .containsExactly("openai/*-pro", "openai/gpt-5-*");
+        assertThat(errors).isEmpty();
+    }
+
+    /**
+     * A blank entry is dropped rather than refused. It is what a list editor
+     * sends for an untouched row, and the stored column never sees it — the DB
+     * CHECK refuses a zero-length element, so the two rules agree on the value
+     * that reaches the table even though they disagree on how it is handled.
+     */
+    @Test
+    void dropsBlankEntriesWithoutRefusingTheList() {
+        List<FieldValidationError> errors = new ArrayList<>();
+        List<String> kept = normalize(new ArrayList<>(java.util.Arrays.asList(
+                "openai/*-pro", "", "   ", null)), errors);
+        assertThat(errors).isEmpty();
+        assertThat(kept).containsExactly("openai/*-pro");
+    }
+
+    /**
      * The cases are the gateway's own, transcribed. Two matchers that must
      * agree need one table of truths, and the screen that lists what a key may
      * call is only right while they do.
@@ -119,7 +185,7 @@ class CreditModelPatternsTest {
                 new Case("~", "~anthropic/claude", false),
                 new Case("~/*", "~anthropic/claude", false));
         for (Case c : cases) {
-            assertThat(CreditModelAllowlist.matches(c.pattern(), c.name()))
+            assertThat(CreditModelPatterns.matches(c.pattern(), c.name()))
                     .describedAs("matches(%s, %s)", c.pattern(), c.name())
                     .isEqualTo(c.want());
         }
@@ -137,8 +203,8 @@ class CreditModelPatternsTest {
      */
     @Test
     void comparesTheNameWithoutRegardToCase() {
-        assertThat(CreditModelAllowlist.matches("openai/*", "OpenAI/GPT-4o")).isTrue();
-        assertThat(CreditModelAllowlist.matches("openai/gpt-4o", "OpenAI/GPT-4o")).isTrue();
+        assertThat(CreditModelPatterns.matches("openai/*", "OpenAI/GPT-4o")).isTrue();
+        assertThat(CreditModelPatterns.matches("openai/gpt-4o", "OpenAI/GPT-4o")).isTrue();
     }
 
     /**

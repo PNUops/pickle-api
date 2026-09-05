@@ -200,6 +200,12 @@ class LlmGatewayEndpointTest {
                 // silently lock every fenced key out of self-serving models.
                 .andExpect(jsonPath("$.keys[0].creditAllowedModels").isArray())
                 .andExpect(jsonPath("$.keys[0].creditAllowedModels.length()").value(0))
+                // Its opposite travels beside it, and it is an EMPTY ARRAY
+                // rather than an omission: the gateway ignores a key it does
+                // not know, so a missing member and "nothing is blocked" would
+                // be the same document, and only one of them is true.
+                .andExpect(jsonPath("$.keys[0].creditDeniedModels").isArray())
+                .andExpect(jsonPath("$.keys[0].creditDeniedModels.length()").value(0))
                 .andReturn().getResponse().getContentAsString();
         // Both members present — models as an EMPTY ARRAY (a real state: no
         // catalogue rows exist yet), never omitted alongside a present keys.
@@ -254,28 +260,44 @@ class LlmGatewayEndpointTest {
         }
     }
 
-    // The money fence reaches the gateway as stored, and it reaches it on its
-    // own field: allowedModels stays empty, because filling that one would lock
-    // the key out of self-serving models as a side effect.
+    // Both money fences reach the gateway as stored, each on its own field:
+    // allowedModels stays empty, because filling that one would lock the key out
+    // of self-serving models as a side effect.
+    //
+    // The two lists carry different values on purpose. They are arrays of the
+    // same shape on adjacent members, so a transposed pair produces a
+    // well-formed document that inverts the fence, and the gateway would apply
+    // it without complaint.
     @Test
-    void creditModelAllowlistTravelsInTheDocument() throws Exception {
+    void bothCreditModelListsTravelInTheDocument() throws Exception {
         // A positive money limit needs an account binding since the legacy source
         // was retired, so the fence rides a properly bound key.
         long account = insertOpenrouterAccount();
         KeyFixture fenced = newKey("fenced");
         jdbcTemplate.update("update llm_api_keys set credit_limit = 5.00, "
-                + "openrouter_account_id = ?, credit_allowed_models = ?::jsonb where id = ?",
-                account, "[\"openai/*\", \"anthropic/claude-sonnet-4\"]", fenced.id());
+                + "openrouter_account_id = ?, credit_allowed_models = ?::jsonb, "
+                + "credit_denied_models = ?::jsonb where id = ?",
+                account, "[\"openai/*\", \"anthropic/claude-sonnet-4\"]",
+                "[\"openai/*-pro\"]", fenced.id());
 
         syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk());
-        syncFrom(SOURCE, TOKEN, poll(0))
+        String body = syncFrom(SOURCE, TOKEN, poll(0))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
                         + "')].creditAllowedModels[0]").value("openai/*"))
                 .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
                         + "')].creditAllowedModels[1]").value("anthropic/claude-sonnet-4"))
                 .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
-                        + "')].allowedModels[0]").doesNotExist());
+                        + "')].creditDeniedModels[0]").value("openai/*-pro"))
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].creditDeniedModels[1]").doesNotExist())
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].allowedModels[0]").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        // The gateway's decoder ignores a key it does not know, so a renamed
+        // member arrives as "nothing is blocked" with nothing to say so. Pin
+        // the spelling itself, not only the value behind it.
+        assertThat(body).contains("\"creditDeniedModels\":[\"openai/*-pro\"]");
     }
 
     @Test
