@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The money fence's format rule lives in four places — here, the CHECK the
@@ -139,10 +140,45 @@ class CreditModelPatternsTest {
     }
 
     /**
+     * A stored value that cannot be read comes back empty instead of throwing,
+     * and that leniency is deliberate: this is the read side of a
+     * CHECK-constrained column, so it can only happen to something written
+     * outside the application, and throwing would take down every screen that
+     * lists keys — including the one an approver would use to repair the row.
+     *
+     * <p>What it costs is that the screen then says "nothing is blocked" while
+     * the gateway, judging the same broken value, refuses the key outright. Both
+     * are silent, and they disagree, which is why each of these paths logs the
+     * key at WARN. The test pins the leniency; the log is what makes it findable.
+     */
+    @Test
+    void readsAnUnreadableStoredValueAsEmptyRatherThanThrowing() {
+        ObjectMapper mapper = new ObjectMapper();
+        assertThat(CreditModelPatterns.fromJson(mapper, "{not json", "llm key t-1")).isEmpty();
+        assertThat(CreditModelPatterns.fromJson(mapper, "\"openai/*\"", "llm key t-2")).isEmpty();
+        assertThat(CreditModelPatterns.fromJson(mapper, "{\"a\":1}", "llm key t-3")).isEmpty();
+        // A non-string element is dropped and the rest survives — on a deny list
+        // that is a silent narrowing, so it warns rather than passing unnoticed.
+        assertThat(CreditModelPatterns.fromJson(mapper, "[\"openai/*\", 7, \"\"]", "llm key t-4"))
+                .containsExactly("openai/*");
+        // The ordinary empties stay silent: they are not damage.
+        assertThat(CreditModelPatterns.fromJson(mapper, CreditModelPatterns.EMPTY_JSON,
+                "llm key t-5")).isEmpty();
+        assertThat(CreditModelPatterns.fromJson(mapper, null, "llm key t-6")).isEmpty();
+    }
+
+    /**
      * A blank entry is dropped rather than refused. It is what a list editor
      * sends for an untouched row, and the stored column never sees it — the DB
      * CHECK refuses a zero-length element, so the two rules agree on the value
      * that reaches the table even though they disagree on how it is handled.
+     *
+     * <p>Dropping it loses no decision, and that is what separates it from an
+     * entry the syntax refuses. A blank means nothing in either direction: it
+     * opens nothing on the allow list and blocks nothing on the deny list, so
+     * there is no reviewer intent to preserve. A malformed-but-non-blank entry
+     * is the opposite — somebody meant something by it — which is why that one
+     * is an error rather than a silent drop.
      */
     @Test
     void dropsBlankEntriesWithoutRefusingTheList() {

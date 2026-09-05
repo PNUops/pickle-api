@@ -881,9 +881,11 @@ public class AdminOpenRouterAccountService {
                                 != OpenRouterCredentialStatus.ACTIVE).findFirst().orElse(null)),
                 creditsQuery.get(account), allocationResponse(allocation),
                 CreditModelPatterns.fromJson(objectMapper,
-                        account.getDefaultCreditAllowedModels()),
+                        account.getDefaultCreditAllowedModels(),
+                        "openrouter account " + account.getPublicId()),
                 CreditModelPatterns.fromJson(objectMapper,
-                        account.getDefaultCreditDeniedModels()),
+                        account.getDefaultCreditDeniedModels(),
+                        "openrouter account " + account.getPublicId()),
                 account.getCreatedAt(), account.getUpdatedAt());
     }
 

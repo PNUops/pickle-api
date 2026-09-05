@@ -199,8 +199,10 @@ public class AdminLlmKeyService {
                 org == null ? null : org.getPublicId(), org == null ? "" : org.getName(),
                 requestId, account == null ? null : account.getPublicId(),
                 account == null ? null : account.getName(),
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels()),
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels(),
+                        "llm key " + key.getPublicId()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
+                        "llm key " + key.getPublicId()),
                 Instant.now());
     }
 
@@ -250,9 +252,11 @@ public class AdminLlmKeyService {
         // without touching a single number this branch looks at — or, through
         // the deny list, could lift a refusal the same way.
         boolean allowedModelsChanged = !allowedModels.equals(
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels()));
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels(),
+                        "llm key " + key.getPublicId()));
         boolean deniedModelsChanged = !deniedModels.equals(
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels()));
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
+                        "llm key " + key.getPublicId()));
         boolean moneyChanged = key.getCreditLimit().compareTo(form.getCreditLimit()) != 0
                 || !Objects.equals(key.getCreditLimitReset(), form.getCreditLimitReset())
                 || allowedModelsChanged || deniedModelsChanged;

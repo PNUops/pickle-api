@@ -138,8 +138,10 @@ public class LlmApiKeyQueryService {
         return LlmKeyDetailResponse.from(key,
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels()),
-                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels(),
+                        "llm key " + key.getPublicId()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditDeniedModels(),
+                        "llm key " + key.getPublicId()),
                 standing.role(), standing.manages());
     }
 }

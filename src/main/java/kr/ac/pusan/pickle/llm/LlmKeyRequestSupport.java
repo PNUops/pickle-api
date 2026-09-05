@@ -240,9 +240,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // an account default has to leave behind what was actually granted,
         // because the default it came from can change later.
         auditArgs.put("grantedCreditAllowedModels",
-                CreditModelPatterns.fromJson(objectMapper, creditAllowedModels));
+                CreditModelPatterns.fromJson(objectMapper, creditAllowedModels,
+                        "llm key " + key.getPublicId()));
         auditArgs.put("grantedCreditDeniedModels",
-                CreditModelPatterns.fromJson(objectMapper, creditDeniedModels));
+                CreditModelPatterns.fromJson(objectMapper, creditDeniedModels,
+                        "llm key " + key.getPublicId()));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);
         // A money budget is useless until its OpenRouter key exists, and the

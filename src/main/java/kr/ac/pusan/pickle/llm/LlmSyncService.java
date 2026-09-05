@@ -561,12 +561,14 @@ public class LlmSyncService {
                         // The money axis. Empty is unrestricted, and a TOKEN-axis
                         // model ignores it entirely.
                         CreditModelPatterns.fromJson(objectMapper,
-                                rs.getString("credit_allowed_models")),
+                                rs.getString("credit_allowed_models"),
+                                "llm key " + publicId),
                         // Its opposite, on its own member. Empty blocks nothing,
                         // and the gateway lets this side win where the two
                         // lists disagree.
                         CreditModelPatterns.fromJson(objectMapper,
-                                rs.getString("credit_denied_models")),
+                                rs.getString("credit_denied_models"),
+                                "llm key " + publicId),
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),
                                 rs.getObject("concurrency", Integer.class)),

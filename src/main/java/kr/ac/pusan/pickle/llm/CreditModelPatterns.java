@@ -8,6 +8,8 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -38,6 +40,8 @@ import tools.jackson.databind.ObjectMapper;
  * look at this file.
  */
 public final class CreditModelPatterns {
+
+    private static final Logger log = LoggerFactory.getLogger(CreditModelPatterns.class);
 
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
@@ -235,14 +239,26 @@ public final class CreditModelPatterns {
      * a deny list that loses entries stops blocking. This method stays lenient
      * because it is on the reading side of a constrained column and the
      * gateway's loader is where a malformed document is judged.
+     *
+     * <p><b>What is unsafe here is the display, not the enforcement.</b> The two
+     * sides read the same broken value in opposite directions: this one shows
+     * "nothing is blocked", while the gateway drops the key entirely, so the key
+     * can call nothing at all. An approver reading the screen and a user hitting
+     * the gateway get contradictory answers and neither is told. That is what
+     * {@code source} is for — without a key in the log there is no way to answer
+     * "why does this key not work", which is the only form the report arrives in.
      */
-    public static List<String> fromJson(ObjectMapper mapper, @Nullable String stored) {
+    public static List<String> fromJson(ObjectMapper mapper, @Nullable String stored,
+            String source) {
         if (stored == null || stored.isBlank()) {
             return List.of();
         }
         try {
             JsonNode node = mapper.readTree(stored);
             if (!node.isArray()) {
+                log.warn("stored credit model list for {} is not a JSON array; reading it as "
+                        + "empty, which this screen shows as no restriction while the gateway "
+                        + "refuses the key outright", source);
                 return List.of();
             }
             List<String> models = new ArrayList<>(node.size());
@@ -251,8 +267,16 @@ public final class CreditModelPatterns {
                     models.add(item.asString());
                 }
             });
+            if (models.size() != node.size()) {
+                log.warn("dropped {} unreadable entr(ies) from the stored credit model list for "
+                        + "{}; on a deny list that silently stops blocking what was refused",
+                        node.size() - models.size(), source);
+            }
             return List.copyOf(models);
         } catch (JacksonException e) {
+            log.warn("could not parse the stored credit model list for {}; reading it as empty, "
+                    + "which this screen shows as no restriction while the gateway refuses the "
+                    + "key outright", source, e);
             return List.of();
         }
     }
