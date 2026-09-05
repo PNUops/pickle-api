@@ -11,10 +11,21 @@
 -- breaks its checksum and Flyway then refuses to start. A correction is
 -- carried by the next migration, which is this one.
 --
--- Seven columns, not eleven. The files contain eleven occurrences, but a later
--- `comment on` replaces an earlier one on the same object, so four of them are
--- already dead text. The seven below are what `col_description` actually
--- returns today.
+-- Eight objects, not the eleven the files mention. A later `comment on`
+-- replaces an earlier one on the same object, and not every occurrence is a
+-- comment at all. Asked of the live database rather than counted in the files:
+--
+--   7  live column comments   V88 x2, V97, V102, V106, V109 x2
+--   1  live function comment  V109, superseding V102 and V104
+--   2  dead function comments V102 and V104, replaced by the above
+--   1  not a comment          V87 inserts it as an `llm_upstreams.note` value
+--
+-- The first count of this was seven, because it asked `col_description` and
+-- then spoke about the database. Columns are one form of `comment on`; the
+-- function comment survives `create or replace` and had to be re-issued here
+-- too. The note row is data, so a migration must not touch it without operator
+-- approval; nothing reads it into a response, so it reaches a person only
+-- through psql.
 --
 -- Comments only. No schema change, no data.
 
@@ -38,3 +49,6 @@ comment on column llm_key_request_details.req_use_commercial is
 
 comment on column llm_key_request_details.granted_credit_denied_models is
     '승인자가 부여한 유료 모델 차단 목록. 빈 배열은 차단 없음이다. 허용 목록과 달리 금액 한도가 0이어도 남는다.';
+
+comment on function llm_credit_model_patterns_valid(jsonb) is
+    '유료 모델 허용 목록과 차단 목록 항목의 형식 검사. 두 목록의 문법은 같고 뜻만 반대다. 모델 이름, 벤더 프리픽스(vendor/*), 모델 자리의 앞뒤 와일드카드 하나를 받고, 벤더 자리의 와일드카드와 ''*'' 단독과 대문자는 거부한다.';
