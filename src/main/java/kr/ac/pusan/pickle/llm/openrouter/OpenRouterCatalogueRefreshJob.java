@@ -145,4 +145,17 @@ public class OpenRouterCatalogueRefreshJob {
     public static Duration interval() {
         return INTERVAL;
     }
+
+    /**
+     * How old a successful listing may get before a reader should say so.
+     *
+     * <p>Three missed refreshes. It lives beside the interval it is derived
+     * from so the two cannot drift, and it is public because more than one
+     * screen now reads this cache.
+     */
+    public static Duration staleAfter() {
+        return interval().multipliedBy(STALE_AFTER_MISSED_REFRESHES);
+    }
+
+    private static final int STALE_AFTER_MISSED_REFRESHES = 3;
 }

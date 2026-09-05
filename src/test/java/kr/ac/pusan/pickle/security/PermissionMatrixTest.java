@@ -154,7 +154,7 @@ class PermissionMatrixTest {
         // it had said v0.57.0 for four contract bumps, which is how a label
         // stops describing what it labels.
         assertThat(matrix).as("permission-matrix.yaml op count (contract v%s)",
-                OpenApiConfig.CONTRACT_VERSION).hasSize(202);
+                OpenApiConfig.CONTRACT_VERSION).hasSize(204);
 
         Set<String> missingFromMatrix = new TreeSet<>(runtime);
         missingFromMatrix.removeAll(matrix.keySet());

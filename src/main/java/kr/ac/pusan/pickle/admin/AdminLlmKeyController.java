@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.SuspendAdminLlmKeyRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -70,6 +71,17 @@ public class AdminLlmKeyController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
         return service.get(principal, keyId);
+    }
+
+    @GetMapping("/{keyId}/models")
+    @Operation(summary = "관리자 LLM API 키로 호출할 수 있는 모델",
+            description = "이 키로 부를 수 있는 모델입니다. 키 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
+                    + "허용 목록을 정할 때 그 목록이 실제로 무엇을 남기는지 확인하는 자리입니다. "
+                    + "최종 판정은 호출 시점에 이뤄지므로 여기 있는 모델이 항상 응답한다는 보장은 아닙니다.")
+    public LlmKeyModelsResponse listAdminLlmKeyModels(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId) {
+        return service.models(principal, keyId);
     }
 
     @PutMapping("/{keyId}/limits")
