@@ -138,7 +138,7 @@ public class LlmApiKeyQueryService {
         return LlmKeyDetailResponse.from(key,
                 workspace == null ? null : workspace.getPublicId(),
                 workspace == null ? "" : workspace.getName(),
-                CreditModelAllowlist.fromJson(objectMapper, key.getCreditAllowedModels()),
+                CreditModelPatterns.fromJson(objectMapper, key.getCreditAllowedModels()),
                 standing.role(), standing.manages());
     }
 }

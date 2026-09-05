@@ -559,7 +559,7 @@ public class LlmSyncService {
                         List.of(),
                         // The money axis. Empty is unrestricted, and a TOKEN-axis
                         // model ignores it entirely.
-                        CreditModelAllowlist.fromJson(objectMapper,
+                        CreditModelPatterns.fromJson(objectMapper,
                                 rs.getString("credit_allowed_models")),
                         limits(rs.getObject("rpm", Integer.class),
                                 rs.getObject("tpm", Integer.class),

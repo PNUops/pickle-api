@@ -128,7 +128,7 @@ public class LlmApiKey {
 
     /**
      * JSON array of the model patterns this key may spend money on, normalized
-     * by {@link CreditModelAllowlist}. Empty means unrestricted, and there is no
+     * by {@link CreditModelPatterns}. Empty means unrestricted, and there is no
      * null: the column carries a not-null default so "no restriction" has one
      * spelling everywhere.
      *
@@ -138,7 +138,7 @@ public class LlmApiKey {
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "credit_allowed_models", nullable = false, columnDefinition = "jsonb")
-    private String creditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+    private String creditAllowedModels = CreditModelPatterns.EMPTY_JSON;
 
     /** OpenRouter's identifier for this key's own OpenRouter key. */
     @Column(name = "openrouter_key_hash")
@@ -546,7 +546,7 @@ public class LlmApiKey {
         return creditLimitReset;
     }
 
-    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getCreditAllowedModels() {
         return creditAllowedModels;
     }

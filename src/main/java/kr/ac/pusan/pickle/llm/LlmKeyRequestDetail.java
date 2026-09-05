@@ -80,7 +80,7 @@ public class LlmKeyRequestDetail {
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "granted_credit_allowed_models", nullable = false, columnDefinition = "jsonb")
-    private String grantedCreditAllowedModels = CreditModelAllowlist.EMPTY_JSON;
+    private String grantedCreditAllowedModels = CreditModelPatterns.EMPTY_JSON;
 
     protected LlmKeyRequestDetail() {
     }
@@ -118,7 +118,7 @@ public class LlmKeyRequestDetail {
             @Nullable Long dailyTokens, @Nullable BigDecimal creditLimit,
             @Nullable CreditLimitReset creditLimitReset) {
         grant(rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, null,
-                CreditModelAllowlist.EMPTY_JSON);
+                CreditModelPatterns.EMPTY_JSON);
     }
 
     public void grant(@Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
@@ -143,7 +143,7 @@ public class LlmKeyRequestDetail {
         return requestId;
     }
 
-    /** The stored JSON array; read it with {@link CreditModelAllowlist#fromJson}. */
+    /** The stored JSON array; read it with {@link CreditModelPatterns#fromJson}. */
     public String getGrantedCreditAllowedModels() {
         return grantedCreditAllowedModels;
     }

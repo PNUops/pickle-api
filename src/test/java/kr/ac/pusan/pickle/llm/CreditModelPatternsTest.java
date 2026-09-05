@@ -12,10 +12,10 @@ import org.junit.jupiter.api.Test;
  * migrations install, the gateway's loader, and the console's input helper —
  * so the rule is pinned at the one of them the api writes through.
  */
-class CreditModelAllowlistTest {
+class CreditModelPatternsTest {
 
     private List<String> normalize(List<String> input, List<FieldValidationError> errors) {
-        return CreditModelAllowlist.normalize(input, "creditAllowedModels", errors);
+        return CreditModelPatterns.normalize(input, "creditAllowedModels", errors);
     }
 
     /**
@@ -83,8 +83,8 @@ class CreditModelAllowlistTest {
                     .describedAs("reserved name %s must be refused", reserved)
                     .isNotEmpty();
         }
-        assertThat(CreditModelAllowlist.isReserved("~pickle-general")).isTrue();
-        assertThat(CreditModelAllowlist.isReserved("~anthropic/claude-sonnet-latest")).isFalse();
+        assertThat(CreditModelPatterns.isReserved("~pickle-general")).isTrue();
+        assertThat(CreditModelPatterns.isReserved("~anthropic/claude-sonnet-latest")).isFalse();
     }
 
     /**

@@ -13,17 +13,21 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * The CREDIT-axis model allow list: normalization, validation and the JSON form
- * the three columns store.
+ * CREDIT-axis model patterns: normalization, validation and the JSON form the
+ * columns store.
  *
- * <p>One class holds all of it because three writers set the same kind of value
- * — approval, the administrator limits replacement and an account's prefill
- * default — and a rule that lives in three places is a rule that will disagree
- * with itself.
+ * <p>One class holds all of it because the same kind of value is set by several
+ * writers — approval, the administrator limits replacement and an account's
+ * prefill default — and a rule that lives in three places is a rule that will
+ * disagree with itself. The class is named for the value rather than for one of
+ * its uses: the allow list and the deny list are the same syntax judged by the
+ * same function, and only their meaning differs.
  *
- * <p><b>Empty means unrestricted.</b> There is no null state: every caller
- * turns a missing value into an empty list here, so "no restriction" has one
- * spelling from the request body to the gateway document.
+ * <p><b>Empty means "this list places no constraint".</b> There is no null
+ * state: every caller turns a missing value into an empty list here, so an
+ * unconstrained axis has one spelling from the request body to the gateway
+ * document. The two lists spell it identically and mean opposite things —
+ * an empty allow list opens every model, an empty deny list closes none.
  *
  * <p><b>This validation is a courtesy, not the enforcement.</b> The gateway is
  * the only place that decides what a key may call; refusing a malformed pattern
@@ -33,7 +37,7 @@ import tools.jackson.databind.ObjectMapper;
  * one piece of gateway knowledge duplicated here, so a change there wants a
  * look at this file.
  */
-public final class CreditModelAllowlist {
+public final class CreditModelPatterns {
 
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
@@ -67,7 +71,7 @@ public final class CreditModelAllowlist {
     private static final int MAX_ENTRIES = 50;
     private static final int MAX_ENTRY_BYTES = 200;
 
-    private CreditModelAllowlist() {
+    private CreditModelPatterns() {
     }
 
     /**

@@ -152,7 +152,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // Same shape, same reason: a model allow list on a key with no money
         // restricts nothing, because there is nothing on the money axis to
         // restrict. Saying so beats storing a decision that does not apply.
-        List<String> models = CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+        List<String> models = CreditModelPatterns.normalize(spec.grantedCreditAllowedModels(),
                 "llmKey.grantedCreditAllowedModels", errors);
         if (!models.isEmpty()
                 && (spec.grantedCreditLimit() == null
@@ -188,8 +188,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // what keeps the checked list and the saved list the same list.
         // validateApprove has already refused anything malformed, so the error
         // sink here stays empty.
-        String creditAllowedModels = CreditModelAllowlist.toJson(objectMapper,
-                CreditModelAllowlist.normalize(spec.grantedCreditAllowedModels(),
+        String creditAllowedModels = CreditModelPatterns.toJson(objectMapper,
+                CreditModelPatterns.normalize(spec.grantedCreditAllowedModels(),
                         "llmKey.grantedCreditAllowedModels", new ArrayList<>()));
         detail.grant(spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
                 spec.grantedDailyTokens(), spec.grantedCreditLimit(),
@@ -230,7 +230,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // an account default has to leave behind what was actually granted,
         // because the default it came from can change later.
         auditArgs.put("grantedCreditAllowedModels",
-                CreditModelAllowlist.fromJson(objectMapper, creditAllowedModels));
+                CreditModelPatterns.fromJson(objectMapper, creditAllowedModels));
         auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
         auditArgs.putAll(allocationRecord);
         // A money budget is useless until its OpenRouter key exists, and the
