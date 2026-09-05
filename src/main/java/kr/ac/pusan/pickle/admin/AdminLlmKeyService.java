@@ -325,6 +325,11 @@ public class AdminLlmKeyService {
         args.put("creditLimitReset", form.getCreditLimitReset());
         args.put("creditAllowedModels", allowedModels);
         args.put("creditDeniedModels", deniedModels);
+        // The reason this list sits inside the money gate above is the reason it
+        // has to be here: it changes the shape of what a key may spend on
+        // without moving any number, so an audit record that carries the numbers
+        // and not this one cannot answer who opened image generation.
+        args.put("passthroughEndpoints", passthroughEndpoints);
         args.put("openrouterAccountId", account == null ? null : account.getPublicId());
         args.putAll(allocationRecord);
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

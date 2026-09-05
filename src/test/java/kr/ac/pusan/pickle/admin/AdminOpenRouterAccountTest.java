@@ -781,7 +781,8 @@ class AdminOpenRouterAccountTest {
                                 null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ",
                                         "~Anthropic/Claude-Sonnet-Latest"),
                                 java.util.List.of("openai/*-pro", " OpenAI/o1* "),
-                                null, account.getPublicId())), sysAdmin));
+                                java.util.List.of("Images", " embeddings "),
+                                account.getPublicId())), sysAdmin));
 
         String allowed =
                 "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]";
@@ -795,6 +796,15 @@ class AdminOpenRouterAccountTest {
                 "select credit_denied_models::text from llm_api_keys where request_id = ?",
                 String.class, requestId)).isEqualTo(denied);
 
+        // The third list travels the same path and lands in the same row, and it
+        // is the one whose silent failure looks like nothing at all: the request
+        // detail below would still show the grant, so every screen an approver
+        // checks would agree while the key reached no passthrough path. Deleting
+        // the entity write makes this assertion fail and nothing else.
+        assertThat(jdbcTemplate.queryForObject(
+                "select passthrough_endpoints::text from llm_api_keys where request_id = ?",
+                String.class, requestId)).isEqualTo("[\"images\", \"embeddings\"]");
+
         // And the approval history, which is what the screens read back.
         assertThat(jdbcTemplate.queryForObject(
                 "select granted_credit_allowed_models::text from llm_key_request_details "
@@ -802,6 +812,10 @@ class AdminOpenRouterAccountTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select granted_credit_denied_models::text from llm_key_request_details "
                         + "where request_id = ?", String.class, requestId)).isEqualTo(denied);
+        assertThat(jdbcTemplate.queryForObject(
+                "select granted_passthrough_endpoints::text from llm_key_request_details "
+                        + "where request_id = ?", String.class, requestId))
+                .isEqualTo("[\"images\", \"embeddings\"]");
     }
 
     // A refusal is true at an amount of zero, and stays true the day somebody
