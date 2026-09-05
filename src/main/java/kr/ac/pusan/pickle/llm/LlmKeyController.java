@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBodyDetailResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBodySummaryResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyDetailResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeySummaryResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
 import kr.ac.pusan.pickle.llm.dto.UpdateLlmKeyRequest;
@@ -45,13 +46,16 @@ public class LlmKeyController {
     private final LlmApiKeyService keyService;
     private final LlmKeyUsageService usageService;
     private final LlmKeyBodyService bodyService;
+    private final LlmKeyModelService modelService;
 
     public LlmKeyController(LlmApiKeyQueryService queryService, LlmApiKeyService keyService,
-            LlmKeyUsageService usageService, LlmKeyBodyService bodyService) {
+            LlmKeyUsageService usageService, LlmKeyBodyService bodyService,
+            LlmKeyModelService modelService) {
         this.queryService = queryService;
         this.keyService = keyService;
         this.usageService = usageService;
         this.bodyService = bodyService;
+        this.modelService = modelService;
     }
 
     @GetMapping
@@ -73,6 +77,19 @@ public class LlmKeyController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
         return queryService.get(principal, keyId);
+    }
+
+    @GetMapping("/{keyId}/models")
+    @Operation(summary = "LLM API 키로 호출할 수 있는 모델",
+            description = "이 키로 부를 수 있는 모델입니다. 자체 서빙 모델은 플랫폼 카탈로그에서, "
+                    + "유료 모델은 공급자 목록의 캐시에서 옵니다. 키에 모델 허용 목록이 있으면 "
+                    + "그 목록에 맞는 것만 담기고, 금액 한도가 아직 없어도 무엇을 신청할지 볼 수 "
+                    + "있도록 목록은 채워집니다. 최종 판정은 호출 시점에 이뤄지므로 여기 있는 "
+                    + "모델이 항상 응답한다는 보장은 아닙니다.")
+    public LlmKeyModelsResponse listLlmKeyModels(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId) {
+        return modelService.list(principal, keyId);
     }
 
     @GetMapping("/{keyId}/usage")

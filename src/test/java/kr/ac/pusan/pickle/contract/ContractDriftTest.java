@@ -126,6 +126,7 @@ class ContractDriftTest {
             "POST /admin/requests/{requestId}/reject",
             "GET /admin/llm/keys",
             "GET /admin/llm/keys/{keyId}",
+            "GET /admin/llm/keys/{keyId}/models",
             "PUT /admin/llm/keys/{keyId}/limits",
             "POST /admin/llm/keys/{keyId}/suspend",
             "POST /admin/llm/keys/{keyId}/resume",
@@ -271,6 +272,7 @@ class ContractDriftTest {
             // LLM API keys: the read surface and the access list.
             "GET /llm-keys",
             "GET /llm-keys/{keyId}",
+            "GET /llm-keys/{keyId}/models",
             "GET /llm-keys/{keyId}/usage",
             "GET /llm-keys/{keyId}/bodies",
             "GET /llm-keys/{keyId}/bodies/{bodyId}",

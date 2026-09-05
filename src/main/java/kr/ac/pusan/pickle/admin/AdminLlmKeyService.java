@@ -24,6 +24,8 @@ import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
+import kr.ac.pusan.pickle.llm.LlmKeyModelService;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
@@ -73,6 +75,7 @@ public class AdminLlmKeyService {
     private final OpenRouterAllocationQuery allocationQuery;
     private final ObjectMapper objectMapper;
     private final JobScheduler jobScheduler;
+    private final LlmKeyModelService modelService;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -81,7 +84,7 @@ public class AdminLlmKeyService {
             EntityManager entityManager, OpenRouterAccountRepository accountRepository,
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
-            JobScheduler jobScheduler) {
+            JobScheduler jobScheduler, LlmKeyModelService modelService) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -95,6 +98,7 @@ public class AdminLlmKeyService {
         this.allocationQuery = allocationQuery;
         this.objectMapper = objectMapper;
         this.jobScheduler = jobScheduler;
+        this.modelService = modelService;
     }
 
     @Transactional(readOnly = true)
@@ -359,6 +363,24 @@ public class AdminLlmKeyService {
                     internalKeyId, hash, false));
         }
         return get(actor, keyId);
+    }
+
+    /**
+     * The models this key may call, for the screen that decides its allow list.
+     *
+     * <p>The same answer the key's holder gets, computed by the same service.
+     * A reviewer choosing what to permit and a holder reading what they have
+     * are looking at one fact, and two computations of it would drift into two
+     * answers about a fence.
+     *
+     * <p>The institution scoping is this surface's own: an org-tier reviewer
+     * sees keys of the institutions they read, and a system-tier one sees all.
+     * Resource grants do not enter it, which is exactly why this is a separate
+     * path rather than a widening of the holder's.
+     */
+    @Transactional(readOnly = true)
+    public LlmKeyModelsResponse models(AuthenticatedUser actor, UUID keyId) {
+        return modelService.of(requireReadable(actor, keyId));
     }
 
     private LlmApiKey requireReadable(AuthenticatedUser actor, UUID keyId) {

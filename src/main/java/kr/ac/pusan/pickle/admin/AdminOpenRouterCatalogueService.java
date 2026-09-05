@@ -3,7 +3,6 @@ package kr.ac.pusan.pickle.admin;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterCatalogueResponse;
@@ -33,15 +32,6 @@ public class AdminOpenRouterCatalogueService {
      */
     private static final BigDecimal PER_MILLION = new BigDecimal("1000000");
 
-    /**
-     * How far past a successful refresh the list still counts as current.
-     *
-     * <p>Derived from the job's own cadence rather than written down again:
-     * three missed refreshes is the point where "the schedule slipped" stops
-     * being the likeliest explanation. Repeating the number here is how the two
-     * drift apart when one of them is tuned.
-     */
-    private static final int STALE_AFTER_MISSED_REFRESHES = 3;
 
     private final OpenRouterCatalogueRepository catalogue;
     private final Clock clock;
@@ -64,14 +54,8 @@ public class AdminOpenRouterCatalogueService {
     }
 
     private OpenRouterCreditsFreshness freshness(@Nullable Instant lastSuccessAt) {
-        if (lastSuccessAt == null) {
-            return OpenRouterCreditsFreshness.UNKNOWN;
-        }
-        Duration age = Duration.between(lastSuccessAt, Instant.now(clock));
-        Duration limit = OpenRouterCatalogueRefreshJob.interval()
-                .multipliedBy(STALE_AFTER_MISSED_REFRESHES);
-        return age.isNegative() || age.compareTo(limit) < 0
-                ? OpenRouterCreditsFreshness.FRESH : OpenRouterCreditsFreshness.STALE;
+        return OpenRouterCreditsFreshness.of(lastSuccessAt,
+                OpenRouterCatalogueRefreshJob.staleAfter(), clock);
     }
 
     /**

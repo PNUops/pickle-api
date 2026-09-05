@@ -109,12 +109,98 @@ class AdminLlmKeyTest {
                 UserRole.SYS_ADMIN, null));
     }
 
+    /**
+     * The model list is reachable to a reviewer who holds no grant on the key,
+     * and the holder's own path still refuses that same reviewer.
+     *
+     * <p>Both halves matter. The first says the administrative route exists at
+     * all; the second says it was added as a second surface with its own rule
+     * rather than by loosening the holder's, which is the change that would
+     * have quietly given every system role a standing read of every key's
+     * content. A test of the first alone passes just as well after that
+     * mistake.
+     */
+    @Test
+    void aReviewerReadsTheModelsWithoutAGrantAndTheHoldersPathStillRefuses() throws Exception {
+        Key a = key(orgA.getId(), workspaceA, "모델 목록 읽기 대상", "ACTIVE", null);
+        String admin = "/api/v1/admin/llm/keys/" + a.publicId() + "/models";
+        String holder = "/api/v1/llm-keys/" + a.publicId() + "/models";
+
+        // Read, not write. The two grades are separate methods in the service
+        // and only the reading roles tell them apart: a reviewer who may look
+        // but not act still answers here.
+        for (String reader : new String[] {sysAdminToken, sysViewerToken, orgViewerToken,
+                orgManagerToken, orgAdminToken}) {
+            mockMvc.perform(get(admin).header("Authorization", "Bearer " + reader))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.selfServed").exists())
+                    .andExpect(jsonPath("$.paid.access").exists())
+                    .andExpect(jsonPath("$.paid.catalogFreshness").exists());
+        }
+
+        // The holder's path refuses every one of them, and for two different
+        // reasons that must both stay true. A system role is not a member of
+        // the owning workspace, so it is masked as missing; an institution role
+        // is not either. Neither is a grant, and a grant is the whole rule
+        // there. Without this half, loosening that rule to admit reviewers
+        // leaves the block above green.
+        for (String reader : new String[] {sysAdminToken, sysViewerToken, orgViewerToken,
+                orgManagerToken}) {
+            mockMvc.perform(get(holder).header("Authorization", "Bearer " + reader))
+                    .andExpect(status().isNotFound());
+        }
+
+        // The two surfaces answer with one computation, so the bodies are equal
+        // byte for byte. Without this, a second copy of the narrowing could
+        // appear behind the administrative route and nothing would say so.
+        //
+        // The grant is inserted rather than assumed: owning the workspace is
+        // not itself a grant on the key, so the requester reaches the holder's
+        // path only once one exists. Reading that the owner "has a standing
+        // read" and skipping this line yields a 403, and the assertion would
+        // then be rewritten to match the wrong answer.
+        jdbcTemplate.update("""
+                insert into resource_access_grants
+                       (resource_type, resource_id, grantee_type, user_id, role)
+                values ('LLM_API_KEY',
+                        (select id from llm_api_keys where public_id = ?::uuid),
+                        'USER', ?, 'OWNER'::resource_role)
+                """, a.publicId().toString(), requester.getId());
+        String byReviewer = mockMvc.perform(get(admin)
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andReturn().getResponse().getContentAsString();
+        String byHolder = mockMvc.perform(get(holder)
+                        .header("Authorization", "Bearer " + requesterToken))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(byReviewer).isEqualTo(byHolder);
+    }
+
+    /**
+     * Institution scoping is this surface's rule, so a reviewer of another
+     * institution is answered as if the key did not exist.
+     */
+    @Test
+    void aReviewerOfAnotherInstitutionCannotTellTheKeyFromAMissingOne() throws Exception {
+        Key b = key(orgB.getId(), workspaceB, "타 기관 모델 목록 대상", "ACTIVE", null);
+
+        mockMvc.perform(get("/api/v1/admin/llm/keys/" + b.publicId() + "/models")
+                        .header("Authorization", "Bearer " + orgManagerToken))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void listAndDetailAreOrgScopedAndNeverExposeSecrets() throws Exception {
         Key a = key(orgA.getId(), workspaceA, "기관 A 키", "ACTIVE", null);
         key(orgB.getId(), workspaceB, "기관 B 키", "ACTIVE", null);
 
-        String body = mockMvc.perform(get("/api/v1/admin/llm/keys?query=기관 A")
+        // The query names the key exactly. Keys accumulate across this class's
+        // methods, so a prefix would count whatever an earlier-running method
+        // had created that also matches. The order between two methods is
+        // stable here -- the runner sorts on the hash of the method name, which
+        // no addition changes -- so what a new method moves is not the order
+        // but whether a matching row exists by the time this runs.
+        String body = mockMvc.perform(get("/api/v1/admin/llm/keys?query=기관 A 키")
                         .header("Authorization", "Bearer " + orgManagerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))

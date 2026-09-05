@@ -151,6 +151,47 @@ public final class CreditModelAllowlist {
         return false;
     }
 
+    /**
+     * Whether one normalized pattern covers a model name.
+     *
+     * <p><b>This is the second piece of gateway knowledge duplicated here</b>,
+     * and unlike the reserved prefixes above it is not a courtesy: a screen that
+     * lists what a key may call has to agree with the fence, or it shows models
+     * the call will refuse. The rule is the gateway's, transcribed: an exact
+     * name, or one vendor opened by a trailing {@code /*}. A bare {@code *}
+     * matches nothing — "everything" is spelled by an empty list, and a second
+     * spelling of one state is how a state count grows past what anyone reasons
+     * about. A leading {@code ~} is an ordinary character, so {@code ~vendor/*}
+     * and {@code vendor/*} stay separate prefixes.
+     *
+     * <p>Both sides lower-case before comparing. A change to the gateway's
+     * matcher wants a change here in the same unit of work.
+     *
+     * <p><b>Two such changes are known to be coming</b> (agreed with the round
+     * that is writing them, 2026-09-05): a deny list beside the allow list, and
+     * a wider pattern grammar with leading and trailing wildcards inside the
+     * vendor half. Until both land here, the screen that lists what a key may
+     * call <em>over-reports</em> — it cannot subtract a denied model, and it
+     * narrows by the older grammar. That round owns moving this method and the
+     * case table in {@code CreditModelAllowlistTest}, which is kept input for
+     * input with the gateway's own table. <b>Keeping those two tables equal is
+     * the only thing holding this copy together</b>, so move them together or
+     * the divergence will be silent: every case in a stale table still passes.
+     */
+    public static boolean matches(String pattern, String modelName) {
+        if (pattern.isEmpty() || "*".equals(pattern)) {
+            return false;
+        }
+        String lowerName = modelName.toLowerCase(Locale.ROOT);
+        String lowerPattern = pattern.toLowerCase(Locale.ROOT);
+        if (lowerPattern.endsWith("/*")) {
+            String prefix = lowerPattern.substring(0, lowerPattern.length() - 2);
+            return !prefix.isEmpty() && lowerName.startsWith(prefix + "/")
+                    && lowerName.length() > prefix.length() + 1;
+        }
+        return lowerPattern.equals(lowerName);
+    }
+
     /** The stored form. Never null, so the column's not-null holds trivially. */
     public static String toJson(ObjectMapper mapper, List<String> models) {
         if (models.isEmpty()) {
