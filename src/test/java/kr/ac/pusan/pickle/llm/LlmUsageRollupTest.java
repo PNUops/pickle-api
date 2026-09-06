@@ -343,9 +343,16 @@ class LlmUsageRollupTest {
         // The served name's cardinality is the vendor's catalogue rather than
         // the names we issue, so it is a counter and not a bucket key. The
         // count says whether to look; the names are read from raw events.
-        insertServedEvent("2026-09-06T03:00:00Z", "openrouter/auto", "deepseek/deepseek-v4");
-        insertServedEvent("2026-09-06T04:00:00Z", "openrouter/auto", "openai/gpt-5.6");
-        insertServedEvent("2026-09-06T05:00:00Z", "openrouter/auto", "openrouter/auto");
+        //
+        // Its presence is the mismatch. The gateway writes the column only
+        // when the upstream answered with something other than what it was
+        // asked for, so this side counts rows rather than comparing names --
+        // the pair it would have to compare is not the pair that matters, and
+        // comparing the wrong one reported a fallback on every self-hosted
+        // request, whose public name differs from its upstream one by design.
+        insertServedEvent("2026-09-06T03:00:00Z", "pickle-general", "deepseek/deepseek-v4");
+        insertServedEvent("2026-09-06T04:00:00Z", "pickle-general", "openai/gpt-5.6");
+        insertServedEvent("2026-09-06T05:00:00Z", "pickle-general", null);
 
         rollupService.refresh();
 
@@ -355,18 +362,34 @@ class LlmUsageRollupTest {
     }
 
     @Test
-    void aRequestThatNeverChoseAModelIsNotAFallback() {
-        // The count needs both names. A row with no requested model failed
-        // before one was chosen, and reading a served name beside that null as
-        // "the vendor answered with something else" turns every such failure
-        // into a fallback that never happened.
-        jdbcTemplate.update("""
-                insert into llm_usage_events (event_id, key_id, public_model_name, status,
-                        input_tokens, output_tokens, estimated, latency_ms, ttft_ms,
-                        requested_at, endpoint, served_model_name)
-                values (?, ?, null, 'UPSTREAM_ERROR', 0, 0, false, 5, 5,
-                        '2026-09-06T03:00:00Z'::timestamptz, 'chat', 'vendor/whatever')
-                """, UUID.randomUUID().toString(), keyId);
+    void aFallbackCountsEvenWhenTheServedNameEqualsTheRequestedOne() {
+        // The row that tells the two possible rules apart, and the reason this
+        // test exists at all: a name comparison here answers zero and the rule
+        // this column now follows answers one.
+        //
+        // On the paid axis the public name and the upstream name are the same
+        // string, so a genuine fallback can come back under a name equal to the
+        // one the request carried. Only the gateway saw which upstream model it
+        // asked for, and it writes this column exactly when the answer differed
+        // -- so the presence of a value is the finding, and comparing names on
+        // this side would silently drop the case.
+        insertServedEvent("2026-09-06T03:00:00Z", "openai/gpt-5.6", "openai/gpt-5.6");
+
+        rollupService.refresh();
+
+        Map<String, Object> bucket = onlyBucket();
+        assertThat(bucket.get("requests")).isEqualTo(1L);
+        assertThat(bucket.get("served_mismatch_requests")).isEqualTo(1L);
+    }
+
+    @Test
+    void anOrdinarySelfHostedRequestIsNotAFallback() {
+        // The regression this replaced a name comparison for. A catalogue
+        // model's public name and the upstream id it maps to always differ,
+        // so comparing those two counted every ordinary request as a vendor
+        // fallback -- and the one live row that existed when it was found had
+        // been read as the feature working.
+        insertServedEvent("2026-09-06T03:00:00Z", "pickle-general", null);
 
         rollupService.refresh();
 
