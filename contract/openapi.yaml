@@ -2942,6 +2942,8 @@ components:
           - "string"
           - "null"
         failed:
+          description: "한도 거부가 **아닌** 사유로 실패한 요청 수. 한도 거부를 여기 넣지 않는 것은 집계 표와 같은 가름\
+            이라야 같은 이름이 두 숫자를 뜻하지 않기 때문입니다."
           format: "int64"
           type: "integer"
         imageCount:
@@ -2958,6 +2960,10 @@ components:
           description: "이 경로 요청 중 공급자가 금액을 알려 준 요청 수"
           format: "int64"
           type: "integer"
+        rateLimited:
+          description: "한도에 걸려 거부된 요청 수. failed와 겹치지 않습니다 — 셋을 더하면 requests가 됩니다."
+          format: "int64"
+          type: "integer"
         requests:
           format: "int64"
           type: "integer"
@@ -2970,6 +2976,7 @@ components:
       - "inputTokens"
       - "outputTokens"
       - "pricedRequests"
+      - "rateLimited"
       - "requests"
       - "succeeded"
       type: "object"
@@ -4539,7 +4546,7 @@ components:
           description: "기능 권한 값. images 또는 embeddings입니다."
           type: "string"
         grantedKeys:
-          description: "이 기능을 부여받은 키 수"
+          description: "지금 이 기능을 부여받은 키 수"
           format: "int64"
           type: "integer"
         requests:
@@ -4547,7 +4554,10 @@ components:
           format: "int64"
           type: "integer"
         usedKeys:
-          description: "그중 이 기간에 실제로 호출한 키 수"
+          description: "이 기간에 이 기능이 여는 경로를 실제로 호출한 키 수. **grantedKeys의 부분집합이 아닙니다\
+            ** — 부여는 지금 상태이고 호출은 지나간 사실이라, 쓰고 나서 권한이 회수된 키가 여기에만 남아 grantedKeys보다\
+            \ 클 수 있습니다. 호출한 쪽을 부여로 걸러 내지 않는 것은 그렇게 하면 그 요청이 아래 requests 에는 있고 이 수에\
+            는 없어 두 칸이 서로를 반박하기 때문입니다."
           format: "int64"
           type: "integer"
       required:

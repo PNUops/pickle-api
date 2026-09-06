@@ -143,13 +143,20 @@ public class LlmKeyUsageService {
      * The window by route. A null endpoint is its own bucket rather than being
      * dropped or folded into a named one: those are requests recorded before
      * the column existed, and calling them "other" would invent a route.
+     *
+     * <p>The three outcome counts partition the requests, and {@code failed}
+     * excludes a rate-limited refusal, which is the same split the rollup
+     * makes. This surface and the platform-wide one publish the same schema, so
+     * a route counted as failed here and not there would put two numbers behind
+     * one field name and nothing would ever surface the difference.
      */
     private static final String ENDPOINT_KIND_SQL = """
             select e.endpoint,
                    count(*) as requests,
                    count(*) filter (where e.status = 'OK') as succeeded,
+                   count(*) filter (where e.status = 'RATE_LIMITED') as rate_limited,
                    count(*) filter (where e.status is null
-                                      or e.status <> 'OK') as failed,
+                                      or e.status not in ('OK', 'RATE_LIMITED')) as failed,
                    coalesce(sum(e.input_tokens), 0) as input_tokens,
                    coalesce(sum(e.output_tokens), 0) as output_tokens,
                    sum(e.cost_usd) as attributed_cost_usd,
@@ -385,6 +392,7 @@ public class LlmKeyUsageService {
                         rs.getString("endpoint"),
                         rs.getLong("requests"),
                         rs.getLong("succeeded"),
+                        rs.getLong("rate_limited"),
                         rs.getLong("failed"),
                         rs.getLong("input_tokens"),
                         rs.getLong("output_tokens"),

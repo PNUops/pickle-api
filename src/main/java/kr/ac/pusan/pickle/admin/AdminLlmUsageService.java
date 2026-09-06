@@ -496,6 +496,7 @@ public class AdminLlmUsageService {
                 select d.endpoint,
                        sum(d.requests) as requests,
                        sum(d.succeeded) as succeeded,
+                       sum(d.rate_limited) as rate_limited,
                        sum(d.failed) as failed,
                        sum(d.input_tokens) as input_tokens,
                        sum(d.output_tokens) as output_tokens,
@@ -513,6 +514,7 @@ public class AdminLlmUsageService {
                     long priced = rs.getLong("priced_requests");
                     return new LlmEndpointKindUsageResponse(rs.getString("endpoint"),
                             rs.getLong("requests"), rs.getLong("succeeded"),
+                            rs.getLong("rate_limited"),
                             rs.getLong("failed"), rs.getLong("input_tokens"),
                             rs.getLong("output_tokens"),
                             priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,

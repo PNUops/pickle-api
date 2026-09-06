@@ -24,6 +24,13 @@ public record LlmEndpointKindUsageResponse(
         @Nullable String endpoint,
         long requests,
         long succeeded,
+        @Schema(description = """
+                한도에 걸려 거부된 요청 수. failed와 겹치지 않습니다 — 셋을 더하면 \
+                requests가 됩니다.""")
+        long rateLimited,
+        @Schema(description = """
+                한도 거부가 **아닌** 사유로 실패한 요청 수. 한도 거부를 여기 넣지 않는 것은 \
+                집계 표와 같은 가름이라야 같은 이름이 두 숫자를 뜻하지 않기 때문입니다.""")
         long failed,
         long inputTokens,
         long outputTokens,

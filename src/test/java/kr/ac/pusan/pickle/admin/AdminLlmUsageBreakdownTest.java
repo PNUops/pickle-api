@@ -73,6 +73,8 @@ class AdminLlmUsageBreakdownTest {
     private long accountA;
     private UUID accountAPublicId;
     private long accountB;
+    private UUID accountBPublicId;
+    private UUID workspaceAPublicId;
     private Key keyOne;
     private Key keyTwo;
     private Key keyOther;
@@ -101,9 +103,11 @@ class AdminLlmUsageBreakdownTest {
         accountA = account(orgA, "분해 사업 A " + suffix);
         accountAPublicId = SeedFixtures.publicId(jdbcTemplate, "openrouter_accounts", accountA);
         accountB = account(orgB, "분해 사업 B " + suffix);
+        accountBPublicId = SeedFixtures.publicId(jdbcTemplate, "openrouter_accounts", accountB);
+        workspaceAPublicId = workspaceA.getPublicId();
         keyOne = key(orgA, workspaceA, "분해 키 하나 " + suffix, accountA, "[\"images\"]");
         keyTwo = key(orgA, workspaceA, "분해 키 둘 " + suffix, accountA, "[]");
-        keyOther = key(orgB, workspaceB, "분해 남의 키 " + suffix, accountB, "[]");
+        keyOther = key(orgB, workspaceB, "분해 남의 키 " + suffix, accountB, "[\"images\"]");
     }
 
     @Test
@@ -179,11 +183,42 @@ class AdminLlmUsageBreakdownTest {
     }
 
     @Test
-    void aKeyOutsideTheReadersInstitutionsIsAnswatchedAsMissing() throws Exception {
+    void aKeyOutsideTheReadersInstitutionsIsAnsweredAsMissing() throws Exception {
+        // The 404 alone proves nothing: a scope check that refuses everything
+        // passes it too. The pair is the assertion — the same reader reaches
+        // its own institution's key and not the other one.
         event(keyOne.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
+        event(keyOther.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         rollupService.refresh();
 
+        adminKeyUsage(orgBAdminToken, keyOther.publicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trend.points").isArray());
         adminKeyUsage(orgBAdminToken, keyOne.publicId()).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anAccountOutsideTheReadersInstitutionsIsAnsweredAsMissing() throws Exception {
+        accountUsage(orgBAdminToken, accountBPublicId, 7).andExpect(status().isOk());
+        accountUsage(orgBAdminToken, accountAPublicId, 7).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theBreakdownCountsOnlyWhatTheReadersInstitutionsCover() throws Exception {
+        // Traffic in both institutions, read by someone who holds one of them.
+        event(keyOne.id(), paidModel, "images", "0.10000000", 1, 1, hoursAgo(2));
+        event(keyOther.id(), paidModel, "images", "9.00000000", 1, 1, hoursAgo(2));
+        rollupService.refresh();
+
+        platformUsage(orgBAdminToken, "")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quality.totalRequests").value(1))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'images')].grantedKeys")
+                        .value(org.hamcrest.Matchers.contains(1)))
+                .andExpect(jsonPath(
+                        "$.breakdown.passthroughGrants[?(@.capability == 'images')].requests")
+                        .value(org.hamcrest.Matchers.contains(1)));
     }
 
     @Test
@@ -235,6 +270,8 @@ class AdminLlmUsageBreakdownTest {
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.breakdown.passthroughGrants.length()").value(2))
+                // orgB도 이 기능을 가진 키를 하나 갖고 있다. 스코프가 빠지면 이 수가
+                // 곧바로 달라지므로, 이 단언이 스코프를 실제로 지킨다.
                 .andExpect(jsonPath(
                         "$.breakdown.passthroughGrants[?(@.capability == 'images')].grantedKeys")
                         .value(org.hamcrest.Matchers.contains(1)))
@@ -258,6 +295,25 @@ class AdminLlmUsageBreakdownTest {
         event(keyTwo.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
         rollupService.refresh();
 
+        // Drill to the key level so each consumer row is one key. At the
+        // institution level both keys fold into one row and the unpriced half
+        // stops being visible, which is how this test previously asserted
+        // nothing at all about the consumers it is named for.
+        platformUsage(sysToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceAPublicId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.level").value("KEY"))
+                .andExpect(jsonPath("$.consumers.items.length()").value(2))
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*하나.*/)]"
+                        + ".attributedCostUsd")
+                        .value(org.hamcrest.Matchers.contains(0.75)))
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*둘.*/)]"
+                        + ".attributedCostUsd")
+                        .value(org.hamcrest.Matchers.contains(
+                                org.hamcrest.Matchers.nullValue())))
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*둘.*/)].pricedRequests")
+                        .value(org.hamcrest.Matchers.contains(0)));
+
         platformUsage(sysToken, "orgId=" + orgA.getPublicId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quality.pricedRequests").value(1))
@@ -271,7 +327,64 @@ class AdminLlmUsageBreakdownTest {
                         "$.breakdown.models[?(@.modelName == 'pickle-general')]"
                         + ".attributedCostUsd")
                         .value(org.hamcrest.Matchers.contains(
+                                org.hamcrest.Matchers.nullValue())))
+                .andExpect(jsonPath("$.breakdown.endpointKinds.length()").value(2))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[?(@.endpoint == 'images')]"
+                        + ".attributedCostUsd")
+                        .value(org.hamcrest.Matchers.contains(0.75)))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[?(@.endpoint == 'chat')]"
+                        + ".attributedCostUsd")
+                        .value(org.hamcrest.Matchers.contains(
                                 org.hamcrest.Matchers.nullValue())));
+    }
+
+    @Test
+    void aRateLimitedRefusalIsNotCountedAsAFailureOnEitherSurface() throws Exception {
+        // The two surfaces publish one schema, so one field name must not carry
+        // two definitions. A refusal is neither succeeded nor failed, and the
+        // three partition the requests.
+        event(keyOne.id(), "pickle-general", "chat", null, 1, 1, hoursAgo(2));
+        refusedEvent(keyOne.id(), "pickle-general", "chat", hoursAgo(3));
+        rollupService.refresh();
+
+        adminKeyUsage(sysToken, keyOne.publicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.endpointKinds[0].requests").value(2))
+                .andExpect(jsonPath("$.endpointKinds[0].succeeded").value(1))
+                .andExpect(jsonPath("$.endpointKinds[0].rateLimited").value(1))
+                .andExpect(jsonPath("$.endpointKinds[0].failed").value(0));
+
+        platformUsage(sysToken, "orgId=" + orgA.getPublicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.breakdown.endpointKinds[0].requests").value(2))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[0].succeeded").value(1))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[0].rateLimited").value(1))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[0].failed").value(0));
+    }
+
+    @Test
+    void theTrendCarriesTheNewPerDayMeasurements() throws Exception {
+        event(keyOne.id(), paidModel, "images", "0.20000000", 10, 4, hoursAgo(2));
+        jdbcTemplate.update("update llm_usage_events set cached_input_tokens = 3, "
+                + "reasoning_tokens = 2, image_count = 2, streamed = true where key_id = ?",
+                keyOne.id());
+        rollupService.refresh();
+
+        adminKeyUsage(sysToken, keyOne.publicId())
+                .andExpect(status().isOk())
+                // 부분집합이므로 입출력 합계가 이 값들을 이미 포함한다. 셋을 더한
+                // 값이 나오면 어딘가에서 이중 계산을 하고 있다는 뜻이다.
+                .andExpect(jsonPath("$.trend.points[-1:].cachedInputTokens")
+                        .value(org.hamcrest.Matchers.contains(3)))
+                .andExpect(jsonPath("$.trend.points[-1:].reasoningTokens")
+                        .value(org.hamcrest.Matchers.contains(2)))
+                .andExpect(jsonPath("$.trend.points[-1:].inputTokens")
+                        .value(org.hamcrest.Matchers.contains(10)))
+                .andExpect(jsonPath("$.trend.points[-1:].imageCount")
+                        .value(org.hamcrest.Matchers.contains(2)))
+                .andExpect(jsonPath("$.trend.points[-1:].streamedRequests")
+                        .value(org.hamcrest.Matchers.contains(1)))
+                .andExpect(jsonPath("$.trend.models[0].imageCount").value(2));
     }
 
     private ResultActions adminKeyUsage(String token, UUID keyId) throws Exception {
@@ -297,6 +410,16 @@ class AdminLlmUsageBreakdownTest {
         LocalDate today = ClockConfig.todayKst(java.time.Clock.systemUTC());
         return today.atTime(12, 0).atZone(java.time.ZoneId.of("Asia/Seoul")).toInstant()
                 .minusSeconds(hours * 3600L);
+    }
+
+    private void refusedEvent(long keyId, String model, String endpoint, Instant requestedAt) {
+        jdbcTemplate.update("""
+                insert into llm_usage_events
+                       (event_id, key_id, public_model_name, endpoint, status,
+                        input_tokens, output_tokens, estimated, latency_ms, requested_at)
+                values (?, ?, ?, ?, 'RATE_LIMITED', 0, 0, false, 1, ?)
+                """, UUID.randomUUID().toString(), keyId, model, endpoint,
+                Timestamp.from(requestedAt));
     }
 
     private void event(long keyId, String model, String endpoint, String costUsd,
