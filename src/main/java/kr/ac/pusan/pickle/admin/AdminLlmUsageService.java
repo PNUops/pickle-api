@@ -18,11 +18,14 @@ import kr.ac.pusan.pickle.admin.dto.LlmGatewayStatusResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmLimitPressureResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmLimitReviewCollectionResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmLimitReviewResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmUsageBreakdownResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerLevel;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumerResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageConsumersResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDailyPointResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageDemandResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmUsageModelBreakdownResponse;
+import kr.ac.pusan.pickle.admin.dto.LlmUsagePassthroughGrantResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageQualityResponse;
 import kr.ac.pusan.pickle.admin.dto.LlmUsageWindowResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -31,6 +34,8 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
+import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
+import kr.ac.pusan.pickle.llm.dto.LlmEndpointKindUsageResponse;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
@@ -50,6 +55,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminLlmUsageService {
 
     private static final String TIMEZONE = "Asia/Seoul";
+
+    /**
+     * Which routes each capability opens. Written out rather than derived: the
+     * capability is not the route name, and {@code images} covering both the
+     * paid generation route and the free catalogue lookup is the whole reason
+     * the two vocabularies are kept apart.
+     */
+    private static final Map<String, String> ROUTES_BY_CAPABILITY = Map.of(
+            PassthroughEndpoints.IMAGES, "{images,images_models}",
+            PassthroughEndpoints.EMBEDDINGS, "{embeddings}");
     private static final List<String> PRESSURE_REASONS = List.of(
             "quota_exhausted", "credit_exhausted", "rate_limit_requests",
             "rate_limit_tokens", "rate_limit_concurrency");
@@ -90,8 +105,9 @@ public class AdminLlmUsageService {
                 context, generatedAt, to, top);
         LlmUsageQualityResponse quality = quality(
                 context, actor, generatedAt, from, to);
+        LlmUsageBreakdownResponse breakdown = breakdown(context, from, to, top);
         return new AdminLlmUsageResponse(generatedAt, TIMEZONE, from, to, days,
-                demand, consumers, limitReview, quality);
+                demand, consumers, breakdown, limitReview, quality);
     }
 
     private ScopeContext resolveScope(AuthenticatedUser actor, @Nullable UUID orgId,
@@ -230,6 +246,8 @@ public class AdminLlmUsageService {
                        sum(d.requests) as requests,
                        sum(d.input_tokens) as input_tokens,
                        sum(d.output_tokens) as output_tokens,
+                       sum(d.cost_usd) as cost_usd,
+                       sum(d.priced_requests) as priced_requests,
                        count(*) over() as total_items
                   from llm_usage_daily d
                   join llm_api_keys k on k.id = d.key_id
@@ -354,13 +372,18 @@ public class AdminLlmUsageService {
                        coalesce(sum(d.input_tokens + d.output_tokens), 0) as total_tokens,
                        case when count(*) = 0 then 0
                             when count(*) filter (where d.estimated_tokens is null) > 0 then null
-                            else coalesce(sum(d.estimated_tokens), 0) end as estimated_tokens
+                            else coalesce(sum(d.estimated_tokens), 0) end as estimated_tokens,
+                       coalesce(sum(d.priced_requests), 0) as priced_requests,
+                       coalesce(sum(d.requests) filter (where d.endpoint is not null), 0)
+                           as endpoint_recorded_requests
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
                  where d.day >= ? and d.day <= ?
                 """ + parts.clause(), (rs, rowNum) -> new QualityAggregate(
                         rs.getLong("total_requests"), rs.getLong("estimated_requests"),
-                        rs.getLong("total_tokens"), nullableLong(rs, "estimated_tokens")),
+                        rs.getLong("total_tokens"), nullableLong(rs, "estimated_tokens"),
+                        rs.getLong("priced_requests"),
+                        rs.getLong("endpoint_recorded_requests")),
                 aggregateArgs.toArray());
         QualityAggregate safe = aggregate == null ? QualityAggregate.ZERO : aggregate;
 
@@ -406,7 +429,147 @@ public class AdminLlmUsageService {
                 gateway.lastUsageShipSuccessAt(), gateway.usageQueueObservedAt(),
                 gateway.oldestUnshippedEventAt(), gateway.queuedUsageEvents(),
                 gateway.queuedUsageBytes(), gateway.spoolWriteFailures(),
-                gateway.usageShipFailures(), gateway.usageQueueScanFailures(), unattributed);
+                gateway.usageShipFailures(), gateway.usageQueueScanFailures(), unattributed,
+                safe.pricedRequests(), safe.endpointRecordedRequests());
+    }
+
+    /**
+     * The three cuts of the window that answer "of what" rather than "how
+     * much". They read the rollup, which already holds every sum they need,
+     * and the capability table is the one exception because a grant is a
+     * property of the key rather than of a day.
+     *
+     * <p>Nothing here joins the model catalogue. Paid models are passed through
+     * without a row of ours, so a join would drop exactly the traffic that
+     * carries a price, which is the traffic these cuts exist to show.
+     */
+    private LlmUsageBreakdownResponse breakdown(ScopeContext context, LocalDate from,
+            LocalDate to, int top) {
+        return new LlmUsageBreakdownResponse(modelBreakdown(context, from, to, top),
+                endpointBreakdown(context, from, to), passthroughGrants(context, from, to));
+    }
+
+    private List<LlmUsageModelBreakdownResponse> modelBreakdown(ScopeContext context,
+            LocalDate from, LocalDate to, int top) {
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        List<Object> args = new ArrayList<>();
+        args.add(from);
+        args.add(to);
+        args.addAll(parts.args());
+        args.add(top);
+        return jdbcTemplate.query("""
+                select d.public_model_name as model_name,
+                       sum(d.requests) as requests,
+                       sum(d.failed) as failed,
+                       sum(d.input_tokens) as input_tokens,
+                       sum(d.output_tokens) as output_tokens,
+                       sum(d.cost_usd) as cost_usd,
+                       sum(d.priced_requests) as priced_requests,
+                       sum(d.latency_ms_sum) as latency_ms_sum
+                  from llm_usage_daily d
+                  left join llm_api_keys k on k.id = d.key_id
+                 where d.day >= ? and d.day <= ?
+                """ + parts.clause() + """
+                 group by d.public_model_name
+                having sum(d.requests) > 0
+                 order by requests desc, model_name
+                 limit ?
+                """, (rs, rowNum) -> {
+                    long requests = rs.getLong("requests");
+                    long priced = rs.getLong("priced_requests");
+                    return new LlmUsageModelBreakdownResponse(rs.getString("model_name"),
+                            requests, rs.getLong("failed"), rs.getLong("input_tokens"),
+                            rs.getLong("output_tokens"),
+                            priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
+                            requests == 0 ? 0 : rs.getLong("latency_ms_sum") / requests);
+                }, args.toArray());
+    }
+
+    private List<LlmEndpointKindUsageResponse> endpointBreakdown(ScopeContext context,
+            LocalDate from, LocalDate to) {
+        SqlParts parts = scopedParts(context, "k.org_id", "k.workspace_id");
+        List<Object> args = new ArrayList<>();
+        args.add(from);
+        args.add(to);
+        args.addAll(parts.args());
+        return jdbcTemplate.query("""
+                select d.endpoint,
+                       sum(d.requests) as requests,
+                       sum(d.succeeded) as succeeded,
+                       sum(d.rate_limited) as rate_limited,
+                       sum(d.failed) as failed,
+                       sum(d.input_tokens) as input_tokens,
+                       sum(d.output_tokens) as output_tokens,
+                       sum(d.cost_usd) as cost_usd,
+                       sum(d.priced_requests) as priced_requests,
+                       sum(d.image_count) as image_count
+                  from llm_usage_daily d
+                  left join llm_api_keys k on k.id = d.key_id
+                 where d.day >= ? and d.day <= ?
+                """ + parts.clause() + """
+                 group by d.endpoint
+                having sum(d.requests) > 0
+                 order by requests desc, d.endpoint
+                """, (rs, rowNum) -> {
+                    long priced = rs.getLong("priced_requests");
+                    return new LlmEndpointKindUsageResponse(rs.getString("endpoint"),
+                            rs.getLong("requests"), rs.getLong("succeeded"),
+                            rs.getLong("rate_limited"),
+                            rs.getLong("failed"), rs.getLong("input_tokens"),
+                            rs.getLong("output_tokens"),
+                            priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
+                            rs.getLong("image_count"));
+                }, args.toArray());
+    }
+
+    /**
+     * One row per capability, always, including the ones nobody holds. An
+     * absent row would read as "no data" where the useful answer is a zero.
+     *
+     * <p>The routes a capability opens are listed here rather than derived,
+     * because they are not the same word: {@code images} opens the generation
+     * route and the catalogue route, and one of them costs money.
+     */
+    private List<LlmUsagePassthroughGrantResponse> passthroughGrants(ScopeContext context,
+            LocalDate from, LocalDate to) {
+        List<LlmUsagePassthroughGrantResponse> rows = new ArrayList<>();
+        for (String capability : PassthroughEndpoints.sorted()) {
+            String routes = ROUTES_BY_CAPABILITY.get(capability);
+            SqlParts keyParts = scopedParts(context, "k.org_id", "k.workspace_id");
+            List<Object> grantArgs = new ArrayList<>();
+            grantArgs.add(capability);
+            grantArgs.addAll(keyParts.args());
+            Long granted = jdbcTemplate.queryForObject("""
+                    select count(*) from llm_api_keys k
+                     where k.passthrough_endpoints @> to_jsonb(?::text)
+                    """ + keyParts.clause(), Long.class, grantArgs.toArray());
+
+            SqlParts useParts = scopedParts(context, "k.org_id", "k.workspace_id");
+            List<Object> useArgs = new ArrayList<>();
+            useArgs.add(routes);
+            useArgs.add(from);
+            useArgs.add(to);
+            useArgs.addAll(useParts.args());
+            UsedRoutes used = jdbcTemplate.queryForObject("""
+                    select count(distinct d.key_id) as used_keys,
+                           coalesce(sum(d.requests), 0) as requests
+                      from llm_usage_daily d
+                      join llm_api_keys k on k.id = d.key_id
+                     where d.endpoint = any (?::text[])
+                       and d.day >= ? and d.day <= ?
+                    """ + useParts.clause(),
+                    (rs, rowNum) -> new UsedRoutes(rs.getLong("used_keys"),
+                            rs.getLong("requests")),
+                    useArgs.toArray());
+            rows.add(new LlmUsagePassthroughGrantResponse(capability,
+                    granted == null ? 0 : granted,
+                    used == null ? 0 : used.usedKeys(),
+                    used == null ? 0 : used.requests()));
+        }
+        return List.copyOf(rows);
+    }
+
+    private record UsedRoutes(long usedKeys, long requests) {
     }
 
     private SqlParts scopedParts(ScopeContext context, String orgColumn,
@@ -433,12 +596,18 @@ public class AdminLlmUsageService {
     }
 
     private static ConsumerRow consumerRow(ResultSet rs) throws SQLException {
+        long priced = rs.getLong("priced_requests");
         return new ConsumerRow(new LlmUsageConsumerResponse(
                 rs.getObject("org_public_id", UUID.class), rs.getString("org_name"),
                 rs.getObject("workspace_public_id", UUID.class), rs.getString("workspace_name"),
                 rs.getObject("key_public_id", UUID.class), rs.getString("key_name"),
                 rs.getLong("requests"), rs.getLong("input_tokens"),
-                rs.getLong("output_tokens")), rs.getLong("total_items"));
+                rs.getLong("output_tokens"),
+                // Absent rather than zero: a consumer whose whole window went
+                // to self-hosted models has no dollar figure, and a zero here
+                // would rank it beside one that genuinely spent nothing.
+                priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced),
+                rs.getLong("total_items"));
     }
 
     private static LimitRow limitRow(ResultSet rs) throws SQLException {
@@ -532,8 +701,9 @@ public class AdminLlmUsageService {
     }
 
     private record QualityAggregate(long totalRequests, long estimatedRequests,
-            long totalTokens, @Nullable Long estimatedTokens) {
-        private static final QualityAggregate ZERO = new QualityAggregate(0, 0, 0, 0L);
+            long totalTokens, @Nullable Long estimatedTokens, long pricedRequests,
+            long endpointRecordedRequests) {
+        private static final QualityAggregate ZERO = new QualityAggregate(0, 0, 0, 0L, 0, 0);
     }
 
     private record CreditMeters(long total, long observed, @Nullable Instant oldest,

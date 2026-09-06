@@ -37,5 +37,14 @@ public record LlmUsageQualityResponse(
         @Nullable Long usageShipFailures,
         @Nullable Long usageQueueScanFailures,
         @Schema(description = "Key에 귀속되지 않은 selected-window request 수. SYS global에서만 값이 있음")
-        @Nullable Long unattributedRequests) {
+        @Nullable Long unattributedRequests,
+        @Schema(description = """
+                이 기간 요청 중 공급자가 금액을 알려 준 수. totalRequests와 견주면 금액 \
+                합계가 얼마나 덮는지 보입니다. 자체 서빙 요청은 금액이라는 것이 없어 여기 \
+                들어가지 않으므로, 이 값이 작은 것 자체는 결함이 아닙니다.""")
+        long pricedRequests,
+        @Schema(description = """
+                이 기간 요청 중 들어온 경로가 기록된 수. 경로 축은 2026-09-06에 생겼으므로 \
+                그 전 요청은 여기 들어가지 않고, 경로별 분해도 그만큼 덜 덮습니다.""")
+        long endpointRecordedRequests) {
 }

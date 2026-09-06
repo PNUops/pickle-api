@@ -3,11 +3,15 @@ package kr.ac.pusan.pickle.admin;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmAccountUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
@@ -73,6 +77,21 @@ public class AdminOpenRouterAccountController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID accountId) {
         return service.get(principal, accountId);
+    }
+
+    @GetMapping("/{accountId}/usage")
+    @Operation(summary = "OpenRouter 사업 계정 사용량",
+            description = "이 계정의 키들이 무엇에 얼마를 썼는지 귀속해 보여 줍니다. "
+                    + "**공급자가 말하는 지출액이나 잔액이 아닙니다** — 그쪽은 계정 상세의 "
+                    + "credits가 답하고 기간도 다릅니다. 키가 확인되지 않은 요청은 어느 계정에도 "
+                    + "속하지 않고, 공급자가 금액을 알려 주지 않은 요청은 금액이 0인 것이 아니라 "
+                    + "모르는 것이라 합계에서 빠집니다. 그래서 금액마다 가격이 붙은 요청 수가 함께 옵니다.")
+    public AdminLlmAccountUsageResponse getAdminLlmAccountUsage(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID accountId,
+            @Parameter(description = "오늘을 포함해 거슬러 올라갈 일수")
+            @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days) {
+        return service.usage(principal, accountId, days);
     }
 
     @PatchMapping("/{accountId}")

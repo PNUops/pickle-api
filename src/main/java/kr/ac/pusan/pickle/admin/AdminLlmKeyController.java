@@ -16,6 +16,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.SuspendAdminLlmKeyRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
@@ -71,6 +72,21 @@ public class AdminLlmKeyController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId) {
         return service.get(principal, keyId);
+    }
+
+    @GetMapping("/{keyId}/usage")
+    @Operation(summary = "관리자 LLM API 키 사용량",
+            description = "이 키의 일별 사용량과, 키 소유자 화면에는 없는 분해 셋입니다. "
+                    + "일별 사용량은 소유자가 보는 것과 같은 값이고 같은 계산을 씁니다. "
+                    + "분해 셋은 일별 금액, 경로별 사용, 공급자가 요청과 다른 모델로 응답한 사례입니다. "
+                    + "하루는 한국 시간 기준이고 호출이 없던 날도 0으로 채워집니다. "
+                    + "게이트웨이가 배치로 보고하므로 오늘 자 값은 아직 채워지는 중입니다.")
+    public AdminLlmKeyUsageResponse getAdminLlmKeyUsage(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId,
+            @Parameter(description = "오늘을 포함해 거슬러 올라갈 일수")
+            @RequestParam(defaultValue = "30") @Min(1) @Max(90) int days) {
+        return service.usage(principal, keyId, days);
     }
 
     @GetMapping("/{keyId}/models")

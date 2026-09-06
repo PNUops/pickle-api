@@ -14,6 +14,10 @@ public record AdminLlmUsageResponse(
         int days,
         LlmUsageDemandResponse demand,
         LlmUsageConsumersResponse consumers,
+        @Schema(description = """
+                같은 기간을 「무엇을」로 자른 셋. 모델별, 경로별, 그리고 기능 권한이 실제로 \
+                쓰이고 있는지입니다.""")
+        LlmUsageBreakdownResponse breakdown,
         LlmLimitReviewCollectionResponse limitReview,
         LlmUsageQualityResponse quality) {
 }
