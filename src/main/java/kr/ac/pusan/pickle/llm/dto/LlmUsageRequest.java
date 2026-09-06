@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.llm.dto;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -33,6 +34,18 @@ public record LlmUsageRequest(
      * CREDIT decision. Old gateways omit it; an absent or unknown value keeps
      * the event and is stored as an unknown axis rather than rejecting a
      * durable usage batch.
+     *
+     * <p>The seven fields after {@code requestedAt} arrived together and are
+     * absent on every line written before them. {@code endpoint} is the route
+     * name, an open vocabulary. {@code costUsd} is what the vendor charged for
+     * this one request, and its absence is not zero: a free paid-axis model
+     * genuinely costs zero and says so, while a self-hosted one has no dollar
+     * figure at all. It binds to {@code BigDecimal} rather than a float so the
+     * vendor's precision survives; the gateway validates the literal before it
+     * reaches the spool, and this side clamps rather than lets an impossible
+     * value abort the batch. {@code cachedInputTokens} and
+     * {@code reasoningTokens} are subsets of the two token counts, never
+     * additions to them.</p>
      */
     public record UsageEvent(
             String eventUuid,
@@ -49,6 +62,13 @@ public record LlmUsageRequest(
             Boolean estimated,
             Long latencyMs,
             Long ttftMs,
-            String requestedAt) {
+            String requestedAt,
+            String endpoint,
+            String servedModelName,
+            BigDecimal costUsd,
+            Integer imageCount,
+            Integer cachedInputTokens,
+            Integer reasoningTokens,
+            Boolean streamed) {
     }
 }

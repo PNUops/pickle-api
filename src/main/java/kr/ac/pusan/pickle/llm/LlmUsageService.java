@@ -1,5 +1,7 @@
 package kr.ac.pusan.pickle.llm;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -14,6 +16,7 @@ import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmUsageResponse;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterCreditRefreshScheduler;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,6 +55,18 @@ public class LlmUsageService {
 
     /** Cap on any reported free-text field persisted here. */
     static final int REPORTED_TEXT_MAX = 256;
+
+    /**
+     * Route names are short by construction and the gateway's vocabulary is
+     * open, so an unknown one is stored rather than refused; the bound only
+     * keeps a malformed writer from filling the column.
+     */
+    static final int ENDPOINT_MAX = 64;
+
+    /** Matches numeric(14, 8) on llm_usage_events.cost_usd. */
+    private static final int COST_SCALE = 8;
+
+    private static final int COST_INTEGER_DIGITS = 6;
 
     private static final Logger log = LoggerFactory.getLogger(LlmUsageService.class);
 
@@ -139,8 +154,10 @@ public class LlmUsageService {
         return jdbcTemplate.query("""
                 insert into llm_usage_events (event_id, key_id, generation, public_model_name,
                     budget_axis, upstream_ref, attempts, status, error_type, input_tokens,
-                    output_tokens, estimated, latency_ms, ttft_ms, requested_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    output_tokens, estimated, latency_ms, ttft_ms, requested_at,
+                    endpoint, served_model_name, cost_usd, image_count,
+                    cached_input_tokens, reasoning_tokens, streamed)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (event_id) do nothing
                 returning id
                 """, rs -> rs.next() ? rs.getLong(1) : null,
@@ -153,7 +170,52 @@ public class LlmUsageService {
                 nonNegative(event.inputTokens()), nonNegative(event.outputTokens()),
                 Boolean.TRUE.equals(event.estimated()),
                 nonNegative(event.latencyMs()), event.ttftMs(),
-                requestedAt.atOffset(ZoneOffset.UTC));
+                requestedAt.atOffset(ZoneOffset.UTC),
+                Texts.sanitizeReported(event.endpoint(), ENDPOINT_MAX),
+                Texts.sanitizeReported(event.servedModelName(), REPORTED_TEXT_MAX),
+                costUsd(event.costUsd()),
+                positiveOrNull(event.imageCount()),
+                nonNegative(event.cachedInputTokens()), nonNegative(event.reasoningTokens()),
+                Boolean.TRUE.equals(event.streamed()));
+    }
+
+    /**
+     * Clamps one vendor-reported price to what the column can hold.
+     *
+     * <p>A value past the column's precision raises numeric field overflow,
+     * which aborts the whole ingest transaction. The api then answers 5xx, the
+     * gateway reads that as transient and re-sends the same batch forever, and
+     * the checkpoint sits in front of it until spool retention deletes
+     * everything queued behind. So an impossible price degrades to null and
+     * the event keeps its token counts, which are still good. The gateway
+     * validates the literal on its side too; this is the half that does not
+     * depend on the writer being the version we think it is.</p>
+     *
+     * <p>A negative price is a malfunction rather than a claim of free, so it
+     * becomes null. Zero is left alone, because a free paid-axis model
+     * genuinely costs zero and that is a different fact from "not priced".</p>
+     */
+    private static @Nullable BigDecimal costUsd(@Nullable BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.signum() < 0) {
+            log.warn("LLM usage event carried a negative cost, storing none");
+            return null;
+        }
+        BigDecimal scaled = value.scale() > COST_SCALE
+                ? value.setScale(COST_SCALE, RoundingMode.HALF_UP)
+                : value;
+        if (scaled.precision() - scaled.scale() > COST_INTEGER_DIGITS) {
+            log.warn("LLM usage event carried a cost past the column's range, storing none");
+            return null;
+        }
+        return scaled;
+    }
+
+    /** Image count is absent outside the image route, and absence is not zero. */
+    private static @Nullable Integer positiveOrNull(@Nullable Integer value) {
+        return value == null || value < 0 ? null : value;
     }
 
     /** Unknown or malformed additive reports remain usable and aggregate as UNKNOWN. */

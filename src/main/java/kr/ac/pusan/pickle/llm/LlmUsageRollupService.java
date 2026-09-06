@@ -81,13 +81,29 @@ public class LlmUsageRollupService {
      * RATE_LIMITED are named, and everything else is a failure. A status this
      * code has never heard of is still a request that happened, so it lands in
      * {@code failed} rather than vanishing from the counts.
+     *
+     * <p>{@code endpoint} is part of the bucket key rather than a set of
+     * counter columns, which is the opposite of what the budget axis did. The
+     * axis is closed at two values so three counters cover it forever; a route
+     * name is the gateway's open vocabulary, so counters would need a
+     * migration per route and per-route sums would need one column per route
+     * and measure. Grouping costs almost no rows, because a model is reached
+     * from essentially one route.
+     *
+     * <p>{@code served_model_name} is counted rather than grouped, and the
+     * reason is the same test read the other way: its cardinality is the
+     * vendor's catalogue rather than the names we issue, and a router can
+     * answer with any of thousands. The mismatch count says whether to look;
+     * the names themselves are read from raw events when someone does.
      */
     private static final String REBUILD_DAY_SQL = """
-            insert into llm_usage_daily (day, key_id, public_model_name, requests, succeeded,
-                    rate_limited, failed, input_tokens, output_tokens, estimated_requests,
-                    latency_ms_sum, token_axis_requests, credit_axis_requests,
-                    unknown_axis_requests, estimated_tokens)
-            select ?::date, e.key_id, e.public_model_name,
+            insert into llm_usage_daily (day, key_id, public_model_name, endpoint, requests,
+                    succeeded, rate_limited, failed, input_tokens, output_tokens,
+                    estimated_requests, latency_ms_sum, token_axis_requests,
+                    credit_axis_requests, unknown_axis_requests, estimated_tokens,
+                    cost_usd, priced_requests, image_count, cached_input_tokens,
+                    reasoning_tokens, served_mismatch_requests, streamed_requests)
+            select ?::date, e.key_id, e.public_model_name, e.endpoint,
                    count(*),
                    count(*) filter (where e.status = 'OK'),
                    count(*) filter (where e.status = 'RATE_LIMITED'),
@@ -101,11 +117,20 @@ public class LlmUsageRollupService {
                    count(*) filter (where e.budget_axis = 'CREDIT'),
                    count(*) filter (where e.budget_axis is null),
                    coalesce(sum(e.input_tokens::bigint + e.output_tokens::bigint)
-                       filter (where e.estimated), 0)
+                       filter (where e.estimated), 0),
+                   coalesce(sum(e.cost_usd), 0),
+                   count(*) filter (where e.cost_usd is not null),
+                   coalesce(sum(e.image_count), 0),
+                   coalesce(sum(e.cached_input_tokens::bigint), 0),
+                   coalesce(sum(e.reasoning_tokens::bigint), 0),
+                   count(*) filter (where e.served_model_name is not null
+                                      and e.served_model_name
+                                          is distinct from e.public_model_name),
+                   count(*) filter (where e.streamed)
               from llm_usage_events e
              where e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
                and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
-             group by e.key_id, e.public_model_name
+             group by e.key_id, e.public_model_name, e.endpoint
             """;
 
     private static final String ADVANCE_SQL = """

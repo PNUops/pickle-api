@@ -261,6 +261,109 @@ class LlmUsageRollupTest {
         assertThat(onlyBucket().get("requests")).isEqualTo(2L);
     }
 
+    @Test
+    void theRouteIsPartOfTheBucketKeySoOneModelSplitsByHowItWasCalled() {
+        // A paid model can be reached from more than one route and the
+        // catalogue read is free while the generation is not, so a single
+        // bucket per model would add a $0.24 image to a list of free lookups
+        // and report one average nobody can act on.
+        insertMetricEvent("2026-09-06T03:00:00Z", "google/gemini-3-pro-image", "images",
+                "0.242", 1);
+        insertMetricEvent("2026-09-06T04:00:00Z", "google/gemini-3-pro-image", "images_models",
+                null, null);
+
+        rollupService.refresh();
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                select endpoint, requests, cost_usd, priced_requests, image_count
+                  from llm_usage_daily order by endpoint
+                """);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("endpoint")).isEqualTo("images");
+        assertThat(((java.math.BigDecimal) rows.get(0).get("cost_usd")))
+                .isEqualByComparingTo("0.242");
+        assertThat(rows.get(0).get("priced_requests")).isEqualTo(1L);
+        assertThat(rows.get(0).get("image_count")).isEqualTo(1L);
+        assertThat(rows.get(1).get("endpoint")).isEqualTo("images_models");
+        assertThat(((java.math.BigDecimal) rows.get(1).get("cost_usd")))
+                .isEqualByComparingTo("0");
+        assertThat(rows.get(1).get("priced_requests")).isEqualTo(0L);
+    }
+
+    @Test
+    void anUnpricedRequestIsCountedApartRatherThanSummedAsZero() {
+        // The pair (cost_usd, priced_requests) is what lets a reader tell
+        // "this was free" from "nobody reported a price". Collapsing them
+        // makes a period before the field existed read as a discount.
+        insertMetricEvent("2026-09-06T03:00:00Z", "paid/model", "chat", "0.50", null);
+        insertMetricEvent("2026-09-06T04:00:00Z", "paid/model", "chat", null, null);
+
+        rollupService.refresh();
+
+        Map<String, Object> bucket = onlyBucket();
+        assertThat(bucket.get("requests")).isEqualTo(2L);
+        assertThat(bucket.get("priced_requests")).isEqualTo(1L);
+        assertThat((java.math.BigDecimal) bucket.get("cost_usd")).isEqualByComparingTo("0.50");
+    }
+
+    @Test
+    void aRouteRecordedBeforeTheFieldExistedKeepsItsOwnBucket() {
+        // Rows written before the column are null, and that null is "not
+        // recorded" rather than a route named "other". NULLS NOT DISTINCT is
+        // what keeps the rebuild colliding with its own previous row instead
+        // of accumulating duplicates beside it.
+        insertEvent("2026-09-06T03:00:00Z", "pickle-general", "OK", 1, 1, 10);
+        insertMetricEvent("2026-09-06T04:00:00Z", "pickle-general", "chat", null, null);
+
+        rollupService.refresh();
+        rollupService.refresh();
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "select endpoint, requests from llm_usage_daily order by endpoint nulls last");
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("endpoint")).isEqualTo("chat");
+        assertThat(rows.get(1).get("endpoint")).isNull();
+        assertThat(rows.get(1).get("requests")).isEqualTo(1L);
+    }
+
+    @Test
+    void aVendorFallbackIsCountedWithoutGroupingByTheModelItServed() {
+        // The served name's cardinality is the vendor's catalogue rather than
+        // the names we issue, so it is a counter and not a bucket key. The
+        // count says whether to look; the names are read from raw events.
+        insertServedEvent("2026-09-06T03:00:00Z", "openrouter/auto", "deepseek/deepseek-v4");
+        insertServedEvent("2026-09-06T04:00:00Z", "openrouter/auto", "openai/gpt-5.6");
+        insertServedEvent("2026-09-06T05:00:00Z", "openrouter/auto", "openrouter/auto");
+
+        rollupService.refresh();
+
+        Map<String, Object> bucket = onlyBucket();
+        assertThat(bucket.get("requests")).isEqualTo(3L);
+        assertThat(bucket.get("served_mismatch_requests")).isEqualTo(2L);
+    }
+
+    private void insertMetricEvent(String requestedAt, String model, String endpoint,
+            String costUsd, Integer imageCount) {
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, status,
+                        input_tokens, output_tokens, estimated, latency_ms, ttft_ms,
+                        requested_at, endpoint, cost_usd, image_count,
+                        cached_input_tokens, reasoning_tokens, streamed)
+                values (?, ?, ?, 'OK', 1, 1, false, 10, 10, ?::timestamptz, ?,
+                        ?::numeric, ?, 0, 0, false)
+                """, UUID.randomUUID().toString(), keyId, model, requestedAt, endpoint,
+                costUsd, imageCount);
+    }
+
+    private void insertServedEvent(String requestedAt, String model, String served) {
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, status,
+                        input_tokens, output_tokens, estimated, latency_ms, ttft_ms,
+                        requested_at, endpoint, served_model_name)
+                values (?, ?, ?, 'OK', 1, 1, false, 10, 10, ?::timestamptz, 'chat', ?)
+                """, UUID.randomUUID().toString(), keyId, model, requestedAt, served);
+    }
+
     private Map<String, Object> onlyBucket() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("select * from llm_usage_daily");
         assertThat(rows).hasSize(1);
