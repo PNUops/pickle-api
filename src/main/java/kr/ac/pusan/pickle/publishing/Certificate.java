@@ -16,10 +16,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A TLS certificate. The shared
- * Cloudflare Origin CA wildcard has {@code domainId} null and a root-domain
- * scope; per-custom-domain Let's Encrypt certs point at the domain and scope the
- * FQDN.
+ * A TLS certificate. The shared platform wildcard for a root (a Let's Encrypt
+ * wildcard held on the reverse proxy) has {@code domainId} null and a
+ * root-domain scope; per-custom-domain Let's Encrypt certs point at the domain
+ * and scope the FQDN.
  */
 @Entity
 @Table(name = "certificates")

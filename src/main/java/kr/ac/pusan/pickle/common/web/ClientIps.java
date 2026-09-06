@@ -9,15 +9,18 @@ public final class ClientIps {
     }
 
     /**
-     * Resolves the caller IP behind the two-hop reverse-proxy chain
-     * (Cloudflare → edge nginx on LXC100 → app-LXC nginx → pickle-api).
+     * Resolves the caller IP behind the two trusted hops in front of the api:
+     * the reverse proxy, which terminates TLS, restores the true peer from the
+     * PROXY protocol its own :443 tier hands it and sets {@code X-Real-IP};
+     * then the app-tier nginx, which forwards that header unchanged. No CDN
+     * sits in front of either name any more, so there is no third hop and no
+     * vendor header to trust.
      *
-     * <p>Because two trusted hops append to {@code X-Forwarded-For}, the
-     * rightmost entry is the app-LXC nginx's own peer (LXC100 172.30.1.10) for
+     * <p>Because both hops append to {@code X-Forwarded-For}, the rightmost
+     * entry is the app-tier nginx's own peer (the reverse proxy) for
      * <em>every</em> external request — using it would collapse all traffic into
-     * a single per-IP rate-limit bucket and erase audit attribution. The app-LXC
-     * nginx sets {@code X-Real-IP} from Cloudflare's {@code CF-Connecting-IP}
-     * (the true client), so it is preferred when present. Only when it is absent
+     * a single per-IP rate-limit bucket and erase audit attribution. So
+     * {@code X-Real-IP} is preferred when present. Only when it is absent
      * (e.g. a direct in-cluster call) do we fall back to the rightmost
      * {@code X-Forwarded-For} entry, then {@code getRemoteAddr()}. Left
      * {@code X-Forwarded-For} entries stay untrusted (client-supplied, spoofable).</p>
