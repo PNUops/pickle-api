@@ -12,6 +12,7 @@ import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceStanding;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.llm.dto.LlmEndpointKindUsageResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBudgetResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyErrorTypeResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyHourlyUsageResponse;
@@ -19,6 +20,8 @@ import kr.ac.pusan.pickle.llm.dto.LlmKeyLatencyResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyModelUsageResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyUsagePointResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmServedModelUsageResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmUsageCostPointResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +47,14 @@ import org.springframework.transaction.annotation.Transactional;
  * midnight can reach the api after calls that happened later, and bucketing by
  * arrival would move it to the wrong day.
  *
+ * <p>Three of the measurements read wrongly if taken at face value. The cached
+ * and reasoning token counts are <b>subsets</b> of the input and output counts,
+ * so adding them into a total double-counts. An absent cost is not zero: a
+ * self-hosted request has no dollar figure at all, which is why every cost
+ * travels beside the count of requests that carried a price. And the image
+ * count is what the response returned, not what the request asked for, so it
+ * stays zero outside the image route rather than tracking an {@code n}.
+ *
  * <p>Events whose key never resolved carry a null {@code key_id} and so belong
  * to nobody's series. That is deliberate: they are the trace of somebody
  * looping on a bad key, and attributing them to a key would put another
@@ -66,7 +77,11 @@ public class LlmKeyUsageService {
                                       and e.status not in ('OK', 'RATE_LIMITED')) as failed,
                    coalesce(sum(e.input_tokens), 0) as input_tokens,
                    coalesce(sum(e.output_tokens), 0) as output_tokens,
-                   count(*) filter (where e.estimated) as estimated_requests
+                   count(*) filter (where e.estimated) as estimated_requests,
+                   coalesce(sum(e.cached_input_tokens::bigint), 0) as cached_input_tokens,
+                   coalesce(sum(e.reasoning_tokens::bigint), 0) as reasoning_tokens,
+                   coalesce(sum(e.image_count), 0) as image_count,
+                   count(*) filter (where e.streamed) as streamed_requests
               from generate_series(?::date::timestamp, ?::date::timestamp, interval '1 day') d
               left join llm_usage_events e
                      on e.key_id = ?
@@ -91,13 +106,78 @@ public class LlmKeyUsageService {
                    coalesce(sum(e.input_tokens), 0) as input_tokens,
                    coalesce(sum(e.output_tokens), 0) as output_tokens,
                    count(*) filter (where e.estimated) as estimated_requests,
-                   avg(e.latency_ms) as avg_latency_ms
+                   avg(e.latency_ms) as avg_latency_ms,
+                   sum(e.cost_usd) as attributed_cost_usd,
+                   count(*) filter (where e.cost_usd is not null) as priced_requests,
+                   coalesce(sum(e.image_count), 0) as image_count
               from llm_usage_events e
              where e.key_id = ?
                and e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
                and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
              group by e.public_model_name
              order by requests desc, model_name
+            """;
+
+    /**
+     * Cost per day, gapless like the usage series but null where the usage
+     * series would be zero. The two are not interchangeable and the difference
+     * is the point: no requests on a day is a true zero, while requests that
+     * carried no price is an unknown, and drawing the second as zero reads as
+     * "that day was free".
+     */
+    private static final String COST_POINT_SQL = """
+            select d::date as day,
+                   sum(e.cost_usd) as attributed_cost_usd,
+                   count(*) filter (where e.cost_usd is not null) as priced_requests,
+                   count(e.id) as requests
+              from generate_series(?::date::timestamp, ?::date::timestamp, interval '1 day') d
+              left join llm_usage_events e
+                     on e.key_id = ?
+                    and e.requested_at >= d::date::timestamp at time zone 'Asia/Seoul'
+                    and e.requested_at < (d::date + 1)::timestamp at time zone 'Asia/Seoul'
+             group by d
+             order by d
+            """;
+
+    /**
+     * The window by route. A null endpoint is its own bucket rather than being
+     * dropped or folded into a named one: those are requests recorded before
+     * the column existed, and calling them "other" would invent a route.
+     */
+    private static final String ENDPOINT_KIND_SQL = """
+            select e.endpoint,
+                   count(*) as requests,
+                   count(*) filter (where e.status = 'OK') as succeeded,
+                   count(*) filter (where e.status is null
+                                      or e.status <> 'OK') as failed,
+                   coalesce(sum(e.input_tokens), 0) as input_tokens,
+                   coalesce(sum(e.output_tokens), 0) as output_tokens,
+                   sum(e.cost_usd) as attributed_cost_usd,
+                   count(*) filter (where e.cost_usd is not null) as priced_requests,
+                   coalesce(sum(e.image_count), 0) as image_count
+              from llm_usage_events e
+             where e.key_id = ?
+               and e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
+               and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
+             group by e.endpoint
+             order by requests desc, e.endpoint
+            """;
+
+    /**
+     * Only fallbacks appear, because only fallbacks are written. Nothing here
+     * compares the served name against anything: the gateway already made the
+     * comparison against the upstream name it sent, which this row does not
+     * carry, and the public name is deliberately not that name.
+     */
+    private static final String SERVED_MODEL_SQL = """
+            select e.served_model_name, count(*) as requests
+              from llm_usage_events e
+             where e.key_id = ?
+               and e.served_model_name is not null
+               and e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
+               and e.requested_at < (?::date + 1)::timestamp at time zone 'Asia/Seoul'
+             group by e.served_model_name
+             order by requests desc, e.served_model_name
             """;
 
     private static final String ERROR_TYPE_SQL = """
@@ -214,7 +294,25 @@ public class LlmKeyUsageService {
         ResourceStanding standing = resourceAccessResolver.standing(ResourceType.LLM_API_KEY,
                 key.getId(), key.getWorkspaceId(), actor.id());
         standing.requireVisible(LlmKeyResourceAdapter.MESSAGES);
+        return trendOf(key, days);
+    }
 
+    /**
+     * The same answer without the grant check, for a caller that has already
+     * decided the question its own way.
+     *
+     * <p>The administrative surface reaches usage through here rather than
+     * through a query of its own, and that is the whole reason this method is
+     * separate. Two queries would drift, and the first person to notice would
+     * be an administrator being told by a student that the two screens disagree
+     * about how many requests a key made.
+     *
+     * <p><b>Authorization is the caller's.</b> Nothing here reads the actor,
+     * so passing a key the caller has not scoped hands out somebody else's
+     * usage.
+     */
+    @Transactional(readOnly = true)
+    public LlmKeyUsageTrendResponse trendOf(LlmApiKey key, int days) {
         LocalDate to = ClockConfig.todayKst(clock);
         LocalDate from = to.minusDays(days - 1L);
         List<LlmKeyUsagePointResponse> points = jdbcTemplate.query(TREND_SQL,
@@ -226,7 +324,11 @@ public class LlmKeyUsageService {
                         rs.getLong("failed"),
                         rs.getLong("input_tokens"),
                         rs.getLong("output_tokens"),
-                        rs.getLong("estimated_requests")),
+                        rs.getLong("estimated_requests"),
+                        rs.getLong("cached_input_tokens"),
+                        rs.getLong("reasoning_tokens"),
+                        rs.getLong("image_count"),
+                        rs.getLong("streamed_requests")),
                 from, to, key.getId());
         return new LlmKeyUsageTrendResponse(from, to, reportedUntil(key.getId()), points,
                 models(key.getId(), from, to), errorTypes(key.getId(), from, to),
@@ -248,7 +350,57 @@ public class LlmKeyUsageService {
                         // A model row exists only where at least one request
                         // does, and latency_ms is NOT NULL, so the average is
                         // never absent here.
-                        Math.round(rs.getDouble("avg_latency_ms"))),
+                        Math.round(rs.getDouble("avg_latency_ms")),
+                        // Absent, not zero. A window whose requests all went to
+                        // a self-hosted model has no dollar figure at all, and
+                        // a zero here would read as "this was free".
+                        rs.getBigDecimal("attributed_cost_usd"),
+                        rs.getLong("priced_requests"),
+                        rs.getLong("image_count")),
+                keyId, from, to);
+    }
+
+    /**
+     * Daily cost for one key. Public because the administrative surface shows
+     * it and the owner's screen does not; keeping it out of the trend is what
+     * makes that separation structural rather than a rendering decision.
+     */
+    @Transactional(readOnly = true)
+    public List<LlmUsageCostPointResponse> costPoints(long keyId, LocalDate from, LocalDate to) {
+        return jdbcTemplate.query(COST_POINT_SQL,
+                (rs, rowNum) -> new LlmUsageCostPointResponse(
+                        rs.getObject("day", LocalDate.class),
+                        rs.getBigDecimal("attributed_cost_usd"),
+                        rs.getLong("priced_requests"),
+                        rs.getLong("requests")),
+                from, to, keyId);
+    }
+
+    /** The window by route, for the administrative surface. */
+    @Transactional(readOnly = true)
+    public List<LlmEndpointKindUsageResponse> endpointKinds(long keyId, LocalDate from,
+            LocalDate to) {
+        return jdbcTemplate.query(ENDPOINT_KIND_SQL,
+                (rs, rowNum) -> new LlmEndpointKindUsageResponse(
+                        rs.getString("endpoint"),
+                        rs.getLong("requests"),
+                        rs.getLong("succeeded"),
+                        rs.getLong("failed"),
+                        rs.getLong("input_tokens"),
+                        rs.getLong("output_tokens"),
+                        rs.getBigDecimal("attributed_cost_usd"),
+                        rs.getLong("priced_requests"),
+                        rs.getLong("image_count")),
+                keyId, from, to);
+    }
+
+    /** Fallbacks in the window, for the administrative surface. */
+    @Transactional(readOnly = true)
+    public List<LlmServedModelUsageResponse> servedModels(long keyId, LocalDate from,
+            LocalDate to) {
+        return jdbcTemplate.query(SERVED_MODEL_SQL,
+                (rs, rowNum) -> new LlmServedModelUsageResponse(
+                        rs.getString("served_model_name"), rs.getLong("requests")),
                 keyId, from, to);
     }
 

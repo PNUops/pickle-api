@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmAccountUsageResponse;
 import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
@@ -77,6 +78,7 @@ public class AdminOpenRouterAccountService {
     private final OpenRouterAllocationQuery allocationQuery;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
     private final ObjectMapper objectMapper;
+    private final AdminLlmAccountUsageService accountUsageService;
 
     public AdminOpenRouterAccountService(OpenRouterAccountRepository accountRepository,
             OpenRouterAccountCredentialRepository credentialRepository,
@@ -87,7 +89,8 @@ public class AdminOpenRouterAccountService {
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAccountCreditsQueryService creditsQuery,
             OpenRouterAllocationQuery allocationQuery,
-            OpenRouterCreditRefreshScheduler creditRefreshScheduler, ObjectMapper objectMapper) {
+            OpenRouterCreditRefreshScheduler creditRefreshScheduler, ObjectMapper objectMapper,
+            AdminLlmAccountUsageService accountUsageService) {
         this.accountRepository = accountRepository;
         this.credentialRepository = credentialRepository;
         this.keyRepository = keyRepository;
@@ -102,6 +105,7 @@ public class AdminOpenRouterAccountService {
         this.allocationQuery = allocationQuery;
         this.creditRefreshScheduler = creditRefreshScheduler;
         this.objectMapper = objectMapper;
+        this.accountUsageService = accountUsageService;
     }
 
     @Transactional(readOnly = true)
@@ -127,6 +131,20 @@ public class AdminOpenRouterAccountService {
     @Transactional(readOnly = true)
     public OpenRouterAccountResponse get(AuthenticatedUser actor, UUID accountId) {
         return response(requireReadable(actor, accountId));
+    }
+
+    /**
+     * What this account was used for (contract op
+     * {@code getAdminLlmAccountUsage}).
+     *
+     * <p>Scoping is the same as the detail above it. The arithmetic is the
+     * usage service's, and it answers a different question from the credits on
+     * the account response: this one attributes, that one states. They are read
+     * side by side on the screen and are never subtracted from each other.
+     */
+    @Transactional(readOnly = true)
+    public AdminLlmAccountUsageResponse usage(AuthenticatedUser actor, UUID accountId, int days) {
+        return accountUsageService.usage(requireReadable(actor, accountId).getId(), days);
     }
 
     public OpenRouterAccountResponse create(AuthenticatedUser actor,

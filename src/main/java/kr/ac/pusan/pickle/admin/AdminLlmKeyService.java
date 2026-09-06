@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -26,7 +27,9 @@ import kr.ac.pusan.pickle.llm.LlmApiKeyRepository;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
 import kr.ac.pusan.pickle.llm.LlmGatewayGenerations;
 import kr.ac.pusan.pickle.llm.LlmKeyModelService;
+import kr.ac.pusan.pickle.llm.LlmKeyUsageService;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyModelsResponse;
+import kr.ac.pusan.pickle.llm.dto.LlmKeyUsageTrendResponse;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
@@ -77,6 +80,7 @@ public class AdminLlmKeyService {
     private final ObjectMapper objectMapper;
     private final JobScheduler jobScheduler;
     private final LlmKeyModelService modelService;
+    private final LlmKeyUsageService keyUsageService;
 
     public AdminLlmKeyService(LlmApiKeyRepository keyRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
@@ -85,7 +89,8 @@ public class AdminLlmKeyService {
             EntityManager entityManager, OpenRouterAccountRepository accountRepository,
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
-            JobScheduler jobScheduler, LlmKeyModelService modelService) {
+            JobScheduler jobScheduler, LlmKeyModelService modelService,
+            LlmKeyUsageService keyUsageService) {
         this.keyRepository = keyRepository;
         this.workspaceRepository = workspaceRepository;
         this.orgRepository = orgRepository;
@@ -100,6 +105,7 @@ public class AdminLlmKeyService {
         this.objectMapper = objectMapper;
         this.jobScheduler = jobScheduler;
         this.modelService = modelService;
+        this.keyUsageService = keyUsageService;
     }
 
     @Transactional(readOnly = true)
@@ -417,6 +423,35 @@ public class AdminLlmKeyService {
     @Transactional(readOnly = true)
     public LlmKeyModelsResponse models(AuthenticatedUser actor, UUID keyId) {
         return modelService.of(requireReadable(actor, keyId));
+    }
+
+    /**
+     * One key's usage for an administrator (contract op
+     * {@code getAdminLlmKeyUsage}).
+     *
+     * <p>This opens a line the holder's side draws deliberately. There, usage
+     * is content rather than standing: a workspace owner who can see that a key
+     * exists still cannot read what it was used for. Here an administrator sees
+     * it, on an operator decision of 2026-09-06, because the same person sets
+     * this key's limits and carries what it spends, and a limit decided without
+     * the usage behind it is a guess.
+     *
+     * <p>The scoping is this surface's own, the same as the detail beside it:
+     * an org-tier reviewer sees keys of the institutions they read. Resource
+     * grants do not enter it.
+     *
+     * <p>The trend is the holder's own response, not a second query. The
+     * breakdowns beside it are the part an administrator has and the holder
+     * does not.
+     */
+    @Transactional(readOnly = true)
+    public AdminLlmKeyUsageResponse usage(AuthenticatedUser actor, UUID keyId, int days) {
+        LlmApiKey key = requireReadable(actor, keyId);
+        LlmKeyUsageTrendResponse trend = keyUsageService.trendOf(key, days);
+        return new AdminLlmKeyUsageResponse(trend,
+                keyUsageService.costPoints(key.getId(), trend.from(), trend.to()),
+                keyUsageService.endpointKinds(key.getId(), trend.from(), trend.to()),
+                keyUsageService.servedModels(key.getId(), trend.from(), trend.to()));
     }
 
     private LlmApiKey requireReadable(AuthenticatedUser actor, UUID keyId) {
