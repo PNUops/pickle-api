@@ -102,6 +102,8 @@ public class PublishingTeardownService {
             if (route == null) {
                 continue;
             }
+            // The ABSENT push below takes the A record down after the vhost.
+            domain.markDnsRemovalOwed();
             if (route.getStatus() != RouteStatus.REMOVED) {
                 route.setStatus(RouteStatus.REMOVED);
                 route.setGeneration(routeGenerations.next());
