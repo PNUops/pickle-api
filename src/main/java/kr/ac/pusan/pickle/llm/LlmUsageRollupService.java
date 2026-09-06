@@ -94,10 +94,15 @@ public class LlmUsageRollupService {
      * reason is the same test read the other way: its cardinality is the
      * vendor's catalogue rather than the names we issue, and a router can
      * answer with any of thousands. The mismatch count says whether to look;
-     * the names themselves are read from raw events when someone does. The
-     * count requires both names, because "the vendor answered with a model we
-     * never asked for a name for" is a request that failed before a model was
-     * chosen, not a fallback.
+     * the names themselves are read from raw events when someone does.
+     *
+     * <p><b>Its presence is the mismatch.</b> This column used to be compared
+     * against {@code public_model_name}, which was wrong in a way that showed
+     * up as a fallback on every ordinary self-hosted request: the two names
+     * live in different namespaces, and a public name differing from the
+     * upstream one is what a public name is for. The gateway holds the only
+     * pair worth comparing, so it decides there and writes the column only
+     * when the answer differed from what it asked for.
      */
     private static final String REBUILD_DAY_SQL = """
             insert into llm_usage_daily (day, key_id, public_model_name, endpoint, requests,
@@ -126,9 +131,7 @@ public class LlmUsageRollupService {
                    coalesce(sum(e.image_count), 0),
                    coalesce(sum(e.cached_input_tokens::bigint), 0),
                    coalesce(sum(e.reasoning_tokens::bigint), 0),
-                   count(*) filter (where e.served_model_name is not null
-                                      and e.public_model_name is not null
-                                      and e.served_model_name <> e.public_model_name),
+                   count(*) filter (where e.served_model_name is not null),
                    count(*) filter (where e.streamed)
               from llm_usage_events e
              where e.requested_at >= ?::date::timestamp at time zone 'Asia/Seoul'
