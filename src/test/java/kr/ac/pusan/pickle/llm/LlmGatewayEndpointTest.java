@@ -756,17 +756,35 @@ class LlmGatewayEndpointTest {
         tooFine.put("costUsd", new java.math.BigDecimal("0.0000000149"));
         Map<String, Object> free = event("evt-cost-free", null, "2026-08-10T20:04:00Z");
         free.put("costUsd", java.math.BigDecimal.ZERO);
+        // A degenerate exponent is the shape that gets past the gateway's own
+        // guard: it parses to a finite non-negative float, so nothing there
+        // objects, and BigDecimal keeps the exponent as a scale. Rescaling one
+        // has to build a power of ten that large and throws instead, which is
+        // the same permanent stall as an overflow, reached one line earlier.
+        Map<String, Object> tinyExponent = event("evt-cost-tiny-exp", null,
+                "2026-08-10T20:04:01Z");
+        tinyExponent.put("costUsd", new java.math.BigDecimal("1E-2147483647"));
+        Map<String, Object> hugeExponent = event("evt-cost-huge-exp", null,
+                "2026-08-10T20:04:02Z");
+        hugeExponent.put("costUsd", new java.math.BigDecimal("1E+2147483647"));
 
-        usage(Map.of("events", List.of(huge, negative, tooFine, free)))
+        usage(Map.of("events",
+                List.of(huge, negative, tooFine, free, tinyExponent, hugeExponent)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accepted").value(4))
+                .andExpect(jsonPath("$.accepted").value(6))
                 .andExpect(jsonPath("$.rejected").value(0));
 
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from llm_usage_events
-                 where event_id in ('evt-cost-huge', 'evt-cost-negative')
+                 where event_id in ('evt-cost-huge', 'evt-cost-negative', 'evt-cost-huge-exp')
                    and cost_usd is null
-                """, Long.class)).isEqualTo(2);
+                """, Long.class)).isEqualTo(3);
+        // Too small for the column's last place is the same answer rounding
+        // would have given, and it is a claim about a price rather than the
+        // absence of one.
+        assertThat(jdbcTemplate.queryForObject(
+                "select cost_usd from llm_usage_events where event_id = 'evt-cost-tiny-exp'",
+                java.math.BigDecimal.class)).isEqualByComparingTo("0");
         assertThat(jdbcTemplate.queryForObject(
                 "select cost_usd from llm_usage_events where event_id = 'evt-cost-fine'",
                 java.math.BigDecimal.class)).isEqualByComparingTo("0.00000001");

@@ -309,13 +309,10 @@ class LlmUsageRollupTest {
     @Test
     void aRouteRecordedBeforeTheFieldExistedKeepsItsOwnBucket() {
         // Rows written before the column are null, and that null is "not
-        // recorded" rather than a route named "other". NULLS NOT DISTINCT is
-        // what keeps the rebuild colliding with its own previous row instead
-        // of accumulating duplicates beside it.
+        // recorded" rather than a route named "other".
         insertEvent("2026-09-06T03:00:00Z", "pickle-general", "OK", 1, 1, 10);
         insertMetricEvent("2026-09-06T04:00:00Z", "pickle-general", "chat", null, null);
 
-        rollupService.refresh();
         rollupService.refresh();
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -324,6 +321,21 @@ class LlmUsageRollupTest {
         assertThat(rows.get(0).get("endpoint")).isEqualTo("chat");
         assertThat(rows.get(1).get("endpoint")).isNull();
         assertThat(rows.get(1).get("requests")).isEqualTo(1L);
+
+        // A second refresh with a new event on the same day is the rebuild
+        // that actually re-inserts both buckets, which is where the null
+        // dimension has to survive. Calling refresh twice with nothing new
+        // proves none of this: the watermark makes the second call return
+        // without touching the table.
+        insertEvent("2026-09-06T05:00:00Z", "pickle-general", "OK", 1, 1, 10);
+        rollupService.refresh();
+
+        rows = jdbcTemplate.queryForList(
+                "select endpoint, requests from llm_usage_daily order by endpoint nulls last");
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).get("requests")).isEqualTo(1L);
+        assertThat(rows.get(1).get("endpoint")).isNull();
+        assertThat(rows.get(1).get("requests")).isEqualTo(2L);
     }
 
     @Test
@@ -340,6 +352,27 @@ class LlmUsageRollupTest {
         Map<String, Object> bucket = onlyBucket();
         assertThat(bucket.get("requests")).isEqualTo(3L);
         assertThat(bucket.get("served_mismatch_requests")).isEqualTo(2L);
+    }
+
+    @Test
+    void aRequestThatNeverChoseAModelIsNotAFallback() {
+        // The count needs both names. A row with no requested model failed
+        // before one was chosen, and reading a served name beside that null as
+        // "the vendor answered with something else" turns every such failure
+        // into a fallback that never happened.
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, status,
+                        input_tokens, output_tokens, estimated, latency_ms, ttft_ms,
+                        requested_at, endpoint, served_model_name)
+                values (?, ?, null, 'UPSTREAM_ERROR', 0, 0, false, 5, 5,
+                        '2026-09-06T03:00:00Z'::timestamptz, 'chat', 'vendor/whatever')
+                """, UUID.randomUUID().toString(), keyId);
+
+        rollupService.refresh();
+
+        Map<String, Object> bucket = onlyBucket();
+        assertThat(bucket.get("requests")).isEqualTo(1L);
+        assertThat(bucket.get("served_mismatch_requests")).isEqualTo(0L);
     }
 
     private void insertMetricEvent(String requestedAt, String model, String endpoint,

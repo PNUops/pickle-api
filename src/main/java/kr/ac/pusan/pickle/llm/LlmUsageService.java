@@ -68,6 +68,12 @@ public class LlmUsageService {
 
     private static final int COST_INTEGER_DIGITS = 6;
 
+    /** The first value the column cannot hold, compared against before rescaling. */
+    private static final BigDecimal COST_EXCLUSIVE_MAX = new BigDecimal("1000000");
+
+    /** Below half of the last place the column keeps, rounding would give zero anyway. */
+    private static final BigDecimal COST_ROUNDS_TO_ZERO = new BigDecimal("0.000000005");
+
     private static final Logger log = LoggerFactory.getLogger(LlmUsageService.class);
 
     private final JdbcTemplate jdbcTemplate;
@@ -173,8 +179,8 @@ public class LlmUsageService {
                 requestedAt.atOffset(ZoneOffset.UTC),
                 Texts.sanitizeReported(event.endpoint(), ENDPOINT_MAX),
                 Texts.sanitizeReported(event.servedModelName(), REPORTED_TEXT_MAX),
-                costUsd(event.costUsd()),
-                positiveOrNull(event.imageCount()),
+                costUsd(event.costUsd(), eventId),
+                nonNegativeOrNull(event.imageCount()),
                 nonNegative(event.cachedInputTokens()), nonNegative(event.reasoningTokens()),
                 Boolean.TRUE.equals(event.streamed()));
     }
@@ -191,30 +197,65 @@ public class LlmUsageService {
      * validates the literal on its side too; this is the half that does not
      * depend on the writer being the version we think it is.</p>
      *
+     * <p><b>The bounds are compared before anything rescales, and that order is
+     * the whole point.</b> {@code BigDecimal} keeps a literal's exponent as its
+     * scale, so {@code 1E-2147483647} parses without complaint and then throws
+     * from {@code setScale}, which has to build a power of ten that large to
+     * divide by. An exception here is the same permanent stall as the overflow
+     * this method exists to prevent, only reached one line earlier.
+     * {@code compareTo} decides on the adjusted exponent instead and returns at
+     * once whatever the scale is. The {@code try} around the rest is not
+     * belt-and-braces for that case — it is the promise in the paragraph above,
+     * which is worth nothing if a writer we did not anticipate can still throw
+     * here.</p>
+     *
      * <p>A negative price is a malfunction rather than a claim of free, so it
      * becomes null. Zero is left alone, because a free paid-axis model
-     * genuinely costs zero and that is a different fact from "not priced".</p>
+     * genuinely costs zero and that is a different fact from "not priced" — and
+     * a price too small to survive the column's scale becomes that same zero,
+     * which is what rounding it would have produced anyway.</p>
      */
-    private static @Nullable BigDecimal costUsd(@Nullable BigDecimal value) {
+    private static @Nullable BigDecimal costUsd(@Nullable BigDecimal value, String eventId) {
         if (value == null) {
             return null;
         }
         if (value.signum() < 0) {
-            log.warn("LLM usage event carried a negative cost, storing none");
+            log.warn("LLM usage event {} carried a negative cost, storing none", eventId);
             return null;
         }
-        BigDecimal scaled = value.scale() > COST_SCALE
-                ? value.setScale(COST_SCALE, RoundingMode.HALF_UP)
-                : value;
-        if (scaled.precision() - scaled.scale() > COST_INTEGER_DIGITS) {
-            log.warn("LLM usage event carried a cost past the column's range, storing none");
+        if (value.compareTo(COST_EXCLUSIVE_MAX) >= 0) {
+            log.warn("LLM usage event {} carried a cost past the column's range, storing none",
+                    eventId);
             return null;
         }
-        return scaled;
+        if (value.compareTo(COST_ROUNDS_TO_ZERO) < 0) {
+            return BigDecimal.ZERO.setScale(COST_SCALE);
+        }
+        try {
+            BigDecimal scaled = value.scale() > COST_SCALE
+                    ? value.setScale(COST_SCALE, RoundingMode.HALF_UP)
+                    : value;
+            // Rounding can carry into the integer part: 999999.999999995
+            // becomes 1000000.00000000, which the bound above let through.
+            if (scaled.precision() - scaled.scale() > COST_INTEGER_DIGITS) {
+                log.warn("LLM usage event {} carried a cost past the column's range,"
+                        + " storing none", eventId);
+                return null;
+            }
+            return scaled;
+        } catch (ArithmeticException e) {
+            log.warn("LLM usage event {} carried a cost this side cannot rescale,"
+                    + " storing none", eventId);
+            return null;
+        }
     }
 
-    /** Image count is absent outside the image route, and absence is not zero. */
-    private static @Nullable Integer positiveOrNull(@Nullable Integer value) {
+    /**
+     * Image count is absent outside the image route, and absence is not zero:
+     * a route that returns no image legitimately reports zero. A negative one
+     * is a malfunction and loses only itself.
+     */
+    private static @Nullable Integer nonNegativeOrNull(@Nullable Integer value) {
         return value == null || value < 0 ? null : value;
     }
 
