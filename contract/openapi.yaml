@@ -189,6 +189,17 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
+        dnsAppliedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        dnsLastError:
+          type:
+          - "string"
+          - "null"
+        dnsStatus:
+          $ref: "#/components/schemas/DomainDnsStatus"
         fqdn:
           type: "string"
         id:
@@ -243,6 +254,7 @@ components:
           type: "string"
       required:
       - "createdAt"
+      - "dnsStatus"
       - "fqdn"
       - "id"
       - "kind"
@@ -2360,6 +2372,17 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
+        dnsAppliedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        dnsLastError:
+          type:
+          - "string"
+          - "null"
+        dnsStatus:
+          $ref: "#/components/schemas/DomainDnsStatus"
         fqdn:
           type: "string"
         id:
@@ -2397,12 +2420,20 @@ components:
           type: "string"
       required:
       - "createdAt"
+      - "dnsStatus"
       - "fqdn"
       - "id"
       - "kind"
       - "status"
       - "vmId"
       type: "object"
+    DomainDnsStatus:
+      enum:
+      - "NONE"
+      - "PENDING"
+      - "APPLIED"
+      - "FAILED"
+      type: "string"
     DomainKind:
       enum:
       - "AUTO"
@@ -2422,6 +2453,17 @@ components:
         createdAt:
           format: "date-time"
           type: "string"
+        dnsAppliedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        dnsLastError:
+          type:
+          - "string"
+          - "null"
+        dnsStatus:
+          $ref: "#/components/schemas/DomainDnsStatus"
         fqdn:
           type: "string"
         id:
@@ -2455,6 +2497,7 @@ components:
           type: "string"
       required:
       - "createdAt"
+      - "dnsStatus"
       - "fqdn"
       - "id"
       - "kind"

@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 
 import java.time.Instant;
 import java.util.UUID;
+import kr.ac.pusan.pickle.publishing.DomainDnsStatus;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import org.jspecify.annotations.Nullable;
@@ -22,5 +23,8 @@ public record DomainDetailView(
         @Nullable Instant releasedAt,
         @Nullable Instant reservedUntil,
         Instant createdAt,
+        DomainDnsStatus dnsStatus,
+        @Nullable String dnsLastError,
+        @Nullable Instant dnsAppliedAt,
         @Nullable DomainVerificationView verification) {
 }

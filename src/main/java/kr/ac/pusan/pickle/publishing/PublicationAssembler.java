@@ -20,7 +20,7 @@ import org.springframework.stereotype.Component;
  * domain/route/certificate rows. Custom domains carry a verification block (the
  * A + TXT records to create and the current polling state); platform subdomains
  * do not (null). The certificate is the per-domain LE cert for custom domains and
- * the Origin CA wildcard of the subdomain's own root for platform subdomains.
+ * the shared wildcard of the subdomain's own root for platform subdomains.
  */
 @Component
 public class PublicationAssembler {
@@ -57,7 +57,8 @@ public class PublicationAssembler {
         return new DomainSummaryView(domain.getPublicId(), vmId, domain.getKind(),
                 domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                 domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
-                domain.getCreatedAt());
+                domain.getCreatedAt(), domain.getDnsStatus(), domain.getDnsLastError(),
+                domain.getDnsAppliedAt());
     }
 
     public DomainDetailView toDomainDetail(Domain domain, UUID vmId) {
@@ -66,7 +67,8 @@ public class PublicationAssembler {
         return new DomainDetailView(domain.getPublicId(), vmId, domain.getKind(),
                 domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                 domain.getVerifiedAt(), domain.getReleasedAt(), reservedUntil(domain),
-                domain.getCreatedAt(), verification);
+                domain.getCreatedAt(), domain.getDnsStatus(), domain.getDnsLastError(),
+                domain.getDnsAppliedAt(), verification);
     }
 
     /**

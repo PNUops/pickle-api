@@ -147,7 +147,8 @@ public class AdminPublishingService {
                     assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
                     ctx.workspaceId(vm), ctx.workspaceName(vm),
                     ctx.orgId(vm), ctx.orgName(vm),
-                    routeStatus, certStatus, domain.getUpdatedAt());
+                    routeStatus, certStatus, domain.getDnsStatus(), domain.getDnsLastError(),
+                    domain.getDnsAppliedAt(), domain.getUpdatedAt());
         }).toList();
         return PageResponse.of(content, domains);
     }

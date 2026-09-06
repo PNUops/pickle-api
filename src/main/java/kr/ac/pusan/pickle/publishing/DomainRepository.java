@@ -61,6 +61,12 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** Every domain row of a VM, any status — the deletion teardown sweep. */
     List<Domain> findByVmId(Long vmId);
 
+    /**
+     * Every live row under a platform root, serving or held in its grace —
+     * the names the DNS orphan prune must leave alone.
+     */
+    List<Domain> findByRootDomainAndStatusNot(String rootDomain, DomainStatus status);
+
     /** Custom domains due for DNS re-check (recurring verification scan). */
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
 

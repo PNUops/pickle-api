@@ -82,6 +82,23 @@ public class Domain {
     @Column(nullable = false, columnDefinition = "domain_status")
     private DomainStatus status;
 
+    /**
+     * Where the platform's own A record for this name stands. Written only
+     * through the {@code markDns*} methods so the three columns stay
+     * consistent with each other (the schema checks the pairs); a custom
+     * domain is never touched and stays NONE.
+     */
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "dns_status", nullable = false, columnDefinition = "domain_dns_status")
+    private DomainDnsStatus dnsStatus = DomainDnsStatus.NONE;
+
+    @Column(name = "dns_last_error")
+    private String dnsLastError;
+
+    @Column(name = "dns_applied_at")
+    private Instant dnsAppliedAt;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -103,9 +120,15 @@ public class Domain {
         this.status = status;
     }
 
-    /** Platform subdomain (AUTO/PLATFORM): ACTIVE immediately, no ownership check. */
+    /**
+     * Platform subdomain (AUTO/PLATFORM): ACTIVE immediately, no ownership
+     * check. Its A record is owed from the start (PENDING) and the first apply
+     * writes it.
+     */
     public static Domain platform(Long vmId, DomainKind kind, String fqdn, String rootDomain) {
-        return new Domain(vmId, kind, fqdn, rootDomain, null, DomainStatus.ACTIVE);
+        Domain domain = new Domain(vmId, kind, fqdn, rootDomain, null, DomainStatus.ACTIVE);
+        domain.dnsStatus = DomainDnsStatus.PENDING;
+        return domain;
     }
 
     /** Custom domain: PENDING until TXT+A are verified, carrying the ownership token. */
@@ -195,6 +218,67 @@ public class Domain {
 
     public void setStatus(DomainStatus status) {
         this.status = status;
+    }
+
+    public DomainDnsStatus getDnsStatus() {
+        return dnsStatus;
+    }
+
+    public String getDnsLastError() {
+        return dnsLastError;
+    }
+
+    public Instant getDnsAppliedAt() {
+        return dnsAppliedAt;
+    }
+
+    /**
+     * The name is going into service and its record is owed: the next apply
+     * ensures it. Set on every platform (re)attach, whatever the row held
+     * before. Custom domains are left alone, whatever the caller meant.
+     */
+    public void markDnsRecordOwed() {
+        if (kind == DomainKind.CUSTOM) {
+            return;
+        }
+        dnsStatus = DomainDnsStatus.PENDING;
+        dnsLastError = null;
+    }
+
+    /**
+     * The name is leaving service and whatever record exists is owed a
+     * removal. A row at NONE stays NONE: the platform never wrote a record
+     * for it (a row from before per-name records, on a zone the platform may
+     * not even be able to write yet), so there is nothing to take down and
+     * nothing to keep a removal retrying against an unconfigured provider.
+     * A previous applied time is kept: the record may well still exist.
+     */
+    public void markDnsRemovalOwed() {
+        if (kind == DomainKind.CUSTOM || dnsStatus == DomainDnsStatus.NONE) {
+            return;
+        }
+        dnsStatus = DomainDnsStatus.PENDING;
+        dnsLastError = null;
+    }
+
+    /** The provider confirmed the record is present. */
+    public void markDnsApplied() {
+        dnsStatus = DomainDnsStatus.APPLIED;
+        dnsLastError = null;
+        dnsAppliedAt = Instant.now();
+    }
+
+    /** The provider confirmed the record is gone (or none was ever written). */
+    public void markDnsRemoved() {
+        dnsStatus = DomainDnsStatus.NONE;
+        dnsLastError = null;
+        dnsAppliedAt = null;
+    }
+
+    /** The last attempt failed; the applied time survives because the record may. */
+    public void markDnsFailed(String error) {
+        dnsStatus = DomainDnsStatus.FAILED;
+        dnsLastError = error != null && !error.isBlank() ? error : "원인 미상";
     }
 
     public Instant getCreatedAt() {

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.publishing.CertificateStatus;
+import kr.ac.pusan.pickle.publishing.DomainDnsStatus;
 import kr.ac.pusan.pickle.publishing.DomainKind;
 import kr.ac.pusan.pickle.publishing.DomainStatus;
 import kr.ac.pusan.pickle.publishing.RouteStatus;
@@ -17,6 +18,10 @@ import org.jspecify.annotations.Nullable;
  * subdomain keeps {@link DomainStatus#ACTIVE} while it holds its name through
  * the grace, so this pair is the only axis that tells an admin why a name is
  * occupied.</p>
+ *
+ * <p>{@code dnsStatus}/{@code dnsLastError}/{@code dnsAppliedAt}: where the
+ * platform's own A record stands, the axis that answers "the vhost is
+ * APPLIED, why does the name not resolve". Custom domains are always NONE.</p>
  */
 public record AdminDomainView(
         UUID id,
@@ -36,5 +41,8 @@ public record AdminDomainView(
         String orgName,
         @Nullable RouteStatus routeStatus,
         @Nullable CertificateStatus certificateStatus,
+        DomainDnsStatus dnsStatus,
+        @Nullable String dnsLastError,
+        @Nullable Instant dnsAppliedAt,
         @Nullable Instant updatedAt) {
 }
