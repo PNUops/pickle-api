@@ -682,6 +682,118 @@ class LlmGatewayEndpointTest {
         assertThat(unknown).isEqualTo(2);
     }
 
+    @Test
+    void theMetricsGroupSurvivesVerbatimAndAnAbsentPriceStaysAbsent() throws Exception {
+        Map<String, Object> priced = event("evt-priced", null, "2026-08-10T20:03:57Z");
+        priced.put("endpoint", "images");
+        priced.put("servedModelName", "google/gemini-3-pro-image");
+        priced.put("costUsd", new java.math.BigDecimal("0.24200000"));
+        priced.put("imageCount", 2);
+        priced.put("cachedInputTokens", 12);
+        priced.put("reasoningTokens", 320);
+        priced.put("streamed", true);
+        Map<String, Object> unpriced = event("evt-unpriced", null, "2026-08-10T20:03:58Z");
+        unpriced.put("endpoint", "chat");
+
+        usage(Map.of("events", List.of(priced, unpriced))).andExpect(status().isOk());
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select endpoint, served_model_name, cost_usd, image_count,
+                       cached_input_tokens, reasoning_tokens, streamed
+                  from llm_usage_events where event_id = 'evt-priced'
+                """);
+        assertThat(row.get("endpoint")).isEqualTo("images");
+        assertThat(row.get("served_model_name")).isEqualTo("google/gemini-3-pro-image");
+        assertThat((java.math.BigDecimal) row.get("cost_usd"))
+                .isEqualByComparingTo("0.242");
+        assertThat(((Number) row.get("image_count")).intValue()).isEqualTo(2);
+        assertThat(((Number) row.get("cached_input_tokens")).intValue()).isEqualTo(12);
+        assertThat(((Number) row.get("reasoning_tokens")).intValue()).isEqualTo(320);
+        assertThat(row.get("streamed")).isEqualTo(true);
+
+        // A self-hosted call has no dollar figure at all, and that is a
+        // different fact from a paid model that happened to be free. Storing
+        // zero here would make the period before this field existed read as a
+        // discount.
+        Map<String, Object> plain = jdbcTemplate.queryForMap("""
+                select cost_usd, image_count from llm_usage_events
+                 where event_id = 'evt-unpriced'
+                """);
+        assertThat(plain.get("cost_usd")).isNull();
+        assertThat(plain.get("image_count")).isNull();
+    }
+
+    @Test
+    void anUnknownRouteNameIsStoredRatherThanRefused() throws Exception {
+        // The route vocabulary belongs to the gateway and grows there first.
+        // Refusing a name this side has not heard of would abort the ingest
+        // transaction, and a 5xx makes the gateway re-send the same batch
+        // until spool retention deletes everything queued behind it.
+        Map<String, Object> event = event("evt-route-new", null, "2026-08-10T20:03:57Z");
+        event.put("endpoint", "audio_speech");
+
+        usage(Map.of("events", List.of(event)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(1))
+                .andExpect(jsonPath("$.rejected").value(0));
+        assertThat(jdbcTemplate.queryForObject(
+                "select endpoint from llm_usage_events where event_id = 'evt-route-new'",
+                String.class)).isEqualTo("audio_speech");
+    }
+
+    @Test
+    void anImpossiblePriceLosesOnlyItsOwnPriceAndNeverTheBatch() throws Exception {
+        // A value past numeric(14, 8) would raise numeric field overflow,
+        // abort the whole transaction and answer 5xx -- which the gateway
+        // reads as transient, re-sending this batch forever while its
+        // checkpoint stops moving. Degrading one field keeps the tokens, which
+        // are still good, and lets the rest of the batch land.
+        Map<String, Object> huge = event("evt-cost-huge", null, "2026-08-10T20:03:57Z");
+        huge.put("costUsd", new java.math.BigDecimal("99999999.5"));
+        Map<String, Object> negative = event("evt-cost-negative", null, "2026-08-10T20:03:58Z");
+        negative.put("costUsd", new java.math.BigDecimal("-1.5"));
+        Map<String, Object> tooFine = event("evt-cost-fine", null, "2026-08-10T20:03:59Z");
+        tooFine.put("costUsd", new java.math.BigDecimal("0.0000000149"));
+        Map<String, Object> free = event("evt-cost-free", null, "2026-08-10T20:04:00Z");
+        free.put("costUsd", java.math.BigDecimal.ZERO);
+        // A degenerate exponent is the shape that gets past the gateway's own
+        // guard: it parses to a finite non-negative float, so nothing there
+        // objects, and BigDecimal keeps the exponent as a scale. Rescaling one
+        // has to build a power of ten that large and throws instead, which is
+        // the same permanent stall as an overflow, reached one line earlier.
+        Map<String, Object> tinyExponent = event("evt-cost-tiny-exp", null,
+                "2026-08-10T20:04:01Z");
+        tinyExponent.put("costUsd", new java.math.BigDecimal("1E-2147483647"));
+        Map<String, Object> hugeExponent = event("evt-cost-huge-exp", null,
+                "2026-08-10T20:04:02Z");
+        hugeExponent.put("costUsd", new java.math.BigDecimal("1E+2147483647"));
+
+        usage(Map.of("events",
+                List.of(huge, negative, tooFine, free, tinyExponent, hugeExponent)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accepted").value(6))
+                .andExpect(jsonPath("$.rejected").value(0));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from llm_usage_events
+                 where event_id in ('evt-cost-huge', 'evt-cost-negative', 'evt-cost-huge-exp')
+                   and cost_usd is null
+                """, Long.class)).isEqualTo(3);
+        // Too small for the column's last place is the same answer rounding
+        // would have given, and it is a claim about a price rather than the
+        // absence of one.
+        assertThat(jdbcTemplate.queryForObject(
+                "select cost_usd from llm_usage_events where event_id = 'evt-cost-tiny-exp'",
+                java.math.BigDecimal.class)).isEqualByComparingTo("0");
+        assertThat(jdbcTemplate.queryForObject(
+                "select cost_usd from llm_usage_events where event_id = 'evt-cost-fine'",
+                java.math.BigDecimal.class)).isEqualByComparingTo("0.00000001");
+        // Zero is a claim, not an absence: a paid model that costs nothing.
+        assertThat(jdbcTemplate.queryForObject(
+                "select cost_usd from llm_usage_events where event_id = 'evt-cost-free'",
+                java.math.BigDecimal.class)).isEqualByComparingTo("0");
+    }
+
     // ── bodies channel ──────────────────────────────────────────────────────
 
     @Test
