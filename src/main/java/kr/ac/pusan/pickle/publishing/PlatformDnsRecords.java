@@ -160,7 +160,13 @@ public class PlatformDnsRecords {
             return List.of();
         }
         List<ZoneReconciliation> results = new ArrayList<>();
-        Set<String> reserved = new HashSet<>(settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS));
+        // Folded to lower case because the labels it is compared against are:
+        // a record's name arrives through DnsNames.relative, which lower-cases
+        // it. An unfolded reserved list would let a differently-cased reserved
+        // label look unreserved, and the prune treats unreserved as deletable.
+        Set<String> reserved = settingsService.stringList(SettingsService.RESERVED_SUBDOMAINS).stream()
+                .map(label -> label.toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
         for (String root : settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS)) {
             String rootDomain = root.toLowerCase(Locale.ROOT);
             List<DnsRecord> zone;
@@ -194,6 +200,16 @@ public class PlatformDnsRecords {
             DnsRecord current = aRecords.get(fqdn);
             boolean right = current != null && current.values().equals(List.of(targetIp()))
                     && current.ttlSeconds() == ttlSeconds();
+            // Re-read before writing, not only after. The manifest was taken
+            // before the provider calls, so a domain released in between has
+            // already had its own ABSENT push remove the record; ensuring it
+            // here would put the record back and nothing would take it down
+            // again, because writeServingState then declines to record it and
+            // the pruner is off by default. Confirming a record that is already
+            // right needs no such check: it writes no zone change.
+            if (!right && !stillServing(domain.getId())) {
+                continue;
+            }
             Outcome outcome = right ? new Done() : ensure(fqdn);
             if (outcome instanceof Failed failure) {
                 failed.add(fqdn);
@@ -213,6 +229,18 @@ public class PlatformDnsRecords {
         for (DnsRecord orphan : orphanCandidates(zone, rootDomain, claimed, reserved, targetIp())) {
             if (!dnsProperties.pruneOrphans()) {
                 orphansLeft.add(orphan.name());
+                continue;
+            }
+            // Re-read the claim immediately before deleting. The claimed set
+            // above was taken once, and a platform name is reissuable the
+            // moment its reservation lapses, so a name freed during the scan
+            // and taken by someone else in the meantime would have that new
+            // owner's freshly written record deleted while their row reads
+            // APPLIED. This is the one destructive path here, so it re-checks
+            // rather than trusting a snapshot.
+            if (domainRepository.findFirstByFqdnAndStatusNot(orphan.name(), DomainStatus.REMOVED)
+                    .isPresent()) {
+                log.info("dns reconcile: {} was claimed during the scan, not pruning", orphan.name());
                 continue;
             }
             if (remove(orphan.name()) instanceof Failed failure) {
@@ -278,10 +306,23 @@ public class PlatformDnsRecords {
         return Boolean.TRUE.equals(current);
     }
 
+    /** Whether this domain is still ACTIVE with a live route, read fresh. */
+    private boolean stillServing(long domainId) {
+        Boolean serving = transactionTemplate.execute(tx -> domainRepository.findById(domainId)
+                .filter(domain -> domain.getStatus() == DomainStatus.ACTIVE)
+                .filter(domain -> routeRepository
+                        .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                        .isPresent())
+                .isPresent());
+        return Boolean.TRUE.equals(serving);
+    }
+
     /**
      * Writes a resync verdict on a domain that is still serving. The manifest
      * was read before the provider calls, so a domain released meanwhile is
-     * left alone: its own ABSENT push owns the record from here on.
+     * left alone: its own ABSENT push owns the record from here on. The zone
+     * write is guarded separately by {@link #stillServing} — this filter only
+     * keeps the row from claiming a state nobody asked for.
      */
     private void writeServingState(long domainId, java.util.function.Consumer<Domain> change) {
         transactionTemplate.executeWithoutResult(tx -> domainRepository.findByIdForUpdate(domainId)

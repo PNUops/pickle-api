@@ -154,7 +154,15 @@ public class RouteApplyJob {
         }
         Push push = (Push) prep;
         PlatformDnsRecords.Outcome dns = null;
-        if (!push.absent() && push.platformDns()) {
+        // The configured() guard is what keeps an unconfigured provider from
+        // reaching routes that already exist. Refusing a *new* platform publish
+        // is correct and happens earlier, at requireDnsProvider(); refusing to
+        // re-apply a name that already resolves is not. Without this, a port
+        // edit, a VM address change or any reconcile of an unconfirmed route
+        // would fail on a deployment that simply has no DNS provider set, and
+        // it would fail before the agent is called, so the vhost would not be
+        // touched either. Same posture as reconcile(), which skips whole.
+        if (!push.absent() && push.platformDns() && dnsRecords.configured()) {
             dns = dnsRecords.ensureForRoute(push.fqdn(), push.routeId(), push.generation());
             if (!(dns instanceof PlatformDnsRecords.Done)) {
                 PlatformDnsRecords.Outcome failedOrSkipped = dns;
@@ -167,7 +175,8 @@ public class RouteApplyJob {
         // the apply call does.
         CertVerdict certVerdict = outcome.kind() == ApplyOutcome.Kind.APPLIED
                 && !push.absent() && push.custom() ? probeCert(push.fqdn()) : null;
-        if (push.absent() && push.dnsRemovalOwed() && outcome.kind() == ApplyOutcome.Kind.APPLIED) {
+        if (push.absent() && push.dnsRemovalOwed() && dnsRecords.configured()
+                && outcome.kind() == ApplyOutcome.Kind.APPLIED) {
             dns = dnsRecords.removeForRoute(push.fqdn(), push.routeId(), push.generation());
         }
         PlatformDnsRecords.Outcome dnsOutcome = dns;

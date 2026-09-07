@@ -22,9 +22,20 @@ public class DnsProviderConfig {
     private static final Logger log = LoggerFactory.getLogger(DnsProviderConfig.class);
 
     @Bean
-    public DnsRecordProvider dnsRecordProvider(DnsProperties properties) {
+    public DnsRecordProvider dnsRecordProvider(DnsProperties properties,
+            org.springframework.core.env.Environment environment) {
         return switch (properties.provider()) {
             case DnsProperties.PROVIDER_NOOP -> {
+                // Refused outside development. The no-op accepts every write
+                // and performs none, so on a real deployment it would mark
+                // every name APPLIED while not one of them resolves — the
+                // failure is invisible until a user reports a dead site. The
+                // default already avoids it; this stops an explicit setting
+                // from reaching production, which the default cannot.
+                if (environment.matchesProfiles("prod")) {
+                    yield unconfigured("DNS 레코드 제공자로 noop 은 운영 프로파일에서 쓸 수 없습니다 "
+                            + "(레코드를 쓰지 않으면서 성공으로 기록합니다)");
+                }
                 log.info("dns provider: noop (records are accepted and never written)");
                 yield new NoopDnsRecordProvider();
             }

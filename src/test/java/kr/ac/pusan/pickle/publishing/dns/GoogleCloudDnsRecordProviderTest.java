@@ -211,31 +211,48 @@ class GoogleCloudDnsRecordProviderTest {
     @Test
     void theConfigFallsBackToUnconfiguredWhenTheKeyFileIsMissingOrTheSettingsAreBlank() {
         DnsProviderConfig config = new DnsProviderConfig();
+        org.springframework.mock.env.MockEnvironment dev = new org.springframework.mock.env.MockEnvironment();
+        dev.setActiveProfiles("dev");
 
         DnsRecordProvider missingFile = config.dnsRecordProvider(new DnsProperties(
                 "google", new DnsProperties.Google("proj", "zone",
-                        keyDir.resolve("absent.json").toString()), null, null, null, null));
+                        keyDir.resolve("absent.json").toString()), null, null, null, null), dev);
         assertThat(missingFile.configured()).isFalse();
         assertThatThrownBy(() -> missingFile.ensureA("x.example.dev", "203.0.113.10", 300))
                 .isInstanceOf(DnsProviderException.class)
                 .hasMessageContaining("서비스 계정 키");
 
         DnsRecordProvider blank = config.dnsRecordProvider(new DnsProperties(
-                "google", new DnsProperties.Google("", "", null), null, null, null, null));
+                "google", new DnsProperties.Google("", "", null), null, null, null, null), dev);
         assertThat(blank.configured()).isFalse();
 
         DnsRecordProvider none = config.dnsRecordProvider(new DnsProperties(
-                null, null, null, null, null, null));
+                null, null, null, null, null, null), dev);
         assertThat(none.configured()).isFalse();
 
         DnsRecordProvider noop = config.dnsRecordProvider(new DnsProperties(
-                "noop", null, null, null, null, null));
+                "noop", null, null, null, null, null), dev);
         assertThat(noop.configured()).isTrue();
 
         DnsRecordProvider real = config.dnsRecordProvider(new DnsProperties(
                 "google", new DnsProperties.Google("proj", "zone",
-                        keyDir.resolve("sa.json").toString()), null, null, null, null));
+                        keyDir.resolve("sa.json").toString()), null, null, null, null), dev);
         assertThat(real).isInstanceOf(GoogleCloudDnsRecordProvider.class);
+    }
+
+    @Test
+    void theNoopProviderIsRefusedOnProductionBecauseItWouldReportEveryNameApplied() {
+        DnsProviderConfig config = new DnsProviderConfig();
+        org.springframework.mock.env.MockEnvironment prod = new org.springframework.mock.env.MockEnvironment();
+        prod.setActiveProfiles("prod");
+
+        DnsRecordProvider provider = config.dnsRecordProvider(
+                new DnsProperties("noop", null, null, null, null, null), prod);
+
+        assertThat(provider.configured()).isFalse();
+        assertThatThrownBy(() -> provider.ensureA("x.example.dev", "203.0.113.10", 300))
+                .isInstanceOf(DnsProviderException.class)
+                .hasMessageContaining("noop");
     }
 
     private static String keyJson() {
