@@ -127,6 +127,7 @@ public class DomainVerifier {
                 String error = "검증 기한(" + properties.verificationTimeout().toHours()
                         + "시간)이 지났습니다. DNS 레코드를 설정한 뒤 검증을 다시 실행해 주세요.";
                 domain.setLastError(error);
+                discardUnissuedCertificate(domain);
                 notifyVerificationFailed(domain, error);
                 log.info("domain {} verification deadline passed — parked FAILED", fqdn);
                 return Optional.empty();
@@ -142,6 +143,34 @@ public class DomainVerifier {
      *
      * @return whether issuance is still needed (anything but a live ACTIVE cert)
      */
+    /**
+     * Drops the certificate row a verification attempt created, once that
+     * verification has given up. The row is put in RENEWING the moment
+     * verification starts, and nothing moved it back when the domain parked
+     * FAILED, so the certificate screen kept reporting "issuing" for a name
+     * whose issuance had never begun and never would — a claim that reads as
+     * "nearly done" and stays that way until a person intervenes. The two
+     * screens then disagreed about the same domain, which is how this was
+     * found.
+     *
+     * <p>Only an unissued row goes: a certificate that was ever ACTIVE, or
+     * that carries an expiry, is history worth keeping and is left alone.
+     * Nothing is lost by deleting the rest, because the reason the domain
+     * failed is on the domain row, not here, and a user who fixes their DNS
+     * and verifies again gets a fresh row from {@link #ensureCertificate}.</p>
+     */
+    private void discardUnissuedCertificate(Domain domain) {
+        certificateRepository
+                .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED)
+                .filter(cert -> cert.getStatus() != CertificateStatus.ACTIVE)
+                .filter(cert -> cert.getNotAfter() == null)
+                .ifPresent(cert -> {
+                    certificateRepository.delete(cert);
+                    log.info("domain {} parked FAILED — discarded its unissued certificate row",
+                            domain.getFqdn());
+                });
+    }
+
     private boolean ensureCertificate(Domain domain) {
         Optional<Certificate> existing = certificateRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED);

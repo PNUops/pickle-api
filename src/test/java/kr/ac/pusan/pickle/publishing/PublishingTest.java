@@ -902,6 +902,38 @@ class PublishingTest {
     }
 
     @Test
+    void parkingAVerificationFailureLeavesNoCertificateClaimingToBeIssuing() throws Exception {
+        long vmId = publishableVm("team-park", "pusan.dev", VmStatus.RUNNING);
+        String fqdn = "app." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
+        publish(vmId, "{\"port\":3000,\"customDomain\":\"" + fqdn + "\"}")
+                .andExpect(status().isAccepted());
+        long domainId = domainIdForVm(vmId);
+
+        // One attempt with no DNS: the domain waits and its certificate row is
+        // created in RENEWING, which is what the screen calls 갱신 중.
+        domainVerifier.verifyOne(domainId);
+        assertThat(domainStatus(domainId)).isEqualTo("VERIFYING");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from certificates where domain_id = ?", String.class, domainId))
+                .isEqualTo("RENEWING");
+
+        // Age the domain past the verification deadline and try again. The
+        // domain parks FAILED, and the certificate row must not be left behind
+        // saying it is still issuing: nothing is issuing and nothing will.
+        jdbcTemplate.update(
+                "update domains set created_at = now() - interval '30 days' where id = ?", domainId);
+        domainVerifier.verifyOne(domainId);
+
+        assertThat(domainStatus(domainId)).isEqualTo("FAILED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from certificates where domain_id = ?", Integer.class, domainId))
+                .isZero();
+        // The reason survives on the domain, which is where a user reads it.
+        assertThat(jdbcTemplate.queryForObject("select last_error from domains where id = ?",
+                String.class, domainId)).contains("검증 기한");
+    }
+
+    @Test
     void verifyTriggerIsRateLimitedAndDeduplicated() throws Exception {
         long vmId = publishableVm("team-vrl", "pusan.dev", VmStatus.RUNNING);
         String fqdn = "rl." + UUID.randomUUID().toString().substring(0, 8) + ".example.com";
