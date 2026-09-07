@@ -109,6 +109,21 @@ public class LlmKeyUsageService {
                    avg(e.latency_ms) as avg_latency_ms,
                    sum(e.cost_usd) as attributed_cost_usd,
                    count(*) filter (where e.cost_usd is not null) as priced_requests,
+                   -- The same four the platform breakdown carries, so one model
+                   -- reads the same on both screens. This side reads raw events
+                   -- rather than the rollup, so a filter is all it takes.
+                   coalesce(sum(e.input_tokens) filter (where e.cost_usd is not null), 0)
+                       as priced_input_tokens,
+                   coalesce(sum(e.output_tokens) filter (where e.cost_usd is not null), 0)
+                       as priced_output_tokens,
+                   avg(e.latency_ms) filter (where e.cost_usd is not null)
+                       as priced_avg_latency_ms,
+                   avg(e.latency_ms) filter (where e.cost_usd is null)
+                       as unpriced_avg_latency_ms,
+                   count(*) filter (where e.cost_usd is not null
+                                      and (e.status is null
+                                           or e.status not in ('OK', 'RATE_LIMITED')))
+                       as priced_failed,
                    coalesce(sum(e.image_count), 0) as image_count
               from llm_usage_events e
              where e.key_id = ?
@@ -364,6 +379,13 @@ public class LlmKeyUsageService {
                         // a zero here would read as "this was free".
                         rs.getBigDecimal("attributed_cost_usd"),
                         rs.getLong("priced_requests"),
+                        rs.getLong("priced_input_tokens"),
+                        rs.getLong("priced_output_tokens"),
+                        // Zero when that side is empty: an absent average would
+                        // be a third state for a row the screen does not draw.
+                        Math.round(rs.getDouble("priced_avg_latency_ms")),
+                        Math.round(rs.getDouble("unpriced_avg_latency_ms")),
+                        rs.getLong("priced_failed"),
                         rs.getLong("image_count")),
                 keyId, from, to);
     }
