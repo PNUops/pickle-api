@@ -236,25 +236,66 @@ public class AdminLlmUsageService {
             case WORKSPACE -> "w.id";
             case KEY -> "o.id, w.id, k.id";
         };
+        Timestamp windowStart = Timestamp.from(from.atStartOfDay(ClockConfig.KST).toInstant());
+        Timestamp windowEnd = Timestamp.from(
+                to.plusDays(1).atStartOfDay(ClockConfig.KST).toInstant());
         List<Object> args = new ArrayList<>();
         args.add(from);
         args.add(to);
+        args.add(windowStart);
+        args.add(windowEnd);
+        args.add(windowStart);
         args.addAll(parts.args());
         args.add(top);
         List<ConsumerRow> rows = jdbcTemplate.query("""
+                with per_key as (
+                    select d.key_id,
+                           sum(d.requests) as requests,
+                           sum(d.input_tokens) as input_tokens,
+                           sum(d.output_tokens) as output_tokens,
+                           sum(d.cost_usd) as cost_usd,
+                           sum(d.priced_requests) as priced_requests,
+                           sum(d.credit_axis_requests) as credit_axis_requests
+                      from llm_usage_daily d
+                     where d.day >= ? and d.day <= ?
+                     group by d.key_id
+                ), metered as (
+                    select t.key_id,
+                           sum(case
+                                 when t.prev is null
+                                     then case when t.created_at >= ? then t.usage_amount
+                                          else 0 end
+                                 when t.usage_amount >= t.prev then t.usage_amount - t.prev
+                                 else t.usage_amount
+                               end) as metered_usd
+                      from (
+                        select s.key_id, s.captured_at, s.usage_amount, k2.created_at,
+                               lag(s.usage_amount) over (
+                                   partition by s.key_id order by s.captured_at) as prev
+                          from llm_credit_usage_snapshots s
+                          join llm_api_keys k2 on k2.id = s.key_id
+                         where s.captured_at < ?
+                      ) t
+                     where t.captured_at >= ?
+                     group by t.key_id
+                )
                 select %s,
-                       sum(d.requests) as requests,
-                       sum(d.input_tokens) as input_tokens,
-                       sum(d.output_tokens) as output_tokens,
-                       sum(d.cost_usd) as cost_usd,
-                       sum(d.priced_requests) as priced_requests,
-                       sum(d.credit_axis_requests) as credit_axis_requests,
+                       sum(pk.requests) as requests,
+                       sum(pk.input_tokens) as input_tokens,
+                       sum(pk.output_tokens) as output_tokens,
+                       sum(pk.cost_usd) as cost_usd,
+                       sum(pk.priced_requests) as priced_requests,
+                       sum(pk.credit_axis_requests) as credit_axis_requests,
+                       sum(m.metered_usd) as metered_usd,
+                       min(k.openrouter_usage_at)
+                           filter (where m.metered_usd is not null) as metered_observed_at,
                        count(*) over() as total_items
-                  from llm_usage_daily d
-                  join llm_api_keys k on k.id = d.key_id
+                  from per_key pk
+                  join llm_api_keys k on k.id = pk.key_id
                   join workspaces w on w.id = k.workspace_id
                   join orgs o on o.id = k.org_id
-                 where d.day >= ? and d.day <= ?
+                  left join metered m on m.key_id = pk.key_id
+                 where true
                 """.formatted(dimensions) + parts.clause() + " group by " + group
                 + " order by requests desc, " + order + " limit ?",
                 (rs, rowNum) -> consumerRow(rs), args.toArray());
@@ -617,17 +658,23 @@ public class AdminLlmUsageService {
 
     private static ConsumerRow consumerRow(ResultSet rs) throws SQLException {
         long priced = rs.getLong("priced_requests");
+        // The vendor's own per-key meter, summed over the consumer's keys. Null
+        // where no key of it has ever been reconciled, which is not zero: the
+        // amount is unknown rather than absent, and the moment beside it says so.
+        BigDecimal metered = rs.getBigDecimal("metered_usd");
+        Timestamp observed = rs.getTimestamp("metered_observed_at");
         return new ConsumerRow(new LlmUsageConsumerResponse(
                 rs.getObject("org_public_id", UUID.class), rs.getString("org_name"),
                 rs.getObject("workspace_public_id", UUID.class), rs.getString("workspace_name"),
                 rs.getObject("key_public_id", UUID.class), rs.getString("key_name"),
                 rs.getLong("requests"), rs.getLong("input_tokens"),
-                rs.getLong("output_tokens"),
+                rs.getLong("output_tokens"), metered,
                 // Absent rather than zero: a consumer whose whole window went
                 // to self-hosted models has no dollar figure, and a zero here
                 // would rank it beside one that genuinely spent nothing.
                 priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
-                rs.getLong("credit_axis_requests")),
+                rs.getLong("credit_axis_requests"),
+                observed == null ? null : observed.toInstant()),
                 rs.getLong("total_items"));
     }
 

@@ -79,6 +79,9 @@ class AdminLlmUsageTest {
         jdbcTemplate.update("delete from llm_usage_daily");
         jdbcTemplate.update("delete from llm_usage_rollup_state");
         jdbcTemplate.update("delete from llm_usage_events");
+        // Snapshots outlive their keys' usage rows, and a leftover reading from
+        // another test would land inside this one's window.
+        jdbcTemplate.update("delete from llm_credit_usage_snapshots");
         String suffix = UUID.randomUUID().toString().substring(0, 8);
         orgA = org("사용량 기관 A " + suffix);
         orgB = org("사용량 기관 B " + suffix);
@@ -225,6 +228,73 @@ class AdminLlmUsageTest {
         usage(multiOrgToken, "orgId=" + orgB.getPublicId())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.consumers.totalItems").value(1));
+    }
+
+    @Test
+    void consumerAmountsComeFromTheVendorMeterAndSurviveALimitWindowReset() throws Exception {
+        // The per-request amounts only start where the gateway began sending
+        // them, so a consumer total built from them under-reports its own past.
+        // The vendor meters each key, and the difference between two readings is
+        // that key's spend in the window whether or not we priced its requests.
+        Key paid = key(orgA, workspaceA1, "금액 축 키", null, "20", true,
+                account(orgA, "미터 사업 계정"), "7.500000", "12.500000", true);
+        Instant today = atKst(LocalDate.now(ClockConfig.KST), 12);
+        event(paid.id(), tokenModel, "CREDIT", null, 30, 30, false, today);
+        rollupService.refresh();
+        // The key was created inside the window, so its first reading is spend
+        // that happened here: 4.0 by the second reading, then the limit window
+        // resets and 3.25 goes out again, for 7.25. A plain last-minus-first
+        // would report 1.75 and a min-to-max 2.5, both of them spend that never
+        // happened in one direction or the other.
+        snapshot(paid.id(), "1.500000", today.minusSeconds(4 * 3600));
+        snapshot(paid.id(), "4.000000", today.minusSeconds(3 * 3600));
+        snapshot(paid.id(), "0.750000", today.minusSeconds(2 * 3600));
+        snapshot(paid.id(), "3.250000", today.minusSeconds(3600));
+
+        usage(orgViewerToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceA1.getPublicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.items[0].meteredCostUsd").value(7.25))
+                .andExpect(jsonPath("$.consumers.items[0].meteredObservedAt").exists())
+                // The attributed figure stays in the response as the other
+                // source, and it is the one that misses the unpriced requests.
+                .andExpect(jsonPath("$.consumers.items[0].attributedCostUsd").doesNotExist())
+                .andExpect(jsonPath("$.consumers.items[0].creditAxisRequests").value(1));
+
+        // A consumer whose keys were never reconciled has no amount, and that is
+        // not zero: nothing has been read yet.
+        Key selfServed = key(orgA, workspaceA2, "자체 서빙 키", 1000L, "0", false, null,
+                null, null, false);
+        event(selfServed.id(), tokenModel, "TOKEN", null, 10, 10, false, today);
+        rollupService.refresh();
+        usage(orgViewerToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceA2.getPublicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.items[0].meteredCostUsd").doesNotExist())
+                .andExpect(jsonPath("$.consumers.items[0].meteredObservedAt").doesNotExist());
+    }
+
+    @Test
+    void consumerAmountsIgnoreSpendOutsideTheSelectedWindow() throws Exception {
+        Key paid = key(orgA, workspaceA1, "기간 밖 지출 키", null, "20", true,
+                account(orgA, "기간 사업 계정"), "9.000000", "11.000000", true);
+        Instant today = atKst(LocalDate.now(ClockConfig.KST), 12);
+        event(paid.id(), tokenModel, "CREDIT", null, 5, 5, false, today);
+        rollupService.refresh();
+        // The reading just before the window is the baseline, so the 6.0 spent
+        // before it belongs to the earlier period and not to this one.
+        snapshot(paid.id(), "2.000000", today.minusSeconds(40L * 24 * 3600));
+        snapshot(paid.id(), "8.000000", today.minusSeconds(10L * 24 * 3600));
+        snapshot(paid.id(), "9.000000", today.minusSeconds(3600));
+
+        usage(orgViewerToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceA1.getPublicId() + "&days=7")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.items[0].meteredCostUsd").value(1.0));
+        usage(orgViewerToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceA1.getPublicId() + "&days=30")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.items[0].meteredCostUsd").value(7.0));
     }
 
     @Test
@@ -543,6 +613,14 @@ class AdminLlmUsageTest {
 
     private String token(User user) {
         return jwtService.createAccessToken(user);
+    }
+
+    /** One vendor reading of a key's spend, as the reconciliation records it. */
+    private void snapshot(long keyId, String usage, Instant capturedAt) {
+        jdbcTemplate.update("""
+                insert into llm_credit_usage_snapshots (key_id, usage_amount, captured_at)
+                values (?, ?::numeric, ?)
+                """, keyId, usage, Timestamp.from(capturedAt));
     }
 
     private record Key(long id, UUID publicId) {
