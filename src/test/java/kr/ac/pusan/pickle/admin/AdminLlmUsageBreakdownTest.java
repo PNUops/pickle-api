@@ -131,8 +131,8 @@ class AdminLlmUsageBreakdownTest {
         // The paid one carries the axis, the other does not: the key surface
         // reads raw events rather than the rollup, so its own filter has to be
         // asserted or a constant would pass.
-        axisEvent(keyOne.id(), paidModel, "images", "0.24200000", "CREDIT", 5, 0, 1, hoursAgo(2));
-        event(keyOne.id(), paidModel, "images", null, 5, 0, hoursAgo(3));
+        axisEvent(keyOne.id(), paidModel, "images", "0.24200000", "CREDIT", 7, 2, 9, hoursAgo(2));
+        event(keyOne.id(), paidModel, "images", null, 3, 1, hoursAgo(3));
         rollupService.refresh();
 
         adminKeyUsage(sysToken, keyOne.publicId())
@@ -144,6 +144,15 @@ class AdminLlmUsageBreakdownTest {
                 .andExpect(jsonPath("$.trend.models[0].requests").value(2))
                 .andExpect(jsonPath("$.trend.models[0].pricedRequests").value(1))
                 .andExpect(jsonPath("$.trend.models[0].attributedCostUsd").value(0.242))
+                // The key screen draws this model as two rows, so it needs the
+                // same five the platform breakdown carries. A model must not
+                // read differently depending on which screen you open.
+                .andExpect(jsonPath("$.trend.models[0].inputTokens").value(10))
+                .andExpect(jsonPath("$.trend.models[0].pricedInputTokens").value(7))
+                .andExpect(jsonPath("$.trend.models[0].pricedOutputTokens").value(2))
+                .andExpect(jsonPath("$.trend.models[0].pricedAvgLatencyMs").value(9))
+                .andExpect(jsonPath("$.trend.models[0].unpricedAvgLatencyMs").value(1))
+                .andExpect(jsonPath("$.trend.models[0].pricedFailed").value(0))
                 .andExpect(jsonPath("$.endpointKinds[0].endpoint").value("images"))
                 .andExpect(jsonPath("$.endpointKinds[0].requests").value(2))
                 .andExpect(jsonPath("$.endpointKinds[0].pricedRequests").value(1))
