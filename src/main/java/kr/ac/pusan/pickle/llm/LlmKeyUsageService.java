@@ -161,6 +161,7 @@ public class LlmKeyUsageService {
                    coalesce(sum(e.output_tokens), 0) as output_tokens,
                    sum(e.cost_usd) as attributed_cost_usd,
                    count(*) filter (where e.cost_usd is not null) as priced_requests,
+                   count(*) filter (where e.budget_axis = 'CREDIT') as credit_axis_requests,
                    coalesce(sum(e.image_count), 0) as image_count
               from llm_usage_events e
              where e.key_id = ?
@@ -398,6 +399,7 @@ public class LlmKeyUsageService {
                         rs.getLong("output_tokens"),
                         rs.getBigDecimal("attributed_cost_usd"),
                         rs.getLong("priced_requests"),
+                        rs.getLong("credit_axis_requests"),
                         rs.getLong("image_count")),
                 keyId, from, to);
     }

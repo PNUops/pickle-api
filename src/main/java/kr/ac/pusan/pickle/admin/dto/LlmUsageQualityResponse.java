@@ -39,9 +39,11 @@ public record LlmUsageQualityResponse(
         @Schema(description = "Key에 귀속되지 않은 selected-window request 수. SYS global에서만 값이 있음")
         @Nullable Long unattributedRequests,
         @Schema(description = """
-                이 기간 요청 중 공급자가 금액을 알려 준 수. totalRequests와 견주면 금액 \
-                합계가 얼마나 덮는지 보입니다. 자체 서빙 요청은 금액이라는 것이 없어 여기 \
-                들어가지 않으므로, 이 값이 작은 것 자체는 결함이 아닙니다.""")
+                이 기간 요청 중 공급자가 금액을 알려 준 수. 자체 서빙 요청은 금액이라는 \
+                것이 없어 여기 들어가지 않으므로, 이 값이 작은 것 자체는 결함이 아닙니다. \
+                **totalRequests와 견주지 마십시오** — 그 비율은 「금액을 못 받은 비율」이 \
+                아니라 자체 서빙 비중을 함께 담습니다. 이 요약 층에는 유료 요청 수가 없고, \
+                그것이 필요하면 소비처와 호출 종류 행의 creditAxisRequests를 씁니다.""")
         long pricedRequests,
         @Schema(description = """
                 이 기간 요청 중 들어온 경로가 기록된 수. 경로 축은 2026-09-06에 생겼으므로 \

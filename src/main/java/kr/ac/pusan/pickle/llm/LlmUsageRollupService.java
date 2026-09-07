@@ -109,7 +109,8 @@ public class LlmUsageRollupService {
                     succeeded, rate_limited, failed, input_tokens, output_tokens,
                     estimated_requests, latency_ms_sum, token_axis_requests,
                     credit_axis_requests, unknown_axis_requests, estimated_tokens,
-                    cost_usd, priced_requests, image_count, cached_input_tokens,
+                    cost_usd, priced_requests, priced_input_tokens, priced_output_tokens,
+                    priced_latency_ms_sum, priced_failed, image_count, cached_input_tokens,
                     reasoning_tokens, served_mismatch_requests, streamed_requests)
             select ?::date, e.key_id, e.public_model_name, e.endpoint,
                    count(*),
@@ -128,6 +129,12 @@ public class LlmUsageRollupService {
                        filter (where e.estimated), 0),
                    coalesce(sum(e.cost_usd), 0),
                    count(*) filter (where e.cost_usd is not null),
+                   coalesce(sum(e.input_tokens) filter (where e.cost_usd is not null), 0),
+                   coalesce(sum(e.output_tokens) filter (where e.cost_usd is not null), 0),
+                   coalesce(sum(e.latency_ms) filter (where e.cost_usd is not null), 0),
+                   count(*) filter (where e.cost_usd is not null
+                                      and (e.status is null
+                                           or e.status not in ('OK', 'RATE_LIMITED'))),
                    coalesce(sum(e.image_count), 0),
                    coalesce(sum(e.cached_input_tokens::bigint), 0),
                    coalesce(sum(e.reasoning_tokens::bigint), 0),

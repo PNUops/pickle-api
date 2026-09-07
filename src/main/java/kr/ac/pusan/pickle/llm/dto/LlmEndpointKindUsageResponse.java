@@ -38,6 +38,12 @@ public record LlmEndpointKindUsageResponse(
         @Nullable BigDecimal attributedCostUsd,
         @Schema(description = "이 경로 요청 중 공급자가 금액을 알려 준 요청 수")
         long pricedRequests,
+        @Schema(description = """
+                이 경로 요청 중 유료 모델로 나간 요청 수. 한 경로에는 두 축이 섞이므로 \
+                금액이 빠진 건수를 세려면 전체 요청이 아니라 이 값에서 빼야 합니다. \
+                자체 서빙 요청에는 금액이라는 것이 아예 없으므로, 전체 요청에서 빼면 \
+                자체 서빙까지 「금액을 모르는 요청」으로 세게 됩니다.""")
+        long creditAxisRequests,
         @Schema(description = "이 경로가 돌려준 이미지 수")
         long imageCount) {
 }
