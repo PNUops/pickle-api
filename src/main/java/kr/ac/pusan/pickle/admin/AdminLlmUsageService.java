@@ -248,6 +248,7 @@ public class AdminLlmUsageService {
                        sum(d.output_tokens) as output_tokens,
                        sum(d.cost_usd) as cost_usd,
                        sum(d.priced_requests) as priced_requests,
+                       sum(d.credit_axis_requests) as credit_axis_requests,
                        count(*) over() as total_items
                   from llm_usage_daily d
                   join llm_api_keys k on k.id = d.key_id
@@ -465,7 +466,12 @@ public class AdminLlmUsageService {
                        sum(d.output_tokens) as output_tokens,
                        sum(d.cost_usd) as cost_usd,
                        sum(d.priced_requests) as priced_requests,
-                       sum(d.latency_ms_sum) as latency_ms_sum
+                       sum(d.credit_axis_requests) as credit_axis_requests,
+                       sum(d.priced_input_tokens) as priced_input_tokens,
+                       sum(d.priced_output_tokens) as priced_output_tokens,
+                       sum(d.latency_ms_sum) as latency_ms_sum,
+                       sum(d.priced_latency_ms_sum) as priced_latency_ms_sum,
+                       sum(d.priced_failed) as priced_failed
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
                  where d.day >= ? and d.day <= ?
@@ -481,7 +487,19 @@ public class AdminLlmUsageService {
                             requests, rs.getLong("failed"), rs.getLong("input_tokens"),
                             rs.getLong("output_tokens"),
                             priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
-                            requests == 0 ? 0 : rs.getLong("latency_ms_sum") / requests);
+                            rs.getLong("credit_axis_requests"),
+                            rs.getLong("priced_input_tokens"),
+                            rs.getLong("priced_output_tokens"),
+                            requests == 0 ? 0 : rs.getLong("latency_ms_sum") / requests,
+                            priced == 0 ? 0 : rs.getLong("priced_latency_ms_sum") / priced,
+                            // The complement, computed here rather than on the
+                            // screen: the two rows must not each reinvent the
+                            // subtraction that keeps them adding up.
+                            requests - priced == 0 ? 0
+                                    : (rs.getLong("latency_ms_sum")
+                                            - rs.getLong("priced_latency_ms_sum"))
+                                            / (requests - priced),
+                            rs.getLong("priced_failed"));
                 }, args.toArray());
     }
 
@@ -502,6 +520,7 @@ public class AdminLlmUsageService {
                        sum(d.output_tokens) as output_tokens,
                        sum(d.cost_usd) as cost_usd,
                        sum(d.priced_requests) as priced_requests,
+                       sum(d.credit_axis_requests) as credit_axis_requests,
                        sum(d.image_count) as image_count
                   from llm_usage_daily d
                   left join llm_api_keys k on k.id = d.key_id
@@ -518,6 +537,7 @@ public class AdminLlmUsageService {
                             rs.getLong("failed"), rs.getLong("input_tokens"),
                             rs.getLong("output_tokens"),
                             priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
+                            rs.getLong("credit_axis_requests"),
                             rs.getLong("image_count"));
                 }, args.toArray());
     }
@@ -606,7 +626,8 @@ public class AdminLlmUsageService {
                 // Absent rather than zero: a consumer whose whole window went
                 // to self-hosted models has no dollar figure, and a zero here
                 // would rank it beside one that genuinely spent nothing.
-                priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced),
+                priced == 0 ? null : rs.getBigDecimal("cost_usd"), priced,
+                rs.getLong("credit_axis_requests")),
                 rs.getLong("total_items"));
     }
 

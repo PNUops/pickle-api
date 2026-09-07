@@ -128,7 +128,10 @@ class AdminLlmUsageBreakdownTest {
 
     @Test
     void aPricedRequestCarriesItsAmountAndItsCount() throws Exception {
-        event(keyOne.id(), paidModel, "images", "0.24200000", 5, 0, hoursAgo(2));
+        // The paid one carries the axis, the other does not: the key surface
+        // reads raw events rather than the rollup, so its own filter has to be
+        // asserted or a constant would pass.
+        axisEvent(keyOne.id(), paidModel, "images", "0.24200000", "CREDIT", 5, 0, 1, hoursAgo(2));
         event(keyOne.id(), paidModel, "images", null, 5, 0, hoursAgo(3));
         rollupService.refresh();
 
@@ -143,7 +146,10 @@ class AdminLlmUsageBreakdownTest {
                 .andExpect(jsonPath("$.trend.models[0].attributedCostUsd").value(0.242))
                 .andExpect(jsonPath("$.endpointKinds[0].endpoint").value("images"))
                 .andExpect(jsonPath("$.endpointKinds[0].requests").value(2))
-                .andExpect(jsonPath("$.endpointKinds[0].pricedRequests").value(1));
+                .andExpect(jsonPath("$.endpointKinds[0].pricedRequests").value(1))
+                // One of the two, not zero and not both. This surface fills the
+                // same schema as the platform one from a different source.
+                .andExpect(jsonPath("$.endpointKinds[0].creditAxisRequests").value(1));
     }
 
     @Test
@@ -339,6 +345,100 @@ class AdminLlmUsageBreakdownTest {
     }
 
     @Test
+    void theUnpricedCountIsMeasuredAgainstPaidTrafficRatherThanEveryRequest()
+            throws Exception {
+        // A screen that wants to say "the amount covers all but N of these"
+        // cannot subtract from the request count: a self-hosted request has no
+        // dollar figure to miss, and a refusal never reached the vendor. Only
+        // the paid axis could have carried an amount, so only it is the
+        // denominator, and it travels on the row so the screen never has to
+        // guess.
+        // The priced request is the slow one, so a latency that did not split
+        // would show the same number on both rows. Input and output differ so a
+        // swapped pair of token sums is visible rather than symmetric.
+        axisEvent(keyOne.id(), paidModel, "chat", "0.75000000", "CREDIT", 7, 3, 5, hoursAgo(2));
+        axisEvent(keyOne.id(), paidModel, "chat", null, "CREDIT", 2, 1, 1, hoursAgo(2));
+        // A refusal on the same model, so the model's request count is larger
+        // than its paid-axis count. Without it the two candidate denominators
+        // for the unpriced side are the same number and no assertion can say
+        // which one the code used.
+        refusedEvent(keyOne.id(), paidModel, "chat", hoursAgo(2));
+        axisEvent(keyOne.id(), "pickle-general", "chat", null, "TOKEN", 1, 1, 1, hoursAgo(2));
+        axisEvent(keyOne.id(), "pickle-general", "chat", null, "TOKEN", 1, 1, 1, hoursAgo(2));
+        axisEvent(keyOne.id(), "pickle-general", "chat", null, "TOKEN", 1, 1, 1, hoursAgo(2));
+        rollupService.refresh();
+
+        platformUsage(sysToken, "orgId=" + orgA.getPublicId()
+                        + "&workspaceId=" + workspaceAPublicId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.consumers.level").value("KEY"))
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*하나.*/)].requests")
+                        .value(org.hamcrest.Matchers.contains(6)))
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*하나.*/)].pricedRequests")
+                        .value(org.hamcrest.Matchers.contains(1)))
+                // Two, not six: three were self-hosted and one was refused
+                // before it reached a provider.
+                .andExpect(jsonPath("$.consumers.items[?(@.keyName =~ /.*하나.*/)]"
+                        + ".creditAxisRequests")
+                        .value(org.hamcrest.Matchers.contains(2)));
+
+        platformUsage(sysToken, "orgId=" + orgA.getPublicId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".creditAxisRequests")
+                        .value(org.hamcrest.Matchers.contains(2)))
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == 'pickle-general')]"
+                        + ".creditAxisRequests")
+                        .value(org.hamcrest.Matchers.contains(0)))
+                // The tokens split with the amount. Without this the screen can
+                // say how many requests went unpriced but not what volume they
+                // carried, and the known rate has nothing to be applied to.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".inputTokens")
+                        .value(org.hamcrest.Matchers.contains(9)))
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".outputTokens")
+                        .value(org.hamcrest.Matchers.contains(4)))
+                // Seven and three, not three and seven: a swapped pair of sums
+                // is only visible because the fixture is asymmetric.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".pricedInputTokens")
+                        .value(org.hamcrest.Matchers.contains(7)))
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".pricedOutputTokens")
+                        .value(org.hamcrest.Matchers.contains(3)))
+                // A self-hosted model has no priced side at all, so both are
+                // zero and the screen leaves the row whole.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == 'pickle-general')]"
+                        + ".pricedInputTokens")
+                        .value(org.hamcrest.Matchers.contains(0)))
+                // The screen draws the two parts as two whole rows, so the
+                // response time has to come apart with them. One number
+                // repeated would have two rows with different request counts
+                // claiming the same latency.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".pricedAvgLatencyMs")
+                        .value(org.hamcrest.Matchers.contains(5)))
+                // (7 - 5) / (3 - 1). Dividing by the paid-axis remainder
+                // instead would give (7 - 5) / (2 - 1) = 2, so this number
+                // says which partition the row describes.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".unpricedAvgLatencyMs")
+                        .value(org.hamcrest.Matchers.contains(1)))
+                // Zero because it is counted, not because it is assumed.
+                .andExpect(jsonPath("$.breakdown.models[?(@.modelName == '%s')]"
+                                .formatted(paidModel) + ".pricedFailed")
+                        .value(org.hamcrest.Matchers.contains(0)))
+                // One route carried both axes, so its own count is the only
+                // thing that separates them here.
+                .andExpect(jsonPath("$.breakdown.endpointKinds[?(@.endpoint == 'chat')].requests")
+                        .value(org.hamcrest.Matchers.contains(6)))
+                .andExpect(jsonPath("$.breakdown.endpointKinds[?(@.endpoint == 'chat')]"
+                        + ".creditAxisRequests")
+                        .value(org.hamcrest.Matchers.contains(2)));
+    }
+
+    @Test
     void aRateLimitedRefusalIsNotCountedAsAFailureOnEitherSurface() throws Exception {
         // The two surfaces publish one schema, so one field name must not carry
         // two definitions. A refusal is neither succeeded nor failed, and the
@@ -424,13 +524,25 @@ class AdminLlmUsageBreakdownTest {
 
     private void event(long keyId, String model, String endpoint, String costUsd,
             int inputTokens, int outputTokens, Instant requestedAt) {
+        axisEvent(keyId, model, endpoint, costUsd, null, inputTokens, outputTokens, 1,
+                requestedAt);
+    }
+
+    /**
+     * The same row with the budget axis set. Every other helper here leaves it
+     * null, which is what a request recorded before the axis existed looks
+     * like, so a test that needs the axis has to say so.
+     */
+    private void axisEvent(long keyId, String model, String endpoint, String costUsd,
+            String budgetAxis, int inputTokens, int outputTokens, int latencyMs,
+            Instant requestedAt) {
         jdbcTemplate.update("""
                 insert into llm_usage_events
-                       (event_id, key_id, public_model_name, endpoint, cost_usd, status,
-                        input_tokens, output_tokens, estimated, latency_ms, requested_at)
-                values (?, ?, ?, ?, ?::numeric, 'OK', ?, ?, false, 1, ?)
-                """, UUID.randomUUID().toString(), keyId, model, endpoint, costUsd,
-                inputTokens, outputTokens, Timestamp.from(requestedAt));
+                       (event_id, key_id, public_model_name, endpoint, cost_usd, budget_axis,
+                        status, input_tokens, output_tokens, estimated, latency_ms, requested_at)
+                values (?, ?, ?, ?, ?::numeric, ?, 'OK', ?, ?, false, ?, ?)
+                """, UUID.randomUUID().toString(), keyId, model, endpoint, costUsd, budgetAxis,
+                inputTokens, outputTokens, latencyMs, Timestamp.from(requestedAt));
     }
 
     private long account(Org org, String name) {
