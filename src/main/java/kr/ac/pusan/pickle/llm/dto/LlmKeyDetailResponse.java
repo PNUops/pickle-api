@@ -42,6 +42,8 @@ public record LlmKeyDetailResponse(
         @Nullable Integer tpm,
         @Schema(description = "동시 요청 한도. null이면 게이트웨이 기본값을 따릅니다.")
         @Nullable Integer concurrency,
+        @Schema(description = "일일 토큰 한도. null이면 일일 한도가 없고, 0이면 자체 서빙 모델을 쓸 수 없습니다.")
+        @Nullable Long dailyTokens,
         @Schema(description = "프롬프트·응답 본문 기록 여부")
         boolean recordBodies,
         @Schema(description = "유료 모델 한도, USD 크레딧. 0이면 유료 모델을 쓸 수 없습니다.")
@@ -79,7 +81,8 @@ public record LlmKeyDetailResponse(
             @Nullable ResourceRole myResourceRole, boolean accessManageAllowed) {
         return new LlmKeyDetailResponse(key.getPublicId(), key.getName(), key.getPurpose(),
                 key.getStatus(), key.getTokenPrefix(), key.getExpiresAt(), key.getLastUsedAt(),
-                key.getRpm(), key.getTpm(), key.getConcurrency(), key.isRecordBodies(),
+                key.getRpm(), key.getTpm(), key.getConcurrency(), key.getDailyTokens(),
+                key.isRecordBodies(),
                 key.getCreditLimit(), key.getCreditLimitReset(), key.isCreditAxisConnected(),
                 creditAllowedModels, creditDeniedModels, passthroughEndpoints,
                 workspaceId, workspaceName,
