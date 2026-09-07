@@ -23,9 +23,8 @@ public record LlmKeyUsageTrendResponse(
         LocalDate from,
         LocalDate to,
         @Schema(description = """
-                게이트웨이가 이 Key의 사용량을 마지막으로 보고한 시각. 전송은 배치라 몇 분 \
-                늦을 수 있고, 오늘 자 값은 아직 채워지는 중입니다. 보고가 한 번도 없었으면 \
-                null입니다.""")
+                게이트웨이가 이 키의 사용량을 마지막으로 보고한 시각. 보고는 배치라 몇 분 \
+                늦을 수 있습니다. 보고가 한 번도 없었으면 null입니다.""")
         @Nullable Instant reportedUntil,
         @Schema(description = "하루 한 점, 오래된 날부터")
         List<LlmKeyUsagePointResponse> points,

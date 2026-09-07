@@ -31,14 +31,13 @@ public record LlmKeyBudgetResponse(
         @Schema(description = "유료 모델에 쓸 수 있는 금액 한도(USD). 0이면 유료 모델을 쓸 수 없습니다.")
         BigDecimal creditLimit,
         @Schema(description = """
-                OpenRouter가 보고한 현재 limit window 사용액(USD). DAILY/WEEKLY/MONTHLY \
-                reset 뒤에는 감소할 수 있습니다. 아직 보고된 적이 없으면 null이며 0으로 \
-                표시하지 않습니다.""")
+                공급자가 보고한 현재 한도 창 사용액(USD). DAILY/WEEKLY/MONTHLY 리셋 뒤에는 \
+                감소할 수 있습니다. 아직 보고된 적이 없으면 null입니다.""")
         @Nullable BigDecimal creditUsage,
-        @Schema(description = "그 limit window 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
+        @Schema(description = "그 한도 창 사용액을 읽어 온 시각. 30분마다 갱신됩니다.")
         @Nullable Instant creditUsageAt,
         @Schema(description = """
                 최근 소비 속도로 금액 한도에 도달할 것으로 보이는 날짜. 이력이 부족하거나 \
-                최근에 쓴 적이 없으면 null입니다 — 그때는 화면이 예상 대신 이유를 말합니다.""")
+                최근에 쓴 적이 없으면 null입니다.""")
         @Nullable LocalDate creditDepletionForecast) {
 }

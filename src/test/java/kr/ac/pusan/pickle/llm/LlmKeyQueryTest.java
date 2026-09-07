@@ -174,6 +174,7 @@ class LlmKeyQueryTest {
                 .andExpect(jsonPath("$.rpm").value(60))
                 .andExpect(jsonPath("$.tpm").value(100000))
                 .andExpect(jsonPath("$.concurrency").value(4))
+                .andExpect(jsonPath("$.dailyTokens").value(500000))
                 .andExpect(jsonPath("$.recordBodies").value(false))
                 .andExpect(jsonPath("$.myResourceRole").value("OWNER"))
                 .andExpect(jsonPath("$.accessManageAllowed").value(true))
@@ -246,8 +247,8 @@ class LlmKeyQueryTest {
         long keyId = jdbcTemplate.queryForObject("""
                 insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,
                                           token_hash, token_prefix, status, rpm, tpm, concurrency,
-                                          created_by)
-                values (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 60, 100000, 4, ?)
+                                          daily_tokens, created_by)
+                values (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 60, 100000, 4, 500000, ?)
                 returning id
                 """, Long.class, workspaceId, orgId, requestId, name, name + " 용도", tokenHash,
                 tokenPrefix, keyOwner.getId());

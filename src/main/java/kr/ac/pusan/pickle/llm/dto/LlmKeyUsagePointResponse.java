@@ -23,12 +23,12 @@ public record LlmKeyUsagePointResponse(
                 주지 않으면 게이트웨이가 추정하므로, 이 값이 크면 위 토큰 합도 그만큼 추정입니다.""")
         long estimatedRequests,
         @Schema(description = """
-                입력 토큰 중 공급자가 캐시에서 읽어 처리한 몫. 입력 토큰의 **부분집합**이라 \
+                입력 토큰 중 공급자가 캐시에서 읽어 처리한 몫. 입력 토큰의 부분집합이라 \
                 입력 토큰에 더하면 이중 계산입니다.""")
         long cachedInputTokens,
         @Schema(description = """
                 출력 토큰 중 모델이 답을 내기 전에 생각하는 데 쓴 몫. 출력 토큰의 \
-                **부분집합**이라 출력 토큰에 더하면 이중 계산입니다.""")
+                부분집합이라 출력 토큰에 더하면 이중 계산입니다.""")
         long reasoningTokens,
         @Schema(description = """
                 이 날 응답으로 돌아온 이미지 수. 요청한 장수가 아니라 실제로 받은 장수이고, \
