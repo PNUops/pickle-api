@@ -75,6 +75,11 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
   암호화 키, 내부 토큰 중 하나라도 비어 있으면 서버가 실행되지 않습니다.
 - **테스트가 외부 런타임을 요구하지 않습니다.** Zonky embedded-postgres와 WireMock으로
   돌기 때문에 `mvn verify` 하나로 전체 테스트가 끝납니다.
+- **플랫폼 서브도메인의 DNS 레코드를 서버가 직접 씁니다.** 이름 하나에 A 레코드 하나를
+  Google Cloud DNS REST API로 만들고 지우며, 라우트 적용 잡의 한 단계입니다(올릴 때는
+  vhost보다 먼저, 내릴 때는 vhost 뒤에). SDK 대신 얇은 HTTPS 클라이언트를 쓰고, 서비스
+  계정 인증은 이미 쓰고 있는 jjwt로 RS256 JWT를 서명해 토큰으로 바꿉니다. 제공자가 설정되지
+  않았으면 기동은 되고 플랫폼 서브도메인 공개만 거부됩니다.
 
 ## 프로비저닝 파이프라인
 
@@ -245,7 +250,12 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_TERMINAL_PER_USER_CAP` / `_PER_VM_CAP` / `_PER_ORG_CAP` | 동시 터미널 세션 상한 | `3` / `5` / `20` |
 | `PICKLE_TERMINAL_RATE_LIMIT` | 티켓 발급 분당 한도 | `10` |
 | `PICKLE_TERMINAL_SINGLE_INSTANCE` | 기동 시 단일 인스턴스 확인(PG advisory lock) | `true` |
-| `PICKLE_PROXY_PUBLIC_IP` | 커스텀 도메인 A 레코드가 가리킬 프록시 공개 IP | `164.125.249.87` |
+| `PICKLE_PROXY_PUBLIC_IP` | 커스텀 도메인 A 레코드가 가리킬 프록시 공개 IP. 플랫폼 서브도메인의 A 레코드도 같은 값을 가리킵니다 | `164.125.249.87` |
+| `PICKLE_DNS_PROVIDER` | 플랫폼 서브도메인 A 레코드를 쓰는 DNS 제공자. `none`이면 기동은 되지만 플랫폼 서브도메인 공개가 409로 거부되고, `google`이면 아래 세 값이 필요하며, `noop`은 dev/test 전용(쓰는 척만 함) | `none` (dev 프로필은 `noop`) |
+| `PICKLE_DNS_GOOGLE_PROJECT` / `_ZONE` | Google Cloud DNS 프로젝트 id와 관리형 존 이름(리소스 이름) | 없음 |
+| `PICKLE_DNS_GOOGLE_CREDENTIALS` | 서비스 계정 키 파일(JSON) 경로. 값이 아니라 경로이며, 파일이 없거나 읽을 수 없으면 `none`과 같이 동작 | `/etc/pickle/gcp-dns.json` |
+| `PICKLE_DNS_RECORD_TTL` | 플랫폼 A 레코드의 TTL | `5m` |
+| `PICKLE_DNS_PRUNE_ORPHANS` | 관리자 전체 재동기화가 플랫폼 루트 바로 아래의 단일 라벨 A 레코드 중 프록시 IP를 가리키면서 살아 있는 도메인 행이 없는 것을 **삭제**할지. 꺼져 있으면 지울 대상을 로그로만 남깁니다 | `false` |
 | `PICKLE_RELAY_SYNC_RATE_LIMIT` | 릴레이별 동기화 분당 한도 | `20` |
 | `PICKLE_RELAY_POLL_INTERVAL_SECONDS` | 릴레이 에이전트 폴링 주기(접촉 두절 판정 기준) | `30` |
 | `PICKLE_RELAY_FIRST_CONTACT_GRACE_SECONDS` | 활성 릴레이가 첫 동기화 없이 허용되는 시간(초과 시 미접속 알림) | `900` |

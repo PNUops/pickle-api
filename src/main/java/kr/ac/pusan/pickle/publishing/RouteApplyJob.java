@@ -48,6 +48,21 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@link #applyNow} in a transaction of their own, or the call would be pulled
  * back inside one.</p>
  *
+ * <p><b>The DNS record is a step of the same push, not a path of its own.</b>
+ * A platform subdomain resolves only because the platform writes its A
+ * record ({@link PlatformDnsRecords}), so a PRESENT push ensures the record
+ * <em>before</em> the vhost is rendered and an ABSENT push removes it
+ * <em>after</em> the vhost is gone. The order is the one that keeps APPLIED
+ * honest: a vhost with no name is invisible, so a route must never read
+ * APPLIED while its name does not resolve, whereas a name that briefly
+ * resolves to a proxy with no vhost only shows the proxy's own reject page
+ * until the next step lands. Both DNS steps run between the transactions
+ * like the agent call, under the same generation guard (a newer intent makes
+ * the step a no-op) and the record phase writes their result on the domain
+ * row. A DNS failure leaves the route PENDING (or REMOVED and unconfirmed)
+ * with the error on both rows, and the reconciler retries it; it is never a
+ * 422, because nothing about the config was judged.</p>
+ *
  * <p>Idempotent/desired-state: re-running is safe, and a stale generation is a
  * 409 no-op on the agent. Failure handling splits on what the agent said:
  * a 422 (config rejected) records FAILED without throwing — retrying the same
@@ -81,13 +96,15 @@ public class RouteApplyJob {
     private final TransactionTemplate transactionTemplate;
     private final NotificationService notificationService;
     private final RouteGenerations routeGenerations;
+    private final PlatformDnsRecords dnsRecords;
 
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             IpAddressResolver ipAddressResolver, ProxyAgentClient proxyAgentClient,
             PublishingProperties properties, PublicationAssembler assembler,
             TransactionTemplate transactionTemplate,
-            NotificationService notificationService, RouteGenerations routeGenerations) {
+            NotificationService notificationService, RouteGenerations routeGenerations,
+            PlatformDnsRecords dnsRecords) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -99,6 +116,7 @@ public class RouteApplyJob {
         this.transactionTemplate = transactionTemplate;
         this.notificationService = notificationService;
         this.routeGenerations = routeGenerations;
+        this.dnsRecords = dnsRecords;
     }
 
     /**
@@ -120,7 +138,14 @@ public class RouteApplyJob {
      * ({@link PublishingTeardownService}) and the recurring {@link RouteReconcileJob}
      * push synchronously and act on the result. The two DB phases each run in
      * their own short transaction ({@link TransactionTemplate}); the agent call
-     * between them holds neither a transaction nor a row lock.
+     * and the DNS steps between them hold neither a transaction nor a row lock.
+     *
+     * <p>A DNS failure on the way up reports FAILED without touching the
+     * agent: the route stays PENDING and the reconciler retries it. A DNS
+     * failure on the way down comes after the vhost is confirmed gone and
+     * reports the agent's own APPLIED — the teardown may release the IP, a
+     * record pointing at the proxy endangers nothing — while the route is
+     * left unconfirmed so the reconciler retries the removal.</p>
      */
     public ApplyOutcome.Kind applyNow(long routeId) {
         Prep prep = transactionTemplate.execute(tx -> prepare(routeId));
@@ -128,22 +153,49 @@ public class RouteApplyJob {
             return skip.kind();
         }
         Push push = (Push) prep;
+        PlatformDnsRecords.Outcome dns = null;
+        // The configured() guard is what keeps an unconfigured provider from
+        // reaching routes that already exist. Refusing a *new* platform publish
+        // is correct and happens earlier, at requireDnsProvider(); refusing to
+        // re-apply a name that already resolves is not. Without this, a port
+        // edit, a VM address change or any reconcile of an unconfirmed route
+        // would fail on a deployment that simply has no DNS provider set, and
+        // it would fail before the agent is called, so the vhost would not be
+        // touched either. Same posture as reconcile(), which skips whole.
+        if (!push.absent() && push.platformDns() && dnsRecords.configured()) {
+            dns = dnsRecords.ensureForRoute(push.fqdn(), push.routeId(), push.generation());
+            if (!(dns instanceof PlatformDnsRecords.Done)) {
+                PlatformDnsRecords.Outcome failedOrSkipped = dns;
+                return transactionTemplate.execute(tx -> recordDnsOnly(push, failedOrSkipped));
+            }
+        }
         ApplyOutcome outcome = proxyAgentClient.apply(push.request());
         // The cert confirmation is a second agent round trip (GET /status, with
         // a bounded retry sleep) — it must happen out here for the same reason
         // the apply call does.
         CertVerdict certVerdict = outcome.kind() == ApplyOutcome.Kind.APPLIED
                 && !push.absent() && push.custom() ? probeCert(push.fqdn()) : null;
-        return transactionTemplate.execute(tx -> record(push, outcome, certVerdict));
+        if (push.absent() && push.dnsRemovalOwed() && dnsRecords.configured()
+                && outcome.kind() == ApplyOutcome.Kind.APPLIED) {
+            dns = dnsRecords.removeForRoute(push.fqdn(), push.routeId(), push.generation());
+        }
+        PlatformDnsRecords.Outcome dnsOutcome = dns;
+        return transactionTemplate.execute(tx -> record(push, outcome, certVerdict, dnsOutcome));
     }
 
     /** Result of the prepare phase: either push this request, or stop here. */
     private sealed interface Prep permits Push, Skip {
     }
 
-    /** Desired state snapshot to push — {@code generation} is the CAS token. */
+    /**
+     * Desired state snapshot to push — {@code generation} is the CAS token.
+     * {@code platformDns} says the platform owns this name's record;
+     * {@code dnsRemovalOwed} that a record is (or may be) up and an ABSENT
+     * push must take it down.
+     */
     private record Push(long routeId, long domainId, long generation, boolean absent,
-            boolean custom, String fqdn, ApplyRequest request) implements Prep {
+            boolean custom, boolean platformDns, boolean dnsRemovalOwed, String fqdn,
+            ApplyRequest request) implements Prep {
     }
 
     /** Nothing to push; {@code kind} is what {@link #applyNow} reports. */
@@ -215,8 +267,11 @@ public class RouteApplyJob {
         if (request == null) {
             return new Skip(ApplyOutcome.Kind.FAILED); // recorded already (no live IP)
         }
+        boolean platformDns = PlatformDnsRecords.managed(domain);
         return new Push(route.getId(), domain.getId(), route.getGeneration(), absent,
-                domain.getKind() == DomainKind.CUSTOM, domain.getFqdn(), request);
+                domain.getKind() == DomainKind.CUSTOM, platformDns,
+                platformDns && domain.getDnsStatus() != DomainDnsStatus.NONE,
+                domain.getFqdn(), request);
     }
 
     /**
@@ -226,7 +281,8 @@ public class RouteApplyJob {
      * and this (now historical) outcome must not overwrite it. The discarded
      * state is re-converged by the newer intent's own apply or the reconciler.
      */
-    private ApplyOutcome.Kind record(Push push, ApplyOutcome outcome, CertVerdict certVerdict) {
+    private ApplyOutcome.Kind record(Push push, ApplyOutcome outcome, CertVerdict certVerdict,
+            PlatformDnsRecords.Outcome dns) {
         Route route = routeRepository.findByIdForApply(push.routeId()).orElse(null);
         if (route == null) {
             log.warn("route-apply outcome dropped: route {} disappeared during the call",
@@ -239,13 +295,60 @@ public class RouteApplyJob {
             return outcome.kind();
         }
         Domain domain = domainRepository.findById(push.domainId()).orElseThrow();
+        if (!push.absent() && dns instanceof PlatformDnsRecords.Done) {
+            // The record is up whatever the agent said next: a 422 or an outage
+            // leaves a name resolving to the proxy's reject page until the
+            // retry, which is the order this job chose on purpose.
+            domain.markDnsApplied();
+        }
+        boolean dnsRemovalFailed = false;
+        if (push.absent() && dns != null) {
+            dnsRemovalFailed = recordDnsRemoval(route, domain, dns);
+        }
         switch (outcome.kind()) {
-            case APPLIED -> recordApplied(route, domain, push.absent(), outcome, certVerdict);
+            case APPLIED -> recordApplied(route, domain, push.absent(), outcome, certVerdict,
+                    dnsRemovalFailed);
             case STALE -> recordSuperseded(route, domain, push.absent(), outcome);
             case FAILED -> recordFailed(route, domain, push.absent(), outcome.error());
             case TRANSPORT -> recordTransport(route, domain, outcome.error());
         }
         return outcome.kind();
+    }
+
+    /**
+     * The record phase for a PRESENT push that never reached the agent: the
+     * DNS step failed or was superseded. Same generation guard as
+     * {@link #record}; a failure lands on both rows and leaves the route
+     * PENDING for the reconciler, since nothing about the config was judged.
+     */
+    private ApplyOutcome.Kind recordDnsOnly(Push push, PlatformDnsRecords.Outcome dns) {
+        Route route = routeRepository.findByIdForApply(push.routeId()).orElse(null);
+        if (route == null || route.getGeneration() != push.generation()
+                || !(dns instanceof PlatformDnsRecords.Failed failure)) {
+            log.info("route-apply dns step for {} superseded (generation moved)", push.fqdn());
+            return null;
+        }
+        Domain domain = domainRepository.findById(push.domainId()).orElseThrow();
+        domain.markDnsFailed(failure.error());
+        route.setLastError("DNS 레코드 생성 실패: " + failure.error());
+        log.warn("route-apply held for {}: dns record not ensured: {}", push.fqdn(),
+                failure.error());
+        return ApplyOutcome.Kind.FAILED;
+    }
+
+    /** Writes an ABSENT push's DNS removal result; true when it failed. */
+    private boolean recordDnsRemoval(Route route, Domain domain, PlatformDnsRecords.Outcome dns) {
+        if (dns instanceof PlatformDnsRecords.Failed failure) {
+            domain.markDnsFailed(failure.error());
+            route.setLastError("DNS 레코드 삭제 실패: " + failure.error());
+            log.warn("route-apply removal for {} left the dns record: {}", domain.getFqdn(),
+                    failure.error());
+            return true;
+        }
+        if (dns instanceof PlatformDnsRecords.Done) {
+            domain.markDnsRemoved();
+        }
+        return false;
     }
 
     /**
@@ -282,9 +385,20 @@ public class RouteApplyJob {
                 route.getTargetPort(), assembler.certRefFor(domain));
     }
 
+    /**
+     * The agent confirmed the push. A removal whose DNS step failed is left
+     * unconfirmed on purpose ({@code appliedGeneration} untouched): the vhost
+     * is gone, but the desired state — no vhost, no record — is not reached,
+     * and the reconciler's re-push is what retries the record.
+     */
     private void recordApplied(Route route, Domain domain, boolean absent, ApplyOutcome outcome,
-            CertVerdict certVerdict) {
+            CertVerdict certVerdict, boolean dnsRemovalFailed) {
         Long appliedGen = outcome.generation() != null ? outcome.generation() : route.getGeneration();
+        if (dnsRemovalFailed) {
+            log.info("route-apply removed the vhost for {} but left the route unconfirmed "
+                    + "until its dns record is gone", domain.getFqdn());
+            return;
+        }
         route.setAppliedGeneration(appliedGen);
         route.setAppliedAt(Instant.now());
         route.setLastError(null);

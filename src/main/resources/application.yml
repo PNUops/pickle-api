@@ -299,6 +299,24 @@ pickle:
     # Recurring DNS scan gives up (domain FAILED) past this age; manual verify
     # still succeeds whenever the records finally match.
     verification-timeout: 72h
+  dns:
+    # The platform writes one A record per platform subdomain (pointing at
+    # proxy-public-ip above) through this provider. Fail-closed, not fail-fast,
+    # like Google sign-in: `none` (the default) and a `google` block missing its
+    # project, zone or key file all boot fine and refuse platform-subdomain
+    # publishing with a 409, while everything unrelated keeps working. Dev and
+    # test run `noop`, which accepts every write and touches nothing.
+    provider: ${PICKLE_DNS_PROVIDER:none}
+    google:
+      project: ${PICKLE_DNS_GOOGLE_PROJECT:}
+      zone: ${PICKLE_DNS_GOOGLE_ZONE:}
+      # Service-account key file (JSON). A path, never the key itself.
+      credentials: ${PICKLE_DNS_GOOGLE_CREDENTIALS:/etc/pickle/gcp-dns.json}
+    record-ttl: ${PICKLE_DNS_RECORD_TTL:5m}
+    # The admin resync lists the zone and can DELETE single-label A records
+    # under a platform root that point at the proxy and no live domain claims.
+    # Off, it only logs what it would remove; on, it removes them.
+    prune-orphans: ${PICKLE_DNS_PRUNE_ORPHANS:false}
   seed:
     # Passwords have no default: the seeder runs only under dev/test and refuses
     # to start on a blank value, so a reachable environment cannot end up with a
@@ -323,6 +341,9 @@ pickle:
     # full mock-mail bodies (verification links = bearer tokens) go to this
     # service-user-only (rw-------) spool, not the journal
     mock-spool-path: ${PICKLE_MOCK_MAIL_SPOOL:/var/lib/pickle/mock-mail.log}
+  dns:
+    # No zone to write in development: accept and do nothing.
+    provider: ${PICKLE_DNS_PROVIDER:noop}
 
 ---
 # staging/prod: real SMTP (Google SMTP creds provided by operator via env).

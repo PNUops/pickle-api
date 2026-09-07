@@ -95,6 +95,7 @@ public class PublishingService {
     private final RouteApplyJob routeApplyJob;
     private final DomainVerificationJob domainVerificationJob;
     private final RateLimitService rateLimitService;
+    private final PlatformDnsRecords dnsRecords;
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
@@ -106,7 +107,7 @@ public class PublishingService {
             SettingsService settingsService,
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
-            RateLimitService rateLimitService) {
+            RateLimitService rateLimitService, PlatformDnsRecords dnsRecords) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -124,6 +125,7 @@ public class PublishingService {
         this.routeApplyJob = routeApplyJob;
         this.domainVerificationJob = domainVerificationJob;
         this.rateLimitService = rateLimitService;
+        this.dnsRecords = dnsRecords;
     }
 
     // ── create / update / delete a domain ────────────────────────────────────
@@ -401,6 +403,7 @@ public class PublishingService {
             throw ApiException.validationFailed(errors);
         }
         requireWildcardCertificate(rootDomain);
+        requireDnsProvider();
         return new PlatformName(label + "." + rootDomain, rootDomain);
     }
 
@@ -454,6 +457,21 @@ public class PublishingService {
     }
 
     /**
+     * A platform subdomain resolves only because the platform writes its A
+     * record, so a publish under an unconfigured provider would hand the user a
+     * name that never resolves and an error only the apply log can read. Same
+     * shape as the wildcard check above: refuse here, up front, with a message
+     * that names the missing piece.
+     */
+    private void requireDnsProvider() {
+        if (!dnsRecords.configured()) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                    "공개할 수 없습니다",
+                    "플랫폼 서브도메인의 DNS 레코드를 만들 수 있는 제공자가 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
+        }
+    }
+
+    /**
      * Re-attaches the SAME FQDN to the VM that still holds its row: a released
      * platform subdomain comes back into service ({@code releasedAt} cleared —
      * the reservation did its job), a leftover custom row keeps its preserved
@@ -463,6 +481,7 @@ public class PublishingService {
      */
     private Domain revive(Domain domain, int port) {
         domain.setReleasedAt(null);
+        domain.markDnsRecordOwed();
         if (domain.getKind() == DomainKind.CUSTOM && certificateRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), CertificateStatus.REVOKED)
                 .isEmpty()) {
@@ -515,6 +534,10 @@ public class PublishingService {
             live.setGeneration(routeGenerations.next());
             long routeId = live.getId();
             enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+        }
+        if (live != null) {
+            // The record comes down after the vhost, in the same push.
+            domain.markDnsRemovalOwed();
         }
         if (live != null && domain.getKind() != DomainKind.CUSTOM) {
             domain.setReleasedAt(Instant.now());

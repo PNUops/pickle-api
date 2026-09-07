@@ -44,6 +44,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  * silently erase a domain whose revive already returned success — with the
  * next apply then removing its route as a stray. Locked recheck first makes
  * the revive win whichever side commits first.</p>
+ *
+ * <p><b>The reclaim is where a released name becomes free, so it is also
+ * where its A record must be gone.</b> The release itself takes the record
+ * down with the vhost, but that step can fail and be left for the reconciler;
+ * a row that still shows a record when its grace ends has the removal
+ * retried here, outside the lock like every provider call, and is reclaimed
+ * only once the provider confirms. A failure keeps the name reserved for
+ * another hour rather than freeing a name that still points at the proxy.
+ * A row at NONE has nothing to remove and reclaims as before.</p>
  */
 @Component
 public class DomainReservationSweeper {
@@ -60,11 +69,13 @@ public class DomainReservationSweeper {
     private final SettingsService settingsService;
     private final NotificationService notificationService;
     private final TransactionTemplate transactionTemplate;
+    private final PlatformDnsRecords dnsRecords;
 
     public DomainReservationSweeper(DomainRepository domainRepository,
             RouteRepository routeRepository, CertificateRepository certificateRepository,
             VmRepository vmRepository, SettingsService settingsService,
-            NotificationService notificationService, TransactionTemplate transactionTemplate) {
+            NotificationService notificationService, TransactionTemplate transactionTemplate,
+            PlatformDnsRecords dnsRecords) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -72,6 +83,7 @@ public class DomainReservationSweeper {
         this.settingsService = settingsService;
         this.notificationService = notificationService;
         this.transactionTemplate = transactionTemplate;
+        this.dnsRecords = dnsRecords;
     }
 
     /** One sweep. Public and argument-free for JobRunr; tests call it directly. */
@@ -84,8 +96,7 @@ public class DomainReservationSweeper {
         int reclaimed = 0;
         for (Domain candidate : domainRepository
                 .findByReleasedAtIsNotNullAndStatusNot(DomainStatus.REMOVED)) {
-            if (Boolean.TRUE.equals(transactionTemplate.execute(
-                    tx -> sweepOne(candidate.getId(), graceDays, now)))) {
+            if (sweepOne(candidate.getId(), graceDays, now)) {
                 reclaimed++;
             }
         }
@@ -94,47 +105,110 @@ public class DomainReservationSweeper {
         }
     }
 
+    /** What the locked evaluation of one candidate found. */
+    private enum Verdict {
+        /** Revived, reclaimed elsewhere, still serving, or simply not due. */
+        LEAVE,
+        /** Due, and no record to take down first. */
+        RECLAIM,
+        /** Due, but a record is (or may be) up and must come down first. */
+        RECLAIM_AFTER_DNS
+    }
+
+    /** The locked verdict plus what the DNS step needs to know. */
+    private record Decision(Verdict verdict, String fqdn) {
+    }
+
+    /**
+     * One candidate: a locked evaluation, the DNS removal outside the lock
+     * when one is owed, and a locked write that re-evaluates before acting.
+     * Returns true when the row was reclaimed.
+     */
+    private boolean sweepOne(long domainId, int graceDays, Instant now) {
+        Decision first = transactionTemplate.execute(tx -> evaluate(domainId, graceDays, now, true));
+        if (first == null || first.verdict() == Verdict.LEAVE) {
+            return false;
+        }
+        if (first.verdict() == Verdict.RECLAIM_AFTER_DNS
+                && dnsRecords.remove(first.fqdn()) instanceof PlatformDnsRecords.Failed failure) {
+            transactionTemplate.executeWithoutResult(tx -> domainRepository.findByIdForUpdate(domainId)
+                    .ifPresent(domain -> domain.markDnsFailed(failure.error())));
+            log.warn("domain reservation sweep kept {} reserved: dns record not removed: {}",
+                    first.fqdn(), failure.error());
+            return false;
+        }
+        return Boolean.TRUE.equals(transactionTemplate.execute(tx -> reclaim(domainId, graceDays,
+                now, first.verdict() == Verdict.RECLAIM_AFTER_DNS)));
+    }
+
     /**
      * Decides one candidate under the row lock, rechecking every condition
      * against the row's CURRENT committed state (the caller's scan is only a
-     * snapshot). Returns true when the row was reclaimed.
+     * snapshot). The advance notice is sent from here, once per release.
      */
-    private boolean sweepOne(long domainId, int graceDays, Instant now) {
+    private Decision evaluate(long domainId, int graceDays, Instant now, boolean notice) {
         Domain domain = domainRepository.findByIdForUpdate(domainId).orElse(null);
         if (domain == null || domain.getStatus() == DomainStatus.REMOVED
                 || domain.getReleasedAt() == null) {
-            return false; // reclaimed elsewhere, or revived since the scan
+            return new Decision(Verdict.LEAVE, null); // reclaimed elsewhere, or revived since the scan
         }
         if (routeRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                 .isPresent()) {
-            return false; // still serving — a stale releasedAt must never take a route down
+            return new Decision(Verdict.LEAVE, null); // still serving — a stale releasedAt must never take a route down
         }
         boolean custom = domain.getKind() == DomainKind.CUSTOM;
-        Instant releasedAt = domain.getReleasedAt();
-        Instant expiry = custom ? releasedAt : releasedAt.plus(graceDays, ChronoUnit.DAYS);
+        Instant expiry = expiry(domain, graceDays);
         if (!now.isBefore(expiry)) {
-            domain.setStatus(DomainStatus.REMOVED);
-            // The stamp goes with the claim: a REMOVED row reserves nothing,
-            // and a surviving releasedAt would keep it reading as "reserved".
-            domain.setReleasedAt(null);
-            certificateRepository.findByDomainId(domain.getId()).stream()
-                    .filter(cert -> cert.getStatus() != CertificateStatus.REVOKED)
-                    .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
-            if (!custom) {
-                notify(domain, NotificationEvent.DOMAIN_RESERVE_RELEASED, expiry,
-                        "domain_reserve_released:" + domain.getId()
-                                + ":" + releasedAt.toEpochMilli());
-            }
-            return true;
+            boolean recordUp = PlatformDnsRecords.managed(domain)
+                    && domain.getDnsStatus() != DomainDnsStatus.NONE;
+            return new Decision(recordUp ? Verdict.RECLAIM_AFTER_DNS : Verdict.RECLAIM,
+                    domain.getFqdn());
         }
-        if (!custom && graceDays > NOTICE_DAYS
+        if (notice && !custom && graceDays > NOTICE_DAYS
                 && !now.isBefore(expiry.minus(NOTICE_DAYS, ChronoUnit.DAYS))) {
             notify(domain, NotificationEvent.DOMAIN_RESERVE_EXPIRING, expiry,
                     "domain_reserve_expiring:" + domain.getId()
                             + ":" + domain.getReleasedAt().toEpochMilli());
         }
-        return false;
+        return new Decision(Verdict.LEAVE, null);
+    }
+
+    /**
+     * The reclaim itself, under the lock again: the DNS step ran with no lock
+     * held, so the row is re-evaluated first and a revive that landed in
+     * between wins ("first commit wins", as before).
+     */
+    private boolean reclaim(long domainId, int graceDays, Instant now, boolean recordRemoved) {
+        if (evaluate(domainId, graceDays, now, false).verdict() == Verdict.LEAVE) {
+            return false;
+        }
+        Domain domain = domainRepository.findByIdForUpdate(domainId).orElseThrow();
+        boolean custom = domain.getKind() == DomainKind.CUSTOM;
+        Instant releasedAt = domain.getReleasedAt();
+        Instant expiry = expiry(domain, graceDays);
+        domain.setStatus(DomainStatus.REMOVED);
+        // The stamp goes with the claim: a REMOVED row reserves nothing,
+        // and a surviving releasedAt would keep it reading as "reserved".
+        domain.setReleasedAt(null);
+        if (recordRemoved) {
+            domain.markDnsRemoved();
+        }
+        certificateRepository.findByDomainId(domain.getId()).stream()
+                .filter(cert -> cert.getStatus() != CertificateStatus.REVOKED)
+                .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
+        if (!custom) {
+            notify(domain, NotificationEvent.DOMAIN_RESERVE_RELEASED, expiry,
+                    "domain_reserve_released:" + domain.getId()
+                            + ":" + releasedAt.toEpochMilli());
+        }
+        return true;
+    }
+
+    private static Instant expiry(Domain domain, int graceDays) {
+        Instant releasedAt = domain.getReleasedAt();
+        return domain.getKind() == DomainKind.CUSTOM ? releasedAt
+                : releasedAt.plus(graceDays, ChronoUnit.DAYS);
     }
 
     private void notify(Domain domain, NotificationEvent event, Instant reservedUntil,

@@ -32,6 +32,14 @@ import org.springframework.stereotype.Component;
  * skipped route's own apply/reconcile converges the agent. Per-route CAS also
  * means no row locks are held while the agent works, so a large manifest
  * cannot pin DB connections (same discipline as {@link RouteApplyJob}).</p>
+ *
+ * <p>The zone is reconciled in the same run, after the agent half and
+ * independently of its outcome ({@link PlatformDnsRecords#reconcile}): a
+ * serving platform name whose A record is missing gets one, a name whose
+ * record is right is marked APPLIED, and records the platform could have
+ * written but no live domain row claims are pruned when pruning is enabled,
+ * listed otherwise. The agent's verdict never depends on the zone being
+ * reachable, nor the zone's on the agent.</p>
  */
 @Component
 public class ResyncRoutesJob {
@@ -45,11 +53,12 @@ public class ResyncRoutesJob {
     private final RouteGenerations routeGenerations;
     private final ProxyAgentClient proxyAgentClient;
     private final PublicationAssembler assembler;
+    private final PlatformDnsRecords dnsRecords;
 
     public ResyncRoutesJob(RouteRepository routeRepository, DomainRepository domainRepository,
             VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             RouteGenerations routeGenerations, ProxyAgentClient proxyAgentClient,
-            PublicationAssembler assembler) {
+            PublicationAssembler assembler, PlatformDnsRecords dnsRecords) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.vmRepository = vmRepository;
@@ -57,6 +66,7 @@ public class ResyncRoutesJob {
         this.routeGenerations = routeGenerations;
         this.proxyAgentClient = proxyAgentClient;
         this.assembler = assembler;
+        this.dnsRecords = dnsRecords;
     }
 
     /** The manifest slice of one route + the generation the CAS must match. */
@@ -68,6 +78,7 @@ public class ResyncRoutesJob {
         List<Route> live = routeRepository.findByStatusNot(RouteStatus.REMOVED);
         List<Included> included = new ArrayList<>();
         List<ApplyRequest> manifest = new ArrayList<>();
+        List<Domain> servingPlatformDomains = new ArrayList<>();
         for (Route route : live) {
             Domain domain = domainRepository.findById(route.getDomainId()).orElse(null);
             if (domain == null || domain.getStatus() != DomainStatus.ACTIVE) {
@@ -82,6 +93,9 @@ public class ResyncRoutesJob {
             manifest.add(ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
                     route.getTargetPort(), assembler.certRefFor(domain)));
             included.add(new Included(route.getId(), route.getGeneration()));
+            if (PlatformDnsRecords.managed(domain)) {
+                servingPlatformDomains.add(domain);
+            }
         }
         long snapshotGeneration = routeGenerations.next();
         ApplyOutcome outcome = proxyAgentClient.syncAll(snapshotGeneration, manifest);
@@ -113,5 +127,12 @@ public class ResyncRoutesJob {
             case TRANSPORT -> log.error("route-resync transport failure: {}", outcome.error());
         }
         log.info("route-resync pushed {} routes (outcome {})", manifest.size(), outcome.kind());
+        try {
+            dnsRecords.reconcile(servingPlatformDomains);
+        } catch (RuntimeException e) {
+            // The route half is already recorded; the zone half must not turn a
+            // finished resync into a failed job.
+            log.error("route-resync dns reconcile failed: {}", e.getMessage(), e);
+        }
     }
 }

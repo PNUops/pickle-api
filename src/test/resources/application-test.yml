@@ -43,6 +43,11 @@ pickle:
     token: test-sshgw-token
     allowed-source-ip: 172.30.1.30
     rate-limit-per-minute: 60
+  dns:
+    # The state machine around platform A records runs against a provider that
+    # accepts every write; the tests that need to see the calls swap in a
+    # recording one.
+    provider: noop
   terminal:
     # Known control token/URL for the force-terminate tests (WireMock points here).
     bridge-control-base-url: http://127.0.0.1:0
