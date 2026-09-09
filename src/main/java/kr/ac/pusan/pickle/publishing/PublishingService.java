@@ -330,11 +330,15 @@ public class PublishingService {
 
     /**
      * An existing live row for the requested FQDN is only revivable by the VM
-     * that already owns it, and only while it is not serving — anything else is
-     * the same 409 the unique index would give.
+     * that already owns it, and only while it is not serving. Anything else is
+     * the same 409 the unique index would give, and that includes a row holding
+     * the name for something other than a VM: the comparison is written so the
+     * held name loses rather than dereferencing a VM the row does not have.
+     * Read the other way round it is a cross-user 500 on a name collision,
+     * which tells the caller more about our schema than about their request.
      */
     private void requireRevivable(Domain existing, Vm vm) {
-        if (!existing.getVmId().equals(vm.getId()) || assembler.hasLiveRoute(existing)) {
+        if (!vm.getId().equals(existing.getVmId()) || assembler.hasLiveRoute(existing)) {
             throw fqdnTaken();
         }
     }
@@ -425,8 +429,8 @@ public class PublishingService {
         vmRepository.findByIdForUpdate(vmId).orElseThrow(VmAccessService::vmNotFound);
         int limit = settingsService.integer(SettingsService.PLATFORM_SUBDOMAINS_PER_VM,
                 SubdomainPolicy.DEFAULT_SUBDOMAINS_PER_VM);
-        long serving = domainRepository.countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(
-                vmId, DomainKind.CUSTOM, DomainStatus.REMOVED);
+        long serving = domainRepository.countByVmIdAndKindInAndStatusNotAndReleasedAtIsNull(
+                vmId, SubdomainPolicy.CAPPED_KINDS, DomainStatus.REMOVED);
         if (serving >= limit) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_LIMIT_REACHED,
                     "플랫폼 서브도메인 개수 제한에 도달했습니다",
@@ -539,7 +543,7 @@ public class PublishingService {
             // The record comes down after the vhost, in the same push.
             domain.markDnsRemovalOwed();
         }
-        if (live != null && domain.getKind() != DomainKind.CUSTOM) {
+        if (live != null && domain.getKind().reservesNameAfterRelease()) {
             domain.setReleasedAt(Instant.now());
         } else {
             retire(domain);

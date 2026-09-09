@@ -235,10 +235,11 @@ public class Domain {
     /**
      * The name is going into service and its record is owed: the next apply
      * ensures it. Set on every platform (re)attach, whatever the row held
-     * before. Custom domains are left alone, whatever the caller meant.
+     * before. A kind the proxy does not serve is left alone, whatever the
+     * caller meant.
      */
     public void markDnsRecordOwed() {
-        if (kind == DomainKind.CUSTOM) {
+        if (!kind.servedByPlatformProxy()) {
             return;
         }
         dnsStatus = DomainDnsStatus.PENDING;
@@ -254,7 +255,7 @@ public class Domain {
      * A previous applied time is kept: the record may well still exist.
      */
     public void markDnsRemovalOwed() {
-        if (kind == DomainKind.CUSTOM || dnsStatus == DomainDnsStatus.NONE) {
+        if (!kind.servedByPlatformProxy() || dnsStatus == DomainDnsStatus.NONE) {
             return;
         }
         dnsStatus = DomainDnsStatus.PENDING;

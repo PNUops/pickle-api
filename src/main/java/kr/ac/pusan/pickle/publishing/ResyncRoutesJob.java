@@ -75,6 +75,11 @@ public class ResyncRoutesJob {
 
     @Job(name = "route-resync (sync-all)", retries = 0)
     public void run() {
+        // Deliberately not isolated per route, unlike the reconcile cycle. The
+        // manifest this loop builds is authoritative: a name absent from it has
+        // its vhost pruned, so skipping a row that failed to render would take
+        // a serving site down. A failure here aborts before the agent is called
+        // and therefore changes nothing, which is the safe direction.
         List<Route> live = routeRepository.findByStatusNot(RouteStatus.REMOVED);
         List<Included> included = new ArrayList<>();
         List<ApplyRequest> manifest = new ArrayList<>();

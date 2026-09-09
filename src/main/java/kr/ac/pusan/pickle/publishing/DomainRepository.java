@@ -51,9 +51,14 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
      * SERVING platform subdomains of a VM (released ones excluded) — the
      * per-VM cap counts these only, so a name in its reservation grace never
      * blocks its owner from attaching a replacement.
+     *
+     * <p>The kinds to count are passed as a list rather than derived by
+     * excluding CUSTOM: the cap is a rule about the shared platform name space
+     * under a root, and a kind that is not part of that name space must not
+     * fall into the count by having been forgotten here.</p>
      */
-    long countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(Long vmId, DomainKind kind,
-            DomainStatus status);
+    long countByVmIdAndKindInAndStatusNotAndReleasedAtIsNull(Long vmId,
+            Collection<DomainKind> kinds, DomainStatus status);
 
     /** Released-but-kept rows — the reservation sweeper's scan set. */
     List<Domain> findByReleasedAtIsNotNullAndStatusNot(DomainStatus status);
@@ -69,24 +74,6 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
 
     /** Custom domains due for DNS re-check (recurring verification scan). */
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
-
-    /**
-     * User listing — scoped to the caller's own workspaces' VMs. {@code vmId} and
-     * {@code status} are optional filters; newest first. REMOVED rows are
-     * hidden by default but visible via status=REMOVED — same convention as
-     * the admin listing: a removed domain is gone from its owner's view, not
-     * a row that lingers as if it still held its name.
-     */
-    @Query("""
-            select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where v.workspaceId in :workspaceIds
-              and (:vmId is null or d.vmId = :vmId)
-              and ((:status is null and cast(d.status as string) <> 'REMOVED')
-                   or cast(d.status as string) = :status)
-            order by d.id desc
-            """)
-    Page<Domain> findForMember(@Param("workspaceIds") Collection<Long> workspaceIds, @Param("vmId") Long vmId,
-            @Param("status") String status, Pageable pageable);
 
     // Same listing narrowed to the VMs the requester may actually reach: a
     // domain names its VM, so listing one they hold no grant on would hand back

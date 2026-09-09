@@ -1,7 +1,10 @@
 package kr.ac.pusan.pickle.publishing;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.settings.SettingsService;
@@ -22,6 +25,20 @@ public class SubdomainPolicy {
 
     /** Code fallback for {@code settings.platform_subdomains_per_vm}. */
     public static final int DEFAULT_SUBDOMAINS_PER_VM = 3;
+
+    /**
+     * The domain kinds the per-VM platform-subdomain cap counts: the names a VM
+     * takes out of the shared space under a platform root.
+     *
+     * <p>Listed rather than derived by excluding CUSTOM. The cap protects a
+     * shared name space, which is not the same question as who serves the name
+     * ({@link DomainKind#servedByPlatformProxy()}) — a kind can sit under a
+     * platform root and be served elsewhere. Enumerating what the cap counts
+     * keeps a kind added later out of the count until someone decides it
+     * belongs there.</p>
+     */
+    public static final Set<DomainKind> CAPPED_KINDS =
+            Collections.unmodifiableSet(EnumSet.of(DomainKind.AUTO, DomainKind.PLATFORM));
 
     /** Code fallback for {@code settings.platform_subdomain_reserve_days}. */
     public static final int DEFAULT_RESERVE_DAYS = 30;

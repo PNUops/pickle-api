@@ -94,14 +94,28 @@ public class DomainReservationSweeper {
                 SubdomainPolicy.DEFAULT_RESERVE_DAYS);
         Instant now = Instant.now();
         int reclaimed = 0;
+        int failed = 0;
         for (Domain candidate : domainRepository
                 .findByReleasedAtIsNotNullAndStatusNot(DomainStatus.REMOVED)) {
-            if (sweepOne(candidate.getId(), graceDays, now)) {
-                reclaimed++;
+            // One candidate's failure must not end the sweep. The loop is the
+            // only thing that frees a reserved name, the job is registered with
+            // no retries, and an exception escaping here stops every later
+            // candidate for good: the name space quietly stops recycling and
+            // nothing says so. Isolating each candidate turns that into one
+            // loud row that gets retried on the next run.
+            try {
+                if (sweepOne(candidate.getId(), graceDays, now)) {
+                    reclaimed++;
+                }
+            } catch (RuntimeException e) {
+                failed++;
+                log.error("domain reservation sweep failed for domain {} ({})",
+                        candidate.getId(), candidate.getFqdn(), e);
             }
         }
-        if (reclaimed > 0) {
-            log.info("domain reservation sweep reclaimed {} released row(s)", reclaimed);
+        if (reclaimed > 0 || failed > 0) {
+            log.info("domain reservation sweep reclaimed {} released row(s), {} failed",
+                    reclaimed, failed);
         }
     }
 
@@ -157,7 +171,7 @@ public class DomainReservationSweeper {
                 .isPresent()) {
             return new Decision(Verdict.LEAVE, null); // still serving — a stale releasedAt must never take a route down
         }
-        boolean custom = domain.getKind() == DomainKind.CUSTOM;
+        boolean reserves = domain.getKind().reservesNameAfterRelease();
         Instant expiry = expiry(domain, graceDays);
         if (!now.isBefore(expiry)) {
             boolean recordUp = PlatformDnsRecords.managed(domain)
@@ -165,7 +179,7 @@ public class DomainReservationSweeper {
             return new Decision(recordUp ? Verdict.RECLAIM_AFTER_DNS : Verdict.RECLAIM,
                     domain.getFqdn());
         }
-        if (notice && !custom && graceDays > NOTICE_DAYS
+        if (notice && reserves && graceDays > NOTICE_DAYS
                 && !now.isBefore(expiry.minus(NOTICE_DAYS, ChronoUnit.DAYS))) {
             notify(domain, NotificationEvent.DOMAIN_RESERVE_EXPIRING, expiry,
                     "domain_reserve_expiring:" + domain.getId()
@@ -184,7 +198,7 @@ public class DomainReservationSweeper {
             return false;
         }
         Domain domain = domainRepository.findByIdForUpdate(domainId).orElseThrow();
-        boolean custom = domain.getKind() == DomainKind.CUSTOM;
+        boolean reserves = domain.getKind().reservesNameAfterRelease();
         Instant releasedAt = domain.getReleasedAt();
         Instant expiry = expiry(domain, graceDays);
         domain.setStatus(DomainStatus.REMOVED);
@@ -197,7 +211,7 @@ public class DomainReservationSweeper {
         certificateRepository.findByDomainId(domain.getId()).stream()
                 .filter(cert -> cert.getStatus() != CertificateStatus.REVOKED)
                 .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
-        if (!custom) {
+        if (reserves) {
             notify(domain, NotificationEvent.DOMAIN_RESERVE_RELEASED, expiry,
                     "domain_reserve_released:" + domain.getId()
                             + ":" + releasedAt.toEpochMilli());
@@ -207,12 +221,24 @@ public class DomainReservationSweeper {
 
     private static Instant expiry(Domain domain, int graceDays) {
         Instant releasedAt = domain.getReleasedAt();
-        return domain.getKind() == DomainKind.CUSTOM ? releasedAt
-                : releasedAt.plus(graceDays, ChronoUnit.DAYS);
+        return domain.getKind().reservesNameAfterRelease()
+                ? releasedAt.plus(graceDays, ChronoUnit.DAYS)
+                : releasedAt;
     }
 
     private void notify(Domain domain, NotificationEvent event, Instant reservedUntil,
             String dedupKey) {
+        // Every notice this sweeper sends is addressed through the domain's VM,
+        // so a row that names no VM has no recipient rule here. Reached rather
+        // than assumed: the repository lookup below throws on a null id, which
+        // would take the whole sweep down with it. A kind that can exist
+        // without a VM needs its own recipients before it can be notified, and
+        // saying so at WARN is what keeps that from being a silent omission.
+        if (domain.getVmId() == null) {
+            log.warn("no notification recipients for domain {} ({}): kind {} names no VM",
+                    domain.getId(), domain.getFqdn(), domain.getKind());
+            return;
+        }
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
         if (vm == null) {
             return;
