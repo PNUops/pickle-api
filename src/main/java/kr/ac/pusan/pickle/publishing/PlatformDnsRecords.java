@@ -88,12 +88,14 @@ public class PlatformDnsRecords {
     }
 
     /**
-     * Whether the platform owns this domain's records: every kind but CUSTOM.
-     * A custom domain's zone belongs to its user, so nothing here may ever
-     * write to it, whatever state its row is in.
+     * Whether the platform owns this domain's records. Two conditions: the kind
+     * opts in ({@link DomainKind#servedByPlatformProxy()}) and the row names a
+     * root whose zone this provider can be asked about. A custom domain's zone
+     * belongs to its user, so nothing here may ever write to it, whatever state
+     * its row is in.
      */
     public static boolean managed(Domain domain) {
-        return domain.getKind() != DomainKind.CUSTOM && domain.getRootDomain() != null;
+        return domain.getKind().servedByPlatformProxy() && domain.getRootDomain() != null;
     }
 
     /** The address every platform record points at: the reverse proxy. */

@@ -115,9 +115,15 @@ public class PublicationAssembler {
                 .isPresent();
     }
 
-    /** The certificate backing a domain: its root's wildcard (platform) or LE (custom). */
+    /**
+     * The certificate backing a domain: its root's wildcard for the kinds the
+     * platform proxy serves, else the domain's own row. Asked the positive way
+     * round, so a kind the platform does not serve reports whatever certificate
+     * it actually has (none, for a name whose TLS is somebody else's) instead of
+     * inheriting a wildcard that does not cover it in any useful sense.
+     */
     public Optional<Certificate> certificateFor(Domain domain) {
-        if (domain.getKind() == DomainKind.CUSTOM) {
+        if (!domain.getKind().servedByPlatformProxy()) {
             return certificateRepository.findFirstByDomainIdAndStatusNot(domain.getId(),
                     CertificateStatus.REVOKED);
         }
@@ -126,18 +132,32 @@ public class PublicationAssembler {
     }
 
     /**
-     * The certRef the proxy-agent resolves to certificate material for this domain:
-     * a per-domain LE cert for custom domains, else the wildcard of the domain's own
-     * root. Deriving the platform ref from the root — rather than from a single
-     * configured constant — is what lets a second root domain be introduced with no
-     * code change: the agent gains a certificate, this gains nothing. An unknown
+     * The certRef the proxy-agent resolves to certificate material for this
+     * domain: the wildcard of its own root for a name the platform proxy
+     * serves, a per-domain Let's Encrypt cert for a custom domain. Deriving the
+     * platform ref from the root, rather than from a single configured
+     * constant, is what lets a second root domain be introduced with no code
+     * change: the agent gains a certificate, this gains nothing. An unknown
      * root reaches the agent as an unresolvable ref and is refused there, so a
      * misconfigured root cannot be rendered with some other root's certificate.
+     *
+     * <p>Every other kind throws rather than falling through to the Let's
+     * Encrypt ref. That ref makes the agent drive certbot for the name, and
+     * handing it a name inside a platform root is the 2026-07-30 accident: a
+     * publicly issued certificate for a platform subdomain, which
+     * {@code nginx -t} accepts and nobody notices. A kind that reaches here
+     * without an answer is a kind whose certificate story was never decided,
+     * and guessing is the one thing that must not happen.</p>
      */
     public String certRefFor(Domain domain) {
-        return domain.getKind() == DomainKind.CUSTOM
-                ? properties.letsEncryptCertRef()
-                : WILDCARD_CERT_REF_PREFIX + domain.getRootDomain();
+        if (domain.getKind().servedByPlatformProxy()) {
+            return WILDCARD_CERT_REF_PREFIX + domain.getRootDomain();
+        }
+        if (domain.getKind() == DomainKind.CUSTOM) {
+            return properties.letsEncryptCertRef();
+        }
+        throw new IllegalStateException(
+                "no certRef is defined for domain kind " + domain.getKind());
     }
 
     private DomainVerificationView verification(Domain domain) {

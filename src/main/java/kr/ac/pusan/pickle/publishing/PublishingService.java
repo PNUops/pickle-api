@@ -425,8 +425,8 @@ public class PublishingService {
         vmRepository.findByIdForUpdate(vmId).orElseThrow(VmAccessService::vmNotFound);
         int limit = settingsService.integer(SettingsService.PLATFORM_SUBDOMAINS_PER_VM,
                 SubdomainPolicy.DEFAULT_SUBDOMAINS_PER_VM);
-        long serving = domainRepository.countByVmIdAndKindNotAndStatusNotAndReleasedAtIsNull(
-                vmId, DomainKind.CUSTOM, DomainStatus.REMOVED);
+        long serving = domainRepository.countByVmIdAndKindInAndStatusNotAndReleasedAtIsNull(
+                vmId, SubdomainPolicy.CAPPED_KINDS, DomainStatus.REMOVED);
         if (serving >= limit) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_LIMIT_REACHED,
                     "플랫폼 서브도메인 개수 제한에 도달했습니다",
