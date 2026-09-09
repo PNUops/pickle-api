@@ -64,7 +64,20 @@ public class RouteReconcileJob {
         }
         log.info("route-reconcile: {} unconfirmed route(s) to re-push", routeIds.size());
         for (long routeId : routeIds) {
-            ApplyOutcome.Kind kind = routeApplyJob.applyNow(routeId);
+            ApplyOutcome.Kind kind;
+            // One route's failure must not take the cycle with it. The scan is
+            // ordered, so a route that throws every time would otherwise sit at
+            // the head of it and block every later route for good, and this job
+            // is what eventually confirms a route nothing else retried. The
+            // transport case below is the opposite and deliberately stops the
+            // cycle: the agent being unreachable says nothing about this route,
+            // and pushing the rest at an absent agent only burns the window.
+            try {
+                kind = routeApplyJob.applyNow(routeId);
+            } catch (RuntimeException e) {
+                log.error("route-reconcile: route {} failed, continuing", routeId, e);
+                continue;
+            }
             if (kind == ApplyOutcome.Kind.TRANSPORT) {
                 log.warn("route-reconcile: proxy-agent unreachable — stopping this cycle "
                         + "(route {} and later retry next cycle)", routeId);
