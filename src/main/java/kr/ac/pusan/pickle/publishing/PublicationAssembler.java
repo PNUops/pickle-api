@@ -87,7 +87,7 @@ public class PublicationAssembler {
         if (domain.getReleasedAt() == null) {
             return null;
         }
-        if (domain.getKind() == DomainKind.CUSTOM) {
+        if (!domain.getKind().reservesNameAfterRelease()) {
             return domain.getReleasedAt();
         }
         int graceDays = settingsService.integer(SettingsService.PLATFORM_SUBDOMAIN_RESERVE_DAYS,
@@ -142,12 +142,16 @@ public class PublicationAssembler {
      * misconfigured root cannot be rendered with some other root's certificate.
      *
      * <p>Every other kind throws rather than falling through to the Let's
-     * Encrypt ref. That ref makes the agent drive certbot for the name, and
-     * handing it a name inside a platform root is the 2026-07-30 accident: a
-     * publicly issued certificate for a platform subdomain, which
-     * {@code nginx -t} accepts and nobody notices. A kind that reaches here
-     * without an answer is a kind whose certificate story was never decided,
-     * and guessing is the one thing that must not happen.</p>
+     * Encrypt ref. That ref makes the agent drive certbot for the name, so
+     * handing it a name inside a platform root gets a publicly issued
+     * certificate for a platform subdomain, which {@code nginx -t} accepts.
+     * The 2026-07-30 review found that exact outcome on the agent's side, where
+     * an unrecognised ref fell into the custom branch, and closed it by making
+     * that branch require an exact match. The agent's refusal does not cover
+     * this direction: the ref sent here would be the recognised one, for a name
+     * that should never have it. A kind that reaches here without an answer is
+     * a kind whose certificate story was never decided, and guessing is the one
+     * thing that must not happen.</p>
      */
     public String certRefFor(Domain domain) {
         if (domain.getKind().servedByPlatformProxy()) {

@@ -235,8 +235,8 @@ public class Domain {
     /**
      * The name is going into service and its record is owed: the next apply
      * ensures it. Set on every platform (re)attach, whatever the row held
-     * before. A kind whose records the platform does not own is left alone,
-     * whatever the caller meant.
+     * before. A kind the proxy does not serve is left alone, whatever the
+     * caller meant.
      */
     public void markDnsRecordOwed() {
         if (!kind.servedByPlatformProxy()) {

@@ -171,7 +171,7 @@ public class DomainReservationSweeper {
                 .isPresent()) {
             return new Decision(Verdict.LEAVE, null); // still serving — a stale releasedAt must never take a route down
         }
-        boolean custom = domain.getKind() == DomainKind.CUSTOM;
+        boolean reserves = domain.getKind().reservesNameAfterRelease();
         Instant expiry = expiry(domain, graceDays);
         if (!now.isBefore(expiry)) {
             boolean recordUp = PlatformDnsRecords.managed(domain)
@@ -179,7 +179,7 @@ public class DomainReservationSweeper {
             return new Decision(recordUp ? Verdict.RECLAIM_AFTER_DNS : Verdict.RECLAIM,
                     domain.getFqdn());
         }
-        if (notice && !custom && graceDays > NOTICE_DAYS
+        if (notice && reserves && graceDays > NOTICE_DAYS
                 && !now.isBefore(expiry.minus(NOTICE_DAYS, ChronoUnit.DAYS))) {
             notify(domain, NotificationEvent.DOMAIN_RESERVE_EXPIRING, expiry,
                     "domain_reserve_expiring:" + domain.getId()
@@ -198,7 +198,7 @@ public class DomainReservationSweeper {
             return false;
         }
         Domain domain = domainRepository.findByIdForUpdate(domainId).orElseThrow();
-        boolean custom = domain.getKind() == DomainKind.CUSTOM;
+        boolean reserves = domain.getKind().reservesNameAfterRelease();
         Instant releasedAt = domain.getReleasedAt();
         Instant expiry = expiry(domain, graceDays);
         domain.setStatus(DomainStatus.REMOVED);
@@ -211,7 +211,7 @@ public class DomainReservationSweeper {
         certificateRepository.findByDomainId(domain.getId()).stream()
                 .filter(cert -> cert.getStatus() != CertificateStatus.REVOKED)
                 .forEach(cert -> cert.setStatus(CertificateStatus.REVOKED));
-        if (!custom) {
+        if (reserves) {
             notify(domain, NotificationEvent.DOMAIN_RESERVE_RELEASED, expiry,
                     "domain_reserve_released:" + domain.getId()
                             + ":" + releasedAt.toEpochMilli());
@@ -221,8 +221,9 @@ public class DomainReservationSweeper {
 
     private static Instant expiry(Domain domain, int graceDays) {
         Instant releasedAt = domain.getReleasedAt();
-        return domain.getKind() == DomainKind.CUSTOM ? releasedAt
-                : releasedAt.plus(graceDays, ChronoUnit.DAYS);
+        return domain.getKind().reservesNameAfterRelease()
+                ? releasedAt.plus(graceDays, ChronoUnit.DAYS)
+                : releasedAt;
     }
 
     private void notify(Domain domain, NotificationEvent event, Instant reservedUntil,

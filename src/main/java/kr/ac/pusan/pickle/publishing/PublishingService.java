@@ -543,7 +543,7 @@ public class PublishingService {
             // The record comes down after the vhost, in the same push.
             domain.markDnsRemovalOwed();
         }
-        if (live != null && domain.getKind() != DomainKind.CUSTOM) {
+        if (live != null && domain.getKind().reservesNameAfterRelease()) {
             domain.setReleasedAt(Instant.now());
         } else {
             retire(domain);

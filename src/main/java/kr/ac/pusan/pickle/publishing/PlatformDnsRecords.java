@@ -25,7 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * The platform's own A records for platform subdomains: one per serving
  * name, pointing at the reverse proxy, written through the configured
  * {@link DnsRecordProvider}. Custom domains never reach this class — they are
- * the user's zone — and {@link #managed(Domain)} is the single test of that.
+ * the user's zone — and {@link #managed(Domain)} is the test every path here
+ * asks. It answers for this record only: a name whose address is not the proxy
+ * is outside this class even when the platform writes its zone.
  *
  * <p>Every provider call runs outside any database transaction (the same
  * discipline as the proxy-agent call in {@link RouteApplyJob}) and under an
@@ -88,11 +90,17 @@ public class PlatformDnsRecords {
     }
 
     /**
-     * Whether the platform owns this domain's records. Two conditions: the kind
-     * opts in ({@link DomainKind#servedByPlatformProxy()}) and the row names a
-     * root whose zone this provider can be asked about. A custom domain's zone
-     * belongs to its user, so nothing here may ever write to it, whatever state
-     * its row is in.
+     * Whether this class owns the domain's address record: the kind is served
+     * by the reverse proxy ({@link DomainKind#servedByPlatformProxy()}) and the
+     * row names a root whose zone the provider can be asked about.
+     *
+     * <p>Read it as "does this name resolve to the proxy", not as "does the
+     * platform write this name's records". The two are the same question only
+     * while every name in a platform zone is served here; a kind whose records
+     * the platform writes to point somewhere else answers false and gets its
+     * addresses from whatever owns that story, not from this class. A custom
+     * domain's zone belongs to its user, so nothing here may ever write to it,
+     * whatever state its row is in.</p>
      */
     public static boolean managed(Domain domain) {
         return domain.getKind().servedByPlatformProxy() && domain.getRootDomain() != null;
