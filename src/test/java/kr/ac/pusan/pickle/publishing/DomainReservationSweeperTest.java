@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.publishing;
 
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.doThrow;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -22,6 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * Released-name reservation sweep: a released platform subdomain survives the
@@ -43,6 +46,9 @@ class DomainReservationSweeperTest {
 
     @Autowired
     private DomainReservationSweeper sweeper;
+    // Spied so one candidate can be made to fail; unstubbed it delegates.
+    @MockitoSpyBean
+    private DomainRepository domainRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
     @Autowired
@@ -249,6 +255,25 @@ class DomainReservationSweeperTest {
                 insert into workspace_members (workspace_id, user_id, role)
                 values (?, ?, ?::workspace_member_role)
                 """, workspaceId, userId, role);
+    }
+
+    @Test
+    void oneFailingCandidateDoesNotEndTheSweep() {
+        long vmId = createVm();
+        long poison = platformDomain(vmId, uniqueFqdn("poison"), daysAgo(31));
+        long survivor = platformDomain(vmId, uniqueFqdn("survivor"), daysAgo(31));
+
+        doThrow(new IllegalStateException("locked read failed"))
+                .when(domainRepository).findByIdForUpdate(poison);
+
+        // This loop is the only thing that frees a reserved name and the job is
+        // registered with no retries, so an exception escaping it stops the name
+        // space recycling for good and nothing says so. Both assertions catch
+        // that regression whichever order the scan returns the two rows in: the
+        // sweep returns normally, and the other due row is still reclaimed.
+        assertThatCode(sweeper::sweep).doesNotThrowAnyException();
+        assertThat(domainStatus(survivor)).isEqualTo("REMOVED");
+        assertThat(domainStatus(poison)).isEqualTo("ACTIVE");
     }
 
     private long createVm() {

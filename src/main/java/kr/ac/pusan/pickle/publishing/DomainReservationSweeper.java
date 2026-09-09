@@ -94,14 +94,28 @@ public class DomainReservationSweeper {
                 SubdomainPolicy.DEFAULT_RESERVE_DAYS);
         Instant now = Instant.now();
         int reclaimed = 0;
+        int failed = 0;
         for (Domain candidate : domainRepository
                 .findByReleasedAtIsNotNullAndStatusNot(DomainStatus.REMOVED)) {
-            if (sweepOne(candidate.getId(), graceDays, now)) {
-                reclaimed++;
+            // One candidate's failure must not end the sweep. The loop is the
+            // only thing that frees a reserved name, the job is registered with
+            // no retries, and an exception escaping here stops every later
+            // candidate for good: the name space quietly stops recycling and
+            // nothing says so. Isolating each candidate turns that into one
+            // loud row that gets retried on the next run.
+            try {
+                if (sweepOne(candidate.getId(), graceDays, now)) {
+                    reclaimed++;
+                }
+            } catch (RuntimeException e) {
+                failed++;
+                log.error("domain reservation sweep failed for domain {} ({})",
+                        candidate.getId(), candidate.getFqdn(), e);
             }
         }
-        if (reclaimed > 0) {
-            log.info("domain reservation sweep reclaimed {} released row(s)", reclaimed);
+        if (reclaimed > 0 || failed > 0) {
+            log.info("domain reservation sweep reclaimed {} released row(s), {} failed",
+                    reclaimed, failed);
         }
     }
 
@@ -213,6 +227,17 @@ public class DomainReservationSweeper {
 
     private void notify(Domain domain, NotificationEvent event, Instant reservedUntil,
             String dedupKey) {
+        // Every notice this sweeper sends is addressed through the domain's VM,
+        // so a row that names no VM has no recipient rule here. Reached rather
+        // than assumed: the repository lookup below throws on a null id, which
+        // would take the whole sweep down with it. A kind that can exist
+        // without a VM needs its own recipients before it can be notified, and
+        // saying so at WARN is what keeps that from being a silent omission.
+        if (domain.getVmId() == null) {
+            log.warn("no notification recipients for domain {} ({}): kind {} names no VM",
+                    domain.getId(), domain.getFqdn(), domain.getKind());
+            return;
+        }
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
         if (vm == null) {
             return;
