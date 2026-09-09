@@ -35,18 +35,23 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
         return configured;
     }
 
+    // The call log stays keyed by name alone, whatever the type: every existing
+    // assertion reads it that way and callsFor() matches on the name suffix.
+    // A test that cares which type was written reads the zone instead.
+
     @Override
-    public void ensureA(String fqdn, String ipv4, int ttlSeconds) {
+    public void ensure(String fqdn, DnsRecordType type, List<String> values, int ttlSeconds) {
         record("ensure", fqdn);
         failIfArmed();
-        zone.put(key(fqdn, "A"), new DnsRecord(fqdn, "A", List.of(ipv4), ttlSeconds));
+        zone.put(key(fqdn, type.name()),
+                new DnsRecord(fqdn, type.name(), values, ttlSeconds));
     }
 
     @Override
-    public void removeA(String fqdn) {
+    public void remove(String fqdn, DnsRecordType type) {
         record("remove", fqdn);
         failIfArmed();
-        zone.remove(key(fqdn, "A"));
+        zone.remove(key(fqdn, type.name()));
     }
 
     @Override
@@ -74,6 +79,10 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
 
     public DnsRecord a(String fqdn) {
         return zone.get(key(fqdn, "A"));
+    }
+
+    public DnsRecord recordSet(String name, DnsRecordType type) {
+        return zone.get(key(name, type.name()));
     }
 
     public boolean has(String name, String type) {

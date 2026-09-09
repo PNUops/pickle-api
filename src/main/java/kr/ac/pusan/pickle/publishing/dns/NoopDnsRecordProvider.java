@@ -17,12 +17,12 @@ public class NoopDnsRecordProvider implements DnsRecordProvider {
     }
 
     @Override
-    public void ensureA(String fqdn, String ipv4, int ttlSeconds) {
+    public void ensure(String fqdn, DnsRecordType type, List<String> values, int ttlSeconds) {
         // accepted, nothing written
     }
 
     @Override
-    public void removeA(String fqdn) {
+    public void remove(String fqdn, DnsRecordType type) {
         // accepted, nothing written
     }
 

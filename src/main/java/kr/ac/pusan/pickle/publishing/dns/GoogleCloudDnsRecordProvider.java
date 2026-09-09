@@ -24,10 +24,11 @@ import tools.jackson.databind.json.JsonMapper;
  * jjwt already on the classpath, and the SDK would bring its own HTTP stack,
  * JSON library and auth chain into the dependency audit for that.
  *
- * <p>Per-record-set endpoints ({@code GET/POST/PATCH/DELETE rrsets/{name}/A})
- * are used instead of the older {@code changes} batch because they make the
- * idempotence the contract promises trivial: an ensure reads the set and
- * patches only when it differs, a remove treats 404 as done.</p>
+ * <p>Per-record-set endpoints
+ * ({@code GET/POST/PATCH/DELETE rrsets/{name}/{type}}) are used instead of the
+ * older {@code changes} batch because they make the idempotence the contract
+ * promises trivial: an ensure reads the set and patches only when it differs,
+ * a remove treats 404 as done.</p>
  */
 public class GoogleCloudDnsRecordProvider implements DnsRecordProvider {
 
@@ -56,45 +57,71 @@ public class GoogleCloudDnsRecordProvider implements DnsRecordProvider {
     }
 
     @Override
-    public void ensureA(String fqdn, String ipv4, int ttlSeconds) {
+    public void ensure(String fqdn, DnsRecordType type, List<String> values, int ttlSeconds) {
         String name = DnsNames.absolute(fqdn);
-        Response existing = call(HttpMethod.GET, rrsetPath(name), null);
+        List<String> rrdatas = wireValues(type, values);
+        String what = type + " " + fqdn;
+        Response existing = call(HttpMethod.GET, rrsetPath(name, type), null);
         if (existing.status() == 200) {
             JsonNode current = existing.json();
-            List<String> rrdatas = new ArrayList<>();
-            current.path("rrdatas").forEach(v -> rrdatas.add(v.asString()));
-            if (rrdatas.equals(List.of(ipv4)) && current.path("ttl").asInt(-1) == ttlSeconds) {
+            List<String> currentData = new ArrayList<>();
+            current.path("rrdatas").forEach(v -> currentData.add(v.asString()));
+            if (sameData(type, currentData, rrdatas)
+                    && current.path("ttl").asInt(-1) == ttlSeconds) {
                 return; // already exactly this
             }
-            require(call(HttpMethod.PATCH, rrsetPath(name), rrset(name, ipv4, ttlSeconds)),
-                    "ensure " + fqdn, 200);
-            log.info("cloud-dns replaced A {} -> {}", fqdn, ipv4);
+            require(call(HttpMethod.PATCH, rrsetPath(name, type),
+                            rrset(name, type, rrdatas, ttlSeconds)), "ensure " + what, 200);
+            log.info("cloud-dns replaced {} -> {}", what, rrdatas);
             return;
         }
         if (existing.status() != 404) {
-            throw failure("read " + fqdn, existing);
+            throw failure("read " + what, existing);
         }
-        Response created = call(HttpMethod.POST, zonePath + "/rrsets", rrset(name, ipv4, ttlSeconds));
+        Response created = call(HttpMethod.POST, zonePath + "/rrsets",
+                rrset(name, type, rrdatas, ttlSeconds));
         if (created.status() == 409) {
             // Lost a create race against ourselves (two applies for one name);
             // the set exists now, so make it hold what was asked.
-            require(call(HttpMethod.PATCH, rrsetPath(name), rrset(name, ipv4, ttlSeconds)),
-                    "ensure " + fqdn, 200);
+            require(call(HttpMethod.PATCH, rrsetPath(name, type),
+                            rrset(name, type, rrdatas, ttlSeconds)), "ensure " + what, 200);
         } else {
-            require(created, "create " + fqdn, 200, 201);
+            require(created, "create " + what, 200, 201);
         }
-        log.info("cloud-dns created A {} -> {}", fqdn, ipv4);
+        log.info("cloud-dns created {} -> {}", what, rrdatas);
     }
 
     @Override
-    public void removeA(String fqdn) {
+    public void remove(String fqdn, DnsRecordType type) {
         String name = DnsNames.absolute(fqdn);
-        Response deleted = call(HttpMethod.DELETE, rrsetPath(name), null);
+        Response deleted = call(HttpMethod.DELETE, rrsetPath(name, type), null);
         if (deleted.status() == 404) {
             return; // absent is the desired state
         }
-        require(deleted, "remove " + fqdn, 200, 204);
-        log.info("cloud-dns removed A {}", fqdn);
+        require(deleted, "remove " + type + " " + fqdn, 200, 204);
+        log.info("cloud-dns removed {} {}", type, fqdn);
+    }
+
+    /**
+     * The data as the zone API stores it. Only TXT differs from what the caller
+     * gave: DNS carries it as a quoted character-string, so a value written raw
+     * would come back quoted and never compare equal again.
+     */
+    private static List<String> wireValues(DnsRecordType type, List<String> values) {
+        return type == DnsRecordType.TXT ? TxtValues.encodeAll(values) : List.copyOf(values);
+    }
+
+    /**
+     * Whether the set already holds what is wanted. TXT is compared on the
+     * decoded values rather than the presentation form, because a value the
+     * zone holds as several character-strings, or escaped differently from the
+     * way this client would write it, is the same TXT record and must not
+     * provoke a rewrite on every reconcile.
+     */
+    private static boolean sameData(DnsRecordType type, List<String> current, List<String> wanted) {
+        return type == DnsRecordType.TXT
+                ? TxtValues.decodeAll(current).equals(TxtValues.decodeAll(wanted))
+                : current.equals(wanted);
     }
 
     @Override
@@ -117,16 +144,17 @@ public class GoogleCloudDnsRecordProvider implements DnsRecordProvider {
         return records;
     }
 
-    private String rrsetPath(String absoluteName) {
-        return zonePath + "/rrsets/" + absoluteName + "/A";
+    private String rrsetPath(String absoluteName, DnsRecordType type) {
+        return zonePath + "/rrsets/" + absoluteName + "/" + type;
     }
 
-    private static Map<String, Object> rrset(String absoluteName, String ipv4, int ttlSeconds) {
+    private static Map<String, Object> rrset(String absoluteName, DnsRecordType type,
+            List<String> rrdatas, int ttlSeconds) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("name", absoluteName);
-        body.put("type", "A");
+        body.put("type", type.name());
         body.put("ttl", ttlSeconds);
-        body.put("rrdatas", List.of(ipv4));
+        body.put("rrdatas", rrdatas);
         return body;
     }
 
