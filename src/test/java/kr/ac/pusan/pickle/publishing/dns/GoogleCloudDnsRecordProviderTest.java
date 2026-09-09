@@ -46,6 +46,8 @@ class GoogleCloudDnsRecordProviderTest {
 
     private static final String ZONE_PATH = "/dns/v1/projects/proj/managedZones/zone";
     private static final String RRSET = ZONE_PATH + "/rrsets/team-x.example.dev./A";
+    private static final String CNAME_RRSET = ZONE_PATH + "/rrsets/team-x.example.dev./CNAME";
+    private static final String TXT_RRSET = ZONE_PATH + "/rrsets/team-x.example.dev./TXT";
 
     private static WireMockServer google;
     private static KeyPair keyPair;
@@ -130,6 +132,70 @@ class GoogleCloudDnsRecordProviderTest {
         google.verify(1, patchRequestedFor(urlPathEqualTo(RRSET))
                 .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing(
                         "203.0.113.99")));
+    }
+
+    @Test
+    void eachTypeAddressesItsOwnRecordSet() {
+        // The rrset endpoint is keyed by name AND type. A hardcoded /A here
+        // would send a CNAME body to the A set, which the API accepts as a
+        // type mismatch error rather than doing what was asked.
+        google.stubFor(get(urlPathEqualTo(CNAME_RRSET)).willReturn(aResponse().withStatus(404)));
+        google.stubFor(post(urlPathEqualTo(ZONE_PATH + "/rrsets")).willReturn(aResponse()
+                .withStatus(200).withBody("{}")));
+
+        provider.ensure("team-x.example.dev", DnsRecordType.CNAME,
+                List.of("pages.example.com."), 300);
+
+        google.verify(1, getRequestedFor(urlPathEqualTo(CNAME_RRSET)));
+        google.verify(0, getRequestedFor(urlPathEqualTo(RRSET)));
+        google.verify(postRequestedFor(urlPathEqualTo(ZONE_PATH + "/rrsets"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.equalToJson(
+                        "{\"name\":\"team-x.example.dev.\",\"type\":\"CNAME\",\"ttl\":300,"
+                                + "\"rrdatas\":[\"pages.example.com.\"]}")));
+
+        google.stubFor(delete(urlPathEqualTo(CNAME_RRSET)).willReturn(aResponse().withStatus(200)
+                .withBody("{}")));
+        provider.remove("team-x.example.dev", DnsRecordType.CNAME);
+        google.verify(1, com.github.tomakehurst.wiremock.client.WireMock
+                .deleteRequestedFor(urlPathEqualTo(CNAME_RRSET)));
+    }
+
+    @Test
+    void txtIsWrittenQuotedAndAnEquivalentSetIsLeftAlone() {
+        google.stubFor(get(urlPathEqualTo(TXT_RRSET)).willReturn(aResponse().withStatus(404)));
+        google.stubFor(post(urlPathEqualTo(ZONE_PATH + "/rrsets")).willReturn(aResponse()
+                .withStatus(200).withBody("{}")));
+
+        provider.ensure("team-x.example.dev", DnsRecordType.TXT, List.of("pv-abc123"), 300);
+
+        google.verify(postRequestedFor(urlPathEqualTo(ZONE_PATH + "/rrsets"))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.equalToJson(
+                        "{\"name\":\"team-x.example.dev.\",\"type\":\"TXT\",\"ttl\":300,"
+                                + "\"rrdatas\":[\"\\\"pv-abc123\\\"\"]}")));
+
+        // The zone holds the same value split into two character-strings, which
+        // is what a long value looks like and what another tool may have
+        // written. Compared as raw strings that differs from what this client
+        // would send and the record is rewritten on every reconcile, so the
+        // comparison decodes both sides first. Written this way on purpose:
+        // a stub echoing the exact presentation form this client produces
+        // passes with or without the decoding and proves nothing.
+        google.stubFor(get(urlPathEqualTo(TXT_RRSET)).willReturn(aResponse().withStatus(200)
+                .withBody("{\"name\":\"team-x.example.dev.\",\"type\":\"TXT\",\"ttl\":300,"
+                        + "\"rrdatas\":[\"\\\"pv-\\\" \\\"abc123\\\"\"]}")));
+        // Stubbed before the equivalence check so that a client which rewrites
+        // anyway fails on the assertion below rather than on an unstubbed call:
+        // the message should name the invariant, not the missing stub.
+        google.stubFor(patch(urlPathEqualTo(TXT_RRSET)).willReturn(aResponse().withStatus(200)
+                .withBody("{}")));
+        provider.ensure("team-x.example.dev", DnsRecordType.TXT, List.of("pv-abc123"), 300);
+        google.verify(0, patchRequestedFor(urlPathEqualTo(TXT_RRSET)));
+
+        // A different value still gets written.
+        provider.ensure("team-x.example.dev", DnsRecordType.TXT, List.of("pv-zzz999"), 300);
+        google.verify(1, patchRequestedFor(urlPathEqualTo(TXT_RRSET))
+                .withRequestBody(com.github.tomakehurst.wiremock.client.WireMock.containing(
+                        "pv-zzz999")));
     }
 
     @Test
