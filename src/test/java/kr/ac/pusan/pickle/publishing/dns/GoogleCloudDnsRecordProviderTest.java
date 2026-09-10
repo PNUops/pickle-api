@@ -109,6 +109,18 @@ class GoogleCloudDnsRecordProviderTest {
         assertThat(claims.getAudience()).containsExactly(google.baseUrl() + "/token");
         assertThat(claims.get("scope", String.class)).isEqualTo(GoogleServiceAccountTokens.SCOPE);
 
+        // The audience has to be a JSON string, and the parsed claim above
+        // cannot tell: a parser reads a string and a one-element array alike,
+        // so that assertion passes whichever the builder emitted. The token
+        // endpoint does not -- it answers an array with invalid_grant and
+        // "Failed audience check", naming the value it was already sent, which
+        // reads as though the value were wrong. So the raw payload is read
+        // here, on the assertion this code actually produced.
+        String payload = new String(Base64.getUrlDecoder()
+                .decode(assertion.split("\\.")[1]), StandardCharsets.UTF_8);
+        assertThat(payload).contains("\"aud\":\"" + google.baseUrl() + "/token\"");
+        assertThat(payload).doesNotContain("\"aud\":[");
+
         google.verify(postRequestedFor(urlPathEqualTo(ZONE_PATH + "/rrsets"))
                 .withHeader("Authorization", com.github.tomakehurst.wiremock.client.WireMock
                         .equalTo("Bearer tok-1"))
