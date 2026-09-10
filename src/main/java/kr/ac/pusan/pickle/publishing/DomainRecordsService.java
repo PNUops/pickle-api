@@ -61,7 +61,11 @@ public class DomainRecordsService {
      * is only ever told about a state that is already durable.</p>
      */
     @Transactional
-    public List<DomainRecord> replace(Domain domain, List<DesiredSet> desired) {
+    public List<DomainRecord> replace(Domain domain, List<DesiredSet> requested) {
+        // Normalized before anything reads it, so the rules and the rows agree
+        // about what the value is. They did not: the guards ran on a stripped
+        // and folded copy while the raw string was stored and pushed.
+        List<DesiredSet> desired = requested.stream().map(DesiredSet::normalized).toList();
         List<FieldValidationError> errors = new ArrayList<>();
         policy.validate(desired, "records", errors);
         if (!errors.isEmpty()) {
@@ -71,6 +75,7 @@ public class DomainRecordsService {
         // read the same value would each believe theirs is the newer intent.
         Domain locked = domainRepository.findByIdForUpdate(domain.getId()).orElseThrow();
         requireExternal(locked);
+        requireStillHeld(locked);
 
         Map<String, DomainRecord> live = new LinkedHashMap<>();
         for (DomainRecord record : recordRepository.findByDomainId(locked.getId())) {
@@ -161,6 +166,24 @@ public class DomainRecordsService {
      * neither is the question here — a kind can be unserved and still not be
      * ours to write.</p>
      */
+    /**
+     * Refuses an edit to a name its owner has already let go of.
+     *
+     * <p>A released row is on its way out: its sets are marked for removal and
+     * the reclaim waits for the zone to confirm they are gone. A set added
+     * after that point is pushed into the zone for a name that is mid-reclaim,
+     * and — being owed a write rather than a removal — it makes the reclaim
+     * find work forever, so the name is never freed and the sweep says so once
+     * an hour with nothing changing.</p>
+     */
+    private static void requireStillHeld(Domain domain) {
+        if (domain.getStatus() == DomainStatus.REMOVED || domain.getReleasedAt() != null) {
+            throw new IllegalStateException(
+                    "records are not editable on a domain that has been released: "
+                            + domain.getFqdn());
+        }
+    }
+
     private static void requireExternal(Domain domain) {
         if (domain.getKind() != DomainKind.EXTERNAL) {
             throw new IllegalStateException("record sets belong to an external domain, not "

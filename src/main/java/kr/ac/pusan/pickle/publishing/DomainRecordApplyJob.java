@@ -70,9 +70,15 @@ public class DomainRecordApplyJob {
         }
         String fqdn = domain.getFqdn();
         long generation = domain.getRecordsGeneration();
-        boolean retired = domain.getStatus() == DomainStatus.REMOVED;
+        // Released and retired both mean the same thing here: the name is no
+        // longer this domain's to write. A release keeps the row alive through
+        // its reservation grace, so asking only about REMOVED would leave the
+        // whole grace period as a window in which a set could still be pushed
+        // under a name that is being taken back.
+        boolean letGo = domain.getStatus() == DomainStatus.REMOVED
+                || domain.getReleasedAt() != null;
         nameLocks.underLock(fqdn, () -> {
-            if (retired && claimedByAnother(domainId, fqdn)) {
+            if (letGo && claimedByAnother(domainId, fqdn)) {
                 // The name went back into the pool and somebody took it. These
                 // rows name sets in the zone that are now that owner's, so the
                 // only safe thing to do with them is forget them: removing
@@ -82,12 +88,12 @@ public class DomainRecordApplyJob {
                         + "to another domain now", fqdn, dropped);
                 return null;
             }
-            pushAll(domainId, fqdn, generation, retired);
+            pushAll(domainId, fqdn, generation, letGo);
             return null;
         });
     }
 
-    private void pushAll(long domainId, String fqdn, long generation, boolean retired) {
+    private void pushAll(long domainId, String fqdn, long generation, boolean letGo) {
         List<DomainRecord> records = transactionTemplate.execute(tx ->
                 recordRepository.findByDomainId(domainId).stream()
                         .filter(r -> r.getStatus() != DomainRecordStatus.APPLIED)
@@ -105,12 +111,14 @@ public class DomainRecordApplyJob {
                 return;
             }
             String owner = absolute(record.getName(), fqdn);
-            if (retired && record.getStatus() != DomainRecordStatus.REMOVED) {
-                // A retired domain writes nothing. Its name is out of its
-                // hands, and putting a set back under it would publish a
-                // record for a name this platform no longer says is theirs.
+            if (letGo && record.getStatus() != DomainRecordStatus.REMOVED) {
+                // A domain that has been let go writes nothing. Its name is
+                // out of its hands, and putting a set back under it would
+                // publish a record for a name this platform no longer says is
+                // theirs — and, being owed a write, would keep the reclaim
+                // finding work for a name it can then never free.
                 write(record.getId(), DomainRecord::markRemovalOwed);
-                log.info("domain-records-apply {} {} turned into a removal: the domain is retired",
+                log.info("domain-records-apply {} {} turned into a removal: the name was released",
                         record.getType(), owner);
                 continue;
             }

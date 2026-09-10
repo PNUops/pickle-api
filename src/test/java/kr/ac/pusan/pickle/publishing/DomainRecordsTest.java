@@ -239,6 +239,37 @@ class DomainRecordsTest {
     }
 
     @Test
+    void aNameItsOwnerLetGoOfTakesNoMoreEdits() {
+        Domain domain = external("released-edit");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        applyJob.apply(domain.getId());
+        jdbcTemplate.update("update domains set released_at = now() where id = ?", domain.getId());
+        Domain released = domainRepository.findById(domain.getId()).orElseThrow();
+
+        // Accepted, this set would be owed a WRITE on a name that is being
+        // taken back: the reclaim waits for the zone to be clear, finds a row
+        // that is not, and says so once an hour forever without the name ever
+        // being freed.
+        assertThatThrownBy(() -> records.replace(released,
+                List.of(set("www", DnsRecordType.A, PUBLIC_V4))))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aSetStillOwedWhenTheNameIsReleasedComesDownRatherThanUp() {
+        Domain domain = external("released-push");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        // Released before its first push ever ran.
+        jdbcTemplate.update("update domains set released_at = now() where id = ?", domain.getId());
+
+        applyJob.apply(domain.getId());
+
+        // The push must not publish it. A record written under a name that is
+        // mid-reclaim outlives the row that asked for it.
+        assertThat(zone.has(domain.getFqdn(), "A")).isFalse();
+    }
+
+    @Test
     void aRefusedValueNeverReachesTheZone() {
         Domain domain = external("refused");
         assertThatThrownBy(() -> records.replace(domain,
