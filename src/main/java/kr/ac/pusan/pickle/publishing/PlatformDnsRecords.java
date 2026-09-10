@@ -7,8 +7,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import kr.ac.pusan.pickle.config.DnsProperties;
 import kr.ac.pusan.pickle.config.PublishingProperties;
@@ -69,12 +67,12 @@ public class PlatformDnsRecords {
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final TransactionTemplate transactionTemplate;
-    private final ConcurrentHashMap<String, ReentrantLock> fqdnLocks = new ConcurrentHashMap<>();
+    private final DnsNameLocks nameLocks;
 
     public PlatformDnsRecords(DnsRecordProvider provider, DnsProperties dnsProperties,
             PublishingProperties publishingProperties, SettingsService settingsService,
             DomainRepository domainRepository, RouteRepository routeRepository,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate, DnsNameLocks nameLocks) {
         this.provider = provider;
         this.dnsProperties = dnsProperties;
         this.publishingProperties = publishingProperties;
@@ -82,6 +80,7 @@ public class PlatformDnsRecords {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.transactionTemplate = transactionTemplate;
+        this.nameLocks = nameLocks;
     }
 
     /** Whether a platform subdomain can be given a record at all right now. */
@@ -354,13 +353,6 @@ public class PlatformDnsRecords {
     }
 
     private Outcome underLock(String fqdn, Supplier<Outcome> step) {
-        ReentrantLock lock = fqdnLocks.computeIfAbsent(fqdn.toLowerCase(Locale.ROOT),
-                key -> new ReentrantLock());
-        lock.lock();
-        try {
-            return step.get();
-        } finally {
-            lock.unlock();
-        }
+        return nameLocks.underLock(fqdn, step);
     }
 }

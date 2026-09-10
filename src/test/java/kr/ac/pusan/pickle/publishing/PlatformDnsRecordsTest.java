@@ -476,7 +476,8 @@ class PlatformDnsRecordsTest {
         dns.seed(orphan, "A", List.of(publishingProperties.proxyPublicIp()));
         PlatformDnsRecords dryRun = new PlatformDnsRecords(dns,
                 new DnsProperties("noop", null, null, false, null, null), publishingProperties,
-                settingsService, domainRepository, routeRepository, transactionTemplate);
+                settingsService, domainRepository, routeRepository, transactionTemplate,
+                new DnsNameLocks());
 
         List<PlatformDnsRecords.ZoneReconciliation> result = dryRun.reconcile(List.of());
 
