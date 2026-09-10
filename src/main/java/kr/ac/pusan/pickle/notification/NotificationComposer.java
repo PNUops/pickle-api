@@ -171,10 +171,11 @@ public class NotificationComposer {
             case DOMAIN_RESERVE_EXPIRING -> new Composed(event.id(),
                     "도메인 이름 예약 만료 예정 — " + str(args, "fqdn"),
                     """
-                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 %s에 만료됩니다.
+                    해제한 %s '%s'의 이름 예약이 %s에 만료됩니다.
                     만료 후에는 다른 사용자가 이 이름을 사용할 수 있습니다.
-                    계속 사용하려면 만료 전에 같은 이름으로 다시 연결해 주세요.""".formatted(
-                            str(args, "fqdn"), KST.format(instant(args, "reservedUntil"))),
+                    계속 사용하려면 만료 전에 같은 이름으로 다시 %s 주세요.""".formatted(
+                            domainNoun(args), str(args, "fqdn"),
+                            KST.format(instant(args, "reservedUntil")), domainReclaimVerb(args)),
                     domainLink(args), event.defaultImportance(),
                     payload(args, "vmId", "domainId", "fqdn", "reservedUntil"));
             case DOMAIN_RENEWAL_DUE -> new Composed(event.id(),
@@ -204,9 +205,9 @@ public class NotificationComposer {
             case DOMAIN_RESERVE_RELEASED -> new Composed(event.id(),
                     "도메인 이름 예약 만료 — " + str(args, "fqdn"),
                     """
-                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 만료되어 회수되었습니다.
+                    해제한 %s '%s'의 이름 예약이 만료되어 회수되었습니다.
                     이제 다른 사용자가 이 이름을 사용할 수 있습니다.""".formatted(
-                            str(args, "fqdn")),
+                            domainNoun(args), str(args, "fqdn")),
                     domainLink(args), event.defaultImportance(),
                     payload(args, "vmId", "domainId", "fqdn"));
             case CERT_FAILURE -> new Composed(event.id(),
@@ -518,6 +519,22 @@ public class NotificationComposer {
                         .formatted(str(args, "vmName"), str(args, "fqdn"), tail)
                 : "도메인 '%s'이(가) 관리자에 의해 해제되었습니다.\n%s"
                         .formatted(str(args, "fqdn"), tail);
+    }
+
+    /**
+     * What to call the thing in a notice that reaches both kinds. A subdomain
+     * this platform serves is published from a VM and is re-attached to one; a
+     * name that only holds records is made and remade on its own, so calling
+     * it a platform subdomain and telling its owner to "연결" names an action
+     * that does not exist for it.
+     */
+    private static String domainNoun(Map<String, Object> args) {
+        return args.get("vmId") != null ? "플랫폼 서브도메인" : "도메인";
+    }
+
+    /** And what its owner does to get it back, which differs the same way. */
+    private static String domainReclaimVerb(Map<String, Object> args) {
+        return args.get("vmId") != null ? "연결해" : "만들어";
     }
 
     /**
