@@ -37,7 +37,12 @@ class DomainKindTest {
             DomainKind.PLATFORM, new Answers(true, true, true),
             // The user's own zone, the user's own certificate, and a name
             // nobody else can take, so nothing to hold after release.
-            DomainKind.CUSTOM, new Answers(false, false, false)));
+            DomainKind.CUSTOM, new Answers(false, false, false),
+            // Our zone, somebody else's server. The proxy does not serve it, so
+            // no record of ours points at us and no certificate of ours covers
+            // it; but the name is ours to reissue, so releasing it holds it for
+            // its owner. It takes no VM slot because it has no VM.
+            DomainKind.EXTERNAL, new Answers(false, false, true)));
 
     @Test
     void everyKindHasItsAnswers() {

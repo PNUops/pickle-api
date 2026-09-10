@@ -28,6 +28,12 @@ public enum NotificationEvent {
     // before the grace runs out, then the reclaim itself.
     DOMAIN_RESERVE_EXPIRING("domain.reserve.expiring", NotificationImportance.NORMAL),
     DOMAIN_RESERVE_RELEASED("domain.reserve.released", NotificationImportance.NORMAL),
+    // An external domain has no usage period above it to expire, so its own
+    // renewal deadline is what asks whether anyone still wants the name. The
+    // lapse is HIGH: the records come down with it and the site stops
+    // answering.
+    DOMAIN_RENEWAL_DUE("domain.renewal.due", NotificationImportance.NORMAL),
+    DOMAIN_RENEWAL_LAPSED("domain.renewal.lapsed", NotificationImportance.HIGH),
     // Admin takedown of a domain: the owning workspace loses its public address
     // with no reservation, and must not learn it from a dead link.
     DOMAIN_ADMIN_RELEASED("domain.admin_released", NotificationImportance.HIGH),

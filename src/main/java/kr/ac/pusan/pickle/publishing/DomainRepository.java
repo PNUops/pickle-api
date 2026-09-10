@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.publishing;
 
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -62,6 +63,16 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
 
     /** Released-but-kept rows — the reservation sweeper's scan set. */
     List<Domain> findByReleasedAtIsNotNullAndStatusNot(DomainStatus status);
+
+    /**
+     * Rows whose renewal deadline is at or before {@code bound} and that are
+     * still held by their owner — the renewal sweep's candidates, both the
+     * ones to warn and the ones already past. A released row is excluded
+     * because its deadline stopped meaning anything the moment it was let go:
+     * the reservation grace decides its name from then on.
+     */
+    List<Domain> findByKindAndStatusNotAndReleasedAtIsNullAndRenewDueAtLessThanEqual(
+            DomainKind kind, DomainStatus status, Instant bound);
 
     /** Every domain row of a VM, any status — the deletion teardown sweep. */
     List<Domain> findByVmId(Long vmId);

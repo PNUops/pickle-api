@@ -171,32 +171,45 @@ public class NotificationComposer {
             case DOMAIN_RESERVE_EXPIRING -> new Composed(event.id(),
                     "도메인 이름 예약 만료 예정 — " + str(args, "fqdn"),
                     """
-                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 %s에 만료됩니다.
+                    해제한 %s '%s'의 이름 예약이 %s에 만료됩니다.
                     만료 후에는 다른 사용자가 이 이름을 사용할 수 있습니다.
-                    계속 사용하려면 만료 전에 같은 이름으로 다시 연결해 주세요.""".formatted(
-                            str(args, "fqdn"), KST.format(instant(args, "reservedUntil"))),
-                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
-                    payload(args, "vmId", "fqdn", "reservedUntil"));
+                    계속 사용하려면 만료 전에 같은 이름으로 다시 %s 주세요.""".formatted(
+                            domainNoun(args), str(args, "fqdn"),
+                            KST.format(instant(args, "reservedUntil")), domainReclaimVerb(args)),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "vmId", "domainId", "fqdn", "reservedUntil"));
+            case DOMAIN_RENEWAL_DUE -> new Composed(event.id(),
+                    "도메인 사용 연장 안내 — " + str(args, "fqdn"),
+                    """
+                    '%s'의 사용 기한이 %s에 끝납니다.
+                    콘솔에서 연장하지 않으면 레코드가 삭제되고 이름은 예약 상태로 바뀝니다.""".formatted(
+                            str(args, "fqdn"), KST.format(instant(args, "renewDueAt"))),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "domainId", "fqdn", "renewDueAt"));
+            case DOMAIN_RENEWAL_LAPSED -> new Composed(event.id(),
+                    "도메인 사용 기한 만료 — " + str(args, "fqdn"),
+                    """
+                    '%s'의 사용 기한이 지나 레코드를 삭제하고 이름을 예약 상태로 두었습니다.
+                    %s까지는 같은 이름으로 다시 연결할 수 있고, 그 뒤에는 다른 사용자가 사용할 수 있습니다."""
+                            .formatted(str(args, "fqdn"),
+                                    KST.format(instant(args, "reservedUntil"))),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "domainId", "fqdn", "reservedUntil"));
             // Same wording axis as VM_DELETE_FORCE: announced as 관리자 해제
             // without exposing the force/immediacy distinction.
             case DOMAIN_ADMIN_RELEASED -> new Composed(event.id(),
                     "도메인 관리자 해제 — " + str(args, "fqdn"),
-                    """
-                    VM '%s'에 연결된 도메인 '%s'이(가) 관리자에 의해 해제되었습니다.
-                    이름은 예약 없이 즉시 회수되었으며, 이 주소로는 더 이상 접속할 수 없습니다.
-
-                    문의 사항은 관리자에게 연락해 주세요.""".formatted(
-                            str(args, "vmName"), str(args, "fqdn")),
-                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
-                    payload(args, "vmId", "vmName", "fqdn"));
+                    adminReleasedBody(args),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "domainId", "fqdn"));
             case DOMAIN_RESERVE_RELEASED -> new Composed(event.id(),
                     "도메인 이름 예약 만료 — " + str(args, "fqdn"),
                     """
-                    해제한 플랫폼 서브도메인 '%s'의 이름 예약이 만료되어 회수되었습니다.
+                    해제한 %s '%s'의 이름 예약이 만료되어 회수되었습니다.
                     이제 다른 사용자가 이 이름을 사용할 수 있습니다.""".formatted(
-                            str(args, "fqdn")),
-                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
-                    payload(args, "vmId", "fqdn"));
+                            domainNoun(args), str(args, "fqdn")),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "vmId", "domainId", "fqdn"));
             case CERT_FAILURE -> new Composed(event.id(),
                     "인증서 발급 실패 — " + str(args, "fqdn"),
                     """
@@ -490,6 +503,53 @@ public class NotificationComposer {
     }
 
     /** Whitelist-copy of the given display fields into the stored payload. */
+    /**
+     * The admin-release notice. A domain this platform serves is named by its
+     * VM, because that is the thing its owner recognises it by; one that only
+     * holds records has no VM to name, and a sentence with an empty name in it
+     * reads as a bug to the person it reaches.
+     */
+    private static String adminReleasedBody(Map<String, Object> args) {
+        String tail = """
+                이름은 예약 없이 즉시 회수되었으며, 이 주소로는 더 이상 접속할 수 없습니다.
+
+                문의 사항은 관리자에게 연락해 주세요.""";
+        return args.get("vmId") != null
+                ? "VM '%s'에 연결된 도메인 '%s'이(가) 관리자에 의해 해제되었습니다.\n%s"
+                        .formatted(str(args, "vmName"), str(args, "fqdn"), tail)
+                : "도메인 '%s'이(가) 관리자에 의해 해제되었습니다.\n%s"
+                        .formatted(str(args, "fqdn"), tail);
+    }
+
+    /**
+     * What to call the thing in a notice that reaches both kinds. A subdomain
+     * this platform serves is published from a VM and is re-attached to one; a
+     * name that only holds records is made and remade on its own, so calling
+     * it a platform subdomain and telling its owner to "연결" names an action
+     * that does not exist for it.
+     */
+    private static String domainNoun(Map<String, Object> args) {
+        return args.get("vmId") != null ? "플랫폼 서브도메인" : "도메인";
+    }
+
+    /** And what its owner does to get it back, which differs the same way. */
+    private static String domainReclaimVerb(Map<String, Object> args) {
+        return args.get("vmId") != null ? "연결해" : "만들어";
+    }
+
+    /**
+     * Where a domain notice points. A domain that this platform serves is read
+     * on its VM's page, which is where its whole publication lives; one that
+     * only holds records has no VM and is its own resource. The link is chosen
+     * by which the payload carries rather than by the event, because the same
+     * three events now reach both kinds.
+     */
+    private static String domainLink(Map<String, Object> args) {
+        return args.get("vmId") != null
+                ? "/console/vms/" + args.get("vmId")
+                : "/console/domains/" + args.get("domainId");
+    }
+
     private static Map<String, Object> payload(Map<String, Object> args, String... keys) {
         Map<String, Object> payload = new LinkedHashMap<>();
         for (String key : keys) {

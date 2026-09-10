@@ -10,7 +10,8 @@ package kr.ac.pusan.pickle.access;
  */
 public enum ResourceType {
     VM("VM"),
-    LLM_API_KEY("LLM API 키");
+    LLM_API_KEY("LLM API 키"),
+    DOMAIN("도메인");
 
     private final String label;
 
