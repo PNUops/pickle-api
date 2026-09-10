@@ -139,7 +139,6 @@ public class DomainRecordPolicy {
         }
         Set<String> seen = new HashSet<>();
         Set<String> cnamed = new HashSet<>();
-        Set<String> named = new HashSet<>();
         for (int i = 0; i < sets.size(); i++) {
             DesiredSet set = sets.get(i);
             String at = field + "[" + i + "]";
@@ -153,7 +152,6 @@ public class DomainRecordPolicy {
             if (set.type() == DnsRecordType.CNAME) {
                 cnamed.add(set.name());
             }
-            named.add(set.name());
         }
         // RFC 1034: a name carrying a CNAME carries nothing else. A rule about
         // the other rows at the same name, which is why the database cannot
@@ -165,7 +163,6 @@ public class DomainRecordPolicy {
                 break;
             }
         }
-        named.clear();
     }
 
     private void validateName(String name, String at, List<FieldValidationError> errors) {

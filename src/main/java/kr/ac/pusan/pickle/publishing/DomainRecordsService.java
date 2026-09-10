@@ -47,10 +47,10 @@ public class DomainRecordsService {
         this.jobScheduler = jobScheduler;
     }
 
-    /** The sets a domain currently claims, newest identity order. */
+    /** The sets a domain currently claims, in the order they were created. */
     @Transactional(readOnly = true)
     public List<DomainRecord> list(long domainId) {
-        return recordRepository.findByDomainIdAndStatusNot(domainId, DomainRecordStatus.REMOVED);
+        return recordRepository.findByDomainIdAndStatusNotOrderByIdAsc(domainId, DomainRecordStatus.REMOVED);
     }
 
     /**
@@ -78,7 +78,7 @@ public class DomainRecordsService {
         requireStillHeld(locked);
 
         Map<String, DomainRecord> live = new LinkedHashMap<>();
-        for (DomainRecord record : recordRepository.findByDomainId(locked.getId())) {
+        for (DomainRecord record : recordRepository.findByDomainIdOrderByIdAsc(locked.getId())) {
             if (record.getStatus() != DomainRecordStatus.REMOVED) {
                 live.put(key(record.getName(), record.getType().name()), record);
             }
@@ -119,7 +119,7 @@ public class DomainRecordsService {
             long domainId = locked.getId();
             enqueueAfterCommit(() -> applyJob.apply(domainId));
         }
-        return recordRepository.findByDomainIdAndStatusNot(locked.getId(),
+        return recordRepository.findByDomainIdAndStatusNotOrderByIdAsc(locked.getId(),
                 DomainRecordStatus.REMOVED);
     }
 
@@ -133,7 +133,7 @@ public class DomainRecordsService {
         Domain locked = domainRepository.findByIdForUpdate(domainId).orElseThrow();
         requireExternal(locked);
         boolean changed = false;
-        for (DomainRecord record : recordRepository.findByDomainId(domainId)) {
+        for (DomainRecord record : recordRepository.findByDomainIdOrderByIdAsc(domainId)) {
             if (record.getStatus() == DomainRecordStatus.REMOVED) {
                 continue;
             }
@@ -165,6 +165,10 @@ public class DomainRecordsService {
      * purpose: those answers are about serving and about holding a name, and
      * neither is the question here — a kind can be unserved and still not be
      * ours to write.</p>
+     *
+     * <p>This is the kind half only. Whether the row is still its owner's to
+     * edit is a separate question with a separate answer, in
+     * {@link #requireStillHeld}.</p>
      */
     /**
      * Refuses an edit to a name its owner has already let go of.

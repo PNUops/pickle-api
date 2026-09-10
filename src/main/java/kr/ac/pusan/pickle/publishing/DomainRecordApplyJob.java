@@ -22,8 +22,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>Provider calls run outside any database transaction and under the name's
  * lock, the same discipline the vhost push follows. The generation is re-read
  * before each call rather than once at the start: a newer intent written while
- * this push is in flight owns the name from that moment, and its own push —
- * queued behind the same lock — writes the final state.</p>
+ * this push is in flight owns the name from that moment, and this push stands
+ * down so that the newer one, queued behind the same lock, writes the final
+ * state.</p>
  *
  * <p>That guard runs before the call, so it cannot see an edit that commits
  * during one. What closes the gap on the other side is the status write, which
@@ -95,7 +96,7 @@ public class DomainRecordApplyJob {
 
     private void pushAll(long domainId, String fqdn, long generation, boolean letGo) {
         List<DomainRecord> records = transactionTemplate.execute(tx ->
-                recordRepository.findByDomainId(domainId).stream()
+                recordRepository.findByDomainIdOrderByIdAsc(domainId).stream()
                         .filter(r -> r.getStatus() != DomainRecordStatus.APPLIED)
                         .toList());
         if (records == null || records.isEmpty()) {
@@ -175,7 +176,7 @@ public class DomainRecordApplyJob {
     /** Forgets a retired domain's owed rows without touching the zone. */
     private int dropOwed(long domainId) {
         Integer dropped = transactionTemplate.execute(tx -> {
-            List<DomainRecord> owed = recordRepository.findByDomainId(domainId).stream()
+            List<DomainRecord> owed = recordRepository.findByDomainIdOrderByIdAsc(domainId).stream()
                     .filter(r -> r.getStatus() != DomainRecordStatus.APPLIED)
                     .toList();
             owed.forEach(recordRepository::delete);
