@@ -20,6 +20,7 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
     private final List<String> calls = new CopyOnWriteArrayList<>();
     private final List<String> sequence;
     private final AtomicReference<String> failure = new AtomicReference<>();
+    private final AtomicReference<Runnable> beforeEnsure = new AtomicReference<>();
     private volatile boolean configured = true;
 
     public RecordingDnsRecordProvider(List<String> sequence) {
@@ -42,6 +43,7 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
     @Override
     public void ensure(String fqdn, DnsRecordType type, List<String> values, int ttlSeconds) {
         record("ensure", fqdn);
+        runBeforeEnsure();
         failIfArmed();
         zone.put(key(fqdn, type.name()),
                 new DnsRecord(fqdn, type.name(), values, ttlSeconds));
@@ -99,6 +101,22 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
         return calls.stream().filter(call -> call.endsWith(suffix)).toList();
     }
 
+    /**
+     * Runs once inside the next ensure, before the zone is written. Stands in
+     * for the window a real provider call occupies: a test uses it to commit
+     * something while a push is in flight.
+     */
+    public void beforeNextEnsure(Runnable action) {
+        beforeEnsure.set(action);
+    }
+
+    private void runBeforeEnsure() {
+        Runnable action = beforeEnsure.getAndSet(null);
+        if (action != null) {
+            action.run();
+        }
+    }
+
     /** Every write from now on throws with this message; null disarms. */
     public void failWith(String message) {
         failure.set(message);
@@ -113,6 +131,7 @@ public class RecordingDnsRecordProvider implements DnsRecordProvider {
         calls.clear();
         sequence.clear();
         failure.set(null);
+        beforeEnsure.set(null);
         configured = true;
     }
 

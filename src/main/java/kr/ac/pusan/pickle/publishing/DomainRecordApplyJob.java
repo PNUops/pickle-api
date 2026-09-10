@@ -24,6 +24,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * before each call rather than once at the start: a newer intent written while
  * this push is in flight owns the name from that moment, and its own push —
  * queued behind the same lock — writes the final state.</p>
+ *
+ * <p>That guard runs before the call, so it cannot see an edit that commits
+ * during one. What closes the gap on the other side is the status write, which
+ * lands only while the row still holds what was pushed: a row stamped APPLIED
+ * for values the zone never received would be skipped by the superseding push
+ * as already applied, and the disagreement would have nothing left to find
+ * it.</p>
  */
 @Component
 public class DomainRecordApplyJob {
@@ -63,13 +70,24 @@ public class DomainRecordApplyJob {
         }
         String fqdn = domain.getFqdn();
         long generation = domain.getRecordsGeneration();
+        boolean retired = domain.getStatus() == DomainStatus.REMOVED;
         nameLocks.underLock(fqdn, () -> {
-            pushAll(domainId, fqdn, generation);
+            if (retired && claimedByAnother(domainId, fqdn)) {
+                // The name went back into the pool and somebody took it. These
+                // rows name sets in the zone that are now that owner's, so the
+                // only safe thing to do with them is forget them: removing
+                // them would delete records this domain no longer speaks for.
+                int dropped = dropOwed(domainId);
+                log.warn("domain-records-apply for {} dropped {} owed row(s): the name belongs "
+                        + "to another domain now", fqdn, dropped);
+                return null;
+            }
+            pushAll(domainId, fqdn, generation, retired);
             return null;
         });
     }
 
-    private void pushAll(long domainId, String fqdn, long generation) {
+    private void pushAll(long domainId, String fqdn, long generation, boolean retired) {
         List<DomainRecord> records = transactionTemplate.execute(tx ->
                 recordRepository.findByDomainId(domainId).stream()
                         .filter(r -> r.getStatus() != DomainRecordStatus.APPLIED)
@@ -87,6 +105,15 @@ public class DomainRecordApplyJob {
                 return;
             }
             String owner = absolute(record.getName(), fqdn);
+            if (retired && record.getStatus() != DomainRecordStatus.REMOVED) {
+                // A retired domain writes nothing. Its name is out of its
+                // hands, and putting a set back under it would publish a
+                // record for a name this platform no longer says is theirs.
+                write(record.getId(), DomainRecord::markRemovalOwed);
+                log.info("domain-records-apply {} {} turned into a removal: the domain is retired",
+                        record.getType(), owner);
+                continue;
+            }
             try {
                 if (record.getStatus() == DomainRecordStatus.REMOVED) {
                     provider.remove(owner, record.getType());
@@ -99,7 +126,18 @@ public class DomainRecordApplyJob {
                     provider.ensure(owner, record.getType(), record.getRrdatas(), record.getTtl());
                     applied++;
                     Instant now = Instant.now();
-                    write(record.getId(), r -> r.markApplied(now));
+                    // Marked applied only if the row still asks for what was
+                    // just written. The generation check above runs BEFORE the
+                    // provider call, so an edit that commits during it is
+                    // invisible here; this row would otherwise be stamped
+                    // APPLIED while holding values the zone has never seen, and
+                    // the superseding push skips APPLIED rows — the zone and
+                    // the row would disagree with nothing left to notice.
+                    if (!writeIfUnchanged(record, r -> r.markApplied(now))) {
+                        applied--;
+                        log.info("domain-records-apply {} {} not recorded: the set moved "
+                                + "under the push", record.getType(), owner);
+                    }
                 }
             } catch (DnsProviderException e) {
                 failed++;
@@ -117,6 +155,27 @@ public class DomainRecordApplyJob {
         return name.isEmpty() ? fqdn : name + "." + fqdn;
     }
 
+    /** Whether a live domain row now holds this name, read fresh under the lock. */
+    private boolean claimedByAnother(long domainId, String fqdn) {
+        Boolean claimed = transactionTemplate.execute(tx -> domainRepository
+                .findFirstByFqdnAndStatusNot(fqdn, DomainStatus.REMOVED)
+                .filter(other -> other.getId() != domainId)
+                .isPresent());
+        return Boolean.TRUE.equals(claimed);
+    }
+
+    /** Forgets a retired domain's owed rows without touching the zone. */
+    private int dropOwed(long domainId) {
+        Integer dropped = transactionTemplate.execute(tx -> {
+            List<DomainRecord> owed = recordRepository.findByDomainId(domainId).stream()
+                    .filter(r -> r.getStatus() != DomainRecordStatus.APPLIED)
+                    .toList();
+            owed.forEach(recordRepository::delete);
+            return owed.size();
+        });
+        return dropped == null ? 0 : dropped;
+    }
+
     private boolean stillCurrent(long domainId, long generation) {
         Boolean current = transactionTemplate.execute(tx -> domainRepository.findById(domainId)
                 .map(d -> d.getRecordsGeneration() == generation).orElse(false));
@@ -126,5 +185,28 @@ public class DomainRecordApplyJob {
     private void write(long recordId, java.util.function.Consumer<DomainRecord> change) {
         transactionTemplate.executeWithoutResult(tx ->
                 recordRepository.findById(recordId).ifPresent(change));
+    }
+
+    /**
+     * Applies {@code change} only while the row still holds the values that
+     * were pushed. Compared on the values rather than on the generation: the
+     * generation moves for any edit to the domain, and a set that was not
+     * touched by that edit was still written correctly.
+     *
+     * @return whether the row was written
+     */
+    private boolean writeIfUnchanged(DomainRecord pushed,
+            java.util.function.Consumer<DomainRecord> change) {
+        Boolean written = transactionTemplate.execute(tx -> recordRepository
+                .findById(pushed.getId())
+                .filter(r -> r.getRrdatas().equals(pushed.getRrdatas()))
+                .filter(r -> r.getTtl() == pushed.getTtl())
+                .filter(r -> r.getStatus() == pushed.getStatus())
+                .map(r -> {
+                    change.accept(r);
+                    return true;
+                })
+                .orElse(false));
+        return Boolean.TRUE.equals(written);
     }
 }

@@ -216,6 +216,29 @@ class DomainRecordsTest {
     }
 
     @Test
+    void anEditThatLandsDuringAPushIsNotRecordedAsApplied() {
+        Domain domain = external("mid-push");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        // The edit commits while the first push is between its generation
+        // check and its status write, which is where a zone round trip sits.
+        zone.beforeNextEnsure(() ->
+                records.replace(domain, List.of(set("", DnsRecordType.A, "93.184.216.35"))));
+
+        applyJob.apply(domain.getId());
+
+        // Recorded as applied, this row would be skipped by the push that
+        // supersedes it, and the zone would keep the old value with the row
+        // claiming the new one and nothing left to notice.
+        assertThat(records.list(domain.getId()))
+                .singleElement()
+                .satisfies(r -> assertThat(r.getStatus()).isNotEqualTo(DomainRecordStatus.APPLIED));
+
+        applyJob.apply(domain.getId());
+        assertThat(zone.recordSet(domain.getFqdn(), DnsRecordType.A).values())
+                .containsExactly("93.184.216.35");
+    }
+
+    @Test
     void aRefusedValueNeverReachesTheZone() {
         Domain domain = external("refused");
         assertThatThrownBy(() -> records.replace(domain,
