@@ -209,10 +209,10 @@ public class AdminPublishingService {
         Domain domain = requireScopedDomain(actor, domainId);
         boolean served = assembler.hasLiveRoute(domain);
         publishingService.forceTeardown(domain);
-        // The VM's event log and its members are where an admin release is
-        // announced, and a domain that serves no VM has neither. Asked before
-        // the lookup rather than after, because a null id is a refusal there
-        // and not an empty result.
+        // The VM's event log is where an admin release is announced for a
+        // domain that serves one, and a domain that serves no VM has none.
+        // Asked before the lookup rather than after, because a null id is a
+        // refusal there and not an empty result.
         Vm vm = domain.getVmId() == null ? null
                 : vmRepository.findById(domain.getVmId()).orElse(null);
         if (vm != null) {
@@ -225,6 +225,16 @@ public class AdminPublishingService {
                     NotificationEvent.DOMAIN_ADMIN_RELEASED,
                     Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(),
                             "fqdn", domain.getFqdn()),
+                    null);
+        } else {
+            // The event log is the VM's, but the notice is not: a public
+            // address disappearing must not be discovered from a dead link,
+            // whether or not the name had a VM behind it. A domain that stands
+            // on its own answers who is responsible from its own access list.
+            notificationService.publish(
+                    DomainRecipients.of(notificationService, domain),
+                    NotificationEvent.DOMAIN_ADMIN_RELEASED,
+                    Map.of("domainId", domain.getPublicId(), "fqdn", domain.getFqdn()),
                     null);
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),

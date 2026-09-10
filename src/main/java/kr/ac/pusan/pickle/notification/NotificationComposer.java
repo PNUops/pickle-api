@@ -198,14 +198,9 @@ public class NotificationComposer {
             // without exposing the force/immediacy distinction.
             case DOMAIN_ADMIN_RELEASED -> new Composed(event.id(),
                     "도메인 관리자 해제 — " + str(args, "fqdn"),
-                    """
-                    VM '%s'에 연결된 도메인 '%s'이(가) 관리자에 의해 해제되었습니다.
-                    이름은 예약 없이 즉시 회수되었으며, 이 주소로는 더 이상 접속할 수 없습니다.
-
-                    문의 사항은 관리자에게 연락해 주세요.""".formatted(
-                            str(args, "vmName"), str(args, "fqdn")),
-                    "/console/vms/" + args.get("vmId"), event.defaultImportance(),
-                    payload(args, "vmId", "vmName", "fqdn"));
+                    adminReleasedBody(args),
+                    domainLink(args), event.defaultImportance(),
+                    payload(args, "vmId", "vmName", "domainId", "fqdn"));
             case DOMAIN_RESERVE_RELEASED -> new Composed(event.id(),
                     "도메인 이름 예약 만료 — " + str(args, "fqdn"),
                     """
@@ -507,6 +502,24 @@ public class NotificationComposer {
     }
 
     /** Whitelist-copy of the given display fields into the stored payload. */
+    /**
+     * The admin-release notice. A domain this platform serves is named by its
+     * VM, because that is the thing its owner recognises it by; one that only
+     * holds records has no VM to name, and a sentence with an empty name in it
+     * reads as a bug to the person it reaches.
+     */
+    private static String adminReleasedBody(Map<String, Object> args) {
+        String tail = """
+                이름은 예약 없이 즉시 회수되었으며, 이 주소로는 더 이상 접속할 수 없습니다.
+
+                문의 사항은 관리자에게 연락해 주세요.""";
+        return args.get("vmId") != null
+                ? "VM '%s'에 연결된 도메인 '%s'이(가) 관리자에 의해 해제되었습니다.\n%s"
+                        .formatted(str(args, "vmName"), str(args, "fqdn"), tail)
+                : "도메인 '%s'이(가) 관리자에 의해 해제되었습니다.\n%s"
+                        .formatted(str(args, "fqdn"), tail);
+    }
+
     /**
      * Where a domain notice points. A domain that this platform serves is read
      * on its VM's page, which is where its whole publication lives; one that

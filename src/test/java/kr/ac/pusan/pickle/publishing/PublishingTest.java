@@ -1891,6 +1891,34 @@ class PublishingTest {
                 """, Long.class, vmId)).isEqualTo(1);
     }
 
+    @Test
+    void adminForceReleaseOfAnExternalDomainStillReachesItsOwner() throws Exception {
+        // A name with no VM behind it. The notice used to be addressed through
+        // the VM, so this one went nowhere: the audit row alone reaches no
+        // user, and a public address disappearing must not be discovered from
+        // a dead link whether or not a VM was serving it.
+        String fqdn = "extfnote-" + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev";
+        long domainId = jdbcTemplate.queryForObject("""
+                insert into domains (workspace_id, org_id, kind, fqdn, root_domain, status,
+                                     renew_due_at)
+                values (?, ?, 'EXTERNAL'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status,
+                        now() + interval '180 days')
+                returning id
+                """, Long.class, workspaceId, orgId, fqdn);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domainId) + "/force-release")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+
+        assertThat(adminReleaseNoticeCount(fqdn)).isEqualTo(1);
+        // And the sentence it carries names no VM, rather than naming an empty
+        // one, which is how a reader tells a notice from a bug.
+        assertThat(jdbcTemplate.queryForObject("""
+                select body from notifications
+                 where event = 'domain.admin_released' and payload ->> 'fqdn' = ?
+                """, String.class, fqdn)).doesNotContain("VM ''");
+    }
+
     private long adminReleaseNoticeCount(String fqdn) {
         return jdbcTemplate.queryForObject("""
                 select count(*) from notifications
