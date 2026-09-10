@@ -10,11 +10,18 @@ package kr.ac.pusan.pickle.publishing;
  * request form. The form lost its domain axis, so the name described a step that
  * no longer happens instead of what the row actually holds, a platform subdomain
  * the user picks at publish time.</p>
+ *
+ * <p>EXTERNAL is a name under a platform root whose records point wherever its
+ * owner says. It is the first kind for which the two questions below disagree:
+ * this platform does not serve it, and yet the name comes out of the same
+ * shared space every other platform subdomain comes out of, so releasing it
+ * holds it for its owner the same way.</p>
  */
 public enum DomainKind {
     AUTO(true, true),
     PLATFORM(true, true),
-    CUSTOM(false, false);
+    CUSTOM(false, false),
+    EXTERNAL(false, true);
 
     private final boolean servedByPlatformProxy;
     private final boolean reservesNameAfterRelease;
