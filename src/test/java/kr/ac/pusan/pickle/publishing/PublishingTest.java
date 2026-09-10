@@ -689,10 +689,13 @@ class PublishingTest {
                                 Thread.currentThread().interrupt();
                             }
                             jdbcTemplate.update("""
-                                    insert into domains (vm_id, kind, fqdn, root_domain, status)
-                                    values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
-                                            'ACTIVE'::domain_status)
-                                    """, vmId, winnerFqdn);
+                                    insert into domains (vm_id, workspace_id, org_id, kind, fqdn,
+                                                         root_domain, status)
+                                    select v.id, v.workspace_id, v.org_id,
+                                           'PLATFORM'::domain_kind, ?, 'pusan.dev',
+                                           'ACTIVE'::domain_status
+                                      from vms v where v.id = ?
+                                    """, winnerFqdn, vmId);
                             return f;
                         });
                 var result = loser.get(30, java.util.concurrent.TimeUnit.SECONDS);
@@ -2094,11 +2097,12 @@ class PublishingTest {
         // reason and would stop testing that scoping is per workspace.
         AccessGrantFixtures.grantVmToUser(jdbcTemplate, foreignVmId, outsiderId, "OWNER");
         return jdbcTemplate.queryForObject("""
-                insert into domains (vm_id, kind, fqdn, root_domain, status)
-                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, root_domain, status)
+                select v.id, v.workspace_id, v.org_id, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
+                       'ACTIVE'::domain_status
+                  from vms v where v.id = ?
                 returning id
-                """, Long.class, foreignVmId,
-                slug + ".pusan.dev");
+                """, Long.class, slug + ".pusan.dev", foreignVmId);
     }
 
     private String routeStatus(long routeId) {

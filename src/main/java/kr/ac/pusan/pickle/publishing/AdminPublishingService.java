@@ -111,8 +111,8 @@ public class AdminPublishingService {
                     domain != null ? domain.getFqdn() : null,
                     domain != null ? domain.getKind() : null,
                     vm != null ? vm.getPublicId() : null, name(vm),
-                    ctx.workspaceId(vm), ctx.workspaceName(vm),
-                    ctx.orgId(vm), ctx.orgName(vm),
+                    ctx.workspaceId(domain), ctx.workspaceName(domain),
+                    ctx.orgId(domain), ctx.orgName(domain),
                     route.getTargetPort(), route.getProtocol(), route.getStatus(),
                     route.getAppliedGeneration(), route.getAppliedAt(), route.getLastError(),
                     route.getUpdatedAt());
@@ -145,8 +145,8 @@ public class AdminPublishingService {
                     domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
                     domain.getVerifiedAt(), domain.getReleasedAt(),
                     assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
-                    ctx.workspaceId(vm), ctx.workspaceName(vm),
-                    ctx.orgId(vm), ctx.orgName(vm),
+                    ctx.workspaceId(domain), ctx.workspaceName(domain),
+                    ctx.orgId(domain), ctx.orgName(domain),
                     routeStatus, certStatus, domain.getDnsStatus(), domain.getDnsLastError(),
                     domain.getDnsAppliedAt(), domain.getUpdatedAt());
         }).toList();
@@ -209,7 +209,12 @@ public class AdminPublishingService {
         Domain domain = requireScopedDomain(actor, domainId);
         boolean served = assembler.hasLiveRoute(domain);
         publishingService.forceTeardown(domain);
-        Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
+        // The VM's event log and its members are where an admin release is
+        // announced, and a domain that serves no VM has neither. Asked before
+        // the lookup rather than after, because a null id is a refusal there
+        // and not an empty result.
+        Vm vm = domain.getVmId() == null ? null
+                : vmRepository.findById(domain.getVmId()).orElse(null);
         if (vm != null) {
             if (served) {
                 vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.UNPUBLISH, actor.id(),
@@ -304,12 +309,22 @@ public class AdminPublishingService {
         return domain;
     }
 
+    /**
+     * The organisation scope of one domain, read off the domain.
+     *
+     * <p>It used to be read off the VM, which made two problems out of one
+     * lookup. The listing beside it scopes on the row's own organisation, so
+     * the two answered from different sources and could disagree — a row
+     * visible in the list and absent when opened. And a domain that serves no
+     * VM has no id to look up: the repository refuses a null one, so the
+     * refusal this guard exists to produce arrived as a server error
+     * instead.</p>
+     */
     private void requireScope(AuthenticatedUser actor, Domain domain) {
         if (!actor.role().isOrgTier()) {
             return;
         }
-        Long vmOrgId = vmRepository.findById(domain.getVmId()).map(Vm::getOrgId).orElse(null);
-        if (!actor.operates(vmOrgId)) {
+        if (!actor.operates(domain.getOrgId())) {
             throw domainNotFound();
         }
     }
@@ -362,12 +377,23 @@ public class AdminPublishingService {
         return vm != null ? vm.getName() : null;
     }
 
-    /** Batch-resolves the VM/workspace/org context for a set of domains. */
+    /**
+     * Batch-resolves the VM, workspace and organisation context for a set of
+     * domains.
+     *
+     * <p>Workspace and organisation come off the domain rows, not off their
+     * VMs. Read through the VM, a domain that serves none reports no workspace
+     * and no organisation, which in the admin listing is a row with blanks
+     * where its owner should be — and in the org-scoped listing, a row that is
+     * not there at all. The VM lookup stays for the VM's own name and id, and
+     * skips the rows that have none.</p>
+     */
     private Context context(List<Domain> domains) {
-        Set<Long> vmIds = domains.stream().map(Domain::getVmId).collect(Collectors.toSet());
+        Set<Long> vmIds = domains.stream().map(Domain::getVmId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
         Map<Long, Vm> vms = byId(vmRepository.findAllById(vmIds), Vm::getId);
-        Set<Long> workspaceIds = vms.values().stream().map(Vm::getWorkspaceId).collect(Collectors.toSet());
-        Set<Long> orgIds = vms.values().stream().map(Vm::getOrgId).collect(Collectors.toSet());
+        Set<Long> workspaceIds = domains.stream().map(Domain::getWorkspaceId).collect(Collectors.toSet());
+        Set<Long> orgIds = domains.stream().map(Domain::getOrgId).collect(Collectors.toSet());
         Map<Long, Workspace> workspaces = byId(workspaceRepository.findAllById(workspaceIds), Workspace::getId);
         Map<Long, Org> orgs = byId(orgRepository.findAllById(orgIds), Org::getId);
         return new Context(byId(domains, Domain::getId), vms, workspaces, orgs);
@@ -382,29 +408,23 @@ public class AdminPublishingService {
     private record Context(Map<Long, Domain> domains, Map<Long, Vm> vms, Map<Long, Workspace> workspaces,
             Map<Long, Org> orgs) {
 
-        String workspaceName(Vm vm) {
-            if (vm == null) {
-                return null;
-            }
-            Workspace workspace = workspaces.get(vm.getWorkspaceId());
+        String workspaceName(Domain domain) {
+            Workspace workspace = domain == null ? null : workspaces.get(domain.getWorkspaceId());
             return workspace != null ? workspace.getName() : null;
         }
 
-        String orgName(Vm vm) {
-            if (vm == null) {
-                return null;
-            }
-            Org org = orgs.get(vm.getOrgId());
+        String orgName(Domain domain) {
+            Org org = domain == null ? null : orgs.get(domain.getOrgId());
             return org != null ? org.getName() : null;
         }
 
-        UUID workspaceId(Vm vm) {
-            Workspace workspace = vm == null ? null : workspaces.get(vm.getWorkspaceId());
+        UUID workspaceId(Domain domain) {
+            Workspace workspace = domain == null ? null : workspaces.get(domain.getWorkspaceId());
             return workspace != null ? workspace.getPublicId() : null;
         }
 
-        UUID orgId(Vm vm) {
-            Org org = vm == null ? null : orgs.get(vm.getOrgId());
+        UUID orgId(Domain domain) {
+            Org org = domain == null ? null : orgs.get(domain.getOrgId());
             return org != null ? org.getPublicId() : null;
         }
     }

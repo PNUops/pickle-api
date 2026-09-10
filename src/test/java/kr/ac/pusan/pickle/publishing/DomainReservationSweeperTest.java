@@ -110,12 +110,15 @@ class DomainReservationSweeperTest {
         // never holds a custom name after release, so no grace applies.
         long vmId = createVm();
         long domainId = jdbcTemplate.queryForObject("""
-                insert into domains (vm_id, kind, fqdn, verification_token, status, released_at)
-                values (?, 'CUSTOM'::domain_kind, ?, 'pv-test', 'PENDING'::domain_status, ?)
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, verification_token,
+                                     status, released_at)
+                select v.id, v.workspace_id, v.org_id, 'CUSTOM'::domain_kind, ?, 'pv-test',
+                       'PENDING'::domain_status, ?
+                  from vms v where v.id = ?
                 returning id
-                """, Long.class, vmId,
+                """, Long.class,
                 "legacy-" + UUID.randomUUID().toString().substring(0, 8) + ".example.com",
-                Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)));
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)), vmId);
         jdbcTemplate.update("""
                 insert into certificates (domain_id, kind, scope, status)
                 values (?, 'LETS_ENCRYPT'::certificate_kind, 'legacy', 'ACTIVE'::certificate_status)
@@ -297,11 +300,18 @@ class DomainReservationSweeperTest {
 
     /** A released platform subdomain with its (already removed) route. */
     private long platformDomain(long vmId, String fqdn, Instant releasedAt) {
+        // Owner columns are read off the VM rather than passed in: every caller
+        // here already has the VM and none of them cares which workspace it
+        // belongs to, so taking them from the row keeps the fixture honest
+        // without threading two more ids through it.
         long domainId = jdbcTemplate.queryForObject("""
-                insert into domains (vm_id, kind, fqdn, root_domain, status, released_at)
-                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status, ?)
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, root_domain,
+                                     status, released_at)
+                select v.id, v.workspace_id, v.org_id, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
+                       'ACTIVE'::domain_status, ?
+                  from vms v where v.id = ?
                 returning id
-                """, Long.class, vmId, fqdn, Timestamp.from(releasedAt));
+                """, Long.class, fqdn, Timestamp.from(releasedAt), vmId);
         jdbcTemplate.update("""
                 insert into routes (domain_id, target_port, status, generation)
                 values (?, 8080, 'REMOVED'::route_status, 1)

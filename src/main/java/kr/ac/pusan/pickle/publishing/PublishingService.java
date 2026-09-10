@@ -227,8 +227,13 @@ public class PublishingService {
                 : vmRepository.findByPublicId(publicVmId).map(Vm::getId).orElse(-1L);
         Page<Domain> result = domainRepository.findForReachableVms(reachableVmIds(actor), vmId,
                 status != null ? status.name() : null, pageable);
+        // Nulls filtered before the lookup: a domain that serves no VM has none
+        // to resolve, and findAllById throws on a null id rather than ignoring
+        // it. The listing above excludes such rows today, so this is the guard
+        // that keeps the two from disagreeing later.
         Map<Long, UUID> vmPublicIds = vmRepository.findAllById(result.getContent().stream()
-                        .map(Domain::getVmId).distinct().toList()).stream()
+                        .map(Domain::getVmId).filter(java.util.Objects::nonNull).distinct().toList())
+                .stream()
                 .collect(java.util.stream.Collectors.toMap(Vm::getId, Vm::getPublicId));
         return PageResponse.of(result.getContent().stream()
                 .map(domain -> assembler.toDomainSummary(domain, vmPublicIds.get(domain.getVmId())))
@@ -298,7 +303,8 @@ public class PublishingService {
             requireRevivable(existing, vm);
             return revive(existing, port);
         }
-        Domain domain = saveDomainOrFqdnTaken(Domain.custom(vm.getId(), fqdn, generateToken()));
+        Domain domain = saveDomainOrFqdnTaken(Domain.custom(vm.getWorkspaceId(),
+                vm.getOrgId(), vm.getId(), fqdn, generateToken()));
         certificateRepository.save(Certificate.letsEncrypt(domain.getId(), domain.getFqdn()));
         attachRoute(domain, port);
         return domain;
@@ -323,7 +329,8 @@ public class PublishingService {
         }
         requirePlatformSlotFree(vm.getId());
         Domain domain = saveDomainOrFqdnTaken(
-                Domain.platform(vm.getId(), DomainKind.PLATFORM, name.fqdn(), name.rootDomain()));
+                Domain.platform(vm.getWorkspaceId(), vm.getOrgId(), vm.getId(),
+                        DomainKind.PLATFORM, name.fqdn(), name.rootDomain()));
         attachRoute(domain, port);
         return domain;
     }
@@ -628,12 +635,14 @@ public class PublishingService {
     }
 
     /** The same two gates reached from a row that already names its VM internally. */
-    private Vm requireVmMemberOf(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmMemberOf(AuthenticatedUser actor, Long vmId) {
+        requireVmScoped(vmId);
         return vmAccessService.of(vmRepository.findById(vmId)
                 .orElseThrow(VmAccessService::vmNotFound), actor.id()).requireVisible();
     }
 
-    private Vm requireVmOwnerOrEditorOf(AuthenticatedUser actor, long vmId) {
+    private Vm requireVmOwnerOrEditorOf(AuthenticatedUser actor, Long vmId) {
+        requireVmScoped(vmId);
         return vmAccessService.of(vmRepository.findById(vmId)
                 .orElseThrow(VmAccessService::vmNotFound), actor.id())
                 .requireAtLeast(ResourceRole.EDITOR,
@@ -660,6 +669,21 @@ public class PublishingService {
      * that is inside. Empty means empty, so a sentinel keeps the {@code in}
      * clause valid.
      */
+    /**
+     * Refuses a domain whose access is asked through a VM it does not have.
+     *
+     * <p>These two helpers took a primitive, so a null id unboxed into a
+     * NullPointerException before either of them ran — a server error where the
+     * endpoint's own answer is "no such domain". A name that serves no VM is
+     * not reachable by a VM's access list, and this is where that is said once
+     * instead of at each of the four call sites.</p>
+     */
+    private static void requireVmScoped(Long vmId) {
+        if (vmId == null) {
+            throw domainNotFound();
+        }
+    }
+
     private List<Long> reachableVmIds(AuthenticatedUser actor) {
         List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
         Set<Long> vmIds = new LinkedHashSet<>();
