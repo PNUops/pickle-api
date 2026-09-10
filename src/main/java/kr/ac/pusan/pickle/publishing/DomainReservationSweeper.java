@@ -79,13 +79,14 @@ public class DomainReservationSweeper {
     private final PlatformDnsRecords dnsRecords;
     private final DomainRecordRepository recordRepository;
     private final DomainRecordApplyJob recordApplyJob;
+    private final DomainRecordsReconciler recordsReconciler;
 
     public DomainReservationSweeper(DomainRepository domainRepository,
             RouteRepository routeRepository, CertificateRepository certificateRepository,
             VmRepository vmRepository, SettingsService settingsService,
             NotificationService notificationService, TransactionTemplate transactionTemplate,
             PlatformDnsRecords dnsRecords, DomainRecordRepository recordRepository,
-            DomainRecordApplyJob recordApplyJob) {
+            DomainRecordApplyJob recordApplyJob, DomainRecordsReconciler recordsReconciler) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -96,6 +97,7 @@ public class DomainReservationSweeper {
         this.dnsRecords = dnsRecords;
         this.recordRepository = recordRepository;
         this.recordApplyJob = recordApplyJob;
+        this.recordsReconciler = recordsReconciler;
     }
 
     /** One sweep. Public and argument-free for JobRunr; tests call it directly. */
@@ -139,8 +141,13 @@ public class DomainReservationSweeper {
         RECLAIM,
         /** Due, but a record is (or may be) up and must come down first. */
         RECLAIM_AFTER_DNS,
-        /** Due, but record sets its owner wrote are still owed the zone. */
-        RECLAIM_AFTER_RECORDS
+        /**
+         * Due, and the name is one whose owner wrote their own record sets.
+         * Always this verdict for such a name, even with no row left: rows
+         * going is not the same as the zone being clear, and the zone is what
+         * the next holder of the name inherits.
+         */
+        RECLAIM_EXTERNAL
     }
 
     /** The locked verdict plus what the DNS step needs to know. */
@@ -157,14 +164,32 @@ public class DomainReservationSweeper {
         if (first == null || first.verdict() == Verdict.LEAVE) {
             return false;
         }
-        if (first.verdict() == Verdict.RECLAIM_AFTER_RECORDS) {
-            // The release already asked for these to go; this is the retry.
-            // Rows survive until the provider confirms each removal, so their
-            // absence afterwards is the zone's answer and not this job's.
-            recordApplyJob.apply(domainId);
+        if (first.verdict() == Verdict.RECLAIM_EXTERNAL) {
+            // The release already asked the owner's sets to go; this is the
+            // retry. Rows survive until the provider confirms each removal, so
+            // their absence afterwards is the zone's answer and not this job's.
             if (Boolean.TRUE.equals(transactionTemplate.execute(tx ->
-                    !recordRepository.findByDomainId(domainId).isEmpty()))) {
-                log.warn("domain reservation sweep kept {} reserved: record sets still in the zone",
+                    !recordRepository.findByDomainIdOrderByIdAsc(domainId).isEmpty()))) {
+                recordApplyJob.apply(domainId);
+                if (Boolean.TRUE.equals(transactionTemplate.execute(tx ->
+                        !recordRepository.findByDomainIdOrderByIdAsc(domainId).isEmpty()))) {
+                    log.warn("domain reservation sweep kept {} reserved: record sets still in "
+                            + "the zone", first.fqdn());
+                    return false;
+                }
+            }
+            // And no row owing anything is still not the zone being clear. A
+            // push that reached the zone and then failed to record itself
+            // leaves a set no row remembers, and the next edit drops the row
+            // that would have owed its removal, so nothing is left to ask on
+            // the row side. The name is about to go back into the pool: this is
+            // the last moment anyone can ask, and the only moment at which a
+            // leftover set stops being untidy and becomes the next holder's
+            // problem.
+            Domain clearing = transactionTemplate.execute(tx ->
+                    domainRepository.findById(domainId).orElse(null));
+            if (clearing != null && !recordsReconciler.clearZoneUnder(clearing)) {
+                log.warn("domain reservation sweep kept {} reserved: the zone could not be cleared",
                         first.fqdn());
                 return false;
             }
@@ -203,9 +228,7 @@ public class DomainReservationSweeper {
         Instant expiry = expiry(domain, graceDays);
         if (!now.isBefore(expiry)) {
             if (domain.getKind() == DomainKind.EXTERNAL) {
-                boolean owed = !recordRepository.findByDomainId(domain.getId()).isEmpty();
-                return new Decision(owed ? Verdict.RECLAIM_AFTER_RECORDS : Verdict.RECLAIM,
-                        domain.getFqdn());
+                return new Decision(Verdict.RECLAIM_EXTERNAL, domain.getFqdn());
             }
             boolean recordUp = PlatformDnsRecords.managed(domain)
                     && domain.getDnsStatus() != DomainDnsStatus.NONE;

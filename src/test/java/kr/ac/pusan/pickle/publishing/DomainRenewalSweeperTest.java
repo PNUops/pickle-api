@@ -170,6 +170,38 @@ class DomainRenewalSweeperTest {
         assertThat(zone.has(domain.getFqdn(), "A")).isFalse();
     }
 
+    @Test
+    void aNameIsNotFreedWhileTheZoneStillHoldsSomethingUnderIt() {
+        Domain domain = external("stranded", daysFromNow(-1));
+        // The state a crash between the zone write and its bookkeeping leaves:
+        // the set is in the zone and no row remembers owing it, because the
+        // edit that dropped it deleted the row that looked never-applied.
+        zone.seed(domain.getFqdn(), "A", List.of(PUBLIC_V4));
+        sweeper.sweep();
+        setReleasedAt(domain.getId(), daysFromNow(-40));
+
+        reservationSweeper.sweep();
+
+        // Freed here, the next holder of the name would inherit a record
+        // pointing at the last one's server.
+        assertThat(status(domain.getId())).isEqualTo("REMOVED");
+        assertThat(zone.has(domain.getFqdn(), "A")).isFalse();
+    }
+
+    @Test
+    void aNameStaysReservedWhenTheZoneCannotBeCleared() {
+        Domain domain = external("unclearable", daysFromNow(-1));
+        zone.seed(domain.getFqdn(), "A", List.of(PUBLIC_V4));
+        sweeper.sweep();
+        setReleasedAt(domain.getId(), daysFromNow(-40));
+        zone.failWith("zone unreachable");
+
+        reservationSweeper.sweep();
+
+        // Reserved another cycle rather than freed with the record standing.
+        assertThat(status(domain.getId())).isEqualTo("ACTIVE");
+    }
+
     private static DesiredSet set(String name, DnsRecordType type, String value) {
         return new DesiredSet(name, type, List.of(value), 300);
     }

@@ -168,6 +168,61 @@ public class DomainRecordsReconciler {
     }
 
     /**
+     * Takes every set the zone still holds under a name, whatever any row
+     * says, and reports whether the name is clear afterwards.
+     *
+     * <p>Called at the one moment a leftover set becomes dangerous rather than
+     * merely untidy: just before a reclaimed name goes back into the pool. The
+     * rows cannot answer this on their own — a push that reached the zone and
+     * then failed to record itself leaves a row that looks as though it never
+     * applied, and the next edit drops such a row outright, so the set outlives
+     * everything that remembered it. Freeing the name then hands the next
+     * holder a record pointing at the last one's server, which is the exact
+     * shape of a subdomain takeover.</p>
+     *
+     * <p>Destructive, and deliberately not gated behind the orphan-pruning
+     * switch that guards the scan: that switch exists because a scan guesses
+     * which records are the platform's to remove, while here the platform
+     * still holds the name and everything under it is by definition its own.
+     * A failure leaves the name reserved for another cycle instead.</p>
+     */
+    public boolean clearZoneUnder(Domain domain) {
+        if (!provider.configured()) {
+            return false;
+        }
+        String fqdn = domain.getFqdn();
+        List<DnsRecord> zone;
+        try {
+            zone = provider.listRecords(domain.getRootDomain());
+        } catch (DnsProviderException e) {
+            log.error("could not read the zone before freeing {}: {}", fqdn, e.getMessage());
+            return false;
+        }
+        List<DnsRecord> under = zone.stream()
+                .filter(record -> MANAGED_TYPES.contains(record.type()))
+                .filter(record -> relativeTo(record.name(), fqdn) != null)
+                .toList();
+        if (under.isEmpty()) {
+            return true;
+        }
+        Boolean cleared = nameLocks.underLock(fqdn, () -> {
+            for (DnsRecord record : under) {
+                try {
+                    provider.remove(record.name(), DnsRecordType.valueOf(record.type()));
+                    log.warn("removed {} {} before freeing the name: no row claimed it",
+                            record.type(), record.name());
+                } catch (DnsProviderException e) {
+                    log.error("could not remove {} {} before freeing the name: {}",
+                            record.type(), record.name(), e.getMessage());
+                    return false;
+                }
+            }
+            return true;
+        });
+        return Boolean.TRUE.equals(cleared);
+    }
+
+    /**
      * Pushes for domains the per-root pass below cannot see.
      *
      * <p>That pass starts from live domain rows, and a retired one is not
@@ -209,7 +264,7 @@ public class DomainRecordsReconciler {
      */
     private List<DnsRecord> orphansUnder(Domain domain, List<DnsRecord> zone) {
         Set<String> claimed = new HashSet<>();
-        for (DomainRecord record : recordRepository.findByDomainId(domain.getId())) {
+        for (DomainRecord record : recordRepository.findByDomainIdOrderByIdAsc(domain.getId())) {
             claimed.add(key(record.getName(), record.getType().name()));
         }
         String fqdn = domain.getFqdn();
@@ -234,7 +289,7 @@ public class DomainRecordsReconciler {
             return false;
         }
         Boolean claimed = transactionTemplate.execute(tx ->
-                recordRepository.findByDomainId(domain.getId()).stream()
+                recordRepository.findByDomainIdOrderByIdAsc(domain.getId()).stream()
                         .anyMatch(row -> row.getName().equals(relative)
                                 && row.getType().name().equals(record.type())));
         return Boolean.TRUE.equals(claimed);
@@ -243,7 +298,7 @@ public class DomainRecordsReconciler {
     /** Whether any row of this domain is still owed a write, read fresh. */
     private boolean owesTheZone(long domainId) {
         Boolean owed = transactionTemplate.execute(tx ->
-                recordRepository.findByDomainId(domainId).stream()
+                recordRepository.findByDomainIdOrderByIdAsc(domainId).stream()
                         .anyMatch(record -> record.getStatus() != DomainRecordStatus.APPLIED));
         return Boolean.TRUE.equals(owed);
     }
