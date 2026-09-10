@@ -40,6 +40,13 @@ import org.springframework.stereotype.Component;
  * written but no live domain row claims are pruned when pruning is enabled,
  * listed otherwise. The agent's verdict never depends on the zone being
  * reachable, nor the zone's on the agent.</p>
+ *
+ * <p>External domains are reconciled in the same run and separately again
+ * ({@link DomainRecordsReconciler}). They have no route, so the manifest above
+ * cannot see them, and their records are not the platform's address, so the
+ * zone half beside it cannot either: without this third call nothing but the
+ * apply job ever writes them, and an apply that died mid-push is never come
+ * back for.</p>
  */
 @Component
 public class ResyncRoutesJob {
@@ -54,11 +61,13 @@ public class ResyncRoutesJob {
     private final ProxyAgentClient proxyAgentClient;
     private final PublicationAssembler assembler;
     private final PlatformDnsRecords dnsRecords;
+    private final DomainRecordsReconciler recordsReconciler;
 
     public ResyncRoutesJob(RouteRepository routeRepository, DomainRepository domainRepository,
             VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             RouteGenerations routeGenerations, ProxyAgentClient proxyAgentClient,
-            PublicationAssembler assembler, PlatformDnsRecords dnsRecords) {
+            PublicationAssembler assembler, PlatformDnsRecords dnsRecords,
+            DomainRecordsReconciler recordsReconciler) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.vmRepository = vmRepository;
@@ -67,6 +76,7 @@ public class ResyncRoutesJob {
         this.proxyAgentClient = proxyAgentClient;
         this.assembler = assembler;
         this.dnsRecords = dnsRecords;
+        this.recordsReconciler = recordsReconciler;
     }
 
     /** The manifest slice of one route + the generation the CAS must match. */
@@ -138,6 +148,14 @@ public class ResyncRoutesJob {
             // The route half is already recorded; the zone half must not turn a
             // finished resync into a failed job.
             log.error("route-resync dns reconcile failed: {}", e.getMessage(), e);
+        }
+        try {
+            recordsReconciler.reconcile();
+        } catch (RuntimeException e) {
+            // Isolated from both halves above for the same reason they are
+            // isolated from each other: one unreachable surface must not
+            // discard what the other two already did.
+            log.error("route-resync external records reconcile failed: {}", e.getMessage(), e);
         }
     }
 }
