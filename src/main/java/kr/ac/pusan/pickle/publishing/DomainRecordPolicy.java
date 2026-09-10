@@ -74,6 +74,21 @@ public class DomainRecordPolicy {
             "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4",
             "240.0.0.0/4");
 
+    /**
+     * Names this institution answers on. A CNAME is the same lending of a
+     * university name that the campus address range is refused for, arranged
+     * one level up: the target is never resolved here, so an address rule
+     * cannot see it, and a name under a platform root pointing at a campus
+     * host is the shape a phishing page takes whether it got there by address
+     * or by name. Held as suffixes because that is all a policy that refuses
+     * to resolve anything can compare.
+     */
+    private static final List<String> CAMPUS_SUFFIXES = List.of(
+            "pusan.ac.kr",
+            "pnu.app",
+            "pcl.kr",
+            "pnuops.com");
+
     /** Mail policy lives at the parent; a child must not speak for it. */
     private static final List<String> MAIL_POLICY_PREFIXES =
             List.of("v=spf1", "v=dmarc1", "v=stsv1", "v=dkim1");
@@ -88,6 +103,27 @@ public class DomainRecordPolicy {
 
     /** One set as the caller asked for it, before it is compared with what exists. */
     public record DesiredSet(String name, DnsRecordType type, List<String> rrdatas, int ttl) {
+
+        /**
+         * The set as it is stored and pushed. Every rule below reads a value
+         * stripped and, where case carries no meaning, folded; storing the raw
+         * string instead would leave validation and storage disagreeing about
+         * what the value is, and it is the stored one the zone receives. A
+         * leading space passes every check here and then fails at the provider
+         * for as long as the row exists.
+         *
+         * <p>TXT keeps its case and its inner spacing — both are data there,
+         * and the only thing safe to take off is the surrounding whitespace a
+         * form adds.</p>
+         */
+        public DesiredSet normalized() {
+            List<String> values = rrdatas.stream()
+                    .map(value -> type == DnsRecordType.TXT
+                            ? value.strip()
+                            : value.strip().toLowerCase(Locale.ROOT))
+                    .toList();
+            return new DesiredSet(name.strip().toLowerCase(Locale.ROOT), type, values, ttl);
+        }
     }
 
     /**
@@ -238,6 +274,16 @@ public class DomainRecordPolicy {
             if (bare.equals(lower) || bare.endsWith("." + lower)) {
                 errors.add(new FieldValidationError(at,
                         "플랫폼이 관리하는 이름을 대상으로 지정할 수 없습니다."));
+                return;
+            }
+        }
+        // And the same refusal the address rules make, at the level a name
+        // reaches. Without this the whole "nothing may point back at us"
+        // family is one CNAME away from being bypassed.
+        for (String suffix : CAMPUS_SUFFIXES) {
+            if (bare.equals(suffix) || bare.endsWith("." + suffix)) {
+                errors.add(new FieldValidationError(at,
+                        "교내 도메인을 대상으로 지정할 수 없습니다."));
                 return;
             }
         }

@@ -165,6 +165,45 @@ class DomainRecordPolicyTest {
                 .anyMatch(m -> m.contains("올바른 IP 주소가 아닙니다"));
     }
 
+    @Test
+    void aCnameIntoTheCampusIsRefused() {
+        // The address rules refuse the campus range because a university name
+        // aimed at another machine on that network is what a phishing page
+        // looks like. A name reaches the same place, and the target is never
+        // resolved here, so an address rule cannot see it.
+        assertThat(messages(set("www", DnsRecordType.CNAME, "victim.pusan.ac.kr")))
+                .anyMatch(m -> m.contains("교내"));
+        assertThat(messages(set("www", DnsRecordType.CNAME, "PUSAN.AC.KR.")))
+                .anyMatch(m -> m.contains("교내"));
+        assertThat(messages(set("www", DnsRecordType.CNAME, "cse.pnu.app")))
+                .anyMatch(m -> m.contains("교내"));
+    }
+
+    @Test
+    void aTargetOutsideTheCampusIsAccepted() {
+        assertThat(errors(set("www", DnsRecordType.CNAME, "pages.github.io."))).isEmpty();
+        // A name that merely ends in the same letters is not under it.
+        assertThat(errors(set("www", DnsRecordType.CNAME, "notpusan.ac.kr.example.com")))
+                .isEmpty();
+    }
+
+    @Test
+    void aValueIsStoredTheWayItWasValidated() {
+        DesiredSet normalized = new DesiredSet(" WWW ", DnsRecordType.CNAME,
+                List.of(" Pages.GitHub.IO. "), 300).normalized();
+
+        // Validation ran on a stripped and folded copy while the raw string was
+        // stored and pushed, so a leading space passed every rule here and then
+        // failed at the provider for as long as the row existed.
+        assertThat(normalized.name()).isEqualTo("www");
+        assertThat(normalized.rrdatas()).containsExactly("pages.github.io.");
+
+        // TXT keeps its case and inner spacing, which are data there.
+        DesiredSet text = new DesiredSet("_acme-challenge", DnsRecordType.TXT,
+                List.of("  Token With Spaces  "), 300).normalized();
+        assertThat(text.rrdatas()).containsExactly("Token With Spaces");
+    }
+
     private static DesiredSet set(String name, DnsRecordType type, String value) {
         return new DesiredSet(name, type, List.of(value), 300);
     }
