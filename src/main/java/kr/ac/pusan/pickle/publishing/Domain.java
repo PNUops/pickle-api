@@ -16,9 +16,15 @@ import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 /**
- * A domain (FQDN) attached to a VM. Platform
- * subdomains (AUTO/PLATFORM) are ACTIVE on creation; custom domains carry a
- * verification token and flow PENDING→VERIFYING→ACTIVE via DNS polling.
+ * A domain (FQDN) owned by a workspace. Platform subdomains (AUTO/PLATFORM)
+ * are ACTIVE on creation; custom domains carry a verification token and flow
+ * PENDING→VERIFYING→ACTIVE via DNS polling.
+ *
+ * <p>The workspace is the owner; the VM, when there is one, is what the name
+ * serves. Those were the same fact while every name served a VM, and reading
+ * ownership off the VM is what made a name without one impossible to express.
+ * Everything that asks who may see this row, which organisation scopes it or
+ * who hears about it now asks the workspace.</p>
  */
 @Entity
 @Table(name = "domains")
@@ -36,7 +42,29 @@ public class Domain {
     @Column(name = "public_id", nullable = false, updatable = false, unique = true)
     private UUID publicId = UUID.randomUUID();
 
-    @Column(name = "vm_id", nullable = false)
+    /**
+     * The owner. Every kind has one.
+     *
+     * <p>The database column is nullable for now and this mapping is what holds
+     * the invariant. Tightening it in the same migration that adds it would
+     * make the previous release's jar unable to insert here at all, which is
+     * the one thing an automatic rollback must not land on; the NOT NULL
+     * belongs to the release after the jar that writes the column is running.
+     * Same for {@link #orgId}.</p>
+     */
+    @Column(name = "workspace_id", nullable = false, updatable = false)
+    private Long workspaceId;
+
+    /**
+     * The organisation that administers this name. Held on the row rather than
+     * read through the workspace, which carries none; {@code vms} and
+     * {@code llm_api_keys} hold their own for the same reason.
+     */
+    @Column(name = "org_id", nullable = false, updatable = false)
+    private Long orgId;
+
+    /** The VM this name serves, when it serves one. Null for EXTERNAL. */
+    @Column(name = "vm_id")
     private Long vmId;
 
     @Enumerated(EnumType.STRING)
@@ -99,6 +127,22 @@ public class Domain {
     @Column(name = "dns_applied_at")
     private Instant dnsAppliedAt;
 
+    /**
+     * The deadline for its owner to say they still want this name. Only the
+     * kinds nothing else expires carry one; a VM's name ends with the VM.
+     */
+    @Column(name = "renew_due_at")
+    private Instant renewDueAt;
+
+    /**
+     * The revision of this domain's record set, in the same role
+     * {@code routes.generation} plays for a vhost: an apply step re-reads it
+     * under the name's lock and stands down when a newer intent has been
+     * written since.
+     */
+    @Column(name = "records_generation", nullable = false)
+    private long recordsGeneration;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -110,8 +154,10 @@ public class Domain {
     protected Domain() {
     }
 
-    private Domain(Long vmId, DomainKind kind, String fqdn, String rootDomain,
-            String verificationToken, DomainStatus status) {
+    private Domain(Long workspaceId, Long orgId, Long vmId, DomainKind kind, String fqdn,
+            String rootDomain, String verificationToken, DomainStatus status) {
+        this.workspaceId = workspaceId;
+        this.orgId = orgId;
         this.vmId = vmId;
         this.kind = kind;
         this.fqdn = fqdn;
@@ -125,15 +171,19 @@ public class Domain {
      * check. Its A record is owed from the start (PENDING) and the first apply
      * writes it.
      */
-    public static Domain platform(Long vmId, DomainKind kind, String fqdn, String rootDomain) {
-        Domain domain = new Domain(vmId, kind, fqdn, rootDomain, null, DomainStatus.ACTIVE);
+    public static Domain platform(Long workspaceId, Long orgId, Long vmId, DomainKind kind,
+            String fqdn, String rootDomain) {
+        Domain domain = new Domain(workspaceId, orgId, vmId, kind, fqdn, rootDomain, null,
+                DomainStatus.ACTIVE);
         domain.dnsStatus = DomainDnsStatus.PENDING;
         return domain;
     }
 
     /** Custom domain: PENDING until TXT+A are verified, carrying the ownership token. */
-    public static Domain custom(Long vmId, String fqdn, String verificationToken) {
-        return new Domain(vmId, DomainKind.CUSTOM, fqdn, null, verificationToken, DomainStatus.PENDING);
+    public static Domain custom(Long workspaceId, Long orgId, Long vmId, String fqdn,
+            String verificationToken) {
+        return new Domain(workspaceId, orgId, vmId, DomainKind.CUSTOM, fqdn, null,
+                verificationToken, DomainStatus.PENDING);
     }
 
     public Long getId() {
@@ -144,8 +194,32 @@ public class Domain {
         return publicId;
     }
 
+    public Long getWorkspaceId() {
+        return workspaceId;
+    }
+
+    public Long getOrgId() {
+        return orgId;
+    }
+
     public Long getVmId() {
         return vmId;
+    }
+
+    public Instant getRenewDueAt() {
+        return renewDueAt;
+    }
+
+    public void setRenewDueAt(Instant renewDueAt) {
+        this.renewDueAt = renewDueAt;
+    }
+
+    public long getRecordsGeneration() {
+        return recordsGeneration;
+    }
+
+    public void setRecordsGeneration(long recordsGeneration) {
+        this.recordsGeneration = recordsGeneration;
     }
 
     public DomainKind getKind() {

@@ -102,11 +102,13 @@ class AdminSummariesTest {
                 """, vmExpired);
         // one published (APPLIED) route on the expiring VM
         long domainId = jdbcTemplate.queryForObject("""
-                insert into domains (vm_id, kind, fqdn, root_domain, status, verified_at)
-                values (?, 'AUTO', ?, 'pusan.dev', 'ACTIVE', now())
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, root_domain,
+                                     status, verified_at)
+                select v.id, v.workspace_id, v.org_id, 'AUTO', ?, 'pusan.dev', 'ACTIVE', now()
+                  from vms v where v.id = ?
                 returning id
-                """, Long.class, vmExpiring,
-                "ads-" + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev");
+                """, Long.class,
+                "ads-" + UUID.randomUUID().toString().substring(0, 8) + ".pusan.dev", vmExpiring);
         jdbcTemplate.update("""
                 insert into routes (domain_id, target_port, protocol, status, generation)
                 values (?, 8080, 'HTTP', 'APPLIED', 1)

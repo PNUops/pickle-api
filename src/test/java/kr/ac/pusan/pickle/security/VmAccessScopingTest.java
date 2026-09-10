@@ -500,10 +500,12 @@ class VmAccessScopingTest {
         long vmId = insertVm();
         String label = "sc" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         long domainId = jdbcTemplate.queryForObject("""
-                insert into domains (vm_id, kind, fqdn, root_domain, status)
-                values (?, 'PLATFORM'::domain_kind, ?, 'pusan.dev', 'ACTIVE'::domain_status)
+                insert into domains (vm_id, workspace_id, org_id, kind, fqdn, root_domain, status)
+                select v.id, v.workspace_id, v.org_id, 'PLATFORM'::domain_kind, ?, 'pusan.dev',
+                       'ACTIVE'::domain_status
+                  from vms v where v.id = ?
                 returning id
-                """, Long.class, vmId, label + ".pusan.dev");
+                """, Long.class, label + ".pusan.dev", vmId);
         long portForwardingId = jdbcTemplate.queryForObject("""
                 insert into port_mappings (relay_id, vm_id, proto, public_port, target_port,
                                            status, last_change_generation, created_by)

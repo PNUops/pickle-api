@@ -75,12 +75,19 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** Custom domains due for DNS re-check (recurring verification scan). */
     List<Domain> findByKindAndStatusIn(DomainKind kind, Collection<DomainStatus> statuses);
 
-    // Same listing narrowed to the VMs the requester may actually reach: a
-    // domain names its VM, so listing one they hold no grant on would hand back
-    // exactly what the access list is there to withhold.
+    // The listing narrowed to the VMs the requester may actually reach: a
+    // domain that serves a VM is withheld unless the access list names them on
+    // that VM.
+    //
+    // The null test is written out rather than left to `in`. A domain with no
+    // VM is not reachable by this rule and must not be listed here, which is
+    // also what `d.vmId in :vmIds` does — but for the wrong reason, because
+    // `NULL IN (...)` is UNKNOWN rather than false. Spelled out, the exclusion
+    // is a decision instead of an accident, and the branch that lists a domain
+    // with no VM arrives with the access list that makes one reachable at all.
     @Query("""
             select d from Domain d
-            where d.vmId in :vmIds
+            where d.vmId is not null and d.vmId in :vmIds
               and (:vmId is null or d.vmId = :vmId)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
@@ -89,12 +96,15 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     Page<Domain> findForReachableVms(@Param("vmIds") Collection<Long> vmIds,
             @Param("vmId") Long vmId, @Param("status") String status, Pageable pageable);
 
-    // Admin listing — joined to Vm for org scoping (ad-hoc join on the FK column).
+    // Admin listing, scoped on the row's own organisation. It used to join Vm
+    // for that, which is an inner join on a column that can now be null and
+    // would drop those rows from the administrator's view entirely — a listing
+    // that silently omits rows is worse than one that errors.
     // Enum filters are cast to string so a null bind has a determinable type.
     // REMOVED rows are hidden by default but visible via status=REMOVED.
     @Query("""
-            select d from Domain d join kr.ac.pusan.pickle.vm.Vm v on v.id = d.vmId
-            where (:orgIds is null or v.orgId in :orgIds)
+            select d from Domain d
+            where (:orgIds is null or d.orgId in :orgIds)
               and (:kind is null or cast(d.kind as string) = :kind)
               and ((:status is null and cast(d.status as string) <> 'REMOVED')
                    or cast(d.status as string) = :status)
