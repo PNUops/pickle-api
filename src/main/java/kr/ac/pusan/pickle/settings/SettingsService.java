@@ -42,6 +42,8 @@ public class SettingsService {
     public static final String PLATFORM_SUBDOMAINS_PER_VM = "platform_subdomains_per_vm";
     public static final String PLATFORM_SUBDOMAIN_RESERVE_DAYS = "platform_subdomain_reserve_days";
     public static final String RESERVED_SUBDOMAINS = "reserved_subdomains";
+    public static final String DOMAIN_RENEWAL_DAYS = "domain_renewal_days";
+    public static final String DOMAIN_RENEWAL_NOTICE_DAYS = "domain_renewal_notice_days";
     public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
@@ -271,6 +273,11 @@ public class SettingsService {
                 intInRange(0, 100)));
         map.put(PLATFORM_SUBDOMAIN_RESERVE_DAYS, new Editable(SettingValueType.INTEGER,
                 intInRange(0, 365)));
+        // No zero: a deadline of "today" would reclaim a name the moment it is
+        // issued, and the button that renews it would never be reachable.
+        map.put(DOMAIN_RENEWAL_DAYS, new Editable(SettingValueType.INTEGER,
+                intInRange(1, 3650)));
+        map.put(DOMAIN_RENEWAL_NOTICE_DAYS, new Editable(SettingValueType.JSON, expiryStages()));
         map.put(VM_DELETE_GRACE_HOURS, new Editable(SettingValueType.INTEGER,
                 intInRange(1, 2160)));
         map.put(SSH_GATEWAY_ENABLED, new Editable(SettingValueType.BOOLEAN, bool()));

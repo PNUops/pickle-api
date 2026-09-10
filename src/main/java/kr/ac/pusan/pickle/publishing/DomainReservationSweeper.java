@@ -53,6 +53,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * only once the provider confirms. A failure keeps the name reserved for
  * another hour rather than freeing a name that still points at the proxy.
  * A row at NONE has nothing to remove and reclaims as before.</p>
+ *
+ * <p>An external row answers the same question with its record rows rather
+ * than with {@code dnsStatus}: it has no platform-written record, so the state
+ * that must be gone before its name is free is every set its owner put there.
+ * A row that still has one has the push retried here and stays reserved until
+ * the zone confirms, for exactly the reason above — the next holder of the
+ * name would otherwise inherit the last one's DNS.</p>
  */
 @Component
 public class DomainReservationSweeper {
@@ -70,12 +77,15 @@ public class DomainReservationSweeper {
     private final NotificationService notificationService;
     private final TransactionTemplate transactionTemplate;
     private final PlatformDnsRecords dnsRecords;
+    private final DomainRecordRepository recordRepository;
+    private final DomainRecordApplyJob recordApplyJob;
 
     public DomainReservationSweeper(DomainRepository domainRepository,
             RouteRepository routeRepository, CertificateRepository certificateRepository,
             VmRepository vmRepository, SettingsService settingsService,
             NotificationService notificationService, TransactionTemplate transactionTemplate,
-            PlatformDnsRecords dnsRecords) {
+            PlatformDnsRecords dnsRecords, DomainRecordRepository recordRepository,
+            DomainRecordApplyJob recordApplyJob) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -84,6 +94,8 @@ public class DomainReservationSweeper {
         this.notificationService = notificationService;
         this.transactionTemplate = transactionTemplate;
         this.dnsRecords = dnsRecords;
+        this.recordRepository = recordRepository;
+        this.recordApplyJob = recordApplyJob;
     }
 
     /** One sweep. Public and argument-free for JobRunr; tests call it directly. */
@@ -126,7 +138,9 @@ public class DomainReservationSweeper {
         /** Due, and no record to take down first. */
         RECLAIM,
         /** Due, but a record is (or may be) up and must come down first. */
-        RECLAIM_AFTER_DNS
+        RECLAIM_AFTER_DNS,
+        /** Due, but record sets its owner wrote are still owed the zone. */
+        RECLAIM_AFTER_RECORDS
     }
 
     /** The locked verdict plus what the DNS step needs to know. */
@@ -142,6 +156,20 @@ public class DomainReservationSweeper {
         Decision first = transactionTemplate.execute(tx -> evaluate(domainId, graceDays, now, true));
         if (first == null || first.verdict() == Verdict.LEAVE) {
             return false;
+        }
+        if (first.verdict() == Verdict.RECLAIM_AFTER_RECORDS) {
+            // The release already asked for these to go; this is the retry.
+            // Rows survive until the provider confirms each removal, so their
+            // absence afterwards is the zone's answer and not this job's.
+            recordApplyJob.apply(domainId);
+            if (Boolean.TRUE.equals(transactionTemplate.execute(tx ->
+                    !recordRepository.findByDomainId(domainId).isEmpty()))) {
+                log.warn("domain reservation sweep kept {} reserved: record sets still in the zone",
+                        first.fqdn());
+                return false;
+            }
+            return Boolean.TRUE.equals(transactionTemplate.execute(tx ->
+                    reclaim(domainId, graceDays, now, false)));
         }
         if (first.verdict() == Verdict.RECLAIM_AFTER_DNS
                 && dnsRecords.remove(first.fqdn()) instanceof PlatformDnsRecords.Failed failure) {
@@ -174,6 +202,11 @@ public class DomainReservationSweeper {
         boolean reserves = domain.getKind().reservesNameAfterRelease();
         Instant expiry = expiry(domain, graceDays);
         if (!now.isBefore(expiry)) {
+            if (domain.getKind() == DomainKind.EXTERNAL) {
+                boolean owed = !recordRepository.findByDomainId(domain.getId()).isEmpty();
+                return new Decision(owed ? Verdict.RECLAIM_AFTER_RECORDS : Verdict.RECLAIM,
+                        domain.getFqdn());
+            }
             boolean recordUp = PlatformDnsRecords.managed(domain)
                     && domain.getDnsStatus() != DomainDnsStatus.NONE;
             return new Decision(recordUp ? Verdict.RECLAIM_AFTER_DNS : Verdict.RECLAIM,
@@ -228,15 +261,15 @@ public class DomainReservationSweeper {
 
     private void notify(Domain domain, NotificationEvent event, Instant reservedUntil,
             String dedupKey) {
-        // Every notice this sweeper sends is addressed through the domain's VM,
-        // so a row that names no VM has no recipient rule here. Reached rather
-        // than assumed: the repository lookup below throws on a null id, which
-        // would take the whole sweep down with it. A kind that can exist
-        // without a VM needs its own recipients before it can be notified, and
-        // saying so at WARN is what keeps that from being a silent omission.
+        // A domain this platform serves is addressed through its VM, because
+        // that is where its publication is read and who is responsible for it
+        // is a question about the VM. One that only holds records is its own
+        // resource and answers that question from its own access list.
         if (domain.getVmId() == null) {
-            log.warn("no notification recipients for domain {} ({}): kind {} names no VM",
-                    domain.getId(), domain.getFqdn(), domain.getKind());
+            notificationService.publish(
+                    DomainRecipients.of(notificationService, domain), event,
+                    Map.of("fqdn", domain.getFqdn(), "domainId", domain.getPublicId(),
+                            "reservedUntil", reservedUntil), dedupKey);
             return;
         }
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);

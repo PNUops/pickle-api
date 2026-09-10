@@ -96,6 +96,7 @@ public class PublishingService {
     private final DomainVerificationJob domainVerificationJob;
     private final RateLimitService rateLimitService;
     private final PlatformDnsRecords dnsRecords;
+    private final DomainRecordsService recordsService;
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
@@ -107,7 +108,8 @@ public class PublishingService {
             SettingsService settingsService,
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
-            RateLimitService rateLimitService, PlatformDnsRecords dnsRecords) {
+            RateLimitService rateLimitService, PlatformDnsRecords dnsRecords,
+            DomainRecordsService recordsService) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -126,6 +128,7 @@ public class PublishingService {
         this.domainVerificationJob = domainVerificationJob;
         this.rateLimitService = rateLimitService;
         this.dnsRecords = dnsRecords;
+        this.recordsService = recordsService;
     }
 
     // ── create / update / delete a domain ────────────────────────────────────
@@ -531,12 +534,23 @@ public class PublishingService {
      * another account can pass the TXT challenge, control of the name really
      * moved, and holding the row here would only block the new owner. A
      * non-serving row is a reservation being handed back early.</li>
+     * <li><b>External domain</b> — its records are marked for removal and the
+     * row is reserved. It has no route, so the branch above would read it as
+     * "not serving at all" and free a contested name the instant its owner
+     * let go of it, which is the opposite of what the same name space gets
+     * when this platform serves it. What comes down is the zone, and the zone
+     * is all it ever had.</li>
      * </ul>
      *
      * <p>Package-private: the admin force-release reuses the exact
      * user-deletion semantics instead of duplicating them.</p>
      */
     void teardown(Domain domain) {
+        if (domain.getKind() == DomainKind.EXTERNAL) {
+            recordsService.removeAll(domain.getId());
+            domain.setReleasedAt(Instant.now());
+            return;
+        }
         Route live = routeRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                 .orElse(null);
