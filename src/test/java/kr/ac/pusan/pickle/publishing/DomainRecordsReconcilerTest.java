@@ -158,6 +158,63 @@ class DomainRecordsReconcilerTest {
         assertThat(zone.has("not-" + domain.getFqdn(), "A")).isTrue();
     }
 
+    @Test
+    void aRetiredDomainWhoseRemovalFailedIsStillComeBackFor() {
+        Domain domain = external("retired");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        applyJob.apply(domain.getId());
+        // The shape an admin takedown leaves: the sets are marked for removal
+        // and the name is freed in the same transaction, so the push is the
+        // only thing standing between the zone and a record on a name anybody
+        // can now register — and here it fails.
+        zone.failWith("zone unreachable");
+        records.removeAll(domain.getId());
+        applyJob.apply(domain.getId());
+        retire(domain.getId());
+        assertThat(zone.has(domain.getFqdn(), "A")).isTrue();
+
+        zone.failWith(null);
+        reconciler.reconcile();
+
+        // Every scan that starts from the domains table is blind to a retired
+        // row. The records themselves are what remember the debt.
+        assertThat(zone.has(domain.getFqdn(), "A")).isFalse();
+    }
+
+    @Test
+    void aRetiredDomainWhoseNameSomebodyElseTookWritesNothing() {
+        Domain domain = external("handed-on");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        // Applied first, on purpose: a set that never reached the zone is
+        // dropped rather than queued, so only an applied one leaves a row
+        // still owing a removal after the takedown.
+        applyJob.apply(domain.getId());
+        zone.failWith("zone unreachable");
+        records.removeAll(domain.getId());
+        applyJob.apply(domain.getId());
+        String fqdn = domain.getFqdn();
+        retire(domain.getId());
+        // The name went back into the pool and the next owner took it.
+        Domain next = external("handed-on-next");
+        jdbcTemplate.update("update domains set fqdn = ? where id = ?", fqdn, next.getId());
+        zone.failWith(null);
+        zone.seed(fqdn, "A", List.of("93.184.216.35"));
+
+        reconciler.reconcile();
+
+        // Removing here would delete the new owner's record. The old rows are
+        // forgotten instead.
+        assertThat(zone.recordSet(fqdn, DnsRecordType.A).values())
+                .containsExactly("93.184.216.35");
+    }
+
+    /** Frees the name the way an administrator's takedown does. */
+    private void retire(long domainId) {
+        jdbcTemplate.update(
+                "update domains set status = 'REMOVED'::domain_status, released_at = null"
+                        + " where id = ?", domainId);
+    }
+
     /**
      * The same reconciler with orphan pruning on. Built rather than patched:
      * the switch is a constructor argument, and a test that reaches into the

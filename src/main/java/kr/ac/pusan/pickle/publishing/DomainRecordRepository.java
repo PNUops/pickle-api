@@ -21,6 +21,20 @@ public interface DomainRecordRepository extends JpaRepository<DomainRecord, Long
     List<DomainRecord> findByDomainIdAndStatusNot(Long domainId, DomainRecordStatus status);
 
     /**
+     * Every domain that has a set the zone has not confirmed, whatever the
+     * state of the domain row itself.
+     *
+     * <p>Asked of the records rather than of the domains on purpose. A domain
+     * can be retired while its sets are still standing — the admin takedown
+     * frees the name in the same transaction that marks them for removal — and
+     * a retired row is invisible to every scan that starts from
+     * {@code domains}. What the zone is owed is recorded here, so this is what
+     * has to be asked.</p>
+     */
+    @Query("select distinct r.domainId from DomainRecord r where r.status <> :applied")
+    List<Long> findDomainIdsOwedTheZone(@Param("applied") DomainRecordStatus applied);
+
+    /**
      * The rows an apply has to act on, taken under their locks so a second
      * apply for the same domain waits rather than pushing the same set twice.
      */

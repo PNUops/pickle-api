@@ -90,6 +90,7 @@ public class DomainRecordsReconciler {
             log.warn("domain-records reconcile skipped: provider unconfigured");
             return List.of();
         }
+        pushRetiredDomainsStillOwingTheZone();
         List<Reconciliation> results = new ArrayList<>();
         for (String root : settingsService.stringList(SettingsService.ALLOWED_ROOT_DOMAINS)) {
             String rootDomain = root.toLowerCase(Locale.ROOT);
@@ -164,6 +165,40 @@ public class DomainRecordsReconciler {
         log.info("domain-records reconcile for {}: pushed {}, pruned {}, left {}",
                 rootDomain, pushed.size(), pruned.size(), orphansLeft.size());
         return new Reconciliation(rootDomain, pushed, pruned, orphansLeft);
+    }
+
+    /**
+     * Pushes for domains the per-root pass below cannot see.
+     *
+     * <p>That pass starts from live domain rows, and a retired one is not
+     * among them — the admin takedown frees the name in the same transaction
+     * that marks its sets for removal, so a takedown whose push failed leaves
+     * records standing on a name anybody can now register, with every scan
+     * that starts from {@code domains} blind to them. The question is asked of
+     * the record rows instead, which is where what the zone is owed is
+     * actually written down.</p>
+     */
+    private void pushRetiredDomainsStillOwingTheZone() {
+        List<Long> owed = transactionTemplate.execute(tx ->
+                recordRepository.findDomainIdsOwedTheZone(DomainRecordStatus.APPLIED));
+        if (owed == null) {
+            return;
+        }
+        for (Long domainId : owed) {
+            Boolean retired = transactionTemplate.execute(tx -> domainRepository.findById(domainId)
+                    .map(d -> d.getStatus() == DomainStatus.REMOVED)
+                    .orElse(false));
+            if (!Boolean.TRUE.equals(retired)) {
+                continue; // the per-root pass owns this one
+            }
+            try {
+                applyJob.apply(domainId);
+            } catch (RuntimeException e) {
+                // One retired domain's failure must not stop the rest, the
+                // same isolation the reservation sweep gives its candidates.
+                log.error("domain-records reconcile failed for retired domain {}", domainId, e);
+            }
+        }
     }
 
     /**
