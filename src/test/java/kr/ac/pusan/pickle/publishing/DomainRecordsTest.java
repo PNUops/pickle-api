@@ -196,6 +196,26 @@ class DomainRecordsTest {
     }
 
     @Test
+    void aFailedRemovalRetriesAsARemoval() {
+        Domain domain = external("failed-removal");
+        records.replace(domain, List.of(set("", DnsRecordType.A, PUBLIC_V4)));
+        applyJob.apply(domain.getId());
+        records.replace(domain, List.of());
+        zone.failWith("zone unreachable");
+        applyJob.apply(domain.getId());
+
+        zone.failWith(null);
+        applyJob.apply(domain.getId());
+
+        // The retry has to keep going the same way. Recorded as simply owed a
+        // write, the row would put the set back into the zone, and since it
+        // only goes once the zone confirms the deletion it would stay owed for
+        // good and the name could never be reclaimed.
+        assertThat(zone.has(domain.getFqdn(), "A")).isFalse();
+        assertThat(records.list(domain.getId())).isEmpty();
+    }
+
+    @Test
     void aRefusedValueNeverReachesTheZone() {
         Domain domain = external("refused");
         assertThatThrownBy(() -> records.replace(domain,

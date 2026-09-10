@@ -157,8 +157,21 @@ public class DomainRecord {
         this.appliedAt = now;
     }
 
+    /**
+     * The last push of this set failed.
+     *
+     * <p>A set on its way out keeps REMOVED. FAILED means the set is owed a
+     * WRITE, so a failed removal recorded as FAILED has the next apply put the
+     * set back into the zone instead of taking it down — and since the row
+     * only goes once the zone confirms the deletion, it would then be owed a
+     * write forever and the name it belongs to could never be reclaimed. The
+     * error is recorded either way; only the direction of the retry is at
+     * stake here.</p>
+     */
     public void markFailed(String error) {
-        this.status = DomainRecordStatus.FAILED;
+        if (status != DomainRecordStatus.REMOVED) {
+            this.status = DomainRecordStatus.FAILED;
+        }
         this.lastError = error;
     }
 }
