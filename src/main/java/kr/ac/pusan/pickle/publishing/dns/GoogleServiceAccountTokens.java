@@ -110,7 +110,13 @@ public class GoogleServiceAccountTokens {
     private Cached exchange(Instant now) {
         String assertion = Jwts.builder()
                 .issuer(clientEmail)
-                .audience().add(tokenUri).and()
+                // single(), not add(). Both put the same value in the claim
+                // and every parser reads them alike, but add() serialises even
+                // one audience as a JSON array and the token endpoint answers
+                // that with invalid_grant, "Failed audience check" -- naming
+                // the value it was already sent, which reads as though the
+                // value were wrong.
+                .audience().single(tokenUri)
                 .claim("scope", SCOPE)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(ASSERTION_LIFETIME)))
