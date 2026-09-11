@@ -244,6 +244,36 @@ public class DevDataSeeder implements ApplicationRunner {
         seedRequestPeriods();
         seedRelay();
         seedPlatformCertificate();
+        seedDomainRoot();
+    }
+
+    /**
+     * The root names are issued under, and the organisation they belong to.
+     *
+     * <p>Which roots exist is environment rather than schema, so no migration
+     * writes this: a development database gets its row here and the platform
+     * host gets its own from the infra script that writes the settings it
+     * belongs with. Without a row, issuing a name answers a validation error
+     * rather than producing one with no organisation behind it.</p>
+     */
+    private void seedDomainRoot() {
+        Integer roots = jdbcTemplate.queryForObject("select count(*) from domain_roots",
+                Integer.class);
+        if (roots == null || roots > 0) {
+            return;
+        }
+        String root = jdbcTemplate.query(
+                "select value->>0 from settings where key = 'allowed_root_domains'",
+                rs -> rs.next() ? rs.getString(1) : null);
+        Long orgId = jdbcTemplate.query("select id from orgs order by id limit 1",
+                rs -> rs.next() ? rs.getLong(1) : null);
+        if (root == null || root.isBlank() || orgId == null) {
+            log.warn("No allowed root domain or no organisation, so no development domain root");
+            return;
+        }
+        jdbcTemplate.update("insert into domain_roots (root_domain, org_id) values (?, ?)",
+                root, orgId);
+        log.info("Empty inventory: seeded the development domain root ({})", root);
     }
 
     /** Returns the node every other part attaches to, seeding it when there is none. */
