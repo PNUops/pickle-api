@@ -93,7 +93,16 @@ class ReauthCoverageTest {
             // VM's does: an edit decides who reaches the key at all.
             "POST /llm-keys/{keyId}/access",
             "PATCH /llm-keys/{keyId}/access/{grantId}",
-            "DELETE /llm-keys/{keyId}/access/{grantId}"));
+            "DELETE /llm-keys/{keyId}/access/{grantId}",
+            // A name issued on its own is a resource, and letting it go deletes
+            // one — so it steps up the way DELETE /vms/{vmId} does rather than
+            // the way a served domain's release does, which takes a name off a
+            // VM that remains. Its access list steps up for the same reason
+            // every other access list does.
+            "DELETE /dns-domains/{domainId}",
+            "POST /dns-domains/{domainId}/access",
+            "PATCH /dns-domains/{domainId}/access/{grantId}",
+            "DELETE /dns-domains/{domainId}/access/{grantId}"));
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

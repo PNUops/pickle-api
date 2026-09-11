@@ -285,6 +285,21 @@ class ContractDriftTest {
             "POST /llm-keys/{keyId}/access",
             "PATCH /llm-keys/{keyId}/access/{grantId}",
             "DELETE /llm-keys/{keyId}/access/{grantId}",
+
+            // Names issued on their own, with no VM. A separate root from
+            // /domains because those are scoped through the VM they publish and
+            // one operationId cannot be scoped to two access lists.
+            "GET /dns-domains",
+            "POST /dns-domains",
+            "GET /dns-domains/{domainId}",
+            "DELETE /dns-domains/{domainId}",
+            "POST /dns-domains/{domainId}/renew",
+            "GET /dns-domains/{domainId}/records",
+            "PUT /dns-domains/{domainId}/records",
+            "GET /dns-domains/{domainId}/access",
+            "POST /dns-domains/{domainId}/access",
+            "PATCH /dns-domains/{domainId}/access/{grantId}",
+            "DELETE /dns-domains/{domainId}/access/{grantId}",
             // 공지사항: the public board and its management surface.
             "GET /notices",
             "GET /notices/{noticeId}",
