@@ -80,6 +80,14 @@ public class AuditService {
     public static final String LLM_KEY_ACCESS_GRANT_UPDATE = "llm_key.access_grant_update";
     public static final String LLM_KEY_ACCESS_GRANT_REMOVE = "llm_key.access_grant_remove";
     public static final String LLM_KEY_ACCESS_BREAK_GLASS = "llm_key.access_break_glass";
+    public static final String DNS_DOMAIN_ACCESS_GRANT_ADD = "dns_domain.access_grant_add";
+    public static final String DNS_DOMAIN_ACCESS_GRANT_UPDATE = "dns_domain.access_grant_update";
+    public static final String DNS_DOMAIN_ACCESS_GRANT_REMOVE = "dns_domain.access_grant_remove";
+    public static final String DNS_DOMAIN_ACCESS_BREAK_GLASS = "dns_domain.access_break_glass";
+    public static final String DNS_DOMAIN_CREATE = "dns_domain.create";
+    public static final String DNS_DOMAIN_DELETE = "dns_domain.delete";
+    public static final String DNS_DOMAIN_RENEW = "dns_domain.renew";
+    public static final String DNS_DOMAIN_RECORDS_REPLACE = "dns_domain.records_replace";
     public static final String LLM_KEY_ISSUE = "llm_key.issue";
     public static final String LLM_KEY_REVOKE = "llm_key.revoke";
     public static final String LLM_KEY_UPDATE = "llm_key.update";
