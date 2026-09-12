@@ -15,6 +15,9 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.orgs.Org;
+import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.publishing.DomainRecordPolicy.DesiredSet;
 import kr.ac.pusan.pickle.publishing.dto.CreateDnsDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
@@ -53,6 +56,7 @@ public class DnsDomainService {
     private final ResourceAccessGrantRepository grantRepository;
     private final ResourceAccessResolver resourceAccessResolver;
     private final DomainRootRepository domainRootRepository;
+    private final OrgRepository orgRepository;
     private final kr.ac.pusan.pickle.publishing.dns.DnsRecordProvider dnsRecordProvider;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -63,7 +67,7 @@ public class DnsDomainService {
             SubdomainPolicy subdomainPolicy, PublishingService publishingService,
             ResourceAccessGrantRepository grantRepository,
             ResourceAccessResolver resourceAccessResolver,
-            DomainRootRepository domainRootRepository,
+            DomainRootRepository domainRootRepository, OrgRepository orgRepository,
             kr.ac.pusan.pickle.publishing.dns.DnsRecordProvider dnsRecordProvider,
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, AuditService auditService) {
@@ -76,6 +80,7 @@ public class DnsDomainService {
         this.grantRepository = grantRepository;
         this.resourceAccessResolver = resourceAccessResolver;
         this.domainRootRepository = domainRootRepository;
+        this.orgRepository = orgRepository;
         this.dnsRecordProvider = dnsRecordProvider;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -338,10 +343,20 @@ public class DnsDomainService {
     }
 
     private DomainRoot requireIssuableRoot(String rootDomain) {
-        return domainRootRepository.findByRootDomain(rootDomain)
+        DomainRoot root = domainRootRepository.findByRootDomain(rootDomain)
                 .orElseThrow(() -> ApiException.validationFailed(List.of(
                         new FieldValidationError("rootDomain",
                                 "이 루트 도메인으로는 이름을 발급할 수 없습니다."))));
+        // The same refusal a request form makes. A name takes its organisation
+        // from the root, so issuing under a root whose organisation is disabled
+        // would attach it to one that is no longer taking anything on.
+        Org org = orgRepository.findById(root.getOrgId()).orElse(null);
+        if (org == null || org.getStatus() != OrgStatus.ACTIVE) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                    "지금은 이 루트 도메인으로 발급할 수 없습니다",
+                    "이 루트 도메인을 소유한 기관이 비활성 상태입니다. 관리자에게 문의해 주세요.");
+        }
+        return root;
     }
 
     private Workspace requireMembership(AuthenticatedUser actor, UUID workspaceId) {

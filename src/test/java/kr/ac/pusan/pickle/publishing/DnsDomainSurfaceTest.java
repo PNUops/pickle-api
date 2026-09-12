@@ -63,6 +63,10 @@ class DnsDomainSurfaceTest {
     @BeforeEach
     void setUp() {
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
+        // Reset rather than assumed: the suite shares one seeded organisation
+        // and the disabled-root test leaves it DISABLED, which every other test
+        // here would then be running against.
+        jdbcTemplate.update("update orgs set status = 'ACTIVE' where id = ?", orgId);
         String slug = "dds-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
@@ -298,6 +302,18 @@ class DnsDomainSurfaceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select released_at is not null from domains where public_id = ?",
                 Boolean.class, created.id())).isTrue();
+    }
+
+    @Test
+    void aRootWhoseOrganisationIsDisabledIssuesNothing() {
+        jdbcTemplate.update("update orgs set status = 'DISABLED' where id = ?", orgId);
+
+        // A name takes its organisation from the root, so issuing here would
+        // attach it to one that is no longer taking anything on — the same
+        // refusal a request form makes.
+        assertThatThrownBy(() -> service.create(owner, request("disabled"), "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("발급할 수 없습니다");
     }
 
     private CreateDnsDomainRequest request(String label) {
