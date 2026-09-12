@@ -209,6 +209,97 @@ class DnsDomainSurfaceTest {
         assertThat(renewed.renewDueAt()).isAfter(Instant.now().plusSeconds(60L * 60 * 24 * 100));
     }
 
+    @Test
+    void aWorkspaceTakesItsOwnReservedNameBack() {
+        DnsDomainView created = service.create(owner, request("comeback"), "127.0.0.1");
+        service.replaceRecords(owner, created.id(), new ReplaceDnsRecordSetsRequest(List.of(
+                new DesiredRecordSet("", DnsRecordType.A, List.of("93.184.216.34"), 300))),
+                "127.0.0.1");
+        service.delete(owner, created.id(), "127.0.0.1");
+
+        DnsDomainView revived = service.create(owner, request("comeback"), "127.0.0.1");
+
+        // The whole point of the grace: without this it keeps the name from
+        // everybody including the person it is being kept for.
+        assertThat(revived.fqdn()).isEqualTo(created.fqdn());
+        assertThat(revived.releasedAt()).isNull();
+        assertThat(revived.renewDueAt()).isAfter(Instant.now());
+        // The name comes back; the records do not. They were taken down when it
+        // was released, and handing them back would republish a site its owner
+        // had stopped.
+        assertThat(service.listRecords(owner, revived.id())).isEmpty();
+    }
+
+    @Test
+    void aReservedNameIsNotRevivableByAnotherWorkspace() {
+        DnsDomainView created = service.create(owner, request("notyours"), "127.0.0.1");
+        service.delete(owner, created.id(), "127.0.0.1");
+        long otherWorkspaceId = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                Long.class, "other-" + UUID.randomUUID().toString().substring(0, 8));
+        jdbcTemplate.update(
+                "insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",
+                otherWorkspaceId, owner.id());
+        UUID otherPublicId = jdbcTemplate.queryForObject(
+                "select public_id from workspaces where id = ?", UUID.class, otherWorkspaceId);
+
+        // The same conflict an unheld collision gets. Saying it is reserved by
+        // somebody else would tell a stranger who holds a name they cannot see.
+        assertThatThrownBy(() -> service.create(owner,
+                new CreateDnsDomainRequest("notyours", "pusan.dev", otherPublicId), "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("이미 사용 중");
+    }
+
+    @Test
+    void releasingTwiceDoesNotRestartTheGrace() {
+        DnsDomainView created = service.create(owner, request("twice"), "127.0.0.1");
+        service.delete(owner, created.id(), "127.0.0.1");
+
+        // Allowed, this holds a name out of the shared space for ever: delete it
+        // once a month and the reservation never ends.
+        assertThatThrownBy(() -> service.delete(owner, created.id(), "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("이미 해제한");
+    }
+
+    @Test
+    void aReleasedNameTakesNoRecordEditsAndSaysSoAsAConflict() {
+        DnsDomainView created = service.create(owner, request("noedit"), "127.0.0.1");
+        service.delete(owner, created.id(), "127.0.0.1");
+
+        // The records service guards the same thing as an invariant, which
+        // answers 500. A name its owner already let go of is a state a request
+        // can legitimately arrive in, so the answer is a conflict.
+        assertThatThrownBy(() -> service.replaceRecords(owner, created.id(),
+                new ReplaceDnsRecordSetsRequest(List.of(
+                        new DesiredRecordSet("", DnsRecordType.A, List.of("93.184.216.34"), 300))),
+                "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("이미 해제한");
+        assertThatThrownBy(() -> service.renew(owner, created.id(), "127.0.0.1"))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("이미 해제한");
+    }
+
+    @Test
+    void aWorkspaceOwnerWithNoGrantMayStillReleaseTheName() {
+        DnsDomainView created = service.create(owner, request("standing"), "127.0.0.1");
+        // The person who issued it is gone: their grant is withdrawn and nobody
+        // holds one. The workspace owner must still be able to take the name
+        // back without first granting themselves access to it.
+        jdbcTemplate.update("delete from resource_access_grants"
+                + " where resource_type = 'DOMAIN'::resource_type");
+
+        service.delete(owner, created.id(), "127.0.0.1");
+
+        // Read from the row: managing is a standing right, but opening the
+        // detail still needs a grant, and that split is the established one.
+        assertThat(jdbcTemplate.queryForObject(
+                "select released_at is not null from domains where public_id = ?",
+                Boolean.class, created.id())).isTrue();
+    }
+
     private CreateDnsDomainRequest request(String label) {
         return new CreateDnsDomainRequest(label, "pusan.dev", workspacePublicId);
     }

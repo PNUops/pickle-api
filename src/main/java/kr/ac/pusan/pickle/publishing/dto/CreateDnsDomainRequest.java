@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.publishing.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
@@ -30,5 +31,6 @@ public record CreateDnsDomainRequest(
         String rootDomain,
 
         @Schema(description = "이 이름을 소유할 워크스페이스.")
+        @NotNull
         UUID workspaceId) {
 }
