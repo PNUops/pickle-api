@@ -78,8 +78,13 @@ public class ResourceAccessResolver {
      * resource type would be a second policy within a release or two.
      *
      * <p>Membership of the owning workspace is deliberately not re-checked per
-     * row: every caller builds its page from the requester's own workspace
-     * memberships, so each row already is a resource of a workspace they are in.
+     * row: the page builders all derive their rows from the requester's own
+     * workspace memberships, so each row already is a resource of a workspace
+     * they are in. One caller is outside that: an administrator reading a single
+     * allocation is not a member of its workspace, and it reads {@code
+     * ownerNames} alone. {@code roles} is the component that must not be read
+     * without the membership check, so a future caller of that shape has to
+     * establish it first.
      */
     @Transactional(readOnly = true)
     public ListAccess listAccess(ResourceType type, List<Long> resourceIds, long userId) {

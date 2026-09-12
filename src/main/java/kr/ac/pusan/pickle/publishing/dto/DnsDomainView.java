@@ -45,7 +45,8 @@ public record DnsDomainView(
         boolean accessLimited,
         boolean accessManageAllowed,
         @Schema(description = "요청자가 이 도메인의 접근 목록에서 받은 등급. "
-                + "목록에 없으면 null입니다.")
+                + "부여가 없으면 null이고, 그런 행은 목록에만 나타납니다. "
+                + "상세는 부여가 있어야 열리므로 언제나 값이 있습니다.")
         @Nullable ResourceRole myResourceRole,
         java.util.List<String> ownerNames,
         int recordSetCount) {
