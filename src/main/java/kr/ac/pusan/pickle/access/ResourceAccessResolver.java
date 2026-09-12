@@ -61,8 +61,13 @@ public class ResourceAccessResolver {
      * @param reachable  the resources some grant opens for them
      * @param ownerNames per resource, the names of its owners: who a member
      *                   without a grant asks for one
+     * @param roles      per reachable resource, the rung the requester acts at,
+     *                   so a list can tell a reader which of the row's actions
+     *                   would be refused before they press one. Absent for a
+     *                   resource no grant opens.
      */
-    public record ListAccess(Set<Long> reachable, Map<Long, List<String>> ownerNames) {
+    public record ListAccess(Set<Long> reachable, Map<Long, List<String>> ownerNames,
+            Map<Long, ResourceRole> roles) {
     }
 
     /**
@@ -73,22 +78,34 @@ public class ResourceAccessResolver {
      * resource type would be a second policy within a release or two.
      *
      * <p>Membership of the owning workspace is deliberately not re-checked per
-     * row: every caller builds its page from the requester's own workspace
-     * memberships, so each row already is a resource of a workspace they are in.
+     * row: the page builders all derive their rows from the requester's own
+     * workspace memberships, so each row already is a resource of a workspace
+     * they are in. One caller is outside that: an administrator reading a single
+     * allocation is not a member of its workspace, and it reads {@code
+     * ownerNames} alone. {@code roles} is the component that must not be read
+     * without the membership check, so a future caller of that shape has to
+     * establish it first.
      */
     @Transactional(readOnly = true)
     public ListAccess listAccess(ResourceType type, List<Long> resourceIds, long userId) {
         if (resourceIds.isEmpty()) {
-            return new ListAccess(Set.of(), Map.of());
+            return new ListAccess(Set.of(), Map.of(), Map.of());
         }
         List<ResourceAccessGrant> grants =
                 grantRepository.findByResourceTypeAndResourceIdIn(type, resourceIds);
         Set<Long> reachable = new HashSet<>();
         Map<Long, List<Long>> ownerIds = new LinkedHashMap<>();
+        Map<Long, ResourceRole> roles = new LinkedHashMap<>();
         for (ResourceAccessGrant grant : grants) {
             if (grant.getGranteeType() == AccessGranteeType.WORKSPACE
                     || Long.valueOf(userId).equals(grant.getUserId())) {
                 reachable.add(grant.getResourceId());
+                // Same rule the single-resource form uses: two grants can reach
+                // one person, and the higher rung is the one they act at.
+                ResourceRole best = roles.get(grant.getResourceId());
+                if (best == null || grant.getRole().atLeast(best)) {
+                    roles.put(grant.getResourceId(), grant.getRole());
+                }
             }
             if (grant.getRole() == ResourceRole.OWNER && grant.getUserId() != null) {
                 ownerIds.computeIfAbsent(grant.getResourceId(), key -> new ArrayList<>())
@@ -101,7 +118,7 @@ public class ResourceAccessResolver {
         Map<Long, List<String>> ownerNames = new LinkedHashMap<>();
         ownerIds.forEach((resourceId, ids) -> ownerNames.put(resourceId, ids.stream()
                 .map(names::get).filter(Objects::nonNull).toList()));
-        return new ListAccess(reachable, ownerNames);
+        return new ListAccess(reachable, ownerNames, roles);
     }
 
     /**

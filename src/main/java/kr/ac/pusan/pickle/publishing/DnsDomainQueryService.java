@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceAccessResolver;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceStanding;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
@@ -22,6 +23,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.jspecify.annotations.Nullable;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -96,6 +98,7 @@ public class DnsDomainQueryService {
                             open ? List.of() : access.ownerNames()
                                     .getOrDefault(domain.getId(), List.of()),
                             ownedWorkspaceIds.contains(domain.getWorkspaceId()),
+                            access.roles().get(domain.getId()),
                             open ? recordSetCount(domain.getId()) : 0);
                 })
                 .toList(), pageable, result.getTotalElements());
@@ -114,7 +117,7 @@ public class DnsDomainQueryService {
         standing.requireVisible(DomainResourceAdapter.MESSAGES);
         Workspace workspace = workspaceRepository.findById(domain.getWorkspaceId()).orElse(null);
         return view(domain, workspace, graceDays(), false, List.of(), standing.manages(),
-                recordSetCount(domain.getId()));
+                standing.role(), recordSetCount(domain.getId()));
     }
 
     /**
@@ -142,7 +145,8 @@ public class DnsDomainQueryService {
     }
 
     private static DnsDomainView view(Domain domain, Workspace workspace, int graceDays,
-            boolean limited, List<String> ownerNames, boolean manages, int recordSetCount) {
+            boolean limited, List<String> ownerNames, boolean manages,
+            @Nullable ResourceRole myResourceRole, int recordSetCount) {
         Instant releasedAt = domain.getReleasedAt();
         return new DnsDomainView(
                 domain.getPublicId(),
@@ -157,6 +161,7 @@ public class DnsDomainQueryService {
                 workspace == null ? "" : workspace.getName(),
                 limited,
                 manages,
+                myResourceRole,
                 ownerNames,
                 recordSetCount);
     }

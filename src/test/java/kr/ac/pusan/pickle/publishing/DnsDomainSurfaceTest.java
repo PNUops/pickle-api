@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.publishing.dto.CreateDnsDomainRequest;
@@ -302,6 +303,95 @@ class DnsDomainSurfaceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select released_at is not null from domains where public_id = ?",
                 Boolean.class, created.id())).isTrue();
+    }
+
+    @Test
+    void theRowCarriesTheRungItsReaderActsAt() {
+        DnsDomainView created = service.create(owner, request("rung"), "127.0.0.1");
+        long domainId = jdbcTemplate.queryForObject(
+                "select id from domains where public_id = ?", Long.class, created.id());
+
+        // The issuer holds OWNER, which is what the screen reads to decide
+        // whether to draw a release button at all. Without it every reader sees
+        // every action and learns from a refusal after pressing one.
+        assertThat(created.myResourceRole()).isEqualTo(ResourceRole.OWNER);
+        assertThat(queryService.get(owner, created.id()).myResourceRole())
+                .isEqualTo(ResourceRole.OWNER);
+
+        // Demote the one grant. The row stays open and the rung follows it down,
+        // which is the case the screen exists to draw differently. Scoped to
+        // this row: the suite shares one database and an unscoped update would
+        // reach grants other classes seeded.
+        jdbcTemplate.update("update resource_access_grants set role = 'VIEWER'::resource_role"
+                + " where resource_type = 'DOMAIN'::resource_type and resource_id = ?", domainId);
+        assertThat(queryService.get(owner, created.id()).myResourceRole())
+                .isEqualTo(ResourceRole.VIEWER);
+
+        // The listing answers the same rung. It is a separate code path — a
+        // batch query rather than the single-resource one — and a list that
+        // reported OWNER for everything would draw the same wrong buttons.
+        assertThat(listed(owner, created.id()).myResourceRole()).isEqualTo(ResourceRole.VIEWER);
+    }
+
+    @Test
+    void aListedRowReportsTheReadersOwnRungAndNobodyElses() {
+        DnsDomainView created = service.create(owner, request("someoneelse"), "127.0.0.1");
+        long domainId = jdbcTemplate.queryForObject(
+                "select id from domains where public_id = ?", Long.class, created.id());
+
+        // A second member of the same workspace, with no grant on this name.
+        AuthenticatedUser stranger = member("stranger");
+
+        DnsDomainView row = listed(stranger, created.id());
+        // The row is listed so its existence and owner are visible, and the
+        // absent rung is what says the inside is closed. Reporting the issuer's
+        // OWNER here would contradict accessLimited on the same row, and a
+        // screen reading the rung would draw every action for somebody the
+        // server refuses.
+        assertThat(row.accessLimited()).isTrue();
+        assertThat(row.myResourceRole()).isNull();
+        assertThat(row.ownerNames()).isNotEmpty();
+
+        // A grant to the workspace as a whole opens the row for that member,
+        // and the rung has to arrive with it — an open row reporting no rung
+        // would have every action hidden from somebody entitled to them.
+        jdbcTemplate.update("""
+                insert into resource_access_grants
+                       (resource_type, resource_id, grantee_type, role)
+                values ('DOMAIN'::resource_type, ?, 'WORKSPACE'::access_grantee_type,
+                        'MEMBER'::resource_role)
+                """, domainId);
+        DnsDomainView opened = listed(stranger, created.id());
+        assertThat(opened.accessLimited()).isFalse();
+        assertThat(opened.myResourceRole()).isEqualTo(ResourceRole.MEMBER);
+
+        // Two grants reach the issuer now. They act at the higher of the two,
+        // the same rule the single-resource form uses; taking the lower would
+        // strip the issuer of their own name.
+        assertThat(listed(owner, created.id()).myResourceRole()).isEqualTo(ResourceRole.OWNER);
+    }
+
+    /** The row for one name out of a reader's own listing. */
+    private DnsDomainView listed(AuthenticatedUser actor, UUID domainId) {
+        return queryService
+                .listPage(actor, null, org.springframework.data.domain.PageRequest.of(0, 50))
+                .getContent().stream()
+                .filter(row -> row.id().equals(domainId))
+                .findFirst().orElseThrow();
+    }
+
+    /** Another member of the seeded workspace, holding no grant on anything. */
+    private AuthenticatedUser member(String prefix) {
+        String email = prefix + "." + UUID.randomUUID().toString().substring(0, 8)
+                + "@pusan.ac.kr";
+        long id = createUser(email);
+        jdbcTemplate.update(
+                "insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'MEMBER')",
+                workspaceId, id);
+        return new AuthenticatedUser(id,
+                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
+                        id),
+                email, UserRole.USER, Map.of());
     }
 
     @Test
