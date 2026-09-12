@@ -41,6 +41,9 @@ public class Vm {
     @Column(name = "proxmox_vmid", unique = true)
     private Integer proxmoxVmid;
 
+    @Column(name = "power_operation_id")
+    private UUID powerOperationId;
+
     @Column(name = "node_id", nullable = false)
     private Long nodeId;
 
@@ -215,6 +218,8 @@ public class Vm {
     public Integer getProxmoxVmid() {
         return proxmoxVmid;
     }
+
+    public UUID getPowerOperationId() { return powerOperationId; }
 
     public Long getNodeId() {
         return nodeId;

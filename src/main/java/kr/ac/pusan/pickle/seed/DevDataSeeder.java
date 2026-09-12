@@ -140,6 +140,11 @@ public class DevDataSeeder implements ApplicationRunner {
         setting("ip_quarantine_hours", "24",
                 "회수된 IP를 재할당하지 않고 격리하는 시간(시간). 릴레이 에이전트가 보관된 스냅샷을"
                         + " 재적용할 수 있는 기간(24시간)보다 짧게 설정할 수 없습니다.");
+        setting("gpu_unattached_review_hours", "12", "GPU 미연결 검토 기준 시간. 저장한 값은 다음 검토 실행에서 읽습니다.");
+        setting("gpu_low_util_window_hours", "12", "GPU 저사용 평균을 계산하는 시간 범위.");
+        setting("gpu_low_util_threshold_percent", "5", "GPU 저사용 검토 기준 이용률(%). 자동 회수하지 않습니다.");
+        setting("gpu_low_util_snooze_hours", "12", "GPU 유지 결정 후 재검토를 유예할 시간.");
+        setting("gpu_lease_notice_hours", "[24,1]", "GPU 임대 종료까지 남은 시간 기준 알림 단계. 승인한 임대보다 짧은 단계만 보냅니다.");
         setting("vm_delete_grace_hours", "168",
                 "본인 삭제 접수 후 파기까지의 유예 시간(시간). 유예는 관리자 복구용 안전망.");
         setting("ssh_gateway_enabled", "false",

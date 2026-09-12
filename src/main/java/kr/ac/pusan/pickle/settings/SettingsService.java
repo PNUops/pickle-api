@@ -38,6 +38,12 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class SettingsService {
 
+    public static final String GPU_UNATTACHED_REVIEW_HOURS = "gpu_unattached_review_hours";
+    public static final String GPU_LOW_UTIL_WINDOW_HOURS = "gpu_low_util_window_hours";
+    public static final String GPU_LOW_UTIL_THRESHOLD_PERCENT = "gpu_low_util_threshold_percent";
+    public static final String GPU_LOW_UTIL_SNOOZE_HOURS = "gpu_low_util_snooze_hours";
+    public static final String GPU_LEASE_NOTICE_HOURS = "gpu_lease_notice_hours";
+
     public static final String ALLOWED_ROOT_DOMAINS = "allowed_root_domains";
     public static final String PLATFORM_SUBDOMAINS_PER_VM = "platform_subdomains_per_vm";
     public static final String PLATFORM_SUBDOMAIN_RESERVE_DAYS = "platform_subdomain_reserve_days";
@@ -172,6 +178,16 @@ public class SettingsService {
         return value.isBlank() ? null : value;
     }
 
+    /** Reads the stored value at call time, refusing missing or invalid configuration. */
+    public JsonNode requiredValid(String key) {
+        JsonNode value = read(key);
+        Editable rule = EDITABLE.get(key);
+        if (value == null || rule == null || !rule.validator().apply(value).isEmpty()) {
+            throw new IllegalStateException("GPU 설정을 확인해 주세요: " + key);
+        }
+        return value;
+    }
+
     // ── SYS_ADMIN editor (contract listSettings / updateSetting) ───────────
 
     /** Every settings row, whitelisted ones marked editable. Key-ordered. */
@@ -263,6 +279,24 @@ public class SettingsService {
 
     private static Map<String, Editable> buildWhitelist() {
         Map<String, Editable> map = new LinkedHashMap<>();
+        for (String key : List.of(GPU_UNATTACHED_REVIEW_HOURS, GPU_LOW_UTIL_WINDOW_HOURS, GPU_LOW_UTIL_SNOOZE_HOURS)) {
+            map.put(key, new Editable(SettingValueType.INTEGER, intInRange(1, 8760)));
+        }
+        map.put(GPU_LOW_UTIL_THRESHOLD_PERCENT, new Editable(SettingValueType.NUMBER, value ->
+                value.isNumber() && Double.isFinite(value.asDouble()) && value.asDouble() >= 0 && value.asDouble() <= 100
+                ? List.of() : List.of(new FieldValidationError("value", "0 이상 100 이하의 숫자여야 합니다."))));
+        map.put(GPU_LEASE_NOTICE_HOURS, new Editable(SettingValueType.JSON, value -> {
+            if (!value.isArray() || value.size() > 5) {
+                return List.of(new FieldValidationError("value", "알림 시점은 최대 5개의 시간 배열이어야 합니다."));
+            }
+            Set<Integer> seen = new LinkedHashSet<>();
+            for (JsonNode item : value) {
+                if (!item.isIntegralNumber() || !item.canConvertToInt() || item.asInt() < 1 || !seen.add(item.asInt())) {
+                    return List.of(new FieldValidationError("value", "중복 없는 양의 정수 시간을 입력해 주세요."));
+                }
+            }
+            return List.of();
+        }));
         map.put(VCPU_OVERCOMMIT_WARN, new Editable(SettingValueType.NUMBER,
                 numberInRangeExclusiveMin(0, 10)));
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,

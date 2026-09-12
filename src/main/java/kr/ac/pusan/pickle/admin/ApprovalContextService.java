@@ -102,7 +102,7 @@ public class ApprovalContextService {
                 legacyVm.orgHeadroom(),
                 legacyVm.guidance(),
                 contribution.vm(),
-                contribution.llmKey());
+                contribution.llmKey(), contribution.gpu());
     }
 
     private Applicant applicantPanel(Request request, User applicant) {

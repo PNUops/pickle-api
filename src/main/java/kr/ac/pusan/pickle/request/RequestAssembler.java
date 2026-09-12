@@ -44,6 +44,7 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 public class RequestAssembler {
 
+    private final kr.ac.pusan.pickle.gpu.GpuStore gpuStore;
     private final RequestReviewRepository reviewRepository;
     private final VmRequestDetailRepository vmDetailRepository;
     private final LlmKeyRequestDetailRepository llmKeyDetailRepository;
@@ -56,7 +57,7 @@ public class RequestAssembler {
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final ObjectMapper objectMapper;
 
-    public RequestAssembler(RequestReviewRepository reviewRepository,
+    public RequestAssembler(kr.ac.pusan.pickle.gpu.GpuStore gpuStore, RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository,
             LlmKeyRequestDetailRepository llmKeyDetailRepository,
             WorkspaceRepository workspaceRepository,
@@ -64,6 +65,7 @@ public class RequestAssembler {
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, RequestPeriodPresetRepository periodPresetRepository,
             ObjectMapper objectMapper) {
+        this.gpuStore = gpuStore;
         this.objectMapper = objectMapper;
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
@@ -174,6 +176,7 @@ public class RequestAssembler {
                             PassthroughEndpoints.fromJson(objectMapper,
                                     llmKeyDetail.getGrantedPassthroughEndpoints(),
                                     "request " + request.getPublicId())) : null,
+                    request.getResourceType() == ResourceType.GPU ? gpuStore.requestSpec(request.getId()) : null,
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;

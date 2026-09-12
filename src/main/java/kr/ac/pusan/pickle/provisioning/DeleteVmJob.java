@@ -80,6 +80,7 @@ public class DeleteVmJob {
     private static final Set<VmStatus> POWER_STATES =
             Set.of(VmStatus.RUNNING, VmStatus.STOPPED, VmStatus.REBOOTING);
 
+    private final kr.ac.pusan.pickle.gpu.GpuMutationService gpuMutations;
     private final VmRepository vmRepository;
     private final VmEventRepository vmEventRepository;
     private final ProvisioningTaskRepository taskRepository;
@@ -95,7 +96,7 @@ public class DeleteVmJob {
     private final VmSettingsService vmSettingsService;
     private final TransactionTemplate transactionTemplate;
 
-    public DeleteVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
+    public DeleteVmJob(kr.ac.pusan.pickle.gpu.GpuMutationService gpuMutations, VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
             ProxmoxClient proxmoxClient, IpamService ipamService, JobScheduler jobScheduler,
             UserRepository userRepository, NotificationService notificationService,
@@ -103,6 +104,7 @@ public class DeleteVmJob {
             PortMappingTeardownService portMappingTeardown,
             VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService,
             TransactionTemplate transactionTemplate) {
+        this.gpuMutations = gpuMutations;
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -130,6 +132,8 @@ public class DeleteVmJob {
         if (vm == null || vm.getStatus() != VmStatus.DELETING || vm.getProxmoxVmid() == null) {
             return;
         }
+        if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) { return; }
+        if (!gpuMutations.prepareVmDeletion(vmId, true)) { return; }
         Node node = nodeRepository.findById(vm.getNodeId()).orElse(null);
         if (node == null) {
             return;
@@ -151,6 +155,7 @@ public class DeleteVmJob {
             closeRacedLiveTask(vmId);
             return;
         }
+        if (vm.getDeleteScheduledFor() == null || vm.getDeleteScheduledFor().isAfter(Instant.now())) { return; }
         if (vm.getStatus() != VmStatus.DELETING) {
             // ADMIN-scheduled deletes keep the power state until destroy time.
             // The claim CAS re-checks the intent so a raced cancel cannot leave
@@ -196,6 +201,11 @@ public class DeleteVmJob {
                     vmId);
             taskRepository.park(task.getId(), detail, now);
             vmRepository.updateStatusDetail(vmId, VmStatus.DELETING, detail, now);
+            return;
+        }
+        if (!gpuMutations.prepareVmDeletion(vmId, false)) {
+            taskRepository.transitionStatus(task.getId(), ProvisioningTaskStatus.RUNNING,
+                    ProvisioningTaskStatus.RETRYING, "GPU 연결 해제가 완료되기를 기다립니다.", Instant.now());
             return;
         }
         try {

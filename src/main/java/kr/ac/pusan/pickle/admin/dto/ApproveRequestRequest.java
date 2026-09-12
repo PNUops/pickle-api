@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin.dto;
 
 import jakarta.validation.Valid;
+import kr.ac.pusan.pickle.gpu.dto.ApproveGpuRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
@@ -27,5 +28,10 @@ public record ApproveRequestRequest(
          * May be empty: every limit on it is optional, and granting none is
          * granting the service defaults, which is the ordinary decision.
          */
-        @Valid @Nullable ApproveLlmKeyRequestSpec llmKey) {
+        @Valid @Nullable ApproveLlmKeyRequestSpec llmKey,
+        @Valid @Nullable ApproveGpuRequestSpec gpu) {
+    public ApproveRequestRequest(LocalDate grantedStartDate, LocalDate grantedEndDate,
+            String comment, ApproveVmRequestSpec vm, ApproveLlmKeyRequestSpec llmKey) {
+        this(grantedStartDate, grantedEndDate, comment, vm, llmKey, null);
+    }
 }

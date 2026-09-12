@@ -2,6 +2,8 @@ package kr.ac.pusan.pickle.vm;
 
 /** Kinds of entries in the permanent per-VM history (vm_events). */
 public enum VmEventType {
+    GPU_ATTACH,
+    GPU_DETACH,
     CREATE,
     START,
     STOP,

@@ -65,6 +65,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class VmQueryService {
 
+    private final kr.ac.pusan.pickle.gpu.GpuVmQueryService gpuQuery;
     private final VmRepository vmRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
@@ -82,7 +83,7 @@ public class VmQueryService {
     private final VmSettingsService vmSettingsService;
     private final String sshHost;
 
-    public VmQueryService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
+    public VmQueryService(kr.ac.pusan.pickle.gpu.GpuVmQueryService gpuQuery, VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
             ResourceAccessResolver resourceAccessResolver,
             UserRepository userRepository,
@@ -94,6 +95,7 @@ public class VmQueryService {
             DomainRepository domainRepository, PublicationAssembler publicationAssembler,
             VmSettingsService vmSettingsService,
             @Value("${pickle.ssh.advertised-host:}") String sshHost) {
+        this.gpuQuery = gpuQuery;
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -223,7 +225,7 @@ public class VmQueryService {
     @Transactional(readOnly = true)
     public VmDetailResponse get(AuthenticatedUser actor, UUID vmId) {
         VmAccess access = vmAccessService.of(actor, vmId);
-        return detailOf(access.requireVisible(), access.role(), access.manages());
+        return detailOf(access.requireVisible(), access.role(), access.manages(), actor.id());
     }
 
     /**
@@ -243,6 +245,10 @@ public class VmQueryService {
     @Transactional(readOnly = true)
     public VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole,
             boolean accessManageAllowed) {
+        return detailOf(vm, myResourceRole, accessManageAllowed, null);
+    }
+
+    private VmDetailResponse detailOf(Vm vm, ResourceRole myResourceRole, boolean accessManageAllowed, Long actorId) {
         long vmId = vm.getId();
         // History-preserving joins: a DELETED vm's workspace/org may have been
         // deleted afterwards, so this deliberately reads all workspaces/orgs.
@@ -281,7 +287,7 @@ public class VmQueryService {
                 vmSettingsService.role(vmId, VmSettingsService.PASSWORD_REVEAL_MIN_ROLE));
         return VmDetailResponse.from(vm, refs, workspaceName, orgName, displayName, ipAddress, sshHost,
                 myResourceRole, passwordRevealAllowed, accessManageAllowed, provisioning,
-                publications);
+                publications, gpuQuery.summary(vm.getId(), actorId));
     }
 
     /** Newest-first lifecycle history (contract op {@code listVmEvents}). */

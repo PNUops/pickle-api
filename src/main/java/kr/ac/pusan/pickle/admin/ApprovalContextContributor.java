@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import java.util.List;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.LlmKeyContext;
+import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.GpuContext;
 import kr.ac.pusan.pickle.admin.dto.ApprovalContextResponse.VmContext;
 import kr.ac.pusan.pickle.request.Request;
 import org.jspecify.annotations.Nullable;
@@ -14,13 +15,14 @@ public interface ApprovalContextContributor {
 
     Contribution contribute(Request request, List<Long> applicantWorkspaceIds);
 
-    record Contribution(@Nullable VmContext vm, @Nullable LlmKeyContext llmKey) {
+    record Contribution(@Nullable VmContext vm, @Nullable LlmKeyContext llmKey,
+            @Nullable GpuContext gpu) {
         public static Contribution vm(VmContext context) {
-            return new Contribution(context, null);
+            return new Contribution(context, null, null);
         }
 
         public static Contribution llmKey(LlmKeyContext context) {
-            return new Contribution(null, context);
+            return new Contribution(null, context, null);
         }
     }
 }

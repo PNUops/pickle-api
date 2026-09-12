@@ -45,13 +45,15 @@ public class VmPowerJobs {
     private final VmEventRepository vmEventRepository;
     private final NodeRepository nodeRepository;
     private final ProxmoxClient proxmoxClient;
+    private final VmPowerOperationGuard powerGuard;
 
     public VmPowerJobs(VmRepository vmRepository, VmEventRepository vmEventRepository,
-            NodeRepository nodeRepository, ProxmoxClient proxmoxClient) {
+            NodeRepository nodeRepository, ProxmoxClient proxmoxClient, VmPowerOperationGuard powerGuard) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.nodeRepository = nodeRepository;
         this.proxmoxClient = proxmoxClient;
+        this.powerGuard = powerGuard;
     }
 
     /**
@@ -63,10 +65,9 @@ public class VmPowerJobs {
      * them — it carries two longs and nothing else — but JobRunr resolves the
      * method by name <b>and parameter types</b>, so the lookup would find
      * nothing and the job fails outright with no retry ({@code retries = 0}).
-     * The Proxmox call would be the smaller loss: the power-action claim is
-     * released in the job's own {@code finally}, so a job that never runs
-     * leaves that VM's power controls held until the stale-task sweeper frees
-     * them. They record {@link VmActorKind#UNKNOWN}, because the member and the
+     * A job that never runs leaves an undispatched claim for the stale-task
+     * sweeper. Once a command is dispatched, recovery verifies the remote task
+     * before releasing the VM. They record {@link VmActorKind#UNKNOWN}, because the member and the
      * admin power endpoints both enqueued through them and the queued job
      * carries nothing that tells the two apart. Guessing "member" there would
      * print an administrator's name in a workspace's history for the width of
@@ -129,17 +130,19 @@ public class VmPowerJobs {
             log.warn("Power job {} skipped: vm {} not found", action, vmId);
             return; // no row → no claim to release
         }
-        // Release the start/shutdown/force-stop claim on every exit path so a
-        // finished (or skipped, or failed) action never bricks power controls.
-        // Reboot never set the claim, so this is a harmless no-op for it.
+        if (vm.getPowerOperationId() != null) { return; }
+        java.util.UUID worker = java.util.UUID.randomUUID();
+        if (vmRepository.claimPowerWorker(vmId, action.name(), worker) == 0) { return; }
+        // Release only after every recorded remote task is terminal. A timeout
+        // keeps the UUID so unrelated device work cannot start.
         try {
-            run(action, vm, vmId, actorId, actorKind);
+            run(action, vm, vmId, actorId, actorKind, worker);
         } finally {
-            vmRepository.clearPowerActionClaim(vmId, Instant.now());
+            powerGuard.finish(vmId, worker);
         }
     }
 
-    private void run(PowerAction action, Vm vm, long vmId, long actorId, VmActorKind actorKind) {
+    private void run(PowerAction action, Vm vm, long vmId, long actorId, VmActorKind actorKind, java.util.UUID worker) {
         VmStatus from = vm.getStatus();
         if (!action.fromStatuses.contains(from)) {
             // Stale/duplicate enqueue, or the VM moved on (e.g. deletion won).
@@ -147,19 +150,20 @@ public class VmPowerJobs {
             return;
         }
         if (vm.getProxmoxVmid() == null) {
-            recordFailure(action, vmId, actorId, actorKind, "Proxmox VMID가 없는 VM입니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "Proxmox VMID가 없는 VM입니다");
             return;
         }
         Node node = nodeRepository.findById(vm.getNodeId()).orElse(null);
         if (node == null) {
-            recordFailure(action, vmId, actorId, actorKind, "배치된 노드 정보를 찾을 수 없습니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "배치된 노드 정보를 찾을 수 없습니다");
             return;
         }
         try {
-            String upid = action.invoke(proxmoxClient, node.getApiHost(), node.getName(),
-                    vm.getProxmoxVmid());
+            String upid = powerGuard.dispatch(vmId, worker, () -> action.invoke(proxmoxClient, node.getApiHost(), node.getName(),
+                    vm.getProxmoxVmid()));
             proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
-            int updated = vmRepository.transitionStatus(vmId, from, action.toStatus, null, Instant.now());
+            if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
+            int updated = vmRepository.transitionPowerStatus(vmId, worker, from, action.toStatus, null, Instant.now());
             if (updated == 1) {
                 vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId,
                         actorKind, null));
@@ -169,16 +173,17 @@ public class VmPowerJobs {
                         action, vmId);
             }
         } catch (RuntimeException e) {
-            recordFailure(action, vmId, actorId, actorKind, reasonOf(e));
+            if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
+            recordFailure(action, vmId, actorId, actorKind, worker, reasonOf(e));
         }
     }
 
     /** Failure: keep the status (the poller converges), record detail + event. */
     private void recordFailure(PowerAction action, long vmId, long actorId,
-            VmActorKind actorKind, String reason) {
+            VmActorKind actorKind, java.util.UUID worker, String reason) {
         String detail = action.koreanLabel + " 실패: " + reason;
         log.warn("Power job {} failed for vm {}: {}", action, vmId, reason);
-        vmRepository.updateStatusDetail(vmId, detail, Instant.now());
+        if (vmRepository.recordPowerFailure(vmId, worker, detail, Instant.now()) == 0) { return; }
         vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId, actorKind,
                 detail));
     }

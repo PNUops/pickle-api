@@ -189,6 +189,7 @@ public class ApprovalService {
         notifyArgs.put("requestId", request.getPublicId());
         notifyArgs.put("type", request.getResourceType().name());
         notifyArgs.put("resourceName", created.resourceName());
+        notifyArgs.putAll(created.notificationArgs());
         String reviewComment = Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);

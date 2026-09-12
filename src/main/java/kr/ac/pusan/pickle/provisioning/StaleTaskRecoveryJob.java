@@ -42,9 +42,8 @@ public class StaleTaskRecoveryJob {
     static final Duration STALE_AFTER = Duration.ofMinutes(30);
 
     /**
-     * Power actions are single-shot (retries = 0) and short; a claim older than
-     * this means the worker died before releasing it, so free it lest the VM's
-     * power controls stay bricked.
+     * Old undispatched claims can be freed. Submitted power tasks must first
+     * be observed terminal; GPU operations require their own device readback.
      */
     static final Duration POWER_CLAIM_STALE_AFTER = Duration.ofMinutes(10);
 
@@ -55,15 +54,17 @@ public class StaleTaskRecoveryJob {
     private final JobScheduler jobScheduler;
     private final ProvisioningService provisioningService;
     private final DeleteVmJob deleteVmJob;
+    private final VmPowerOperationGuard powerGuard;
 
     public StaleTaskRecoveryJob(ProvisioningTaskRepository taskRepository,
             VmRepository vmRepository, JobScheduler jobScheduler,
-            ProvisioningService provisioningService, DeleteVmJob deleteVmJob) {
+            ProvisioningService provisioningService, DeleteVmJob deleteVmJob, VmPowerOperationGuard powerGuard) {
         this.taskRepository = taskRepository;
         this.vmRepository = vmRepository;
         this.jobScheduler = jobScheduler;
         this.provisioningService = provisioningService;
         this.deleteVmJob = deleteVmJob;
+        this.powerGuard = powerGuard;
     }
 
     /**
@@ -115,8 +116,9 @@ public class StaleTaskRecoveryJob {
         }
     }
 
-    /** A crashed power worker's claim (retries = 0, never re-run) is freed here. */
+    /** Remote completion is checked before the undispatched-claim sweep. */
     private void releaseStalePowerClaims(Instant now) {
+        powerGuard.recover();
         int freed = vmRepository.clearStalePowerActionClaims(
                 now.minus(POWER_CLAIM_STALE_AFTER), now);
         if (freed > 0) {

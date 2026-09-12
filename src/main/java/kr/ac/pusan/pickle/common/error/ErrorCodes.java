@@ -3,6 +3,18 @@ package kr.ac.pusan.pickle.common.error;
 /** Stable machine-readable error codes (contract: Problem.code). */
 public final class ErrorCodes {
 
+    public static final String GPU_ACCESS_GRANT_EXISTS = "GPU_ACCESS_GRANT_EXISTS";
+    public static final String GPU_ATTACHMENT_NOT_READY = "GPU_ATTACHMENT_NOT_READY";
+    public static final String GPU_EXTENSION_BLOCKED = "GPU_EXTENSION_BLOCKED";
+    public static final String GPU_INVALID_STATE = "GPU_INVALID_STATE";
+    public static final String GPU_LEASE_ENDED = "GPU_LEASE_ENDED";
+    public static final String GPU_OPERATION_CHANGED = "GPU_OPERATION_CHANGED";
+    public static final String GPU_OPERATION_IN_PROGRESS = "GPU_OPERATION_IN_PROGRESS";
+    public static final String GPU_REVIEW_ALREADY_DECIDED = "GPU_REVIEW_ALREADY_DECIDED";
+    public static final String GPU_STATE_UNCONFIRMED = "GPU_STATE_UNCONFIRMED";
+    public static final String GPU_VM_BUSY = "GPU_VM_BUSY";
+
+
     public static final String AUTH_VERIFICATION_TOKEN_EXPIRED = "AUTH_VERIFICATION_TOKEN_EXPIRED";
     public static final String AUTH_INVALID_CREDENTIALS = "AUTH_INVALID_CREDENTIALS";
     public static final String AUTH_EMAIL_NOT_VERIFIED = "AUTH_EMAIL_NOT_VERIFIED";

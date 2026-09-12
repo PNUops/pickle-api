@@ -12,6 +12,8 @@ package kr.ac.pusan.pickle.notification;
  */
 public enum NotificationEvent {
 
+    GPU_UPDATE("gpu.update", NotificationImportance.NORMAL),
+    GPU_REVIEW("gpu.review", NotificationImportance.HIGH),
     REQUEST_SUBMITTED("request.submitted", NotificationImportance.NORMAL),
     REQUEST_APPROVED("request.approved", NotificationImportance.NORMAL),
     REQUEST_REJECTED("request.rejected", NotificationImportance.NORMAL),

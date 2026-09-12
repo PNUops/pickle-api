@@ -49,6 +49,9 @@ class ReauthCoverageTest {
      * prompt into ordinary browsing is its own hazard.
      */
     private static final Set<String> DECLARED_REAUTH_ENDPOINTS = new TreeSet<>(Set.of(
+            "POST /gpu-allocations/{allocationId}/access",
+            "PATCH /gpu-allocations/{allocationId}/access/{grantId}",
+            "DELETE /gpu-allocations/{allocationId}/access/{grantId}",
             "POST /admin/relays/{relayId}/token",
             "POST /admin/llm/accounts",
             "POST /admin/llm/accounts/{accountId}/credentials/staged",
