@@ -305,6 +305,35 @@ class DnsDomainSurfaceTest {
     }
 
     @Test
+    void theRowCarriesTheRungItsReaderActsAt() {
+        DnsDomainView created = service.create(owner, request("rung"), "127.0.0.1");
+
+        // The issuer holds OWNER, which is what the screen reads to decide
+        // whether to draw a release button at all. Without it every reader sees
+        // every action and learns from a refusal after pressing one.
+        assertThat(created.myResourceRole()).isNotNull();
+        assertThat(queryService.get(owner, created.id()).myResourceRole())
+                .isEqualTo(kr.ac.pusan.pickle.access.ResourceRole.OWNER);
+
+        // Demote the one grant. The row stays open and the rung follows it down,
+        // which is the case the screen exists to draw differently.
+        jdbcTemplate.update("update resource_access_grants set role = 'VIEWER'::resource_role"
+                + " where resource_type = 'DOMAIN'::resource_type");
+        assertThat(queryService.get(owner, created.id()).myResourceRole())
+                .isEqualTo(kr.ac.pusan.pickle.access.ResourceRole.VIEWER);
+
+        // The listing answers the same rung. It is a separate code path — a
+        // batch query rather than the single-resource one — and a list that
+        // reported OWNER for everything would draw the same wrong buttons.
+        assertThat(queryService.listPage(owner, null,
+                        org.springframework.data.domain.PageRequest.of(0, 20))
+                .getContent().stream()
+                .filter(row -> row.id().equals(created.id()))
+                .findFirst().orElseThrow().myResourceRole())
+                .isEqualTo(kr.ac.pusan.pickle.access.ResourceRole.VIEWER);
+    }
+
+    @Test
     void aRootWhoseOrganisationIsDisabledIssuesNothing() {
         jdbcTemplate.update("update orgs set status = 'DISABLED' where id = ?", orgId);
 
