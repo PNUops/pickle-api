@@ -74,6 +74,32 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     List<Domain> findByKindAndStatusNotAndReleasedAtIsNullAndRenewDueAtLessThanEqual(
             DomainKind kind, DomainStatus status, Instant bound);
 
+    /**
+     * The names a workspace holds of one kind, newest first.
+     *
+     * <p>The external listing's own query. It cannot reuse
+     * {@link #findForReachableVms} — that one reaches a domain through the VM
+     * it serves, and these have none, which is the case its comment says
+     * arrives with the access list that makes a VM-less row reachable at all.
+     * This is that arrival.</p>
+     */
+    Page<Domain> findByWorkspaceIdAndKindAndStatusNot(Long workspaceId, DomainKind kind,
+            DomainStatus status, Pageable pageable);
+
+    /** The same across every workspace the requester belongs to. */
+    Page<Domain> findByWorkspaceIdInAndKindAndStatusNot(Collection<Long> workspaceIds,
+            DomainKind kind, DomainStatus status, Pageable pageable);
+
+    /** Every row of one kind a workspace owns, whatever its state. */
+    List<Domain> findByWorkspaceIdAndKind(Long workspaceId, DomainKind kind);
+
+    /**
+     * How many of one kind the workspace still holds. A released row counts:
+     * it is still holding its name out of the shared space.
+     */
+    long countByWorkspaceIdAndKindAndStatusNot(Long workspaceId, DomainKind kind,
+            DomainStatus status);
+
     /** Every domain row of a VM, any status — the deletion teardown sweep. */
     List<Domain> findByVmId(Long vmId);
 

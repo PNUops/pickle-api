@@ -179,6 +179,28 @@ public class Domain {
         return domain;
     }
 
+    /**
+     * A name issued on its own: ACTIVE from the moment it exists, with no VM,
+     * no route and no record until its owner writes one.
+     *
+     * <p>ACTIVE rather than PENDING because there is nothing to wait for. A
+     * custom domain is PENDING until its owner proves the name is theirs, and a
+     * served subdomain has a vhost to come up; this one is finished as soon as
+     * the row exists, and everything after that is the owner editing records.</p>
+     *
+     * <p>{@code dnsStatus} stays NONE for its whole life. That column reports
+     * the single A record this platform writes for a name it serves, and
+     * nothing here writes one — what this kind has in the zone is
+     * {@code domain_records}, which reports itself.</p>
+     */
+    public static Domain external(Long workspaceId, Long orgId, String fqdn, String rootDomain,
+            Instant renewDueAt) {
+        Domain domain = new Domain(workspaceId, orgId, null, DomainKind.EXTERNAL, fqdn,
+                rootDomain, null, DomainStatus.ACTIVE);
+        domain.renewDueAt = renewDueAt;
+        return domain;
+    }
+
     /** Custom domain: PENDING until TXT+A are verified, carrying the ownership token. */
     public static Domain custom(Long workspaceId, Long orgId, Long vmId, String fqdn,
             String verificationToken) {

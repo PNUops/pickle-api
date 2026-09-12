@@ -78,6 +78,7 @@ public final class ErrorCodes {
     public static final String VM_CONFIRM_NAME_MISMATCH = "VM_CONFIRM_NAME_MISMATCH";
     public static final String VM_ACCESS_GRANT_EXISTS = "VM_ACCESS_GRANT_EXISTS";
     public static final String LLM_KEY_ACCESS_GRANT_EXISTS = "LLM_KEY_ACCESS_GRANT_EXISTS";
+    public static final String DNS_DOMAIN_ACCESS_GRANT_EXISTS = "DNS_DOMAIN_ACCESS_GRANT_EXISTS";
     public static final String LLM_KEY_REVOKED = "LLM_KEY_REVOKED";
     public static final String LLM_KEY_INVALID_STATE = "LLM_KEY_INVALID_STATE";
     public static final String LLM_KEY_OPENROUTER_ACCOUNT_IMMUTABLE =
@@ -101,6 +102,10 @@ public final class ErrorCodes {
     public static final String DOMAIN_FQDN_TAKEN = "DOMAIN_FQDN_TAKEN";
     public static final String DOMAIN_NOT_CUSTOM = "DOMAIN_NOT_CUSTOM";
     public static final String DOMAIN_NOT_ACTIVE = "DOMAIN_NOT_ACTIVE";
+    /** The name is issued on its own; the operation asked for one this platform serves. */
+    public static final String DOMAIN_NOT_EXTERNAL = "DOMAIN_NOT_EXTERNAL";
+    /** The workspace already holds as many names of this kind as it may. */
+    public static final String DNS_DOMAIN_LIMIT_REACHED = "DNS_DOMAIN_LIMIT_REACHED";
     // Operations (contract tag admin).
     public static final String VM_EXPIRED = "VM_EXPIRED";
     public static final String TASK_NOT_RETRYABLE = "TASK_NOT_RETRYABLE";
