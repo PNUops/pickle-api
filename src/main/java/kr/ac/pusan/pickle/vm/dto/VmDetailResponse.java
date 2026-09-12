@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.gpu.dto.GpuVmSummary;
 import kr.ac.pusan.pickle.publishing.dto.PublicationView;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmStatus;
@@ -63,6 +64,7 @@ public record VmDetailResponse(
         boolean accessManageAllowed,
         @Schema(description = "삭제를 접수할 수 있는지")
         boolean deleteAllowed,
+        @Nullable GpuVmSummary gpu,
         Instant updatedAt) {
 
     /**
@@ -76,7 +78,7 @@ public record VmDetailResponse(
             String orgName, String displayName,
             String ipAddress, String sshHost, ResourceRole myResourceRole,
             boolean passwordRevealAllowed, boolean accessManageAllowed,
-            ProvisioningTaskResponse provisioning, List<PublicationView> publications) {
+            ProvisioningTaskResponse provisioning, List<PublicationView> publications, GpuVmSummary gpu) {
         boolean atLeastMember = myResourceRole != null
                 && myResourceRole.atLeast(ResourceRole.MEMBER);
         boolean atLeastEditor = myResourceRole != null
@@ -90,6 +92,6 @@ public record VmDetailResponse(
                 VmDeletionResponse.from(vm, refs.deleteRequestedById()), publications,
                 vm.getPasswordEnc() != null, passwordRevealAllowed,
                 atLeastMember, atLeastMember, atLeastEditor, accessManageAllowed,
-                accessManageAllowed, vm.getUpdatedAt());
+                accessManageAllowed, gpu, vm.getUpdatedAt());
     }
 }

@@ -54,6 +54,9 @@ public interface RequestTypeHandler {
      * @param afterCommit work that must wait for the transaction to commit
      */
     record Materialized(long resourceId, String resourceName, Map<String, Object> auditArgs,
-            Runnable afterCommit) {
+            Runnable afterCommit, Map<String, Object> notificationArgs) {
+        public Materialized(long resourceId, String resourceName, Map<String, Object> auditArgs, Runnable afterCommit) {
+            this(resourceId, resourceName, auditArgs, afterCommit, Map.of());
+        }
     }
 }

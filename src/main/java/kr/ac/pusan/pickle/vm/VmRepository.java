@@ -125,38 +125,61 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int transitionStatus(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update vms set power_operation_id = :operation
+             where id = :id and power_operation_id is null and pending_power_action = :action
+            """)
+    int claimPowerWorker(@Param("id") Long id, @Param("action") String action, @Param("operation") UUID operation);
+
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            update vms set pending_power_action = null, pending_power_action_at = null, power_operation_id = null
+             where id = :id and power_operation_id = :operation
+               and not exists(select 1 from vm_power_dispatches d where d.operation_id = :operation and d.terminal = false)
+            """)
+    int clearPowerWorker(@Param("id") Long id, @Param("operation") UUID operation);
+
+    @Query("select count(v) > 0 from Vm v where v.id = :id and v.powerOperationId = :operation")
+    boolean ownsPowerWorker(@Param("id") Long id, @Param("operation") UUID operation);
+
     // --- power-action serialization -----------------------
 
     /**
      * Claims the single-writer power-action slot in one CAS: succeeds only
      * when no action is already in flight and the status is an allowed source.
      * Rapid duplicates therefore see exactly one success (1 row) and the rest
-     * a 409 (0 rows). The claimed action name is informational; the worker
-     * clears it on any exit path.
+     * a 409 (0 rows). A worker adds an ownership UUID and clears the slot only
+     * after every remote dispatch has finished.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("""
             update Vm v
-               set v.pendingPowerAction = :action, v.pendingPowerActionAt = :now, v.updatedAt = :now
-             where v.id = :id and v.pendingPowerAction is null and v.status in :statuses
+               set v.pendingPowerAction = :action, v.pendingPowerActionAt = :now, v.powerOperationId = null, v.updatedAt = :now
+             where v.id = :id and ((v.pendingPowerAction is null
+                 and not exists(select 1 from VmPowerDispatch d where d.vmId = v.id and d.terminal = false))
+                 or (v.pendingPowerAction = 'REBOOT' and :action = 'FORCE_STOP')) and v.status in :statuses
             """)
     int claimPowerAction(@Param("id") Long id, @Param("action") String action,
             @Param("statuses") Collection<VmStatus> statuses, @Param("now") Instant now);
 
     /**
      * Reboot's intent: RUNNING → REBOOTING, but only when no other power action
-     * is claimed. Unlike {@link #claimPowerAction} it does NOT set
-     * pending_power_action — the visible REBOOTING status both serializes
-     * duplicate reboots and lets a force-stop target a hung reboot, and it
-     * keeps the status poller free to converge a crashed reboot job.
+     * is claimed. The REBOOT claim keeps device operations out until the worker
+     * ends. A force-stop may explicitly supersede that claim; the old worker
+     * cannot clear the replacement's UUID or overwrite its result.
      */
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query("""
             update Vm v
-               set v.status = :to, v.statusDetail = null, v.updatedAt = :now
+               set v.status = :to, v.statusDetail = null, v.pendingPowerAction = 'REBOOT',
+                 v.pendingPowerActionAt = :now, v.updatedAt = :now
              where v.id = :id and v.status = :from and v.pendingPowerAction is null
+               and not exists(select 1 from VmPowerDispatch d where d.vmId = v.id and d.terminal = false)
             """)
     int claimReboot(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("now") Instant now);
@@ -167,17 +190,19 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     @Query("""
             update Vm v
                set v.pendingPowerAction = null, v.pendingPowerActionAt = null, v.updatedAt = :now
-             where v.id = :id and v.pendingPowerAction is not null
+             where v.id = :id and v.pendingPowerAction is not null and v.powerOperationId is null
             """)
     int clearPowerActionClaim(@Param("id") Long id, @Param("now") Instant now);
 
-    /** Crash recovery: frees power claims a dead worker never released. */
+    /** GPU operations keep their claims until device readback; ordinary power claims retain the existing timeout. */
     @Transactional
     @Modifying(clearAutomatically = true)
-    @Query("""
-            update Vm v
-               set v.pendingPowerAction = null, v.pendingPowerActionAt = null, v.updatedAt = :now
-             where v.pendingPowerAction is not null and v.pendingPowerActionAt < :cutoff
+    @Query(nativeQuery = true, value = """
+            update vms v set pending_power_action = null, pending_power_action_at = null,
+                power_operation_id = null, updated_at = :now
+             where v.pending_power_action is not null and v.pending_power_action_at < :cutoff
+               and not exists(select 1 from gpu_operations o where o.id = v.power_operation_id)
+               and not exists(select 1 from vm_power_dispatches d where d.vm_id = v.id and d.terminal = false)
             """)
     int clearStalePowerActionClaims(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
 
@@ -395,7 +420,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                set status = 'DELETING', status_detail = null, delete_kind = 'SELF',
                    delete_scheduled_for = :scheduledFor, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null, updated_at = :now
-             where id = :id and status = cast(:#{#from.name()} as vm_status) and delete_kind is null
+             where id = :id and status = cast(:#{#from.name()} as vm_status) and delete_kind is null and power_operation_id is null
             """)
     int beginSelfDeletion(@Param("id") Long id, @Param("from") VmStatus from,
             @Param("scheduledFor") Instant scheduledFor, @Param("requestedBy") Long requestedBy,
@@ -446,7 +471,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
                set status = 'DELETING', status_detail = null, delete_kind = 'FORCE',
                    delete_scheduled_for = :now, delete_requested_at = :now,
                    delete_requested_by = :requestedBy, delete_reason = null, updated_at = :now
-             where id = :id and status <> 'DELETED'
+             where id = :id and status <> 'DELETED' and power_operation_id is null
             """)
     int beginForceDeletion(@Param("id") Long id, @Param("requestedBy") Long requestedBy,
             @Param("now") Instant now);
@@ -492,7 +517,7 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
             update vms
                set status = 'DELETING', status_detail = null, updated_at = :now
              where id = :id and status = cast(:#{#from.name()} as vm_status)
-               and delete_kind is not null and delete_scheduled_for <= :now
+               and delete_kind is not null and delete_scheduled_for <= :now and power_operation_id is null
             """)
     int claimForDestruction(@Param("id") Long id, @Param("from") VmStatus from,
             @Param("now") Instant now);

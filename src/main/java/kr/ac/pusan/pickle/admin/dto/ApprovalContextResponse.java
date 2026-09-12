@@ -36,7 +36,10 @@ public record ApprovalContextResponse(
         @Deprecated
         String guidance,
         @Nullable VmContext vm,
-        @Nullable LlmKeyContext llmKey) {
+        @Nullable LlmKeyContext llmKey,
+        @Nullable GpuContext gpu) {
+
+    public record GpuContext(long availableCards, long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
 
     public record Applicant(
             UUID id,

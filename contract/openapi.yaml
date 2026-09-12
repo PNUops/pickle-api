@@ -1476,6 +1476,10 @@ components:
         applicantResources:
           $ref: "#/components/schemas/Resources"
           deprecated: true
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/GpuContext"
+          - type: "null"
         guidance:
           deprecated: true
           type: "string"
@@ -1506,6 +1510,32 @@ components:
       - "orgHeadroom"
       - "type"
       - "workspace"
+      type: "object"
+    ApproveGpuRequestSpec:
+      properties:
+        gpuId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        leaseHours:
+          description: "관리자가 승인하는 양의 정수 시간입니다. 1.5처럼 정수가 아닌 값이나 문자열은 허용하지 않습니다."
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        priority:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        priorityReason:
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      required:
+      - "leaseHours"
       type: "object"
     ApproveLlmKeyRequestSpec:
       properties:
@@ -1598,6 +1628,10 @@ components:
           type:
           - "string"
           - "null"
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/ApproveGpuRequestSpec"
+          - type: "null"
         grantedEndDate:
           format: "date"
           type:
@@ -1649,6 +1683,17 @@ components:
       - "grantedImageId"
       - "grantedMemoryMb"
       - "grantedVcpu"
+      type: "object"
+    AttachGpuRequest:
+      properties:
+        confirmed:
+          type: "boolean"
+        vmId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "confirmed"
+      - "vmId"
       type: "object"
     Attention:
       properties:
@@ -1924,6 +1969,13 @@ components:
       - "currentPassword"
       - "newPassword"
       type: "object"
+    ConfirmGpuActionRequest:
+      properties:
+        confirmed:
+          type: "boolean"
+      required:
+      - "confirmed"
+      type: "object"
     ConfirmOpenRouterAccountRequest:
       properties:
         confirmName:
@@ -2009,6 +2061,21 @@ components:
       required:
       - "label"
       - "workspaceId"
+      type: "object"
+    CreateGpuRequestSpec:
+      properties:
+        leaseHours:
+          description: "직접 입력한 양의 정수 시간입니다. 1.5처럼 정수가 아닌 값이나 문자열은 허용하지 않습니다."
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        vmId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "leaseHours"
       type: "object"
     CreateLlmKeyRequestSpec:
       properties:
@@ -2185,6 +2252,10 @@ components:
           type:
           - "string"
           - "null"
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/CreateGpuRequestSpec"
+          - type: "null"
         llmKey:
           anyOf:
           - $ref: "#/components/schemas/CreateLlmKeyRequestSpec"
@@ -2353,6 +2424,18 @@ components:
       - "WEEKLY"
       - "MONTHLY"
       type: "string"
+    DecideGpuReviewRequest:
+      properties:
+        decision:
+          $ref: "#/components/schemas/GpuReviewDecision"
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+      required:
+      - "decision"
+      - "reason"
+      type: "object"
     DepartmentView:
       properties:
         code:
@@ -2681,6 +2764,7 @@ components:
       type: "object"
     DriftFindingKind:
       enum:
+      - "GPU_ATTACHMENT_MISMATCH"
       - "MISSING_IN_PROXMOX"
       - "UNMANAGED_GUEST"
       - "SPEC_MISMATCH"
@@ -2754,6 +2838,22 @@ components:
       - "OPEN"
       - "RESOLVED"
       type: "string"
+    ExtendGpuLeaseRequest:
+      properties:
+        hours:
+          description: "추가할 양의 정수 시간입니다. 1.5처럼 정수가 아닌 값이나 문자열은 허용하지 않습니다."
+          format: "int32"
+          minimum: 1
+          type: "integer"
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      required:
+      - "hours"
+      type: "object"
     FieldValidationError:
       description: "검증 실패 필드 한 건 (422 응답의 errors[] 원소)"
       properties:
@@ -2791,6 +2891,324 @@ components:
           type: "boolean"
       required:
       - "confirmName"
+      type: "object"
+    GpuAllocationStatus:
+      enum:
+      - "QUEUED"
+      - "ALLOCATED"
+      - "RELEASING"
+      - "RELEASED"
+      - "CANCELED"
+      type: "string"
+    GpuAllocationView:
+      properties:
+        accessLimited:
+          type: "boolean"
+        accessManageAllowed:
+          type: "boolean"
+        allocatedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        connectionStatus:
+          $ref: "#/components/schemas/GpuConnectionStatus"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        error:
+          type:
+          - "string"
+          - "null"
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/GpuView"
+          - type: "null"
+        grantedLeaseHours:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        id:
+          format: "uuid"
+          type: "string"
+        leaseEndsAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        myRole:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+        name:
+          type: "string"
+        orgId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        orgName:
+          type:
+          - "string"
+          - "null"
+        ownerNames:
+          items:
+            type: "string"
+          type: "array"
+        priority:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        queuePosition:
+          format: "int64"
+          type:
+          - "integer"
+          - "null"
+        releaseReason:
+          anyOf:
+          - $ref: "#/components/schemas/GpuReleaseReason"
+          - type: "null"
+        sampleObservedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        status:
+          $ref: "#/components/schemas/GpuAllocationStatus"
+        unattachedSince:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        updatedAt:
+          format: "date-time"
+          type: "string"
+        utilizationPercent:
+          format: "double"
+          type:
+          - "number"
+          - "null"
+        vmId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        vmName:
+          type:
+          - "string"
+          - "null"
+        workspaceId:
+          format: "uuid"
+          type: "string"
+        workspaceName:
+          type: "string"
+      required:
+      - "accessLimited"
+      - "accessManageAllowed"
+      - "connectionStatus"
+      - "createdAt"
+      - "id"
+      - "name"
+      - "ownerNames"
+      - "status"
+      - "updatedAt"
+      - "workspaceId"
+      - "workspaceName"
+      type: "object"
+    GpuAttachmentOption:
+      properties:
+        nodeId:
+          format: "uuid"
+          type: "string"
+        ready:
+          type: "boolean"
+        reason:
+          type:
+          - "string"
+          - "null"
+        vmId:
+          format: "uuid"
+          type: "string"
+        vmName:
+          type: "string"
+      required:
+      - "nodeId"
+      - "ready"
+      - "vmId"
+      - "vmName"
+      type: "object"
+    GpuConnectionStatus:
+      enum:
+      - "NONE"
+      - "ATTACHING"
+      - "ATTACHED"
+      - "DETACHING"
+      - "ERROR"
+      type: "string"
+    GpuContext:
+      properties:
+        availableCards:
+          format: "int64"
+          type: "integer"
+        queuedAllocations:
+          format: "int64"
+          type: "integer"
+        requestedLeaseHours:
+          format: "int32"
+          type: "integer"
+        vmName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "availableCards"
+      - "queuedAllocations"
+      - "requestedLeaseHours"
+      type: "object"
+    GpuReasonRequest:
+      properties:
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+      required:
+      - "reason"
+      type: "object"
+    GpuReclaimReviewView:
+      properties:
+        allocationId:
+          format: "uuid"
+          type: "string"
+        allocationName:
+          type: "string"
+        createdAt:
+          format: "date-time"
+          type: "string"
+        decidedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        decision:
+          anyOf:
+          - $ref: "#/components/schemas/GpuReviewDecision"
+          - type: "null"
+        decisionReason:
+          type:
+          - "string"
+          - "null"
+        evidence:
+          additionalProperties: {}
+          type: "object"
+        id:
+          format: "uuid"
+          type: "string"
+        reason:
+          type: "string"
+      required:
+      - "allocationId"
+      - "allocationName"
+      - "createdAt"
+      - "evidence"
+      - "id"
+      - "reason"
+      type: "object"
+    GpuReleaseReason:
+      enum:
+      - "USER_RELEASE"
+      - "LEASE_EXPIRED"
+      - "ADMIN_RECLAIM"
+      - "GRANT_ENDED"
+      type: "string"
+    GpuRequestSpecResponse:
+      properties:
+        grantedGpuId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        grantedLeaseHours:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        grantedPriority:
+          format: "int32"
+          type:
+          - "integer"
+          - "null"
+        leaseHours:
+          format: "int32"
+          type: "integer"
+        vmId:
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        vmName:
+          type:
+          - "string"
+          - "null"
+      required:
+      - "leaseHours"
+      type: "object"
+    GpuReviewDecision:
+      enum:
+      - "KEEP"
+      - "RECLAIM"
+      type: "string"
+    GpuStatus:
+      enum:
+      - "ACTIVE"
+      - "MAINTENANCE"
+      - "RETIRED"
+      type: "string"
+    GpuView:
+      properties:
+        available:
+          type: "boolean"
+        id:
+          format: "uuid"
+          type: "string"
+        model:
+          type: "string"
+        nodeId:
+          format: "uuid"
+          type: "string"
+        status:
+          $ref: "#/components/schemas/GpuStatus"
+        vramMb:
+          format: "int32"
+          type: "integer"
+      required:
+      - "available"
+      - "id"
+      - "model"
+      - "nodeId"
+      - "status"
+      - "vramMb"
+      type: "object"
+    GpuVmSummary:
+      properties:
+        allocationId:
+          format: "uuid"
+          type: "string"
+        allocationName:
+          type: "string"
+        connectionStatus:
+          $ref: "#/components/schemas/GpuConnectionStatus"
+        detailAccessAllowed:
+          type: "boolean"
+        model:
+          type: "string"
+      required:
+      - "allocationId"
+      - "allocationName"
+      - "connectionStatus"
+      - "detailAccessAllowed"
+      - "model"
       type: "object"
     GrantOrgRoleRequest:
       properties:
@@ -6638,6 +7056,56 @@ components:
       - "totalElements"
       - "totalPages"
       type: "object"
+    PageResponseGpuAllocationView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/GpuAllocationView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
+    PageResponseGpuReclaimReviewView:
+      properties:
+        content:
+          items:
+            $ref: "#/components/schemas/GpuReclaimReviewView"
+          type: "array"
+        page:
+          format: "int32"
+          type: "integer"
+        size:
+          format: "int32"
+          type: "integer"
+        totalElements:
+          format: "int64"
+          type: "integer"
+        totalPages:
+          format: "int32"
+          type: "integer"
+      required:
+      - "content"
+      - "page"
+      - "size"
+      - "totalElements"
+      - "totalPages"
+      type: "object"
     PageResponseIpAllocationResponse:
       properties:
         content:
@@ -7257,6 +7725,10 @@ components:
           type:
           - "string"
           - "null"
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/GpuRequestSpecResponse"
+          - type: "null"
         id:
           format: "uuid"
           type: "string"
@@ -7614,6 +8086,7 @@ components:
       - "VM"
       - "LLM_API_KEY"
       - "DOMAIN"
+      - "GPU"
       type: "string"
     Resources:
       properties:
@@ -8094,6 +8567,31 @@ components:
         port:
           format: "int32"
           type: "integer"
+      type: "object"
+    UpdateGpuPriorityRequest:
+      properties:
+        priority:
+          format: "int32"
+          type: "integer"
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+      required:
+      - "priority"
+      - "reason"
+      type: "object"
+    UpdateGpuStatusRequest:
+      properties:
+        reason:
+          maxLength: 2000
+          minLength: 0
+          type: "string"
+        status:
+          $ref: "#/components/schemas/GpuStatus"
+      required:
+      - "reason"
+      - "status"
       type: "object"
     UpdateLlmKeyRequest:
       properties:
@@ -8761,6 +9259,10 @@ components:
           type:
           - "string"
           - "null"
+        gpu:
+          anyOf:
+          - $ref: "#/components/schemas/GpuVmSummary"
+          - type: "null"
         hostname:
           type: "string"
         id:
@@ -8906,6 +9408,8 @@ components:
       type: "object"
     VmEventType:
       enum:
+      - "GPU_ATTACH"
+      - "GPU_DETACH"
       - "CREATE"
       - "START"
       - "STOP"
@@ -9542,7 +10046,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.74.0"
+  version: "0.75.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -10022,6 +10526,340 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-drift-controller"
+  /admin/gpu-allocations:
+    get:
+      operationId: "listAdminGpuAllocations"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "status"
+        required: false
+        schema:
+          $ref: "#/components/schemas/GpuAllocationStatus"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseGpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 GPU 할당 목록"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-allocations/{allocationId}:
+    get:
+      operationId: "getAdminGpuAllocation"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 GPU 할당 상세"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-allocations/{allocationId}/extend:
+    post:
+      operationId: "extendAdminGpuLease"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtendGpuLeaseRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 GPU 임대 연장"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-allocations/{allocationId}/priority:
+    post:
+      operationId: "updateGpuPriority"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGpuPriorityRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 대기 우선순위 변경"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-allocations/{allocationId}/reclaim:
+    post:
+      operationId: "reclaimGpu"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GpuReasonRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 GPU 회수"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-allocations/{allocationId}/reconcile:
+    post:
+      description: "전원과 장치 설정을 변경하지 않고 실제 상태가 확인된 작업의 잠금만 정리합니다. GPU 점유와 회수 의도는 유지\
+        합니다."
+      operationId: "reconcileGpu"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GpuReasonRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 연결 상태 재확인"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-reclaim-reviews:
+    get:
+      operationId: "listGpuReclaimReviews"
+      parameters:
+      - in: "query"
+        name: "orgId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseGpuReclaimReviewView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 회수 검토 목록"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpu-reclaim-reviews/{reviewId}/decision:
+    post:
+      operationId: "decideGpuReclaimReview"
+      parameters:
+      - in: "path"
+        name: "reviewId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideGpuReviewRequest"
+        required: true
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 회수 검토 결정"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpus:
+    get:
+      operationId: "listAdminGpus"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/GpuView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 GPU 목록"
+      tags:
+      - "admin-gpu-controller"
+  /admin/gpus/{gpuId}:
+    patch:
+      operationId: "updateAdminGpu"
+      parameters:
+      - in: "path"
+        name: "gpuId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGpuStatusRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 운영 상태 변경"
+      tags:
+      - "admin-gpu-controller"
   /admin/ip-allocations:
     get:
       operationId: "listIpAllocations"
@@ -13853,6 +14691,420 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "publishing-controller"
+  /gpu-allocations:
+    get:
+      operationId: "listGpuAllocations"
+      parameters:
+      - in: "query"
+        name: "workspaceId"
+        required: false
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "query"
+        name: "page"
+        required: false
+        schema:
+          default: 0
+          format: "int32"
+          minimum: 0
+          type: "integer"
+      - in: "query"
+        name: "size"
+        required: false
+        schema:
+          default: 20
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseGpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 할당 목록"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}:
+    get:
+      operationId: "getGpuAllocation"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 할당 상세"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}/access:
+    get:
+      description: "이 GPU의 접근 권한 전체와, 그 목록이 어느 GPU의 것인지 알려 주는 최소 정보입니다. GPU 소유자와 워\
+        크스페이스 소유자만 볼 수 있습니다."
+      operationId: "listGpuAllocationAccessGrants"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessListResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 목록"
+      tags:
+      - "gpu-access"
+    post:
+      description: "지정한 사용자 또는 소유 워크스페이스 전체에 이 GPU의 접근 권한을 부여합니다. 사용자는 이 GPU를 소유한\
+        \ 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 참여자·열람자까지만 부여할 수 있습니다."
+      operationId: "addGpuAllocationAccessGrant"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddResourceAccessGrantRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "Created"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 부여"
+      tags:
+      - "gpu-access"
+  /gpu-allocations/{allocationId}/access/{grantId}:
+    delete:
+      description: "접근 권한만 회수하며 연결된 가상머신은 재시작하지 않습니다."
+      operationId: "removeGpuAllocationAccessGrant"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 회수"
+      tags:
+      - "gpu-access"
+    patch:
+      operationId: "updateGpuAllocationAccessGrant"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "grantId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - description: "재인증(sudo-mode) 토큰 — POST /auth/reverify가 발급 (10분 유효, 다회용). 없\
+          거나 만료·무효면 403 REAUTH_REQUIRED."
+        in: "header"
+        name: "X-Reauth-Token"
+        required: false
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateResourceAccessGrantRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ResourceAccessGrantView"
+          description: "OK"
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "재인증 필요 — 유효한 X-Reauth-Token 없음 (`REAUTH_REQUIRED`)"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "접근 권한 등급 변경"
+      tags:
+      - "gpu-access"
+  /gpu-allocations/{allocationId}/attach:
+    post:
+      description: "가상머신 중단에 동의한 뒤 연결합니다. 임대는 이미 시작되어 있으며 연결 실패로 초기화되지 않습니다."
+      operationId: "attachGpu"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachGpuRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "가상머신에 GPU 연결"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}/attachment-options:
+    get:
+      operationId: "listGpuAttachmentOptions"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/GpuAttachmentOption"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU에 연결할 가상머신"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}/detach:
+    post:
+      description: "연결만 해제하며 GPU 점유와 임대 기간은 유지합니다."
+      operationId: "detachGpu"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmGpuActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 연결 해제"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}/extend:
+    post:
+      operationId: "extendGpuLease"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtendGpuLeaseRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 임대 연장"
+      tags:
+      - "gpu-controller"
+  /gpu-allocations/{allocationId}/release:
+    post:
+      operationId: "releaseGpu"
+      parameters:
+      - in: "path"
+        name: "allocationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmGpuActionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/GpuAllocationView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 반납"
+      tags:
+      - "gpu-controller"
+  /gpus:
+    get:
+      operationId: "listGpus"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/GpuView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "GPU 목록"
+      tags:
+      - "gpu-controller"
   /llm-keys:
     get:
       description: "내가 속한 워크스페이스의 키를 보여 줍니다. 접근 권한이 없는 키는 이름·상태·소유자만 담긴 제한된 행으로 표시\
@@ -16517,6 +17769,8 @@ security:
 servers:
 - url: "/api/v1"
 tags:
+- description: "GPU 접근 권한 — 이 GPU에 누가 접근할 수 있는지를 정합니다."
+  name: "gpu-access"
 - description: "도메인 접근 권한 — 이 도메인에 누가 접근할 수 있는지를 정합니다."
   name: "dns-domain-access"
 - description: "도메인 — VM 없이 이름만 발급받아 자기 서버로 연결합니다."

@@ -62,11 +62,12 @@ public class ExpiryStopJob {
     private final NotificationService notificationService;
     private final TransactionTemplate transactionTemplate;
     private final Clock clock;
+    private final VmPowerOperationGuard powerGuard;
 
     public ExpiryStopJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             NodeRepository nodeRepository, ProxmoxClient proxmoxClient,
             NotificationService notificationService, TransactionTemplate transactionTemplate,
-            Clock clock) {
+            Clock clock, VmPowerOperationGuard powerGuard) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.nodeRepository = nodeRepository;
@@ -74,20 +75,23 @@ public class ExpiryStopJob {
         this.notificationService = notificationService;
         this.transactionTemplate = transactionTemplate;
         this.clock = clock;
+        this.powerGuard = powerGuard;
     }
 
     @Job(name = "vm-expiry-stop %0", retries = 0)
     public void stop(long vmId) {
+        java.util.UUID worker = java.util.UUID.randomUUID();
+        if (vmRepository.claimPowerWorker(vmId, "EXPIRE_STOP", worker) == 0) { return; }
         try {
-            run(vmId);
+            run(vmId, worker);
         } finally {
-            // Release the claim on every exit path (crash leftovers are freed
-            // by StaleTaskRecoveryJob like any other power claim).
-            vmRepository.clearPowerActionClaim(vmId, Instant.now());
+            // Unconfirmed remote tasks retain their claim until recovery can
+            // prove they finished; a timeout does not cancel a Proxmox task.
+            powerGuard.finish(vmId, worker);
         }
     }
 
-    private void run(long vmId) {
+    private void run(long vmId, java.util.UUID worker) {
         Vm vm = vmRepository.findById(vmId).orElse(null);
         if (vm == null || vm.getExpiryStoppedAt() != null
                 || !STOPPABLE.contains(vm.getStatus())) {
@@ -111,18 +115,18 @@ public class ExpiryStopJob {
             return;
         }
         try {
-            shutdownThenForceStop(node, vm.getProxmoxVmid());
+            shutdownThenForceStop(vmId, worker, node, vm.getProxmoxVmid());
         } catch (RuntimeException e) {
-            // Claim is freed in the finally; the next hourly sweep retries.
+            // Recovery checks unfinished remote tasks before allowing another action.
             log.warn("expiry stop of vm {} (vmid {}) failed: {}", vmId, vm.getProxmoxVmid(),
                     e.getMessage());
             return;
         }
-        finalizeStop(vm);
+        if (vmRepository.ownsPowerWorker(vmId, worker)) { finalizeStop(vm, worker); }
     }
 
     /** Graceful ACPI first; a hung guest gets the force-stop fallback. */
-    private void shutdownThenForceStop(Node node, int vmid) {
+    private void shutdownThenForceStop(long vmId, java.util.UUID worker, Node node, int vmid) {
         ClusterResource resource = proxmoxClient.clusterResources(node.getApiHost(), "vm").stream()
                 .filter(r -> Integer.valueOf(vmid).equals(r.vmid()))
                 .findFirst().orElse(null);
@@ -130,22 +134,23 @@ public class ExpiryStopJob {
             return; // guest already down — just converge the DB state
         }
         try {
-            String upid = proxmoxClient.shutdown(node.getApiHost(), node.getName(), vmid,
-                    SHUTDOWN_TIMEOUT_SECONDS);
+            String upid = powerGuard.dispatch(vmId, worker, () -> proxmoxClient.shutdown(node.getApiHost(), node.getName(), vmid,
+                    SHUTDOWN_TIMEOUT_SECONDS));
             proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid,
                     Duration.ofSeconds(SHUTDOWN_TIMEOUT_SECONDS + 60L));
         } catch (ProxmoxTaskFailedException | ProxmoxTimeoutException acpiUnresponsive) {
             log.info("ACPI shutdown of vmid {} failed ({}); falling back to force stop",
                     vmid, acpiUnresponsive.getMessage());
-            String upid = proxmoxClient.stop(node.getApiHost(), node.getName(), vmid);
+            String upid = powerGuard.dispatch(vmId, worker, () -> proxmoxClient.stop(node.getApiHost(), node.getName(), vmid));
             proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
         }
     }
 
     /** One tx: status CAS + expiry marker + EXPIRE_STOP event + notification. */
-    private void finalizeStop(Vm vm) {
+    private void finalizeStop(Vm vm, java.util.UUID worker) {
         long vmId = vm.getId();
         transactionTemplate.executeWithoutResult(tx -> {
+            if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
             if (vmRepository.finishExpiryStop(vmId, STOPPABLE, VmStatus.STOPPED,
                     DETAIL_EXPIRY_STOPPED, Instant.now()) == 0) {
                 log.info("expiry stop of vm {} lost the CAS — already transitioned", vmId);

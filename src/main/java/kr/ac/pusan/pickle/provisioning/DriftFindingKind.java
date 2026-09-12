@@ -7,6 +7,7 @@ package kr.ac.pusan.pickle.provisioning;
  * per kind and two producers of one kind would resolve each other's findings.
  */
 public enum DriftFindingKind {
+    GPU_ATTACHMENT_MISMATCH,
     /** ① DB VM exists but no matching Proxmox guest. */
     MISSING_IN_PROXMOX,
     /** ② pickle-tagged Proxmox guest nobody in the DB claims. */

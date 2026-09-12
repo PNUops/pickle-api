@@ -84,7 +84,8 @@ public class NodePlacementService {
         return nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE).stream()
                 .filter(node -> imageNodeIds.contains(node.getId()))
                 .filter(node -> hasMemoryHeadroom(node, vm))
-                .max(Comparator.comparingDouble(this::score))
+                .max(Comparator.<Node, Boolean>comparing(node -> !node.isGpuNode())
+                        .thenComparingDouble(this::score))
                 .map(node -> {
                     log.info("placement for vm {}: node {} ({}) score {}", vm.getId(),
                             node.getId(), node.getName(), score(node));

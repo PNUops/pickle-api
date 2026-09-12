@@ -11,7 +11,8 @@ package kr.ac.pusan.pickle.access;
 public enum ResourceType {
     VM("VM"),
     LLM_API_KEY("LLM API 키"),
-    DOMAIN("도메인");
+    DOMAIN("도메인"),
+    GPU("GPU");
 
     private final String label;
 

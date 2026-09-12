@@ -194,6 +194,24 @@ public class ProxmoxClient {
         return config != null && truthyFlag(config.get("protection"));
     }
 
+    /** Reads applied configuration rather than the merged pending configuration. */
+    public Map<String, Object> currentVmConfig(String apiHost, String node, int vmid) {
+        return call(HttpMethod.GET, baseBuilder(apiHost).pathSegment("nodes", node, "qemu", String.valueOf(vmid), "config")
+                .queryParam("current", "1").build().encode().toUri(), null, CONFIG_RESPONSE);
+    }
+
+    /** Each row distinguishes its applied value from any pending change. */
+    public List<Map<String, Object>> pendingVmConfig(String apiHost, String node, int vmid) {
+        return call(HttpMethod.GET, uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "pending"), null,
+                new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+    }
+
+    /** Current runtime state is separate from task completion and desired configuration. */
+    public Map<String, Object> currentVmStatus(String apiHost, String node, int vmid) {
+        return call(HttpMethod.GET, uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "status", "current"), null,
+                CONFIG_RESPONSE);
+    }
+
     /** PVE renders boolean flags as 0/1 int or string across versions. */
     private static boolean truthyFlag(Object value) {
         if (value instanceof Boolean b) {

@@ -248,6 +248,7 @@ class VmPowerControlTest {
         wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(START_UPID)))
                 .willReturn(okFixture("40-start-status")));
 
+        jdbcTemplate.update("update vms set pending_power_action='START',pending_power_action_at=now() where id=?", vmId);
         vmPowerJobs.start(vmId, owner.getId());
 
         assertThat(statusOf(vmId)).isEqualTo("RUNNING");
@@ -264,6 +265,7 @@ class VmPowerControlTest {
         wm.server().stubFor(get(urlPathEqualTo(taskStatusPath(SHUTDOWN_UPID)))
                 .willReturn(okFixture("61-shutdown-status")));
 
+        jdbcTemplate.update("update vms set pending_power_action='SHUTDOWN',pending_power_action_at=now() where id=?", vmId);
         vmPowerJobs.shutdown(vmId, owner.getId());
 
         // status untouched (the poller converges), failure recorded twice over

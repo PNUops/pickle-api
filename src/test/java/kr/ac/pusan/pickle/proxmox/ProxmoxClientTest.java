@@ -84,6 +84,22 @@ class ProxmoxClientTest {
     }
 
     @Test
+    void appliedConfigurationPendingConfigurationAndRuntimeStatusStaySeparate() {
+        String base = "/api2/json/nodes/pve1/qemu/102";
+        wm.server().stubFor(get(urlPathEqualTo(base + "/config")).withQueryParam("current", equalTo("1"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":{\"memory\":2048}}")));
+        wm.server().stubFor(get(urlPathEqualTo(base + "/pending"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                    .withBody("{\"data\":[{\"key\":\"hostpci0\",\"pending\":\"mapping=example-gpu\"}]}")));
+        wm.server().stubFor(get(urlPathEqualTo(base + "/status/current"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":{\"status\":\"running\"}}")));
+        assertThat(client.currentVmConfig(wm.apiHost(), NODE, 102)).doesNotContainKey("hostpci0");
+        assertThat(client.pendingVmConfig(wm.apiHost(), NODE, 102).getFirst()).containsEntry("pending", "mapping=example-gpu");
+        assertThat(client.currentVmStatus(wm.apiHost(), NODE, 102)).containsEntry("status", "running");
+        wm.server().verify(getRequestedFor(urlPathEqualTo(base + "/config")).withQueryParam("current", equalTo("1")));
+    }
+
+    @Test
     void cloneFlowReturnsUpidAndAwaitTaskPollsUntilStopped() {
         wm.server().stubFor(post(urlPathEqualTo("/api2/json/nodes/pve1/qemu/1000/clone"))
                 .willReturn(okFixture("10-clone")));

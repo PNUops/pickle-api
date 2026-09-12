@@ -50,8 +50,15 @@ public class NotificationComposer {
 
     public Composed compose(NotificationEvent event, Map<String, Object> args) {
         return switch (event) {
+            case GPU_UPDATE -> new Composed(event.id(), str(args, "title"), str(args, "message"),
+                    "/console/gpus/" + args.get("allocationId"), event.defaultImportance(), payload(args, "allocationId"));
+            case GPU_REVIEW -> new Composed(event.id(), "GPU 관리자 확인", str(args, "message"),
+                    "/admin/gpus", event.defaultImportance(), Map.of());
             case REQUEST_SUBMITTED -> requestSubmitted(event, args);
-            case REQUEST_APPROVED -> new Composed(event.id(), resourceLabel(args) + " 신청 승인",
+            case REQUEST_APPROVED -> "GPU".equals(str(args, "type"))
+                    ? new Composed(event.id(), "GPU 신청 승인", "GPU 신청이 승인되었습니다. 현재 대기 순서는 " + str(args, "queuePosition") + "번째입니다. GPU가 할당되면 메일과 콘솔 알림으로 안내합니다.",
+                            "/console/requests/" + args.get("requestId"), event.defaultImportance(), payload(args, "requestId", "resourceName"))
+                    : new Composed(event.id(), resourceLabel(args) + " 신청 승인",
                     """
                     %s 신청이 승인되었습니다. %s '%s' 생성이 시작됩니다.
                     생성이 완료되면 다시 알려드립니다.%s""".formatted(resourceLabel(args),

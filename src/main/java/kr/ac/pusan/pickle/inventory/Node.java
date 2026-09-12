@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.Map;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -18,7 +19,7 @@ import org.hibernate.type.SqlTypes;
 /**
  * Proxmox node: identity/capacity for placement and headroom,
  * plus the per-node config the provision pipeline reads (vm_bridge, storage,
- * ip_pool_id — never hardcoded). Only {@code labels} stays unmapped for now.
+ * ip_pool_id — never hardcoded). Labels describe placement capabilities.
  */
 @Entity
 @Table(name = "nodes")
@@ -71,6 +72,14 @@ public class Node {
      */
     @Column(name = "disk_capacity_gb")
     private Long diskCapacityGb;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb", insertable = false, updatable = false)
+    private Map<String, Object> labels;
+
+    public boolean isGpuNode() {
+        return labels != null && Boolean.TRUE.equals(labels.get("gpu"));
+    }
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
