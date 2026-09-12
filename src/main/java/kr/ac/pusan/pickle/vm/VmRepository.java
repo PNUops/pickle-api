@@ -125,6 +125,28 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int transitionStatus(@Param("id") Long id, @Param("from") VmStatus from, @Param("to") VmStatus to,
             @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 
+    /** A stale worker cannot publish a result after the power state has cycled back. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.status = :to, v.statusDetail = :statusDetail, v.updatedAt = :now
+             where v.id = :id and v.status = :from and v.powerOperationId = :worker
+            """)
+    int transitionPowerStatus(@Param("id") Long id, @Param("worker") UUID worker,
+            @Param("from") VmStatus from, @Param("to") VmStatus to,
+            @Param("statusDetail") String statusDetail, @Param("now") Instant now);
+
+    /** Failure details belong to the same UUID that dispatched the command. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v set v.statusDetail = :statusDetail, v.updatedAt = :now
+             where v.id = :id and v.powerOperationId = :worker
+            """)
+    int recordPowerFailure(@Param("id") Long id, @Param("worker") UUID worker,
+            @Param("statusDetail") String statusDetail, @Param("now") Instant now);
+
     @Transactional
     @Modifying(clearAutomatically = true)
     @Query(nativeQuery = true, value = """
@@ -259,6 +281,20 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     int finishExpiryStop(@Param("id") Long id, @Param("from") Collection<VmStatus> from,
             @Param("to") VmStatus to, @Param("statusDetail") String statusDetail,
             @Param("now") Instant now);
+
+    /** The expiry worker must still own the VM when its final state is written. */
+    @Transactional
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Vm v
+               set v.status = :to, v.statusDetail = :statusDetail, v.expiryStoppedAt = :now,
+                   v.updatedAt = :now
+             where v.id = :id and v.status in :from and v.expiryStoppedAt is null
+               and v.powerOperationId = :worker
+            """)
+    int finishOwnedExpiryStop(@Param("id") Long id, @Param("worker") UUID worker,
+            @Param("from") Collection<VmStatus> from, @Param("to") VmStatus to,
+            @Param("statusDetail") String statusDetail, @Param("now") Instant now);
 
     /**
      * Admin period change: updates the dates and clears both expiry markers in

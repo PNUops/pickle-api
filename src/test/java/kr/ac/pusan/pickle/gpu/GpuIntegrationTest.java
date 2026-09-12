@@ -68,6 +68,8 @@ class GpuIntegrationTest {
     @Autowired GpuMutationService mutations;
     @Autowired GpuOperationJob operations;
     @Autowired kr.ac.pusan.pickle.provisioning.DeleteVmJob deleteVmJob;
+    @Autowired kr.ac.pusan.pickle.provisioning.VmPowerJobs ordinaryPowerJobs;
+    @Autowired kr.ac.pusan.pickle.provisioning.ExpiryStopJob expiryPowerJob;
     @Autowired GpuReconciliationService reconciliation;
     @Autowired GpuQueryService query;
     @Autowired GpuLowUtilizationJob lowUtil;
@@ -233,14 +235,55 @@ class GpuIntegrationTest {
 
     @Test
     void currentSettingsChangeReviewsButNeverExistingLeaseDeadlines() {
-        long id = allocated(); Instant end = store.allocation(id).orElseThrow().leaseEndsAt();
-        jdbc.update("update gpu_allocations set unattached_since=now()-interval '13 hours' where id=?", id);
-        settings.update(admin, SettingsService.GPU_UNATTACHED_REVIEW_HOURS, json.readTree("14"), null);
-        lowUtil.check(); assertThat(reviewCount(id)).isZero();
+        long reviewed = allocated();
+        long shorterIdle = allocated();
+        jdbc.update("update gpu_allocations set allocated_at=allocated_at-interval '13 hours', lease_ends_at=lease_ends_at-interval '13 hours', unattached_since=unattached_since-interval '13 hours' where id=?", reviewed);
+        jdbc.update("update gpu_allocations set allocated_at=allocated_at-interval '8 hours', lease_ends_at=lease_ends_at-interval '8 hours', unattached_since=unattached_since-interval '8 hours' where id=?", shorterIdle);
+        Map<Long, Instant> originalDeadlines = new java.util.LinkedHashMap<>();
+        originalDeadlines.put(reviewed, store.allocation(reviewed).orElseThrow().leaseEndsAt());
+        originalDeadlines.put(shorterIdle, store.allocation(shorterIdle).orElseThrow().leaseEndsAt());
+
         settings.update(admin, SettingsService.GPU_UNATTACHED_REVIEW_HOURS, json.readTree("12"), null);
-        lowUtil.check(); lowUtil.check(); assertThat(reviewCount(id)).isEqualTo(1);
-        assertThat(store.allocation(id).orElseThrow().leaseEndsAt()).isEqualTo(end);
-        assertThat(store.allocation(id).orElseThrow().status()).isEqualTo(GpuAllocationStatus.ALLOCATED);
+        lowUtil.check();
+        assertThat(reviewCount(reviewed)).isEqualTo(1);
+        assertThat(reviewCount(shorterIdle)).isZero();
+        String originalEvidence = jdbc.queryForObject(
+                "select evidence::text from gpu_reclaim_reviews where allocation_id=?", String.class, reviewed);
+        assertThat(json.readTree(originalEvidence).get("reviewHours").asInt()).isEqualTo(12);
+
+        settings.update(admin, SettingsService.GPU_UNATTACHED_REVIEW_HOURS, json.readTree("24"), null);
+        long laterIdle = allocated();
+        jdbc.update("update gpu_allocations set allocated_at=allocated_at-interval '13 hours', lease_ends_at=lease_ends_at-interval '13 hours', unattached_since=unattached_since-interval '13 hours' where id=?", laterIdle);
+        originalDeadlines.put(laterIdle, store.allocation(laterIdle).orElseThrow().leaseEndsAt());
+        lowUtil.check();
+        assertThat(reviewCount(shorterIdle)).isZero();
+        assertThat(reviewCount(laterIdle)).isZero();
+        assertThat(reviewCount(reviewed)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select evidence::text from gpu_reclaim_reviews where allocation_id=?",
+                String.class, reviewed)).isEqualTo(originalEvidence);
+        originalDeadlines.forEach((id, end) -> {
+            assertThat(store.allocation(id).orElseThrow().leaseEndsAt()).isEqualTo(end);
+            assertThat(store.allocation(id).orElseThrow().status()).isEqualTo(GpuAllocationStatus.ALLOCATED);
+        });
+
+        settings.update(admin, SettingsService.GPU_UNATTACHED_REVIEW_HOURS, json.readTree("6"), null);
+        lowUtil.check();
+        lowUtil.check();
+        for (long id : List.of(shorterIdle, laterIdle)) {
+            assertThat(reviewCount(id)).isEqualTo(1);
+            String evidence = jdbc.queryForObject(
+                    "select evidence::text from gpu_reclaim_reviews where allocation_id=?", String.class, id);
+            assertThat(json.readTree(evidence).get("reviewHours").asInt()).isEqualTo(6);
+        }
+        assertThat(reviewCount(reviewed)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select evidence::text from gpu_reclaim_reviews where allocation_id=?",
+                String.class, reviewed)).isEqualTo(originalEvidence);
+        originalDeadlines.forEach((id, end) -> {
+            assertThat(store.allocation(id).orElseThrow().leaseEndsAt()).isEqualTo(end);
+            assertThat(store.allocation(id).orElseThrow().status()).isEqualTo(GpuAllocationStatus.ALLOCATED);
+            assertThat(jdbc.queryForObject("select count(*) from gpu_reclaim_reviews where allocation_id=? and decision is not null",
+                    Long.class, id)).isZero();
+        });
     }
 
     @Test
@@ -562,6 +605,116 @@ class GpuIntegrationTest {
             details[i++] = problem.get("detail").asString();
         }
         assertThat(details[0]).isEqualTo(details[1]);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void oldPowerSuccessCannotPublishAfterAStateAbaAndNewGpuClaim() throws Exception {
+        verifyVmMetadataAbaFence(false, false);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void oldPowerFailureCannotReplaceTheNewOwnersDetailOrEvent() throws Exception {
+        verifyVmMetadataAbaFence(true, false);
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void oldExpiryCompletionCannotStopOrNotifyAfterANewGpuClaim() throws Exception {
+        verifyVmMetadataAbaFence(false, true);
+    }
+
+    private void verifyVmMetadataAbaFence(boolean failed, boolean expiry) throws Exception {
+        long[] ids = transactionTemplate.execute(ignored -> new long[] {gpu(), allocation(48), vm()});
+        scheduler.allocate();
+        long vmId = ids[2];
+        jdbc.update("update vms set status='RUNNING',pending_power_action=?,pending_power_action_at=now() where id=?",
+                expiry ? "EXPIRE_STOP" : "SHUTDOWN", vmId);
+        if (expiry) { jdbc.update("update vms set end_date=current_date-1 where id=?", vmId); }
+        var oldWorker = new AtomicReference<UUID>();
+        var newWorker = new AtomicReference<UUID>();
+        var remoteFinished = new java.util.concurrent.CountDownLatch(1);
+        var continueOldWorker = new java.util.concurrent.CountDownLatch(1);
+        var replacementReady = new java.util.concurrent.CountDownLatch(1);
+        var commitReplacement = new java.util.concurrent.CountDownLatch(1);
+        var replacementPid = new java.util.concurrent.atomic.AtomicInteger();
+        long originalEvents = jdbc.queryForObject("select count(*) from vm_events where vm_id=?", Long.class, vmId);
+        long originalNotices = jdbc.queryForObject("select count(*) from notifications where event='vm.expiry.stopped' and payload->>'vmId'=?",
+                Long.class, vmPublicId(vmId).toString());
+        if (expiry) {
+            oldWorker.set(UUID.randomUUID());
+            assertThat(vms.claimPowerWorker(vmId, "EXPIRE_STOP", oldWorker.get())).isEqualTo(1);
+        } else {
+            when(proxmox.shutdown(anyString(), anyString(), anyInt())).thenReturn("old-metadata-task");
+            doAnswer(invocation -> {
+                oldWorker.set(jdbc.queryForObject("select power_operation_id from vms where id=?", UUID.class, vmId));
+                remoteFinished.countDown(); await(continueOldWorker);
+                if (failed) { throw new IllegalStateException("old worker failure after task completion"); }
+                return new TaskStatus("stopped", "OK", "old-metadata-task");
+            }).when(proxmox).awaitTask(anyString(), anyString(), anyString());
+        }
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            try {
+                var old = executor.submit(() -> {
+                    if (expiry) {
+                        remoteFinished.countDown(); await(continueOldWorker);
+                        ReflectionTestUtils.invokeMethod(expiryPowerJob, "finalizeStop", vms.findById(vmId).orElseThrow(), oldWorker.get());
+                    } else {
+                        ordinaryPowerJobs.shutdown(vmId, owner.id());
+                    }
+                });
+                assertThat(remoteFinished.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                var replacement = executor.submit(() -> transactionTemplate.executeWithoutResult(ignored -> {
+                    replacementPid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
+                    // Recovery observes the old remote task as terminal before another owner takes over.
+                    powerGuard.finish(vmId, oldWorker.get());
+                    assertThat(vms.transitionStatus(vmId, kr.ac.pusan.pickle.vm.VmStatus.RUNNING,
+                            kr.ac.pusan.pickle.vm.VmStatus.STOPPED, null, clock.instant())).isEqualTo(1);
+                    jdbc.update("update vms set end_date=current_date+1 where id=?", vmId);
+                    assertThat(vms.transitionStatus(vmId, kr.ac.pusan.pickle.vm.VmStatus.STOPPED,
+                            kr.ac.pusan.pickle.vm.VmStatus.RUNNING, "new worker metadata", clock.instant())).isEqualTo(1);
+                    // The replacement is an actual GPU operation with its own persisted UUID.
+                    mutations.attach(owner, publicId(ids[1]), vmPublicId(vmId), null);
+                    newWorker.set(store.allocation(ids[1]).orElseThrow().operationId());
+                    replacementReady.countDown(); await(commitReplacement);
+                }));
+                assertThat(replacementReady.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                continueOldWorker.countDown();
+                // MVCC lets the old ownership read see its previous UUID, but its UPDATE waits here.
+                awaitVmMetadataWrite(replacementPid.get());
+                commitReplacement.countDown();
+                replacement.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                old.get(10, java.util.concurrent.TimeUnit.SECONDS);
+                assertThat(newWorker.get()).isNotNull();
+                assertThat(jdbc.queryForObject("select status::text from vms where id=?", String.class, vmId)).isEqualTo("RUNNING");
+                assertThat(jdbc.queryForObject("select status_detail from vms where id=?", String.class, vmId)).isEqualTo("new worker metadata");
+                assertThat(jdbc.queryForObject("select power_operation_id from vms where id=?", UUID.class, vmId)).isEqualTo(newWorker.get());
+                assertThat(jdbc.queryForObject("select expiry_stopped_at from vms where id=?", java.sql.Timestamp.class, vmId)).isNull();
+                assertThat(jdbc.queryForObject("select count(*) from vm_events where vm_id=?", Long.class, vmId)).isEqualTo(originalEvents);
+                assertThat(jdbc.queryForObject("select count(*) from notifications where event='vm.expiry.stopped' and payload->>'vmId'=?",
+                        Long.class, vmPublicId(vmId).toString())).isEqualTo(originalNotices);
+            } finally {
+                continueOldWorker.countDown(); commitReplacement.countDown();
+            }
+        } finally {
+            transactionTemplate.executeWithoutResult(ignored -> {
+                jdbc.update("update gpu_operations set phase='DONE' where allocation_id=?", ids[1]);
+                jdbc.update("update gpu_allocations set connection_status='NONE',vm_id=null,operation_id=null where id=?", ids[1]);
+                jdbc.update("update vms set pending_power_action=null,power_operation_id=null where id=?", vmId);
+            });
+            retire(new long[]{ids[0],ids[1]});
+        }
+    }
+
+    private void awaitVmMetadataWrite(int blockerPid) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            var queries = jdbc.queryForList("select query from pg_stat_activity where wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))", String.class, blockerPid);
+            if (queries.stream().map(String::toLowerCase).anyMatch(q -> q.startsWith("update ") && q.contains("vms"))) { return; }
+            Thread.sleep(10);
+        }
+        throw new AssertionError("old worker did not wait on the VM metadata update");
     }
 
     private long gpu() {

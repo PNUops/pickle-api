@@ -151,7 +151,7 @@ public class ExpiryStopJob {
         long vmId = vm.getId();
         transactionTemplate.executeWithoutResult(tx -> {
             if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
-            if (vmRepository.finishExpiryStop(vmId, STOPPABLE, VmStatus.STOPPED,
+            if (vmRepository.finishOwnedExpiryStop(vmId, worker, STOPPABLE, VmStatus.STOPPED,
                     DETAIL_EXPIRY_STOPPED, Instant.now()) == 0) {
                 log.info("expiry stop of vm {} lost the CAS — already transitioned", vmId);
                 return;

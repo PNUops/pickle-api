@@ -150,12 +150,12 @@ public class VmPowerJobs {
             return;
         }
         if (vm.getProxmoxVmid() == null) {
-            recordFailure(action, vmId, actorId, actorKind, "Proxmox VMID가 없는 VM입니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "Proxmox VMID가 없는 VM입니다");
             return;
         }
         Node node = nodeRepository.findById(vm.getNodeId()).orElse(null);
         if (node == null) {
-            recordFailure(action, vmId, actorId, actorKind, "배치된 노드 정보를 찾을 수 없습니다");
+            recordFailure(action, vmId, actorId, actorKind, worker, "배치된 노드 정보를 찾을 수 없습니다");
             return;
         }
         try {
@@ -163,7 +163,7 @@ public class VmPowerJobs {
                     vm.getProxmoxVmid()));
             proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
             if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
-            int updated = vmRepository.transitionStatus(vmId, from, action.toStatus, null, Instant.now());
+            int updated = vmRepository.transitionPowerStatus(vmId, worker, from, action.toStatus, null, Instant.now());
             if (updated == 1) {
                 vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId,
                         actorKind, null));
@@ -174,16 +174,16 @@ public class VmPowerJobs {
             }
         } catch (RuntimeException e) {
             if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
-            recordFailure(action, vmId, actorId, actorKind, reasonOf(e));
+            recordFailure(action, vmId, actorId, actorKind, worker, reasonOf(e));
         }
     }
 
     /** Failure: keep the status (the poller converges), record detail + event. */
     private void recordFailure(PowerAction action, long vmId, long actorId,
-            VmActorKind actorKind, String reason) {
+            VmActorKind actorKind, java.util.UUID worker, String reason) {
         String detail = action.koreanLabel + " 실패: " + reason;
         log.warn("Power job {} failed for vm {}: {}", action, vmId, reason);
-        vmRepository.updateStatusDetail(vmId, detail, Instant.now());
+        if (vmRepository.recordPowerFailure(vmId, worker, detail, Instant.now()) == 0) { return; }
         vmEventRepository.save(new VmEvent(vmId, action.eventType, actorId, actorKind,
                 detail));
     }
