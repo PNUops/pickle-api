@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import org.jspecify.annotations.Nullable;
@@ -39,10 +40,12 @@ public record OpenRouterAccountResponse(
         @Schema(description = "이 account에 걸린 살아 있는 key의 금액 한도 합계")
         OpenRouterAccountAllocationResponse allocation,
         @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 허용 목록 기본값. 복사 원본이지 "
-                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다.")
+                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
+                + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         List<String> defaultCreditAllowedModels,
         @Schema(description = "승인 화면이 프리필에 쓰는 유료 모델 차단 목록 기본값. 복사 원본이지 "
-                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다.")
+                + "상속원이 아니라서 여기를 바꿔도 이미 발급된 키는 그대로입니다."
+                + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> defaultCreditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
                 PassthroughEndpoints.EMBEDDINGS}),

@@ -176,8 +176,7 @@ public class LlmKeyModelService {
         // what gets granted.
         List<OpenRouterCatalogueRepository.CatalogueRow> rows = catalogue.listed();
         List<OpenRouterCatalogueRepository.CatalogueRow> reachable = rows.stream()
-                .filter(row -> patterns.isEmpty() || matchesAny(patterns, row.modelId()))
-                .filter(row -> !matchesAny(denied, row.modelId()))
+                .filter(row -> CreditModelPatterns.allows(patterns, denied, row.modelId()))
                 .toList();
 
         // An entry that matched nothing is worth saying out loud on either
@@ -189,8 +188,8 @@ public class LlmKeyModelService {
         // server cannot tell which, so it reports the fact and leaves the
         // reading to the person who wrote the entry.
         return new LlmKeyModelsResponse.PaidModels(access(key, patterns, denied), patterns,
-                denied, sorted(reachable), unmatchedAgainst(patterns, rows),
-                unmatchedAgainst(denied, rows), freshness, state.lastSuccessAt());
+                denied, sorted(reachable), unmatchedAgainst(patterns, rows, false),
+                unmatchedAgainst(denied, rows, true), freshness, state.lastSuccessAt());
     }
 
     /**
@@ -218,18 +217,17 @@ public class LlmKeyModelService {
 
     /** The entries of one list that no catalogue row answers to. */
     private static List<String> unmatchedAgainst(List<String> patterns,
-            List<OpenRouterCatalogueRepository.CatalogueRow> rows) {
+            List<OpenRouterCatalogueRepository.CatalogueRow> rows, boolean deny) {
         List<String> unmatched = new ArrayList<>();
         for (String pattern : patterns) {
-            if (rows.stream().noneMatch(row -> CreditModelPatterns.matches(pattern, row.modelId()))) {
+            if (rows.stream().filter(row -> !CreditModelPatterns.isRouter(row.modelId()))
+                    .noneMatch(row -> deny
+                            ? CreditModelPatterns.matchesDenied(pattern, row.modelId())
+                            : CreditModelPatterns.matches(pattern, row.modelId()))) {
                 unmatched.add(pattern);
             }
         }
         return unmatched;
-    }
-
-    private static boolean matchesAny(List<String> patterns, String modelId) {
-        return patterns.stream().anyMatch(pattern -> CreditModelPatterns.matches(pattern, modelId));
     }
 
     private static List<LlmKeyModelsResponse.PaidModel> sorted(

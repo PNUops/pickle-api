@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import org.jspecify.annotations.Nullable;
@@ -144,7 +145,8 @@ public class AdminLlmKeyLimitsRequest {
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
             description = "유료 모델 허용 목록. 빈 배열이나 null이면 제한이 없습니다. 금액 "
                     + "한도와 달리 null이 0을 뜻하지 않습니다. 자체 서빙 모델은 이 값에 "
-                    + "영향을 받지 않습니다.")
+                    + "영향을 받지 않습니다."
+                    + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
     public @Nullable List<String> getCreditAllowedModels() {
         return creditAllowedModels;
     }
@@ -157,7 +159,8 @@ public class AdminLlmKeyLimitsRequest {
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
             description = "유료 모델 차단 목록. 빈 배열이나 null이면 차단하는 모델이 없습니다. "
                     + "허용 목록과 함께 걸리면 차단이 이깁니다. 허용 목록과 달리 금액 한도가 "
-                    + "0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다.")
+                    + "0이어도 남습니다. 자체 서빙 모델은 이 값에 영향을 받지 않습니다."
+                    + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
     public @Nullable List<String> getCreditDeniedModels() {
         return creditDeniedModels;
     }

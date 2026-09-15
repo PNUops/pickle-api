@@ -779,14 +779,14 @@ class AdminOpenRouterAccountTest {
                         null, null, null, null,
                         new ApproveLlmKeyRequestSpec(null, null, null, null, BigDecimal.ONE,
                                 null, java.util.List.of("OpenAI/*", " anthropic/claude-sonnet-4 ",
-                                        "~Anthropic/Claude-Sonnet-Latest"),
-                                java.util.List.of("openai/*-pro", " OpenAI/o1* "),
+                                        "~Anthropic/Claude-Sonnet-Latest", "*/*"),
+                                java.util.List.of("*/*-Pro", " OpenAI/o1* "),
                                 java.util.List.of("Images", " embeddings "),
                                 account.getPublicId())), sysAdmin));
 
         String allowed =
-                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\"]";
-        String denied = "[\"openai/*-pro\", \"openai/o1*\"]";
+                "[\"openai/*\", \"anthropic/claude-sonnet-4\", \"~anthropic/claude-sonnet-latest\", \"*/*\"]";
+        String denied = "[\"*/*-pro\", \"openai/o1*\"]";
 
         // The row the sync document is built from — not the request detail.
         assertThat(jdbcTemplate.queryForObject(
@@ -996,12 +996,12 @@ class AdminOpenRouterAccountTest {
         assertThat(created.defaultCreditDeniedModels()).isEmpty();
 
         UpdateOpenRouterAccountRequest both = new UpdateOpenRouterAccountRequest();
-        both.setDefaultCreditAllowedModels(java.util.List.of("openai/*"));
-        both.setDefaultCreditDeniedModels(java.util.List.of("OpenAI/*-Pro", " openai/*-pro "));
+        both.setDefaultCreditAllowedModels(java.util.List.of("*/*"));
+        both.setDefaultCreditDeniedModels(java.util.List.of("*/*-Pro", " */*-pro "));
         OpenRouterAccountResponse updated =
                 service.update(sysAdmin, created.id(), both, "127.0.0.1");
-        assertThat(updated.defaultCreditAllowedModels()).containsExactly("openai/*");
-        assertThat(updated.defaultCreditDeniedModels()).containsExactly("openai/*-pro");
+        assertThat(updated.defaultCreditAllowedModels()).containsExactly("*/*");
+        assertThat(updated.defaultCreditDeniedModels()).containsExactly("*/*-pro");
 
         // Touching only the allow list leaves the deny default standing.
         UpdateOpenRouterAccountRequest allowOnly = new UpdateOpenRouterAccountRequest();
@@ -1009,9 +1009,9 @@ class AdminOpenRouterAccountTest {
         OpenRouterAccountResponse after =
                 service.update(sysAdmin, created.id(), allowOnly, "127.0.0.1");
         assertThat(after.defaultCreditAllowedModels()).containsExactly("anthropic/*");
-        assertThat(after.defaultCreditDeniedModels()).containsExactly("openai/*-pro");
+        assertThat(after.defaultCreditDeniedModels()).containsExactly("*/*-pro");
         assertThat(service.get(sysAdmin, created.id()).defaultCreditDeniedModels())
-                .containsExactly("openai/*-pro");
+                .containsExactly("*/*-pro");
     }
 
     private OpenRouterAccountResponse create(String name) {

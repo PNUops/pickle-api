@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -66,14 +67,16 @@ public record LlmKeyModelsResponse(
     @Schema(description = "유료 모델과 그 목록의 상태")
     public record PaidModels(
             @Schema(description = "사용 가능 여부") PaidAccess access,
-            @Schema(description = "이 키의 모델 허용 목록. 비어 있으면 허용 쪽 제한이 없습니다.")
+            @Schema(description = "이 키의 모델 허용 목록. 비어 있으면 허용 쪽 제한이 없습니다."
+                    + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
             List<String> allowedPatterns,
             @Schema(description = "이 키의 모델 차단 목록. 비어 있으면 차단하는 모델이 없습니다. "
-                    + "허용 목록과 함께 걸리면 차단이 이깁니다.")
+                    + "허용 목록과 함께 걸리면 차단이 이깁니다."
+                    + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
             List<String> deniedPatterns,
             @Schema(description = "호출할 수 있는 모델") List<PaidModel> models,
             @Schema(description = "허용 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
-                    + "오타이거나, 벤더가 내린 모델이거나, 목록이 오래된 것입니다.")
+                    + "목록에서 사라진 모델이나 아직 없는 이름, 제한된 키에서 호출할 수 없는 라우터도 포함됩니다.")
             List<String> unmatchedAllowedPatterns,
             // Deliberately not worded as a warning. A deny rule that matches
             // nothing today is as likely to be pre-emptive as mistyped — the
@@ -82,7 +85,7 @@ public record LlmKeyModelsResponse(
             // as a problem gets a reviewer to delete a rule they meant, and the
             // consequence of that arrives later, on the day the model appears.
             @Schema(description = "차단 목록에 적혀 있지만 지금 목록에서 찾지 못한 이름. "
-                    + "지금은 아무 모델도 막지 않고 있다는 뜻이며, 아직 나오지 않은 모델을 "
+                    + "현재 캐시의 모델명과 별칭 중 이 패턴으로 차단되는 것이 없다는 뜻이며, 아직 나오지 않은 모델을 "
                     + "미리 막아 둔 경우에도 여기에 나옵니다.")
             List<String> unmatchedDeniedPatterns,
             @Schema(description = "목록의 신선도") CatalogFreshness catalogFreshness,

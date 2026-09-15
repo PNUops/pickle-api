@@ -276,6 +276,24 @@ class LlmGatewayEndpointTest {
     // well-formed document that inverts the fence, and the gateway would apply
     // it without complaint.
     @Test
+    void providerWildcardPolicyTravelsInTheActualSyncJson() throws Exception {
+        long account = insertOpenrouterAccount();
+        KeyFixture fenced = newKey("provider-policy");
+        jdbcTemplate.update("""
+                update llm_api_keys set credit_limit = 5.00, openrouter_account_id = ?,
+                    credit_allowed_models = '["*/*"]'::jsonb,
+                    credit_denied_models = '["*/*-pro"]'::jsonb where id = ?
+                """, account, fenced.id());
+        String body = syncFrom(SOURCE, TOKEN, poll(0)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].creditAllowedModels[0]").value("*/*"))
+                .andExpect(jsonPath("$.keys[?(@.keyId=='" + fenced.publicId()
+                        + "')].creditDeniedModels[0]").value("*/*-pro"))
+                .andReturn().getResponse().getContentAsString();
+        java.nio.file.Files.writeString(java.nio.file.Path.of("target/credit-model-sync.json"), body);
+    }
+
+    @Test
     void bothCreditModelListsTravelInTheDocument() throws Exception {
         // A positive money limit needs an account binding since the legacy source
         // was retired, so the fence rides a properly bound key.

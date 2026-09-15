@@ -15,6 +15,38 @@ import tools.jackson.databind.ObjectMapper;
  */
 class CreditModelPatternsTest {
 
+    @Test
+    void sharedPolicyCasesAgreeAcrossTheClients() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        try (var source = getClass().getResourceAsStream("/llm/credit-model-policy-cases.json")) {
+            assertThat(source).isNotNull();
+            var cases = mapper.readTree(source);
+            for (var row : cases.get("patternCases")) {
+                assertThat(CreditModelPatterns.matches(row.get("pattern").asString(),
+                        row.get("name").asString())).as(row.toString())
+                        .isEqualTo(row.get("expected").asBoolean());
+            }
+            for (var row : cases.get("policyCases")) {
+                List<String> allowed = new ArrayList<>();
+                List<String> denied = new ArrayList<>();
+                row.get("allowed").forEach(value -> allowed.add(value.asString()));
+                row.get("denied").forEach(value -> denied.add(value.asString()));
+                assertThat(CreditModelPatterns.allows(allowed, denied, row.get("name").asString()))
+                        .as(row.toString()).isEqualTo(row.get("expected").asBoolean());
+            }
+            for (var row : cases.get("validPatterns")) {
+                List<FieldValidationError> errors = new ArrayList<>();
+                assertThat(normalize(List.of(row.asString()), errors)).containsExactly(row.asString());
+                assertThat(errors).as(row.toString()).isEmpty();
+            }
+            for (var row : cases.get("invalidPatterns")) {
+                List<FieldValidationError> errors = new ArrayList<>();
+                assertThat(normalize(List.of(row.asString()), errors)).isEmpty();
+                assertThat(errors).as(row.toString()).isNotEmpty();
+            }
+        }
+    }
+
     private List<String> normalize(List<String> input, List<FieldValidationError> errors) {
         return CreditModelPatterns.normalize(input, "creditAllowedModels", errors);
     }
@@ -107,13 +139,7 @@ class CreditModelPatternsTest {
         }
     }
 
-    /**
-     * What the syntax drops at the moment of storing. The vendor half takes no
-     * star at all: vendor names are prefixes of one another (meta and
-     * meta-llama, bytedance and bytedance-seed), so {@code openai*} would reach
-     * a vendor nobody named. One star per entry, and a leading star needs a
-     * non-empty tail that ends alphanumeric.
-     */
+    /** Partial provider patterns and multiple stars within a model segment are invalid. */
     @Test
     void refusesTheShapesTheSyntaxDrops() {
         for (String bad : List.of("*", "openai*", "openai/*gpt*", "openai/**",
