@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.PassthroughEndpoints;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountStatus;
 import org.jspecify.annotations.Nullable;
@@ -59,7 +60,8 @@ public class UpdateOpenRouterAccountRequest {
 
     @Schema(description = "새 유료 모델 허용 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
             + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
-            + "영향이 없습니다.")
+            + "영향이 없습니다."
+            + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
     public @Nullable List<String> getDefaultCreditAllowedModels() {
         return defaultCreditAllowedModels;
     }
@@ -70,7 +72,8 @@ public class UpdateOpenRouterAccountRequest {
 
     @Schema(description = "새 유료 모델 차단 목록 기본값. 생략하면 유지하고, null이나 빈 배열이면 "
             + "기본값을 지웁니다. 이 쓰기는 게이트웨이 문서를 바꾸지 않으므로 이미 발급된 키에는 "
-            + "영향이 없습니다.")
+            + "영향이 없습니다."
+            + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
     public @Nullable List<String> getDefaultCreditDeniedModels() {
         return defaultCreditDeniedModels;
     }

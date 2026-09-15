@@ -87,6 +87,99 @@ class LlmKeyModelsTest {
     }
 
     @Test
+    void providerPatternsAndVariantDenialsKeepTheListingAligned() throws Exception {
+        seedCatalogue(Instant.now());
+        insertModel("~other/model", "Alias", "0.1", "0.2", 1000);
+        insertModel("~other/model-pro:batch", "Pro alias", "0.1", "0.2", 1000);
+        insertModel("openai/gpt-5-pro:nitro", "Pro variant", "0.1", "0.2", 1000);
+        insertModel("openrouter/auto", "Router", "0.1", "0.2", 1000);
+        UUID keyId = createKey("전체 공급자 키", "5.00", "hash-provider",
+                "[\"*/*\"]", "[\"*/*-pro\"]");
+
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.models.length()").value(4))
+                .andExpect(jsonPath("$.paid.models[*].id", Matchers.hasItem("~other/model")))
+                .andExpect(jsonPath("$.paid.models[*].id", Matchers.not(Matchers.hasItem("openrouter/auto"))))
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns").isEmpty())
+                .andExpect(jsonPath("$.paid.unmatchedDeniedPatterns").isEmpty())
+                .andExpect(jsonPath("$.selfServed[0].name").value("pickle-general"));
+    }
+
+    @Test
+    void aliasOnlyCatalogueUsesDifferentAllowAndDenyMatching() throws Exception {
+        insertModel("~anthropic/model", "Alias", "0.1", "0.2", 1000);
+        insertModel("~openrouter/auto", "Router alias", "0.1", "0.2", 1000);
+        UUID keyId = createKey("별칭 차단 키", "5.00", "hash-alias",
+                "[\"anthropic/*\",\"~anthropic/*\",\"~openrouter/*\"]",
+                "[\"anthropic/*\"]");
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.models").isEmpty())
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns",
+                        Matchers.contains("anthropic/*", "~openrouter/*")))
+                .andExpect(jsonPath("$.paid.unmatchedDeniedPatterns").isEmpty());
+    }
+
+    @Test
+    void routerOnlyPatternsDoNotReportReachableMatchesInEitherDirection() throws Exception {
+        insertModel("openrouter/auto", "Router", "0.1", "0.2", 1000);
+        UUID keyId = createKey("라우터 제한 키", "5.00", "hash-router",
+                "[\"openrouter/*\"]", "[\"openrouter/*\"]");
+        mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paid.models").isEmpty())
+                .andExpect(jsonPath("$.paid.unmatchedAllowedPatterns", Matchers.contains("openrouter/*")))
+                .andExpect(jsonPath("$.paid.unmatchedDeniedPatterns", Matchers.contains("openrouter/*")));
+    }
+
+    @Test
+    void databaseValidatorAcceptsTheSharedSyntaxAndRejectsPartialProviders() throws Exception {
+        try (var source = getClass().getResourceAsStream("/llm/credit-model-policy-cases.json")) {
+            assertThat(source).isNotNull();
+            var cases = objectMapper.readTree(source);
+            for (String category : java.util.List.of("validPatterns", "invalidPatterns")) {
+                for (var pattern : cases.get(category)) {
+                    assertThat(jdbcTemplate.queryForObject(
+                            "select llm_credit_model_patterns_valid(?::jsonb)", Boolean.class,
+                            objectMapper.writeValueAsString(java.util.List.of(pattern.asString()))))
+                            .as(pattern.toString()).isEqualTo("validPatterns".equals(category));
+                }
+            }
+        }
+        assertThat(jdbcTemplate.queryForObject("select llm_credit_model_patterns_valid(?::jsonb)",
+                Boolean.class, objectMapper.writeValueAsString(java.util.Collections.nCopies(51, "*/*"))))
+                .isFalse();
+        assertThat(jdbcTemplate.queryForObject("select llm_credit_model_patterns_valid(?::jsonb)",
+                Boolean.class, objectMapper.writeValueAsString(java.util.List.of("*/" + "x".repeat(199)))))
+                .isFalse();
+    }
+
+    @Test
+    void wildcardPoliciesPersistOnAllThreeOwners() {
+        UUID keyId = createKey("저장 검증 키", "5.00", "hash-store",
+                "[\"*/*\"]", "[\"*/*-pro\"]");
+        jdbcTemplate.update("""
+                insert into llm_key_request_details (request_id, granted_credit_limit,
+                    granted_openrouter_account_id, granted_credit_allowed_models, granted_credit_denied_models)
+                select request_id, 5, openrouter_account_id, '["*/*"]'::jsonb, '["*/*-pro"]'::jsonb
+                  from llm_api_keys where public_id = ?
+                """, keyId);
+        jdbcTemplate.update("""
+                update openrouter_accounts set default_credit_allowed_models = '["*/*"]'::jsonb,
+                    default_credit_denied_models = '["*/*-pro"]'::jsonb where id = ?
+                """, accountId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from llm_key_request_details d join llm_api_keys k on k.request_id = d.request_id
+                  join openrouter_accounts a on a.id = k.openrouter_account_id
+                 where k.public_id = ? and k.credit_allowed_models = d.granted_credit_allowed_models
+                   and k.credit_denied_models = d.granted_credit_denied_models
+                   and a.default_credit_allowed_models = k.credit_allowed_models
+                   and a.default_credit_denied_models = k.credit_denied_models
+                """, Integer.class, keyId)).isEqualTo(1);
+    }
+
+    @Test
     void aNonMemberCannotTellTheKeyFromAMissingOne() throws Exception {
         UUID keyId = createKey("차단 키", "0.00", null, null);
         mockMvc.perform(get(url(keyId)).header("Authorization", "Bearer " + outsiderToken))

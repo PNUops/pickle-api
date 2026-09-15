@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
@@ -53,10 +54,12 @@ public record LlmKeyDetailResponse(
         @Schema(description = "유료 모델 사용 가능 여부. 금액 한도가 부여됐지만 아직 연결 전이면 false입니다.")
         boolean creditAxisConnected,
         @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열이면 제한이 "
-                + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다.")
+                + "없습니다. 자체 서빙 모델은 이 목록과 무관하게 쓸 수 있습니다."
+                + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         List<String> creditAllowedModels,
         @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열이면 차단이 "
-                + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다.")
+                + "없습니다. 허용 목록과 함께 걸리면 차단이 이깁니다."
+                + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> creditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
                 PassthroughEndpoints.EMBEDDINGS}),

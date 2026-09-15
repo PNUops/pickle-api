@@ -624,15 +624,15 @@ class AdminLlmKeyTest {
     void creditDenylistSavesWithNoMoneyAndReachesTheKeyRow() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "차단 목록 무금액 키", "ACTIVE", null);
         Map<String, Object> noMoney = limits(60, "0");
-        noMoney.put("creditDeniedModels", java.util.List.of("openai/*-pro"));
+        noMoney.put("creditDeniedModels", java.util.List.of("*/*-pro"));
         putLimits(key.publicId(), sysAdminToken, noMoney)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.creditDeniedModels.length()").value(1))
-                .andExpect(jsonPath("$.creditDeniedModels[0]").value("openai/*-pro"));
+                .andExpect(jsonPath("$.creditDeniedModels[0]").value("*/*-pro"));
 
         // The response is the detail projection; the gateway reads the row.
         assertThat(storedModels(key.publicId(), "credit_denied_models"))
-                .isEqualTo("[\"openai/*-pro\"]");
+                .isEqualTo("[\"*/*-pro\"]");
 
         // The allow list still refuses the same shape at zero, which is what
         // makes the asymmetry a decision rather than an oversight.
@@ -678,18 +678,18 @@ class AdminLlmKeyTest {
         // alias — every shape the matcher knows, on both columns at once.
         java.util.List<String> allowed = java.util.List.of(
                 "openai/gpt-5-*", "anthropic/*", "openai/gpt-4o-mini",
-                "~anthropic/claude-sonnet-latest");
+                "~anthropic/claude-sonnet-latest", "*/*", "*/gpt-5*");
         java.util.List<String> denied = java.util.List.of(
-                "openai/*-pro", "openai/gpt-5*", "mistralai/*");
+                "openai/*-pro", "openai/gpt-5*", "mistralai/*", "*/*-pro");
         Map<String, Object> body = limits(60, "5.00");
         body.put("creditAllowedModels", allowed);
         body.put("creditDeniedModels", denied);
         putLimits(key.publicId(), sysAdminToken, body).andExpect(status().isOk());
 
         assertThat(storedModels(key.publicId(), "credit_allowed_models"))
-                .contains("openai/gpt-5-*").contains("~anthropic/claude-sonnet-latest");
+                .contains("openai/gpt-5-*").contains("~anthropic/claude-sonnet-latest", "*/*", "*/gpt-5*");
         assertThat(storedModels(key.publicId(), "credit_denied_models"))
-                .contains("openai/*-pro").contains("openai/gpt-5*");
+                .contains("openai/*-pro").contains("openai/gpt-5*").contains("*/*-pro");
 
         // The pre-existing syntax keeps saving; widening must not narrow.
         Map<String, Object> old = limits(60, "5.00");
@@ -706,7 +706,7 @@ class AdminLlmKeyTest {
     void creditListsRefuseTheShapesTheSyntaxDrops() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "문법 거부 키", "ACTIVE", null);
         for (String bad : java.util.List.of("*", "openai*", "openai/*gpt*", "openai/**",
-                "openai/*-", "~openai*")) {
+                "openai/*-", "~openai*", "open*/*", "~*/*", "*/**")) {
             Map<String, Object> body = limits(60, "5.00");
             body.put("creditDeniedModels", java.util.List.of(bad));
             putLimits(key.publicId(), sysAdminToken, body)

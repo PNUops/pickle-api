@@ -46,31 +46,23 @@ public final class CreditModelPatterns {
     /** The empty list in its stored form. */
     public static final String EMPTY_JSON = "[]";
 
-    /**
-     * Matches the DB CHECK installed by V102 and widened by V104 and V109 — a
-     * model name or a vendor prefix, optionally carrying the vendor's leading
-     * tilde, with at most one star in the segment after the slash.
-     *
-     * <p>The segment takes four shapes: an exact name, a name with a trailing
-     * star, a leading star with a non-empty tail ending alphanumeric, or a bare
-     * star for the whole vendor. The vendor half takes no star at all, because
-     * vendor names are prefixes of one another — {@code meta} and {@code
-     * meta-llama}, {@code bytedance} and {@code bytedance-seed} — so {@code
-     * openai*} would reach a vendor nobody named. The slash itself stays
-     * optional: vendorless names exist and are in use.
-     *
-     * <p>The tilde admits floating aliases like {@code
-     * ~anthropic/claude-sonnet-latest}, which always resolve to the newest
-     * model of a family. They route through passthrough already, so a fence
-     * that could not spell them left a restricted key narrower than an
-     * unrestricted one, and "pin this course to the latest Sonnet" could not
-     * be expressed at all. {@code ~anthropic/*} and {@code anthropic/*} stay
-     * separate prefixes: an alias points at a model that changes underneath
-     * it, so opening a vendor must not admit a moving target nobody chose.
-     */
+    /** Pattern syntax shared by the write paths and the database constraint. */
     private static final Pattern PATTERN = Pattern.compile(
-            "^~?[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*\\*?"
-                    + "|\\*[a-z0-9._:-]*[a-z0-9]|\\*))?$");
+            "^(~?[a-z0-9][a-z0-9._:-]*(/([a-z0-9][a-z0-9._:-]*\\*?"
+                    + "|\\*[a-z0-9._:-]*[a-z0-9]|\\*))?"
+                    + "|\\*/([a-z0-9][a-z0-9._:-]*\\*?|\\*[a-z0-9._:-]*[a-z0-9]|\\*))$");
+
+    public static final String ALLOW_PATTERN_DESCRIPTION =
+            " 항목은 부호 없는 모델 패턴입니다. 공급자는 정확한 이름 또는 *만 사용할 수 "
+                    + "있습니다(예: openai/*, */*-pro). 공급자 *는 ~별칭도 포함하고, 특정 "
+                    + "공급자의 허용은 ~별칭을 별도로 적어야 합니다. 정확한 모델명은 :batch 같은 "
+                    + "변형도 포함합니다. 목록별 최대 50개, 항목별 200바이트입니다.";
+
+    public static final String DENY_PATTERN_DESCRIPTION =
+            " 항목은 허용 목록과 같은 부호 없는 모델 패턴입니다. 공급자는 정확한 이름 또는 "
+                    + "*만 사용할 수 있습니다(예: openai/*, */*-pro). 차단은 ~를 제거한 이름도 "
+                    + "검사하며, 별칭의 실제 대상 모델은 추적하지 않습니다. 정확한 모델명은 "
+                    + ":batch 같은 변형도 포함합니다. 목록별 최대 50개, 항목별 200바이트입니다.";
 
     /**
      * Self-serving model prefixes. A name starting with one of these is served
@@ -121,7 +113,7 @@ public final class CreditModelPatterns {
                 // everything" is false advice on the second one.
                 errors.add(new FieldValidationError(at,
                         "'*' 하나만 적을 수는 없습니다. 목록을 비우면 이 목록은 아무것도 제한하지 "
-                                + "않고, 한 벤더 전체는 'openai/*'처럼 적습니다."));
+                                + "않고, 전체 공급자는 '*/*', 한 공급자는 'openai/*'처럼 적습니다."));
                 continue;
             }
             if (isReserved(value)) {
@@ -131,9 +123,9 @@ public final class CreditModelPatterns {
             }
             if (!PATTERN.matcher(value).matches()) {
                 errors.add(new FieldValidationError(at,
-                        "모델 이름(예: openai/gpt-4o-mini), 벤더 전체(예: openai/*), 또는 "
-                                + "와일드카드를 하나 포함한 모델 패턴(예: openai/gpt-5-*, "
-                                + "openai/*-pro) 형식이어야 합니다."));
+                        "모델 이름(예: openai/gpt-4o-mini), 공급자 전체(예: openai/*), 또는 "
+                                + "모델 자리에 와일드카드를 하나 포함한 패턴(예: openai/gpt-5-*, "
+                                + "*/*-pro) 형식이어야 합니다. 공급자는 정확한 이름 또는 '*'만 사용할 수 있습니다."));
                 continue;
             }
             kept.add(value);
@@ -175,41 +167,10 @@ public final class CreditModelPatterns {
     }
 
     /**
-     * Whether one normalized pattern covers a model name.
-     *
-     * <p><b>This is the second piece of gateway knowledge duplicated here</b>,
-     * and unlike the reserved prefixes above it is not a courtesy: a screen that
-     * lists what a key may call has to agree with the fence, or it shows models
-     * the call will refuse. The rule is the gateway's, transcribed step for
-     * step, and the case table in {@code CreditModelPatternsTest} is kept input
-     * for input with the gateway's own. <b>Keeping those two tables equal is the
-     * only thing holding this copy together</b>, so move them together or the
-     * divergence will be silent: every case in a stale table still passes.
-     *
-     * <p>The model segment takes four shapes — an exact name, a trailing star,
-     * a leading star, or a bare star for the whole vendor. Two of them carry a
-     * rule that is easy to lose:
-     *
-     * <ul>
-     * <li><b>A trailing star stands for nothing at all</b>, as a glob's does, so
-     * {@code openai/gpt-5*} reaches {@code openai/gpt-5} itself. Requiring a
-     * character made the wider-looking pattern the narrower one, which is the
-     * kind of surprise nobody debugs.</li>
-     * <li><b>A leading star sees through a variant suffix.</b> {@code :batch}
-     * and {@code :free} name the same model at a different price, so
-     * {@code openai/*-pro} must reach {@code openai/gpt-5-pro:batch} — without
-     * that it catches the cheap spelling and misses the expensive one.</li>
-     * </ul>
-     *
-     * <p>The separator rule stays beside the trailing star: {@code openai/gpt-5-*}
-     * reaches {@code openai/gpt-5} even though the two are not in a prefix
-     * relation. A bare {@code *} matches nothing — "everything" is spelled by an
-     * empty list, and passthrough can synthesize a model named exactly that. A
-     * leading {@code ~} is an ordinary character, so {@code ~vendor/*} and
-     * {@code vendor/*} stay separate prefixes.
-     *
-     * <p>Both sides lower-case before comparing. A change to the gateway's
-     * matcher wants a change here in the same unit of work.
+     * Matches the gateway's model syntax. A whole-provider star includes aliases;
+     * concrete providers keep their leading tilde significant. Exact names and
+     * leading-star patterns also match the model before its variant suffix.
+     * The trailing-star separator rule remains a comparison against the full name.
      */
     public static boolean matches(String pattern, String modelName) {
         String p = pattern.toLowerCase(Locale.ROOT);
@@ -219,13 +180,23 @@ public final class CreditModelPatterns {
         }
         int slash = p.indexOf('/');
         if (slash < 0) {
-            return p.equals(n);
+            return p.equals(n) || p.equals(withoutVariant(n));
         }
-        String prefix = p.substring(0, slash) + "/";
-        if (!n.startsWith(prefix)) {
-            return false;
+        String vendor = p.substring(0, slash);
+        String rest;
+        if ("*".equals(vendor)) {
+            int nameSlash = n.indexOf('/');
+            if (nameSlash <= 0) {
+                return false;
+            }
+            rest = n.substring(nameSlash + 1);
+        } else {
+            String prefix = vendor + "/";
+            if (!n.startsWith(prefix)) {
+                return false;
+            }
+            rest = n.substring(prefix.length());
         }
-        String rest = n.substring(prefix.length());
         if (rest.isEmpty()) {
             return false;
         }
@@ -251,7 +222,39 @@ public final class CreditModelPatterns {
                     && "-.:".indexOf(stem.charAt(stem.length() - 1)) >= 0
                     && rest.equals(stem.substring(0, stem.length() - 1));
         }
-        return rest.equals(seg);
+        return rest.equals(seg) || withoutVariant(rest).equals(seg);
+    }
+
+    /** Denials also inspect the alias name with all leading tildes removed. */
+    public static boolean matchesDenied(String pattern, String modelName) {
+        return matches(pattern, modelName) || matches(pattern, withoutAlias(modelName));
+    }
+
+    /** A paid-model restriction excludes the whole router namespace. */
+    public static boolean allows(List<String> allowed, List<String> denied, String modelName) {
+        String name = modelName.trim().toLowerCase(Locale.ROOT);
+        if ((!allowed.isEmpty() || !denied.isEmpty()) && isRouter(name)) {
+            return false;
+        }
+        return (allowed.isEmpty() || allowed.stream().anyMatch(pattern -> matches(pattern, name)))
+                && denied.stream().noneMatch(pattern -> matchesDenied(pattern, name));
+    }
+
+    public static boolean isRouter(String modelName) {
+        return withoutAlias(modelName.trim().toLowerCase(Locale.ROOT)).startsWith("openrouter/");
+    }
+
+    private static String withoutAlias(String name) {
+        int start = 0;
+        while (start < name.length() && name.charAt(start) == '~') {
+            start++;
+        }
+        return name.substring(start);
+    }
+
+    private static String withoutVariant(String name) {
+        int colon = name.indexOf(':');
+        return colon < 0 ? name : name.substring(0, colon);
     }
 
     /** The stored form. Never null, so the column's not-null holds trivially. */

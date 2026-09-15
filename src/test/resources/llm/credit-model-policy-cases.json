@@ -1,0 +1,295 @@
+{
+  "patternCases": [
+    {
+      "pattern": "*/*-pro",
+      "name": "openai/gpt-5-pro",
+      "expected": true
+    },
+    {
+      "pattern": "*/*-pro",
+      "name": "other/model-pro:batch",
+      "expected": true
+    },
+    {
+      "pattern": "*/*-pro",
+      "name": "~other/model-pro:nitro",
+      "expected": true
+    },
+    {
+      "pattern": "*/*-pro",
+      "name": "other/pro",
+      "expected": false
+    },
+    {
+      "pattern": "*/*-pro",
+      "name": "other/model-pro-latest",
+      "expected": false
+    },
+    {
+      "pattern": "*/gpt-5*",
+      "name": "~openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "*/gpt-5-*",
+      "name": "openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "*/gpt-5-*",
+      "name": "openai/gpt-5:batch",
+      "expected": false
+    },
+    {
+      "pattern": "*/gpt-5*",
+      "name": "other/gpt-5:batch",
+      "expected": true
+    },
+    {
+      "pattern": "*/model",
+      "name": "vendor/model",
+      "expected": true
+    },
+    {
+      "pattern": "*/model",
+      "name": "~vendor/model:free",
+      "expected": true
+    },
+    {
+      "pattern": "*/model:free",
+      "name": "vendor/model",
+      "expected": false
+    },
+    {
+      "pattern": "*/model:free",
+      "name": "vendor/model:nitro",
+      "expected": false
+    },
+    {
+      "pattern": "*/*",
+      "name": "openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "*/*",
+      "name": "~openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "*/*",
+      "name": "vendorless",
+      "expected": false
+    },
+    {
+      "pattern": "*/*",
+      "name": "/model",
+      "expected": false
+    },
+    {
+      "pattern": "*/*",
+      "name": "vendor/",
+      "expected": false
+    },
+    {
+      "pattern": "openai/*",
+      "name": "openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "openai/*",
+      "name": "openai-mirror/gpt-5",
+      "expected": false
+    },
+    {
+      "pattern": "openai/*",
+      "name": "~openai/gpt-5",
+      "expected": false
+    },
+    {
+      "pattern": "~openai/*",
+      "name": "openai/gpt-5",
+      "expected": false
+    },
+    {
+      "pattern": "~openai/*",
+      "name": "~openai/gpt-5",
+      "expected": true
+    },
+    {
+      "pattern": "openai/gpt-5-pro",
+      "name": "openai/gpt-5-pro:batch",
+      "expected": true
+    },
+    {
+      "pattern": "openai/gpt-5-pro",
+      "name": "openai/gpt-5-pro-v2",
+      "expected": false
+    },
+    {
+      "pattern": "openai/*-pro",
+      "name": "openai/gpt-5-pro:nitro",
+      "expected": true
+    },
+    {
+      "pattern": "openai/gpt-5-*",
+      "name": "openai/gpt-5:batch",
+      "expected": false
+    },
+    {
+      "pattern": "vendorless",
+      "name": "vendorless:batch",
+      "expected": true
+    },
+    {
+      "pattern": "*",
+      "name": "vendorless",
+      "expected": false
+    }
+  ],
+  "policyCases": [
+    {
+      "allowed": [],
+      "denied": [],
+      "name": "openai/model",
+      "expected": true
+    },
+    {
+      "allowed": [],
+      "denied": [],
+      "name": "openrouter/auto",
+      "expected": true
+    },
+    {
+      "allowed": [
+        "*/*"
+      ],
+      "denied": [],
+      "name": "~vendor/model",
+      "expected": true
+    },
+    {
+      "allowed": [
+        "openai/*"
+      ],
+      "denied": [],
+      "name": "~openai/model",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "openai/*"
+      ],
+      "name": "~openai/model",
+      "expected": false
+    },
+    {
+      "allowed": [
+        "~openai/*"
+      ],
+      "denied": [
+        "openai/*"
+      ],
+      "name": "~openai/model",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "~openai/*"
+      ],
+      "name": "openai/model",
+      "expected": true
+    },
+    {
+      "allowed": [
+        "*/*"
+      ],
+      "denied": [
+        "*/*-pro"
+      ],
+      "name": "~other/model-pro:batch",
+      "expected": false
+    },
+    {
+      "allowed": [
+        "*/*"
+      ],
+      "denied": [
+        "*/*-pro"
+      ],
+      "name": "~other/model",
+      "expected": true
+    },
+    {
+      "allowed": [
+        "openai/*"
+      ],
+      "denied": [
+        "*/*-pro"
+      ],
+      "name": "other/model",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "*/*"
+      ],
+      "name": "other/model",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "*/*"
+      ],
+      "name": "vendorless",
+      "expected": true
+    },
+    {
+      "allowed": [
+        "*/*"
+      ],
+      "denied": [],
+      "name": "openrouter/auto",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "openai/*-pro"
+      ],
+      "name": "~~openrouter/auto:nitro",
+      "expected": false
+    },
+    {
+      "allowed": [],
+      "denied": [
+        "openai/gpt-5-pro"
+      ],
+      "name": "  ~OPENAI/GPT-5-PRO:nitro  ",
+      "expected": false
+    }
+  ],
+  "validPatterns": [
+    "*/model",
+    "*/model*",
+    "*/*-pro",
+    "*/*",
+    "~openai/*",
+    "openai/*",
+    "vendorless"
+  ],
+  "invalidPatterns": [
+    "open*/*",
+    "~*/*",
+    "*",
+    "*/",
+    "*/**",
+    "*/*pro*",
+    "*/model*tail",
+    "*/*-",
+    "a/b/c"
+  ]
+}

@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.llm.CreditModelPatterns;
 import kr.ac.pusan.pickle.llm.CreditLimitReset;
 import kr.ac.pusan.pickle.llm.LlmApiKey;
 import kr.ac.pusan.pickle.llm.LlmApiKeyStatus;
@@ -44,10 +45,12 @@ public record AdminLlmKeyDetailResponse(
         @Nullable UUID requestId,
         Instant createdAt,
         @Nullable Instant revokedAt,
-        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열은 제한 없음")
+        @Schema(description = "이 키가 쓸 수 있는 유료 모델 목록. 빈 배열은 제한 없음"
+                + CreditModelPatterns.ALLOW_PATTERN_DESCRIPTION)
         List<String> creditAllowedModels,
         @Schema(description = "이 키가 쓸 수 없는 유료 모델 목록. 빈 배열은 차단 없음. "
-                + "허용 목록과 함께 걸리면 차단이 이긴다.")
+                + "허용 목록과 함께 걸리면 차단이 이긴다."
+                + CreditModelPatterns.DENY_PATTERN_DESCRIPTION)
         List<String> creditDeniedModels,
         @ArraySchema(schema = @Schema(allowableValues = {PassthroughEndpoints.IMAGES,
                 PassthroughEndpoints.EMBEDDINGS}),
