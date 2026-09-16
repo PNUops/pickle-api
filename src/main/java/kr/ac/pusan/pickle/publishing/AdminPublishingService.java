@@ -217,7 +217,7 @@ public class AdminPublishingService {
      */
     @Transactional(readOnly = true)
     public List<DnsRecordSetView> listRecords(AuthenticatedUser actor, UUID domainId) {
-        Domain domain = requireScopedDomain(actor, domainId);
+        Domain domain = requireReadableDomain(actor, domainId);
         return recordRepository
                 .findByDomainIdAndStatusNotOrderByIdAsc(domain.getId(), DomainRecordStatus.REMOVED)
                 .stream()
@@ -407,12 +407,30 @@ public class AdminPublishingService {
      * same 404.
      */
     private Domain requireScopedDomain(AuthenticatedUser actor, UUID domainId) {
+        return requireScopedDomain(actor, domainId, false);
+    }
+
+    /**
+     * The same resolution for somebody who is only looking.
+     *
+     * <p>Split because the two questions have different answers once a
+     * read-only role exists: what may be seen is every organisation the
+     * account holds a role in, what may be changed is the subset it
+     * administers or operates. Every caller of this class was a write until an
+     * external name's records became readable here, and a read that asks the
+     * write question hides an organisation's own rows from its own viewer.</p>
+     */
+    private Domain requireReadableDomain(AuthenticatedUser actor, UUID domainId) {
+        return requireScopedDomain(actor, domainId, true);
+    }
+
+    private Domain requireScopedDomain(AuthenticatedUser actor, UUID domainId, boolean forRead) {
         Domain domain = domainRepository.findByPublicId(domainId)
                 .orElseThrow(AdminPublishingService::domainNotFound);
         if (domain.getStatus() == DomainStatus.REMOVED) {
             throw domainNotFound();
         }
-        requireScope(actor, domain);
+        requireScope(actor, domain, forRead);
         return domain;
     }
 
@@ -428,10 +446,16 @@ public class AdminPublishingService {
      * instead.</p>
      */
     private void requireScope(AuthenticatedUser actor, Domain domain) {
+        requireScope(actor, domain, false);
+    }
+
+    private void requireScope(AuthenticatedUser actor, Domain domain, boolean forRead) {
         if (!actor.role().isOrgTier()) {
             return;
         }
-        if (!actor.operates(domain.getOrgId())) {
+        boolean allowed = forRead ? actor.reads(domain.getOrgId())
+                : actor.operates(domain.getOrgId());
+        if (!allowed) {
             throw domainNotFound();
         }
     }

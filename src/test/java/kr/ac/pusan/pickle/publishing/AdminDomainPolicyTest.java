@@ -205,6 +205,57 @@ class AdminDomainPolicyTest {
                 .hasMessageContaining("사용 기한이 없는");
     }
 
+    @Test
+    void aReadOnlyAdministratorSeesTheRecordsOfItsOwnInstitution() {
+        Domain domain = domainService.issue(workspaceId, "adpviewer", "pusan.dev");
+        AuthenticatedUser viewer = orgTierViewer();
+
+        // Every other caller of this scope check is a write, and a write asks
+        // whether the account may act in the organisation. Reading asks a wider
+        // question, and asking the write question here hid an institution's own
+        // names from its own read-only administrator: the row stood in the
+        // listing and the drawer answered 404.
+        assertThat(adminPublishingService.listRecords(viewer, domain.getPublicId())).isEmpty();
+
+        // The wider read does not become a wider write. Still someone else's
+        // organisation, and still nothing this account may change in its own.
+        assertThatThrownBy(() -> adminPublishingService.updateRenewal(viewer, domain.getPublicId(),
+                new UpdateDomainRenewalRequest(Instant.now().plus(30, ChronoUnit.DAYS), null),
+                "127.0.0.1"))
+                .isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    void anotherInstitutionsRecordsStayOutOfReach() {
+        Domain domain = domainService.issue(workspaceId, "adpoutside", "pusan.dev");
+        AuthenticatedUser outsider = orgTierViewerOf(jdbcTemplate.queryForObject(
+                "insert into orgs (name, status) values (?, 'ACTIVE') returning id",
+                Long.class, "타 기관 " + UUID.randomUUID().toString().substring(0, 8)));
+
+        assertThatThrownBy(() -> adminPublishingService.listRecords(outsider, domain.getPublicId()))
+                .isInstanceOf(ApiException.class);
+    }
+
+    /** A read-only organisation-tier account in the seeded organisation. */
+    private AuthenticatedUser orgTierViewer() {
+        return orgTierViewerOf(orgId);
+    }
+
+    private AuthenticatedUser orgTierViewerOf(long inOrgId) {
+        String slug = "adpview-" + UUID.randomUUID().toString().substring(0, 8);
+        long userId = jdbcTemplate.queryForObject("""
+                insert into users (email, name, role, status, password_hash)
+                values (?, ?, 'ORG_VIEWER', 'ACTIVE', 'x') returning id
+                """, Long.class, slug + "@pusan.ac.kr", "기관 열람자");
+        jdbcTemplate.update(
+                "insert into user_org_roles (user_id, org_id, role) values (?, ?, 'ORG_VIEWER')",
+                userId, inOrgId);
+        return new AuthenticatedUser(userId,
+                jdbcTemplate.queryForObject("select public_id from users where id = ?", UUID.class,
+                        userId),
+                slug + "@pusan.ac.kr", UserRole.ORG_VIEWER, Map.of(inOrgId, UserRole.ORG_VIEWER));
+    }
+
     /** An organisation-tier administrator of the seeded organisation only. */
     private AuthenticatedUser orgTierAdmin() {
         String slug = "adporg-" + UUID.randomUUID().toString().substring(0, 8);
