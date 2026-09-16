@@ -23,8 +23,7 @@ public class VerificationMailComposer {
     private static final String BODY_TEMPLATE = """
             안녕하세요, %s님.
 
-            Pickle(부산대학교 클라우드 플랫폼) 가입을 완료하려면 이메일 인증을
-            진행해 주세요. 인증 링크는 %s 동안 1회만 사용할 수 있습니다.
+            Pickle(부산대학교 클라우드 플랫폼) 가입을 완료하려면 이메일 인증을 진행해 주세요. 인증 링크는 %s 동안 1회만 사용할 수 있습니다.
 
             본인이 가입을 요청하지 않았다면 이 메일을 무시하셔도 됩니다.""";
 
@@ -34,11 +33,9 @@ public class VerificationMailComposer {
     private static final String RESET_BODY_TEMPLATE = """
             안녕하세요, %s님.
 
-            비밀번호 재설정을 요청하셨습니다. 아래에서 새 비밀번호를 설정해
-            주세요. 재설정 링크는 %s 동안 1회만 사용할 수 있습니다.
+            비밀번호 재설정을 요청하셨습니다. 아래에서 새 비밀번호를 설정해 주세요. 재설정 링크는 %s 동안 1회만 사용할 수 있습니다.
 
-            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는
-            변경되지 않습니다.""";
+            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 비밀번호는 변경되지 않습니다.""";
 
     private static final String ALREADY_REGISTERED_SUBJECT =
             "[Pickle] 부산대학교 클라우드 플랫폼 가입 안내";
@@ -53,14 +50,11 @@ public class VerificationMailComposer {
     private static final String ALREADY_REGISTERED_BODY = """
             안녕하세요.
 
-            이 주소로 Pickle(부산대학교 클라우드 플랫폼) 가입 요청이 접수되었지만,
-            이미 가입된 계정이 있어 새로 가입되지는 않았습니다.
+            이 주소로 Pickle(부산대학교 클라우드 플랫폼) 가입 요청이 접수되었지만, 이미 가입된 계정이 있어 새로 가입되지는 않았습니다.
 
-            비밀번호를 잊으셨다면 로그인 화면의 '비밀번호 찾기'에서 재설정할 수
-            있습니다.
+            비밀번호를 잊으셨다면 로그인 화면의 '비밀번호 찾기'에서 재설정할 수 있습니다.
 
-            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 계정에는 아무런
-            변경이 없습니다.""";
+            본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다. 계정에는 아무런 변경이 없습니다.""";
 
     private final AuthProperties authProperties;
 
