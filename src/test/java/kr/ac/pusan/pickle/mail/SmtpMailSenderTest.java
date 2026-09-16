@@ -59,6 +59,36 @@ class SmtpMailSenderTest {
         assertThat(sent.getAllRecipients()[0].toString()).isEqualTo("a@pusan.ac.kr");
     }
 
+    /**
+     * Which body landed in which part, and in which order. Asserting the two
+     * content types alone cannot see a swapped {@code setText(html, text)}:
+     * both parts still exist, both types still match, and every reader gets
+     * markup as their plain text. The order matters too — in
+     * multipart/alternative a client shows the last part it understands, so
+     * the plain part has to come first for the HTML to win.
+     */
+    /**
+     * Which body landed in which part, read the way a mail client reads it.
+     * Asserting the two content types alone cannot see a swapped
+     * {@code setText(html, text)}: both parts still exist, both types still
+     * match, and every reader gets markup as their plain text. The order
+     * matters too — in multipart/alternative a client shows the last part it
+     * understands, so the plain part has to come first for the HTML to win.
+     */
+    @Test
+    void thePlainPartCarriesTheTextAndComesBeforeTheHtml() throws Exception {
+        new SmtpMailSender(javaMailSender, "pickle@pusan.ac.kr")
+                .send(new MailMessage("a@pusan.ac.kr", "제목",
+                        "평문 본문", "<html><body>본문</body></html>"));
+
+        List<Part> parts = parts(reparse(javaMailSender.sent.getFirst()));
+        assertThat(parts).hasSize(2);
+        assertThat(parts.getFirst().type()).startsWith("text/plain");
+        assertThat(parts.getFirst().body()).isEqualTo("평문 본문");
+        assertThat(parts.get(1).type()).startsWith("text/html");
+        assertThat(parts.get(1).body()).isEqualTo("<html><body>본문</body></html>");
+    }
+
     @Test
     void mailWithoutHtmlKeepsASingleTextPart() throws Exception {
         new SmtpMailSender(javaMailSender, "pickle@pusan.ac.kr")
@@ -77,6 +107,44 @@ class SmtpMailSenderTest {
                 .send(MailMessage.text("a@pusan.ac.kr", "제목", "본문"));
 
         assertThat(javaMailSender.sent).hasSize(1);
+    }
+
+    /** One leaf part: its content type and the body that came with it. */
+    private record Part(String type, Object body) {
+    }
+
+    /**
+     * Serializes the message and reads it back. On the in-memory message
+     * {@code getContent()} hands back the two alternative bodies in the
+     * opposite order to their own {@code Content-Type} headers — the bytes on
+     * the wire are correct, the accessor is not — so a test that means to
+     * check which body is in which part has to parse the bytes, exactly as a
+     * receiving client does.
+     */
+    private static MimeMessage reparse(MimeMessage message) throws Exception {
+        var bytes = new java.io.ByteArrayOutputStream();
+        message.writeTo(bytes);
+        return new MimeMessage(message.getSession(),
+                new java.io.ByteArrayInputStream(bytes.toByteArray()));
+    }
+
+    /** Every leaf part in wire order, type and body captured in one walk. */
+    private static List<Part> parts(MimeMessage message) throws Exception {
+        List<Part> parts = new ArrayList<>();
+        collectParts(message.getContent(), message.getContentType(), parts);
+        return parts;
+    }
+
+    private static void collectParts(Object content, String contentType, List<Part> parts)
+            throws Exception {
+        if (content instanceof MimeMultipart multipart) {
+            for (int i = 0; i < multipart.getCount(); i++) {
+                var part = multipart.getBodyPart(i);
+                collectParts(part.getContent(), part.getContentType(), parts);
+            }
+        } else {
+            parts.add(new Part(contentType, content));
+        }
     }
 
     /** Content types of every leaf part, flattening nested multiparts. */

@@ -213,9 +213,47 @@ class NotificationTest {
 
         dispatchJob.dispatch();
 
-        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+        MailMessage linked = mockMailSender.lastMessageTo(alice.getEmail());
+        assertThat(linked.htmlBody())
                 .contains("콘솔에서 확인")
                 .contains("https://pickle.pusan.ac.kr/console/vms/" + vmPublicId);
+        // The plain part carries the URL too: without it the action exists only
+        // in the alternative an HTML-blocked reader cannot see.
+        assertThat(linked.textBody())
+                .contains("https://pickle.pusan.ac.kr/console/vms/" + vmPublicId);
+    }
+
+    /**
+     * The button says what the reader does at the destination. An approved LLM
+     * key is the case the event alone cannot answer — every kind shares
+     * {@code request.approved}, and only this one is sent to the issue screen.
+     */
+    @Test
+    void theActionButtonIsLabelledForWhereItGoes() {
+        String keyPublicId = UUID.randomUUID().toString();
+        notificationService.publish(alice.getId(), NotificationEvent.REQUEST_APPROVED,
+                Map.of("requestId", UUID.randomUUID(), "type", "LLM_API_KEY",
+                        "resourceName", "테스트 키", "llmKeyId", keyPublicId),
+                null);
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .contains("키 발급하기")
+                .doesNotContain("콘솔에서 확인")
+                .contains("https://pickle.pusan.ac.kr/console/llm-keys/" + keyPublicId);
+
+        // A stage-rendered id (vm.expiry.d7) is not a catalog id, so it must
+        // fall through to the default rather than resolving to nothing.
+        notificationService.publish(alice.getId(), NotificationEvent.VM_EXPIRY_NOTICE,
+                Map.of("vmId", UUID.randomUUID().toString(), "vmName", "vm-label",
+                        "endDate", "2026-09-01", "days", 7, "daysLeft", 3L),
+                null);
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .contains("콘솔에서 확인");
     }
 
     @Test
