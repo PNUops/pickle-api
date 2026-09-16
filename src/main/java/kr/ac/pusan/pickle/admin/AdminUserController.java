@@ -31,9 +31,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Admin user surface (contract tag admin). List and detail answer for every
  * account to every admin role, viewers included — the one admin surface that is
- * not scoped by organisation (see {@link AdminUserQueryService}); disable,
- * enable and the MFA reset are SYS_ADMIN-only, and role changes go through
- * {@code AdminController} (per the permission matrix).
+ * not scoped by organisation (see {@link AdminUserQueryService}), which withholds
+ * system-tier accounts from the org tier; disable, enable and the MFA reset are
+ * SYS_ADMIN-only, and role changes go through {@code AdminController} (per the
+ * permission matrix).
  */
 @RestController
 @RequestMapping("/api/v1/admin/users")
