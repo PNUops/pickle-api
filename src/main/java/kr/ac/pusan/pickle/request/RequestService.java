@@ -114,6 +114,15 @@ public class RequestService {
                 .orElseThrow(RequestService::notWorkspaceMember);
 
         List<FieldValidationError> errors = new ArrayList<>();
+        // Asked here rather than by an annotation, because whether the field is
+        // required is the kind's answer. Asked *before* the kind validates so
+        // that a form missing this and something else gets told both at once:
+        // the annotation it replaces reported alongside every other missing
+        // field, and answering in two round trips instead would be a step back
+        // for anything that is not this platform's own console.
+        if (!handler.derivesOrgId() && form.orgId() == null) {
+            errors.add(new FieldValidationError("orgId", "기관(orgId)을 지정해 주세요."));
+        }
         // A kind whose resource carries its own deadline is not asked for a
         // period and is not refused for leaving it out. A period that arrived
         // anyway is dropped rather than stored: keeping it would show the
@@ -318,10 +327,8 @@ public class RequestService {
      */
     private Org resolveOrg(RequestTypeHandler handler, CreateRequestRequest form) {
         Long owned = handler.owningOrgId(form).orElse(null);
-        if (owned == null && form.orgId() == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "기관(orgId)을 지정해 주세요.")));
-        }
+        // Reached only after the missing-field check above, so a form with no
+        // organisation and no kind to derive one never gets this far.
         Org org = (owned != null ? orgRepository.findById(owned)
                 : orgRepository.findByPublicId(form.orgId()))
                 .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));

@@ -144,6 +144,11 @@ public class DomainRequestSupport implements RequestTypeHandler {
     }
 
     @Override
+    public boolean derivesOrgId() {
+        return true;
+    }
+
+    @Override
     public java.util.Optional<Long> owningOrgId(CreateRequestRequest form) {
         // The root decides, and the form's own orgId is not consulted. Two
         // answers about whose a name is would be one too many, and the root is

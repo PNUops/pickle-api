@@ -67,6 +67,22 @@ public interface RequestTypeHandler {
     }
 
     /**
+     * Whether {@link #owningOrgId} answers for this kind, asked without looking
+     * at the form.
+     *
+     * <p>Separate from {@code owningOrgId} because the two are needed at
+     * different moments. Whether the applicant had to send an organisation is
+     * known before anything is validated, and so the refusal for leaving it out
+     * can join the same 422 as every other missing field; working out
+     * <em>which</em> organisation can only happen after the kind's own fields
+     * are known to be good, because for a name it means reading the root that
+     * was asked for.</p>
+     */
+    default boolean derivesOrgId() {
+        return false;
+    }
+
+    /**
      * The organisation this request belongs to, when the type knows better than
      * the applicant did.
      *
