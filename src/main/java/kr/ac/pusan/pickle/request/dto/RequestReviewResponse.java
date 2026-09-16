@@ -15,8 +15,10 @@ import org.jspecify.annotations.Nullable;
  * request's per-type member, since only the period is common to every type.
  */
 public record RequestReviewResponse(
-        @Schema(description = "결재자. 계정 행이 사라진 경우에만 null입니다.")
+        @Schema(description = "결재한 사람. 자동 승인이거나 계정 행이 사라진 경우 null입니다.")
         @Nullable UUID reviewerId,
+        @Schema(description = "결재자 이름. 자동 승인이면 「자동 승인」, 계정 행이 사라졌으면 "
+                + "「탈퇴 회원」입니다. 두 경우 모두 reviewerId가 null이므로 이 값으로 가릅니다.")
         String reviewerName,
         ReviewDecision decision,
         @Nullable String comment,
@@ -25,9 +27,18 @@ public record RequestReviewResponse(
         Instant decidedAt) {
 
     public static RequestReviewResponse from(RequestReview review, User reviewer) {
+        // Three states, not two. A null reviewer on the row means the platform
+        // approved this itself; a reviewer id that no longer resolves means a
+        // person did and their account is gone. Collapsing them would report an
+        // automatic approval as the work of a withdrawn member.
+        String name;
+        if (review.getReviewerId() == null) {
+            name = "자동 승인";
+        } else {
+            name = reviewer != null ? reviewer.getName() : "탈퇴 회원";
+        }
         return new RequestReviewResponse(reviewer != null ? reviewer.getPublicId() : null,
-                reviewer != null ? reviewer.getName() : "탈퇴 회원",
-                review.getDecision(), review.getComment(),
+                name, review.getDecision(), review.getComment(),
                 review.getGrantedStartDate(), review.getGrantedEndDate(), review.getCreatedAt());
     }
 }
