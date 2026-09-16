@@ -148,6 +148,51 @@ class AdminUsersTest {
     }
 
     @Test
+    void membershipsNameTheOrganisationsTheirVirtualMachinesAreIn() throws Exception {
+        // The directory answers for every organisation while the VM list does
+        // not, so the screen has to be able to tell which of a person's
+        // workspaces it could actually open. A workspace has no organisation of
+        // its own; this is derived from the live machines in it.
+        mockMvc.perform(get("/api/v1/admin/users/" + memberA.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.memberships[0].workspaceName").value("A팀"))
+                .andExpect(jsonPath("$.memberships[0].vmOrgIds.length()").value(1));
+
+        // No machines, no organisations — an empty list, not a null.
+        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.memberships").isArray());
+    }
+
+    @Test
+    void theOrgTierIsNotGivenTheIdOfTheAdministratorWhoActed() throws Exception {
+        User target = ensureUser("au.acted@pusan.ac.kr", "조치대상", UserRole.USER, null, UserStatus.ACTIVE);
+        postJson("/api/v1/admin/users/" + target.getPublicId() + "/disable", sysAdminToken,
+                Map.of("reason", "확인 필요"))
+                .andExpect(status().isOk());
+
+        // Account status is written by SYS_ADMIN alone, so the actor on every
+        // one of these lines is an account the org tier is not answered for.
+        // The name and address stay — an administrator fielding a question
+        // needs to know who acted — but the id that would reopen that account
+        // does not.
+        mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statusChanges[0].actorName").value("시스템"))
+                .andExpect(jsonPath("$.statusChanges[0].actorEmail").value("au.sys@pusan.ac.kr"))
+                .andExpect(jsonPath("$.statusChanges[0].actorId").doesNotExist());
+
+        mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.statusChanges[0].actorId")
+                        .value(sysAdmin.getPublicId().toString()));
+    }
+
+    @Test
     void systemTierAccountsAreWithheldFromTheOrgTier() throws Exception {
         // The org tier may act on every account it can see, and a system-tier
         // account is not one of those: grantOrgRole refuses such a target and

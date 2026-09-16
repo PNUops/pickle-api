@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.admin.dto.AdminMembershipResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
 import kr.ac.pusan.pickle.admin.dto.UserStatusChangeResponse;
@@ -29,7 +30,6 @@ import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
 import kr.ac.pusan.pickle.user.UserStatusChangeRepository;
-import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.springframework.http.HttpStatus;
@@ -203,15 +203,19 @@ public class AdminUserQueryService {
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
                 .filter(member -> member.getWorkspace().getDeletedAt() == null)
                 .toList();
-        List<UserProfileResponse.Membership> memberships = liveMemberships.stream()
-                .map(UserProfileResponse.Membership::from)
-                .toList();
         List<Long> workspaceIds = liveMemberships.stream().map(m -> m.getWorkspace().getId()).toList();
+        Map<Long, List<UUID>> vmOrgs = vmOrgsByWorkspace(workspaceIds);
+        List<AdminMembershipResponse> memberships = liveMemberships.stream()
+                .map(m -> new AdminMembershipResponse(m.getWorkspace().getPublicId(),
+                        m.getWorkspace().getName(), m.getWorkspace().getKind(), m.getRole(),
+                        vmOrgs.getOrDefault(m.getWorkspace().getId(), List.of())))
+                .toList();
         int activeVmCount = workspaceIds.isEmpty() ? 0
                 : (int) vmRepository.countActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
 
-        List<UserStatusChangeResponse> statusChanges =
-                mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
+        List<UserStatusChangeResponse> statusChanges = mapStatusChanges(
+                userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()),
+                actor.role().isOrgTier());
         boolean profileVisible = actor.role().isSysTier();
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
@@ -236,8 +240,42 @@ public class AdminUserQueryService {
                 profileVisible ? user.getDepartmentOther() : null);
     }
 
-    /** Resolves each transition's actor in one batch: id, email and name. */
-    private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes) {
+    /**
+     * The organisations each workspace has live virtual machines in, for the
+     * workspaces given. A workspace carries no organisation column, so this is
+     * derived the same way membership is, and a workspace can answer with more
+     * than one. One query for the whole set rather than one per row.
+     */
+    private Map<Long, List<UUID>> vmOrgsByWorkspace(List<Long> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = workspaceIds.stream().map(id -> "?").collect(Collectors.joining(", "));
+        Map<Long, List<UUID>> byWorkspace = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select distinct v.workspace_id, o.public_id
+                  from vms v join orgs o on o.id = v.org_id
+                 where v.status <> 'DELETED' and v.workspace_id in (""" + placeholders + ")",
+                rs -> {
+                    byWorkspace.computeIfAbsent(rs.getLong("workspace_id"), k -> new ArrayList<>())
+                            .add(rs.getObject("public_id", UUID.class));
+                },
+                workspaceIds.toArray());
+        return byWorkspace;
+    }
+
+    /**
+     * Resolves each transition's actor in one batch: id, email and name.
+     *
+     * <p>The public id is withheld from the org tier. Account status is written
+     * by SYS_ADMIN alone, so every actor here is a system-tier account, and
+     * those are the accounts the org tier is not answered for (the list omits
+     * them and the detail answers 404). The id is the handle that reopens them,
+     * so it goes; the name and address stay, because an administrator fielding
+     * a question about a suspended account needs to know who acted.
+     */
+    private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes,
+            boolean withholdActorId) {
         List<Long> actorIds = changes.stream().map(UserStatusChange::getActorId)
                 .filter(id -> id != null).distinct().toList();
         Map<Long, User> actors = userRepository.findAllById(actorIds).stream()
@@ -246,7 +284,7 @@ public class AdminUserQueryService {
                 .map(change -> {
                     User actor = actors.get(change.getActorId());
                     return new UserStatusChangeResponse(change.getFromStatus(), change.getToStatus(),
-                            actor == null ? null : actor.getPublicId(),
+                            actor == null || withholdActorId ? null : actor.getPublicId(),
                             actor == null ? null : actor.getEmail(),
                             actor == null ? null : actor.getName(),
                             change.getReason(), change.getChangedAt());

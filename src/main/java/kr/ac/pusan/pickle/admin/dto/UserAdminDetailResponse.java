@@ -7,7 +7,6 @@ import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.user.UserPosition;
 import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
-import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -26,7 +25,7 @@ public record UserAdminDetailResponse(
         @Nullable Instant withdrawnAt,
         @Nullable Instant disabledAt,
         @Nullable String disabledReason,
-        List<UserProfileResponse.Membership> memberships,
+        List<AdminMembershipResponse> memberships,
         int activeVmCount,
         List<UserStatusChangeResponse> statusChanges,
         /*
