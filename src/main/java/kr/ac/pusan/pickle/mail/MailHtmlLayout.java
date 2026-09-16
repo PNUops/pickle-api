@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.mail;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Renders the shared HTML layout for outbound mails: a Pickle-first lockup
@@ -18,9 +19,9 @@ import java.util.List;
  *
  * <p>Body conversion is line-based and predictable: blank lines (one or
  * more consecutive) separate paragraphs, a single newline inside a
- * paragraph is a soft wrap joined with a space so hard-wrapped plain text
- * reflows naturally, and consecutive lines starting with {@code "- "} are
- * promoted to a {@code <ul>} list. Bare URLs in the body stay plain text —
+ * paragraph becomes a {@code <br />} so the HTML part breaks exactly where
+ * the plain-text part does, and consecutive lines starting with
+ * {@code "- "} are promoted to a {@code <ul>} list. Bare URLs in the body stay plain text —
  * the CTA is deliberately the only anchor in the whole document, because
  * security gateways prefetch every link and a second anchor around a
  * one-time token would consume it before the user clicks.</p>
@@ -54,6 +55,9 @@ public final class MailHtmlLayout {
             "-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic',"
                     + " 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
 
+    /** Characters of the body carried into the inbox preview line. */
+    private static final int PREHEADER_MAX = 90;
+
     private static final String LOGO_URL = "https://pickle.pusan.ac.kr/pnu-logo.png";
 
     private static final String BODY_TEXT_STYLE =
@@ -69,8 +73,9 @@ public final class MailHtmlLayout {
      * Renders the full HTML document for one mail.
      *
      * @param heading  mail title without the {@code "[Pickle] "} prefix
-     * @param textBody Korean plain text: blank lines between paragraphs,
-     *                 soft-wrapped lines inside them, optional {@code "- "} list lines
+     * @param textBody Korean plain text: blank lines between paragraphs, single
+     *                 newlines where the reader should see a line break,
+     *                 optional {@code "- "} list lines
      * @param cta      optional single action button, or {@code null} for none
      * @return a self-contained HTML document
      */
@@ -86,8 +91,9 @@ public final class MailHtmlLayout {
                 .append("<title>").append(escapedHeading).append("</title>\n")
                 .append("</head>\n")
                 .append("<body style=\"margin:0;padding:0;background-color:").append(SLATE_100)
-                .append(";\" bgcolor=\"").append(SLATE_100).append("\">\n")
-                .append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"")
+                .append(";\" bgcolor=\"").append(SLATE_100).append("\">\n");
+        appendPreheader(html, textBody);
+        html.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"")
                 .append(" border=\"0\" style=\"background-color:").append(SLATE_100)
                 .append(";\" bgcolor=\"").append(SLATE_100).append("\">\n")
                 .append("<tr>\n<td align=\"center\" style=\"padding:0 16px;\">\n")
@@ -110,6 +116,37 @@ public final class MailHtmlLayout {
      */
     public static String render(String heading, String textBody) {
         return render(heading, textBody, null);
+    }
+
+    /**
+     * The inbox preview line. Without it every mail previews as the lockup
+     * text ("Pickle 부산대학교 클라우드 플랫폼"), which is the same for all of
+     * them; with it the reader sees the body's own first sentence. Hidden in
+     * the rendered page by the usual belt-and-braces set (clients honour
+     * different halves of it), and padded with zero-width spaces so the
+     * preview is not completed with whatever markup follows.
+     */
+    private static void appendPreheader(StringBuilder html, String textBody) {
+        // Joined across lines rather than taken from the first one. The account
+        // mails open with a greeting, so a first-line preview made the signup
+        // and the password-reset mail read identically in the inbox list —
+        // exactly what this is here to prevent.
+        String first = String.join(" ", textBody.replace("\r\n", "\n").replace('\r', '\n')
+                .trim().lines().map(String::strip).filter(line -> !line.isEmpty())
+                // The list marker is layout, not words: a preview reading
+                // "- 신청 목적: …" shows the reader the source, not the mail.
+                .map(line -> line.startsWith("- ") ? line.substring(2) : line).toList());
+        if (first.isEmpty()) {
+            return;
+        }
+        if (first.length() > PREHEADER_MAX) {
+            first = first.substring(0, PREHEADER_MAX) + "…";
+        }
+        html.append("<div style=\"display:none;max-height:0;overflow:hidden;")
+                .append("mso-hide:all;font-size:1px;line-height:1px;color:transparent;\">")
+                .append(escape(first))
+                .append("&#8203;".repeat(150))
+                .append("</div>\n");
     }
 
     /**
@@ -168,8 +205,8 @@ public final class MailHtmlLayout {
 
     /**
      * Converts the plain-text body: blank-line-separated blocks become
-     * paragraphs, soft-wrapped lines inside a block are joined with a
-     * space, and consecutive {@code "- "} lines become a {@code <ul>} list.
+     * paragraphs, a single newline inside a block becomes a {@code <br />},
+     * and consecutive {@code "- "} lines become a {@code <ul>} list.
      */
     private static void appendBody(StringBuilder html, String textBody) {
         String normalized = textBody.replace("\r\n", "\n").replace('\r', '\n').trim();
@@ -202,8 +239,11 @@ public final class MailHtmlLayout {
         if (lines.isEmpty()) {
             return;
         }
+        // Escape each line first, then join: escaping the joined string would
+        // turn the separator we just inserted into a literal &lt;br /&gt;.
         html.append("<p style=\"margin:0 0 16px;").append(BODY_TEXT_STYLE).append("\">")
-                .append(escape(String.join(" ", lines)))
+                .append(lines.stream().map(MailHtmlLayout::escape)
+                        .collect(Collectors.joining("<br />")))
                 .append("</p>\n");
         lines.clear();
     }

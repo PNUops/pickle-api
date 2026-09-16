@@ -276,8 +276,12 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // after the approval has already committed.
         long keyId = key.getId();
         boolean funded = key.getCreditLimit().signum() > 0;
+        // The approval notice links to the key rather than to the request:
+        // issuing is the requester's next move and it lives on that screen,
+        // and this is the only mail an LLM key ever sends.
         return new Materialized(key.getId(), key.getName(), auditArgs,
-                () -> { if (funded) { provisionNow(keyId); } });
+                () -> { if (funded) { provisionNow(keyId); } },
+                Map.of("llmKeyId", key.getPublicId()));
     }
 
     /**

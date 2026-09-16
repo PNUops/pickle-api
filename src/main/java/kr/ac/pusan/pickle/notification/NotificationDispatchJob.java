@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.notification;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import kr.ac.pusan.pickle.mail.MailHtmlLayout;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MailSender;
@@ -39,9 +40,33 @@ public class NotificationDispatchJob {
 
     private static final String MAIL_FOOTER = "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n";
 
-    private record PendingMail(long id, int attempts, String title, String body, String linkPath,
-                               String email, String userStatus) {
+    private record PendingMail(long id, int attempts, String event, String title, String body,
+                               String linkPath, String email, String userStatus) {
     }
+
+    /**
+     * What the action button says, by event. The default names the
+     * destination generically; an entry here names what the reader does when
+     * they get there, which is what the account mails have always done.
+     *
+     * <p>Keyed by the stored string, not by {@link NotificationEvent}: the
+     * column holds the <em>rendered</em> id, so an expiry notice is filed as
+     * {@code vm.expiry.d7} and would not resolve back to a constant.</p>
+     *
+     * <p>Only events whose destination is the same for every recipient belong
+     * here. Where it is not — {@code request.submitted} goes to the admin
+     * queue or to the requester's own page, depending on who is being told —
+     * the destination decides instead, in {@link #ctaLabel}.</p>
+     */
+    private static final Map<String, String> CTA_LABELS = Map.of(
+            "request.submitted", "신청 확인하기",
+            "request.approved", "신청 확인하기",
+            "request.rejected", "신청 확인하기",
+            "vm.create.done", "VM 확인하기");
+
+    private static final String ADMIN_CTA_LABEL = "관리자 콘솔에서 확인";
+
+    private static final String DEFAULT_CTA_LABEL = "콘솔에서 확인";
 
     private final JdbcTemplate jdbcTemplate;
     private final MailSender mailSender;
@@ -60,7 +85,7 @@ public class NotificationDispatchJob {
     @Job(name = JOB_ID, retries = 0)
     public void dispatch() {
         List<PendingMail> due = jdbcTemplate.query("""
-                select n.id, n.attempts, n.title, n.body, n.link_path,
+                select n.id, n.attempts, n.event, n.title, n.body, n.link_path,
                        u.email, u.status as user_status
                   from notifications n
                   join users u on u.id = n.user_id
@@ -69,8 +94,9 @@ public class NotificationDispatchJob {
                  limit %d
                 """.formatted(BATCH_SIZE),
                 (rs, rowNum) -> new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
-                        rs.getString("title"), rs.getString("body"), rs.getString("link_path"),
-                        rs.getString("email"), rs.getString("user_status")));
+                        rs.getString("event"), rs.getString("title"), rs.getString("body"),
+                        rs.getString("link_path"), rs.getString("email"),
+                        rs.getString("user_status")));
         for (PendingMail mail : due) {
             // Recipient deactivated between enqueue and send (publish resolves
             // ACTIVE at insert time) — never mail a closed account; SKIPPED
@@ -93,7 +119,7 @@ public class NotificationDispatchJob {
             int attempt = mail.attempts() + 1;
             try {
                 mailSender.send(new MailMessage(mail.email(), "[Pickle] " + mail.title(),
-                        mail.body() + MAIL_FOOTER, htmlPart(mail)));
+                        textPart(mail), htmlPart(mail)));
                 jdbcTemplate.update("""
                         update notifications set status = 'SENT', sent_at = now(), last_error = null
                          where id = ?
@@ -122,6 +148,22 @@ public class NotificationDispatchJob {
     }
 
     /**
+     * The plain-text part: body, the URL on a line of its own, signature. The
+     * link line is what a reader without HTML has to work with — without it
+     * the action existed only in the alternative they cannot see. Safe to
+     * expose to link-prefetching gateways because a notification link is a
+     * plain console path, never a one-time token.
+     */
+    private String textPart(PendingMail mail) {
+        String link = mail.linkPath() == null || mail.linkPath().isBlank()
+                ? null : consoleBaseUrl + mail.linkPath();
+        // Stripped: some bodies end with a newline of their own, which would
+        // otherwise open a gap between the text and the link.
+        String body = mail.body().stripTrailing();
+        return link == null ? body + MAIL_FOOTER : body + "\n\n" + link + MAIL_FOOTER;
+    }
+
+    /**
      * The branded HTML part, or null to fall back to text alone — a layout
      * bug must cost this mail its styling, not the whole batch its delivery.
      */
@@ -129,13 +171,43 @@ public class NotificationDispatchJob {
         try {
             MailHtmlLayout.Cta cta = mail.linkPath() == null || mail.linkPath().isBlank()
                     ? null
-                    : new MailHtmlLayout.Cta("콘솔에서 확인", consoleBaseUrl + mail.linkPath());
+                    : new MailHtmlLayout.Cta(ctaLabel(mail), consoleBaseUrl + mail.linkPath());
             return MailHtmlLayout.render(mail.title(), mail.body(), cta);
         } catch (RuntimeException e) {
             log.warn("notification {} html render failed, sending text only: {}",
                     mail.id(), e.toString());
             return null;
         }
+    }
+
+    /**
+     * The action label for this mail. Two cases the event alone cannot answer,
+     * both settled by where the button actually goes.
+     *
+     * <p>An approved LLM-key request: every kind shares
+     * {@code request.approved} and only that one is sent to the screen that
+     * issues the key. Keyed on the event as well as the path, so the first
+     * key-lifecycle notice to link there — an expiry or a revocation — does
+     * not tell its reader to issue a key they already have.</p>
+     *
+     * <p>Anything landing in the admin console: {@code request.submitted}
+     * reaches both a requester and the reviewers, and every other
+     * admin-destined event (relay, certificate, campus IP, GPU review) would
+     * otherwise need its own row here and be forgotten the way
+     * {@code gpu.review} was.</p>
+     */
+    private static String ctaLabel(PendingMail mail) {
+        String path = mail.linkPath();
+        if (path == null) {
+            return DEFAULT_CTA_LABEL;
+        }
+        if ("request.approved".equals(mail.event()) && path.startsWith("/console/llm-keys/")) {
+            return "키 발급하기";
+        }
+        if (path.startsWith("/admin/")) {
+            return ADMIN_CTA_LABEL;
+        }
+        return CTA_LABELS.getOrDefault(mail.event(), DEFAULT_CTA_LABEL);
     }
 
     private static String summarize(RuntimeException e) {

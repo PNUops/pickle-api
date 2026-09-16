@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Pins the email-client survival rules of the shared HTML mail layout: exact
- * escaping, the plain-text-to-HTML conversion (paragraphs, soft-wrap reflow,
+ * escaping, the plain-text-to-HTML conversion (paragraphs, line breaks,
  * list promotion), the single-anchor invariant that keeps one-time tokens
  * safe from link-prefetching gateways, and the no-remote-resources rule with
  * the emblem as the sole exception.
@@ -35,12 +35,23 @@ class MailHtmlLayoutTest {
     }
 
     @Test
-    void blankLineSplitsParagraphsAndSoftWrapJoinsWithSpace() {
+    void blankLineSplitsParagraphsAndSingleNewlineBreaksTheLine() {
         String html = MailHtmlLayout.render("제목", "첫 문단 첫 줄\n첫 문단 둘째 줄\n\n둘째 문단");
 
-        assertThat(html).contains(">첫 문단 첫 줄 첫 문단 둘째 줄</p>");
+        assertThat(html).contains(">첫 문단 첫 줄<br />첫 문단 둘째 줄</p>");
         assertThat(html).contains(">둘째 문단</p>");
-        assertThat(html).doesNotContain("<br");
+    }
+
+    /**
+     * The break is inserted, not escaped. Joining the lines before escaping
+     * would send the separator through {@code escape} and out as literal
+     * {@code &lt;br /&gt;} text; every other assertion here passes either way.
+     */
+    @Test
+    void insertsTheBreakButStillEscapesOneTypedInTheBody() {
+        String html = MailHtmlLayout.render("제목", "직접 쓴 <br /> 태그\n다음 줄");
+
+        assertThat(html).contains(">직접 쓴 &lt;br /&gt; 태그<br />다음 줄</p>");
     }
 
     @Test
@@ -74,6 +85,21 @@ class MailHtmlLayoutTest {
         assertThat(html).doesNotContain("- 신청 목적");
     }
 
+    /**
+     * A multi-line text run sitting directly above a list line: the text lines
+     * join with a break, and the list line still ends the run rather than
+     * becoming a third line of the paragraph.
+     */
+    @Test
+    void endsTheTextRunAtAListLineRatherThanBreakingIntoIt() {
+        String html = MailHtmlLayout.render("제목", "첫 줄\n둘째 줄\n- 항목");
+
+        assertThat(html).contains(">첫 줄<br />둘째 줄</p>");
+        assertThat(html).contains("<li");
+        assertThat(html).contains(">항목</li>");
+        assertThat(html).doesNotContain("둘째 줄<br />항목");
+    }
+
     @Test
     void splitsMixedBlockIntoTextAndListRuns() {
         String html = MailHtmlLayout.render("제목", "안내 문구\n- 항목 하나\n마무리 문구");
@@ -82,6 +108,37 @@ class MailHtmlLayoutTest {
         assertThat(html).contains(">항목 하나</li>");
         assertThat(html).contains(">마무리 문구</p>");
         assertThat(countOccurrences(html, "<ul ")).isEqualTo(1);
+    }
+
+    /**
+     * The inbox preview line. Without it every mail previews as the lockup
+     * text, which is identical across the whole catalog.
+     */
+    @Test
+    void carriesTheBodysFirstLineAsThePreviewText() {
+        String html = MailHtmlLayout.render("제목", "첫 문장입니다.\n\n둘째 문단");
+
+        assertThat(html).contains("첫 문장입니다.");
+        assertThat(html.indexOf("첫 문장입니다.")).isLessThan(html.indexOf("Pickle</div>"));
+        assertThat(html).contains("display:none;max-height:0;overflow:hidden;");
+    }
+
+    /**
+     * The preview runs past the opening line. The account mails all begin
+     * "안녕하세요, …님.", so a preview taken from the first line alone left the
+     * signup and the password-reset mail identical in the inbox list — the
+     * thing the preheader exists to prevent.
+     */
+    @Test
+    void thePreviewRunsPastAGreetingIntoTheSentenceThatDiffers() {
+        String verify = MailHtmlLayout.render("이메일 인증",
+                "안녕하세요, 신예준님.\n\n가입을 완료하려면 이메일 인증을 진행해 주세요.");
+        String reset = MailHtmlLayout.render("비밀번호 재설정",
+                "안녕하세요, 신예준님.\n\n비밀번호 재설정을 요청하셨습니다.");
+
+        assertThat(preheaderOf(verify)).isNotEqualTo(preheaderOf(reset));
+        assertThat(preheaderOf(verify)).contains("이메일 인증을 진행해 주세요");
+        assertThat(preheaderOf(reset)).contains("비밀번호 재설정을 요청하셨습니다");
     }
 
     @Test
@@ -170,6 +227,13 @@ class MailHtmlLayoutTest {
                 .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.</p>")
                 .doesNotContain("Pickle 운영팀")
                 .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
+    }
+
+    /** The hidden preview text, without its zero-width padding. */
+    private static String preheaderOf(String html) {
+        int open = html.indexOf("display:none;max-height:0;overflow:hidden;");
+        int start = html.indexOf('>', open) + 1;
+        return html.substring(start, html.indexOf("</div>", start)).replace("&#8203;", "");
     }
 
     private static int countOccurrences(String haystack, String needle) {
