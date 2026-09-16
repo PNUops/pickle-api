@@ -314,7 +314,12 @@ class GpuIntegrationTest {
         AuthenticatedUser outsider = new AuthenticatedUser(admin.id(), admin.publicId(), admin.email(), UserRole.USER, Map.of());
         mvc.perform(get("/api/v1/gpu-allocations/" + publicId(id)).with(authentication(auth(outsider)))).andExpect(status().isNotFound());
         jdbc.update("delete from resource_access_grants where resource_type='GPU' and resource_id=?", id);
-        var row = query.list(owner, null, 0, 20).content().stream().filter(a -> a.id().equals(publicId(id))).findFirst().orElseThrow();
+        // Without a grant this is no longer one of the holder's own rows, so an
+        // unscoped list leaves it out; the workspace's own listing is where it
+        // stays visible, restricted, so a member can see it and ask.
+        assertThat(query.list(owner, null, 0, 20).content()).noneMatch(a -> a.id().equals(publicId(id)));
+        UUID workspacePublicId = SeedFixtures.publicId(jdbc, "workspaces", workspace);
+        var row = query.list(owner, workspacePublicId, 0, 20).content().stream().filter(a -> a.id().equals(publicId(id))).findFirst().orElseThrow();
         assertThat(row.accessLimited()).isTrue(); assertThat(row.gpu()).isNull(); assertThat(row.leaseEndsAt()).isNull();
         mvc.perform(get("/api/v1/gpu-allocations/" + publicId(id)).with(authentication(auth(owner)))).andExpect(status().isForbidden());
     }

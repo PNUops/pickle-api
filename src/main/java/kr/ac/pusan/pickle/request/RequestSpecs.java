@@ -17,11 +17,16 @@ public final class RequestSpecs {
     private RequestSpecs() {
     }
 
-    /** Own requests plus those of workspaces the caller belongs to. */
-    public static Specification<Request> visibleTo(Long userId, Collection<Long> workspaceIds) {
-        return (root, query, cb) -> cb.or(
-                cb.equal(root.get("requesterId"), userId),
-                root.get("workspaceId").in(workspaceIds));
+    /**
+     * The requests this person filed.
+     *
+     * <p>What an unscoped list shows: nobody named a workspace, so the question
+     * is "what did I ask for". A fellow member's requests are their workspace's
+     * to show and come back when that workspace is named — this is the same line
+     * the resource lists draw, and a request is where a resource comes from.
+     */
+    public static Specification<Request> filedBy(Long userId) {
+        return (root, query, cb) -> cb.equal(root.get("requesterId"), userId);
     }
 
     public static Specification<Request> status(RequestStatus status) {

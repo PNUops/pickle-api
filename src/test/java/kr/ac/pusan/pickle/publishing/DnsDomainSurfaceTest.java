@@ -371,10 +371,42 @@ class DnsDomainSurfaceTest {
         assertThat(listed(owner, created.id()).myResourceRole()).isEqualTo(ResourceRole.OWNER);
     }
 
+    /**
+     * The same rule the other resource lists follow, on names: unscoped is
+     * "which names are mine", and the workspace's own listing is where a member
+     * without a grant sees that a name exists and who holds it.
+     */
+    @Test
+    void anUnscopedNameListCarriesOnlyWhatAGrantOpens() {
+        DnsDomainView created = service.create(owner, request("unscoped"), "127.0.0.1");
+        AuthenticatedUser stranger = member("unscoped-stranger");
+
+        assertThat(rows(stranger, null)).noneMatch(row -> row.id().equals(created.id()));
+        assertThat(rows(stranger, workspacePublicId))
+                .filteredOn(row -> row.id().equals(created.id()))
+                .singleElement()
+                .satisfies(row -> assertThat(row.accessLimited()).isTrue());
+
+        // The issuer holds the OWNER grant seeding gave them, so it is in their
+        // own list without naming anything.
+        assertThat(rows(owner, null)).anyMatch(row -> row.id().equals(created.id()));
+    }
+
+    /** One reader's listing, scoped or not. */
+    private List<DnsDomainView> rows(AuthenticatedUser actor, UUID workspace) {
+        return queryService
+                .listPage(actor, workspace, org.springframework.data.domain.PageRequest.of(0, 50))
+                .getContent();
+    }
+
     /** The row for one name out of a reader's own listing. */
     private DnsDomainView listed(AuthenticatedUser actor, UUID domainId) {
+        // Named workspace, because that is the listing these assertions are
+        // about: an unscoped list carries only what a grant opens, so a reader
+        // with no grant would have no row here to report a rung for.
         return queryService
-                .listPage(actor, null, org.springframework.data.domain.PageRequest.of(0, 50))
+                .listPage(actor, workspacePublicId,
+                        org.springframework.data.domain.PageRequest.of(0, 50))
                 .getContent().stream()
                 .filter(row -> row.id().equals(domainId))
                 .findFirst().orElseThrow();

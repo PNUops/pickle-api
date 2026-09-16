@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.resource;
 
+import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToOwningWorkspace;
 import static kr.ac.pusan.pickle.support.AccessGrantFixtures.grantVmToUser;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -119,6 +120,128 @@ class ResourceIndexTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].name")
                         .value(Matchers.contains(hostname)));
+    }
+
+    /**
+     * The two halves of one rule, which only mean anything together: a list
+     * nobody scoped carries what the caller may open, and naming the workspace
+     * is what asks the other question and brings the rest back.
+     *
+     * <p>Asserted on both the inventory and the VM list because they are
+     * supposed to be the same visibility reached two ways; if only the inventory
+     * narrowed, the dashboard and the VM screen would disagree about what the
+     * person has.
+     */
+    @Test
+    void anUnscopedListCarriesOnlyWhatAGrantOpens() throws Exception {
+        long vmId = createVm();
+        String vmPublicId = pub("vms", vmId).toString();
+
+        // Unscoped: the member holds no grant, so this is not their row.
+        // Asserted on the row rather than on the total, because this account
+        // carries grants from its sibling tests against the same database.
+        mockMvc.perform(get("/api/v1/resources")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')]").isEmpty());
+        mockMvc.perform(get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')]").isEmpty());
+
+        // Named, the same row is there — limited, and saying whom to ask. This is
+        // where the person finds what the workspace holds and how to get in.
+        mockMvc.perform(get("/api/v1/resources?workspaceId=" + pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(true)))
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].ownerNames[0]")
+                        .value(Matchers.contains(owner.getName())));
+
+        // The requester's own row is theirs unscoped, through the OWNER grant
+        // that seeding the resource gave them.
+        mockMvc.perform(get("/api/v1/resources")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(false)));
+
+        // A grant is what moves the row into the member's own list.
+        grantVmToUser(jdbcTemplate, vmId, member.getId(), "VIEWER");
+        mockMvc.perform(get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(false)));
+
+        // The page envelope counts the rows it returns, asserted on an account
+        // whose whole history is this test: two VMs in the workspace, a grant on
+        // one. Narrowing applied after the page was counted would report two
+        // elements here and hand back one.
+        createVm();
+        User newcomer = ensureUser("resindex.newcomer." + UUID.randomUUID() + "@pusan.ac.kr", "인벤토리신입");
+        String newcomerToken = jwtService.createAccessToken(newcomer);
+        addMember(workspaceId, newcomer.getEmail());
+        grantVmToUser(jdbcTemplate, vmId, newcomer.getId(), "VIEWER");
+        mockMvc.perform(get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + newcomerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.totalPages").value(1))
+                .andExpect(jsonPath("$.content.length()").value(1));
+    }
+
+    /**
+     * The workspace axis does not put a row in the unscoped list, and the
+     * workspace-wide grant does.
+     *
+     * <p>Two rules that live nowhere else. A workspace owner's standing rights
+     * are deliberately not a rung (operator, 2026-08-09), so "what do I hold"
+     * must not answer with a resource they only administer — without this, an
+     * owner of a class workspace is back to a default screen of other people's
+     * machines, which is the thing this narrowing exists to stop. And the
+     * grant that names nobody has to open the row for every member, or a
+     * workspace that shares a VM with everyone loses it from their own lists.
+     */
+    @Test
+    void standingRightsDoNotPlaceARowInTheUnscopedListButAWorkspaceWideGrantDoes()
+            throws Exception {
+        long vmId = createVm();
+        String vmPublicId = pub("vms", vmId).toString();
+        // The requester's seeded OWNER grant is what makes this their row, so it
+        // goes: what is left is the workspace ownership alone.
+        jdbcTemplate.update(
+                "delete from resource_access_grants where resource_type = 'VM' and resource_id = ?",
+                vmId);
+
+        mockMvc.perform(get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')]").isEmpty());
+        // Naming the workspace still shows it to them, restricted, with the way
+        // back in: they may hand themselves or somebody else a grant.
+        mockMvc.perform(get("/api/v1/vms?workspaceId=" + pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(true)))
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessManageAllowed")
+                        .value(Matchers.contains(true)));
+
+        // A grant naming nobody reaches every member, so it is their row too.
+        grantVmToOwningWorkspace(jdbcTemplate, vmId, "MEMBER");
+        mockMvc.perform(get("/api/v1/vms")
+                        .header("Authorization", "Bearer " + memberToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(false)));
+        mockMvc.perform(get("/api/v1/resources")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[?(@.id=='" + vmPublicId + "')].accessLimited")
+                        .value(Matchers.contains(false)));
     }
 
     @Test

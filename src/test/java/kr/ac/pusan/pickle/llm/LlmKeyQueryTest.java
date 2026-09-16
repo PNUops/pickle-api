@@ -123,6 +123,37 @@ class LlmKeyQueryTest {
                 .andExpect(status().isNotFound());
     }
 
+    /**
+     * A bystander's unscoped list is their own keys, and naming the workspace is
+     * what asks for the workspace's — where the restricted row above lives. The
+     * two halves are asserted together because either alone reads as the whole
+     * rule and is not: dropping the second would take away the only place a
+     * member can learn the key exists and who to ask.
+     */
+    @Test
+    void anUnscopedKeyListCarriesOnlyWhatAGrantOpens() throws Exception {
+        long keyId = createIssuedKey("미선택 목록 키");
+        String row = "$.content[?(@.id=='" + pub("llm_api_keys", keyId) + "')]";
+
+        mockMvc.perform(get("/api/v1/llm-keys")
+                        .header("Authorization", "Bearer " + bystanderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(row).isEmpty())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        mockMvc.perform(get("/api/v1/llm-keys?workspaceId=" + pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + bystanderToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(row + ".accessLimited").value(Matchers.contains(true)));
+
+        // The holder's own key is in their unscoped list, through the OWNER
+        // grant that issuing it gave them.
+        mockMvc.perform(get("/api/v1/llm-keys")
+                        .header("Authorization", "Bearer " + keyOwnerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(row + ".accessLimited").value(Matchers.contains(false)));
+    }
+
     @Test
     void aMemberWithoutAGrantGetsTheRestrictedRowAndNoTokenPrefix() throws Exception {
         long keyId = createIssuedKey("제한행 키");

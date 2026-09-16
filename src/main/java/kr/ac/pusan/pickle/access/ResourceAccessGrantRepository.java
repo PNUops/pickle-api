@@ -27,9 +27,6 @@ public interface ResourceAccessGrantRepository extends JpaRepository<ResourceAcc
     Optional<ResourceAccessGrant> findByResourceTypeAndResourceIdAndGranteeType(
             ResourceType resourceType, Long resourceId, AccessGranteeType granteeType);
 
-    /** The grants one person holds, for "which resources may I reach" listings. */
-    List<ResourceAccessGrant> findByResourceTypeAndUserId(ResourceType resourceType, Long userId);
-
     /** Grants held on a set of resources, for batch list assembly. */
     List<ResourceAccessGrant> findByResourceTypeAndResourceIdIn(ResourceType resourceType,
             List<Long> resourceIds);

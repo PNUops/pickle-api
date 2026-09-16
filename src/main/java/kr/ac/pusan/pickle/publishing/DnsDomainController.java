@@ -56,8 +56,9 @@ public class DnsDomainController {
 
     @GetMapping
     @Operation(summary = "도메인 목록",
-            description = "내가 속한 워크스페이스의 도메인입니다. 접근 권한이 없는 도메인도 "
-                    + "이름과 상태, 소유자까지는 보입니다.")
+            description = "`workspaceId`를 지정하지 않으면 내가 접근 권한을 가진 도메인만 "
+                    + "옵니다. 지정하면 그 워크스페이스의 도메인 전부이고, 접근 권한이 없는 "
+                    + "도메인도 이름과 상태, 소유자까지는 보입니다.")
     public PageResponse<DnsDomainView> listDnsDomains(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @RequestParam(required = false) @Nullable UUID workspaceId,

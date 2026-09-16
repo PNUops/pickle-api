@@ -142,9 +142,16 @@ public class VmQueryService {
                     ? vmRepository.findByWorkspaceId(filterId, pageable)
                     : Page.empty(pageable);
         } else {
-            result = workspaceIds.isEmpty()
+            // Nobody named a workspace, so this is the "what do I have" list and
+            // it carries only what a grant opens. The rows of a workspace the
+            // requester holds no grant on are that workspace's list to show, and
+            // they come back — limited, with who to ask — the moment it is named.
+            Set<Long> reachable = workspaceIds.isEmpty() ? Set.of()
+                    : resourceAccessResolver.reachableIds(ResourceType.VM,
+                            vmRepository.findIdsByWorkspaceIdIn(workspaceIds), actor.id());
+            result = reachable.isEmpty()
                     ? Page.empty(pageable)
-                    : vmRepository.findByWorkspaceIdIn(workspaceIds, pageable);
+                    : vmRepository.findByIdIn(reachable, pageable);
         }
         List<Vm> vms = result.getContent();
         Map<Long, Org> orgs = orgs(vms);
@@ -168,7 +175,9 @@ public class VmQueryService {
                     // Only a grant opens the row. A workspace owner without one gets
                     // the same restricted row as anyone else, plus the flag that
                     // lets the console offer them the access list — the way back
-                    // in for a VM whose own owner is gone.
+                    // in for a VM whose own owner is gone. That row is reached by
+                    // naming the workspace: an unscoped list has already narrowed
+                    // to what a grant opens, so this branch never runs there.
                     if (access.reachable().contains(vm.getId())) {
                         return VmSummaryResponse.from(vm, workspacePublicId, workspaceName,
                                 org == null ? null : org.getPublicId(),

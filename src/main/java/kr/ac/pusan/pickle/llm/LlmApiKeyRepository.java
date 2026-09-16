@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.llm;
 
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,7 +26,16 @@ public interface LlmApiKeyRepository extends JpaRepository<LlmApiKey, Long>,
 
     Page<LlmApiKey> findByWorkspaceId(long workspaceId, Pageable pageable);
 
-    Page<LlmApiKey> findByWorkspaceIdIn(List<Long> workspaceIds, Pageable pageable);
+    /** Key ids of the given workspaces — the candidates an access-scoped list narrows. */
+    @Query("select k.id from LlmApiKey k where k.workspaceId in :workspaceIds")
+    List<Long> findIdsByWorkspaceIdIn(@Param("workspaceIds") List<Long> workspaceIds);
+
+    /**
+     * A named set of keys, paged — the unscoped list once the access list has
+     * said which ones are the requester's. In the query rather than in a filter
+     * over the page, so the page envelope counts the same rows it returns.
+     */
+    Page<LlmApiKey> findByIdIn(Collection<Long> ids, Pageable pageable);
 
     List<LlmApiKey> findByWorkspaceId(long workspaceId);
 

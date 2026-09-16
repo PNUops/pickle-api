@@ -638,24 +638,42 @@ class RequestTest {
         }
     }
 
+    /**
+     * The list answers a different question depending on whether a workspace was
+     * named: unscoped it is "what did I ask for", scoped it is the workspace's
+     * own record. Detail stays open to every member either way, because the
+     * scoped list hands them rows they must be able to open.
+     */
     @Test
-    void listAndDetailVisibilityFollowsMembership() throws Exception {
+    void listNarrowsToOwnRequestsUntilAWorkspaceIsNamed() throws Exception {
         long workspaceId = createTeam(requesterToken, "vmr-visib-x1");
         addMember(requesterToken, workspaceId, member.getEmail(), "MEMBER");
         long first = submit(requesterToken, workspaceId);
         long second = submit(requesterToken, workspaceId);
 
-        // a plain member sees the workspace's requests, newest first
+        // Unscoped, a plain member sees what they filed themselves — nothing here.
+        // A fellow member's requests belong to the workspace's own list, asked for
+        // below by naming it.
         mockMvc.perform(get("/api/v1/requests").header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
-                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content").isEmpty());
+
+        // the requester's own unscoped list, newest first. Read on the two rows
+        // this test just filed rather than on the total, because the account
+        // carries what its sibling tests filed against the same database.
+        mockMvc.perform(get("/api/v1/requests").header("Authorization", "Bearer " + requesterToken))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(pub("requests", second).toString()))
                 .andExpect(jsonPath("$.content[1].id").value(pub("requests", first).toString()));
 
-        // paging envelope: size=1 → two pages
-        mockMvc.perform(get("/api/v1/requests?size=1").header("Authorization", "Bearer " + memberToken))
+        // paging envelope: size=1 → two pages. Read on the scoped list, where the
+        // member has rows: an envelope counted over rows the filter then dropped
+        // would promise a second page that does not exist.
+        mockMvc.perform(get("/api/v1/requests?size=1&workspaceId=" + pub("workspaces", workspaceId))
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.totalPages").value(2));

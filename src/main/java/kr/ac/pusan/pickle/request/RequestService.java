@@ -166,7 +166,7 @@ public class RequestService {
             }
             spec = RequestSpecs.workspace(scopedWorkspaceId);
         } else {
-            spec = RequestSpecs.visibleTo(actor.id(), myWorkspaceIds(actor));
+            spec = RequestSpecs.filedBy(actor.id());
         }
         if (status != null) {
             spec = spec.and(RequestSpecs.status(status));
@@ -214,15 +214,6 @@ public class RequestService {
                 "request", request.getPublicId(),
                 Map.of("workspaceId", auditIds.workspace(request.getWorkspaceId())), ip);
         return assembler.toDetail(request);
-    }
-
-    private List<Long> myWorkspaceIds(AuthenticatedUser actor) {
-        List<Long> workspaceIds = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id()).stream()
-                .map(m -> m.getWorkspace().getId())
-                .toList();
-        // JPQL "in ()" is invalid — a user without any membership sees only
-        // their own requests, so pass an id that can never match.
-        return workspaceIds.isEmpty() ? List.of(-1L) : workspaceIds;
     }
 
     private static Pageable newestFirst(int page, int size) {

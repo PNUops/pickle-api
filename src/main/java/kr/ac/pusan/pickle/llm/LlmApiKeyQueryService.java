@@ -91,9 +91,15 @@ public class LlmApiKeyQueryService {
                     ? keyRepository.findByWorkspaceId(filterId, pageable)
                     : Page.empty(pageable);
         } else {
-            result = workspaceIds.isEmpty()
+            // No workspace named, so this list is "what do I have" and carries
+            // only what a grant opens. A key a fellow member holds comes back —
+            // limited, with who to ask — when their workspace is named.
+            Set<Long> reachable = workspaceIds.isEmpty() ? Set.of()
+                    : resourceAccessResolver.reachableIds(ResourceType.LLM_API_KEY,
+                            keyRepository.findIdsByWorkspaceIdIn(workspaceIds), actor.id());
+            result = reachable.isEmpty()
                     ? Page.empty(pageable)
-                    : keyRepository.findByWorkspaceIdIn(workspaceIds, pageable);
+                    : keyRepository.findByIdIn(reachable, pageable);
         }
         List<LlmApiKey> keys = result.getContent();
         Set<Long> ownedWorkspaceIds = memberships.stream()
@@ -111,7 +117,9 @@ public class LlmApiKeyQueryService {
                     // Only a grant opens the row. A workspace owner without one
                     // gets the same restricted row as anyone else, plus the flag
                     // that lets the console offer them the access list — the way
-                    // back in for a key whose own owner is gone.
+                    // back in for a key whose own owner is gone. That row is
+                    // reached by naming the workspace: an unscoped list has
+                    // already narrowed to what a grant opens.
                     if (access.reachable().contains(key.getId())) {
                         return LlmKeySummaryResponse.from(key, workspacePublicId, workspaceName);
                     }

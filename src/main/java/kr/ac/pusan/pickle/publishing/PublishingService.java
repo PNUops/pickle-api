@@ -4,17 +4,14 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.access.ResourceAccessResolver;
 import kr.ac.pusan.pickle.access.ResourceRole;
-import kr.ac.pusan.pickle.access.AccessGranteeType;
-import kr.ac.pusan.pickle.access.ResourceAccessGrant;
-import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.access.VmAccessService;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -25,7 +22,6 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.workspace.WorkspaceMember;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
@@ -81,7 +77,7 @@ public class PublishingService {
     private final VmRepository vmRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final VmAccessService vmAccessService;
-    private final ResourceAccessGrantRepository grantRepository;
+    private final ResourceAccessResolver resourceAccessResolver;
     private final DomainRepository domainRepository;
     private final RouteRepository routeRepository;
     private final CertificateRepository certificateRepository;
@@ -101,7 +97,7 @@ public class PublishingService {
 
     public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
             VmAccessService vmAccessService,
-            ResourceAccessGrantRepository grantRepository,
+            ResourceAccessResolver resourceAccessResolver,
             DomainRepository domainRepository, RouteRepository routeRepository,
             CertificateRepository certificateRepository, RouteGenerations routeGenerations,
             PublicationAssembler assembler, SubdomainPolicy subdomainPolicy,
@@ -113,7 +109,7 @@ public class PublishingService {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
-        this.grantRepository = grantRepository;
+        this.resourceAccessResolver = resourceAccessResolver;
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
@@ -699,33 +695,17 @@ public class PublishingService {
     }
 
     private List<Long> reachableVmIds(AuthenticatedUser actor) {
-        List<WorkspaceMember> memberships = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id());
-        Set<Long> vmIds = new LinkedHashSet<>();
-        Set<Long> memberWorkspaceIds = memberships.stream()
+        // Candidates are the VMs of workspaces this person still belongs to, which
+        // is what keeps a grant that outlived its membership from answering here.
+        Set<Long> memberWorkspaceIds = workspaceMemberRepository.findWithWorkspaceByUserId(actor.id())
+                .stream()
                 .map(m -> m.getWorkspace().getId())
                 .collect(java.util.stream.Collectors.toSet());
-        // Only grants on VMs of a workspace this person still belongs to, the same
-        // re-check the access resolver makes: a grant that outlived its
-        // membership must not keep answering here either.
         List<Long> memberVmIds = memberWorkspaceIds.isEmpty() ? List.of()
                 : vmRepository.findIdsByWorkspaceIdIn(List.copyOf(memberWorkspaceIds));
-        Set<Long> reachableByMembership = Set.copyOf(memberVmIds);
-        for (ResourceAccessGrant grant : grantRepository.findByResourceTypeAndUserId(
-                ResourceType.VM, actor.id())) {
-            if (reachableByMembership.contains(grant.getResourceId())) {
-                vmIds.add(grant.getResourceId());
-            }
-        }
-        // Workspace-wide grants name nobody, so they are matched through the VMs of
-        // the workspaces this person belongs to.
-        if (!memberVmIds.isEmpty()) {
-            Set<Long> workspaceWide = grantRepository
-                    .findByResourceTypeAndResourceIdIn(ResourceType.VM, memberVmIds).stream()
-                    .filter(grant -> grant.getGranteeType() == AccessGranteeType.WORKSPACE)
-                    .map(ResourceAccessGrant::getResourceId)
-                    .collect(java.util.stream.Collectors.toSet());
-            vmIds.addAll(workspaceWide);
-        }
+        Set<Long> vmIds = resourceAccessResolver.reachableIds(ResourceType.VM, memberVmIds, actor.id());
+        // JPQL "in ()" is invalid, so an empty answer travels as an id that
+        // cannot match rather than as an empty list.
         return vmIds.isEmpty() ? List.of(-1L) : List.copyOf(vmIds);
     }
 

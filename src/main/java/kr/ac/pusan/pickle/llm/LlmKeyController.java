@@ -60,7 +60,8 @@ public class LlmKeyController {
 
     @GetMapping
     @Operation(summary = "LLM API 키 목록",
-            description = "내가 속한 워크스페이스의 키를 보여 줍니다. 접근 권한이 없는 키는 "
+            description = "`workspaceId`를 지정하지 않으면 내가 접근 권한을 가진 키만 "
+                    + "옵니다. 지정하면 그 워크스페이스의 키 전부이고, 접근 권한이 없는 키는 "
                     + "이름·상태·소유자만 담긴 제한된 행으로 표시됩니다.")
     public PageResponse<LlmKeySummaryResponse> listLlmKeys(
             @AuthenticationPrincipal AuthenticatedUser principal,

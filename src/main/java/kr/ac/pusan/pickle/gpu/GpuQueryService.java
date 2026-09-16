@@ -49,9 +49,18 @@ public class GpuQueryService {
     public PageResponse<GpuAllocationView> list(AuthenticatedUser actor, UUID workspaceId, int page, int size) {
         var workspaceIds = members.findWithWorkspaceByUserId(actor.id()).stream().map(m -> m.getWorkspace().getId()).toList();
         Long selected = workspaceId == null ? null : workspaces.findByPublicId(workspaceId).map(w -> w.getId()).orElse(-1L);
-        var rows = store.all().stream().filter(a -> workspaceIds.contains(a.workspaceId()))
-                .filter(a -> selected == null || a.workspaceId() == selected).toList();
-        return page(actor, rows, page, size, false);
+        var mine = store.all().stream().filter(a -> workspaceIds.contains(a.workspaceId())).toList();
+        if (selected != null) {
+            return page(actor, mine.stream().filter(a -> a.workspaceId() == selected).toList(),
+                    page, size, false);
+        }
+        // No workspace named, so this list is "what do I have" and carries only
+        // what a grant opens. An allocation a fellow member holds comes back —
+        // limited, with who to ask — when their workspace is named.
+        var reachable = access.reachableIds(ResourceType.GPU,
+                mine.stream().map(GpuAllocation::id).toList(), actor.id());
+        return page(actor, mine.stream().filter(a -> reachable.contains(a.id())).toList(),
+                page, size, false);
     }
 
     public PageResponse<GpuAllocationView> adminList(AuthenticatedUser actor, UUID orgId, UUID workspaceId, GpuAllocationStatus status, int page, int size) {
