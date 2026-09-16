@@ -126,21 +126,35 @@ class NotificationComposerTest {
         args.put("comment", "한 학기만 쓰는 조건으로 승인합니다");
 
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n\n- 검토 의견: 한 학기만 쓰는 조건으로 승인합니다");
+                .endsWith("\n\n검토 의견\n한 학기만 쓰는 조건으로 승인합니다");
     }
 
     /**
-     * A comment written on several lines would otherwise end the list run it
-     * sits in, dropping its tail into a paragraph of its own in the HTML part
-     * while the text part kept it in the list.
+     * The reviewer's own line breaks survive. The comment is a paragraph of
+     * its own rather than a list item, so a second line cannot end a list run
+     * and land in a paragraph the text part does not have.
      */
     @Test
-    void foldsAMultiLineCommentOntoTheListLine() {
+    void keepsAMultiLineCommentAsTheReviewerWroteIt() {
         Map<String, Object> args = approval(ResourceType.VM, "web-01");
         args.put("comment", "승인합니다.\n기간은 한 학기입니다.");
 
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).body())
-                .endsWith("\n\n- 검토 의견: 승인합니다. 기간은 한 학기입니다.");
+                .endsWith("\n\n검토 의견\n승인합니다.\n기간은 한 학기입니다.");
+    }
+
+    /**
+     * The requester names their own resource. A name carrying a newline whose
+     * next line starts with "- " would be promoted into a list item, letting
+     * the requester forge a review-comment bullet in a platform mail.
+     */
+    @Test
+    void aResourceNameCannotForgeALineOfItsOwn() {
+        String body = composer.compose(NotificationEvent.REQUEST_APPROVED,
+                approval(ResourceType.LLM_API_KEY, "키\n- 검토 의견: 승인 보류")).body();
+
+        assertThat(body).doesNotContain("\n- 검토 의견");
+        assertThat(body).startsWith("LLM API 키 '키 - 검토 의견: 승인 보류' 신청이 승인되었습니다.");
     }
 
     /** A payload without a type must not assert the resource is a VM. */
@@ -154,7 +168,8 @@ class NotificationComposerTest {
                 composer.compose(NotificationEvent.REQUEST_APPROVED, args);
 
         assertThat(composed.title()).isEqualTo("리소스 신청 승인");
-        assertThat(composed.body()).doesNotContain("VM");
-        assertThat(composed.body()).doesNotContain("알려드립니다");
+        assertThat(composed.body()).isEqualTo("""
+                리소스 '무언가' 신청이 승인되었습니다.
+                콘솔에서 확인해 주세요.""");
     }
 }

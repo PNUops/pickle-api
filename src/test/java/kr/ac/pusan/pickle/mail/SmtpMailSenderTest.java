@@ -60,14 +60,6 @@ class SmtpMailSenderTest {
     }
 
     /**
-     * Which body landed in which part, and in which order. Asserting the two
-     * content types alone cannot see a swapped {@code setText(html, text)}:
-     * both parts still exist, both types still match, and every reader gets
-     * markup as their plain text. The order matters too — in
-     * multipart/alternative a client shows the last part it understands, so
-     * the plain part has to come first for the HTML to win.
-     */
-    /**
      * Which body landed in which part, read the way a mail client reads it.
      * Asserting the two content types alone cannot see a swapped
      * {@code setText(html, text)}: both parts still exist, both types still

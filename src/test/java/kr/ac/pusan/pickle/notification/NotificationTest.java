@@ -254,6 +254,18 @@ class NotificationTest {
 
         assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
                 .contains("콘솔에서 확인");
+
+        // An admin destination is labelled by where it goes, so an event that
+        // reaches both audiences (request.submitted) and one nobody thought to
+        // map (gpu.review) are both covered without their own rows.
+        notificationService.publish(alice.getId(), NotificationEvent.GPU_REVIEW,
+                Map.of("message", "확인이 필요합니다"), null);
+
+        dispatchJob.dispatch();
+
+        assertThat(mockMailSender.lastMessageTo(alice.getEmail()).htmlBody())
+                .contains("관리자 콘솔에서 확인")
+                .contains("https://pickle.pusan.ac.kr/admin/gpus");
     }
 
     @Test

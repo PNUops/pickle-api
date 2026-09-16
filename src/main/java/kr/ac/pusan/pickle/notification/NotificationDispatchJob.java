@@ -52,17 +52,19 @@ public class NotificationDispatchJob {
      * <p>Keyed by the stored string, not by {@link NotificationEvent}: the
      * column holds the <em>rendered</em> id, so an expiry notice is filed as
      * {@code vm.expiry.d7} and would not resolve back to a constant.</p>
+     *
+     * <p>Only events whose destination is the same for every recipient belong
+     * here. Where it is not — {@code request.submitted} goes to the admin
+     * queue or to the requester's own page, depending on who is being told —
+     * the destination decides instead, in {@link #ctaLabel}.</p>
      */
     private static final Map<String, String> CTA_LABELS = Map.of(
             "request.submitted", "신청 확인하기",
             "request.approved", "신청 확인하기",
             "request.rejected", "신청 확인하기",
-            "vm.create.done", "VM 확인하기",
-            "relay.contact_lost", "관리자 콘솔에서 확인",
-            "relay.never_contacted", "관리자 콘솔에서 확인",
-            "relay.band_usage_high", "관리자 콘솔에서 확인",
-            "cert.failure", "관리자 콘솔에서 확인",
-            "campus_ip.requested", "관리자 콘솔에서 확인");
+            "vm.create.done", "VM 확인하기");
+
+    private static final String ADMIN_CTA_LABEL = "관리자 콘솔에서 확인";
 
     private static final String DEFAULT_CTA_LABEL = "콘솔에서 확인";
 
@@ -155,9 +157,10 @@ public class NotificationDispatchJob {
     private String textPart(PendingMail mail) {
         String link = mail.linkPath() == null || mail.linkPath().isBlank()
                 ? null : consoleBaseUrl + mail.linkPath();
-        return link == null
-                ? mail.body() + MAIL_FOOTER
-                : mail.body() + "\n\n" + link + MAIL_FOOTER;
+        // Stripped: some bodies end with a newline of their own, which would
+        // otherwise open a gap between the text and the link.
+        String body = mail.body().stripTrailing();
+        return link == null ? body + MAIL_FOOTER : body + "\n\n" + link + MAIL_FOOTER;
     }
 
     /**
@@ -177,13 +180,32 @@ public class NotificationDispatchJob {
         }
     }
 
-    /** The action label for this mail. An approved LLM-key request is the one
-     *  case the event alone cannot answer — every kind shares
-     *  {@code request.approved}, and only that one is sent to the screen that
-     *  issues the key, so the destination decides. */
+    /**
+     * The action label for this mail. Two cases the event alone cannot answer,
+     * both settled by where the button actually goes.
+     *
+     * <p>An approved LLM-key request: every kind shares
+     * {@code request.approved} and only that one is sent to the screen that
+     * issues the key. Keyed on the event as well as the path, so the first
+     * key-lifecycle notice to link there — an expiry or a revocation — does
+     * not tell its reader to issue a key they already have.</p>
+     *
+     * <p>Anything landing in the admin console: {@code request.submitted}
+     * reaches both a requester and the reviewers, and every other
+     * admin-destined event (relay, certificate, campus IP, GPU review) would
+     * otherwise need its own row here and be forgotten the way
+     * {@code gpu.review} was.</p>
+     */
     private static String ctaLabel(PendingMail mail) {
-        if (mail.linkPath() != null && mail.linkPath().startsWith("/console/llm-keys/")) {
+        String path = mail.linkPath();
+        if (path == null) {
+            return DEFAULT_CTA_LABEL;
+        }
+        if ("request.approved".equals(mail.event()) && path.startsWith("/console/llm-keys/")) {
             return "키 발급하기";
+        }
+        if (path.startsWith("/admin/")) {
+            return ADMIN_CTA_LABEL;
         }
         return CTA_LABELS.getOrDefault(mail.event(), DEFAULT_CTA_LABEL);
     }

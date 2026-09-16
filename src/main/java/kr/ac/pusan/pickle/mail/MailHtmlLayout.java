@@ -127,9 +127,15 @@ public final class MailHtmlLayout {
      * preview is not completed with whatever markup follows.
      */
     private static void appendPreheader(StringBuilder html, String textBody) {
-        String first = textBody.replace("\r\n", "\n").replace('\r', '\n').trim()
-                .lines().map(String::strip).filter(line -> !line.isEmpty())
-                .findFirst().orElse("");
+        // Joined across lines rather than taken from the first one. The account
+        // mails open with a greeting, so a first-line preview made the signup
+        // and the password-reset mail read identically in the inbox list —
+        // exactly what this is here to prevent.
+        String first = String.join(" ", textBody.replace("\r\n", "\n").replace('\r', '\n')
+                .trim().lines().map(String::strip).filter(line -> !line.isEmpty())
+                // The list marker is layout, not words: a preview reading
+                // "- 신청 목적: …" shows the reader the source, not the mail.
+                .map(line -> line.startsWith("- ") ? line.substring(2) : line).toList());
         if (first.isEmpty()) {
             return;
         }
@@ -139,7 +145,7 @@ public final class MailHtmlLayout {
         html.append("<div style=\"display:none;max-height:0;overflow:hidden;")
                 .append("mso-hide:all;font-size:1px;line-height:1px;color:transparent;\">")
                 .append(escape(first))
-                .append("&#8203;".repeat(60))
+                .append("&#8203;".repeat(150))
                 .append("</div>\n");
     }
 

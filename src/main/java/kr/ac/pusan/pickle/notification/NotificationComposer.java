@@ -61,7 +61,8 @@ public class NotificationComposer {
                     """
                     %s 신청이 반려되었습니다.
 
-                    - 반려 사유: %s""".formatted(resourceLabel(args), oneLine(str(args, "comment"))),
+                    반려 사유
+                    %s""".formatted(resourceLabel(args), str(args, "comment")),
                     "/console/requests/" + args.get("requestId"), event.defaultImportance(),
                     payload(args, "requestId"));
             case VM_CREATE_DONE -> new Composed(event.id(),
@@ -244,8 +245,7 @@ public class NotificationComposer {
                     + (Boolean.TRUE.equals(args.get("passwordCleared")) ? """
 
 
-                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼 있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다.
-                    비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해 주세요.""" : ""),
+                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼 있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다. 비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해 주세요.""" : ""),
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
                     """
@@ -378,9 +378,9 @@ public class NotificationComposer {
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "requestId", "vmId", "vmName"));
             case WORKSPACE_DELETED -> new Composed(event.id(),
-                    "워크스페이스 삭제 안내 — " + str(args, "workspaceName"),
+                    "워크스페이스 삭제 안내 — " + oneLine(str(args, "workspaceName")),
                     """
-                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가 정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수 있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이 있었다면 함께 취소되었습니다.""".formatted(str(args, "workspaceName")),
+                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가 정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수 있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이 있었다면 함께 취소되었습니다.""".formatted(oneLine(str(args, "workspaceName"))),
                     null, event.defaultImportance(), payload(args, "workspaceId", "workspaceName"));
         };
     }
@@ -401,7 +401,11 @@ public class NotificationComposer {
     private Composed requestApproved(NotificationEvent event, Map<String, Object> args) {
         ResourceType type = resourceType(args);
         String label = resourceLabel(args);
-        String name = str(args, "resourceName");
+        // The requester names their own resource, and a name carrying a newline
+        // would both split the sentence and, if the next line began with "- ",
+        // be promoted into a list item — letting a requester forge a 검토 의견
+        // bullet in a mail the platform sends.
+        String name = oneLine(str(args, "resourceName"));
         // An expression switch with no default: a fifth resource type fails to
         // compile here. A statement switch would not, and neither did the
         // string comparison this replaces.
@@ -446,7 +450,7 @@ public class NotificationComposer {
      *  never reached the requester. */
     private static String reviewComment(Map<String, Object> args) {
         return args.get("comment") != null
-                ? "\n\n- 검토 의견: " + oneLine(str(args, "comment")) : "";
+                ? "\n\n검토 의견\n" + str(args, "comment") : "";
     }
 
     private Composed requestSubmitted(NotificationEvent event, Map<String, Object> args) {
@@ -457,11 +461,13 @@ public class NotificationComposer {
                 ? """
                   워크스페이스 '%s'에서 새 %s 신청이 접수되었습니다. 검토해 주세요.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, oneLine(str(args, "purpose")))
+                  신청 목적
+                  %s""".formatted(oneLine(str(args, "workspaceName")), label, str(args, "purpose"))
                 : """
                   워크스페이스 '%s'의 %s 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, oneLine(str(args, "purpose")));
+                  신청 목적
+                  %s""".formatted(oneLine(str(args, "workspaceName")), label, str(args, "purpose"));
         String link = (admin ? "/admin/requests/" : "/console/requests/") + args.get("requestId");
         return new Composed(event.id(), title, body, link, event.defaultImportance(),
                 payload(args, "requestId", "workspaceName"));

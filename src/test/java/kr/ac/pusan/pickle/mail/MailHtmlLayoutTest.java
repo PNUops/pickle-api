@@ -123,6 +123,24 @@ class MailHtmlLayoutTest {
         assertThat(html).contains("display:none;max-height:0;overflow:hidden;");
     }
 
+    /**
+     * The preview runs past the opening line. The account mails all begin
+     * "안녕하세요, …님.", so a preview taken from the first line alone left the
+     * signup and the password-reset mail identical in the inbox list — the
+     * thing the preheader exists to prevent.
+     */
+    @Test
+    void thePreviewRunsPastAGreetingIntoTheSentenceThatDiffers() {
+        String verify = MailHtmlLayout.render("이메일 인증",
+                "안녕하세요, 신예준님.\n\n가입을 완료하려면 이메일 인증을 진행해 주세요.");
+        String reset = MailHtmlLayout.render("비밀번호 재설정",
+                "안녕하세요, 신예준님.\n\n비밀번호 재설정을 요청하셨습니다.");
+
+        assertThat(preheaderOf(verify)).isNotEqualTo(preheaderOf(reset));
+        assertThat(preheaderOf(verify)).contains("이메일 인증을 진행해 주세요");
+        assertThat(preheaderOf(reset)).contains("비밀번호 재설정을 요청하셨습니다");
+    }
+
     @Test
     void withCtaRendersExactlyOneAnchorAndSpanFallback() {
         String url = "https://pickle.pusan.ac.kr/verify?token=abc123";
@@ -209,6 +227,13 @@ class MailHtmlLayoutTest {
                 .contains("본 메일은 발신 전용입니다. 회신하신 내용은 확인되지 않습니다.</p>")
                 .doesNotContain("Pickle 운영팀")
                 .doesNotContain("운영: 부산대학교 정보컴퓨터공학부 PNUops");
+    }
+
+    /** The hidden preview text, without its zero-width padding. */
+    private static String preheaderOf(String html) {
+        int open = html.indexOf("display:none;max-height:0;overflow:hidden;");
+        int start = html.indexOf('>', open) + 1;
+        return html.substring(start, html.indexOf("</div>", start)).replace("&#8203;", "");
     }
 
     private static int countOccurrences(String haystack, String needle) {
