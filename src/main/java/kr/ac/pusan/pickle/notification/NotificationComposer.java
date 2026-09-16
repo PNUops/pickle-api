@@ -9,6 +9,7 @@ import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import kr.ac.pusan.pickle.access.ResourceType;
+import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -55,23 +56,12 @@ public class NotificationComposer {
             case GPU_REVIEW -> new Composed(event.id(), "GPU 관리자 확인", str(args, "message"),
                     "/admin/gpus", event.defaultImportance(), Map.of());
             case REQUEST_SUBMITTED -> requestSubmitted(event, args);
-            case REQUEST_APPROVED -> "GPU".equals(str(args, "type"))
-                    ? new Composed(event.id(), "GPU 신청 승인", "GPU 신청이 승인되었습니다. 현재 대기 순서는 " + str(args, "queuePosition") + "번째입니다. GPU가 할당되면 메일과 콘솔 알림으로 안내합니다.",
-                            "/console/requests/" + args.get("requestId"), event.defaultImportance(), payload(args, "requestId", "resourceName"))
-                    : new Composed(event.id(), resourceLabel(args) + " 신청 승인",
-                    """
-                    %s 신청이 승인되었습니다. %s '%s' 생성이 시작됩니다.
-                    생성이 완료되면 다시 알려드립니다.%s""".formatted(resourceLabel(args),
-                            resourceLabel(args), str(args, "resourceName"),
-                            args.get("comment") != null
-                                    ? "\n\n- 검토 의견: " + str(args, "comment") : ""),
-                    "/console/requests/" + args.get("requestId"), event.defaultImportance(),
-                    payload(args, "requestId", "resourceName"));
+            case REQUEST_APPROVED -> requestApproved(event, args);
             case REQUEST_REJECTED -> new Composed(event.id(), resourceLabel(args) + " 신청 반려",
                     """
                     %s 신청이 반려되었습니다.
 
-                    - 반려 사유: %s""".formatted(resourceLabel(args), str(args, "comment")),
+                    - 반려 사유: %s""".formatted(resourceLabel(args), oneLine(str(args, "comment"))),
                     "/console/requests/" + args.get("requestId"), event.defaultImportance(),
                     payload(args, "requestId"));
             case VM_CREATE_DONE -> new Composed(event.id(),
@@ -102,15 +92,15 @@ public class NotificationComposer {
                     - 상세: %s
 
                     관리자가 상태를 확인한 뒤 조치합니다. 문의 사항은 관리자에게 연락해 주세요.""".formatted(
-                            str(args, "hostname"), str(args, "reason")),
+                            str(args, "hostname"), oneLine(str(args, "reason"))),
                     Boolean.TRUE.equals(args.get("admin"))
                             ? "/admin/vms" : "/console/vms/" + args.get("vmId"),
                     event.defaultImportance(), payload(args, "vmId", "hostname"));
             case VM_DELETE_ACCEPTED -> new Composed(event.id(),
                     "VM 삭제 접수 안내 — " + str(args, "vmName"),
                     """
-                    VM '%s'의 삭제 요청이 접수되었습니다. VM은 곧 종료되며,
-                    %s (KST) 이후 완전히 파기될 예정입니다.
+                    VM '%s'의 삭제 요청이 접수되었습니다.
+                    VM은 곧 종료되며, %s (KST) 이후 완전히 파기될 예정입니다.
 
                     - %s
                     - %s""".formatted(str(args, "vmName"), KST.format(instant(args, "scheduledFor")),
@@ -126,7 +116,7 @@ public class NotificationComposer {
                     - 파기 예정 시각: %s (KST)
 
                     - %s
-                    - %s""".formatted(str(args, "vmName"), str(args, "reason"),
+                    - %s""".formatted(str(args, "vmName"), oneLine(str(args, "reason")),
                             KST.format(instant(args, "scheduledFor")),
                             CANCEL_POLICY_NOTICE, BACKUP_NOTICE),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
@@ -135,8 +125,7 @@ public class NotificationComposer {
                     "VM 삭제 취소 안내 — " + str(args, "vmName"),
                     """
                     VM '%s'에 접수되어 있던 삭제가 관리자에 의해 취소되었습니다.
-                    VM과 데이터는 그대로 유지됩니다. (본인 삭제로 종료되었던 VM은
-                    STOPPED 상태로 남아 있으며, 콘솔에서 직접 시작할 수 있습니다.)""".formatted(
+                    VM과 데이터는 그대로 유지됩니다. (본인 삭제로 종료되었던 VM은 STOPPED 상태로 남아 있으며, 콘솔에서 직접 시작할 수 있습니다.)""".formatted(
                             str(args, "vmName")),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName"));
@@ -146,8 +135,8 @@ public class NotificationComposer {
             case VM_DELETE_FORCE -> new Composed(event.id(),
                     "VM 관리자 삭제 통지 — " + str(args, "vmName"),
                     """
-                    관리자가 VM '%s'를 삭제했습니다. 이 삭제는 취소할 수 없으며,
-                    할당되었던 자원은 회수됩니다.
+                    관리자가 VM '%s'를 삭제했습니다.
+                    이 삭제는 취소할 수 없으며, 할당되었던 자원은 회수됩니다.
 
                     - %s
 
@@ -172,7 +161,7 @@ public class NotificationComposer {
                     - 상세: %s
 
                     설정을 확인한 뒤 콘솔에서 검증을 다시 실행해 주세요.""".formatted(
-                            str(args, "fqdn"), str(args, "reason")),
+                            str(args, "fqdn"), oneLine(str(args, "reason"))),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "fqdn"));
             case DOMAIN_RESERVE_EXPIRING -> new Composed(event.id(),
@@ -225,7 +214,7 @@ public class NotificationComposer {
                     - 상세: %s
 
                     프록시 에이전트와 DNS 상태를 확인해 주세요.""".formatted(
-                            str(args, "fqdn"), str(args, "reason")),
+                            str(args, "fqdn"), oneLine(str(args, "reason"))),
                     "/admin/domains", event.defaultImportance(), payload(args, "fqdn"));
             case VM_EXPIRY_NOTICE -> expiryNotice(args);
             case VM_EXPIRY_STOPPED -> new Composed(event.id(),
@@ -243,36 +232,29 @@ public class NotificationComposer {
             // event without a template must fail the build, not runtime).
             case ACCOUNT_PASSWORD_CHANGED -> new Composed(event.id(), "계정 비밀번호 변경 안내",
                     """
-                    계정 비밀번호가 방금 변경되었습니다. 기존의 다른 로그인 세션은
-                    모두 종료되었습니다.
+                    계정 비밀번호가 방금 변경되었습니다. 기존의 다른 로그인 세션은 모두 종료되었습니다.
 
-                    본인이 변경한 것이 아니라면 즉시 비밀번호를 재설정하고
-                    관리자에게 문의해 주세요.""",
+                    본인이 변경한 것이 아니라면 즉시 비밀번호를 재설정하고 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_IDENTITY_LINKED -> new Composed(event.id(), "구글 계정 연동 안내",
                     """
-                    이 계정에 구글 계정이 연동되었습니다. 앞으로 구글 계정으로도
-                    로그인할 수 있습니다.
+                    이 계정에 구글 계정이 연동되었습니다. 앞으로 구글 계정으로도 로그인할 수 있습니다.
 
-                    본인이 연동한 것이 아니라면 계정 설정에서 연동을 해제하고
-                    관리자에게 문의해 주세요."""
+                    본인이 연동한 것이 아니라면 계정 설정에서 연동을 해제하고 관리자에게 문의해 주세요."""
                     + (Boolean.TRUE.equals(args.get("passwordCleared")) ? """
 
 
-                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼
-                    있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다.
-                    비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해
-                    주세요.""" : ""),
+                    이 계정은 이메일 인증을 마치지 않은 상태였습니다. 그때 설정돼 있던 비밀번호는 소유가 확인되지 않은 값이라 무효화했습니다.
+                    비밀번호로도 로그인하려면 비밀번호 재설정으로 새로 설정해 주세요.""" : ""),
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_DISABLED -> new Composed(event.id(), "계정 비활성화 안내",
                     """
-                    관리자에 의해 계정이 비활성화되어 로그인과 SSH 접속이
-                    차단되었습니다.
+                    관리자에 의해 계정이 비활성화되어 로그인과 SSH 접속이 차단되었습니다.
 
                     - 사유: %s
 
                     이의가 있거나 문의가 필요하면 관리자에게 연락해 주세요.""".formatted(
-                            str(args, "reason")),
+                            oneLine(str(args, "reason"))),
                     null, event.defaultImportance(), payload(args, "userId", "userEmail"));
             case ACCOUNT_ENABLED -> new Composed(event.id(), "계정 활성화 안내",
                     """
@@ -281,43 +263,34 @@ public class NotificationComposer {
                     null, event.defaultImportance(), payload(args, "userId", "userEmail"));
             case ACCOUNT_WITHDRAWN -> new Composed(event.id(), "회원 탈퇴 완료 안내",
                     """
-                    회원 탈퇴가 완료되었습니다. 계정 정보는 관련 법령과
-                    개인정보처리방침에 따라 보존되며, 같은 이메일로는 다시
-                    가입할 수 없습니다.
+                    회원 탈퇴가 완료되었습니다. 계정 정보는 관련 법령과 개인정보처리방침에 따라 보존되며, 같은 이메일로는 다시 가입할 수 없습니다.
 
                     그동안 이용해 주셔서 감사합니다.""",
                     null, event.defaultImportance(), payload(args, "userId", "userEmail"));
             case ACCOUNT_MFA_ENROLLED -> new Composed(event.id(), "2단계 인증 등록 안내",
                     """
-                    계정에 2단계 인증(TOTP)이 등록되었습니다. 앞으로 로그인할 때
-                    인증 앱의 코드가 필요합니다.
+                    계정에 2단계 인증(TOTP)이 등록되었습니다. 앞으로 로그인할 때 인증 앱의 코드가 필요합니다.
 
-                    본인이 등록한 것이 아니라면 즉시 비밀번호를 변경하고
-                    관리자에게 문의해 주세요.""",
+                    본인이 등록한 것이 아니라면 즉시 비밀번호를 변경하고 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_MFA_DISABLED -> new Composed(event.id(), "2단계 인증 해제 안내",
                     """
-                    계정의 2단계 인증이 해제되었습니다. 이제 비밀번호만으로
-                    로그인할 수 있습니다.
+                    계정의 2단계 인증이 해제되었습니다. 이제 비밀번호만으로 로그인할 수 있습니다.
 
-                    본인이 해제한 것이 아니라면 즉시 비밀번호를 변경하고
-                    관리자에게 문의해 주세요.""",
+                    본인이 해제한 것이 아니라면 즉시 비밀번호를 변경하고 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
             // 직책·학번·소속 are write-once for the holder, so an administrator
             // is the only one who can have changed them and the holder cannot
             // change them back. Told rather than left to notice.
             case ACCOUNT_PROFILE_UPDATED -> new Composed(event.id(), "프로필 정보 변경 안내 (관리자 조치)",
                     """
-                    관리자가 계정의 직책·학번·소속 정보를 변경했습니다. 계정 화면에서
-                    바뀐 내용을 확인해 주세요.
+                    관리자가 계정의 직책·학번·소속 정보를 변경했습니다. 계정 화면에서 바뀐 내용을 확인해 주세요.
 
                     요청한 적이 없다면 즉시 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
             case ACCOUNT_MFA_RESET -> new Composed(event.id(), "2단계 인증 초기화 안내 (관리자 조치)",
                     """
-                    관리자가 계정의 2단계 인증을 초기화했습니다. 다음 로그인은
-                    비밀번호만으로 가능하며, 보안을 위해 콘솔에서 2단계 인증을
-                    다시 등록해 주세요.
+                    관리자가 계정의 2단계 인증을 초기화했습니다. 다음 로그인은 비밀번호만으로 가능하며, 보안을 위해 콘솔에서 2단계 인증을 다시 등록해 주세요.
 
                     요청한 적이 없다면 즉시 관리자에게 문의해 주세요.""",
                     "/console/account", event.defaultImportance(), null);
@@ -330,8 +303,7 @@ public class NotificationComposer {
                     릴레이 '%s'의 에이전트가 예상 주기 안에 동기화하지 않았습니다.
                     마지막 접촉: %s
 
-                    릴레이 인스턴스와 터널 상태를 확인해 주세요. 마지막으로 적용된
-                    포워딩 규칙은 릴레이에 그대로 남아 있습니다.""".formatted(
+                    릴레이 인스턴스와 터널 상태를 확인해 주세요. 마지막으로 적용된 포워딩 규칙은 릴레이에 그대로 남아 있습니다.""".formatted(
                             str(args, "relayName"), kstOrUnknown(args, "lastContactAt")),
                     "/admin/network", event.defaultImportance(),
                     payload(args, "relayId", "relayName"));
@@ -353,8 +325,8 @@ public class NotificationComposer {
             case RELAY_BAND_USAGE_HIGH -> new Composed(event.id(),
                     "릴레이 포트 대역 사용률 경고 — " + str(args, "relayName"),
                     """
-                    릴레이 '%s'의 공개 포트 대역 사용률이 %s%%에 도달했습니다
-                    (임계값 %s%%). 대역 확장 또는 정리가 필요할 수 있습니다.""".formatted(
+                    릴레이 '%s'의 공개 포트 대역 사용률이 %s%%에 도달했습니다 (임계값 %s%%).
+                    대역 확장 또는 정리가 필요할 수 있습니다.""".formatted(
                             str(args, "relayName"), str(args, "usagePercent"),
                             str(args, "thresholdPercent")),
                     "/admin/network", event.defaultImportance(),
@@ -367,7 +339,7 @@ public class NotificationComposer {
                     - 사유: %s
 
                     문의 사항은 관리자에게 연락해 주세요.""".formatted(str(args, "vmName"),
-                            str(args, "proto"), str(args, "publicPort"), str(args, "reason")),
+                            str(args, "proto"), str(args, "publicPort"), oneLine(str(args, "reason"))),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "vmId", "vmName", "proto", "publicPort"));
             case PORT_MAPPING_DELETED -> new Composed(event.id(),
@@ -385,7 +357,7 @@ public class NotificationComposer {
                     """
                     VM '%s'에 대한 교내 IP 신청이 접수되었습니다. 검토해 주세요.
 
-                    - 신청 목적: %s""".formatted(str(args, "vmName"), str(args, "purpose")),
+                    - 신청 목적: %s""".formatted(str(args, "vmName"), oneLine(str(args, "purpose"))),
                     "/admin/network", event.defaultImportance(),
                     payload(args, "requestId", "vmId", "vmName"));
             case CAMPUS_IP_STATUS_CHANGED -> new Composed(event.id(),
@@ -395,19 +367,86 @@ public class NotificationComposer {
                             str(args, "vmName"), str(args, "statusLabel"),
                             args.get("grantedAddress") != null
                                     ? "\n\n- 할당 주소: " + str(args, "grantedAddress") : "",
+                            // The blank line opens the list block, so it
+                            // belongs to whichever item comes first: without it
+                            // a note-only notice runs its list line straight on
+                            // from the sentence.
                             args.get("adminNote") != null
-                                    ? "\n- 관리자 메모: " + str(args, "adminNote") : ""),
+                                    ? (args.get("grantedAddress") != null ? "\n" : "\n\n")
+                                            + "- 관리자 메모: " + oneLine(str(args, "adminNote"))
+                                    : ""),
                     "/console/vms/" + args.get("vmId"), event.defaultImportance(),
                     payload(args, "requestId", "vmId", "vmName"));
             case WORKSPACE_DELETED -> new Composed(event.id(),
                     "워크스페이스 삭제 안내 — " + str(args, "workspaceName"),
                     """
-                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가
-                    정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수
-                    있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이
-                    있었다면 함께 취소되었습니다.""".formatted(str(args, "workspaceName")),
+                    소유자가 워크스페이스 '%s'을(를) 삭제하여 워크스페이스와 구성원 정보가 정리되었습니다. 워크스페이스에 연결된 VM이 없는 상태에서만 삭제할 수 있으므로 자원에는 영향이 없습니다. 진행 중이던 VM 신청이 있었다면 함께 취소되었습니다.""".formatted(str(args, "workspaceName")),
                     null, event.defaultImportance(), payload(args, "workspaceId", "workspaceName"));
         };
+    }
+
+    /**
+     * The approval notice. What it may say depends on what happens next, and
+     * that differs per resource type: a VM is provisioned by the platform and
+     * gets its own completion notice later, while an LLM key and a domain are
+     * already created by the time this is composed and the next move is the
+     * requester's. The sentence must not promise a follow-up that no code
+     * publishes — an unconditional "생성이 완료되면 다시 알려드립니다" was sent
+     * for LLM keys for months, and nothing ever arrived.
+     *
+     * <p>Switched over {@link ResourceType} rather than compared against a
+     * string, so a fifth kind fails the build here instead of silently
+     * inheriting the VM sentence, which is how the LLM key came to have it.</p>
+     */
+    private Composed requestApproved(NotificationEvent event, Map<String, Object> args) {
+        ResourceType type = resourceType(args);
+        String label = resourceLabel(args);
+        String name = str(args, "resourceName");
+        // An expression switch with no default: a fifth resource type fails to
+        // compile here. A statement switch would not, and neither did the
+        // string comparison this replaces.
+        String body = type == null
+                ? "%s '%s' 신청이 승인되었습니다.\n콘솔에서 확인해 주세요.".formatted(label, name)
+                : switch (type) {
+                    case VM -> """
+                            VM '%s' 신청이 승인되었습니다.
+                            생성이 시작되며, 완료되면 다시 알려드립니다.""".formatted(name);
+                    // The key row exists already; it lands PENDING and only its
+                    // owner can mint the secret. No warning about the one-time
+                    // reveal here — the issue screen carries that at the moment
+                    // it applies, and this mail arrives days earlier.
+                    case LLM_API_KEY -> """
+                            LLM API 키 '%s' 신청이 승인되었습니다.
+                            콘솔에서 키를 발급하면 사용할 수 있습니다.""".formatted(name);
+                    // Issued inside the approval transaction with no
+                    // after-commit work, the same shape as the key: nothing is
+                    // starting, and the next move is the requester's.
+                    case DOMAIN -> """
+                            도메인 '%s' 신청이 승인되었습니다.
+                            콘솔에서 레코드를 추가하면 사용할 수 있습니다.""".formatted(name);
+                    // The only kind that really is queued: the card arrives when
+                    // one frees up, and the scheduler publishes its own notice.
+                    case GPU -> """
+                            GPU 신청이 승인되었습니다. 현재 대기 순서는 %s번째입니다.
+                            GPU가 할당되면 메일과 콘솔 알림으로 안내합니다.""".formatted(
+                                    str(args, "queuePosition"));
+                };
+        // The approval mail is the only one an LLM key ever produces, so it
+        // points at the screen holding the action rather than at the request.
+        String link = type == ResourceType.LLM_API_KEY && args.get("llmKeyId") != null
+                ? "/console/llm-keys/" + args.get("llmKeyId")
+                : "/console/requests/" + args.get("requestId");
+        return new Composed(event.id(), label + " 신청 승인", body + reviewComment(args),
+                link, event.defaultImportance(),
+                payload(args, "requestId", "resourceName"));
+    }
+
+    /** The reviewer's comment as its own list item, or nothing. Shared by every
+     *  kind — the GPU branch used to drop it, so a GPU reviewer's 검토 의견
+     *  never reached the requester. */
+    private static String reviewComment(Map<String, Object> args) {
+        return args.get("comment") != null
+                ? "\n\n- 검토 의견: " + oneLine(str(args, "comment")) : "";
     }
 
     private Composed requestSubmitted(NotificationEvent event, Map<String, Object> args) {
@@ -418,11 +457,11 @@ public class NotificationComposer {
                 ? """
                   워크스페이스 '%s'에서 새 %s 신청이 접수되었습니다. 검토해 주세요.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, str(args, "purpose"))
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, oneLine(str(args, "purpose")))
                 : """
                   워크스페이스 '%s'의 %s 신청이 접수되었습니다. 관리자 검토 후 결과를 알려드립니다.
 
-                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, str(args, "purpose"));
+                  - 신청 목적: %s""".formatted(str(args, "workspaceName"), label, oneLine(str(args, "purpose")));
         String link = (admin ? "/admin/requests/" : "/console/requests/") + args.get("requestId");
         return new Composed(event.id(), title, body, link, event.defaultImportance(),
                 payload(args, "requestId", "workspaceName"));
@@ -445,10 +484,10 @@ public class NotificationComposer {
                 : "VM '%s'의 사용 종료일(%s)이 %d일 남았습니다.".formatted(
                         vmName, args.get("endDate"), daysLeft);
         return new Composed("vm.expiry.d" + stage, title,
-                firstLine + """
-
-                종료일이 지나면 VM이 자동 정지될 수 있습니다. 계속 사용하려면
-                관리자에게 기간 연장을 요청해 주세요.""",
+                // Two newlines, not one: the text block's leading blank line
+                // only looks like a paragraph break in source.
+                firstLine + "\n\n"
+                        + "종료일이 지나면 VM이 자동 정지될 수 있습니다. 계속 사용하려면 관리자에게 기간 연장을 요청해 주세요.",
                 "/console/vms/" + args.get("vmId"),
                 daysLeft <= 1 ? NotificationImportance.HIGH : NotificationImportance.NORMAL,
                 payload(args, "vmId", "vmName", "endDate"));
@@ -462,16 +501,33 @@ public class NotificationComposer {
      * asserting it is a VM.
      */
     private static String resourceLabel(Map<String, Object> args) {
+        ResourceType type = resourceType(args);
+        return type != null ? type.label() : "리소스";
+    }
+
+    /** The payload's resource type, or {@code null} when it is absent or names
+     *  a type this build does not know. */
+    private static @Nullable ResourceType resourceType(Map<String, Object> args) {
         Object type = args.get("type");
         if (type == null) {
-            return "리소스";
+            return null;
         }
         for (ResourceType candidate : ResourceType.values()) {
             if (candidate.name().equals(String.valueOf(type))) {
-                return candidate.label();
+                return candidate;
             }
         }
-        return "리소스";
+        return null;
+    }
+
+    /**
+     * Free text on one line. A value carrying its own newline would otherwise
+     * terminate the {@code "- "} list run it sits in, dropping the rest into a
+     * separate paragraph — visible in the HTML part only, and much more so now
+     * that a single newline renders as a line break.
+     */
+    private static String oneLine(String text) {
+        return text.replace("\r\n", " ").replace('\r', ' ').replace('\n', ' ').strip();
     }
 
     private static String str(Map<String, Object> args, String key) {
