@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.publishing.dto.DomainRequestSpecResponse;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import org.jspecify.annotations.Nullable;
 import kr.ac.pusan.pickle.request.period.RequestPeriodPreset;
@@ -56,6 +57,7 @@ public class RequestAssembler {
     private final NodeRepository nodeRepository;
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final ObjectMapper objectMapper;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public RequestAssembler(kr.ac.pusan.pickle.gpu.GpuStore gpuStore, RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository,
@@ -64,9 +66,11 @@ public class RequestAssembler {
             OrgRepository orgRepository, UserRepository userRepository,
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, RequestPeriodPresetRepository periodPresetRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.gpuStore = gpuStore;
         this.objectMapper = objectMapper;
+        this.jdbcTemplate = jdbcTemplate;
         this.reviewRepository = reviewRepository;
         this.vmDetailRepository = vmDetailRepository;
         this.llmKeyDetailRepository = llmKeyDetailRepository;
@@ -117,6 +121,11 @@ public class RequestAssembler {
         Map<Long, LlmKeyRequestDetail> llmKeyDetails = llmKeyDetailRepository
                 .findByRequestIdIn(idsOfType(requests, ResourceType.LLM_API_KEY)).stream()
                 .collect(Collectors.toMap(LlmKeyRequestDetail::getRequestId, Function.identity()));
+        // Batched like the two above rather than fetched per row, which is what
+        // the GPU member does and the reason a long list of them costs a query
+        // each.
+        Map<Long, DomainRequestSpecResponse> domainSpecs =
+                domainSpecs(idsOfType(requests, ResourceType.DOMAIN));
 
         // The per-type spec reports each catalog reference by public id AND by
         // name, so the rows behind them are batched here beside the display-name
@@ -177,9 +186,28 @@ public class RequestAssembler {
                                     llmKeyDetail.getGrantedPassthroughEndpoints(),
                                     "request " + request.getPublicId())) : null,
                     request.getResourceType() == ResourceType.GPU ? gpuStore.requestSpec(request.getId()) : null,
+                    domainSpecs.get(request.getId()),
                     request.getCreatedAt(), request.getUpdatedAt()));
         }
         return details;
+    }
+
+    private Map<Long, DomainRequestSpecResponse> domainSpecs(List<Long> requestIds) {
+        if (requestIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, DomainRequestSpecResponse> byRequest = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select request_id, label, root_domain, granted_fqdn
+                  from domain_request_details where request_id in (%s)
+                """.formatted(requestIds.stream().map(id -> "?")
+                        .collect(Collectors.joining(","))),
+                rs -> {
+                    byRequest.put(rs.getLong("request_id"), new DomainRequestSpecResponse(
+                            rs.getString("label"), rs.getString("root_domain"),
+                            rs.getString("granted_fqdn")));
+                }, requestIds.toArray());
+        return byRequest;
     }
 
     private static List<Long> idsOfType(List<Request> requests, ResourceType type) {

@@ -10,6 +10,7 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.gpu.dto.CreateGpuRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
+import kr.ac.pusan.pickle.publishing.dto.CreateDomainRequestSpec;
 import kr.ac.pusan.pickle.request.vm.dto.CreateVmRequestSpec;
 import org.jspecify.annotations.Nullable;
 
@@ -73,5 +74,17 @@ public record CreateRequestRequest(
 
         /** Required when {@code type} is LLM_API_KEY, ignored otherwise. */
         @Valid @Nullable CreateLlmKeyRequestSpec llmKey,
-        @Valid @Nullable CreateGpuRequestSpec gpu) {
+        @Valid @Nullable CreateGpuRequestSpec gpu,
+
+        /**
+         * Required when {@code type} is DOMAIN, ignored otherwise.
+         *
+         * <p>This kind also overrides two of the common fields above. The
+         * organisation comes from the chosen root rather than from
+         * {@code orgId}, because a name's institution is a fact about where it
+         * lives; and the period is ignored because a name's life is governed
+         * by its own renewal deadline. The screen does not show either control
+         * for this kind, and the service overwrites whatever arrives.</p>
+         */
+        @Valid @Nullable CreateDomainRequestSpec domain) {
 }

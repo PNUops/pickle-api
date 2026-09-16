@@ -20,6 +20,7 @@ public class GpuApprovalContextContributor implements ApprovalContextContributor
                    and not exists(select 1 from gpu_allocations a where a.gpu_id=g.id and a.status in ('ALLOCATED','RELEASING'))
                 """, Long.class);
         long queued = store.all().stream().filter(a -> a.status() == GpuAllocationStatus.QUEUED).count();
-        return new Contribution(null, null, new GpuContext(available, queued, spec.leaseHours(), spec.vmName()));
+        return new Contribution(null, null,
+                new GpuContext(available, queued, spec.leaseHours(), spec.vmName()), null);
     }
 }

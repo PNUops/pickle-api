@@ -31,6 +31,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import org.jspecify.annotations.Nullable;
@@ -59,6 +60,7 @@ public class RequestService {
 
     private final RequestRepository requestRepository;
     private final RequestAssembler assembler;
+    private final RequestApproval requestApproval;
     private final Map<ResourceType, RequestTypeHandler> handlers;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -69,13 +71,14 @@ public class RequestService {
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final Clock clock;
 
-    public RequestService(RequestRepository requestRepository, RequestAssembler assembler,
+    public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
             RequestPeriodPresetRepository periodPresetRepository, Clock clock) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
+        this.requestApproval = requestApproval;
         this.handlers = handlers.stream()
                 .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
         this.workspaceRepository = workspaceRepository;
@@ -118,17 +121,33 @@ public class RequestService {
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
-        ResolvedPeriod period = resolvePeriod(form, errors);
+        // A kind whose resource carries its own deadline is not asked for a
+        // period and is not refused for leaving it out. A period that arrived
+        // anyway is dropped rather than stored: keeping it would show the
+        // applicant a date on their request that nothing in the system honours,
+        // beside the one that actually ends the resource.
+        ResolvedPeriod period = handler.ownsItsOwnLifetime()
+                ? new ResolvedPeriod(null, null)
+                : resolvePeriod(form, errors);
         handler.validateCreate(form, errors);
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
 
-        Request saved = requestRepository.save(new Request(form.type(), workspace.getId(), org.getId(),
+        Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
+                handler.owningOrgId(form).orElse(org.getId()),
                 actor.id(), form.purpose().strip(),
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
+
+        // A kind whose policy issues without a reviewer is approved here, in
+        // this transaction, through the same code an approving reviewer runs.
+        // Deciding it later — a sweep, a job — would leave a window in which
+        // the applicant is looking at a request nobody will ever act on.
+        if (handler.isAutoApproved(form)) {
+            return autoApprove(actor, saved, handler, workspace, org.getPublicId(), ip);
+        }
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", form.type().name());
@@ -147,6 +166,58 @@ public class RequestService {
                 NotificationEvent.REQUEST_SUBMITTED,
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);
+        return assembler.toDetail(saved);
+    }
+
+    /**
+     * Approves a submission the policy says needs no reviewer.
+     *
+     * <p>The record says a decision was made and that no person made it. The
+     * alternative — leaving {@code request_reviews} empty — would show the
+     * applicant a request that is approved with nothing saying when or by
+     * what, and would take the approved-request guard out of the loop for a
+     * whole kind.</p>
+     *
+     * <p>One notice, not two. The submitted-and-then-approved pair is a story
+     * about waiting, and nobody waited; the organisation's administrators are
+     * not told at all, because there is nothing for them to do about a request
+     * that is already finished.</p>
+     */
+    private RequestDetailResponse autoApprove(AuthenticatedUser actor, Request saved,
+            RequestTypeHandler handler, Workspace workspace, UUID orgPublicId, String ip) {
+        RequestTypeHandler.Materialized created = requestApproval.apply(saved, handler,
+                new ApproveRequestRequest(null, null, null, null, null, null), null, actor);
+
+        // Both rows, not one. The submission happened — somebody asked for this
+        // and the audit is where "was it ever asked for" is answered — and the
+        // approval happened too. Writing only the approval leaves a request
+        // that, to anyone filtering by request.create, never existed.
+        Map<String, Object> submitArgs = new LinkedHashMap<>();
+        submitArgs.put("type", saved.getResourceType().name());
+        submitArgs.put("workspaceId", workspace.getPublicId());
+        submitArgs.put("orgId", orgPublicId);
+        submitArgs.putAll(handler.submitAuditArgs(saved));
+        auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
+                "request", saved.getPublicId(), submitArgs, ip);
+
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("type", saved.getResourceType().name());
+        auditArgs.put("workspaceId", workspace.getPublicId());
+        // The actor on this row is the applicant, because they are who acted.
+        // Without this flag an audit reader sees somebody approving their own
+        // request; with it the row says a policy did.
+        auditArgs.put("automatic", true);
+        auditArgs.putAll(created.auditArgs());
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.REQUEST_APPROVE, "request", saved.getPublicId(), auditArgs, ip);
+
+        Map<String, Object> notifyArgs = new LinkedHashMap<>();
+        notifyArgs.put("requestId", saved.getPublicId());
+        notifyArgs.put("type", saved.getResourceType().name());
+        notifyArgs.put("resourceName", created.resourceName());
+        notifyArgs.put("automatic", true);
+        notifyArgs.putAll(created.notificationArgs());
+        notificationService.publish(actor.id(), NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
         return assembler.toDetail(saved);
     }
 

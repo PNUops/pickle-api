@@ -5,10 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.common.error.ApiException;
-import kr.ac.pusan.pickle.publishing.dto.CreateDnsDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
 import kr.ac.pusan.pickle.publishing.dto.ReplaceDnsRecordSetsRequest;
 import kr.ac.pusan.pickle.publishing.dto.ReplaceDnsRecordSetsRequest.DesiredRecordSet;
@@ -52,6 +52,8 @@ class DnsDomainSurfaceTest {
     @Autowired
     private DomainRepository domainRepository;
     @Autowired
+    private kr.ac.pusan.pickle.access.ResourceAccessGrantRepository grantRepository;
+    @Autowired
     private UserRepository userRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -89,7 +91,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void issuingTakesNoApprovalAndLeavesTheIssuerItsOnlyOwner() {
-        DnsDomainView created = service.create(owner, request("mysite"), "127.0.0.1");
+        DnsDomainView created = issue("mysite");
 
         assertThat(created.fqdn()).isEqualTo("mysite.pusan.dev");
         assertThat(created.status()).isEqualTo(DomainStatus.ACTIVE);
@@ -106,7 +108,7 @@ class DnsDomainSurfaceTest {
     void theOrganisationComesFromTheRootRatherThanFromTheRequester() {
         // The person issuing a name for their own site is never asked which
         // organisation it belongs to; the root they picked already says.
-        DnsDomainView created = service.create(owner, request("fromroot"), "127.0.0.1");
+        DnsDomainView created = issue("fromroot");
 
         assertThat(jdbcTemplate.queryForObject("""
                 select org_id from domains where fqdn = ?
@@ -120,15 +122,15 @@ class DnsDomainSurfaceTest {
         // The setting still allows the root. Without a row there is no
         // organisation to give the name, and a name with none is invisible to
         // every organisation administrator.
-        assertThatThrownBy(() -> service.create(owner, request("orphan"), "127.0.0.1"))
+        assertThatThrownBy(() -> issue("orphan"))
                 .isInstanceOf(ApiException.class);
     }
 
     @Test
     void aNameHeldByAnotherRowIsRefused() {
-        service.create(owner, request("taken"), "127.0.0.1");
+        issue("taken");
 
-        assertThatThrownBy(() -> service.create(owner, request("taken"), "127.0.0.1"))
+        assertThatThrownBy(() -> issue("taken"))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("이미 사용 중");
     }
@@ -136,10 +138,10 @@ class DnsDomainSurfaceTest {
     @Test
     void theWorkspaceCapCountsNamesItIsStillHolding() {
         for (int i = 0; i < DnsDomainService.DEFAULT_DOMAINS_PER_WORKSPACE; i++) {
-            service.create(owner, request("capped" + i), "127.0.0.1");
+            issue("capped" + i);
         }
 
-        assertThatThrownBy(() -> service.create(owner, request("onemore"), "127.0.0.1"))
+        assertThatThrownBy(() -> issue("onemore"))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("더 만들 수 없습니다");
     }
@@ -166,7 +168,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void theWorkspaceDeleteGateSeesThisKindWithoutBeingTold() {
-        service.create(owner, request("blocks"), "127.0.0.1");
+        issue("blocks");
 
         // The gate walks every adapter rather than naming kinds, so this one
         // blocks deletion by existing.
@@ -177,7 +179,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aReleasedNameStillCountsAgainstTheWorkspace() {
-        DnsDomainView created = service.create(owner, request("released"), "127.0.0.1");
+        DnsDomainView created = issue("released");
         service.delete(owner, created.id(), "127.0.0.1");
 
         // Released is not gone: the name is out of the shared space for its
@@ -188,7 +190,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void recordsAreEditedThroughTheNameAndRefusedWhenTheValueIsOurs() {
-        DnsDomainView created = service.create(owner, request("records"), "127.0.0.1");
+        DnsDomainView created = issue("records");
 
         service.replaceRecords(owner, created.id(), new ReplaceDnsRecordSetsRequest(List.of(
                 new DesiredRecordSet("", DnsRecordType.A, List.of("93.184.216.34"), 300))),
@@ -205,7 +207,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void renewingMovesTheDeadlineAFullPeriodFromNow() {
-        DnsDomainView created = service.create(owner, request("renews"), "127.0.0.1");
+        DnsDomainView created = issue("renews");
         jdbcTemplate.update("update domains set renew_due_at = now() + interval '2 days'"
                 + " where fqdn = ?", created.fqdn());
 
@@ -216,13 +218,13 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aWorkspaceTakesItsOwnReservedNameBack() {
-        DnsDomainView created = service.create(owner, request("comeback"), "127.0.0.1");
+        DnsDomainView created = issue("comeback");
         service.replaceRecords(owner, created.id(), new ReplaceDnsRecordSetsRequest(List.of(
                 new DesiredRecordSet("", DnsRecordType.A, List.of("93.184.216.34"), 300))),
                 "127.0.0.1");
         service.delete(owner, created.id(), "127.0.0.1");
 
-        DnsDomainView revived = service.create(owner, request("comeback"), "127.0.0.1");
+        DnsDomainView revived = service.revive(owner, created.id(), "127.0.0.1");
 
         // The whole point of the grace: without this it keeps the name from
         // everybody including the person it is being kept for.
@@ -237,7 +239,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aReservedNameIsNotRevivableByAnotherWorkspace() {
-        DnsDomainView created = service.create(owner, request("notyours"), "127.0.0.1");
+        DnsDomainView created = issue("notyours");
         service.delete(owner, created.id(), "127.0.0.1");
         long otherWorkspaceId = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
@@ -250,15 +252,14 @@ class DnsDomainSurfaceTest {
 
         // The same conflict an unheld collision gets. Saying it is reserved by
         // somebody else would tell a stranger who holds a name they cannot see.
-        assertThatThrownBy(() -> service.create(owner,
-                new CreateDnsDomainRequest("notyours", "pusan.dev", otherPublicId), "127.0.0.1"))
+        assertThatThrownBy(() -> service.issue(otherWorkspaceId, "notyours", "pusan.dev"))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("이미 사용 중");
     }
 
     @Test
     void releasingTwiceDoesNotRestartTheGrace() {
-        DnsDomainView created = service.create(owner, request("twice"), "127.0.0.1");
+        DnsDomainView created = issue("twice");
         service.delete(owner, created.id(), "127.0.0.1");
 
         // Allowed, this holds a name out of the shared space for ever: delete it
@@ -270,7 +271,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aReleasedNameTakesNoRecordEditsAndSaysSoAsAConflict() {
-        DnsDomainView created = service.create(owner, request("noedit"), "127.0.0.1");
+        DnsDomainView created = issue("noedit");
         service.delete(owner, created.id(), "127.0.0.1");
 
         // The records service guards the same thing as an invariant, which
@@ -289,7 +290,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aWorkspaceOwnerWithNoGrantMayStillReleaseTheName() {
-        DnsDomainView created = service.create(owner, request("standing"), "127.0.0.1");
+        DnsDomainView created = issue("standing");
         // The person who issued it is gone: their grant is withdrawn and nobody
         // holds one. The workspace owner must still be able to take the name
         // back without first granting themselves access to it.
@@ -307,7 +308,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void theRowCarriesTheRungItsReaderActsAt() {
-        DnsDomainView created = service.create(owner, request("rung"), "127.0.0.1");
+        DnsDomainView created = issue("rung");
         long domainId = jdbcTemplate.queryForObject(
                 "select id from domains where public_id = ?", Long.class, created.id());
 
@@ -335,7 +336,7 @@ class DnsDomainSurfaceTest {
 
     @Test
     void aListedRowReportsTheReadersOwnRungAndNobodyElses() {
-        DnsDomainView created = service.create(owner, request("someoneelse"), "127.0.0.1");
+        DnsDomainView created = issue("someoneelse");
         long domainId = jdbcTemplate.queryForObject(
                 "select id from domains where public_id = ?", Long.class, created.id());
 
@@ -378,7 +379,7 @@ class DnsDomainSurfaceTest {
      */
     @Test
     void anUnscopedNameListCarriesOnlyWhatAGrantOpens() {
-        DnsDomainView created = service.create(owner, request("unscoped"), "127.0.0.1");
+        DnsDomainView created = issue("unscoped");
         AuthenticatedUser stranger = member("unscoped-stranger");
 
         assertThat(rows(stranger, null)).noneMatch(row -> row.id().equals(created.id()));
@@ -387,7 +388,7 @@ class DnsDomainSurfaceTest {
                 .singleElement()
                 .satisfies(row -> assertThat(row.accessLimited()).isTrue());
 
-        // The issuer holds the OWNER grant seeding gave them, so it is in their
+        // The issuer holds the OWNER grant the fixture writes, so it is in their
         // own list without naming anything.
         assertThat(rows(owner, null)).anyMatch(row -> row.id().equals(created.id()));
     }
@@ -399,7 +400,16 @@ class DnsDomainSurfaceTest {
                 .getContent();
     }
 
-    /** The row for one name out of a reader's own listing. */
+    /**
+     * The row for one name out of the listing of the workspace that owns it.
+     *
+     * <p>Scoped rather than unscoped on purpose. What these tests pin — that a
+     * member with no grant still sees the row, closed — is a property of
+     * <em>asking about a workspace</em>. The unscoped listing answers a
+     * different question ("what do I have") and carries only what a grant
+     * opens, which the test above pins; asserting the closed row from there
+     * would assert the opposite of it.</p>
+     */
     private DnsDomainView listed(AuthenticatedUser actor, UUID domainId) {
         // Named workspace, because that is the listing these assertions are
         // about: an unscoped list carries only what a grant opens, so a reader
@@ -433,13 +443,24 @@ class DnsDomainSurfaceTest {
         // A name takes its organisation from the root, so issuing here would
         // attach it to one that is no longer taking anything on — the same
         // refusal a request form makes.
-        assertThatThrownBy(() -> service.create(owner, request("disabled"), "127.0.0.1"))
+        assertThatThrownBy(() -> issue("disabled"))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("발급할 수 없습니다");
     }
 
-    private CreateDnsDomainRequest request(String label) {
-        return new CreateDnsDomainRequest(label, "pusan.dev", workspacePublicId);
+    /**
+     * A name in the ground, owned by {@code owner}.
+     *
+     * <p>What an approved request does, in two lines: the service puts the row
+     * there and the approval flow writes the first grant. Issuance has no door
+     * of its own any more, so a test that needs an existing name builds one the
+     * way the only real path does.</p>
+     */
+    private DnsDomainView issue(String label) {
+        Domain domain = service.issue(workspaceId, label, "pusan.dev");
+        grantRepository.save(ResourceAccessGrant.forUser(ResourceType.DOMAIN, domain.getId(),
+                owner.id(), ResourceRole.OWNER));
+        return queryService.get(owner, domain.getPublicId());
     }
 
     private long servedVm() {

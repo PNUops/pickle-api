@@ -35,6 +35,51 @@ public interface RequestTypeHandler {
     /** What the submission audit should record beyond the common fields. */
     Map<String, Object> submitAuditArgs(Request request);
 
+    /**
+     * Whether a submission of this kind is approved without a reviewer.
+     *
+     * <p>Asked once, at submission, and the answer is the type's to give
+     * because the thing it depends on is the type's own — for a name it is the
+     * root the applicant picked. Default false: a kind that says nothing keeps
+     * the behaviour every kind had before this existed, which is that a person
+     * decides.</p>
+     */
+    default boolean isAutoApproved(CreateRequestRequest form) {
+        return false;
+    }
+
+    /**
+     * Whether this kind's resource governs its own lifetime.
+     *
+     * <p>True means the common period is neither asked for nor stored: the form
+     * does not show the control, the submission is not refused for leaving it
+     * empty, and the request carries no end date. A name is the case — its life
+     * is the renewal deadline, and a granted period beside it would be a second
+     * clock that disagrees with the first.</p>
+     *
+     * <p>This is the answer to a question the request flow asks of every kind,
+     * not a licence to ignore what was sent. A period that arrived anyway is
+     * dropped rather than stored, because storing it would show the applicant a
+     * date on their request that nothing honours.</p>
+     */
+    default boolean ownsItsOwnLifetime() {
+        return false;
+    }
+
+    /**
+     * The organisation this request belongs to, when the type knows better than
+     * the applicant did.
+     *
+     * <p>Empty for every kind whose organisation is simply the one that was
+     * picked. A name is the exception: its institution is a property of where
+     * it lives, so the root decides and the form's own {@code orgId} is
+     * overwritten rather than trusted. Returning it here rather than mutating
+     * the form keeps the override in one place and visible.</p>
+     */
+    default java.util.Optional<Long> owningOrgId(CreateRequestRequest form) {
+        return java.util.Optional.empty();
+    }
+
     /** Validates the type-specific part of an approval decision. */
     void validateApprove(Request request, ApproveRequestRequest form, List<FieldValidationError> errors);
 

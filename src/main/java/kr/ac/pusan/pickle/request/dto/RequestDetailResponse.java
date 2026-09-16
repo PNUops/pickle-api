@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.gpu.dto.GpuRequestSpecResponse;
+import kr.ac.pusan.pickle.publishing.dto.DomainRequestSpecResponse;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyRequestSpecResponse;
 import kr.ac.pusan.pickle.request.vm.dto.VmRequestSpecResponse;
@@ -43,6 +44,9 @@ public record RequestDetailResponse(
         /** Present when {@code type} is LLM_API_KEY, null otherwise. */
         @Nullable LlmKeyRequestSpecResponse llmKey,
         @Nullable GpuRequestSpecResponse gpu,
+
+        /** Present when {@code type} is DOMAIN, null otherwise. */
+        @Nullable DomainRequestSpecResponse domain,
         Instant createdAt,
         Instant updatedAt) {
 }

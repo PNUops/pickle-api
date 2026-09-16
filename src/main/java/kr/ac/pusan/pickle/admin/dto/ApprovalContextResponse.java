@@ -37,9 +37,25 @@ public record ApprovalContextResponse(
         String guidance,
         @Nullable VmContext vm,
         @Nullable LlmKeyContext llmKey,
-        @Nullable GpuContext gpu) {
+        @Nullable GpuContext gpu,
+        @Nullable DomainContext domain) {
 
     public record GpuContext(long availableCards, long queuedAllocations, int requestedLeaseHours, @Nullable String vmName) {}
+
+    /**
+     * What a reviewer needs before approving a name.
+     *
+     * <p>Both fields are the two ways approving can fail at the last moment.
+     * Nothing holds a name between submission and approval, so it can be taken
+     * meanwhile; and the workspace's cap is counted when the name is created,
+     * not when it was asked for. Showing them here is what stops the reviewer
+     * meeting a conflict they did nothing to cause.</p>
+     *
+     * @param available  whether the name is still free at the moment of reading
+     * @param held       external names this workspace holds, reserved ones included
+     * @param cap        how many it may hold
+     */
+    public record DomainContext(String fqdn, boolean available, long held, int cap) {}
 
     public record Applicant(
             UUID id,
