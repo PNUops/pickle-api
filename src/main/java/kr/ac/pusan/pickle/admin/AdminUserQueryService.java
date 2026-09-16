@@ -46,6 +46,14 @@ import org.springframework.transaction.annotation.Transactional;
  * organisation and was visible to nobody. A student may be supported by any
  * organisation and may write to one before requesting anything.
  *
+ * <p><b>One exclusion, along a different axis</b> (operator decision,
+ * 2026-09-16): the org tier is not answered for system-tier accounts, in the
+ * list or the detail. That is not organisation scoping — it is the rule that an
+ * administrator should be able to act on every account it is shown, and these
+ * are the accounts it may not touch (grantOrgRole refuses a sys-tier target and
+ * the account-state writes are SYS_ADMIN-only). The system tier still reads
+ * every account, its own included.
+ *
  * <p>The {@code orgId} parameter narrows to an organisation's derived members
  * ({@link OrgMembershipSql}) for all tiers alike; it is a filter, not a pin, and
  * an id no organisation has filters to nothing. {@code mfaEnabled} reflects live
@@ -67,6 +75,12 @@ public class AdminUserQueryService {
             "-email", "u.email desc",
             "createdAt", "u.created_at asc",
             "-createdAt", "u.created_at desc");
+
+    /** The roles {@link UserRole#isSysTier()} answers for, as SQL parameters. */
+    private static final List<String> SYS_TIER_ROLES = java.util.Arrays.stream(UserRole.values())
+            .filter(UserRole::isSysTier)
+            .map(Enum::name)
+            .toList();
 
     private final JdbcTemplate jdbcTemplate;
     private final UserRepository userRepository;
@@ -99,6 +113,21 @@ public class AdminUserQueryService {
         OrgScope scope = scopeOrgId(actor, orgId);
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
+        if (actor.role().isOrgTier()) {
+            // System-tier accounts are withheld from the org tier (operator
+            // decision, 2026-09-16). An administrator should be able to act on
+            // every account it can see, and none of these is one it may act on:
+            // grantOrgRole refuses a sys-tier target, and the account-state
+            // writes are SYS_ADMIN-only. Filtered in SQL rather than after the
+            // fetch so the count and the page boundaries agree with the rows.
+            // The set comes from the enum rather than a literal list, so a new
+            // system role cannot be withheld from the detail (which asks
+            // isSysTier) while the list keeps handing it out.
+            where.append(" and u.role::text not in (")
+                    .append(SYS_TIER_ROLES.stream().map(r -> "?").collect(Collectors.joining(", ")))
+                    .append(")");
+            params.addAll(SYS_TIER_ROLES);
+        }
         if (!scope.isUnrestricted()) {
             // Derived-org scoping in SQL: the org's own administrators plus
             // ACTIVE members of a workspace linked to it (derived membership).
@@ -164,6 +193,12 @@ public class AdminUserQueryService {
     public UserAdminDetailResponse getUser(AuthenticatedUser actor, UUID userId) {
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(AdminUserQueryService::userNotFound);
+        if (actor.role().isOrgTier() && user.getRole().isSysTier()) {
+            // Withheld from the list, so withheld here too — otherwise the id
+            // reaches the detail and the exclusion is decoration. 404 rather
+            // than 403, the same way an organisation outside the actor's answers.
+            throw userNotFound();
+        }
 
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
                 .filter(member -> member.getWorkspace().getDeletedAt() == null)

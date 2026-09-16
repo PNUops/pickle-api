@@ -148,6 +148,40 @@ class AdminUsersTest {
     }
 
     @Test
+    void systemTierAccountsAreWithheldFromTheOrgTier() throws Exception {
+        // The org tier may act on every account it can see, and a system-tier
+        // account is not one of those: grantOrgRole refuses such a target and
+        // the account-state writes are SYS_ADMIN-only (operator, 2026-09-16).
+        mockMvc.perform(get("/api/v1/admin/users?q=au.sys@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/admin/users?q=au.sys@pusan.ac.kr")
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        // Filtered in SQL, so the count agrees with the rows rather than being
+        // the unfiltered total with rows missing from the page.
+        mockMvc.perform(get("/api/v1/admin/users?role=SYS_ADMIN")
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0))
+                .andExpect(jsonPath("$.content").isEmpty());
+
+        // Withheld from the detail too, or the id alone reopens it. 404, the
+        // same answer an organisation outside the actor's gets.
+        mockMvc.perform(get("/api/v1/admin/users/" + sysAdmin.getPublicId())
+                        .header("Authorization", "Bearer " + orgAdminAToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        mockMvc.perform(get("/api/v1/admin/users/" + sysAdmin.getPublicId())
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("au.sys@pusan.ac.kr"));
+    }
+
+    @Test
     void disableAndEnableRestorePreviousStatus() throws Exception {
         User target = ensureUser("au.target@pusan.ac.kr", "대상", UserRole.USER, null, UserStatus.ACTIVE);
         String targetToken = jwtService.createAccessToken(target);
