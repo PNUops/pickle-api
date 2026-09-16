@@ -243,10 +243,16 @@ components:
           - "string"
           - "null"
         vmId:
+          description: "이 이름을 쓰는 가상머신. 외부 도메인은 가상머신에 매이지 않으므로 null입니다."
           format: "uuid"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         vmName:
-          type: "string"
+          description: "이 이름을 쓰는 가상머신의 이름. 외부 도메인은 null입니다."
+          type:
+          - "string"
+          - "null"
         workspaceId:
           format: "uuid"
           type: "string"
@@ -261,8 +267,6 @@ components:
       - "orgId"
       - "orgName"
       - "status"
-      - "vmId"
-      - "vmName"
       - "workspaceId"
       - "workspaceName"
       type: "object"
@@ -2307,8 +2311,12 @@ components:
           - $ref: "#/components/schemas/CreateLlmKeyRequestSpec"
           - type: "null"
         orgId:
+          description: "신청할 기관. 리소스 종류가 기관을 스스로 정하지 않을 때만 필수입니다. 외부 도메인은 고른 루트 도메인\
+            이 기관을 정하므로 보내지 않습니다."
           format: "uuid"
-          type: "string"
+          type:
+          - "string"
+          - "null"
         periodPresetId:
           format: "uuid"
           type:
@@ -2340,7 +2348,6 @@ components:
           type: "string"
       required:
       - "displayName"
-      - "orgId"
       - "purpose"
       - "type"
       - "workspaceId"

@@ -113,13 +113,6 @@ public class RequestService {
         workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .orElseThrow(RequestService::notWorkspaceMember);
 
-        Org org = orgRepository.findByPublicId(form.orgId())
-                .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
-        if (org.getStatus() != OrgStatus.ACTIVE) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "비활성화된 기관에는 신청할 수 없습니다.")));
-        }
-
         List<FieldValidationError> errors = new ArrayList<>();
         // A kind whose resource carries its own deadline is not asked for a
         // period and is not refused for leaving it out. A period that arrived
@@ -134,8 +127,14 @@ public class RequestService {
             throw ApiException.validationFailed(errors);
         }
 
+        // After the kind's own validation, not before it. The organisation can
+        // come from what is being asked for, and working it out from a root
+        // domain that turns out not to exist would answer with that failure
+        // instead of the field error the applicant needs to see.
+        Org org = resolveOrg(handler, form);
+
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
-                handler.owningOrgId(form).orElse(org.getId()),
+                org.getId(),
                 actor.id(), form.purpose().strip(),
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
@@ -308,6 +307,31 @@ public class RequestService {
      * <p>고른 항목의 종료일은 신청 행에 복사한다. 다음 학기에 운영자가 항목의 날짜를
      * 고쳐도 이미 낸 신청의 기간이 따라 움직이면 안 되기 때문이다.</p>
      */
+    /**
+     * Whose the resource will be.
+     *
+     * <p>Two sources, and the kind's own answer wins. A kind whose form already
+     * decides the organisation — a domain takes it from the root it is asked
+     * under — is not asked again, because a form that carries both can carry
+     * two different answers and nothing downstream could tell which was meant.
+     * Every other kind is asked, and for those the field is still required.</p>
+     */
+    private Org resolveOrg(RequestTypeHandler handler, CreateRequestRequest form) {
+        Long owned = handler.owningOrgId(form).orElse(null);
+        if (owned == null && form.orgId() == null) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
+                    "기관(orgId)을 지정해 주세요.")));
+        }
+        Org org = (owned != null ? orgRepository.findById(owned)
+                : orgRepository.findByPublicId(form.orgId()))
+                .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
+        if (org.getStatus() != OrgStatus.ACTIVE) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
+                    "비활성화된 기관에는 신청할 수 없습니다.")));
+        }
+        return org;
+    }
+
     private ResolvedPeriod resolvePeriod(CreateRequestRequest form,
             List<FieldValidationError> errors) {
         // 무기한은 값이 없는 상태가 아니라 하나의 값이다. 빠뜨린 종료일과 겹치지

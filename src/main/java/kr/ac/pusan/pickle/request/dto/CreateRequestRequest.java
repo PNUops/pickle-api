@@ -31,8 +31,17 @@ public record CreateRequestRequest(
         @NotNull(message = "신청 워크스페이스(workspaceId)를 지정해 주세요.")
         UUID workspaceId,
 
-        @NotNull(message = "기관(orgId)을 지정해 주세요.")
-        UUID orgId,
+        /**
+         * 이 신청이 속할 기관.
+         *
+         * <p>고르는 종류에만 필수다. 무엇을 신청하는지가 기관을 이미 정하는
+         * 종류가 있고 — 외부 도메인은 고른 루트 도메인이 기관을 나른다 — 그런
+         * 종류에서는 이 값을 묻지 않고 보내도 쓰지 않는다. 신청자에게 물어 둘을
+         * 어긋나게 두느니 답이 하나인 쪽을 쓴다.</p>
+         */
+        @Schema(description = "신청할 기관. 리소스 종류가 기관을 스스로 정하지 않을 때만 필수입니다. "
+                + "외부 도메인은 고른 루트 도메인이 기관을 정하므로 보내지 않습니다.")
+        @Nullable UUID orgId,
 
         @NotBlank(message = "사용 목적을 입력해 주세요.")
         @Size(max = 2000, message = "사용 목적은 2000자 이하여야 합니다.")
