@@ -77,10 +77,17 @@ public class DnsDomainQueryService {
                             DomainKind.EXTERNAL, DomainStatus.REMOVED, pageable)
                     : Page.empty(pageable);
         } else {
-            result = workspaceIds.isEmpty()
+            // No workspace named, so this list is "what do I have" and carries
+            // only what a grant opens. A name a fellow member holds comes back —
+            // limited, with who to ask — when their workspace is named.
+            Set<Long> reachable = workspaceIds.isEmpty() ? Set.of()
+                    : resourceAccessResolver.reachableIds(ResourceType.DOMAIN,
+                            domainRepository.findIdsByWorkspaceIdInAndKindAndStatusNot(
+                                    workspaceIds, DomainKind.EXTERNAL, DomainStatus.REMOVED),
+                            actor.id());
+            result = reachable.isEmpty()
                     ? Page.empty(pageable)
-                    : domainRepository.findByWorkspaceIdInAndKindAndStatusNot(workspaceIds,
-                            DomainKind.EXTERNAL, DomainStatus.REMOVED, pageable);
+                    : domainRepository.findByIdIn(reachable, pageable);
         }
         List<Domain> domains = result.getContent();
         Set<Long> ownedWorkspaceIds = memberships.stream()

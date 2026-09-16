@@ -39,7 +39,14 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
     @Query("select v.id from Vm v where v.workspaceId in :workspaceIds")
     List<Long> findIdsByWorkspaceIdIn(@Param("workspaceIds") Collection<Long> workspaceIds);
 
-    Page<Vm> findByWorkspaceIdIn(Collection<Long> workspaceIds, Pageable pageable);
+    /**
+     * A named set of VMs, paged — what an unscoped list narrows to once the
+     * access list has said which ones are the requester's. The narrowing belongs
+     * in the query rather than in a filter over the page: the page envelope is
+     * built from the count this returns, and a page filtered after the fact
+     * promises more rows than it can produce.
+     */
+    Page<Vm> findByIdIn(Collection<Long> ids, Pageable pageable);
 
     Page<Vm> findByWorkspaceId(Long workspaceId, Pageable pageable);
 

@@ -97,8 +97,7 @@ public class ResourceAccessResolver {
         Map<Long, List<Long>> ownerIds = new LinkedHashMap<>();
         Map<Long, ResourceRole> roles = new LinkedHashMap<>();
         for (ResourceAccessGrant grant : grants) {
-            if (grant.getGranteeType() == AccessGranteeType.WORKSPACE
-                    || Long.valueOf(userId).equals(grant.getUserId())) {
+            if (opensFor(grant, userId)) {
                 reachable.add(grant.getResourceId());
                 // Same rule the single-resource form uses: two grants can reach
                 // one person, and the higher rung is the one they act at.
@@ -119,6 +118,42 @@ public class ResourceAccessResolver {
         ownerIds.forEach((resourceId, ids) -> ownerNames.put(resourceId, ids.stream()
                 .map(names::get).filter(Objects::nonNull).toList()));
         return new ListAccess(reachable, ownerNames, roles);
+    }
+
+    /**
+     * Of these resources, the ones some grant opens for the requester.
+     *
+     * <p>What a list shows when it was not asked about one workspace. The
+     * masking form above answers "what may they see of this row"; this one
+     * answers "is this row theirs at all", which is the question an unscoped
+     * list asks — a person who has not named a workspace is looking at their own
+     * things, and a row they hold no grant on is somebody else's. Naming the
+     * workspace is what asks the other question, and there the limited rows come
+     * back so they still know whom to ask.
+     *
+     * <p>Membership is a precondition here as everywhere: the caller passes
+     * candidates drawn from its own memberships, so a grant that outlived the
+     * membership it was given under cannot answer.
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> reachableIds(ResourceType type, List<Long> candidateIds, long userId) {
+        if (candidateIds.isEmpty()) {
+            return Set.of();
+        }
+        return grantRepository.findByResourceTypeAndResourceIdIn(type, candidateIds).stream()
+                .filter(grant -> opensFor(grant, userId))
+                .map(ResourceAccessGrant::getResourceId)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Whether this grant reaches this person: their own, or the workspace-wide
+     * one that names nobody. Written once because the two list forms above
+     * would otherwise each carry the rule, and reachability is the access rule.
+     */
+    private static boolean opensFor(ResourceAccessGrant grant, long userId) {
+        return grant.getGranteeType() == AccessGranteeType.WORKSPACE
+                || Long.valueOf(userId).equals(grant.getUserId());
     }
 
     /**

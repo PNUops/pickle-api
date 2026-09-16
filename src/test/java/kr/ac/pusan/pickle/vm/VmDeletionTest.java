@@ -352,11 +352,12 @@ class VmDeletionTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
-        // What they do keep is knowing it is there. The list row is the
-        // restricted one — name, state and who to ask — and it carries the flag
+        // What they do keep is knowing it is there. The workspace's own listing
+        // carries the restricted row — name, state and who to ask — with the flag
         // the console needs to offer access management from a row whose detail
-        // page the same person cannot open.
-        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms")
+        // page the same person cannot open. It is read by naming the workspace:
+        // an unscoped list answers "what do I hold", and they hold no grant here.
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms?workspaceId=" + pub("workspaces", workspaceId))
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[?(@.id==\'" + pub("vms", vmId) + "\')].accessLimited")

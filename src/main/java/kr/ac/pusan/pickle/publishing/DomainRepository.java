@@ -86,9 +86,25 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     Page<Domain> findByWorkspaceIdAndKindAndStatusNot(Long workspaceId, DomainKind kind,
             DomainStatus status, Pageable pageable);
 
-    /** The same across every workspace the requester belongs to. */
-    Page<Domain> findByWorkspaceIdInAndKindAndStatusNot(Collection<Long> workspaceIds,
-            DomainKind kind, DomainStatus status, Pageable pageable);
+    /**
+     * The ids that list would return — the candidates an access-scoped list
+     * narrows. Same predicate as the page above, so the narrowing cannot be
+     * computed over rows the list would not have shown anyway.
+     */
+    @Query("""
+            select d.id from Domain d
+             where d.workspaceId in :workspaceIds and d.kind = :kind and d.status <> :status
+            """)
+    List<Long> findIdsByWorkspaceIdInAndKindAndStatusNot(
+            @Param("workspaceIds") Collection<Long> workspaceIds, @Param("kind") DomainKind kind,
+            @Param("status") DomainStatus status);
+
+    /**
+     * A named set of domains, paged — the unscoped list once the access list has
+     * said which ones are the requester's. In the query rather than in a filter
+     * over the page, so the page envelope counts the same rows it returns.
+     */
+    Page<Domain> findByIdIn(Collection<Long> ids, Pageable pageable);
 
     /** Every row of one kind a workspace owns, whatever its state. */
     List<Domain> findByWorkspaceIdAndKind(Long workspaceId, DomainKind kind);
