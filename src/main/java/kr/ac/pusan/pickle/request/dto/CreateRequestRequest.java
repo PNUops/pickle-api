@@ -17,8 +17,11 @@ import org.jspecify.annotations.Nullable;
 /**
  * Contract schema {@code CreateRequest}. The common fields are the same for
  * every resource type; what is being asked for goes in the nested member named
- * after the type, and the service refuses a body whose {@code type} and nested
- * member disagree.
+ * after the type. A member belonging to some other type is ignored rather than
+ * refused: each handler reads only its own, so a body naming DOMAIN and
+ * carrying a {@code vm} block is accepted and the {@code vm} block is dropped.
+ * Whether that should be a refusal is open; what is not open is this paragraph
+ * claiming a check that has never existed.
  *
  * <p>Composed rather than modelled as a discriminated union: a new resource
  * type adds one nullable member here, which keeps the generated schema (and so

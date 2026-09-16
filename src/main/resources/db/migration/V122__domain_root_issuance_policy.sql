@@ -9,6 +9,15 @@
 -- Default true, which is the behaviour every existing name was issued under.
 -- A migration that flipped the answer for names already in the ground would be
 -- changing a policy nobody set.
+--
+-- The default outlives the backfill, and that is a separate decision: a root
+-- registered from here on also starts open. Continuity does not argue for
+-- that one. What does is that registering a root is itself an operator
+-- action — a zone has to be delegated before a row can name it — so the
+-- account that creates the row is the account that would set the policy, and
+-- starting closed would mean every new root is silently unusable until
+-- somebody notices. A root that should start reviewed is flipped from the
+-- administrator's screen, which is a step the same person is already taking.
 alter table domain_roots
     add column auto_approve boolean not null default true;
 

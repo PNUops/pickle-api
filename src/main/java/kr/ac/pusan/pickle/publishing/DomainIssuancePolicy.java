@@ -53,10 +53,28 @@ public class DomainIssuancePolicy {
      */
     @Transactional(readOnly = true)
     public DomainRoot requireIssuable(String rootDomain) {
+        return requireIssuable(rootDomain, true);
+    }
+
+    /**
+     * The same question asked from a path where no form is being filled in.
+     *
+     * <p>A field error names a box on the screen the caller is looking at, and
+     * from an approval there is no such box: a root that vanished between
+     * submission and approval is not something the reviewer typed wrong. That
+     * case answers the conflict the disabled-organisation case already answers,
+     * so the two refusals an approver can meet have the same shape.</p>
+     */
+    @Transactional(readOnly = true)
+    public DomainRoot requireIssuable(String rootDomain, boolean fromForm) {
         DomainRoot root = rootRepository.findByRootDomain(rootDomain)
-                .orElseThrow(() -> ApiException.validationFailed(List.of(
-                        new FieldValidationError("rootDomain",
-                                "이 루트 도메인으로는 이름을 발급할 수 없습니다."))));
+                .orElseThrow(() -> fromForm
+                        ? ApiException.validationFailed(List.of(
+                                new FieldValidationError("rootDomain",
+                                        "이 루트 도메인으로는 이름을 발급할 수 없습니다.")))
+                        : new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                                "지금은 이 루트 도메인으로 발급할 수 없습니다",
+                                "이 루트 도메인은 더 이상 발급 대상이 아닙니다. 신청자에게 다른 이름을 받아야 합니다."));
         Org org = orgRepository.findById(root.getOrgId()).orElse(null);
         if (org == null || org.getStatus() != OrgStatus.ACTIVE) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,

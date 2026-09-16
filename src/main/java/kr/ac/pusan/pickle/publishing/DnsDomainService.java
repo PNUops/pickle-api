@@ -31,11 +31,16 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Issuing a name on its own, letting it go, and keeping it.
  *
- * <p>No approval anywhere in here. That is the decision this kind exists to
- * carry: a name costs the platform a row and a zone entry, and making a person
- * wait for a human to agree to that buys nothing. What stands in for approval
- * is the reserved-label list, the per-workspace cap, and the renewal deadline
- * that takes an unwanted name back.</p>
+ * <p>Whether a person had to agree first is not decided here. {@link #issue}
+ * is reached from the request flow's approval, and the root the name is asked
+ * under says whether that approval waited for a reviewer or was the platform's
+ * own. This class is the part that is the same either way.</p>
+ *
+ * <p>What the round before this one said here — that no approval exists for
+ * this kind, and that the reserved-label list, the per-workspace cap and the
+ * renewal deadline stand in for one — is no longer true of the first clause and
+ * is still true of the rest: those three bound what an approved name may be,
+ * under both policies.</p>
  */
 @Service
 public class DnsDomainService {
@@ -101,7 +106,10 @@ public class DnsDomainService {
     @Transactional
     public Domain issue(long workspaceId, String rawLabel, String rawRoot) {
         String rootDomain = resolveRoot(rawRoot);
-        DomainRoot root = issuancePolicy.requireIssuable(rootDomain);
+        // Reached from an approval, not from the form that named this root, so a
+        // root that disappeared in between answers a conflict rather than
+        // pointing the reviewer at a field they never filled in.
+        DomainRoot root = issuancePolicy.requireIssuable(rootDomain, false);
         String label = validateLabel(rawLabel);
         // Locked before the count, so counting what the workspace holds and
         // adding to it happen under one holder. Two requests at the cap would
@@ -184,7 +192,7 @@ public class DnsDomainService {
         // a root that was withdrawn meanwhile cannot come back to life, and
         // saying so here is better than reviving it into a root that no longer
         // answers for it.
-        issuancePolicy.requireIssuable(held.getRootDomain());
+        issuancePolicy.requireIssuable(held.getRootDomain(), false);
         held.setReleasedAt(null);
         held.setRenewDueAt(renewalPolicy.deadlineFrom(Instant.now()));
         // The original owner's grant survived the release, but the person
@@ -331,18 +339,6 @@ public class DnsDomainService {
         return domain;
     }
 
-    /**
-     * The root row, which is where the name's organisation comes from.
-     *
-     * <p>Two gates rather than one, and they answer different questions. The
-     * setting says whether names may be issued under this root at all, which an
-     * administrator flips; the row says what the root is. A root that passes
-     * the setting with no row here is refused, because the alternative is a
-     * name with no organisation — invisible to every organisation
-     * administrator and visible only to a system administrator, which is the
-     * wrong shape for the one resource kind whose content this platform does
-     * not control.</p>
-     */
     /**
      * Refuses a name its owner has already let go of, or one that has been
      * reclaimed.

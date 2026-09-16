@@ -30,11 +30,18 @@ comment on column domain_request_details.granted_fqdn is
 -- The assertion on the literal is doing real work: every future kind edits this
 -- same function body by string replacement, so a rewrite that drops or reflows
 -- the token would silently stop extending the guard rather than fail loudly.
+--
+-- It counts rather than merely looking, because replace() is global. One
+-- occurrence is the invariant every kind so far has preserved by inserting its
+-- arm in front of the single trailing `else true`; a second one appearing
+-- somewhere unrelated would quietly graft this DOMAIN branch into that case
+-- expression too, and the copy that landed in the wrong place would be as
+-- silent as the missing token this check already refuses.
 do $$
 declare definition text;
 begin
     definition := pg_get_functiondef('assert_approved_request_is_granted()'::regprocedure);
-    if strpos(definition, 'else true') = 0 then
+    if (length(definition) - length(replace(definition, 'else true', ''))) / length('else true') <> 1 then
         raise exception 'approved-request guard changed; review its DOMAIN branch before migrating';
     end if;
     definition := replace(definition, 'else true',

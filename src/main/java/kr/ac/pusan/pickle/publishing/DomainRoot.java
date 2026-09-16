@@ -45,6 +45,15 @@ public class DomainRoot {
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
+    /**
+     * Moved by hand on every write. The column has existed since the table did
+     * and nothing could change a row until the policy became editable, so it
+     * sat equal to {@code created_at} harmlessly; left unmapped now it would
+     * claim to be the last time the policy changed and always be wrong.
+     */
+    @Column(name = "updated_at", insertable = false)
+    private Instant updatedAt;
+
     protected DomainRoot() {
     }
 
@@ -71,6 +80,11 @@ public class DomainRoot {
 
     public void setAutoApprove(boolean autoApprove) {
         this.autoApprove = autoApprove;
+        this.updatedAt = Instant.now();
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
     }
 
     public Instant getCreatedAt() {
