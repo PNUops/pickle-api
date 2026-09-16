@@ -199,7 +199,12 @@ public class DomainRequestSupport implements RequestTypeHandler {
                 ask.get("root"));
         jdbc.update("update domain_request_details set granted_fqdn = ? where request_id = ?",
                 domain.getFqdn(), request.getId());
+        // The public id rides along so the approval notice can point at the
+        // name's own screen. Without it the mail sends the reader to a finished
+        // request, and the thing they have to do next — add the records — is
+        // one more hop away with nothing saying where.
         return new Materialized(domain.getId(), domain.getFqdn(),
-                Map.of("fqdn", domain.getFqdn()), () -> { });
+                Map.of("fqdn", domain.getFqdn()), () -> { },
+                Map.of("domainId", domain.getPublicId()));
     }
 }
