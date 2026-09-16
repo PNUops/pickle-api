@@ -13,6 +13,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
+import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
@@ -22,6 +23,8 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.publishing.dto.AdminCertificateView;
 import kr.ac.pusan.pickle.publishing.dto.AdminDomainView;
+import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
+import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRenewalRequest;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
 import kr.ac.pusan.pickle.orgs.AdminOrgScope;
 import kr.ac.pusan.pickle.orgs.OrgScope;
@@ -53,6 +56,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public class AdminPublishingService {
 
     private final RouteRepository routeRepository;
+    private final DomainRecordRepository recordRepository;
     private final DomainRepository domainRepository;
     private final CertificateRepository certificateRepository;
     private final VmRepository vmRepository;
@@ -69,7 +73,7 @@ public class AdminPublishingService {
     private final VmEventRepository vmEventRepository;
     private final NotificationService notificationService;
 
-    public AdminPublishingService(RouteRepository routeRepository, DomainRepository domainRepository,
+    public AdminPublishingService(RouteRepository routeRepository, DomainRecordRepository recordRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
             WorkspaceRepository workspaceRepository, OrgRepository orgRepository,
             PublicationAssembler assembler, AuditService auditService, JobScheduler jobScheduler,
@@ -78,6 +82,7 @@ public class AdminPublishingService {
             RouteApplyJob routeApplyJob, VmEventRepository vmEventRepository,
             NotificationService notificationService) {
         this.routeRepository = routeRepository;
+        this.recordRepository = recordRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
         this.vmRepository = vmRepository;
@@ -134,22 +139,8 @@ public class AdminPublishingService {
         Page<Domain> domains = domainRepository.findAdmin(orgFilter(scope), name(kind), name(status),
                 page(page, size));
         Context ctx = context(domains.getContent());
-        List<AdminDomainView> content = domains.getContent().stream().map(domain -> {
-            Vm vm = ctx.vms.get(domain.getVmId());
-            RouteStatus routeStatus = routeRepository
-                    .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
-                    .map(Route::getStatus).orElse(null);
-            var certStatus = assembler.certificateFor(domain).map(Certificate::getStatus).orElse(null);
-            return new AdminDomainView(domain.getPublicId(),
-                    vm != null ? vm.getPublicId() : null, domain.getKind(),
-                    domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
-                    domain.getVerifiedAt(), domain.getReleasedAt(),
-                    assembler.reservedUntil(domain), domain.getCreatedAt(), name(vm),
-                    ctx.workspaceId(domain), ctx.workspaceName(domain),
-                    ctx.orgId(domain), ctx.orgName(domain),
-                    routeStatus, certStatus, domain.getDnsStatus(), domain.getDnsLastError(),
-                    domain.getDnsAppliedAt(), domain.getUpdatedAt());
-        }).toList();
+        List<AdminDomainView> content = domains.getContent().stream()
+                .map(domain -> view(domain, ctx)).toList();
         return PageResponse.of(content, domains);
     }
 
@@ -179,6 +170,25 @@ public class AdminPublishingService {
         return PageResponse.of(content, certs);
     }
 
+    /** One row as the administrator's listing reports it. */
+    private AdminDomainView view(Domain domain, Context ctx) {
+        Vm vm = ctx.vms.get(domain.getVmId());
+        RouteStatus routeStatus = routeRepository
+                .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
+                .map(Route::getStatus).orElse(null);
+        var certStatus = assembler.certificateFor(domain).map(Certificate::getStatus).orElse(null);
+        return new AdminDomainView(domain.getPublicId(),
+                vm != null ? vm.getPublicId() : null, domain.getKind(),
+                domain.getFqdn(), domain.getRootDomain(), domain.getStatus(),
+                domain.getVerifiedAt(), domain.getReleasedAt(),
+                assembler.reservedUntil(domain), domain.getRenewDueAt(),
+                domain.getCreatedAt(), name(vm),
+                ctx.workspaceId(domain), ctx.workspaceName(domain),
+                ctx.orgId(domain), ctx.orgName(domain),
+                routeStatus, certStatus, domain.getDnsStatus(), domain.getDnsLastError(),
+                domain.getDnsAppliedAt(), domain.getUpdatedAt());
+    }
+
     @Transactional
     public MessageResponse resync(AuthenticatedUser actor, String ip) {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -193,6 +203,93 @@ public class AdminPublishingService {
     }
 
     // ── post-hoc intervention (contract v0.18.0, all admin roles org-scoped) ──
+
+    /**
+     * The record sets standing under one name, for an administrator.
+     *
+     * <p>Read only. What an administrator can do about a name they have had
+     * reported is release it, and deciding that without being able to see where
+     * it points means deciding blind — the whole question is usually what the
+     * name resolves to. Editing the sets is deliberately not offered: it is a
+     * deeper intervention than taking the name away, and it would leave the
+     * owner with records they did not write and no notice that anything
+     * changed.</p>
+     */
+    @Transactional(readOnly = true)
+    public List<DnsRecordSetView> listRecords(AuthenticatedUser actor, UUID domainId) {
+        Domain domain = requireScopedDomain(actor, domainId);
+        return recordRepository
+                .findByDomainIdAndStatusNotOrderByIdAsc(domain.getId(), DomainRecordStatus.REMOVED)
+                .stream()
+                .map(record -> new DnsRecordSetView(record.getName(), record.getType(),
+                        record.getRrdatas(), record.getTtl(), record.getStatus(),
+                        record.getLastError(), record.getAppliedAt()))
+                .toList();
+    }
+
+    /**
+     * Moves one name's renewal deadline.
+     *
+     * <p>The gentler half of intervention. A forced release takes a name away
+     * now; this decides when its owner has to speak up, which is what a name
+     * that should last a term needs, and equally what a name that should wind
+     * down needs. The deadline is the only lifetime an external name has, so
+     * moving it is the whole of the lever.</p>
+     *
+     * <p>Only for names with a deadline. A platform subdomain's life is its
+     * VM's, and a custom domain's is its owner's DNS; neither has a deadline
+     * here to move, and inventing one would be this screen making up a
+     * lifetime the rest of the system does not honour.</p>
+     */
+    @Transactional
+    public AdminDomainView updateRenewal(AuthenticatedUser actor, UUID domainId,
+            UpdateDomainRenewalRequest form, String ip) {
+        Domain domain = requireScopedDomain(actor, domainId);
+        if (domain.getKind() != DomainKind.EXTERNAL) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                    "사용 기한이 없는 도메인입니다",
+                    "외부 도메인만 사용 기한을 갖습니다. 다른 종류는 가상머신이나 소유자의 DNS가 수명을 정합니다.");
+        }
+        if (domain.getReleasedAt() != null) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                    "이미 해제한 도메인입니다", "해제한 이름에는 사용 기한이 없습니다.");
+        }
+        // A deadline in the past is a forced release with a day's delay and no
+        // notice: the nightly sweeper lapses it, the records come down, and the
+        // owner is never told because the renewal notices only fire ahead of a
+        // deadline that is still ahead. Taking a name away is what force-release
+        // is for, and that path at least announces itself.
+        if (!form.renewDueAt().isAfter(Instant.now())) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("renewDueAt",
+                    "지난 시각으로는 옮길 수 없습니다. 지금 회수하려면 강제 해제를 쓰세요.")));
+        }
+        Instant before = domain.getRenewDueAt();
+        domain.setRenewDueAt(form.renewDueAt());
+        // The owner hears about it. A deadline is the one lever that decides
+        // whether they keep the name, so moving it without saying so leaves
+        // them planning against a date that is no longer real.
+        notificationService.publish(DomainRecipients.of(notificationService, domain),
+                NotificationEvent.DOMAIN_RENEWAL_DUE,
+                Map.of("fqdn", domain.getFqdn(), "domainId", domain.getPublicId(),
+                        "renewDueAt", form.renewDueAt(), "adminAdjusted", true),
+                null);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.DOMAIN_ADMIN_RENEWAL, "domain", domain.getPublicId(),
+                reasonedArgs(domain, before, form), ip);
+        return view(domain, context(List.of(domain)));
+    }
+
+    private static Map<String, Object> reasonedArgs(Domain domain, Instant before,
+            UpdateDomainRenewalRequest form) {
+        Map<String, Object> args = new java.util.LinkedHashMap<>();
+        args.put("fqdn", domain.getFqdn());
+        args.put("previous", before);
+        args.put("renewDueAt", form.renewDueAt());
+        if (form.reason() != null && !form.reason().isBlank()) {
+            args.put("reason", form.reason().strip());
+        }
+        return args;
+    }
 
     /**
      * Admin takedown of a problem domain: route down (pushed to the proxy) and

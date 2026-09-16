@@ -21,6 +21,10 @@ public interface DomainRepository extends JpaRepository<Domain, Long> {
     /** The live row holding an FQDN — the revive-or-409 pre-check. */
     Optional<Domain> findFirstByFqdnAndStatusNot(String fqdn, DomainStatus status);
 
+    /** How many names of a kind stand under one root, reserved ones included. */
+    long countByRootDomainAndKindAndStatusNot(String rootDomain, DomainKind kind,
+            DomainStatus status);
+
     /**
      * The live row holding an FQDN, taken under its row lock — what the revive
      * path reads instead of the unlocked pre-check. The reservation sweeper
