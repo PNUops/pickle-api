@@ -212,6 +212,69 @@ public class ProxmoxClient {
                 CONFIG_RESPONSE);
     }
 
+    /** Reads desired PVE firewall configuration; this is not a kernel enforcement acknowledgment. */
+    public Map<String, Object> vmFirewallOptions(String apiHost, String node, int vmid) {
+        return call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "options"),
+                null, CONFIG_RESPONSE);
+    }
+
+    public List<Map<String, Object>> vmFirewallRules(String apiHost, String node, int vmid) {
+        List<Map<String, Object>> rules = call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "rules"),
+                null, new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+        return rules == null ? List.of() : rules;
+    }
+
+    public void setVmFirewallOptions(String apiHost, String node, int vmid,
+            Map<String, String> options, String digest) {
+        call(HttpMethod.PUT,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "options"),
+                withDigest(options, digest), VOID_RESPONSE);
+    }
+
+    /** PVE inserts a created rule at the front; callers must not assume append order. */
+    public void createVmFirewallRule(String apiHost, String node, int vmid, Map<String, String> rule) {
+        call(HttpMethod.POST,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "rules"),
+                rule, VOID_RESPONSE);
+    }
+
+    public void updateVmFirewallRule(String apiHost, String node, int vmid, int position,
+            Map<String, String> rule, String digest) {
+        requireRulePosition(position);
+        call(HttpMethod.PUT, uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid),
+                "firewall", "rules", String.valueOf(position)), withDigest(rule, digest), VOID_RESPONSE);
+    }
+
+    public void deleteVmFirewallRule(String apiHost, String node, int vmid, int position, String digest) {
+        requireRulePosition(position);
+        requireFirewallDigest(digest);
+        URI target = baseBuilder(apiHost).pathSegment("nodes", node, "qemu", String.valueOf(vmid),
+                "firewall", "rules", String.valueOf(position)).queryParam("digest", digest)
+                .build().encode().toUri();
+        call(HttpMethod.DELETE, target, null, VOID_RESPONSE);
+    }
+
+    private static Map<String, String> withDigest(Map<String, String> fields, String digest) {
+        requireFirewallDigest(digest);
+        Map<String, String> guarded = new java.util.LinkedHashMap<>(fields);
+        guarded.put("digest", digest);
+        return guarded;
+    }
+
+    private static void requireFirewallDigest(String digest) {
+        if (isBlank(digest)) {
+            throw new IllegalArgumentException("방화벽 설정을 다시 조회한 뒤 변경해 주세요.");
+        }
+    }
+
+    private static void requireRulePosition(int position) {
+        if (position < 0) {
+            throw new IllegalArgumentException("방화벽 규칙 위치가 올바르지 않습니다.");
+        }
+    }
+
     /** PVE renders boolean flags as 0/1 int or string across versions. */
     private static boolean truthyFlag(Object value) {
         if (value instanceof Boolean b) {

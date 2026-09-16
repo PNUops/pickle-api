@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
+import kr.ac.pusan.pickle.inventory.OsImageReplicaResolver;
 import kr.ac.pusan.pickle.ipam.AllocationStatus;
 import kr.ac.pusan.pickle.ipam.IpAllocation;
 import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
@@ -109,6 +110,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ProvisioningTaskRepository taskRepository;
     private final NodeRepository nodeRepository;
     private final OsImageRepository imageRepository;
+    private final OsImageReplicaResolver imageReplicaResolver;
     private final VmRequestDetailRepository vmRequestDetailRepository;
     private final IpPoolRepository poolRepository;
     private final IpAllocationRepository allocationRepository;
@@ -129,7 +131,8 @@ public class ProvisionVmJob implements ProvisioningService {
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
-            OsImageRepository imageRepository, VmRequestDetailRepository vmRequestDetailRepository,
+            OsImageRepository imageRepository, OsImageReplicaResolver imageReplicaResolver,
+            VmRequestDetailRepository vmRequestDetailRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
             IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
             VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
@@ -144,6 +147,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.taskRepository = taskRepository;
         this.nodeRepository = nodeRepository;
         this.imageRepository = imageRepository;
+        this.imageReplicaResolver = imageReplicaResolver;
         this.vmRequestDetailRepository = vmRequestDetailRepository;
         this.poolRepository = poolRepository;
         this.allocationRepository = allocationRepository;
@@ -366,8 +370,9 @@ public class ProvisionVmJob implements ProvisioningService {
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             return;
         }
-        OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow();
-        String upid = proxmox.clone(node.getApiHost(), node.getName(), image.getProxmoxVmid(),
+        OsImage granted = imageRepository.findById(vm.getImageId()).orElseThrow();
+        OsImage localImage = imageReplicaResolver.resolve(granted, node.getId());
+        String upid = proxmox.clone(node.getApiHost(), node.getName(), localImage.getProxmoxVmid(),
                 vmid, vm.getHostname());
         proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
     }

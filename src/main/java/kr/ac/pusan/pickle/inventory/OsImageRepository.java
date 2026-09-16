@@ -57,4 +57,8 @@ public interface OsImageRepository extends JpaRepository<OsImage, Long> {
      * placement uses.
      */
     boolean existsByNameAndNodeIdAndStatus(String name, Long nodeId, CatalogStatus status);
+
+    /** The selected node must host the granted revision, not merely the same OS name. */
+    Optional<OsImage> findByNameAndVersionAndNodeIdAndStatus(
+            String name, int version, Long nodeId, CatalogStatus status);
 }
