@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.admin.dto.AdminMembershipResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UserAdminViewResponse;
 import kr.ac.pusan.pickle.admin.dto.UserStatusChangeResponse;
@@ -29,7 +30,6 @@ import kr.ac.pusan.pickle.user.UserRole;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
 import kr.ac.pusan.pickle.user.UserStatusChangeRepository;
-import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
 import org.springframework.http.HttpStatus;
@@ -114,15 +114,11 @@ public class AdminUserQueryService {
         StringBuilder where = new StringBuilder(" where 1 = 1");
         List<Object> params = new ArrayList<>();
         if (actor.role().isOrgTier()) {
-            // System-tier accounts are withheld from the org tier (operator
-            // decision, 2026-09-16). An administrator should be able to act on
-            // every account it can see, and none of these is one it may act on:
-            // grantOrgRole refuses a sys-tier target, and the account-state
-            // writes are SYS_ADMIN-only. Filtered in SQL rather than after the
-            // fetch so the count and the page boundaries agree with the rows.
-            // The set comes from the enum rather than a literal list, so a new
-            // system role cannot be withheld from the detail (which asks
-            // isSysTier) while the list keeps handing it out.
+            // System-tier accounts are withheld from the org tier (operator,
+            // 2026-09-16): it can act on none of them. Filtered in SQL so the
+            // count and the page boundaries agree with the rows, and taken from
+            // the enum so a new system role cannot slip past the list while the
+            // detail (which asks isSysTier) still withholds it.
             where.append(" and u.role::text not in (")
                     .append(SYS_TIER_ROLES.stream().map(r -> "?").collect(Collectors.joining(", ")))
                     .append(")");
@@ -194,24 +190,27 @@ public class AdminUserQueryService {
         User user = userRepository.findByPublicId(userId)
                 .orElseThrow(AdminUserQueryService::userNotFound);
         if (actor.role().isOrgTier() && user.getRole().isSysTier()) {
-            // Withheld from the list, so withheld here too — otherwise the id
-            // reaches the detail and the exclusion is decoration. 404 rather
-            // than 403, the same way an organisation outside the actor's answers.
+            // Withheld from the list, so withheld here too, or the id alone
+            // reopens it. 404 as an organisation outside the actor's answers.
             throw userNotFound();
         }
 
         List<WorkspaceMember> liveMemberships = workspaceMemberRepository.findWithWorkspaceByUserId(user.getId()).stream()
                 .filter(member -> member.getWorkspace().getDeletedAt() == null)
                 .toList();
-        List<UserProfileResponse.Membership> memberships = liveMemberships.stream()
-                .map(UserProfileResponse.Membership::from)
-                .toList();
         List<Long> workspaceIds = liveMemberships.stream().map(m -> m.getWorkspace().getId()).toList();
+        Map<Long, List<UUID>> vmOrgs = vmOrgsByWorkspace(workspaceIds);
+        List<AdminMembershipResponse> memberships = liveMemberships.stream()
+                .map(m -> new AdminMembershipResponse(m.getWorkspace().getPublicId(),
+                        m.getWorkspace().getName(), m.getWorkspace().getKind(), m.getRole(),
+                        vmOrgs.getOrDefault(m.getWorkspace().getId(), List.of())))
+                .toList();
         int activeVmCount = workspaceIds.isEmpty() ? 0
                 : (int) vmRepository.countActiveByWorkspaceIdIn(workspaceIds, VmStatus.DELETED);
 
-        List<UserStatusChangeResponse> statusChanges =
-                mapStatusChanges(userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()));
+        List<UserStatusChangeResponse> statusChanges = mapStatusChanges(
+                userStatusChangeRepository.findByUserIdOrderByChangedAtDescIdDesc(user.getId()),
+                actor.role().isOrgTier());
         boolean profileVisible = actor.role().isSysTier();
 
         return new UserAdminDetailResponse(user.getPublicId(), user.getEmail(), user.getName(),
@@ -236,8 +235,40 @@ public class AdminUserQueryService {
                 profileVisible ? user.getDepartmentOther() : null);
     }
 
-    /** Resolves each transition's actor in one batch: id, email and name. */
-    private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes) {
+    /**
+     * The organisations each workspace has live machines in. Derived, since a
+     * workspace has no organisation column, and one query for the whole set.
+     */
+    private Map<Long, List<UUID>> vmOrgsByWorkspace(List<Long> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = workspaceIds.stream().map(id -> "?").collect(Collectors.joining(", "));
+        Map<Long, List<UUID>> byWorkspace = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select distinct v.workspace_id, o.public_id
+                  from vms v join orgs o on o.id = v.org_id
+                 where v.status <> 'DELETED' and v.workspace_id in (""" + placeholders + ")",
+                rs -> {
+                    byWorkspace.computeIfAbsent(rs.getLong("workspace_id"), k -> new ArrayList<>())
+                            .add(rs.getObject("public_id", UUID.class));
+                },
+                workspaceIds.toArray());
+        return byWorkspace;
+    }
+
+    /**
+     * Resolves each transition's actor in one batch: id, email and name.
+     *
+     * <p><b>A system-tier actor's public id is withheld from the org tier</b>,
+     * which is not answered for those accounts at all and would use the id to
+     * reopen one. The name and address stay: an administrator fielding a
+     * question about a suspended account needs to know who acted. Most actors
+     * here are system-tier, since disable and enable are SYS_ADMIN-only, but a
+     * withdrawal records the holder itself and that id is not withheld.
+     */
+    private List<UserStatusChangeResponse> mapStatusChanges(List<UserStatusChange> changes,
+            boolean orgTierReader) {
         List<Long> actorIds = changes.stream().map(UserStatusChange::getActorId)
                 .filter(id -> id != null).distinct().toList();
         Map<Long, User> actors = userRepository.findAllById(actorIds).stream()
@@ -245,8 +276,9 @@ public class AdminUserQueryService {
         return changes.stream()
                 .map(change -> {
                     User actor = actors.get(change.getActorId());
+                    boolean withholdId = actor != null && orgTierReader && actor.getRole().isSysTier();
                     return new UserStatusChangeResponse(change.getFromStatus(), change.getToStatus(),
-                            actor == null ? null : actor.getPublicId(),
+                            actor == null || withholdId ? null : actor.getPublicId(),
                             actor == null ? null : actor.getEmail(),
                             actor == null ? null : actor.getName(),
                             change.getReason(), change.getChangedAt());
