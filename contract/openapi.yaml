@@ -180,6 +180,33 @@ components:
       - "scope"
       - "status"
       type: "object"
+    AdminDomainRootView:
+      properties:
+        autoApprove:
+          description: "true면 이 루트 아래 이름 신청이 접수와 동시에 승인됩니다. false면 승인 큐를 탑니다. **지금\
+            \ 이 값이 다스리는 것은 외부 도메인 발급뿐이고 가상머신 서브도메인 공개는 아직 아닙니다.**"
+          type: "boolean"
+        issuedNames:
+          description: "이 루트 아래 지금 서 있는 외부 도메인 수"
+          format: "int64"
+          type: "integer"
+        orgId:
+          description: "이 루트 아래 이름이 속하는 기관"
+          format: "uuid"
+          type: "string"
+        orgName:
+          type: "string"
+        rootDomain:
+          description: "루트 도메인"
+          example: "pusan.dev"
+          type: "string"
+      required:
+      - "autoApprove"
+      - "issuedNames"
+      - "orgId"
+      - "orgName"
+      - "rootDomain"
+      type: "object"
     AdminDomainView:
       properties:
         certificateStatus:
@@ -213,6 +240,13 @@ components:
         orgName:
           type: "string"
         releasedAt:
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+        renewDueAt:
+          description: "사용 기한. 외부 도메인만 갖습니다 — 다른 종류는 가상머신이나 소유자의 DNS가 수명을 정하므로 null입\
+            니다."
           format: "date-time"
           type:
           - "string"
@@ -1515,6 +1549,10 @@ components:
         applicantResources:
           $ref: "#/components/schemas/Resources"
           deprecated: true
+        domain:
+          anyOf:
+          - $ref: "#/components/schemas/DomainContext"
+          - type: "null"
         gpu:
           anyOf:
           - $ref: "#/components/schemas/GpuContext"
@@ -2085,26 +2123,21 @@ components:
       - "ports"
       - "purpose"
       type: "object"
-    CreateDnsDomainRequest:
+    CreateDomainRequestSpec:
       properties:
         label:
-          description: "발급받을 이름. 루트 도메인 바로 아래 한 라벨입니다."
+          description: "루트 도메인 바로 아래 한 라벨. 영문 소문자와 숫자, 하이픈만 쓸 수 있습니다."
           example: "myblog"
           minLength: 1
           type: "string"
         rootDomain:
-          description: "이 이름을 둘 루트 도메인. 비우면 기본 루트를 씁니다."
+          description: "이름을 발급받을 루트 도메인. 이 이름이 속할 기관이 여기서 정해집니다."
           example: "pusan.dev"
-          type:
-          - "string"
-          - "null"
-        workspaceId:
-          description: "이 이름을 소유할 워크스페이스."
-          format: "uuid"
+          minLength: 1
           type: "string"
       required:
       - "label"
-      - "workspaceId"
+      - "rootDomain"
       type: "object"
     CreateGpuRequestSpec:
       properties:
@@ -2296,6 +2329,10 @@ components:
           maxLength: 100
           minLength: 0
           type: "string"
+        domain:
+          anyOf:
+          - $ref: "#/components/schemas/CreateDomainRequestSpec"
+          - type: "null"
         extraNote:
           maxLength: 2000
           minLength: 0
@@ -2649,6 +2686,24 @@ components:
       - "CNAME"
       - "TXT"
       type: "string"
+    DomainContext:
+      properties:
+        available:
+          type: "boolean"
+        cap:
+          format: "int32"
+          type: "integer"
+        fqdn:
+          type: "string"
+        held:
+          format: "int64"
+          type: "integer"
+      required:
+      - "available"
+      - "cap"
+      - "fqdn"
+      - "held"
+      type: "object"
     DomainDetailView:
       properties:
         createdAt:
@@ -2730,6 +2785,26 @@ components:
       - "FAILED"
       - "REMOVED"
       type: "string"
+    DomainRequestSpecResponse:
+      properties:
+        grantedFqdn:
+          description: "승인이 실제로 발급한 이름. 승인 전에는 null입니다."
+          example: "myblog.pusan.dev"
+          type:
+          - "string"
+          - "null"
+        label:
+          description: "신청한 이름(루트 바로 아래 한 라벨)"
+          example: "myblog"
+          type: "string"
+        rootDomain:
+          description: "신청한 루트 도메인"
+          example: "pusan.dev"
+          type: "string"
+      required:
+      - "label"
+      - "rootDomain"
+      type: "object"
     DomainStatus:
       enum:
       - "PENDING"
@@ -7799,6 +7874,10 @@ components:
           type: "string"
         displayName:
           type: "string"
+        domain:
+          anyOf:
+          - $ref: "#/components/schemas/DomainRequestSpecResponse"
+          - type: "null"
         extraNote:
           type:
           - "string"
@@ -7938,12 +8017,14 @@ components:
           - "string"
           - "null"
         reviewerId:
-          description: "결재자. 계정 행이 사라진 경우에만 null입니다."
+          description: "결재한 사람. 자동 승인이거나 계정 행이 사라진 경우 null입니다."
           format: "uuid"
           type:
           - "string"
           - "null"
         reviewerName:
+          description: "결재자 이름. 자동 승인이면 「자동 승인」, 계정 행이 사라졌으면 「탈퇴 회원」입니다. 두 경우 모두 reviewerId가\
+            \ null이므로 이 값으로 가릅니다."
           type: "string"
       required:
       - "decidedAt"
@@ -8640,11 +8721,31 @@ components:
       required:
       - "status"
       type: "object"
+    UpdateDomainRenewalRequest:
+      properties:
+        reason:
+          description: "기한을 바꾼 이유. 감사 기록에 남습니다."
+          type: "string"
+        renewDueAt:
+          description: "이 시각까지 연장하지 않으면 레코드가 내려가고 이름이 해제됩니다."
+          format: "date-time"
+          type: "string"
+      required:
+      - "renewDueAt"
+      type: "object"
     UpdateDomainRequest:
       properties:
         port:
           format: "int32"
           type: "integer"
+      type: "object"
+    UpdateDomainRootRequest:
+      properties:
+        autoApprove:
+          description: "true면 자동 승인, false면 승인 필요."
+          type: "boolean"
+      required:
+      - "autoApprove"
       type: "object"
     UpdateGpuPriorityRequest:
       properties:
@@ -10432,6 +10533,62 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-publishing-controller"
+  /admin/domain-roots:
+    get:
+      description: "이름을 발급할 수 있는 루트와 그 승인 정책. 기관으로 좁히지 않습니다 — 이름 공간은 기관끼리 공유하므로, 자\
+        기 루트의 정책을 정하는 사람도 다른 루트가 있다는 것은 볼 수 있어야 합니다."
+      operationId: "listDomainRoots"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/AdminDomainRootView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "루트 도메인 목록"
+      tags:
+      - "admin-publishing-controller"
+  /admin/domain-roots/{rootDomain}:
+    patch:
+      description: "이 루트 아래 이름 신청을 자동으로 승인할지, 승인 큐에 세울지 정합니다. 앞으로 들어오는 신청에만 적용되며 이\
+        미 발급된 이름과 이미 기다리는 신청은 건드리지 않습니다."
+      operationId: "updateDomainRoot"
+      parameters:
+      - in: "path"
+        name: "rootDomain"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDomainRootRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminDomainRootView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "루트 도메인 승인 정책 변경"
+      tags:
+      - "admin-publishing-controller"
   /admin/domains:
     get:
       operationId: "listAdminDomains"
@@ -10507,6 +10664,69 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      tags:
+      - "admin-publishing-controller"
+  /admin/domains/{domainId}/records:
+    get:
+      description: "이 이름이 지금 무엇을 가리키는지 봅니다. 읽기 전용입니다."
+      operationId: "listAdminDomainRecords"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/DnsRecordSetView"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "도메인 레코드 열람"
+      tags:
+      - "admin-publishing-controller"
+  /admin/domains/{domainId}/renewal:
+    patch:
+      description: "외부 도메인의 사용 기한을 옮깁니다. 미루면 그만큼 더 쓰고, 당기면 그 시점에 연장하지 않는 한 이름이 해제됩\
+        니다."
+      operationId: "updateDomainRenewal"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDomainRenewalRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminDomainView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "도메인 사용 기한 조정"
       tags:
       - "admin-publishing-controller"
   /admin/domains/{domainId}/verify:
@@ -14283,32 +14503,6 @@ paths:
       summary: "도메인 목록"
       tags:
       - "dns-domain"
-    post:
-      description: "루트 도메인 아래 이름 하나를 발급받습니다. 승인은 필요하지 않으며, 발급한 사람이 유일한 소유자가 됩니다. 기\
-        관은 고른 루트 도메인을 따릅니다."
-      operationId: "createDnsDomain"
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateDnsDomainRequest"
-        required: true
-      responses:
-        "201":
-          content:
-            '*/*':
-              schema:
-                $ref: "#/components/schemas/DnsDomainView"
-          description: "Created"
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/Problem"
-          description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      summary: "도메인 발급"
-      tags:
-      - "dns-domain"
   /dns-domains/{domainId}:
     delete:
       description: "레코드를 지우고 이름을 해제합니다. 이름은 예약 기간 동안 이 워크스페이스에 남아 있다가 회수됩니다."
@@ -14623,6 +14817,34 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "사용 연장"
+      tags:
+      - "dns-domain"
+  /dns-domains/{domainId}/revive:
+    post:
+      description: "예약 기간 동안 이 워크스페이스가 붙잡고 있는 이름을 되찾습니다. 새로 받는 것이 아니라 이미 가진 것을 되살리\
+        는 것이므로 승인을 거치지 않습니다. 레코드는 돌아오지 않으며 다시 넣어야 합니다."
+      operationId: "reviveDnsDomain"
+      parameters:
+      - in: "path"
+        name: "domainId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DnsDomainView"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "해제한 도메인 되살리기"
       tags:
       - "dns-domain"
   /domains:
