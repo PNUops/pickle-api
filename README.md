@@ -282,7 +282,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_MOCK_MAIL_SPOOL` | dev 전용 메일 스풀 파일 | `/var/lib/pickle/mock-mail.log` |
 | `PICKLE_SMTP_HOST` / `_USERNAME` / `_PASSWORD` | SMTP 접속. staging/prod 전용, 미설정이면 기동 실패 | 없음 |
 | `PICKLE_SMTP_PORT` | SMTP 포트(STARTTLS) | `587` |
-| `PICKLE_MAIL_FROM` | 수신함에 표시할 발신자. `Pickle <주소>` 형식을 권장합니다. | `PICKLE_SMTP_USERNAME` |
+| `PICKLE_MAIL_FROM` | 수신함에 표시할 발신자. `Pickle <주소>` 형식을 권장합니다. staging/prod 전용이고 **필수입니다** — 비어 있거나 주소 모양이 아니면 기동을 거부합니다. SMTP 사용자 이름으로 대신하지 않습니다(발송 서비스를 쓰면 그 값은 주소가 아니라 자격증명입니다) | 없음 |
 
 ### Proxmox / 프로비저닝
 

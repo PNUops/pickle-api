@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.mail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
@@ -14,7 +15,8 @@ import org.springframework.mail.javamail.JavaMailSenderImpl;
  * ever constructs it: these assertions are the only thing standing between a
  * mistake here and production mail. They cover the shape of what goes on the
  * wire — multipart when there is HTML, a single text part when there is not,
- * UTF-8 throughout — without opening a connection.
+ * UTF-8 throughout — and the From address the bean refuses to be built
+ * without, none of it opening a connection.
  */
 class SmtpMailSenderTest {
 
@@ -91,14 +93,50 @@ class SmtpMailSenderTest {
     }
 
     @Test
-    void blankFromIsLeftUnsetRatherThanRejected() {
-        // SimpleMailMessage tolerated a blank from; MimeMessageHelper throws on
-        // one, and this sender is only ever built from configuration that may
-        // not carry the value.
-        new SmtpMailSender(javaMailSender, "  ")
+    void aBlankFromFailsTheBeanInsteadOfEveryLaterSend() {
+        // Letting it through means the session default applies, which a hosted
+        // sending service rejects per message: 40 notifications land FAILED and
+        // the account mails, which have no retry, are simply lost.
+        assertThatThrownBy(() -> new SmtpMailSender(javaMailSender, "  "))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("PICKLE_MAIL_FROM");
+    }
+
+    @Test
+    void aBareTokenIsNotAnAddressAndFailsTheBean() {
+        // The shape the removed `${spring.mail.username}` fallback produced: a
+        // sending service's username is an opaque token with no @domain, not an
+        // address. Strict parsing accepts a bare local part, so validation is
+        // the only thing that sees it.
+        assertThatThrownBy(
+                () -> new SmtpMailSender(javaMailSender, "smtp-user-no-domain"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not a mail address")
+                // the rejected value never reaches the startup journal
+                .hasMessageNotContaining("smtp-user-no-domain")
+                .hasNoCause();
+    }
+
+    @Test
+    void twoAddressesFailTheBean() {
+        assertThatThrownBy(() -> new SmtpMailSender(javaMailSender,
+                "a@pusan.ac.kr, b@pusan.ac.kr"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("carries 2 addresses");
+    }
+
+    @Test
+    void aDisplayNameSurvivesAsRfc2047RatherThanRawBytes() throws Exception {
+        // The reason the sender keeps the configured string and lets the helper
+        // parse it: the helper encodes the display name in its own charset, and
+        // an address parsed here first would carry raw bytes into the header.
+        new SmtpMailSender(javaMailSender, "피클 <no-reply@pnuops.com>")
                 .send(MailMessage.text("a@pusan.ac.kr", "제목", "본문"));
 
-        assertThat(javaMailSender.sent).hasSize(1);
+        MimeMessage sent = javaMailSender.sent.getFirst();
+        assertThat(sent.getHeader("From")[0]).contains("=?UTF-8?");
+        assertThat(((jakarta.mail.internet.InternetAddress) sent.getFrom()[0]).getPersonal())
+                .isEqualTo("피클");
     }
 
     /** One leaf part: its content type and the body that came with it. */

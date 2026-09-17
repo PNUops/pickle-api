@@ -346,7 +346,7 @@ pickle:
     provider: ${PICKLE_DNS_PROVIDER:noop}
 
 ---
-# staging/prod: real SMTP (Google SMTP creds provided by operator via env).
+# staging/prod: real SMTP (provider credentials come from the operator via env).
 spring:
   config:
     activate:
@@ -362,10 +362,18 @@ spring:
           auth: true
           starttls:
             enable: true
+          # JavaMail waits forever by default. The notification dispatcher
+          # drains its batch serially on the scheduled thread, so one stalled
+          # handshake holds every notification behind it; account mail runs on
+          # its own pool of two, which a stall fills and then rejects. Boot's
+          # mail health indicator opens a real connection, so it stalls too.
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
 pickle:
   mfa:
     # Admin-tier 2FA is mandatory in production; override per env if needed.
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
   mail:
-    from: ${PICKLE_MAIL_FROM:${PICKLE_SMTP_USERNAME}}
+    from: ${PICKLE_MAIL_FROM:}
