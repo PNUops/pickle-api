@@ -59,7 +59,7 @@ class DomainSchemaConstraintsTest {
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         String slug = "dsc-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         User owner = new User("owner." + slug + "@pusan.ac.kr", "{test-no-login}", "신예준");
         owner.setRole(UserRole.USER);

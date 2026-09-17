@@ -1071,7 +1071,7 @@ class AdminOpenRouterAccountTest {
 
     private long workspace(long ownerOrgId, String name) {
         return jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?) returning id",
                 Long.class, name + UUID.randomUUID());
     }
 

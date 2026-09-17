@@ -439,7 +439,7 @@ class VmSshKeyTest {
     private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, 'VM 키 테스트 팀') returning id
+                values ('PROJECT'::workspace_kind, 'VM 키 테스트 팀') returning id
                 """, Long.class);
     }
 

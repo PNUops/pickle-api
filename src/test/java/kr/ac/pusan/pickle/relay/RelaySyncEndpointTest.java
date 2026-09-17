@@ -550,7 +550,7 @@ class RelaySyncEndpointTest {
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "rly-" + UUID.randomUUID().toString().substring(0, 10);
         long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?)
                 returning id
                 """, Long.class, "릴레이 테스트 " + slug);
         jdbcTemplate.update("""

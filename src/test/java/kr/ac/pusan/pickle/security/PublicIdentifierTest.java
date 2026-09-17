@@ -220,7 +220,7 @@ class PublicIdentifierTest {
             return existing.getFirst();
         }
         long id = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?)
                 returning id
                 """, Long.class, name);
         jdbcTemplate.update("""

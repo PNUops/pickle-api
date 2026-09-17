@@ -168,7 +168,7 @@ class AccountLifecycleTest {
         User user = createActiveUser("wd.owner@pusan.ac.kr", "유일소유자");
         personalWorkspaceService.ensurePersonalWorkspace(user);
         Org org = ensureOrg();
-        Workspace team = workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, "연구팀", null));
+        Workspace team = workspaceRepository.save(new Workspace(WorkspaceKind.PROJECT, "연구팀", null));
         workspaceMemberRepository.save(new WorkspaceMember(team, user.getId(), WorkspaceMemberRole.OWNER));
         createActiveVm(team.getId(), org.getId(), user.getId());
 
@@ -282,7 +282,7 @@ class AccountLifecycleTest {
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?)
                 returning id
                 """, Long.class, "탈퇴 키 정리 " + UUID.randomUUID().toString().substring(0, 8));
         long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, userId,

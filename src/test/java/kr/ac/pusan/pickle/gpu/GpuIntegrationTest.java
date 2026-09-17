@@ -97,7 +97,7 @@ class GpuIntegrationTest {
     void setup() {
         org = SeedFixtures.seedOrgId(jdbc);
         node = jdbc.queryForObject("select min(id) from nodes", Long.class);
-        workspace = jdbc.queryForObject("insert into workspaces(kind,name) values ('TEAM','GPU test') returning id", Long.class);
+        workspace = jdbc.queryForObject("insert into workspaces(kind,name) values ('PROJECT','GPU test') returning id", Long.class);
         User user = new User(UUID.randomUUID() + "@example.com", "unused", "GPU owner");
         user.setStatus(UserStatus.ACTIVE);
         user = users.saveAndFlush(user);
@@ -595,7 +595,7 @@ class GpuIntegrationTest {
     @Test
     void requestVmSelectionMasksForeignUngrantedsExactlyLikeMissingVms() throws Exception {
         long vm = vm();
-        long foreignWorkspace = jdbc.queryForObject("insert into workspaces(kind,name) values ('TEAM','other GPU workspace') returning id", Long.class);
+        long foreignWorkspace = jdbc.queryForObject("insert into workspaces(kind,name) values ('PROJECT','other GPU workspace') returning id", Long.class);
         jdbc.update("delete from resource_access_grants where resource_type='VM' and resource_id=?", vm);
         jdbc.update("update vms set workspace_id=? where id=?", foreignWorkspace, vm); entityManager.clear();
         String[] details = new String[2]; int i = 0;

@@ -595,7 +595,7 @@ class LlmKeyAccessScopingTest {
         }
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, 'LLM 키 접근 범위 테스트 팀')
+                values ('PROJECT'::workspace_kind, 'LLM 키 접근 범위 테스트 팀')
                 returning id
                 """, Long.class);
     }

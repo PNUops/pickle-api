@@ -129,7 +129,7 @@ class LlmUsageRetentionSweeperTest {
         long ownerId = SeedFixtures.orgadminId(jdbcTemplate);
         String unique = UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?)
                 returning id
                 """, Long.class, "보존 시험 " + unique);
         long requestId = jdbcTemplate.queryForObject("""

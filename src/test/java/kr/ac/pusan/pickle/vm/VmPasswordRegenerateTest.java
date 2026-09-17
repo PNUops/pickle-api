@@ -190,7 +190,7 @@ class VmPasswordRegenerateTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                java.util.Map.of("kind", "TEAM", "name", "재생성 " + slug))))
+                                java.util.Map.of("kind", "PROJECT", "name", "재생성 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));

@@ -70,7 +70,7 @@ class DomainRecordsTest {
         zone.reset();
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, "drt-" + UUID.randomUUID().toString().substring(0, 8));
     }
 

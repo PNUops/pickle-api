@@ -383,7 +383,7 @@ class OrgRoleGrantTest {
                 "select id from nodes where name = 'pve1'", Long.class);
         long requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         long workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, "ogr-" + UUID.randomUUID().toString().substring(0, 8));
         long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, org.getId(),
                 requesterId, "역할부여 테스트", imageId);

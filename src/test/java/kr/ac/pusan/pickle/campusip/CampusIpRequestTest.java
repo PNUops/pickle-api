@@ -316,7 +316,7 @@ class CampusIpRequestTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "교내 IP 테스트 " + slug,
+                                Map.of("kind", "PROJECT", "name", "교내 IP 테스트 " + slug,
                                         "slug", slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();

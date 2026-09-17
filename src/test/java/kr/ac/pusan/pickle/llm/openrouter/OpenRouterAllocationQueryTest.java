@@ -354,7 +354,7 @@ class OpenRouterAllocationQueryTest {
     private long workspace() {
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, ?) returning id
+                values ('PROJECT'::workspace_kind, ?) returning id
                 """, Long.class, "allocation-" + UUID.randomUUID());
     }
 

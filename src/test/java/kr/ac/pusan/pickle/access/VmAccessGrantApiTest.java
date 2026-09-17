@@ -752,7 +752,7 @@ class VmAccessGrantApiTest {
         String body = mockMvc.perform(post("/api/v1/workspaces")
                         .header("Authorization", "Bearer " + workspaceOwnerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("kind", "TEAM",
+                        .content(objectMapper.writeValueAsString(Map.of("kind", "PROJECT",
                                 "name", "접근 권한 테스트 " + slug, "slug", slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();

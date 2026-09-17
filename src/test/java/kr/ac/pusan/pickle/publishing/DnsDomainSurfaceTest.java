@@ -72,7 +72,7 @@ class DnsDomainSurfaceTest {
         jdbcTemplate.update("update orgs set status = 'ACTIVE' where id = ?", orgId);
         String slug = "dds-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         workspacePublicId = jdbcTemplate.queryForObject(
                 "select public_id from workspaces where id = ?", UUID.class, workspaceId);
@@ -242,7 +242,7 @@ class DnsDomainSurfaceTest {
         DnsDomainView created = issue("notyours");
         service.delete(owner, created.id(), "127.0.0.1");
         long otherWorkspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, "other-" + UUID.randomUUID().toString().substring(0, 8));
         jdbcTemplate.update(
                 "insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",

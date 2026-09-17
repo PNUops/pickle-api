@@ -86,7 +86,7 @@ class DriftReconcilerTest {
         requesterId = SeedFixtures.orgadminId(jdbcTemplate);
         String slug = "drift-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         logAppender = new ListAppender<>();
         logAppender.start();

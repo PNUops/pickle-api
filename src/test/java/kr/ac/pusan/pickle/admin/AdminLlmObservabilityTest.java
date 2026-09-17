@@ -435,7 +435,7 @@ class AdminLlmObservabilityTest {
     }
 
     private long workspace(String name) {
-        return workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, name, null)).getId();
+        return workspaceRepository.save(new Workspace(WorkspaceKind.PROJECT, name, null)).getId();
     }
 
     private Org org(String name) {

@@ -86,7 +86,7 @@ class AdminUsersTest {
         // memberA becomes derived-in-orgA: member of a workspace with a VM in orgA.
         if (workspaceMemberRepository.findWithWorkspaceByUserId(memberA.getId()).isEmpty()) {
             Workspace workspace = workspaceRepository.save(
-                    new Workspace(WorkspaceKind.TEAM, "A팀", null));
+                    new Workspace(WorkspaceKind.PROJECT, "A팀", null));
             workspaceMemberRepository.save(new WorkspaceMember(workspace, memberA.getId(), WorkspaceMemberRole.OWNER));
             createActiveVm(workspace.getId(), orgA.getId(), memberA.getId());
         }

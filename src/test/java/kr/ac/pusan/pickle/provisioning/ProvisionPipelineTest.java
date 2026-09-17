@@ -131,7 +131,7 @@ class ProvisionPipelineTest {
         adminUserId = SeedFixtures.orgadminId(jdbc);
         String slug = "pipe-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbc.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
     }
 
