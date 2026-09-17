@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.publishing.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 import kr.ac.pusan.pickle.publishing.CertificateStatus;
@@ -25,7 +26,8 @@ import org.jspecify.annotations.Nullable;
  */
 public record AdminDomainView(
         UUID id,
-        UUID vmId,
+        @Schema(description = "이 이름을 쓰는 가상머신. 외부 도메인은 가상머신에 매이지 않으므로 null입니다.")
+        @Nullable UUID vmId,
         DomainKind kind,
         String fqdn,
         @Nullable String rootDomain,
@@ -33,8 +35,12 @@ public record AdminDomainView(
         @Nullable Instant verifiedAt,
         @Nullable Instant releasedAt,
         @Nullable Instant reservedUntil,
+        @Schema(description = "사용 기한. 외부 도메인만 갖습니다 — 다른 종류는 가상머신이나 "
+                + "소유자의 DNS가 수명을 정하므로 null입니다.")
+        @Nullable Instant renewDueAt,
         Instant createdAt,
-        String vmName,
+        @Schema(description = "이 이름을 쓰는 가상머신의 이름. 외부 도메인은 null입니다.")
+        @Nullable String vmName,
         UUID workspaceId,
         String workspaceName,
         UUID orgId,

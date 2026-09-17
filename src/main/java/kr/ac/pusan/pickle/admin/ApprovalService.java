@@ -7,9 +7,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import kr.ac.pusan.pickle.access.ResourceAccessGrant;
 import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
-import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.admin.dto.RejectRequestRequest;
@@ -48,8 +46,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Admin approval flow (contract tag {@code admin}, vm-requests subset). The org
@@ -65,6 +61,7 @@ public class ApprovalService {
 
     private final RequestRepository requestRepository;
     private final RequestReviewRepository reviewRepository;
+    private final kr.ac.pusan.pickle.request.RequestApproval requestApproval;
     private final RequestAssembler assembler;
     private final Map<ResourceType, RequestTypeHandler> handlers;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -77,6 +74,7 @@ public class ApprovalService {
     private final NotificationService notificationService;
 
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
+            kr.ac.pusan.pickle.request.RequestApproval requestApproval,
             RequestAssembler assembler, List<RequestTypeHandler> handlers,
             WorkspaceMemberRepository workspaceMemberRepository,
             WorkspaceRepository workspaceRepository,
@@ -85,6 +83,7 @@ public class ApprovalService {
             AuditService auditService, AuditIds auditIds, NotificationService notificationService) {
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
+        this.requestApproval = requestApproval;
         this.assembler = assembler;
         this.handlers = handlers.stream()
                 .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
@@ -162,22 +161,10 @@ public class ApprovalService {
             throw ApiException.validationFailed(errors);
         }
 
-        reviewRepository.save(RequestReview.approve(request.getId(), actor.id(),
-                Texts.blankToNull(form.comment()), form.grantedStartDate(), form.grantedEndDate()));
-        request.setStatus(RequestStatus.APPROVED);
-        RequestTypeHandler.Materialized created = handler.materialize(request, form, actor);
-
-        // The resource starts private: its requester, and nobody else. Anyone
-        // who should reach it is added to its access list afterwards, so a
-        // resource is never open by default through a step somebody forgot.
-        grantRepository.save(ResourceAccessGrant.forUser(request.getResourceType(),
-                created.resourceId(), request.getRequesterId(), ResourceRole.OWNER));
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                created.afterCommit().run();
-            }
-        });
+        // The decision, the resource and its first grant, shared with the path
+        // that approves without a reviewer.
+        RequestTypeHandler.Materialized created =
+                requestApproval.apply(request, handler, form, actor.id(), actor);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", request.getResourceType().name());

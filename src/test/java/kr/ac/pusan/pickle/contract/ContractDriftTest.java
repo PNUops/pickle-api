@@ -189,6 +189,10 @@ class ContractDriftTest {
             "POST /domains/{domainId}/verify",
             "GET /admin/routes",
             "GET /admin/domains",
+            "GET /admin/domains/{domainId}/records",
+            "PATCH /admin/domains/{domainId}/renewal",
+            "GET /admin/domain-roots",
+            "PATCH /admin/domain-roots/{rootDomain}",
             "GET /admin/certificates",
             "POST /admin/routes/resync",
             "POST /admin/routes/{routeId}/apply",
@@ -313,7 +317,7 @@ class ContractDriftTest {
             // /domains because those are scoped through the VM they publish and
             // one operationId cannot be scoped to two access lists.
             "GET /dns-domains",
-            "POST /dns-domains",
+            "POST /dns-domains/{domainId}/revive",
             "GET /dns-domains/{domainId}",
             "DELETE /dns-domains/{domainId}",
             "POST /dns-domains/{domainId}/renew",

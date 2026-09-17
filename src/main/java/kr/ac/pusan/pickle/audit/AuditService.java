@@ -120,6 +120,10 @@ public class AuditService {
     // Admin post-hoc domain intervention (contract v0.18.0).
     public static final String DOMAIN_FORCE_RELEASE = "domain.force_release";
     public static final String DOMAIN_ADMIN_VERIFY = "domain.admin_verify";
+    /** An administrator moved one name's renewal deadline. */
+    public static final String DOMAIN_ADMIN_RENEWAL = "domain.admin_renewal";
+    /** An administrator changed whether a root issues without review. */
+    public static final String DOMAIN_ROOT_POLICY = "domain_root.policy";
     public static final String ROUTE_APPLY = "route.apply";
     // Operational-state write paths for inventory (contract v0.21.0).
     public static final String OS_IMAGE_STATUS_UPDATE = "os_image.status_update";

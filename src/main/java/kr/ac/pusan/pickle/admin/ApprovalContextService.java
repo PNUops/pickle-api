@@ -102,7 +102,7 @@ public class ApprovalContextService {
                 legacyVm.orgHeadroom(),
                 legacyVm.guidance(),
                 contribution.vm(),
-                contribution.llmKey(), contribution.gpu());
+                contribution.llmKey(), contribution.gpu(), contribution.domain());
     }
 
     private Applicant applicantPanel(Request request, User applicant) {
@@ -136,6 +136,17 @@ public class ApprovalContextService {
                 resources.activeVms(), resources.totals());
     }
 
+    /** The same three states the request detail reports, for the history panel. */
+    private static String reviewerName(RequestReview review, User reviewer) {
+        if (review == null) {
+            return null;
+        }
+        if (review.getReviewerId() == null) {
+            return "자동 승인";
+        }
+        return reviewer != null ? reviewer.getName() : "탈퇴 회원";
+    }
+
     private List<HistoryEntry> history(Request request) {
         List<Request> prior = requestRepository.findHistory(request.getRequesterId(), request.getWorkspaceId(),
                 request.getId(), PageRequest.of(0, HISTORY_LIMIT, Sort.by(Sort.Direction.DESC, "id")));
@@ -145,18 +156,23 @@ public class ApprovalContextService {
         Map<Long, RequestReview> reviews = reviewRepository
                 .findByRequestIdIn(prior.stream().map(Request::getId).toList())
                 .stream().collect(Collectors.toMap(RequestReview::getRequestId, Function.identity()));
+        // Null reviewer ids are automatic approvals and there is nobody to look
+        // up for them. The batched lookup on the requester side already filters;
+        // this one did not, because until now the column could not be null.
         Map<Long, User> reviewers = userRepository
-                .findAllById(reviews.values().stream().map(RequestReview::getReviewerId).toList())
+                .findAllById(reviews.values().stream().map(RequestReview::getReviewerId)
+                        .filter(java.util.Objects::nonNull).toList())
                 .stream().collect(Collectors.toMap(User::getId, Function.identity()));
         return prior.stream()
                 .map(r -> {
                     RequestReview review = reviews.get(r.getId());
-                    User reviewer = review != null ? reviewers.get(review.getReviewerId()) : null;
+                    User reviewer = review != null && review.getReviewerId() != null
+                            ? reviewers.get(review.getReviewerId()) : null;
                     return new HistoryEntry(r.getPublicId(), r.getResourceType(), r.getDisplayName(),
                             r.getCreatedAt(), r.getStatus(),
                             review != null ? review.getDecision() : null,
                             review != null ? review.getComment() : null,
-                            reviewer != null ? reviewer.getName() : null);
+                            reviewerName(review, reviewer));
                 })
                 .toList();
     }

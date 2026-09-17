@@ -435,11 +435,19 @@ public class NotificationComposer {
                             GPU가 할당되면 메일과 콘솔 알림으로 안내합니다.""".formatted(
                                     str(args, "queuePosition"));
                 };
-        // The approval mail is the only one an LLM key ever produces, so it
-        // points at the screen holding the action rather than at the request.
-        String link = type == ResourceType.LLM_API_KEY && args.get("llmKeyId") != null
-                ? "/console/llm-keys/" + args.get("llmKeyId")
-                : "/console/requests/" + args.get("requestId");
+        // Where the next move is. For a key and a name that is the resource's
+        // own screen rather than the request: the request is finished and what
+        // the reader has to do — mint the secret, add the records — is over
+        // there. Everything else keeps pointing at the request, which is where
+        // its story continues.
+        String link;
+        if (type == ResourceType.LLM_API_KEY && args.get("llmKeyId") != null) {
+            link = "/console/llm-keys/" + args.get("llmKeyId");
+        } else if (type == ResourceType.DOMAIN && args.get("domainId") != null) {
+            link = "/console/domains/" + args.get("domainId");
+        } else {
+            link = "/console/requests/" + args.get("requestId");
+        }
         return new Composed(event.id(), label + " 신청 승인", body + reviewComment(args),
                 link, event.defaultImportance(),
                 payload(args, "requestId", "resourceName"));

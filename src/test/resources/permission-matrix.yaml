@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.75.0, 239 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.81.0, 243 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -161,7 +161,7 @@ operations:
   # resolve the owning VM's list and answer 404 for one of these, which is why
   # the two cannot share a path: one operationId cannot be scoped to two lists.
   - { id: listDnsDomains, method: GET, path: "/dns-domains", roles: { USER: allow_workspace_scoped:MEMBER, ORG_VIEWER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_VIEWER: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
-  - { id: createDnsDomain, method: POST, path: "/dns-domains", roles: { USER: allow_workspace_scoped:MEMBER, ORG_VIEWER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_VIEWER: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
+  - { id: reviveDnsDomain, method: POST, path: "/dns-domains/{domainId}/revive", roles: { USER: allow_workspace_scoped:MEMBER, ORG_VIEWER: allow_workspace_scoped:MEMBER, ORG_MANAGER: allow_workspace_scoped:MEMBER, ORG_ADMIN: allow_workspace_scoped:MEMBER, SYS_VIEWER: allow_workspace_scoped:MEMBER, SYS_MANAGER: allow_workspace_scoped:MEMBER, SYS_ADMIN: allow_workspace_scoped:MEMBER } }
   - { id: getDnsDomain, method: GET, path: "/dns-domains/{domainId}", roles: { USER: allow_resource_scoped:VIEWER, ORG_VIEWER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_VIEWER: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
   - { id: deleteDnsDomain, method: DELETE, path: "/dns-domains/{domainId}", roles: { USER: allow_resource_scoped:OWNER, ORG_VIEWER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_VIEWER: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: renewDnsDomain, method: POST, path: "/dns-domains/{domainId}/renew", roles: { USER: allow_resource_scoped:EDITOR, ORG_VIEWER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_VIEWER: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
@@ -247,6 +247,10 @@ operations:
   # ── 3.12 Admin — publishing / routes (resync SYS tier) ────────────────────
   - { id: listAdminRoutes,       method: GET,  path: "/admin/routes",          roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listAdminDomains,      method: GET,  path: "/admin/domains",         roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listAdminDomainRecords, method: GET, path: "/admin/domains/{domainId}/records", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateDomainRenewal,   method: PATCH, path: "/admin/domains/{domainId}/renewal", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: listDomainRoots,       method: GET,  path: "/admin/domain-roots",    roles: { USER: deny, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateDomainRoot,      method: PATCH, path: "/admin/domain-roots/{rootDomain}", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listAdminCertificates, method: GET,  path: "/admin/certificates",    roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: resyncRoutes,          method: POST, path: "/admin/routes/resync",   roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: forceReleaseDomain,    method: POST, path: "/admin/domains/{domainId}/force-release", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }

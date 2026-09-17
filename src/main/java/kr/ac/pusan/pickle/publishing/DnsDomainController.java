@@ -9,7 +9,6 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.publishing.dto.CreateDnsDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
 import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
 import kr.ac.pusan.pickle.publishing.dto.ReplaceDnsRecordSetsRequest;
@@ -70,16 +69,16 @@ public class DnsDomainController {
         return PageResponse.of(result.getContent(), result);
     }
 
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "도메인 발급",
-            description = "루트 도메인 아래 이름 하나를 발급받습니다. 승인은 필요하지 않으며, "
-                    + "발급한 사람이 유일한 소유자가 됩니다. 기관은 고른 루트 도메인을 따릅니다.")
-    public DnsDomainView createDnsDomain(
+    @PostMapping("/{domainId}/revive")
+    @Operation(summary = "해제한 도메인 되살리기",
+            description = "예약 기간 동안 이 워크스페이스가 붙잡고 있는 이름을 되찾습니다. "
+                    + "새로 받는 것이 아니라 이미 가진 것을 되살리는 것이므로 승인을 거치지 "
+                    + "않습니다. 레코드는 돌아오지 않으며 다시 넣어야 합니다.")
+    public DnsDomainView reviveDnsDomain(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody CreateDnsDomainRequest request,
+            @PathVariable UUID domainId,
             HttpServletRequest httpRequest) {
-        return service.create(principal, request, clientIp(httpRequest));
+        return service.revive(principal, domainId, clientIp(httpRequest));
     }
 
     @GetMapping("/{domainId}")

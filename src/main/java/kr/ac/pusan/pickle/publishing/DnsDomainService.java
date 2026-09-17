@@ -15,11 +15,7 @@ import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
-import kr.ac.pusan.pickle.orgs.Org;
-import kr.ac.pusan.pickle.orgs.OrgRepository;
-import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.publishing.DomainRecordPolicy.DesiredSet;
-import kr.ac.pusan.pickle.publishing.dto.CreateDnsDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
 import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
 import kr.ac.pusan.pickle.publishing.dto.ReplaceDnsRecordSetsRequest;
@@ -35,11 +31,16 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Issuing a name on its own, letting it go, and keeping it.
  *
- * <p>No approval anywhere in here. That is the decision this kind exists to
- * carry: a name costs the platform a row and a zone entry, and making a person
- * wait for a human to agree to that buys nothing. What stands in for approval
- * is the reserved-label list, the per-workspace cap, and the renewal deadline
- * that takes an unwanted name back.</p>
+ * <p>Whether a person had to agree first is not decided here. {@link #issue}
+ * is reached from the request flow's approval, and the root the name is asked
+ * under says whether that approval waited for a reviewer or was the platform's
+ * own. This class is the part that is the same either way.</p>
+ *
+ * <p>What the round before this one said here — that no approval exists for
+ * this kind, and that the reserved-label list, the per-workspace cap and the
+ * renewal deadline stand in for one — is no longer true of the first clause and
+ * is still true of the rest: those three bound what an approved name may be,
+ * under both policies.</p>
  */
 @Service
 public class DnsDomainService {
@@ -55,8 +56,7 @@ public class DnsDomainService {
     private final PublishingService publishingService;
     private final ResourceAccessGrantRepository grantRepository;
     private final ResourceAccessResolver resourceAccessResolver;
-    private final DomainRootRepository domainRootRepository;
-    private final OrgRepository orgRepository;
+    private final DomainIssuancePolicy issuancePolicy;
     private final kr.ac.pusan.pickle.publishing.dns.DnsRecordProvider dnsRecordProvider;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -67,7 +67,7 @@ public class DnsDomainService {
             SubdomainPolicy subdomainPolicy, PublishingService publishingService,
             ResourceAccessGrantRepository grantRepository,
             ResourceAccessResolver resourceAccessResolver,
-            DomainRootRepository domainRootRepository, OrgRepository orgRepository,
+            DomainIssuancePolicy issuancePolicy,
             kr.ac.pusan.pickle.publishing.dns.DnsRecordProvider dnsRecordProvider,
             WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, AuditService auditService) {
@@ -79,8 +79,7 @@ public class DnsDomainService {
         this.publishingService = publishingService;
         this.grantRepository = grantRepository;
         this.resourceAccessResolver = resourceAccessResolver;
-        this.domainRootRepository = domainRootRepository;
-        this.orgRepository = orgRepository;
+        this.issuancePolicy = issuancePolicy;
         this.dnsRecordProvider = dnsRecordProvider;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -88,42 +87,50 @@ public class DnsDomainService {
     }
 
     /**
-     * Issues a name to a workspace the requester belongs to.
+     * Puts a fresh name in the ground, with nothing said about who owns it.
      *
-     * <p>The requester becomes its only owner, exactly as an approved resource
-     * does: nothing is open by default, and anyone else arrives through the
-     * access list.</p>
+     * <p>Shared by the two callers that can produce one: the approval flow,
+     * which materialises an approved request, and the revival path's sibling
+     * below. Neither the access grant nor the audit row is written here —
+     * both belong to the flow that decided the name should exist, and writing
+     * them here as well is how one name ends up with two owners and two
+     * stories about how it arrived.</p>
+     *
+     * <p>Every check runs here rather than only at submission time. A request
+     * can sit in a queue for days, and in that time a root can lose its row,
+     * an organisation can be disabled, the reserved-word list can grow and
+     * somebody else can take the name. Validating once at the door and
+     * trusting it at the counter is how an approval creates something the
+     * rules no longer allow.</p>
      */
     @Transactional
-    public DnsDomainView create(AuthenticatedUser actor, CreateDnsDomainRequest request,
-            String ip) {
-        Workspace workspace = requireMembership(actor, request.workspaceId());
-        String rootDomain = resolveRoot(request.rootDomain());
-        DomainRoot root = requireIssuableRoot(rootDomain);
-        String label = validateLabel(request.label());
+    public Domain issue(long workspaceId, String rawLabel, String rawRoot) {
+        String rootDomain = resolveRoot(rawRoot);
+        // Reached from an approval, not from the form that named this root, so a
+        // root that disappeared in between answers a conflict rather than
+        // pointing the reviewer at a field they never filled in.
+        DomainRoot root = issuancePolicy.requireIssuable(rootDomain, false);
+        String label = validateLabel(rawLabel);
         // Locked before the count, so counting what the workspace holds and
         // adding to it happen under one holder. Two requests at the cap would
         // otherwise both read a number below it and both commit above it.
-        workspaceRepository.findByIdForUpdate(workspace.getId())
+        workspaceRepository.findByIdForUpdate(workspaceId)
                 .orElseThrow(() -> workspaceNotFound());
 
         String fqdn = label + "." + rootDomain;
-        // A live row for this name answers whoever holds it, with one exception:
-        // the workspace that holds it in reserve. That exception is the entire
-        // point of the reservation — it exists so a release by mistake is
-        // recoverable, and without it the grace only keeps the name from
-        // everybody including the person it is being kept for.
+        // Any live row for this name refuses this one. The workspace that holds
+        // it in reserve is not an exception here the way it used to be: taking
+        // a reserved name back is its own act on a row that already exists, and
+        // routing it through issuance would make recovery wait behind whatever
+        // queue issuance waits behind.
         Domain held = domainRepository
                 .findFirstByFqdnAndStatusNotForUpdate(fqdn, DomainStatus.REMOVED)
                 .orElse(null);
         if (held != null) {
-            // Ahead of the cap check on purpose: the row being revived is
-            // already counted against the workspace, so asking again would
-            // refuse a workspace at the cap the one name it is entitled to.
-            return revive(actor, held, workspace, ip);
+            throw heldBy(held, workspaceId);
         }
 
-        requireRoomInWorkspace(workspace.getId());
+        requireRoomInWorkspace(workspaceId);
         if (!dnsRecordProvider.configured()) {
             // The platform path refuses here too. Without it the name is issued
             // and every set it is given stays PENDING with no error on it, so
@@ -133,9 +140,8 @@ public class DnsDomainService {
                     "지금은 도메인을 발급할 수 없습니다",
                     "DNS 제공자가 설정되어 있지 않습니다. 관리자에게 문의해 주세요.");
         }
-        Domain domain;
         try {
-            domain = domainRepository.saveAndFlush(Domain.external(workspace.getId(),
+            return domainRepository.saveAndFlush(Domain.external(workspaceId,
                     root.getOrgId(), fqdn, rootDomain,
                     renewalPolicy.deadlineFrom(Instant.now())));
         } catch (DataIntegrityViolationException raced) {
@@ -144,35 +150,60 @@ public class DnsDomainService {
             // the arbiter. The loser gets the same 409, not a 500 at commit.
             throw fqdnTaken();
         }
-        grantRepository.save(ResourceAccessGrant.forUser(ResourceType.DOMAIN, domain.getId(),
-                actor.id(), ResourceRole.OWNER));
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.DNS_DOMAIN_CREATE, "dns_domain", domain.getPublicId(),
-                java.util.Map.of("fqdn", fqdn), ip);
-        return queryService.get(actor, domain.getPublicId());
     }
 
     /**
-     * Takes a reserved name back for the workspace holding it.
+     * Takes back a name this workspace is holding in reserve.
      *
-     * <p>The name returns; the records do not. They were marked for removal
-     * when it was released and by now the zone has taken them down, so handing
-     * them back would republish a site its owner had stopped — and the records
-     * are the part they can rewrite in a minute, while the name is the part
-     * they cannot get again once somebody else takes it.</p>
+     * <p>A door of its own rather than a branch of issuance, and the reason is
+     * the clock. The reservation expires — the sweeper reclaims the name once
+     * the grace is up — so a recovery that had to wait in an approval queue
+     * could outlive the thing it was recovering, and the owner would watch
+     * their own name go to somebody else while their request was pending.
+     * Nothing is being handed out here either: the workspace already holds the
+     * name and it has been occupying one of their slots the whole time.</p>
      *
-     * <p>Anyone but the holding workspace gets the same conflict an unheld
-     * collision gets. Saying "this is reserved by somebody else" would tell a
-     * stranger who holds a name they cannot see.</p>
+     * <p>The records do not come back. Restoring them would republish a site
+     * its owner had taken down, and they are the part that can be rewritten in
+     * a minute while the name is the part that cannot be had again.</p>
+     *
+     * <p><b>Membership, not a rung.</b> Every other operation on this kind asks
+     * the access list, and this one asks the workspace — because the person who
+     * has to be able to recover a name is often the one who has no grant on it:
+     * a workspace owner whose member issued the name and then left. Requiring a
+     * grant would mean granting yourself access to a released row before you
+     * could take it back, which is a step nobody would find.</p>
      */
-    private DnsDomainView revive(AuthenticatedUser actor, Domain held, Workspace workspace,
-            String ip) {
-        if (held.getReleasedAt() == null || !workspace.getId().equals(held.getWorkspaceId())
-                || held.getKind() != DomainKind.EXTERNAL) {
-            throw fqdnTaken();
+    @Transactional
+    public DnsDomainView revive(AuthenticatedUser actor, UUID domainId, String ip) {
+        Domain unlocked = queryService.requireExternal(domainId);
+        // Re-read under the row lock. Two people pressing 되살리기 on the same
+        // name is the ordinary case — the workspace owner and the issuer both
+        // looking at the same list — and without the lock both see a released
+        // row and both write a fresh deadline.
+        Domain held = domainRepository.findByIdForUpdate(unlocked.getId())
+                .orElseThrow(() -> DomainResourceAdapter.MESSAGES.notFound());
+        Workspace workspace = requireMembership(actor, held);
+        if (held.getReleasedAt() == null) {
+            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
+                    "해제한 이름이 아닙니다", "이 도메인은 지금 쓰이고 있습니다.");
         }
+        // The root has to still be one we issue under. A name reserved beneath
+        // a root that was withdrawn meanwhile cannot come back to life, and
+        // saying so here is better than reviving it into a root that no longer
+        // answers for it.
+        issuancePolicy.requireIssuable(held.getRootDomain(), false);
         held.setReleasedAt(null);
         held.setRenewDueAt(renewalPolicy.deadlineFrom(Instant.now()));
+        // The original owner's grant survived the release, but the person
+        // taking the name back may not be that person — a workspace owner
+        // recovering a name whose issuer has left holds no grant on it. Without
+        // this they revive the row and are then refused the view of it.
+        if (grantRepository.findByResourceTypeAndResourceIdAndUserId(ResourceType.DOMAIN,
+                held.getId(), actor.id()).isEmpty()) {
+            grantRepository.save(ResourceAccessGrant.forUser(ResourceType.DOMAIN, held.getId(),
+                    actor.id(), ResourceRole.OWNER));
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.DNS_DOMAIN_CREATE, "dns_domain", held.getPublicId(),
                 java.util.Map.of("fqdn", held.getFqdn(), "revived", true), ip);
@@ -309,18 +340,6 @@ public class DnsDomainService {
     }
 
     /**
-     * The root row, which is where the name's organisation comes from.
-     *
-     * <p>Two gates rather than one, and they answer different questions. The
-     * setting says whether names may be issued under this root at all, which an
-     * administrator flips; the row says what the root is. A root that passes
-     * the setting with no row here is refused, because the alternative is a
-     * name with no organisation — invisible to every organisation
-     * administrator and visible only to a system administrator, which is the
-     * wrong shape for the one resource kind whose content this platform does
-     * not control.</p>
-     */
-    /**
      * Refuses a name its owner has already let go of, or one that has been
      * reclaimed.
      *
@@ -342,35 +361,16 @@ public class DnsDomainService {
         }
     }
 
-    private DomainRoot requireIssuableRoot(String rootDomain) {
-        DomainRoot root = domainRootRepository.findByRootDomain(rootDomain)
-                .orElseThrow(() -> ApiException.validationFailed(List.of(
-                        new FieldValidationError("rootDomain",
-                                "이 루트 도메인으로는 이름을 발급할 수 없습니다."))));
-        // The same refusal a request form makes. A name takes its organisation
-        // from the root, so issuing under a root whose organisation is disabled
-        // would attach it to one that is no longer taking anything on.
-        Org org = orgRepository.findById(root.getOrgId()).orElse(null);
-        if (org == null || org.getStatus() != OrgStatus.ACTIVE) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_NOT_ACTIVE,
-                    "지금은 이 루트 도메인으로 발급할 수 없습니다",
-                    "이 루트 도메인을 소유한 기관이 비활성 상태입니다. 관리자에게 문의해 주세요.");
-        }
-        return root;
-    }
-
-    private Workspace requireMembership(AuthenticatedUser actor, UUID workspaceId) {
-        if (workspaceId == null) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("workspaceId",
-                    "이 이름을 소유할 워크스페이스를 골라 주세요.")));
-        }
-        Workspace workspace = workspaceRepository.findByPublicIdAndDeletedAtIsNull(workspaceId)
+    /** The workspace a held name belongs to, refusing anyone outside it. */
+    private Workspace requireMembership(AuthenticatedUser actor, Domain domain) {
+        Workspace workspace = workspaceRepository
+                .findByIdAndDeletedAtIsNull(domain.getWorkspaceId())
                 .orElseThrow(DnsDomainService::workspaceNotFound);
         if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .isEmpty()) {
-            // The same 404 an unknown id gets: whether a workspace exists is
-            // not something a non-member is told.
-            throw workspaceNotFound();
+            // The same 404 the name's own machinery gives somebody it is hidden
+            // from: whether this name exists is not a non-member's to learn.
+            throw DomainResourceAdapter.MESSAGES.notFound();
         }
         return workspace;
     }
@@ -425,6 +425,25 @@ public class DnsDomainService {
                             + "개까지 가질 수 있습니다. 해제한 이름도 예약 기간 동안은 자리를 차지하므로, "
                             + "예약이 끝나기를 기다리거나 쓰고 있는 이름을 정리해 주세요.");
         }
+    }
+
+    /**
+     * The refusal for a name that is already in the ground.
+     *
+     * <p>Split on who holds it, and only for the workspace doing the asking.
+     * Their own reserved name is recoverable and they should be sent to the
+     * door that recovers it rather than told to pick a different name. For
+     * everyone else the answer stays exactly what an unheld collision gives —
+     * saying "reserved by somebody else" would tell a stranger who holds a
+     * name they cannot see.</p>
+     */
+    private static ApiException heldBy(Domain held, long askingWorkspaceId) {
+        if (held.getReleasedAt() != null && held.getWorkspaceId() == askingWorkspaceId) {
+            return new ApiException(HttpStatus.CONFLICT, ErrorCodes.DOMAIN_FQDN_TAKEN,
+                    "이 워크스페이스가 예약 중인 이름입니다",
+                    "해제한 이름이라 아직 이 워크스페이스의 것입니다. 도메인 목록에서 되살려 주세요.");
+        }
+        return fqdnTaken();
     }
 
     private static ApiException fqdnTaken() {

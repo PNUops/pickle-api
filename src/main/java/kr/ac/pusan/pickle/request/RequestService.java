@@ -31,6 +31,7 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.orgs.OrgStatus;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
+import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.request.dto.RequestDetailResponse;
 import org.jspecify.annotations.Nullable;
@@ -59,6 +60,7 @@ public class RequestService {
 
     private final RequestRepository requestRepository;
     private final RequestAssembler assembler;
+    private final RequestApproval requestApproval;
     private final Map<ResourceType, RequestTypeHandler> handlers;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
@@ -69,13 +71,14 @@ public class RequestService {
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final Clock clock;
 
-    public RequestService(RequestRepository requestRepository, RequestAssembler assembler,
+    public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
             RequestPeriodPresetRepository periodPresetRepository, Clock clock) {
         this.requestRepository = requestRepository;
         this.assembler = assembler;
+        this.requestApproval = requestApproval;
         this.handlers = handlers.stream()
                 .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
         this.workspaceRepository = workspaceRepository;
@@ -110,25 +113,49 @@ public class RequestService {
         workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
                 .orElseThrow(RequestService::notWorkspaceMember);
 
-        Org org = orgRepository.findByPublicId(form.orgId())
-                .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
-        if (org.getStatus() != OrgStatus.ACTIVE) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
-                    "비활성화된 기관에는 신청할 수 없습니다.")));
-        }
-
         List<FieldValidationError> errors = new ArrayList<>();
-        ResolvedPeriod period = resolvePeriod(form, errors);
+        // Asked here rather than by an annotation, because whether the field is
+        // required is the kind's answer. Asked *before* the kind validates so
+        // that a form missing this and something else gets told both at once:
+        // the annotation it replaces reported alongside every other missing
+        // field, and answering in two round trips instead would be a step back
+        // for anything that is not this platform's own console.
+        if (!handler.derivesOrgId() && form.orgId() == null) {
+            errors.add(new FieldValidationError("orgId", "기관(orgId)을 지정해 주세요."));
+        }
+        // A kind whose resource carries its own deadline is not asked for a
+        // period and is not refused for leaving it out. A period that arrived
+        // anyway is dropped rather than stored: keeping it would show the
+        // applicant a date on their request that nothing in the system honours,
+        // beside the one that actually ends the resource.
+        ResolvedPeriod period = handler.ownsItsOwnLifetime()
+                ? new ResolvedPeriod(null, null)
+                : resolvePeriod(form, errors);
         handler.validateCreate(form, errors);
         if (!errors.isEmpty()) {
             throw ApiException.validationFailed(errors);
         }
 
-        Request saved = requestRepository.save(new Request(form.type(), workspace.getId(), org.getId(),
+        // After the kind's own validation, not before it. The organisation can
+        // come from what is being asked for, and working it out from a root
+        // domain that turns out not to exist would answer with that failure
+        // instead of the field error the applicant needs to see.
+        Org org = resolveOrg(handler, form);
+
+        Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
+                org.getId(),
                 actor.id(), form.purpose().strip(),
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
+
+        // A kind whose policy issues without a reviewer is approved here, in
+        // this transaction, through the same code an approving reviewer runs.
+        // Deciding it later — a sweep, a job — would leave a window in which
+        // the applicant is looking at a request nobody will ever act on.
+        if (handler.isAutoApproved(form)) {
+            return autoApprove(actor, saved, handler, workspace, org.getPublicId(), ip);
+        }
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", form.type().name());
@@ -147,6 +174,58 @@ public class RequestService {
                 NotificationEvent.REQUEST_SUBMITTED,
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);
+        return assembler.toDetail(saved);
+    }
+
+    /**
+     * Approves a submission the policy says needs no reviewer.
+     *
+     * <p>The record says a decision was made and that no person made it. The
+     * alternative — leaving {@code request_reviews} empty — would show the
+     * applicant a request that is approved with nothing saying when or by
+     * what, and would take the approved-request guard out of the loop for a
+     * whole kind.</p>
+     *
+     * <p>One notice, not two. The submitted-and-then-approved pair is a story
+     * about waiting, and nobody waited; the organisation's administrators are
+     * not told at all, because there is nothing for them to do about a request
+     * that is already finished.</p>
+     */
+    private RequestDetailResponse autoApprove(AuthenticatedUser actor, Request saved,
+            RequestTypeHandler handler, Workspace workspace, UUID orgPublicId, String ip) {
+        RequestTypeHandler.Materialized created = requestApproval.apply(saved, handler,
+                new ApproveRequestRequest(null, null, null, null, null, null), null, actor);
+
+        // Both rows, not one. The submission happened — somebody asked for this
+        // and the audit is where "was it ever asked for" is answered — and the
+        // approval happened too. Writing only the approval leaves a request
+        // that, to anyone filtering by request.create, never existed.
+        Map<String, Object> submitArgs = new LinkedHashMap<>();
+        submitArgs.put("type", saved.getResourceType().name());
+        submitArgs.put("workspaceId", workspace.getPublicId());
+        submitArgs.put("orgId", orgPublicId);
+        submitArgs.putAll(handler.submitAuditArgs(saved));
+        auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
+                "request", saved.getPublicId(), submitArgs, ip);
+
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("type", saved.getResourceType().name());
+        auditArgs.put("workspaceId", workspace.getPublicId());
+        // The actor on this row is the applicant, because they are who acted.
+        // Without this flag an audit reader sees somebody approving their own
+        // request; with it the row says a policy did.
+        auditArgs.put("automatic", true);
+        auditArgs.putAll(created.auditArgs());
+        auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                AuditService.REQUEST_APPROVE, "request", saved.getPublicId(), auditArgs, ip);
+
+        Map<String, Object> notifyArgs = new LinkedHashMap<>();
+        notifyArgs.put("requestId", saved.getPublicId());
+        notifyArgs.put("type", saved.getResourceType().name());
+        notifyArgs.put("resourceName", created.resourceName());
+        notifyArgs.put("automatic", true);
+        notifyArgs.putAll(created.notificationArgs());
+        notificationService.publish(actor.id(), NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
         return assembler.toDetail(saved);
     }
 
@@ -237,6 +316,29 @@ public class RequestService {
      * <p>고른 항목의 종료일은 신청 행에 복사한다. 다음 학기에 운영자가 항목의 날짜를
      * 고쳐도 이미 낸 신청의 기간이 따라 움직이면 안 되기 때문이다.</p>
      */
+    /**
+     * Whose the resource will be.
+     *
+     * <p>Two sources, and the kind's own answer wins. A kind whose form already
+     * decides the organisation — a domain takes it from the root it is asked
+     * under — is not asked again, because a form that carries both can carry
+     * two different answers and nothing downstream could tell which was meant.
+     * Every other kind is asked, and for those the field is still required.</p>
+     */
+    private Org resolveOrg(RequestTypeHandler handler, CreateRequestRequest form) {
+        Long owned = handler.owningOrgId(form).orElse(null);
+        // Reached only after the missing-field check above, so a form with no
+        // organisation and no kind to derive one never gets this far.
+        Org org = (owned != null ? orgRepository.findById(owned)
+                : orgRepository.findByPublicId(form.orgId()))
+                .orElseThrow(() -> notFound("해당 기관이 존재하지 않습니다."));
+        if (org.getStatus() != OrgStatus.ACTIVE) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("orgId",
+                    "비활성화된 기관에는 신청할 수 없습니다.")));
+        }
+        return org;
+    }
+
     private ResolvedPeriod resolvePeriod(CreateRequestRequest form,
             List<FieldValidationError> errors) {
         // 무기한은 값이 없는 상태가 아니라 하나의 값이다. 빠뜨린 종료일과 겹치지

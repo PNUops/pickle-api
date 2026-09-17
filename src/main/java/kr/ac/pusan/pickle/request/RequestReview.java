@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 /**
  * Approve/reject decision (request_reviews). One row per request; the granted
- * period is null on REJECT. What was granted of the resource itself lives on
+ * period is null on REJECT, and the reviewer is null on an automatic approval. What was granted of the resource itself lives on
  * the request's per-type detail row, since only the period is common to every
  * resource type.
  */
@@ -32,7 +32,15 @@ public class RequestReview {
     @Column(name = "request_id", nullable = false, unique = true)
     private Long requestId;
 
-    @Column(name = "reviewer_id", nullable = false)
+    /**
+     * Who decided, or null when nobody did.
+     *
+     * <p>Null is the record of an automatic approval — a policy said this kind
+     * of request is issued without review, and the platform acted. Writing the
+     * requester here instead would read as self-approval, which is a different
+     * and untrue thing.</p>
+     */
+    @Column(name = "reviewer_id")
     private Long reviewerId;
 
     @Enumerated(EnumType.STRING)

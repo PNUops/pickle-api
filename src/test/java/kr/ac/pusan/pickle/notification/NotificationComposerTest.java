@@ -21,6 +21,7 @@ class NotificationComposerTest {
 
     private static final UUID REQUEST_ID = UUID.fromString("09c0fb1c-2952-433d-b527-660de9f7fb98");
     private static final UUID KEY_ID = UUID.fromString("2f1c6f3a-7d41-4e2b-9c08-15b0a4e7d3c5");
+    private static final UUID DOMAIN_ID = UUID.fromString("8c4b1e90-2a55-4d17-b3ef-6f0d92a1c4e8");
 
     private final NotificationComposer composer = new NotificationComposer("ssh.pcl.kr");
 
@@ -79,6 +80,24 @@ class NotificationComposerTest {
     void llmKeyApprovalFallsBackToTheRequestWithoutAKeyId() {
         assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED,
                 approval(ResourceType.LLM_API_KEY, "테스트 키")).linkPath())
+                .isEqualTo("/console/requests/" + REQUEST_ID);
+    }
+
+    /** Same reasoning as the key: the request is finished and the next move —
+     *  adding the records — is on the name's own screen. */
+    @Test
+    void domainApprovalLinksToTheNameWhenItsIdTravelled() {
+        Map<String, Object> args = approval(ResourceType.DOMAIN, "myblog.pusan.dev");
+        args.put("domainId", DOMAIN_ID);
+
+        assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED, args).linkPath())
+                .isEqualTo("/console/domains/" + DOMAIN_ID);
+    }
+
+    @Test
+    void domainApprovalFallsBackToTheRequestWithoutADomainId() {
+        assertThat(composer.compose(NotificationEvent.REQUEST_APPROVED,
+                approval(ResourceType.DOMAIN, "myblog.pusan.dev")).linkPath())
                 .isEqualTo("/console/requests/" + REQUEST_ID);
     }
 
