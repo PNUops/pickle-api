@@ -262,6 +262,15 @@ class WorkspacesTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
+        // an explicit null is not "leave it alone": description clears that way,
+        // but a workspace has no state with no kind, and the schema says so.
+        Map<String, Object> nullKind = new HashMap<>();
+        nullKind.put("kind", null);
+        patchJson("/api/v1/workspaces/" + workspace, ownerToken, nullKind)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("kind"));
+
         // the change is audit-logged with the value it replaced
         Long audits = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs

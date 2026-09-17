@@ -20,7 +20,12 @@ public class UpdateWorkspaceRequest {
     private @Nullable String description;
     private boolean descriptionSet;
 
-    private @Nullable CreatableWorkspaceKind kind;
+    // Deliberately not @Nullable: null is not a value this field can carry.
+    // "leave the kind alone" is the field being absent, which kindSet tracks,
+    // and there is no state a workspace can be in with no kind. Marking it
+    // nullable published a schema that allowed a value the server always
+    // refuses with 422.
+    private CreatableWorkspaceKind kind;
     private boolean kindSet;
 
     public String getName() {
@@ -53,11 +58,11 @@ public class UpdateWorkspaceRequest {
 
     @io.swagger.v3.oas.annotations.media.Schema(
             description = "워크스페이스 유형. PERSONAL 워크스페이스는 유형을 바꿀 수 없습니다")
-    public @Nullable CreatableWorkspaceKind getKind() {
+    public CreatableWorkspaceKind getKind() {
         return kind;
     }
 
-    public void setKind(@Nullable CreatableWorkspaceKind kind) {
+    public void setKind(CreatableWorkspaceKind kind) {
         this.kind = kind;
         this.kindSet = true;
     }
