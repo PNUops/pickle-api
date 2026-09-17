@@ -40,11 +40,19 @@ public class SmtpMailSender implements MailSender {
     }
 
     /**
-     * The value has to be one address, optionally with a display name. Strict
-     * parsing alone accepts a bare local part with no domain, which is the
-     * shape a provider credential has, so {@code validate} is what actually
-     * rejects it. The message names the shape of the value and never the value
-     * itself, because it reaches the startup log.
+     * The value has to be one address, optionally with a display name.
+     * {@code InternetAddress.parse} with strict on still returns a bare local
+     * part with no domain, which is the shape a sending service's username
+     * has, so {@code validate} is what actually rejects it. (The
+     * single-address constructor does throw on that input; this uses parse,
+     * because one value may legitimately be two addresses and that has to be
+     * counted rather than thrown.)
+     *
+     * <p>Nothing here carries the rejected value, the cause included: this
+     * runs at startup, so it lands in the journal, and
+     * {@code AddressException.getMessage} quotes the string it rejected --
+     * which in the case this guard exists for is a credential. The log
+     * masking is key=value shaped and does not catch a quoted bare token.</p>
      */
     private static String requireAddress(String from) {
         if (from == null || from.isBlank()) {
@@ -59,8 +67,9 @@ public class SmtpMailSender implements MailSender {
             }
             parsed[0].validate();
         } catch (AddressException e) {
+            // No cause: its message would quote the rejected value.
             throw new IllegalStateException("PICKLE_MAIL_FROM is not a mail "
-                    + "address; it takes 'Name <local@domain>' or 'local@domain'", e);
+                    + "address; it takes 'Name <local@domain>' or 'local@domain'");
         }
         return from;
     }

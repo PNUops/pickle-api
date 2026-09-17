@@ -363,8 +363,10 @@ spring:
           starttls:
             enable: true
           # JavaMail waits forever by default. The notification dispatcher
-          # sends on a single thread, so one stalled handshake holds every
-          # queued mail -- and the mail health indicator with it.
+          # drains its batch serially on the scheduled thread, so one stalled
+          # handshake holds every notification behind it; account mail runs on
+          # its own pool of two, which a stall fills and then rejects. Boot's
+          # mail health indicator opens a real connection, so it stalls too.
           connectiontimeout: 10000
           timeout: 10000
           writetimeout: 10000

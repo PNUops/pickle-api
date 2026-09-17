@@ -110,14 +110,19 @@ class SmtpMailSenderTest {
         // the only thing that sees it.
         assertThatThrownBy(
                 () -> new SmtpMailSender(javaMailSender, "smtp-user-no-domain"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not a mail address")
+                // the rejected value never reaches the startup journal
+                .hasMessageNotContaining("smtp-user-no-domain")
+                .hasNoCause();
     }
 
     @Test
     void twoAddressesFailTheBean() {
         assertThatThrownBy(() -> new SmtpMailSender(javaMailSender,
                 "a@pusan.ac.kr, b@pusan.ac.kr"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("carries 2 addresses");
     }
 
     @Test
