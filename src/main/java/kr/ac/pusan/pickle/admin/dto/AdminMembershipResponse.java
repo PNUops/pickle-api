@@ -6,16 +6,13 @@ import kr.ac.pusan.pickle.workspace.WorkspaceKind;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRole;
 
 /**
- * Contract schema {@code AdminMembership} — one workspace this account belongs
- * to, as the admin user detail reports it.
+ * Contract schema {@code AdminMembershipResponse} — one workspace this account
+ * belongs to, as the admin user detail reports it.
  *
- * <p>Same fields as the holder's own {@code Membership} plus {@code vmOrgIds}:
- * the organisations that workspace has live virtual machines in. A workspace
- * carries no organisation of its own, so this is derived, and it can name more
- * than one. The screen needs it because the account directory is not scoped by
- * organisation while the VM list is: without it, a link to a workspace outside
- * the reader's scope lands on an empty list that reads as "this person has no
- * virtual machines" rather than "not yours to see".
+ * <p>The holder's own {@code Membership} plus {@code vmOrgIds}, the
+ * organisations that workspace has live machines in. A workspace carries no
+ * organisation of its own, so this is derived and can name more than one. The
+ * screen needs it because this read is not org-scoped while the VM list is.
  */
 public record AdminMembershipResponse(
         UUID workspaceId,

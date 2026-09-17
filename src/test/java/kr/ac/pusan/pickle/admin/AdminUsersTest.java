@@ -149,21 +149,31 @@ class AdminUsersTest {
 
     @Test
     void membershipsNameTheOrganisationsTheirVirtualMachinesAreIn() throws Exception {
-        // The directory answers for every organisation while the VM list does
-        // not, so the screen has to be able to tell which of a person's
-        // workspaces it could actually open. A workspace has no organisation of
-        // its own; this is derived from the live machines in it.
+        // The screen decides which workspaces it could open from this, so the
+        // organisation has to be the one the live machine is in.
+        UUID orgAPublicId = orgRepository.findFirstByNameOrderByIdAsc("사용자관리 기관 A")
+                .orElseThrow().getPublicId();
         mockMvc.perform(get("/api/v1/admin/users/" + memberA.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.memberships[0].workspaceName").value("A팀"))
-                .andExpect(jsonPath("$.memberships[0].vmOrgIds.length()").value(1));
+                .andExpect(jsonPath("$.memberships[0].vmOrgIds.length()").value(1))
+                .andExpect(jsonPath("$.memberships[0].vmOrgIds[0]").value(orgAPublicId.toString()));
 
-        // No machines, no organisations — an empty list, not a null.
-        mockMvc.perform(get("/api/v1/admin/users/" + foreign.getPublicId())
+        // A deleted machine does not name its organisation: the link leads nowhere.
+        Org orgB = orgRepository.findFirstByNameOrderByIdAsc("사용자관리 기관 B")
+                .orElseGet(() -> orgRepository.save(new Org("사용자관리 기관 B", null)));
+        Workspace teamA = workspaceRepository.findAll().stream()
+                .filter(w -> "A팀".equals(w.getName())).findFirst().orElseThrow();
+        createActiveVm(teamA.getId(), orgB.getId(), memberA.getId());
+        jdbcTemplate.update("update vms set status = 'DELETED'::vm_status where org_id = ?",
+                orgB.getId());
+
+        mockMvc.perform(get("/api/v1/admin/users/" + memberA.getPublicId())
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.memberships").isArray());
+                .andExpect(jsonPath("$.memberships[0].vmOrgIds.length()").value(1))
+                .andExpect(jsonPath("$.memberships[0].vmOrgIds[0]").value(orgAPublicId.toString()));
     }
 
     @Test
@@ -173,11 +183,8 @@ class AdminUsersTest {
                 Map.of("reason", "확인 필요"))
                 .andExpect(status().isOk());
 
-        // Account status is written by SYS_ADMIN alone, so the actor on every
-        // one of these lines is an account the org tier is not answered for.
-        // The name and address stay — an administrator fielding a question
-        // needs to know who acted — but the id that would reopen that account
-        // does not.
+        // A system-tier actor is an account the org tier is not answered for.
+        // The name and address stay; the id that would reopen it does not.
         mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
@@ -194,9 +201,7 @@ class AdminUsersTest {
 
     @Test
     void systemTierAccountsAreWithheldFromTheOrgTier() throws Exception {
-        // The org tier may act on every account it can see, and a system-tier
-        // account is not one of those: grantOrgRole refuses such a target and
-        // the account-state writes are SYS_ADMIN-only (operator, 2026-09-16).
+        // The org tier can act on none of these (operator, 2026-09-16).
         mockMvc.perform(get("/api/v1/admin/users?q=au.sys@pusan.ac.kr")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
@@ -206,16 +211,14 @@ class AdminUsersTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0));
 
-        // Filtered in SQL, so the count agrees with the rows rather than being
-        // the unfiltered total with rows missing from the page.
+        // Filtered in SQL, so the count agrees with the rows.
         mockMvc.perform(get("/api/v1/admin/users?role=SYS_ADMIN")
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(0))
                 .andExpect(jsonPath("$.content").isEmpty());
 
-        // Withheld from the detail too, or the id alone reopens it. 404, the
-        // same answer an organisation outside the actor's gets.
+        // 404, the answer an organisation outside the actor's gets.
         mockMvc.perform(get("/api/v1/admin/users/" + sysAdmin.getPublicId())
                         .header("Authorization", "Bearer " + orgAdminAToken))
                 .andExpect(status().isNotFound())
