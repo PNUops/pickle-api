@@ -33,7 +33,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * Workspace management per contract: creation (TEAM/PROJECT only),
+ * Workspace management per contract: creation (PERSONAL and the retired
+ * TEAM excluded),
  * member management role matrix (OWNER-only), owner appointment and release,
  * last-owner protection, self-leave and PERSONAL immutability.
  */
@@ -107,16 +108,22 @@ class WorkspacesTest {
                 Map.of("kind", "PROJECT", "name", "캡스톤 3조"))
                 .andExpect(status().isCreated());
 
-        // PERSONAL cannot be created manually → 422
+        // PERSONAL is created at signup, and TEAM is retired. Neither is a
+        // member of CreatableWorkspaceKind, so the body no longer reaches
+        // validation: it fails to deserialize and answers the same 422 with an
+        // empty errors array, the way every other narrowed enum here does.
         postJson("/api/v1/workspaces", ownerToken,
                 Map.of("kind", "PERSONAL", "name", "개인"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors[0].field").value("kind"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        postJson("/api/v1/workspaces", ownerToken,
+                Map.of("kind", "TEAM", "name", "폐기된 유형"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
 
         // a blank name is refused
         postJson("/api/v1/workspaces", ownerToken,
-                Map.of("kind", "TEAM", "name", " "))
+                Map.of("kind", "COURSE", "name", " "))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[0].field").value("name"));
 
@@ -226,6 +233,64 @@ class WorkspacesTest {
         patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), ownerToken, Map.of())
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void ownerReclassifiesTheWorkspaceAndPersonalStaysPut() throws Exception {
+        long workspaceId = createWorkspace(ownerToken, "grp-kind-x1");
+        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
+        String workspace = pub("workspaces", workspaceId).toString();
+
+        // every creatable kind round-trips through the update path
+        for (CreatableWorkspaceKind kind : CreatableWorkspaceKind.values()) {
+            patchJson("/api/v1/workspaces/" + workspace, ownerToken, Map.of("kind", kind.name()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.kind").value(kind.name()));
+        }
+
+        // kind alone is a non-empty patch
+        patchJson("/api/v1/workspaces/" + workspace, ownerToken, Map.of("kind", "COURSE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("COURSE"));
+        // and the detail read agrees, not just the write response
+        mockMvc.perform(get("/api/v1/workspaces/" + workspace).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.kind").value("COURSE"));
+
+        // a member cannot reclassify
+        patchJson("/api/v1/workspaces/" + workspace, memberToken, Map.of("kind", "CLUB"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        // the change is audit-logged with the value it replaced
+        Long audits = jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs
+                where action = 'workspace.kind_update' and actor_id = ?
+                  and detail ->> 'previousKind' is not null
+                """, Long.class, owner.getId());
+        assertThat(audits).isPositive();
+
+        // a no-op patch leaves no audit trail behind
+        Long before = jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = 'workspace.kind_update'", Long.class);
+        patchJson("/api/v1/workspaces/" + workspace, ownerToken, Map.of("kind", "COURSE"))
+                .andExpect(status().isOk());
+        Long after = jdbcTemplate.queryForObject(
+                "select count(*) from audit_logs where action = 'workspace.kind_update'", Long.class);
+        assertThat(after).isEqualTo(before);
+
+        // the personal workspace keeps its kind: everything that treats it
+        // differently decides by asking whether the kind is PERSONAL.
+        personalWorkspaceService.ensurePersonalWorkspace(owner);
+        String personal = jdbcTemplate.queryForObject("""
+                select w.public_id::text from workspaces w
+                join workspace_members m on m.workspace_id = w.id
+                where m.user_id = ? and w.kind = 'PERSONAL'
+                """, String.class, owner.getId());
+        patchJson("/api/v1/workspaces/" + personal, ownerToken, Map.of("kind", "PROJECT"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("kind"));
     }
 
     @Test
@@ -344,7 +409,7 @@ class WorkspacesTest {
 
     private long createWorkspace(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
+                Map.of("kind", "PROJECT", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));

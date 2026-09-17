@@ -3,15 +3,16 @@ package kr.ac.pusan.pickle.workspace.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import kr.ac.pusan.pickle.workspace.WorkspaceKind;
+import kr.ac.pusan.pickle.workspace.CreatableWorkspaceKind;
 import org.jspecify.annotations.Nullable;
 
-/** Contract schema {@code CreateWorkspaceRequest} (kind TEAM/PROJECT only — enforced in the service). */
+/** Contract schema {@code CreateWorkspaceRequest}. */
 public record CreateWorkspaceRequest(
-        @NotNull(message = "kind는 TEAM 또는 PROJECT여야 합니다.")
-        @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"TEAM", "PROJECT"},
-                description = "워크스페이스 종류 — PERSONAL은 시스템 생성 전용이라 요청으로 만들 수 없습니다")
-        WorkspaceKind kind,
+        @NotNull(message = "워크스페이스 유형을 선택해 주세요.")
+        @io.swagger.v3.oas.annotations.media.Schema(
+                description = "워크스페이스 유형. PERSONAL은 가입 시 자동 생성되고 TEAM은 폐기된 값이라 "
+                        + "요청으로 만들 수 없습니다")
+        CreatableWorkspaceKind kind,
 
         @NotBlank(message = "워크스페이스 이름을 입력해 주세요.")
         @Size(max = 100, message = "워크스페이스 이름은 100자 이하여야 합니다.")
