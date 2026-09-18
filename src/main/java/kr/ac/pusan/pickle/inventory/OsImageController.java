@@ -19,17 +19,17 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "os-image-controller")
 public class OsImageController {
 
-    private final OsImageRepository osImageRepository;
+    private final OsImageCatalogService catalog;
 
-    public OsImageController(OsImageRepository osImageRepository) {
-        this.osImageRepository = osImageRepository;
+    public OsImageController(OsImageCatalogService catalog) {
+        this.catalog = catalog;
     }
 
     @GetMapping
     @Transactional(readOnly = true)
     public List<OsImageResponse> listOsImages() {
-        return osImageRepository.findByStatusInDisplayOrder(CatalogStatus.ACTIVE).stream()
-                .map(OsImageResponse::from)
+        return catalog.selectable().stream()
+                .map(OsImageResponse::available)
                 .toList();
     }
 }

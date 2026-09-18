@@ -24,4 +24,12 @@ public record OsImageResponse(
                 image.getVersion(), image.getMinDiskGb(), image.getStatus(),
                 image.getNotes());
     }
+
+    /** A disabled canonical row is exposed as available while an ACTIVE compatible replica exists. */
+    public static OsImageResponse available(OsImage image) {
+        OsImageResponse response = from(image);
+        return new OsImageResponse(response.id(), response.name(), response.displayName(),
+                response.osFamily(), response.osVersion(), response.sshUsername(), response.version(),
+                response.minDiskGb(), CatalogStatus.ACTIVE, response.notes());
+    }
 }

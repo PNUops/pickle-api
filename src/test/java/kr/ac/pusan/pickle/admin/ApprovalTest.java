@@ -41,6 +41,7 @@ import org.hamcrest.Matchers;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.ObjectMapper;
@@ -55,6 +56,7 @@ import tools.jackson.databind.ObjectMapper;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_CLASS)
 class ApprovalTest {
 
     @Autowired
@@ -236,6 +238,11 @@ class ApprovalTest {
         assertThat(vm.getSshUsername()).isEqualTo("ubuntu");
         assertThat(vm.getProxmoxVmid()).isNull();
         assertThat(vm.getOrgId()).isEqualTo(org.getId());
+        assertThat(vm.cloneImagePin()).hasValueSatisfying(pin -> {
+            assertThat(pin.imageId()).isEqualTo(image.getId());
+            assertThat(pin.nodeId()).isEqualTo(vm.getNodeId());
+            assertThat(pin.templateVmid()).isEqualTo(image.getProxmoxVmid());
+        });
 
         // a mock-provisioning job was enqueued through the ProvisioningService
         // seam; the enqueue runs afterCommit (completed by the time MockMvc

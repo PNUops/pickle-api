@@ -294,6 +294,10 @@ class ProvisioningEndToEndTest {
         wm.server().stubFor(WireMock.post(WireMock.urlPathEqualTo("/api2/json/nodes/pve1/qemu/" + SeedFixtures.TEMPLATE_VMID + "/clone"))
                 .willReturn(okFixture("10-clone")));
         stubTaskStatus(CLONE_UPID, "10-clone-status");
+        wm.server().stubFor(WireMock.get(WireMock.urlPathEqualTo(qemu + "/config"))
+                .willReturn(WireMock.aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"net0\":\"virtio=02:00:00:00:00:02,bridge=old\"}}")));
         wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/config"))
                 .willReturn(okFixture("20-config")));
         wm.server().stubFor(WireMock.put(WireMock.urlPathEqualTo(qemu + "/resize"))

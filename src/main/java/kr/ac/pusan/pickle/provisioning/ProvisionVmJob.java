@@ -18,9 +18,10 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.inventory.NodeStatus;
+import kr.ac.pusan.pickle.inventory.CloneImagePin;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
-import kr.ac.pusan.pickle.inventory.OsImageReplicaResolver;
 import kr.ac.pusan.pickle.ipam.AllocationStatus;
 import kr.ac.pusan.pickle.ipam.IpAllocation;
 import kr.ac.pusan.pickle.ipam.IpAllocationRepository;
@@ -41,8 +42,6 @@ import kr.ac.pusan.pickle.vm.VmEventRepository;
 import kr.ac.pusan.pickle.vm.VmEventType;
 import kr.ac.pusan.pickle.vm.VmRepository;
 import kr.ac.pusan.pickle.vm.VmStatus;
-import kr.ac.pusan.pickle.request.vm.VmRequestDetail;
-import kr.ac.pusan.pickle.request.vm.VmRequestDetailRepository;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.scheduling.JobScheduler;
 import org.slf4j.Logger;
@@ -110,12 +109,9 @@ public class ProvisionVmJob implements ProvisioningService {
     private final ProvisioningTaskRepository taskRepository;
     private final NodeRepository nodeRepository;
     private final OsImageRepository imageRepository;
-    private final OsImageReplicaResolver imageReplicaResolver;
-    private final VmRequestDetailRepository vmRequestDetailRepository;
     private final IpPoolRepository poolRepository;
     private final IpAllocationRepository allocationRepository;
     private final IpamService ipamService;
-    private final NodePlacementService placementService;
     private final ProxmoxClient proxmox;
     private final VmidSequence vmidSequence;
     private final JobScheduler jobScheduler;
@@ -131,10 +127,9 @@ public class ProvisionVmJob implements ProvisioningService {
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
-            OsImageRepository imageRepository, OsImageReplicaResolver imageReplicaResolver,
-            VmRequestDetailRepository vmRequestDetailRepository,
+            OsImageRepository imageRepository,
             IpPoolRepository poolRepository, IpAllocationRepository allocationRepository,
-            IpamService ipamService, NodePlacementService placementService, ProxmoxClient proxmox,
+            IpamService ipamService, ProxmoxClient proxmox,
             VmidSequence vmidSequence, JobScheduler jobScheduler, PasswordEncoder passwordEncoder,
             VmPasswordGenerator passwordGenerator, CredentialCipher credentialCipher,
             NotificationService notificationService, ObjectMapper objectMapper,
@@ -147,12 +142,9 @@ public class ProvisionVmJob implements ProvisioningService {
         this.taskRepository = taskRepository;
         this.nodeRepository = nodeRepository;
         this.imageRepository = imageRepository;
-        this.imageReplicaResolver = imageReplicaResolver;
-        this.vmRequestDetailRepository = vmRequestDetailRepository;
         this.poolRepository = poolRepository;
         this.allocationRepository = allocationRepository;
         this.ipamService = ipamService;
-        this.placementService = placementService;
         this.proxmox = proxmox;
         this.vmidSequence = vmidSequence;
         this.jobScheduler = jobScheduler;
@@ -310,14 +302,23 @@ public class ProvisionVmJob implements ProvisioningService {
         throw new PipelineHalted("vm status " + vm.getStatus() + " fails the guard");
     }
 
-    /** Step 1: confirm the node (admin-forced node from the approval wins). */
+    /** Step 1: verify the approval-time node and immutable clone source. */
     private void place(Vm vm) {
-        OsImage image = imageRepository.findById(vm.getImageId()).orElseThrow(
-                () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + "이 존재하지 않습니다"));
-        Long forcedNodeId = vmRequestDetailRepository.findById(vm.getRequestId())
-                .map(VmRequestDetail::getNodeId).orElse(null);
-        Node node = placementService.place(vm, image, forcedNodeId);
-        vmRepository.assignNode(vm.getId(), node.getId(), Instant.now());
+        try {
+            CloneImagePin pin = requiredClonePin(vm);
+            pin.requireCurrentNode(vm.getNodeId());
+            Node node = node(vm);
+            if (node.getStatus() != NodeStatus.ACTIVE) {
+                throw new IllegalStateException("승인 시 선택한 노드가 더 이상 ACTIVE 상태가 아닙니다.");
+            }
+            OsImage granted = imageRepository.findById(vm.getImageId()).orElseThrow(
+                    () -> new IllegalStateException("OS 이미지 " + vm.getImageId() + "이 존재하지 않습니다"));
+            OsImage replica = imageRepository.findById(pin.imageId()).orElseThrow(
+                    () -> new IllegalStateException("고정된 복제 이미지가 존재하지 않습니다."));
+            pin.requireUnchanged(granted, replica);
+        } catch (IllegalStateException unsafe) {
+            throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
+        }
     }
 
     /** Step 2: allocate an IP from the node's pool (skip when already done). */
@@ -350,6 +351,18 @@ public class ProvisionVmJob implements ProvisioningService {
     /** Step 4: full clone of the OS image — only if the VMID does not exist yet. */
     private void clone(Vm vm) {
         Node node = node(vm);
+        CloneImagePin pin;
+        try {
+            pin = requiredClonePin(vm);
+            pin.requireCurrentNode(node.getId());
+            OsImage granted = imageRepository.findById(vm.getImageId())
+                    .orElseThrow(() -> new IllegalStateException("승인된 OS 이미지가 존재하지 않습니다."));
+            OsImage replica = imageRepository.findById(pin.imageId())
+                    .orElseThrow(() -> new IllegalStateException("고정된 복제 이미지가 존재하지 않습니다."));
+            pin.requireUnchanged(granted, replica);
+        } catch (IllegalStateException unsafe) {
+            throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
+        }
         int vmid = requireVmid(vm);
         ClusterResource resident = findResource(node, vmid);
         if (resident != null) {
@@ -370,9 +383,22 @@ public class ProvisionVmJob implements ProvisioningService {
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
             return;
         }
-        OsImage granted = imageRepository.findById(vm.getImageId()).orElseThrow();
-        OsImage localImage = imageReplicaResolver.resolve(granted, node.getId());
-        String upid = proxmox.clone(node.getApiHost(), node.getName(), localImage.getProxmoxVmid(),
+        if (node.getStatus() != NodeStatus.ACTIVE) {
+            IllegalStateException inactive = new IllegalStateException(
+                    "승인 시 선택한 노드가 더 이상 ACTIVE 상태가 아닙니다.");
+            throw new ProvisioningSafetyException(inactive.getMessage(), inactive);
+        }
+        try {
+            var requirements = node.vmNicRequirements();
+            if (requirements.isPresent()) {
+                Map<String, Object> templateConfig = proxmox.currentVmConfig(node.getApiHost(),
+                        node.getName(), pin.templateVmid());
+                VmNicConfiguration.requirePrepared(nicConfig(templateConfig), requirements.get());
+            }
+        } catch (IllegalStateException unsafe) {
+            throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
+        }
+        String upid = proxmox.clone(node.getApiHost(), node.getName(), pin.templateVmid(),
                 vmid, vm.getHostname());
         proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
     }
@@ -419,7 +445,14 @@ public class ProvisionVmJob implements ProvisioningService {
         params.put("ipconfig0", "ip=" + ip + "/" + cidrPrefix(pool.getCidr())
                 + ",gw=" + hostAddress(pool.getGateway()));
         firstDns(pool).ifPresent(dns -> params.put("nameserver", dns));
-        params.put("net0", "virtio,bridge=" + node.getVmBridge());
+        Map<String, Object> currentConfig = proxmox.currentVmConfig(node.getApiHost(),
+                node.getName(), requireVmid(vm));
+        try {
+            params.put("net0", VmNicConfiguration.onBridge(nicConfig(currentConfig),
+                    node.getVmBridge(), node.vmNicRequirements()));
+        } catch (IllegalStateException unsafe) {
+            throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
+        }
         params.put("onboot", "1");
         params.put("protection", "1");
         params.put("tags", "pickle");
@@ -634,6 +667,14 @@ public class ProvisionVmJob implements ProvisioningService {
         log.warn("provision vm {} failed at step {} (attempt {}): {}", vmId, step,
                 task.getAttempts(), summarize(e), e);
 
+        if (e instanceof ProvisioningSafetyException) {
+            taskRepository.park(taskId, error, now);
+            vmRepository.transitionStatus(vmId, VmStatus.CREATING, VmStatus.NEEDS_ADMIN,
+                    "프로비저닝 안전 조건을 확인할 수 없어 관리자 확인 대기 중입니다", now);
+            publishCreateFailed(vmId, error);
+            return;
+        }
+
         if (isRetryable(e) && task.getAttempts() <= MAX_STEP_ATTEMPTS
                 && taskRepository.markRetrying(taskId, error, now) == 1) {
             Duration backoff = RETRY_BACKOFF.get(Math.min(task.getAttempts(), MAX_STEP_ATTEMPTS) - 1);
@@ -822,6 +863,16 @@ public class ProvisionVmJob implements ProvisioningService {
         return vm.getProxmoxVmid();
     }
 
+    private static CloneImagePin requiredClonePin(Vm vm) {
+        return vm.cloneImagePin().orElseThrow(() -> new IllegalStateException(
+                "기존 VM 생성 요청에는 복제 이미지 고정 정보가 없습니다. 관리자 확인이 필요합니다."));
+    }
+
+    private static String nicConfig(Map<String, Object> config) {
+        Object value = config == null ? null : config.get("net0");
+        return value == null ? null : value.toString();
+    }
+
     private IpAllocation requireAllocation(Vm vm) {
         if (vm.getIpAllocationId() == null) {
             throw new IllegalStateException("IP가 아직 할당되지 않았습니다 (vm " + vm.getId() + ")");
@@ -882,6 +933,14 @@ public class ProvisionVmJob implements ProvisioningService {
     private static final class VmidConflict extends RuntimeException {
         VmidConflict(String message) {
             super(message);
+        }
+    }
+
+    /** A violated clone provenance or prepared-node precondition must never trigger cleanup. */
+    private static final class ProvisioningSafetyException extends RuntimeException {
+
+        ProvisioningSafetyException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 

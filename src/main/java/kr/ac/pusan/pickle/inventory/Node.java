@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.Map;
+import java.util.Optional;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -79,6 +80,33 @@ public class Node {
 
     public boolean isGpuNode() {
         return labels != null && Boolean.TRUE.equals(labels.get("gpu"));
+    }
+
+    /** Existing numeric columns retain their monitoring meanings; placement reads the explicit budget. */
+    public Optional<PlacementCapacity> placementCapacity(Instant observedAt) {
+        return PlacementCapacity.read(labels, cpuThreads, memoryMb, diskCapacityGb, observedAt);
+    }
+
+    public Optional<NodeVmNicRequirements> vmNicRequirements() {
+        return NodeVmNicRequirements.read(labels);
+    }
+
+    /** New prepared nodes publish both placement and NIC facts before activation. */
+    public void requireProvisioningReadiness(Instant observedAt) {
+        boolean prepared = labels != null && (labels.containsKey("placement_capacity")
+                || labels.containsKey("vm_nic_requirements"));
+        if (!prepared) {
+            return;
+        }
+        placementCapacity(observedAt).orElseThrow(Node::invalidPreparation);
+        NodeVmNicRequirements nic = vmNicRequirements().orElseThrow(Node::invalidPreparation);
+        if (nic.mtu() != 1370 || !nic.firewall()) {
+            throw invalidPreparation();
+        }
+    }
+
+    private static IllegalStateException invalidPreparation() {
+        return new IllegalStateException("노드의 프로비저닝 준비 정보가 완전하지 않습니다.");
     }
 
     @CreationTimestamp

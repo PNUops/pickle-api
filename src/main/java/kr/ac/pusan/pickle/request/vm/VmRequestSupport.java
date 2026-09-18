@@ -4,9 +4,10 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalLong;
-import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.admin.dto.ApproveVmRequestSpec;
@@ -19,10 +20,13 @@ import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageCatalogService;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningService;
+import kr.ac.pusan.pickle.provisioning.NodePlacementBudget;
+import kr.ac.pusan.pickle.provisioning.VmCloneReservationService;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import kr.ac.pusan.pickle.request.RequestTypeHandler;
@@ -47,6 +51,7 @@ public class VmRequestSupport implements RequestTypeHandler {
 
     private final VmRequestDetailRepository detailRepository;
     private final OsImageRepository imageRepository;
+    private final OsImageCatalogService imageCatalog;
     private final VmFlavorRepository flavorRepository;
     private final NodeRepository nodeRepository;
     private final VmRepository vmRepository;
@@ -54,14 +59,17 @@ public class VmRequestSupport implements RequestTypeHandler {
     private final VmSettingsService vmSettingsService;
     private final JobScheduler jobScheduler;
     private final ProvisioningService provisioningService;
+    private final VmCloneReservationService cloneReservations;
     private final SecureRandom random = new SecureRandom();
 
     public VmRequestSupport(VmRequestDetailRepository detailRepository, OsImageRepository imageRepository,
+            OsImageCatalogService imageCatalog,
             VmFlavorRepository flavorRepository, NodeRepository nodeRepository, VmRepository vmRepository,
             VmSlugPolicy slugPolicy, VmSettingsService vmSettingsService, JobScheduler jobScheduler,
-            ProvisioningService provisioningService) {
+            ProvisioningService provisioningService, VmCloneReservationService cloneReservations) {
         this.detailRepository = detailRepository;
         this.imageRepository = imageRepository;
+        this.imageCatalog = imageCatalog;
         this.flavorRepository = flavorRepository;
         this.nodeRepository = nodeRepository;
         this.vmRepository = vmRepository;
@@ -69,6 +77,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         this.vmSettingsService = vmSettingsService;
         this.jobScheduler = jobScheduler;
         this.provisioningService = provisioningService;
+        this.cloneReservations = cloneReservations;
     }
 
     @Override
@@ -86,18 +95,13 @@ public class VmRequestSupport implements RequestTypeHandler {
         // A reference to something that does not exist is a 404 here, as it is
         // for the workspace and the organisation; only a row that exists but may
         // no longer be chosen is a validation error.
-        OsImage image = imageRepository.findByPublicId(spec.imageId())
-                .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
+        OsImage image = selectableImage(spec.imageId(), "vm.imageId", errors, true);
         // 사양을 직접 적은 신청은 카탈로그 행을 가리키지 않는다. 사유가 언제 필요한지는
         // validateSpec 이 정한다 — 직접 적었다는 것만으로는 필요하지 않다.
         VmFlavor flavor = spec.flavorId() == null ? null
                 : flavorRepository.findByPublicId(spec.flavorId())
                         .orElseThrow(() -> notFound("해당 사양이 존재하지 않습니다."));
-        boolean axesActive = true;
-        if (image.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("vm.imageId", "더 이상 선택할 수 없는 OS 이미지입니다."));
-            axesActive = false;
-        }
+        boolean axesActive = image != null;
         if (flavor != null && flavor.getStatus() != CatalogStatus.ACTIVE) {
             errors.add(new FieldValidationError("vm.flavorId", "더 이상 선택할 수 없는 사양입니다."));
             axesActive = false;
@@ -113,7 +117,7 @@ public class VmRequestSupport implements RequestTypeHandler {
     public void saveDetail(Request request, CreateRequestRequest form) {
         CreateVmRequestSpec spec = form.vm();
         // validateCreate already 404'd on an unknown reference, so these resolve.
-        long imageId = imageRepository.findByPublicId(spec.imageId()).orElseThrow().getId();
+        long imageId = imageCatalog.requireSelectable(spec.imageId()).getId();
         // 사양을 직접 적은 신청은 가리키는 프리셋이 없다.
         Long flavorId = spec.flavorId() == null ? null
                 : flavorRepository.findByPublicId(spec.flavorId()).orElseThrow().getId();
@@ -139,10 +143,8 @@ public class VmRequestSupport implements RequestTypeHandler {
             errors.add(new FieldValidationError("vm", "VM 승인 항목(vm)을 입력해 주세요."));
             return;
         }
-        OsImage image = imageRepository.findByPublicId(spec.grantedImageId()).orElse(null);
-        if (image == null || image.getStatus() != CatalogStatus.ACTIVE) {
-            errors.add(new FieldValidationError("vm.grantedImageId", "사용할 수 없는 OS 이미지입니다."));
-        } else if (spec.grantedDiskGb() < image.getMinDiskGb()) {
+        OsImage image = selectableImage(spec.grantedImageId(), "vm.grantedImageId", errors, false);
+        if (image != null && spec.grantedDiskGb() < image.getMinDiskGb()) {
             errors.add(new FieldValidationError("vm.grantedDiskGb",
                     "이 OS 이미지의 최소 디스크 크기는 " + image.getMinDiskGb() + "GiB입니다."));
         }
@@ -151,8 +153,10 @@ public class VmRequestSupport implements RequestTypeHandler {
                     .map(kr.ac.pusan.pickle.inventory.Node::getId).orElse(null);
             if (nodeId == null) {
                 errors.add(new FieldValidationError("vm.nodeId", "존재하지 않는 노드입니다."));
-            } else if (image != null && !imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), nodeId, CatalogStatus.ACTIVE)) {
+            } else if (image != null && imageRepository.findByNameAndVersionAndNodeIdAndStatus(
+                            image.getName(), image.getVersion(), nodeId, CatalogStatus.ACTIVE)
+                    .filter(candidate -> kr.ac.pusan.pickle.inventory.OsImageReplicaResolver
+                            .compatible(image, candidate)).isEmpty()) {
                 // Forced node must host the granted image — the provisioning
                 // pipeline clones the image on the placed node, so a node without it
                 // guarantees a mid-pipeline clone failure.
@@ -180,27 +184,36 @@ public class VmRequestSupport implements RequestTypeHandler {
     @Override
     public Materialized materialize(Request request, ApproveRequestRequest form, AuthenticatedUser actor) {
         ApproveVmRequestSpec spec = form.vm();
-        OsImage image = imageRepository.findByPublicId(spec.grantedImageId()).orElseThrow();
+        VmCloneReservationService.Reservation reservation;
+        try {
+            reservation = cloneReservations.reserve(spec.grantedImageId(), spec.nodeId(),
+                    new NodePlacementBudget.VmPlacementResources(spec.grantedVcpu(),
+                            spec.grantedMemoryMb(), spec.grantedDiskGb()));
+        } catch (VmCloneReservationService.NoCapacityException unavailable) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError(
+                    spec.nodeId() == null ? "vm" : "vm.nodeId", unavailable.getMessage())));
+        }
+        OsImage image = reservation.canonical();
         VmRequestDetail detail = detail(request);
-        Long forcedNodeId = spec.nodeId() == null ? null
-                : nodeRepository.findByPublicId(spec.nodeId())
-                        .map(kr.ac.pusan.pickle.inventory.Node::getId).orElseThrow();
+        Long forcedNodeId = spec.nodeId() == null ? null : reservation.node().getId();
         detail.grant(spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
                 image.getId(), forcedNodeId);
 
-        // Auto placement: the image's node (single-node cluster; the
-        // scoring placement step arrives with the provisioning pipeline).
-        Long nodeId = forcedNodeId != null ? forcedNodeId : image.getNodeId();
+        // Approval already reserved the exact node and clone source while holding
+        // their database locks, so the worker only verifies this persisted choice.
+        Long nodeId = reservation.node().getId();
         String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
                 : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName(),
                         request.getWorkspaceId()), request.getWorkspaceId());
         // The guest admin account comes from the granted image (each
         // distribution ships its own), never from a platform-wide constant.
-        Vm vm = vmRepository.save(new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
+        Vm vm = new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
                 request.getId(), hostname, hostname, image.getId(), image.getSshUsername(),
                 spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
-                form.grantedStartDate(), form.grantedEndDate()));
+                form.grantedStartDate(), form.grantedEndDate());
+        vm.pinClone(reservation.pin());
+        vm = vmRepository.save(vm);
         // Requester-chosen display name (request form) — seeded as the
         // vm_settings row; audited via the request.approve entry. The seeder
         // sanitizes, so it returns what was actually stored (null when the name
@@ -242,6 +255,23 @@ public class VmRequestSupport implements RequestTypeHandler {
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", detail);
+    }
+
+    private OsImage selectableImage(UUID publicId, String field, List<FieldValidationError> errors,
+            boolean unknownIsNotFound) {
+        try {
+            return imageCatalog.requireSelectable(publicId);
+        } catch (OsImageCatalogService.UnknownImageException missing) {
+            if (unknownIsNotFound) {
+                throw notFound("해당 OS 이미지가 존재하지 않습니다.");
+            }
+            errors.add(new FieldValidationError(field, "사용할 수 없는 OS 이미지입니다."));
+            return null;
+        } catch (OsImageCatalogService.UnavailableImageException unavailable) {
+            errors.add(new FieldValidationError(field, unknownIsNotFound
+                    ? "더 이상 선택할 수 없는 OS 이미지입니다." : "사용할 수 없는 OS 이미지입니다."));
+            return null;
+        }
     }
 
     /** Whether the slug policy would accept this name, without collecting the reasons. */
