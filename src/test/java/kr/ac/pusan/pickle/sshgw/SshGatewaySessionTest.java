@@ -280,7 +280,7 @@ class SshGatewaySessionTest {
     private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, '세션팀') returning id
+                values ('PROJECT'::workspace_kind, '세션팀') returning id
                 """, Long.class);
     }
 

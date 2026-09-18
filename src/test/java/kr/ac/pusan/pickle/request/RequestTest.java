@@ -836,7 +836,7 @@ class RequestTest {
 
     private long createTeam(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
+                Map.of("kind", "PROJECT", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));

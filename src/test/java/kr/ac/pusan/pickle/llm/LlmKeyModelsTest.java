@@ -578,7 +578,7 @@ class LlmKeyModelsTest {
                         .header("Authorization", "Bearer " + wsOwnerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", name))))
+                                Map.of("kind", "PROJECT", "name", name))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         UUID publicId = UUID.fromString(objectMapper.readTree(body).get("id").asString());

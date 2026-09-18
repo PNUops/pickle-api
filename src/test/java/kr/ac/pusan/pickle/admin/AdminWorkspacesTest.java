@@ -66,7 +66,7 @@ class AdminWorkspacesTest {
         slug = "agr-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name, description)
-                values ('TEAM', ?, '워크스페이스 조회 테스트') returning id
+                values ('PROJECT', ?, '워크스페이스 조회 테스트') returning id
                 """, Long.class, slug);
         ownerId = ensureUser("agr.owner." + slug + "@pusan.ac.kr", UserStatus.ACTIVE).getId();
         disabledMemberId = ensureUser("agr.off." + slug + "@pusan.ac.kr", UserStatus.DISABLED).getId();
@@ -84,7 +84,7 @@ class AdminWorkspacesTest {
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath(bySlug() + ".kind").value("TEAM"))
+                .andExpect(jsonPath(bySlug() + ".kind").value("PROJECT"))
                 .andExpect(jsonPath(bySlug() + ".createdAt").isNotEmpty())
                 // memberCount keeps its ACTIVE-only definition (fan-out basis)
                 .andExpect(jsonPath(bySlug() + ".memberCount").value(1));
@@ -96,7 +96,7 @@ class AdminWorkspacesTest {
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value(slug))
-                .andExpect(jsonPath("$.kind").value("TEAM"))
+                .andExpect(jsonPath("$.kind").value("PROJECT"))
                 .andExpect(jsonPath("$.memberCount").value(1))
                 .andExpect(jsonPath("$.vmCount").value(0))
                 .andExpect(jsonPath("$.members.length()").value(2))
@@ -118,7 +118,7 @@ class AdminWorkspacesTest {
         String deletedSlug = "agr-del-" + UUID.randomUUID().toString().substring(0, 8);
         long deleted = jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name, deleted_at, deleted_by)
-                values ('TEAM', ?, now(), ?) returning id
+                values ('PROJECT', ?, now(), ?) returning id
                 """, Long.class, deletedSlug, ownerId);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", deleted))
                         .header("Authorization", "Bearer " + sysAdminToken))
@@ -127,7 +127,7 @@ class AdminWorkspacesTest {
         // a workspace with no request/VM in the admin's org → 404 for the org tier
         String foreignSlug = "agr-for-" + UUID.randomUUID().toString().substring(0, 8);
         long unlinked = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, foreignSlug);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + orgAdminToken))

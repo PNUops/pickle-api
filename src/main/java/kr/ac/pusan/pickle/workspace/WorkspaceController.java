@@ -61,8 +61,9 @@ public class WorkspaceController {
     @PatchMapping("/{workspaceId}")
     public WorkspaceDetailResponse updateWorkspace(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
-            @Valid @RequestBody UpdateWorkspaceRequest request) {
-        return workspaceService.update(principal, workspaceId, request);
+            @Valid @RequestBody UpdateWorkspaceRequest request,
+            HttpServletRequest httpRequest) {
+        return workspaceService.update(principal, workspaceId, request, clientIp(httpRequest));
     }
 
     @DeleteMapping("/{workspaceId}")

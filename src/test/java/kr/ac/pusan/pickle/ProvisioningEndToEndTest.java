@@ -41,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * End-to-end proof of the real provisioning path in one flow: signup → verify
- * (token from the mock mail) → login → TEAM workspace → vm-request → seeded
+ * (token from the mock mail) → login → PROJECT workspace → vm-request → seeded
  * ORG_ADMIN queue → approval context → approve → the JobRunr background server
  * runs the REAL provision pipeline against a WireMock Proxmox (pve1 captures,
  * happy path) → /vms shows RUNNING with the allocated IP, one-shot password
@@ -148,9 +148,9 @@ class ProvisioningEndToEndTest {
         // 2. login as the user
         String userToken = login(USER_EMAIL, USER_PASSWORD);
 
-        // 3. create a TEAM workspace
+        // 3. create a PROJECT workspace
         MvcResult workspaceResult = postJson("/api/v1/workspaces", userToken,
-                Map.of("kind", "TEAM", "name", "종단 테스트 팀"))
+                Map.of("kind", "PROJECT", "name", "종단 테스트 팀"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long workspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces",

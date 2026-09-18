@@ -59,7 +59,7 @@ class DomainRequestKindTest {
                 UUID.class, orgId);
         String slug = "drk-" + UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         workspacePublicId = jdbcTemplate.queryForObject(
                 "select public_id from workspaces where id = ?", UUID.class, workspaceId);

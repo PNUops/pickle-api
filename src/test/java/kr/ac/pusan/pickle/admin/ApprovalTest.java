@@ -578,7 +578,7 @@ class ApprovalTest {
                 .andExpect(jsonPath("$.applicantResources.totals.vcpu").value(2))
                 .andExpect(jsonPath("$.applicantResources.totals.memoryMb").value(2048))
                 .andExpect(jsonPath("$.workspace.id").value(pub("workspaces", workspaceId).toString()))
-                .andExpect(jsonPath("$.workspace.kind").value("TEAM"))
+                .andExpect(jsonPath("$.workspace.kind").value("PROJECT"))
                 .andExpect(jsonPath("$.workspace.members[?(@.role == 'OWNER')].name")
                         .value(Matchers.hasItem("컨텍스트학생")))
                 .andExpect(jsonPath("$.workspace.members.length()").value(2))
@@ -716,7 +716,7 @@ class ApprovalTest {
 
     private long createTeam(String token, String slug) throws Exception {
         String body = postJson("/api/v1/workspaces", token,
-                Map.of("kind", "TEAM", "name", "테스트 워크스페이스 " + slug))
+                Map.of("kind", "PROJECT", "name", "테스트 워크스페이스 " + slug))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));

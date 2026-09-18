@@ -29,6 +29,7 @@ public class AuditService {
     public static final String AUTH_LOGOUT = "auth.logout";
     public static final String WORKSPACE_CREATE = "workspace.create";
     public static final String WORKSPACE_DELETE = "workspace.delete";
+    public static final String WORKSPACE_KIND_UPDATE = "workspace.kind_update";
     public static final String WORKSPACE_MEMBER_ADD = "workspace.member_add";
     public static final String WORKSPACE_MEMBER_UPDATE = "workspace.member_update";
     public static final String WORKSPACE_MEMBER_REMOVE = "workspace.member_remove";

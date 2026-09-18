@@ -247,7 +247,7 @@ class ManagerRoleScopingTest {
         long imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
         long workspaceId = jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, ?) returning id
+                values ('PROJECT'::workspace_kind, ?) returning id
                 """, Long.class, "mgr-grp-" + slug());
         return RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, requesterId, "운영자 스코핑 테스트", imageId);
     }
@@ -257,7 +257,7 @@ class ManagerRoleScopingTest {
         long nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         long workspaceId = jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, ?) returning id
+                values ('PROJECT'::workspace_kind, ?) returning id
                 """, Long.class, "mgr-vmgrp-" + slug());
         long requestId = RequestFixtures.insertVmRequest(jdbcTemplate, workspaceId, orgId, foreignAdminB.getId(), "deleteVm 오버라이드 테스트", imageId);
         String hostname = "mgr-vm-" + slug();

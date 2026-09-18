@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.workspace.dto;
 
 import jakarta.validation.constraints.Size;
+import kr.ac.pusan.pickle.workspace.CreatableWorkspaceKind;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -18,6 +19,14 @@ public class UpdateWorkspaceRequest {
     @Size(max = 500, message = "설명은 500자 이하여야 합니다.")
     private @Nullable String description;
     private boolean descriptionSet;
+
+    // Deliberately not @Nullable: null is not a value this field can carry.
+    // "leave the kind alone" is the field being absent, which kindSet tracks,
+    // and there is no state a workspace can be in with no kind. Marking it
+    // nullable published a schema that allowed a value the server always
+    // refuses with 422.
+    private CreatableWorkspaceKind kind;
+    private boolean kindSet;
 
     public String getName() {
         return name;
@@ -47,8 +56,24 @@ public class UpdateWorkspaceRequest {
         return descriptionSet;
     }
 
+    @io.swagger.v3.oas.annotations.media.Schema(
+            description = "워크스페이스 유형. PERSONAL 워크스페이스는 유형을 바꿀 수 없습니다")
+    public CreatableWorkspaceKind getKind() {
+        return kind;
+    }
+
+    public void setKind(CreatableWorkspaceKind kind) {
+        this.kind = kind;
+        this.kindSet = true;
+    }
+
+    @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
+    public boolean isKindSet() {
+        return kindSet;
+    }
+
     @io.swagger.v3.oas.annotations.media.Schema(hidden = true)
     public boolean isEmpty() {
-        return !nameSet && !descriptionSet;
+        return !nameSet && !descriptionSet && !kindSet;
     }
 }

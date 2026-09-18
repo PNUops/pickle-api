@@ -562,7 +562,7 @@ class VmAccessScopingTest {
         }
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, '접근 범위 테스트 팀')
+                values ('PROJECT'::workspace_kind, '접근 범위 테스트 팀')
                 returning id
                 """, Long.class);
     }

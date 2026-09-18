@@ -97,9 +97,9 @@ class AdminLlmUsageBreakdownTest {
                         orgB.getId()));
 
         Workspace workspaceA = workspaceRepository.save(
-                new Workspace(WorkspaceKind.TEAM, "분해 A " + suffix, null));
+                new Workspace(WorkspaceKind.PROJECT, "분해 A " + suffix, null));
         Workspace workspaceB = workspaceRepository.save(
-                new Workspace(WorkspaceKind.TEAM, "분해 B " + suffix, null));
+                new Workspace(WorkspaceKind.PROJECT, "분해 B " + suffix, null));
         accountA = account(orgA, "분해 사업 A " + suffix);
         accountAPublicId = SeedFixtures.publicId(jdbcTemplate, "openrouter_accounts", accountA);
         accountB = account(orgB, "분해 사업 B " + suffix);

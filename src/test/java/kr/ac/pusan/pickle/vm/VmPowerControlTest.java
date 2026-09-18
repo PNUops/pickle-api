@@ -431,7 +431,7 @@ class VmPowerControlTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "전원 테스트 " + slug))))
+                                Map.of("kind", "PROJECT", "name", "전원 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));

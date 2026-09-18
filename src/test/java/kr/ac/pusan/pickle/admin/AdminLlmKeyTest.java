@@ -1136,7 +1136,7 @@ class AdminLlmKeyTest {
     }
 
     private long workspace(String name) {
-        return workspaceRepository.save(new Workspace(WorkspaceKind.TEAM,
+        return workspaceRepository.save(new Workspace(WorkspaceKind.PROJECT,
                 name + " " + UUID.randomUUID().toString().substring(0, 8), null)).getId();
     }
 

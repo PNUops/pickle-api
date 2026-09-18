@@ -197,7 +197,7 @@ class TerminalMintTest {
     private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, '터미널팀') returning id
+                values ('PROJECT'::workspace_kind, '터미널팀') returning id
                 """, Long.class);
     }
 

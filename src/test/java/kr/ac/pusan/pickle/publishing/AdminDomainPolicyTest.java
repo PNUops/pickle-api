@@ -49,7 +49,7 @@ class AdminDomainPolicyTest {
         jdbcTemplate.update("update orgs set status = 'ACTIVE' where id = ?", orgId);
         String slug = "adp-" + UUID.randomUUID().toString().substring(0, 8);
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         long userId = jdbcTemplate.queryForObject("""
                 insert into users (email, name, role, status, password_hash)

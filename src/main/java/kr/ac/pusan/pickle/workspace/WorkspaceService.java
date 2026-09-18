@@ -31,13 +31,14 @@ import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import java.time.Instant;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * TEAM/PROJECT workspace management (contract tag {@code workspaces}). Authorization
+ * Workspace management (contract tag {@code workspaces}). Authorization
  * is resolved in this layer from a single membership row per request:
  * OWNER edits workspace info, manages members and transfers ownership;
  * PERSONAL workspaces have immutable membership.
@@ -88,11 +89,7 @@ public class WorkspaceService {
 
     @Transactional
     public WorkspaceDetailResponse create(AuthenticatedUser actor, CreateWorkspaceRequest request, String ip) {
-        if (request.kind() == WorkspaceKind.PERSONAL) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("kind",
-                    "PERSONAL 워크스페이스는 자동 생성됩니다. TEAM 또는 PROJECT만 생성할 수 있습니다.")));
-        }
-        Workspace workspace = workspaceRepository.save(new Workspace(request.kind(),
+        Workspace workspace = workspaceRepository.save(new Workspace(request.kind().toWorkspaceKind(),
                 request.name().strip(), normalize(request.description())));
         workspaceMemberRepository.save(new WorkspaceMember(workspace, actor.id(), WorkspaceMemberRole.OWNER));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_CREATE,
@@ -112,7 +109,7 @@ public class WorkspaceService {
 
     @Transactional
     public WorkspaceDetailResponse update(AuthenticatedUser actor, UUID publicWorkspaceId,
-            UpdateWorkspaceRequest request) {
+            UpdateWorkspaceRequest request, String ip) {
         Workspace workspace = findWorkspace(publicWorkspaceId);
         long workspaceId = workspace.getId();
         WorkspaceMember membership = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, actor.id())
@@ -134,7 +131,39 @@ public class WorkspaceService {
         if (request.isDescriptionSet()) {
             workspace.setDescription(normalize(request.getDescription()));
         }
+        if (request.isKindSet()) {
+            applyKindChange(actor, workspace, request.getKind(), ip);
+        }
         return toDetail(workspace, membership.getRole());
+    }
+
+    /**
+     * PERSONAL is excluded in both directions. Automatic creation, the
+     * undeletable rule, the closed member list and the withdrawal cleanup all
+     * decide by asking whether the kind is PERSONAL, so letting a workspace
+     * leave or enter that value would quietly open every one of them.
+     * The request type cannot name PERSONAL, which covers the inbound
+     * direction; this covers the outbound one.
+     */
+    private void applyKindChange(AuthenticatedUser actor, Workspace workspace,
+            @Nullable CreatableWorkspaceKind requested, String ip) {
+        if (requested == null) {
+            throw ApiException.validationFailed(List.of(
+                    new FieldValidationError("kind", "워크스페이스 유형은 비울 수 없습니다.")));
+        }
+        if (workspace.getKind() == WorkspaceKind.PERSONAL) {
+            throw ApiException.validationFailed(List.of(
+                    new FieldValidationError("kind", "개인 워크스페이스는 유형을 바꿀 수 없습니다.")));
+        }
+        WorkspaceKind previous = workspace.getKind();
+        WorkspaceKind next = requested.toWorkspaceKind();
+        if (previous == next) {
+            return;
+        }
+        workspace.changeKind(next);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_KIND_UPDATE,
+                "workspace", workspace.getPublicId(),
+                Map.of("previousKind", previous.name(), "kind", next.name()), ip);
     }
 
     @Transactional

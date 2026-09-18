@@ -172,7 +172,7 @@ class AdminInventoryTest {
         User requester = ensureUser("ait.user@pusan.ac.kr", UserRole.USER);
         String slug = "ait-" + UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
         jdbcTemplate.update("""
                 insert into workspace_members (workspace_id, user_id, role)

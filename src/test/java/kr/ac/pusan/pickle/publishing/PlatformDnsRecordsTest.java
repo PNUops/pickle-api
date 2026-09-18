@@ -656,7 +656,7 @@ class PlatformDnsRecordsTest {
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("kind", "TEAM", "name", "DNS 테스트 " + slug))))
+                                Map.of("kind", "PROJECT", "name", "DNS 테스트 " + slug))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return SeedFixtures.internalId(jdbcTemplate, "workspaces",

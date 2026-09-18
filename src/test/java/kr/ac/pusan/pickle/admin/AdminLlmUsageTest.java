@@ -596,7 +596,7 @@ class AdminLlmUsageTest {
     }
 
     private Workspace workspace(String name) {
-        return workspaceRepository.save(new Workspace(WorkspaceKind.TEAM, name, null));
+        return workspaceRepository.save(new Workspace(WorkspaceKind.PROJECT, name, null));
     }
 
     private User user(String email, String name, UserRole role, Long orgId) {

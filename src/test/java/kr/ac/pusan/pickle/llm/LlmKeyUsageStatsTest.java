@@ -262,7 +262,7 @@ class LlmKeyUsageStatsTest {
         long orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         String unique = UUID.randomUUID().toString().substring(0, 8);
         long workspaceId = jdbcTemplate.queryForObject("""
-                insert into workspaces (kind, name) values ('TEAM'::workspace_kind, ?)
+                insert into workspaces (kind, name) values ('PROJECT'::workspace_kind, ?)
                 returning id
                 """, Long.class, "통계 시험 " + unique);
         // A grant alone is not standing: the resolver reads membership first,

@@ -78,6 +78,16 @@ public class Workspace {
         return kind;
     }
 
+    /**
+     * Reclassify the workspace. Not a plain setter: the kind is a
+     * classification an owner corrects, and PERSONAL is excluded from it in
+     * both directions — the service rejects that, because this class does not
+     * know which exception the caller answers with.
+     */
+    public void changeKind(WorkspaceKind kind) {
+        this.kind = kind;
+    }
+
     public String getName() {
         return name;
     }

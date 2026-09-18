@@ -512,7 +512,7 @@ class InternalSshGatewayRouteTest {
     private long createWorkspace() {
         return jdbcTemplate.queryForObject("""
                 insert into workspaces (kind, name)
-                values ('TEAM'::workspace_kind, '라우트팀') returning id
+                values ('PROJECT'::workspace_kind, '라우트팀') returning id
                 """, Long.class);
     }
 

@@ -80,7 +80,7 @@ class CapacityTrendTest {
         sysAdminToken = jwtService.createAccessToken(
                 userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
         workspaceId = jdbcTemplate.queryForObject(
-                "insert into workspaces (kind, name) values ('TEAM', ?) returning id",
+                "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, slug);
     }
 
