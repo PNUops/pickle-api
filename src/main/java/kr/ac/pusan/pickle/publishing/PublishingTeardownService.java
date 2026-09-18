@@ -3,6 +3,8 @@ package kr.ac.pusan.pickle.publishing;
 import java.util.ArrayList;
 import java.util.List;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathCoordinatorJob;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import org.jobrunr.jobs.annotations.Job;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,17 +42,22 @@ public class PublishingTeardownService {
     private final RouteGenerations routeGenerations;
     private final RouteApplyJob routeApplyJob;
     private final TransactionTemplate transactionTemplate;
+    private final VmNetworkPathOperationStore networkPaths;
+    private final VmNetworkPathCoordinatorJob networkCoordinator;
 
     public PublishingTeardownService(DomainRepository domainRepository,
             RouteRepository routeRepository, CertificateRepository certificateRepository,
             RouteGenerations routeGenerations, RouteApplyJob routeApplyJob,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate, VmNetworkPathOperationStore networkPaths,
+            VmNetworkPathCoordinatorJob networkCoordinator) {
         this.domainRepository = domainRepository;
         this.routeRepository = routeRepository;
         this.certificateRepository = certificateRepository;
         this.routeGenerations = routeGenerations;
         this.routeApplyJob = routeApplyJob;
         this.transactionTemplate = transactionTemplate;
+        this.networkPaths = networkPaths;
+        this.networkCoordinator = networkCoordinator;
     }
 
     /**
@@ -80,6 +87,7 @@ public class PublishingTeardownService {
                     "퍼블리싱 vhost 제거 실패 (route " + String.join(", ", failures)
                             + ") — 라우트가 제거되기 전에는 VM/IP를 파기할 수 없습니다");
         }
+        networkCoordinator.requireVmRetired(vmId);
     }
 
     /**
@@ -110,7 +118,8 @@ public class PublishingTeardownService {
             }
             boolean confirmed = route.getAppliedGeneration() != null
                     && route.getAppliedGeneration() >= route.getGeneration();
-            if (!confirmed) {
+            boolean managed = networkPaths.closeHttp(vmId, route.getId());
+            if (!managed && !confirmed) {
                 pending.add(route.getId());
             }
         }

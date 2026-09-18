@@ -20,7 +20,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
-import kr.ac.pusan.pickle.ipam.IpamService;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.provisioning.DeleteVmJob;
@@ -28,9 +27,6 @@ import kr.ac.pusan.pickle.provisioning.ProvisioningTask;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskKind;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskRepository;
 import kr.ac.pusan.pickle.provisioning.ProvisioningTaskStatus;
-import kr.ac.pusan.pickle.publishing.PublishingTeardownService;
-import kr.ac.pusan.pickle.relay.PortMappingTeardownService;
-import kr.ac.pusan.pickle.sshkey.VmSshKeyRepository;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -52,8 +48,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *   <li><b>Self-delete</b> (workspace OWNER, or ORG_ADMIN of the org / SYS_ADMIN):
  *       immediate DELETING + async graceful shutdown, hard delete after
  *       {@code settings.vm_delete_grace_hours}; users cannot cancel.
- *       ERROR VMs (compensated create failures) collapse to an immediate
- *       DELETED with the IP released — there is nothing to destroy.</li>
+ *       ERROR VMs skip guest destruction but still use the asynchronous
+ *       network-retirement/IP-release pipeline.</li>
  *   <li><b>Admin scheduled delete</b>: intent only (power state untouched),
  *       {@code scheduledFor} any future instant (the minimum-notice floor was
  *       dropped 2026-07-27 — it forced within-notice deletions into the
@@ -83,27 +79,21 @@ public class VmDeletionService {
     private final UserRepository userRepository;
     private final VmEventRepository vmEventRepository;
     private final SettingsService settingsService;
-    private final IpamService ipamService;
     private final JobScheduler jobScheduler;
     private final DeleteVmJob deleteVmJob;
     private final AuditService auditService;
     private final AuditIds auditIds;
     private final NotificationService notificationService;
     private final ProvisioningTaskRepository provisioningTaskRepository;
-    private final PublishingTeardownService publishingTeardown;
-    private final PortMappingTeardownService portMappingTeardown;
-    private final VmSshKeyRepository vmSshKeyRepository;
     private final VmSettingsService vmSettingsService;
 
     public VmDeletionService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository, VmAccessService vmAccessService,
             UserRepository userRepository, VmEventRepository vmEventRepository,
-            SettingsService settingsService, IpamService ipamService, JobScheduler jobScheduler,
+            SettingsService settingsService, JobScheduler jobScheduler,
             DeleteVmJob deleteVmJob, AuditService auditService, AuditIds auditIds,
             NotificationService notificationService,
             ProvisioningTaskRepository provisioningTaskRepository,
-            PublishingTeardownService publishingTeardown,
-            PortMappingTeardownService portMappingTeardown,
-            VmSshKeyRepository vmSshKeyRepository, VmSettingsService vmSettingsService,
+            VmSettingsService vmSettingsService,
             AdminVmAccess adminVmAccess) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -111,16 +101,12 @@ public class VmDeletionService {
         this.userRepository = userRepository;
         this.vmEventRepository = vmEventRepository;
         this.settingsService = settingsService;
-        this.ipamService = ipamService;
         this.jobScheduler = jobScheduler;
         this.deleteVmJob = deleteVmJob;
         this.auditService = auditService;
         this.auditIds = auditIds;
         this.notificationService = notificationService;
         this.provisioningTaskRepository = provisioningTaskRepository;
-        this.publishingTeardown = publishingTeardown;
-        this.portMappingTeardown = portMappingTeardown;
-        this.vmSshKeyRepository = vmSshKeyRepository;
         this.vmSettingsService = vmSettingsService;
         this.adminVmAccess = adminVmAccess;
     }
@@ -161,38 +147,21 @@ public class VmDeletionService {
         return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.publicId(), null, true);
     }
 
-    /** ERROR VM: nothing to destroy — release the IP and finish immediately. */
+    /** ERROR VM: no guest destroy, but network retirement still gates the asynchronous release. */
     private VmDeletionResponse deleteErrorVmImmediately(AuthenticatedUser actor,
             DeletableVm deletable, String ip) {
         Vm vm = deletable.vm();
         Instant now = Instant.now();
-        if (vmRepository.completeErrorDeletion(vm.getId(), actor.id(), now) == 0) {
+        if (vmRepository.beginSelfDeletion(vm.getId(), VmStatus.ERROR, now, actor.id(), now) == 0) {
             throw alreadyPendingDeletion();
         }
-        // An ERROR VM was never publishable, but sweep defensively: rows flip
-        // to REMOVED in this tx, the ABSENT pushes run as a retried job (the
-        // IP is released immediately here, so removal must not be lost).
         long vmId = vm.getId();
-        if (!publishingTeardown.markPublicationsRemoved(vmId).isEmpty()) {
-            enqueueAfterCommit(() -> publishingTeardown.teardownForVmDeletion(vmId));
-        }
-        // Same tx as the release below: no orphan mapping may survive its
-        // target's IP release (the freed address can be re-assigned after
-        // quarantine, and a leftover DNAT would deliver public traffic to the
-        // next tenant's VM).
-        portMappingTeardown.deleteMappingsForVm(vmId);
-        vmSshKeyRepository.deleteByVmId(vmId);
-        if (vm.getIpAllocationId() != null
-                && ipamService.release(vm.getIpAllocationId(), vm.getId())) {
-            vmRepository.clearIpAllocation(vm.getId(), vm.getIpAllocationId(), now);
-        }
         vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.SELF_DELETE, actor.id(),
-                deletable.actorKind(), "삭제 접수 — 생성 실패(ERROR) 상태, 유예 없이 즉시 파기"));
-        vmEventRepository.save(new VmEvent(vm.getId(), VmEventType.DELETE, actor.id(),
-                deletable.actorKind(), "VM 파기 완료 — ERROR 상태(파기할 게스트 없음), IP 회수"));
+                deletable.actorKind(), "삭제 접수 — 생성 실패(ERROR) 상태, 네트워크 퇴역 후 파기"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "immediate", true), ip);
+        enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.publicId(), null, false);
     }
 

@@ -214,15 +214,13 @@ public class DeleteVmJob {
             // FQDN to whoever gets the address next. A
             // failed teardown throws → backoff retry → NEEDS_ADMIN park.
             publishingTeardown.teardownForVmDeletion(vmId);
+            portMappingTeardown.prepareForIpRelease(vmId);
             destroyOnProxmox(vm);
-            // One transaction for mapping teardown + IP release + pointer
-            // clear: no orphan mapping may survive its target's IP release
-            // (a leftover relay DNAT would route public traffic to whoever
-            // gets the quarantined address next), and a crash between the
-            // steps must not leave a half-released state.
+            // Publishing and mapping retirement have been positively proved;
+            // now release the IP and clear its VM pointer in one transaction.
+            // A crash cannot leave a released allocation still attached.
             Long allocationId = vm.getIpAllocationId();
             transactionTemplate.executeWithoutResult(tx -> {
-                portMappingTeardown.deleteMappingsForVm(vmId);
                 // The gateway would refuse these keys anyway (a destroyed VM is
                 // not RUNNING); dropping them is about not keeping private-key
                 // ciphertext for a machine that no longer exists.

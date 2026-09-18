@@ -244,6 +244,36 @@ class PublishingTest {
                 .andExpect(jsonPath("$.route.targetPort").value(8080));
     }
 
+    @Test
+    void managedHttpRouteCannotReachDnsOrProxyBeforeVmAllow() throws Exception {
+        long vmId = publishableVm("managed-http-order", "pusan.dev", VmStatus.RUNNING);
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "b".repeat(64));
+
+        publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
+        long routeId = routeIdForVm(vmId);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_network_derived_paths
+                 where vm_id = ? and owner_kind = 'HTTP_ROUTE' and owner_id = ?
+                """, Long.class, vmId, routeId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select phase::text from vm_network_path_operations
+                 where owner_kind = 'HTTP_ROUTE' and owner_id = ? and phase <> 'DONE'
+                """, String.class, routeId)).isEqualTo("POLICY_ADD");
+
+        routeApplyJob.apply(routeId);
+
+        assertThat(agent.getAllServeEvents().stream()
+                .filter(event -> event.getRequest().getUrl().startsWith(APPLY_PATH)).count())
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status::text from routes where id = ?", String.class, routeId))
+                .isEqualTo("PENDING");
+    }
+
     // ── validation ─────────────────────────────────────────────────────────
 
     @Test

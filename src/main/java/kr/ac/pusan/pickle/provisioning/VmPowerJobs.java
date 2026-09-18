@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Set;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPolicyRuntimeGate;
 import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.proxmox.ProxmoxTaskFailedException;
 import kr.ac.pusan.pickle.vm.Vm;
@@ -46,14 +47,17 @@ public class VmPowerJobs {
     private final NodeRepository nodeRepository;
     private final ProxmoxClient proxmoxClient;
     private final VmPowerOperationGuard powerGuard;
+    private final VmNetworkPolicyRuntimeGate networkPolicyGate;
 
     public VmPowerJobs(VmRepository vmRepository, VmEventRepository vmEventRepository,
-            NodeRepository nodeRepository, ProxmoxClient proxmoxClient, VmPowerOperationGuard powerGuard) {
+            NodeRepository nodeRepository, ProxmoxClient proxmoxClient,
+            VmPowerOperationGuard powerGuard, VmNetworkPolicyRuntimeGate networkPolicyGate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.nodeRepository = nodeRepository;
         this.proxmoxClient = proxmoxClient;
         this.powerGuard = powerGuard;
+        this.networkPolicyGate = networkPolicyGate;
     }
 
     /**
@@ -159,9 +163,21 @@ public class VmPowerJobs {
             return;
         }
         try {
-            String upid = powerGuard.dispatch(vmId, worker, () -> action.invoke(proxmoxClient, node.getApiHost(), node.getName(),
-                    vm.getProxmoxVmid()));
-            proxmoxClient.awaitTask(node.getApiHost(), node.getName(), upid);
+            ProviderDispatch dispatch = action.policyGate
+                    ? networkPolicyGate.dispatch(vmId, from.name(), action.providerStatus, target ->
+                            target == null
+                                    ? new ProviderDispatch(powerGuard.dispatch(vmId, worker,
+                                            () -> action.invoke(proxmoxClient, node.getApiHost(),
+                                                    node.getName(), vm.getProxmoxVmid())),
+                                            node.getApiHost(), node.getName())
+                                    : new ProviderDispatch(powerGuard.dispatch(vmId, worker,
+                                            () -> action.invoke(proxmoxClient, target.apiHost(),
+                                                    target.nodeName(), target.vmid())),
+                                            target.apiHost(), target.nodeName()))
+                    : new ProviderDispatch(powerGuard.dispatch(vmId, worker,
+                            () -> action.invoke(proxmoxClient, node.getApiHost(), node.getName(),
+                                    vm.getProxmoxVmid())), node.getApiHost(), node.getName());
+            proxmoxClient.awaitTask(dispatch.apiHost(), dispatch.node(), dispatch.upid());
             if (!vmRepository.ownsPowerWorker(vmId, worker)) { return; }
             int updated = vmRepository.transitionPowerStatus(vmId, worker, from, action.toStatus, null, Instant.now());
             if (updated == 1) {
@@ -177,6 +193,8 @@ public class VmPowerJobs {
             recordFailure(action, vmId, actorId, actorKind, worker, reasonOf(e));
         }
     }
+
+    private record ProviderDispatch(String upid, String apiHost, String node) {}
 
     /** Failure: keep the status (the poller converges), record detail + event. */
     private void recordFailure(PowerAction action, long vmId, long actorId,
@@ -201,13 +219,13 @@ public class VmPowerJobs {
 
     /** Allowed source statuses / result status / event type per contract op. */
     private enum PowerAction {
-        START(Set.of(VmStatus.STOPPED), VmStatus.RUNNING, VmEventType.START, "시작") {
+        START(Set.of(VmStatus.STOPPED), VmStatus.RUNNING, VmEventType.START, "시작", true, "stopped") {
             @Override
             String invoke(ProxmoxClient client, String apiHost, String node, int vmid) {
                 return client.start(apiHost, node, vmid);
             }
         },
-        SHUTDOWN(Set.of(VmStatus.RUNNING), VmStatus.STOPPED, VmEventType.STOP, "종료") {
+        SHUTDOWN(Set.of(VmStatus.RUNNING), VmStatus.STOPPED, VmEventType.STOP, "종료", false, "") {
             @Override
             String invoke(ProxmoxClient client, String apiHost, String node, int vmid) {
                 // Contract shutdownVm: no force-stop fallback — an unresponsive
@@ -215,14 +233,14 @@ public class VmPowerJobs {
                 return client.shutdown(apiHost, node, vmid);
             }
         },
-        REBOOT(Set.of(VmStatus.REBOOTING), VmStatus.RUNNING, VmEventType.REBOOT, "재부팅") {
+        REBOOT(Set.of(VmStatus.REBOOTING), VmStatus.RUNNING, VmEventType.REBOOT, "재부팅", true, "running") {
             @Override
             String invoke(ProxmoxClient client, String apiHost, String node, int vmid) {
                 return client.reboot(apiHost, node, vmid);
             }
         },
         FORCE_STOP(Set.of(VmStatus.RUNNING, VmStatus.REBOOTING), VmStatus.STOPPED,
-                VmEventType.FORCE_STOP, "강제 종료") {
+                VmEventType.FORCE_STOP, "강제 종료", false, "") {
             @Override
             String invoke(ProxmoxClient client, String apiHost, String node, int vmid) {
                 return client.stop(apiHost, node, vmid);
@@ -233,13 +251,17 @@ public class VmPowerJobs {
         final VmStatus toStatus;
         final VmEventType eventType;
         final String koreanLabel;
+        final boolean policyGate;
+        final String providerStatus;
 
         PowerAction(Set<VmStatus> fromStatuses, VmStatus toStatus, VmEventType eventType,
-                String koreanLabel) {
+                String koreanLabel, boolean policyGate, String providerStatus) {
             this.fromStatuses = fromStatuses;
             this.toStatus = toStatus;
             this.eventType = eventType;
             this.koreanLabel = koreanLabel;
+            this.policyGate = policyGate;
+            this.providerStatus = providerStatus;
         }
 
         abstract String invoke(ProxmoxClient client, String apiHost, String node, int vmid);

@@ -19,6 +19,7 @@ import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.relay.dto.CreatePortForwardingRequest;
 import kr.ac.pusan.pickle.relay.dto.PortForwardingView;
@@ -81,6 +82,8 @@ public class PortForwardingService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final PublicSourcePolicyService sourcePolicies;
+    private final RelayMappingRetirementStore retirementStore;
+    private final VmNetworkPathOperationStore networkPaths;
     private final SecureRandom random = new SecureRandom();
 
     public PortForwardingService(VmRepository vmRepository,
@@ -90,7 +93,9 @@ public class PortForwardingService {
             IpAddressResolver ipAddressResolver, VmEventRepository vmEventRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
             JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
-            PublicSourcePolicyService sourcePolicies) {
+            PublicSourcePolicyService sourcePolicies,
+            RelayMappingRetirementStore retirementStore,
+            VmNetworkPathOperationStore networkPaths) {
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
         this.relayRepository = relayRepository;
@@ -106,6 +111,8 @@ public class PortForwardingService {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.sourcePolicies = sourcePolicies;
+        this.retirementStore = retirementStore;
+        this.networkPaths = networkPaths;
     }
 
     // ── list ─────────────────────────────────────────────────────────────────
@@ -170,9 +177,16 @@ public class PortForwardingService {
         // Bump FIRST: row-locks the relay until commit, so concurrent creates
         // (and deletes) of this relay serialize — the not-exists check inside
         // the allocation insert can then never race cross-proto.
-        long generation = relayGenerations.bump(relay.getId());
+        boolean managed = networkPaths.managed(vmId);
+        long generation = managed ? relay.getMappingGeneration() : relayGenerations.bump(relay.getId());
+        RelayMappingRetirementStore.ConsumerEpoch epoch = managed
+                ? retirementStore.allocateEpoch(relay.getId()) : null;
         long mappingId = allocate(relay, vmId, request.proto(), request.targetPort(),
-                generation, actor.id());
+                generation, actor.id(), epoch);
+        if (managed) {
+            networkPaths.openPort(vmId, mappingId, request.proto().name(), request.targetPort(),
+                    VmNetworkPathOperationStore.Action.OPEN);
+        }
         alertOnBandUsage(relay);
 
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_CREATE, actor.id(), VmActorKind.MEMBER,
@@ -194,8 +208,19 @@ public class PortForwardingService {
         PortMapping mapping = portMappingRepository.findByPublicId(portForwardingId)
                 .filter(row -> row.getVmId() == vmId)
                 .orElseThrow(PortForwardingService::mappingNotFound);
-        relayGenerations.bump(mapping.getRelayId());
-        portMappingRepository.delete(mapping);
+        if (networkPaths.retirePort(vmId, mapping.getId(),
+                VmNetworkPathOperationStore.Action.DELETE)) {
+            mapping.setStatus(PortMappingStatus.REMOVING);
+            RelayMappingRetirementStore.Retirement retirement =
+                    retirementStore.findByMapping(mapping.getId());
+            if (retirement != null) {
+                mapping.setDeliveryState(PortMappingDeliveryState.RETIRING);
+                mapping.setLastChangeGeneration(retirement.generation());
+            }
+        } else {
+            relayGenerations.bump(mapping.getRelayId());
+            portMappingRepository.delete(mapping);
+        }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PORT_FORWARD_DELETE, actor.id(), VmActorKind.MEMBER,
                 mapping.getProto() + " " + mapping.getPublicPort() + " 공개 해제"));
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
@@ -215,11 +240,14 @@ public class PortForwardingService {
      * though the unique constraint itself is per-proto.
      */
     private long allocate(Relay relay, long vmId, PortMappingProto proto, int targetPort,
-            long generation, long actorId) {
+            long generation, long actorId, RelayMappingRetirementStore.ConsumerEpoch epoch) {
+        boolean managed = epoch != null;
         String insertSql = """
                 insert into port_mappings (relay_id, vm_id, proto, public_port, target_port,
-                                           status, last_change_generation, created_by)
-                select ?, ?, ?, ?, ?, 'ACTIVE', ?, ?
+                                           status, delivery_state, flow_mark,
+                                           consumer_mapping_id, last_change_generation, created_by)
+                select ?, ?, ?, ?, ?, ?, ?, ?,
+                       ?, ?, ?
                  where not exists (select 1 from port_mappings
                                     where relay_id = ? and public_port = ?)
                 returning id
@@ -228,8 +256,10 @@ public class PortForwardingService {
             int candidate = relay.getPortBandStart() + random.nextInt(relay.bandSize());
             Long id = jdbcTemplate.query(insertSql,
                     (ResultSetExtractor<Long>) rs -> rs.next() ? rs.getLong(1) : null,
-                    relay.getId(), vmId, proto.name(), candidate, targetPort, generation,
-                    actorId, relay.getId(), candidate);
+                    relay.getId(), vmId, proto.name(), candidate, targetPort,
+                    managed ? "PENDING" : "ACTIVE", managed ? "PENDING" : "LEGACY",
+                    managed ? epoch.flowMark() : null, managed ? epoch.mappingId() : null,
+                    generation, actorId, relay.getId(), candidate);
             if (id != null) {
                 return id;
             }
@@ -246,8 +276,10 @@ public class PortForwardingService {
         if (candidate != null) {
             Long id = jdbcTemplate.query(insertSql,
                     (ResultSetExtractor<Long>) rs -> rs.next() ? rs.getLong(1) : null,
-                    relay.getId(), vmId, proto.name(), candidate, targetPort, generation,
-                    actorId, relay.getId(), candidate);
+                    relay.getId(), vmId, proto.name(), candidate, targetPort,
+                    managed ? "PENDING" : "ACTIVE", managed ? "PENDING" : "LEGACY",
+                    managed ? epoch.flowMark() : null, managed ? epoch.mappingId() : null,
+                    generation, actorId, relay.getId(), candidate);
             if (id != null) {
                 return id;
             }
@@ -294,6 +326,12 @@ public class PortForwardingService {
      */
     static PortForwardApplyState applyState(PortMapping mapping, long appliedGeneration,
             Set<Long> failedMappingIds) {
+        if (mapping.getStatus() == PortMappingStatus.PENDING
+                || mapping.getStatus() == PortMappingStatus.REMOVING
+                || mapping.getDeliveryState() == PortMappingDeliveryState.PENDING
+                || mapping.getDeliveryState() == PortMappingDeliveryState.RETIRING) {
+            return PortForwardApplyState.PENDING;
+        }
         if (failedMappingIds.contains(mapping.getId())) {
             return PortForwardApplyState.FAILED;
         }
@@ -361,7 +399,8 @@ public class PortForwardingService {
 
     private PortMapping requireMapping(long vmId, UUID mappingId) {
         return portMappingRepository.findByPublicId(mappingId)
-                .filter(mapping -> mapping.getVmId() == vmId)
+                .filter(mapping -> mapping.getVmId() == vmId
+                        && mapping.getStatus() != PortMappingStatus.REMOVING)
                 .orElseThrow(PortForwardingService::mappingNotFound);
     }
 }

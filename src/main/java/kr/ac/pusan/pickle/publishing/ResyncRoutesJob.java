@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyActivationService;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
@@ -68,6 +69,7 @@ public class ResyncRoutesJob {
     private final SourcePolicyProducer sourcePolicies;
     private final NetworkPolicyCapability networkPolicyCapability;
     private final SourcePolicyActivationService sourcePolicyActivation;
+    private final VmNetworkPathOperationStore networkPaths;
 
     public ResyncRoutesJob(RouteRepository routeRepository, DomainRepository domainRepository,
             VmRepository vmRepository, IpAddressResolver ipAddressResolver,
@@ -75,7 +77,8 @@ public class ResyncRoutesJob {
             PublicationAssembler assembler, PlatformDnsRecords dnsRecords,
             DomainRecordsReconciler recordsReconciler, SourcePolicyProducer sourcePolicies,
             NetworkPolicyCapability networkPolicyCapability,
-            SourcePolicyActivationService sourcePolicyActivation) {
+            SourcePolicyActivationService sourcePolicyActivation,
+            VmNetworkPathOperationStore networkPaths) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.vmRepository = vmRepository;
@@ -88,6 +91,7 @@ public class ResyncRoutesJob {
         this.sourcePolicies = sourcePolicies;
         this.networkPolicyCapability = networkPolicyCapability;
         this.sourcePolicyActivation = sourcePolicyActivation;
+        this.networkPaths = networkPaths;
     }
 
     /** The manifest slice of one route + the generation the CAS must match. */
@@ -107,6 +111,9 @@ public class ResyncRoutesJob {
         List<ApplyRequest> manifest = new ArrayList<>();
         List<Domain> servingPlatformDomains = new ArrayList<>();
         for (Route route : live) {
+            if (!networkPaths.routeConsumerReady(route.getId())) {
+                continue;
+            }
             Domain domain = domainRepository.findById(route.getDomainId()).orElse(null);
             if (domain == null || domain.getStatus() != DomainStatus.ACTIVE) {
                 continue; // only ACTIVE domains have a servable vhost

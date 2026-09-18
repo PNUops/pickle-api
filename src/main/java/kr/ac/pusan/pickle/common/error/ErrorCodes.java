@@ -151,6 +151,13 @@ public final class ErrorCodes {
     public static final String SOURCE_POLICY_REVISION_CONFLICT = "SOURCE_POLICY_REVISION_CONFLICT";
     /** The configured agent or preset cannot enforce the requested policy. */
     public static final String SOURCE_POLICY_UNAVAILABLE = "SOURCE_POLICY_UNAVAILABLE";
+    /** VM firewall policy adoption is disabled in this deployment. */
+    public static final String VM_NETWORK_POLICY_DISABLED = "VM_NETWORK_POLICY_DISABLED";
+    /** This VM has no durable policy row or prepared-node support. */
+    public static final String VM_NETWORK_POLICY_UNAVAILABLE = "VM_NETWORK_POLICY_UNAVAILABLE";
+    /** The editor wrote against an older VM policy revision. */
+    public static final String VM_NETWORK_POLICY_REVISION_CONFLICT =
+            "VM_NETWORK_POLICY_REVISION_CONFLICT";
     // 교내 IP requests (contract v0.27.0).
     /** The VM already has a live (REQUESTED/APPROVED/GRANTED) campus-IP request. */
     public static final String CAMPUS_IP_REQUEST_EXISTS = "CAMPUS_IP_REQUEST_EXISTS";

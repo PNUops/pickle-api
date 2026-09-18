@@ -23,6 +23,7 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
@@ -96,6 +97,7 @@ public class PublishingService {
     private final PlatformDnsRecords dnsRecords;
     private final DomainRecordsService recordsService;
     private final PublicSourcePolicyService sourcePolicies;
+    private final VmNetworkPathOperationStore networkPaths;
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
@@ -108,7 +110,8 @@ public class PublishingService {
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
             RateLimitService rateLimitService, PlatformDnsRecords dnsRecords,
-            DomainRecordsService recordsService, PublicSourcePolicyService sourcePolicies) {
+            DomainRecordsService recordsService, PublicSourcePolicyService sourcePolicies,
+            VmNetworkPathOperationStore networkPaths) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -129,6 +132,7 @@ public class PublishingService {
         this.dnsRecords = dnsRecords;
         this.recordsService = recordsService;
         this.sourcePolicies = sourcePolicies;
+        this.networkPaths = networkPaths;
     }
 
     @Transactional(readOnly = true)
@@ -193,12 +197,14 @@ public class PublishingService {
         Route route = routeRepository
                 .findFirstByDomainIdAndStatusNot(domain.getId(), RouteStatus.REMOVED)
                 .orElseThrow(PublishingService::domainNotServing);
+        int oldPort = route.getTargetPort();
         route.setTargetPort(resolvedPort);
         route.setGeneration(routeGenerations.next());
         route.setStatus(RouteStatus.PENDING);
         route.setLastError(null);
         Route saved = routeRepository.save(route);
-        if (domain.getStatus() == DomainStatus.ACTIVE) {
+        boolean managed = networkPaths.replaceHttp(vm.getId(), saved.getId(), oldPort, resolvedPort);
+        if (!managed && domain.getStatus() == DomainStatus.ACTIVE) {
             long routeId = saved.getId();
             enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
         }
@@ -376,8 +382,11 @@ public class PublishingService {
         Route route = routeRepository.save(new Route(domain.getId(), port, generation));
         long routeId = route.getId();
         long domainId = domain.getId();
+        boolean managed = networkPaths.openHttp(domain.getVmId(), routeId, port);
         if (domain.getStatus() == DomainStatus.ACTIVE) {
-            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            if (!managed) {
+                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            }
         } else {
             runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         }
@@ -526,8 +535,11 @@ public class PublishingService {
         route.setLastError(null);
         long routeId = routeRepository.save(route).getId();
         long domainId = domain.getId();
+        boolean managed = networkPaths.openHttp(domain.getVmId(), routeId, port);
         if (domain.getStatus() == DomainStatus.ACTIVE) {
-            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            if (!managed) {
+                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            }
         } else {
             runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
         }
@@ -575,7 +587,9 @@ public class PublishingService {
             live.setStatus(RouteStatus.REMOVED);
             live.setGeneration(routeGenerations.next());
             long routeId = live.getId();
-            enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            if (!networkPaths.closeHttp(domain.getVmId(), routeId)) {
+                enqueueAfterCommit(() -> routeApplyJob.apply(routeId));
+            }
         }
         if (live != null) {
             // The record comes down after the vhost, in the same push.

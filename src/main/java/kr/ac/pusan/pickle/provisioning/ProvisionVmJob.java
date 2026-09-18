@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.common.crypto.VmPasswordGenerator;
 import kr.ac.pusan.pickle.config.SshPlatformProperties;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPolicyRuntimeGate;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
@@ -124,6 +125,7 @@ public class ProvisionVmJob implements ProvisioningService {
     private final PortMappingTeardownService portMappingTeardown;
     private final VmSshKeyRepository vmSshKeyRepository;
     private final TransactionTemplate transactionTemplate;
+    private final VmNetworkPolicyRuntimeGate networkPolicyGate;
 
     public ProvisionVmJob(VmRepository vmRepository, VmEventRepository vmEventRepository,
             ProvisioningTaskRepository taskRepository, NodeRepository nodeRepository,
@@ -136,7 +138,8 @@ public class ProvisionVmJob implements ProvisioningService {
             SshPlatformProperties sshPlatformProperties,
             PortMappingTeardownService portMappingTeardown,
             VmSshKeyRepository vmSshKeyRepository,
-            TransactionTemplate transactionTemplate) {
+            TransactionTemplate transactionTemplate,
+            VmNetworkPolicyRuntimeGate networkPolicyGate) {
         this.vmRepository = vmRepository;
         this.vmEventRepository = vmEventRepository;
         this.taskRepository = taskRepository;
@@ -157,6 +160,7 @@ public class ProvisionVmJob implements ProvisioningService {
         this.portMappingTeardown = portMappingTeardown;
         this.vmSshKeyRepository = vmSshKeyRepository;
         this.transactionTemplate = transactionTemplate;
+        this.networkPolicyGate = networkPolicyGate;
     }
 
     @Override
@@ -351,6 +355,7 @@ public class ProvisionVmJob implements ProvisioningService {
     /** Step 4: full clone of the OS image — only if the VMID does not exist yet. */
     private void clone(Vm vm) {
         Node node = node(vm);
+        boolean networkPolicyRequired = networkPolicyGate.required(vm.getId(), node);
         CloneImagePin pin;
         try {
             pin = requiredClonePin(vm);
@@ -381,6 +386,9 @@ public class ProvisionVmJob implements ProvisioningService {
                         + "'과 다릅니다 — vmid_seq 재동기화가 필요합니다.");
             }
             log.info("provision vm {}: vmid {} already exists — clone skipped", vm.getId(), vmid);
+            if (networkPolicyRequired) {
+                keepPreparedCloneStopped(node, vmid);
+            }
             return;
         }
         if (node.getStatus() != NodeStatus.ACTIVE) {
@@ -394,6 +402,9 @@ public class ProvisionVmJob implements ProvisioningService {
                 Map<String, Object> templateConfig = proxmox.currentVmConfig(node.getApiHost(),
                         node.getName(), pin.templateVmid());
                 VmNicConfiguration.requirePrepared(nicConfig(templateConfig), requirements.get());
+                if (networkPolicyRequired && truthy(templateConfig.get("onboot"))) {
+                    throw new IllegalStateException("VM 방화벽 준비 template의 onboot는 0이어야 합니다.");
+                }
             }
         } catch (IllegalStateException unsafe) {
             throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
@@ -401,6 +412,27 @@ public class ProvisionVmJob implements ProvisioningService {
         String upid = proxmox.clone(node.getApiHost(), node.getName(), pin.templateVmid(),
                 vmid, vm.getHostname());
         proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
+        if (networkPolicyRequired) {
+            keepPreparedCloneStopped(node, vmid);
+        }
+    }
+
+    private void keepPreparedCloneStopped(Node node, int vmid) {
+        proxmox.config(node.getApiHost(), node.getName(), vmid, Map.of("onboot", "0"));
+        Map<String, Object> config = proxmox.currentVmConfig(node.getApiHost(), node.getName(), vmid);
+        String runtime = String.valueOf(proxmox.currentVmStatus(
+                node.getApiHost(), node.getName(), vmid).get("status"));
+        if (truthy(config.get("onboot")) || !"stopped".equals(runtime)) {
+            IllegalStateException unsafe = new IllegalStateException(
+                    "VM 방화벽 준비 clone의 stopped/onboot=0 상태를 확인할 수 없습니다.");
+            throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
+        }
+    }
+
+    private static boolean truthy(Object value) {
+        return Boolean.TRUE.equals(value) || Integer.valueOf(1).equals(value)
+                || "1".equals(String.valueOf(value))
+                || "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     /**
@@ -419,6 +451,7 @@ public class ProvisionVmJob implements ProvisioningService {
      */
     private void configure(Vm vm) {
         Node node = node(vm);
+        boolean networkPolicyRequired = networkPolicyGate.required(vm.getId(), node);
         IpAllocation allocation = requireAllocation(vm);
         IpPool pool = poolRepository.findById(allocation.getPoolId()).orElseThrow();
         String ip = hostAddress(allocation.getIp());
@@ -453,13 +486,18 @@ public class ProvisionVmJob implements ProvisioningService {
         } catch (IllegalStateException unsafe) {
             throw new ProvisioningSafetyException(unsafe.getMessage(), unsafe);
         }
-        params.put("onboot", "1");
+        // A prepared VM cannot auto-start after a host reboot until its immutable
+        // firewall base and latest desired policy have exact provider readback.
+        params.put("onboot", networkPolicyRequired ? "0" : "1");
         params.put("protection", "1");
         params.put("tags", "pickle");
         proxmox.config(node.getApiHost(), node.getName(), requireVmid(vm), params);
 
         vmRepository.storeCredentials(vm.getId(), credentialCipher.encrypt(password),
                 passwordEncoder.encode(password), Instant.now());
+        if (networkPolicyRequired) {
+            networkPolicyGate.initialize(vm.getId());
+        }
     }
 
     /**
@@ -506,9 +544,35 @@ public class ProvisionVmJob implements ProvisioningService {
     private void start(Vm vm) {
         Node node = node(vm);
         int vmid = requireVmid(vm);
+        ProviderDispatch dispatch = new ProviderDispatch(
+                null, node.getApiHost(), node.getName(), vmid);
         try {
-            String upid = proxmox.start(node.getApiHost(), node.getName(), vmid);
-            proxmox.awaitTask(node.getApiHost(), node.getName(), upid);
+            dispatch = networkPolicyGate.dispatchProvisionStart(vm.getId(), context -> {
+                if (context == null) {
+                    return new ProviderDispatch(proxmox.start(
+                            node.getApiHost(), node.getName(), vmid),
+                            node.getApiHost(), node.getName(), vmid);
+                }
+                var target = context.target();
+                String apiHost = target.apiHost();
+                String nodeName = target.nodeName();
+                int targetVmid = target.vmid();
+                if ("running".equals(context.providerStatus())) {
+                    return new ProviderDispatch(null, apiHost, nodeName, targetVmid);
+                }
+                proxmox.config(apiHost, nodeName, targetVmid, Map.of("onboot", "1"));
+                Object onboot = proxmox.currentVmConfig(
+                        apiHost, nodeName, targetVmid).get("onboot");
+                if (!(Integer.valueOf(1).equals(onboot) || "1".equals(String.valueOf(onboot))
+                        || Boolean.TRUE.equals(onboot))) {
+                    throw new IllegalStateException("VM 자동 시작 설정을 확인할 수 없습니다.");
+                }
+                return new ProviderDispatch(proxmox.start(apiHost, nodeName, targetVmid),
+                        apiHost, nodeName, targetVmid);
+            });
+            if (dispatch.upid() != null) {
+                proxmox.awaitTask(dispatch.apiHost(), dispatch.node(), dispatch.upid());
+            }
         } catch (ProxmoxTaskFailedException e) {
             if (e.exitstatus() == null || !e.exitstatus().contains("already running")) {
                 throw e;
@@ -516,14 +580,16 @@ public class ProvisionVmJob implements ProvisioningService {
             // re-run after a crash between start and step-advance — fine
         }
         long deadline = System.nanoTime() + AGENT_PING_TIMEOUT.toNanos();
-        while (!proxmox.agentPing(node.getApiHost(), node.getName(), vmid)) {
+        while (!proxmox.agentPing(dispatch.apiHost(), dispatch.node(), dispatch.vmid())) {
             if (System.nanoTime() >= deadline) {
                 throw new ProxmoxTimeoutException("qemu-guest-agent가 " + AGENT_PING_TIMEOUT
-                        + " 안에 응답하지 않았습니다 (vmid " + vmid + ")");
+                        + " 안에 응답하지 않았습니다 (vmid " + dispatch.vmid() + ")");
             }
             sleep(AGENT_PING_INTERVAL);
         }
     }
+
+    private record ProviderDispatch(String upid, String apiHost, String node, int vmid) {}
 
     /** Step 8: the guest must actually carry the allocated IP. */
     private void verify(Vm vm) {
@@ -777,12 +843,12 @@ public class ProvisionVmJob implements ProvisioningService {
                     .map(IpAllocation::getId).orElse(null);
         }
         Long allocationId = found;
+        portMappingTeardown.prepareForIpRelease(vmId);
         // One transaction for mapping teardown + release + pointer clear: no
         // orphan mapping may survive its target's IP release. A compensated
         // create normally has no mappings, but the sweep is cheap and the
         // invariant must hold on every release path.
         transactionTemplate.executeWithoutResult(tx -> {
-            portMappingTeardown.deleteMappingsForVm(vmId);
             vmSshKeyRepository.deleteByVmId(vmId);
             if (allocationId != null && ipamService.release(allocationId, vmId)) {
                 vmRepository.clearIpAllocation(vmId, allocationId, Instant.now());

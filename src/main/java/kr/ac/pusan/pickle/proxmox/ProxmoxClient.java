@@ -226,6 +226,64 @@ public class ProxmoxClient {
         return rules == null ? List.of() : rules;
     }
 
+    /** Cluster-global immutable barrier metadata; reads require Sys.Audit. */
+    public Map<String, Object> clusterFirewallOptions(String apiHost) {
+        return call(HttpMethod.GET, uri(apiHost, "cluster", "firewall", "options"), null,
+                CONFIG_RESPONSE);
+    }
+
+    /** Node backend selection; VM policy supports the legacy PVE firewall backend only. */
+    public Map<String, Object> nodeFirewallOptions(String apiHost, String node) {
+        return call(HttpMethod.GET, uri(apiHost, "nodes", node, "firewall", "options"), null,
+                CONFIG_RESPONSE);
+    }
+
+    /** Cluster-global immutable barrier metadata; reads require Sys.Audit. */
+    public List<Map<String, Object>> clusterFirewallGroups(String apiHost) {
+        List<Map<String, Object>> groups = call(HttpMethod.GET,
+                uri(apiHost, "cluster", "firewall", "groups"), null,
+                new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+        return groups == null ? List.of() : groups;
+    }
+
+    /** Rules of one operator-owned cluster security group. No mutation method is exposed. */
+    public List<Map<String, Object>> clusterFirewallGroupRules(String apiHost, String group) {
+        List<Map<String, Object>> rules = call(HttpMethod.GET,
+                uri(apiHost, "cluster", "firewall", "groups", group), null,
+                new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+        return rules == null ? List.of() : rules;
+    }
+
+    /** Entries of a VM-scoped IPSet such as ipfilter-net0. */
+    public List<Map<String, Object>> vmFirewallIpSet(String apiHost, String node, int vmid,
+            String name) {
+        List<Map<String, Object>> entries = call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "ipset", name),
+                null, new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+        return entries == null ? List.of() : entries;
+    }
+
+    public List<Map<String, Object>> vmFirewallIpSets(String apiHost, String node, int vmid) {
+        List<Map<String, Object>> sets = call(HttpMethod.GET,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "ipset"),
+                null, new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+        return sets == null ? List.of() : sets;
+    }
+
+    public void createVmFirewallIpSet(String apiHost, String node, int vmid,
+            String name, String comment) {
+        call(HttpMethod.POST,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "ipset"),
+                Map.of("name", name, "comment", comment), VOID_RESPONSE);
+    }
+
+    public void createVmFirewallIpSetEntry(String apiHost, String node, int vmid,
+            String name, String cidr, String comment) {
+        call(HttpMethod.POST,
+                uri(apiHost, "nodes", node, "qemu", String.valueOf(vmid), "firewall", "ipset", name),
+                Map.of("cidr", cidr, "comment", comment), VOID_RESPONSE);
+    }
+
     public void setVmFirewallOptions(String apiHost, String node, int vmid,
             Map<String, String> options, String digest) {
         call(HttpMethod.PUT,

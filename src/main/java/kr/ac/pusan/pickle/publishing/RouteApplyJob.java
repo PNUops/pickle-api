@@ -10,6 +10,7 @@ import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyUnavailableException;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyWire;
@@ -103,6 +104,7 @@ public class RouteApplyJob {
     private final PlatformDnsRecords dnsRecords;
     private final SourcePolicyProducer sourcePolicies;
     private final NetworkPolicyCapability networkPolicyCapability;
+    private final VmNetworkPathOperationStore networkPaths;
 
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -111,7 +113,8 @@ public class RouteApplyJob {
             TransactionTemplate transactionTemplate,
             NotificationService notificationService, RouteGenerations routeGenerations,
             PlatformDnsRecords dnsRecords, SourcePolicyProducer sourcePolicies,
-            NetworkPolicyCapability networkPolicyCapability) {
+            NetworkPolicyCapability networkPolicyCapability,
+            VmNetworkPathOperationStore networkPaths) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -126,6 +129,7 @@ public class RouteApplyJob {
         this.dnsRecords = dnsRecords;
         this.sourcePolicies = sourcePolicies;
         this.networkPolicyCapability = networkPolicyCapability;
+        this.networkPaths = networkPaths;
     }
 
     /**
@@ -233,6 +237,10 @@ public class RouteApplyJob {
         Route route = routeRepository.findByIdForApply(routeId).orElse(null);
         if (route == null) {
             log.warn("route-apply skipped: route {} not found", routeId);
+            return new Skip(null);
+        }
+        if (!networkPaths.routeConsumerReady(routeId)) {
+            log.info("route-apply held: VM derived allow is not ready for route {}", routeId);
             return new Skip(null);
         }
         Domain domain = domainRepository.findById(route.getDomainId()).orElseThrow();

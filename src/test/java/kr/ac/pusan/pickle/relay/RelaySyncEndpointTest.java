@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import org.junit.jupiter.api.Test;
@@ -32,8 +33,9 @@ import tools.jackson.databind.ObjectMapper;
  * Relay sync surface: per-relay auth (source pin + hashed token binding,
  * fail-closed), the source-route restriction, its own rate-limit scope, body
  * cap, report sanitization, generation validation, the single-view snapshot
- * semantics (unchanged answers omit {@code mappings} entirely; SUSPENDED rows
- * never appear), reset-aware counters and the threshold auto-suspend.
+ * semantics (legacy unchanged answers omit {@code mappings}, while managed
+ * answers always carry the complete typed snapshot), reset-aware counters and
+ * the threshold auto-suspend.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -65,6 +67,8 @@ class RelaySyncEndpointTest {
     private ObjectMapper objectMapper;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private VmNetworkPathOperationStore networkPaths;
 
     // ── auth ────────────────────────────────────────────────────────────────
 
@@ -113,6 +117,192 @@ class RelaySyncEndpointTest {
         sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    void retirementHandshakePinsLedgerAndRejectsMissingOrRegressingState() throws Exception {
+        RelayFixture relay = newRelay("retirement-handshake");
+        UUID ledger = UUID.randomUUID();
+        Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("appliedGeneration", 0);
+        report.put("capabilities", List.of("source-acl-v1", "mapping-retirement-v1"));
+        report.put("retirementLedgerId", ledger);
+        report.put("mappingIdHighWater", 8);
+        report.put("flowMarkHighWater", 22);
+        report.put("managedGenerationHighWater", 0);
+        report.put("retirementHighWater", 7);
+        report.put("retirementReceipts", List.of());
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isOk());
+        Map<String, Object> stored = jdbcTemplate.queryForMap("""
+                select retirement_ledger_id, flow_mark_high_water,
+                       reported_flow_mark_high_water, reported_retirement_high_water
+                  from relays where id = ?
+                """, relay.id());
+        assertThat(stored.get("retirement_ledger_id")).isEqualTo(ledger);
+        assertThat(((Number) stored.get("flow_mark_high_water")).longValue()).isEqualTo(22);
+
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, mark_namespace_ready = true where id = ?
+                """, relay.id());
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0,
+                "capabilities", List.of("source-acl-v1", "mapping-retirement-v1")))
+                .andExpect(status().isConflict());
+        report.put("flowMarkHighWater", 21);
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void restoredActiveMappingCannotReuseConsumerRetiredIdentity() throws Exception {
+        RelayFixture relay = newRelay("retirement-restore");
+        UUID ledger = UUID.randomUUID();
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                    mark_namespace_ready = true where id = ?
+                """, ledger, relay.id());
+        long vmId = runningVm();
+        long rowId = insertMapping(relay.id(), vmId, "UDP", 10053, 53, "ACTIVE", 1);
+        jdbcTemplate.update("""
+                update port_mappings set delivery_state = 'ACTIVE', flow_mark = 22,
+                       consumer_mapping_id = 8 where id = ?
+                """, rowId);
+        Map<String, Object> receipt = Map.of(
+                "retirementId", UUID.randomUUID(), "generation", 7, "mappingId", 8,
+                "flowMark", 22,
+                "tupleHash", "7d909bea936f3ead089f7d75f333a3592a589822fbd6e4ef06cb43a3a8d3dbbf",
+                "state", "CLEARED");
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0,
+                "capabilities", List.of("source-acl-v1", "mapping-retirement-v1"),
+                "retirementLedgerId", ledger, "mappingIdHighWater", 8,
+                "flowMarkHighWater", 22,
+                "managedGenerationHighWater", 0,
+                "retirementHighWater", 7, "retirementReceipts", List.of(receipt)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void managedGenerationHighWaterReconcilesARestoredApiAndCannotRegress() throws Exception {
+        RelayFixture relay = newRelay("managed-generation-restore");
+        UUID ledger = UUID.randomUUID();
+        Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("appliedGeneration", 0);
+        report.put("capabilities", List.of("source-acl-v1", "mapping-retirement-v1"));
+        report.put("retirementLedgerId", ledger);
+        report.put("mappingIdHighWater", 0);
+        report.put("flowMarkHighWater", 0);
+        report.put("managedGenerationHighWater", 9);
+        report.put("retirementHighWater", 0);
+        report.put("retirementReceipts", List.of());
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generation").value(10));
+        assertThat(jdbcTemplate.queryForObject(
+                "select mapping_generation from relays where id = ?", Long.class, relay.id()))
+                .isEqualTo(10);
+
+        report.put("managedGenerationHighWater", 8);
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void retirementAcknowledgementDoesNotCrossAnUnclearedEarlierGeneration() throws Exception {
+        RelayFixture relay = newRelay("retirement-gap");
+        UUID ledger = UUID.randomUUID();
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                    mark_namespace_ready = true, mapping_generation = 9 where id = ?
+                """, ledger, relay.id());
+        long vmId = runningVm();
+        long firstRow = insertMapping(relay.id(), vmId, "UDP", 10061, 61, "REMOVING", 7);
+        long secondRow = insertMapping(relay.id(), vmId, "UDP", 10062, 62, "REMOVING", 9);
+        jdbcTemplate.update("""
+                update port_mappings set delivery_state = 'RETIRING', flow_mark = 31,
+                       consumer_mapping_id = 11 where id = ?
+                """, firstRow);
+        jdbcTemplate.update("""
+                update port_mappings set delivery_state = 'RETIRING', flow_mark = 32,
+                       consumer_mapping_id = 12 where id = ?
+                """, secondRow);
+        UUID firstRetirement = UUID.randomUUID();
+        UUID secondRetirement = UUID.randomUUID();
+        String firstHash = "a".repeat(64);
+        String secondHash = "b".repeat(64);
+        jdbcTemplate.update("""
+                insert into relay_mapping_retirements
+                    (id, relay_id, mapping_row_id, mapping_id, vm_id, retirement_sequence,
+                     generation, protocol, public_port, target_addr, target_port, flow_mark,
+                     tuple_hash)
+                values (?, ?, ?, 11, ?, 7, 7, 'UDP', 10061, '192.0.2.61', 61, 31, ?),
+                       (?, ?, ?, 12, ?, 9, 9, 'UDP', 10062, '192.0.2.62', 62, 32, ?)
+                """, firstRetirement, relay.id(), firstRow, vmId, firstHash,
+                secondRetirement, relay.id(), secondRow, vmId, secondHash);
+        Map<String, Object> laterReceipt = Map.of(
+                "retirementId", secondRetirement, "generation", 9, "mappingId", 12,
+                "flowMark", 32, "tupleHash", secondHash, "state", "CLEARED");
+        Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("appliedGeneration", 0);
+        report.put("capabilities", List.of("source-acl-v1", "mapping-retirement-v1"));
+        report.put("retirementLedgerId", ledger);
+        report.put("mappingIdHighWater", 12);
+        report.put("flowMarkHighWater", 32);
+        report.put("managedGenerationHighWater", 9);
+        report.put("retirementHighWater", 9);
+        report.put("retirementReceipts", List.of(laterReceipt));
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generation").value(9))
+                .andExpect(jsonPath("$.acknowledgedRetirementHighWater").value(0));
+
+        Map<String, Object> firstReceipt = Map.of(
+                "retirementId", firstRetirement, "generation", 7, "mappingId", 11,
+                "flowMark", 31, "tupleHash", firstHash, "state", "CLEARED");
+        report.put("retirementReceipts", List.of(firstReceipt, laterReceipt));
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), report)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generation").value(10))
+                .andExpect(jsonPath("$.acknowledgedRetirementHighWater").value(9))
+                .andExpect(jsonPath("$.retirements").isEmpty());
+    }
+
+    @Test
+    void stableManagedStateSerializesTheCompleteConsumerSnapshot() throws Exception {
+        RelayFixture relay = newRelay("managed-stable-snapshot");
+        UUID ledger = UUID.randomUUID();
+        armRetirement(relay.id(), ledger);
+        long vmId = runningVm();
+        insertManagedPolicy(vmId);
+        long mappingRowId = insertMapping(relay.id(), vmId, "UDP", 10053, 53, "ACTIVE", 1);
+        jdbcTemplate.update("""
+                update port_mappings set delivery_state = 'ACTIVE', flow_mark = 22,
+                       consumer_mapping_id = 8 where id = ?
+                """, mappingRowId);
+
+        Map<String, Object> firstReport = managedReport(0, ledger, 8, 22);
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), firstReport)
+                .andExpect(status().isOk());
+        long stableGeneration = jdbcTemplate.queryForObject(
+                "select mapping_generation from relays where id = ?", Long.class, relay.id());
+
+        Map<String, Object> stableReport = managedReport(
+                stableGeneration, ledger, 8, 22);
+        stableReport.put("managedGenerationHighWater", stableGeneration);
+        String body = syncRaw(relay.id(), relay.sourceIp(), relay.token(), stableReport)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generation").value(stableGeneration))
+                .andExpect(jsonPath("$.mappings").isArray())
+                .andExpect(jsonPath("$.retirements").isArray())
+                .andExpect(jsonPath("$.acknowledgedRetirementHighWater").value(0))
+                .andReturn().getResponse().getContentAsString();
+
+        ConsumerManagedSnapshot snapshot = objectMapper.readValue(
+                body, ConsumerManagedSnapshot.class);
+        assertThat(snapshot.mappings()).containsExactly(new ConsumerMapping(
+                8, "udp", 10053, vmIp(vmId), 53, 22));
+        assertThat(snapshot.retirements()).isEmpty();
     }
 
     // ── source-route restriction (the tunnel address reaches sync only) ────
@@ -517,9 +707,82 @@ class RelaySyncEndpointTest {
         assertThat(notified).isEqualTo(1);
     }
 
+    @Test
+    void lateThresholdCounterKeepsDeleteRetirementInThisAndTheNextSnapshot() throws Exception {
+        RelayFixture relay = newRelay("delete-retirement-counter");
+        UUID ledger = UUID.randomUUID();
+        armRetirement(relay.id(), ledger);
+        long vmId = runningVm();
+        insertManagedPolicy(vmId);
+        long mappingRowId = insertMapping(relay.id(), vmId, "UDP", 16002, 53, "ACTIVE", 1);
+        jdbcTemplate.update("""
+                update port_mappings set delivery_state = 'ACTIVE', flow_mark = 23,
+                       consumer_mapping_id = 9 where id = ?
+                """, mappingRowId);
+        assertThat(networkPaths.openPort(vmId, mappingRowId, "UDP", 53,
+                VmNetworkPathOperationStore.Action.OPEN)).isTrue();
+        jdbcTemplate.update("""
+                update vm_network_path_operations set phase = 'DONE'
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                """, mappingRowId);
+
+        Map<String, Object> baseline = managedReport(0, ledger, 9, 23);
+        baseline.put("counters", List.of(counterRow(9, 0, 0, 0)));
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), baseline)
+                .andExpect(status().isOk());
+
+        assertThat(networkPaths.retirePort(vmId, mappingRowId,
+                VmNetworkPathOperationStore.Action.DELETE)).isTrue();
+        jdbcTemplate.update("""
+                update port_mappings set status = 'REMOVING' where id = ?
+                """, mappingRowId);
+        long currentGeneration = jdbcTemplate.queryForObject(
+                "select mapping_generation from relays where id = ?", Long.class, relay.id());
+        UUID retirementId = jdbcTemplate.queryForObject("""
+                select id from relay_mapping_retirements where mapping_row_id = ?
+                """, UUID.class, mappingRowId);
+
+        Map<String, Object> threshold = managedReport(0, ledger, 9, 23);
+        threshold.put("managedGenerationHighWater", currentGeneration);
+        threshold.put("counters", List.of(counterRow(9, 500_000, 0, 0)));
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), threshold)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.retirements[0].retirementId")
+                        .value(retirementId.toString()))
+                .andExpect(jsonPath("$.retirements[0].mappingId").value(9));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from port_mappings where id = ?", String.class, mappingRowId))
+                .isEqualTo("REMOVING");
+        Map<String, Object> operation = jdbcTemplate.queryForMap("""
+                select action::text as action, phase::text as phase
+                  from vm_network_path_operations
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ? and phase <> 'DONE'
+                """, mappingRowId);
+        assertThat(operation).containsEntry("action", "DELETE")
+                .containsEntry("phase", "CONSUMER_RETIRE");
+        assertCounterTotals(mappingRowId, 500_000, 0);
+
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), thresholdWithoutCounters(threshold))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.retirements[0].retirementId")
+                        .value(retirementId.toString()))
+                .andExpect(jsonPath("$.retirements[0].mappingId").value(9));
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private record RelayFixture(long id, String sourceIp, String token) {
+    }
+
+    private record ConsumerManagedSnapshot(long generation,
+            List<ConsumerMapping> mappings,
+            List<Map<String, Object>> retirements,
+            long acknowledgedRetirementHighWater) {
+    }
+
+    private record ConsumerMapping(long id, String proto, int publicPort,
+            String targetAddr, int targetPort, long flowMark) {
     }
 
     /** Fresh enabled relay with an issued token and its own source address. */
@@ -564,6 +827,42 @@ class RelaySyncEndpointTest {
         return Map.of("mappingId", mappingId, "newConns", newConns, "inBytes", inBytes,
                 "outBytes", outBytes, "inPackets", 0, "outPackets", 0, "rateDropped", 0,
                 "connDropped", 0, "perSourceDropped", 0);
+    }
+
+    private static Map<String, Object> managedReport(long appliedGeneration, UUID ledger,
+            long mappingHighWater, long flowHighWater) {
+        Map<String, Object> report = new java.util.LinkedHashMap<>();
+        report.put("appliedGeneration", appliedGeneration);
+        report.put("capabilities", List.of("source-acl-v1", "mapping-retirement-v1"));
+        report.put("retirementLedgerId", ledger);
+        report.put("mappingIdHighWater", mappingHighWater);
+        report.put("flowMarkHighWater", flowHighWater);
+        report.put("managedGenerationHighWater", 0);
+        report.put("retirementHighWater", 0);
+        report.put("retirementReceipts", List.of());
+        return report;
+    }
+
+    private static Map<String, Object> thresholdWithoutCounters(Map<String, Object> report) {
+        Map<String, Object> copy = new java.util.LinkedHashMap<>(report);
+        copy.remove("counters");
+        return copy;
+    }
+
+    private void armRetirement(long relayId, UUID ledger) {
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                       mark_namespace_ready = true, retirement_observed_at = now()
+                 where id = ?
+                """, ledger, relayId);
+    }
+
+    private void insertManagedPolicy(long vmId) {
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "d".repeat(64));
     }
 
     private void assertCounterTotals(long mappingId, long connTotal, long bytesTotal) {
