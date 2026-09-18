@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import kr.ac.pusan.pickle.auth.PasswordPolicy;
 import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
@@ -22,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -43,13 +45,18 @@ class ProdBootstrapSeederTest {
     private PasswordEncoder passwordEncoder;
     @Mock
     private PersonalWorkspaceService personalWorkspaceService;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
+    @Mock
+    private EntityManager entityManager;
 
     /** Real policy (no deps): exercises the same weak-password bar as signup. */
     private final PasswordPolicy passwordPolicy = new PasswordPolicy();
 
     private ProdBootstrapSeeder seederWith(MockEnvironment env) {
-        return new ProdBootstrapSeeder(userRepository, passwordEncoder, personalWorkspaceService,
-                passwordPolicy, env);
+        BootstrapAdminService service = new BootstrapAdminService(userRepository, passwordEncoder,
+                personalWorkspaceService, passwordPolicy, jdbcTemplate, entityManager);
+        return new ProdBootstrapSeeder(service, env);
     }
 
     private static MockEnvironment validEnv() {
