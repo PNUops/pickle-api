@@ -7,17 +7,25 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import kr.ac.pusan.pickle.audit.AuditIds;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyActivationService;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyWire;
+import kr.ac.pusan.pickle.common.error.ApiException;
+import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.relay.dto.RelaySyncRequest;
 import kr.ac.pusan.pickle.relay.dto.RelaySyncResponse;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -70,7 +78,7 @@ public class RelaySyncService {
             select r.mapping_generation, m.id, lower(m.proto) as proto,
                    m.public_port, m.target_port,
                    m.ct_max, m.new_conn_rate, m.new_conn_burst,
-                   m.per_source_rate, m.per_source_burst,
+                   m.per_source_rate, m.per_source_burst, m.source_policy_generation,
                    host(a.ip) as target_addr
               from relays r
               left join port_mappings m on m.relay_id = r.id and m.status = 'ACTIVE'
@@ -87,10 +95,18 @@ public class RelaySyncService {
     private final AuditService auditService;
     private final AuditIds auditIds;
     private final ObjectMapper objectMapper;
+    private final RelayCapabilityObservationService capabilityObservations;
+    private final SourcePolicyProducer sourcePolicies;
+    private final NetworkPolicyCapability networkPolicyCapability;
+    private final SourcePolicyActivationService sourcePolicyActivation;
 
     public RelaySyncService(JdbcTemplate jdbcTemplate, RelayGenerations relayGenerations,
             SettingsService settingsService, NotificationService notificationService,
-            AuditService auditService, AuditIds auditIds, ObjectMapper objectMapper) {
+            AuditService auditService, AuditIds auditIds, ObjectMapper objectMapper,
+            RelayCapabilityObservationService capabilityObservations,
+            SourcePolicyProducer sourcePolicies,
+            NetworkPolicyCapability networkPolicyCapability,
+            SourcePolicyActivationService sourcePolicyActivation) {
         this.jdbcTemplate = jdbcTemplate;
         this.relayGenerations = relayGenerations;
         this.settingsService = settingsService;
@@ -98,10 +114,19 @@ public class RelaySyncService {
         this.auditService = auditService;
         this.auditIds = auditIds;
         this.objectMapper = objectMapper;
+        this.capabilityObservations = capabilityObservations;
+        this.sourcePolicies = sourcePolicies;
+        this.networkPolicyCapability = networkPolicyCapability;
+        this.sourcePolicyActivation = sourcePolicyActivation;
     }
 
     @Transactional
     public RelaySyncResponse sync(long relayId, RelaySyncRequest request) {
+        Set<String> currentCapabilities = request.capabilities() == null ? Set.of()
+                : Set.copyOf(request.capabilities());
+        capabilityObservations.observe(relayId,
+                request.capabilities() == null ? List.of() : request.capabilities());
+        sourcePolicyActivation.activateRelay(relayId);
         GenerationState state = jdbcTemplate.queryForObject("""
                 select applied_generation, mapping_generation from relays where id = ?
                 """, (rs, rowNum) -> new GenerationState(rs.getLong(1), rs.getLong(2)), relayId);
@@ -153,7 +178,7 @@ public class RelaySyncService {
 
         // A discarded report (violation or restart) always gets the full
         // snapshot so a confused agent converges instead of wedging.
-        return readSnapshot(relayId, validated, discarded);
+        return readSnapshot(relayId, validated, discarded, currentCapabilities);
     }
 
     // ── counters (reset-aware) ───────────────────────────────────────────────
@@ -312,7 +337,7 @@ public class RelaySyncService {
     // ── snapshot ─────────────────────────────────────────────────────────────
 
     private RelaySyncResponse readSnapshot(long relayId, long validatedApplied,
-            boolean forceFull) {
+            boolean forceFull, Set<String> currentCapabilities) {
         return jdbcTemplate.query(SNAPSHOT_SQL, rs -> {
             long generation = 0;
             List<RelaySyncResponse.MappingSnapshot> mappings = new ArrayList<>();
@@ -331,6 +356,15 @@ public class RelaySyncService {
                             mappingId);
                     continue;
                 }
+                SourcePolicyWire sourcePolicy = sourcePolicies.portMapping(mappingId,
+                        rs.getObject("source_policy_generation") != null).orElse(null);
+                if (sourcePolicy != null
+                        && !networkPolicyCapability.sourceAclAvailable(currentCapabilities)) {
+                    throw new ApiException(HttpStatus.CONFLICT,
+                            ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
+                            "릴레이 출발지 정책을 적용할 수 없습니다",
+                            "현재 relay-agent가 source-acl-v1 기능을 보고하지 않았습니다.");
+                }
                 mappings.add(new RelaySyncResponse.MappingSnapshot(mappingId,
                         rs.getString("proto"), rs.getInt("public_port"), targetAddr,
                         rs.getInt("target_port"),
@@ -338,7 +372,7 @@ public class RelaySyncService {
                         rs.getObject("new_conn_rate", Integer.class),
                         rs.getObject("new_conn_burst", Integer.class),
                         rs.getObject("per_source_rate", Integer.class),
-                        rs.getObject("per_source_burst", Integer.class)));
+                        rs.getObject("per_source_burst", Integer.class), sourcePolicy));
             }
             if (!forceFull && validatedApplied == generation) {
                 return new RelaySyncResponse(generation, null); // tiny answer

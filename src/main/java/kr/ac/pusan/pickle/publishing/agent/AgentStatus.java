@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.publishing.agent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * The subset of the proxy-agent {@code GET /status} response pickle-api
@@ -10,7 +11,8 @@ import java.util.Optional;
  * cert-issuance results. The agent surfaces certbot failures ONLY here — an
  * {@code /apply} answers 200 even when issuance failed.
  */
-public record AgentStatus(List<RouteState> routes, List<CertState> certs) {
+public record AgentStatus(List<RouteState> routes, List<CertState> certs,
+        Set<String> capabilities) {
 
     /** One agent-managed vhost and its applied generation. */
     public record RouteState(String fqdn, boolean present, Long generation) {

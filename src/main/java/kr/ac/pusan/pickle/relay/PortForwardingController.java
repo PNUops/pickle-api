@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
+import kr.ac.pusan.pickle.networkpolicy.dto.UpdateSourcePolicyRequest;
 import kr.ac.pusan.pickle.relay.dto.CreatePortForwardingRequest;
 import kr.ac.pusan.pickle.relay.dto.PortForwardingView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -58,5 +61,26 @@ public class PortForwardingController {
             @PathVariable UUID portForwardingId, HttpServletRequest httpRequest) {
         return portForwardingService.delete(principal, vmId, portForwardingId,
                 clientIp(httpRequest));
+    }
+
+    @GetMapping("/{portForwardingId}/source-policy")
+    @io.swagger.v3.oas.annotations.Operation(operationId = "getPortForwardingSourcePolicy",
+            summary = "포트 포워딩 출발지 정책 조회")
+    public SourcePolicyView getPortForwardingSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
+            @PathVariable UUID portForwardingId) {
+        return portForwardingService.getSourcePolicy(principal, vmId, portForwardingId);
+    }
+
+    @PutMapping("/{portForwardingId}/source-policy")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @io.swagger.v3.oas.annotations.Operation(operationId = "updatePortForwardingSourcePolicy",
+            summary = "포트 포워딩 출발지 정책 저장")
+    public SourcePolicyView updatePortForwardingSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
+            @PathVariable UUID portForwardingId,
+            @Valid @RequestBody UpdateSourcePolicyRequest request, HttpServletRequest httpRequest) {
+        return portForwardingService.updateSourcePolicy(principal, vmId, portForwardingId,
+                request.expectedRevision(), request.allowedCidrs(), clientIp(httpRequest));
     }
 }

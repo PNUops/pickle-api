@@ -9,6 +9,10 @@ import kr.ac.pusan.pickle.config.PublishingProperties;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyUnavailableException;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyWire;
 import kr.ac.pusan.pickle.publishing.agent.AgentStatus;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import kr.ac.pusan.pickle.publishing.agent.ApplyRequest;
@@ -97,6 +101,8 @@ public class RouteApplyJob {
     private final NotificationService notificationService;
     private final RouteGenerations routeGenerations;
     private final PlatformDnsRecords dnsRecords;
+    private final SourcePolicyProducer sourcePolicies;
+    private final NetworkPolicyCapability networkPolicyCapability;
 
     public RouteApplyJob(RouteRepository routeRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -104,7 +110,8 @@ public class RouteApplyJob {
             PublishingProperties properties, PublicationAssembler assembler,
             TransactionTemplate transactionTemplate,
             NotificationService notificationService, RouteGenerations routeGenerations,
-            PlatformDnsRecords dnsRecords) {
+            PlatformDnsRecords dnsRecords, SourcePolicyProducer sourcePolicies,
+            NetworkPolicyCapability networkPolicyCapability) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.certificateRepository = certificateRepository;
@@ -117,6 +124,8 @@ public class RouteApplyJob {
         this.notificationService = notificationService;
         this.routeGenerations = routeGenerations;
         this.dnsRecords = dnsRecords;
+        this.sourcePolicies = sourcePolicies;
+        this.networkPolicyCapability = networkPolicyCapability;
     }
 
     /**
@@ -154,6 +163,19 @@ public class RouteApplyJob {
         }
         Push push = (Push) prep;
         PlatformDnsRecords.Outcome dns = null;
+        if (!push.absent() && push.request().sourcePolicy() != null) {
+            Optional<AgentStatus> status = proxyAgentClient.status();
+            if (status.isEmpty()) {
+                ApplyOutcome outcome = ApplyOutcome.transport(
+                        "proxy-agent의 출발지 정책 지원 여부를 확인할 수 없습니다.");
+                return transactionTemplate.execute(tx -> record(push, outcome, null, null));
+            }
+            if (!networkPolicyCapability.sourceAclAvailable(status.get().capabilities())) {
+                ApplyOutcome outcome = ApplyOutcome.transport(
+                        "proxy-agent가 source-acl-v1 기능을 보고하지 않았습니다.");
+                return transactionTemplate.execute(tx -> record(push, outcome, null, null));
+            }
+        }
         // The configured() guard is what keeps an unconfigured provider from
         // reaching routes that already exist. Refusing a *new* platform publish
         // is correct and happens earlier, at requireDnsProvider(); refusing to
@@ -261,9 +283,24 @@ public class RouteApplyJob {
                     domain.getFqdn(), domain.getStatus());
             return new Skip(null);
         }
-        ApplyRequest request = absent
-                ? ApplyRequest.absent(domain.getFqdn(), route.getGeneration())
-                : presentRequest(domain, route);
+        ApplyRequest request;
+        try {
+            if (absent) {
+                request = ApplyRequest.absent(domain.getFqdn(), route.getGeneration());
+            } else {
+                SourcePolicyWire sourcePolicy = sourcePolicies.domain(domain.getId(),
+                        route.getSourcePolicyGeneration() != null).orElse(null);
+                if (sourcePolicy != null && route.getSourcePolicyGeneration() == null) {
+                    long policyGeneration = routeGenerations.next();
+                    route.setGeneration(policyGeneration);
+                    route.setSourcePolicyGeneration(policyGeneration);
+                }
+                request = presentRequest(domain, route, sourcePolicy);
+            }
+        } catch (SourcePolicyUnavailableException unavailable) {
+            route.setLastError(unavailable.getMessage());
+            return new Skip(ApplyOutcome.Kind.TRANSPORT);
+        }
         if (request == null) {
             return new Skip(ApplyOutcome.Kind.FAILED); // recorded already (no live IP)
         }
@@ -373,7 +410,7 @@ public class RouteApplyJob {
                 + "its owner's apply converges the vhost", domain.getFqdn());
     }
 
-    private ApplyRequest presentRequest(Domain domain, Route route) {
+    private ApplyRequest presentRequest(Domain domain, Route route, SourcePolicyWire sourcePolicy) {
         Vm vm = vmRepository.findById(domain.getVmId()).orElse(null);
         String targetIp = vm == null ? null
                 : ipAddressResolver.liveHostIp(vm.getIpAllocationId(), vm.getId());
@@ -382,7 +419,7 @@ public class RouteApplyJob {
             return null;
         }
         return ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
-                route.getTargetPort(), assembler.certRefFor(domain));
+                route.getTargetPort(), assembler.certRefFor(domain), sourcePolicy);
     }
 
     /**

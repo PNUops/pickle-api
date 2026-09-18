@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
+import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyActivationService;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import kr.ac.pusan.pickle.publishing.agent.ApplyRequest;
 import kr.ac.pusan.pickle.publishing.agent.ProxyAgentClient;
@@ -62,12 +65,17 @@ public class ResyncRoutesJob {
     private final PublicationAssembler assembler;
     private final PlatformDnsRecords dnsRecords;
     private final DomainRecordsReconciler recordsReconciler;
+    private final SourcePolicyProducer sourcePolicies;
+    private final NetworkPolicyCapability networkPolicyCapability;
+    private final SourcePolicyActivationService sourcePolicyActivation;
 
     public ResyncRoutesJob(RouteRepository routeRepository, DomainRepository domainRepository,
             VmRepository vmRepository, IpAddressResolver ipAddressResolver,
             RouteGenerations routeGenerations, ProxyAgentClient proxyAgentClient,
             PublicationAssembler assembler, PlatformDnsRecords dnsRecords,
-            DomainRecordsReconciler recordsReconciler) {
+            DomainRecordsReconciler recordsReconciler, SourcePolicyProducer sourcePolicies,
+            NetworkPolicyCapability networkPolicyCapability,
+            SourcePolicyActivationService sourcePolicyActivation) {
         this.routeRepository = routeRepository;
         this.domainRepository = domainRepository;
         this.vmRepository = vmRepository;
@@ -77,6 +85,9 @@ public class ResyncRoutesJob {
         this.assembler = assembler;
         this.dnsRecords = dnsRecords;
         this.recordsReconciler = recordsReconciler;
+        this.sourcePolicies = sourcePolicies;
+        this.networkPolicyCapability = networkPolicyCapability;
+        this.sourcePolicyActivation = sourcePolicyActivation;
     }
 
     /** The manifest slice of one route + the generation the CAS must match. */
@@ -85,6 +96,7 @@ public class ResyncRoutesJob {
 
     @Job(name = "route-resync (sync-all)", retries = 0)
     public void run() {
+        sourcePolicyActivation.activateRoutes();
         // Deliberately not isolated per route, unlike the reconcile cycle. The
         // manifest this loop builds is authoritative: a name absent from it has
         // its vhost pruned, so skipping a row that failed to render would take
@@ -106,10 +118,22 @@ public class ResyncRoutesJob {
                 continue; // no live IP → nothing to render (SSRF guard: own IP only)
             }
             manifest.add(ApplyRequest.present(domain.getFqdn(), route.getGeneration(), targetIp,
-                    route.getTargetPort(), assembler.certRefFor(domain)));
+                    route.getTargetPort(), assembler.certRefFor(domain),
+                    sourcePolicies.domain(domain.getId(), route.getSourcePolicyGeneration() != null)
+                            .orElse(null)));
             included.add(new Included(route.getId(), route.getGeneration()));
             if (PlatformDnsRecords.managed(domain)) {
                 servingPlatformDomains.add(domain);
+            }
+        }
+        boolean carriesSourcePolicy = manifest.stream()
+                .anyMatch(request -> request.sourcePolicy() != null);
+        if (carriesSourcePolicy) {
+            var status = proxyAgentClient.status();
+            if (status.isEmpty()
+                    || !networkPolicyCapability.sourceAclAvailable(status.get().capabilities())) {
+                log.error("route-resync held: proxy-agent did not freshly report source-acl-v1");
+                return;
             }
         }
         long snapshotGeneration = routeGenerations.next();

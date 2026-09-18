@@ -39,6 +39,6 @@ class NetworkPolicyCapabilityTest {
         assertThatThrownBy(() -> empty.campusPreset(true)).isInstanceOf(IllegalStateException.class);
         var configured = new NetworkPolicyProperties(true, List.of("192.0.2.0/24", "2001:DB8::/32"));
         assertThat(configured.campusPreset(true).cidrValues()).containsExactly("192.0.2.0/24", "2001:db8::/32");
-        assertThatThrownBy(() -> configured.campusPreset(false)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(configured.campusPreset(false).cidrValues()).containsExactly("192.0.2.0/24");
     }
 }

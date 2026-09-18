@@ -148,11 +148,17 @@ template의 `net0`가 이 값과 일치하는지 확인하고, VM 설정에서�
 limit과 CPU·aggregate disk advisory 동작을 유지합니다. label 하나라도 등록한 노드는 두
 문서가 모두 유효해야 ACTIVE 전환을 통과합니다.
 
-CIDR 정책 렌더러와 PVE 방화벽 호출, 수동 VM 복구 guard는 내부 구현 준비 단계입니다.
-정책 CRUD와 agent 전달, VM 위치 변경에는 아직 연결되지 않았습니다.
-`pickle.network-policy.enabled`는 기본 false이며 이 값을 켜는 것만으로 방화벽이 적용되지
-않습니다. 교내 CIDR 설정 `pickle.network-policy.campus-source-cidrs`에는 기본 허용 대역이
-없습니다.
+도메인과 포트 매핑별 출발지 정책은 revision CAS로 저장하고 proxy/relay agent에 generation과
+함께 전달합니다. 도메인은 IPv4·IPv6, 포트 매핑은 IPv4 CIDR을 지원하며 빈 목록은 새 연결을
+거부합니다. Proxy는 적용 직전의 fresh `/status`, relay는 현재 sync 요청에서
+`source-acl-v1`을 확인합니다. 어느 쪽이든 확인하지 못하면 정책을 생략하지 않고 반영 대기
+또는 실패로 남깁니다. 제거 경로는 capability와 무관하게 계속 동작합니다.
+
+`pickle.network-policy.enabled`는 기본 false입니다. 이 값이 false인 legacy 행만 기존 wire를
+유지하며, 저장 정책이나 activation marker가 있는 행은 생략으로 완화되지 않습니다. 교내 CIDR
+설정 `pickle.network-policy.campus-source-cidrs`에는 기본 허용 대역이 없습니다. Preset은 이
+설정의 확인된 CIDR을 snapshot으로 반환하고 정책에는 최종 CIDR 배열만 저장합니다. VM NIC의
+PVE 방화벽 정책은 별도 기능이며 아직 공개 CRUD와 applier를 제공하지 않습니다.
 
 30초 상태 폴러와 10분 드리프트 리컨실러, 5분 삭제 스위퍼, 10분 고아 태스크 복구가
 데이터베이스와 Proxmox를 계속 맞춥니다. 드리프트 리컨실러는 어긋난 지점을 보고만 하고
@@ -352,6 +358,8 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_SSHGW_SOURCE_IP` | `/internal` 허용 출발지 | `172.30.1.30` |
 | `PICKLE_SSHGW_RATE_LIMIT` / `_GLOBAL_RATE_LIMIT` | `/internal` 분당 한도 | `60` / `600` |
 | `PICKLE_PROXY_AGENT_URL` / `_TOKEN` | 프록시 에이전트 주소와 bearer | `http://172.30.1.10:9443` / 없음 |
+| `PICKLE_NETWORK_POLICY_ENABLED` | 도메인·포트 매핑 출발지 정책 producer와 CRUD 활성화. Agent capability 확인 전에는 켜지 않습니다 | `false` |
+| `PICKLE_NETWORK_POLICY_CAMPUS_SOURCE_CIDRS` | 교내 preset이 반환할 확인된 CIDR 목록. 빈 값이면 preset은 unavailable입니다 | 없음 |
 | `PICKLE_TERMINAL_BRIDGE_URL` / `PICKLE_TERMINAL_CONTROL_TOKEN` | 터미널 브리지 제어 주소와 bearer | `http://172.30.1.30:8083` / 없음 |
 | `PICKLE_TERMINAL_PER_USER_CAP` / `_PER_VM_CAP` / `_PER_ORG_CAP` | 동시 터미널 세션 상한 | `3` / `5` / `20` |
 | `PICKLE_TERMINAL_RATE_LIMIT` | 티켓 발급 분당 한도 | `10` |

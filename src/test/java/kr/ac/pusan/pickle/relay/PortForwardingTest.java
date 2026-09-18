@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +22,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
@@ -53,7 +55,7 @@ import tools.jackson.databind.ObjectMapper;
  * write, derived apply states, sudo-gated token issue, suspend/unsuspend,
  * tri-state guard PATCH, and the no-orphan-mapping teardown invariant.
  */
-@SpringBootTest
+@SpringBootTest(properties = "pickle.network-policy.enabled=true")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
@@ -121,6 +123,74 @@ class PortForwardingTest {
     }
 
     // ── authorization ───────────────────────────────────────────────────────
+
+    @Test
+    void sourcePolicyUsesVmEditorAndBumpsRelayGeneration() throws Exception {
+        long relayId = soleRelay(10000, 10099);
+        long vmId = runningVm();
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID mappingId = UUID.fromString(objectMapper.readTree(body).get("id").asString());
+        long before = mappingGeneration(relayId);
+
+        sourcePolicyPut(vmId, mappingId, viewerToken, 0, List.of("192.0.2.1"))
+                .andExpect(status().isForbidden());
+        sourcePolicyPut(vmId, mappingId, editorToken, 0, List.of("192.0.2.1"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.revision").value(1))
+                .andExpect(jsonPath("$.allowedCidrs[0]").value("192.0.2.1/32"))
+                .andExpect(jsonPath("$.applyState").value("PENDING"));
+        assertThat(auditAdminIntervention("port_mapping.source_policy_update", mappingId))
+                .isFalse();
+        assertThat(mappingGeneration(relayId)).isEqualTo(before + 1);
+        sourcePolicyPut(vmId, mappingId, ownerToken, 0, List.of())
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SOURCE_POLICY_REVISION_CONFLICT"));
+        sourcePolicyPut(vmId, mappingId, ownerToken, 1, List.of("2001:db8::/32"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("allowedCidrs"));
+
+        adminSourcePolicyPut(mappingId, sysAdminToken, 1, List.of("198.51.100.0/24"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.revision").value(2));
+        assertThat(auditAdminIntervention("port_mapping.source_policy_update", mappingId))
+                .isTrue();
+    }
+
+    @Test
+    void sourcePolicyUpdateFollowsRelayFirstTeardownLockOrder() throws Exception {
+        long relayId = soleRelay(10100, 10199);
+        long vmId = runningVm();
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID mappingId = UUID.fromString(objectMapper.readTree(body).get("id").asString());
+        long internalMappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings", mappingId);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<org.springframework.test.web.servlet.MvcResult> waiting =
+                    transactionTemplate.execute(tx -> {
+                        jdbcTemplate.queryForObject(
+                                "select id from relays where id = ? for update",
+                                Long.class, relayId);
+                        Future<org.springframework.test.web.servlet.MvcResult> future = pool.submit(
+                                () -> sourcePolicyPut(vmId, mappingId, ownerToken, 0,
+                                        List.of("192.0.2.0/24")).andReturn());
+                        try {
+                            Thread.sleep(500);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        portMappingTeardown.deleteMappingsForVm(vmId);
+                        return future;
+                    });
+            assertThat(waiting.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(404);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from port_mapping_source_policies where port_mapping_id = ?",
+                    Long.class, internalMappingId)).isZero();
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 
     @Test
     void createAuthorizesByTheVmAccessList() throws Exception {
@@ -617,6 +687,36 @@ class PortForwardingTest {
     private ResultActions list(long vmId, String token) throws Exception {
         return mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings")
                 .header("Authorization", "Bearer " + token));
+    }
+
+    private ResultActions sourcePolicyPut(long vmId, UUID mappingId, String token,
+            long expectedRevision, List<String> allowedCidrs) throws Exception {
+        return mockMvc.perform(put("/api/v1/vms/" + pub("vms", vmId)
+                        + "/port-forwardings/" + mappingId + "/source-policy")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                        "expectedRevision", expectedRevision,
+                        "allowedCidrs", allowedCidrs))));
+    }
+
+    private ResultActions adminSourcePolicyPut(UUID mappingId, String token,
+            long expectedRevision, List<String> allowedCidrs) throws Exception {
+        return mockMvc.perform(put("/api/v1/admin/port-mappings/" + mappingId
+                        + "/source-policy")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                        "expectedRevision", expectedRevision,
+                        "allowedCidrs", allowedCidrs))));
+    }
+
+    private boolean auditAdminIntervention(String action, UUID targetId) {
+        return jdbcTemplate.queryForObject("""
+                select (detail ->> 'adminIntervention')::boolean
+                  from audit_logs where action = ? and target_id = ?
+                 order by id desc limit 1
+                """, Boolean.class, action, targetId.toString());
     }
 
     private int createdPort(ResultActions result) throws Exception {

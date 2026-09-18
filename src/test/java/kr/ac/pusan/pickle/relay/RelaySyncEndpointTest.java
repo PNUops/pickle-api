@@ -56,6 +56,7 @@ class RelaySyncEndpointTest {
         // Room for a full-size counter report (the volume tests below); the
         // cap itself is still exercised by an oversized body.
         registry.add("pickle.relay.max-sync-body-bytes", () -> "262144");
+        registry.add("pickle.network-policy.enabled", () -> "true");
     }
 
     @Autowired
@@ -326,15 +327,36 @@ class RelaySyncEndpointTest {
         jdbcTemplate.update("update relays set mapping_generation = 1 where id = ?", relay.id());
         sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.generation").value(1))
+                .andExpect(jsonPath("$.generation").value(2))
                 .andExpect(jsonPath("$.mappings.length()").value(1))
                 // lowercase on the internal wire (frozen record), TCP in the DB
                 .andExpect(jsonPath("$.mappings[0].proto").value("tcp"))
                 .andExpect(jsonPath("$.mappings[0].publicPort").value(12345))
                 .andExpect(jsonPath("$.mappings[0].targetAddr").value(vmIp))
                 .andExpect(jsonPath("$.mappings[0].targetPort").value(8080))
+                .andExpect(jsonPath("$.mappings[0].sourcePolicy.allowedCidrs.length()").value(0))
                 // guard columns are null -> the fields are omitted
                 .andExpect(jsonPath("$.mappings[0].ctMax").doesNotExist());
+    }
+
+    @Test
+    void currentCapabilitiesCannotFallBackToAnOlderSourceAclReport() throws Exception {
+        RelayFixture relay = newRelay("cap-downgrade");
+        long vmId = runningVm();
+        insertMapping(relay.id(), vmId, "TCP", 12346, 8080, "ACTIVE", 1);
+        jdbcTemplate.update("update relays set mapping_generation = 1 where id = ?", relay.id());
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
+                .andExpect(status().isOk());
+
+        syncRaw(relay.id(), relay.sourceIp(), relay.token(), Map.of("appliedGeneration", 0))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SOURCE_POLICY_UNAVAILABLE"));
+        assertThat(jdbcTemplate.queryForObject(
+                "select capabilities::text from relays where id = ?",
+                String.class, relay.id())).isEqualTo("[]");
+        assertThat(jdbcTemplate.queryForObject(
+                "select capabilities_observed_at is not null from relays where id = ?",
+                Boolean.class, relay.id())).isTrue();
     }
 
     @Test
@@ -484,7 +506,7 @@ class RelaySyncEndpointTest {
         assertThat(row.get("status")).isEqualTo("SUSPENDED");
         assertThat(String.valueOf(row.get("suspended_reason"))).contains("자동 정지");
         assertThat(row.get("suspended_by")).isNull();
-        assertThat(((Number) row.get("last_change_generation")).longValue()).isEqualTo(2);
+        assertThat(((Number) row.get("last_change_generation")).longValue()).isEqualTo(3);
 
         long sysadminId = SeedFixtures.sysadminId(jdbcTemplate);
         Long notified = jdbcTemplate.queryForObject("""
@@ -515,6 +537,13 @@ class RelaySyncEndpointTest {
 
     private ResultActions sync(long relayId, String sourceIp, String token, Map<String, Object> body)
             throws Exception {
+        Map<String, Object> withCapabilities = new java.util.LinkedHashMap<>(body);
+        withCapabilities.putIfAbsent("capabilities", List.of("source-acl-v1"));
+        return syncRaw(relayId, sourceIp, token, withCapabilities);
+    }
+
+    private ResultActions syncRaw(long relayId, String sourceIp, String token,
+            Map<String, Object> body) throws Exception {
         return mockMvc.perform(post("/internal/relays/" + relayId + "/sync")
                 .with(remoteAddr(sourceIp))
                 .header("Authorization", "Bearer " + token)

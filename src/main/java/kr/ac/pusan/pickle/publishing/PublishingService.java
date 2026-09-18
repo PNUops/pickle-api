@@ -22,6 +22,8 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
@@ -93,6 +95,7 @@ public class PublishingService {
     private final RateLimitService rateLimitService;
     private final PlatformDnsRecords dnsRecords;
     private final DomainRecordsService recordsService;
+    private final PublicSourcePolicyService sourcePolicies;
     private final SecureRandom random = new SecureRandom();
 
     public PublishingService(VmRepository vmRepository, WorkspaceMemberRepository workspaceMemberRepository,
@@ -105,7 +108,7 @@ public class PublishingService {
             VmEventRepository vmEventRepository, AuditService auditService, JobScheduler jobScheduler,
             RouteApplyJob routeApplyJob, DomainVerificationJob domainVerificationJob,
             RateLimitService rateLimitService, PlatformDnsRecords dnsRecords,
-            DomainRecordsService recordsService) {
+            DomainRecordsService recordsService, PublicSourcePolicyService sourcePolicies) {
         this.vmRepository = vmRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.vmAccessService = vmAccessService;
@@ -125,6 +128,24 @@ public class PublishingService {
         this.rateLimitService = rateLimitService;
         this.dnsRecords = dnsRecords;
         this.recordsService = recordsService;
+        this.sourcePolicies = sourcePolicies;
+    }
+
+    @Transactional(readOnly = true)
+    public SourcePolicyView getSourcePolicy(AuthenticatedUser actor, UUID domainId) {
+        Domain domain = domainRepository.findByPublicId(domainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        requireVmMemberOf(actor, domain.getVmId());
+        return sourcePolicies.domainView(domain);
+    }
+
+    @Transactional
+    public SourcePolicyView updateSourcePolicy(AuthenticatedUser actor, UUID domainId,
+            long expectedRevision, List<String> allowedCidrs, String ip) {
+        Domain domain = domainRepository.findByPublicId(domainId)
+                .orElseThrow(PublishingService::domainNotFound);
+        requireVmOwnerOrEditorOf(actor, domain.getVmId());
+        return sourcePolicies.updateDomain(domain, actor, expectedRevision, allowedCidrs, false, ip);
     }
 
     // ── create / update / delete a domain ────────────────────────────────────

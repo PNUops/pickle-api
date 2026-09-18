@@ -8,6 +8,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.HashSet;
+import java.util.Set;
 import kr.ac.pusan.pickle.config.ProxyAgentProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,7 +108,13 @@ public class ProxyAgentClient {
             certs.add(new AgentStatus.CertState(text(cert, "fqdn"), certState(text(cert, "state")),
                     instant(text(cert, "checkedAt")), text(cert, "error")));
         }
-        return new AgentStatus(List.copyOf(routes), List.copyOf(certs));
+        java.util.Set<String> capabilities = new HashSet<>();
+        for (JsonNode capability : node.path("capabilities")) {
+            if (capability.isString()) {
+                capabilities.add(capability.asString());
+            }
+        }
+        return new AgentStatus(List.copyOf(routes), List.copyOf(certs), Set.copyOf(capabilities));
     }
 
     /** Unknown/absent states read as PENDING — never a false OK. */

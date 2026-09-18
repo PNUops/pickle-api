@@ -145,6 +145,12 @@ public final class ErrorCodes {
     public static final String PORT_FORWARDING_DISABLED = "PORT_FORWARDING_DISABLED";
     /** No free public port left in the relay's band. */
     public static final String PUBLIC_PORT_EXHAUSTED = "PUBLIC_PORT_EXHAUSTED";
+    /** Public source-policy endpoints are disabled in this deployment. */
+    public static final String SOURCE_POLICY_DISABLED = "SOURCE_POLICY_DISABLED";
+    /** The editor wrote against an older policy revision. */
+    public static final String SOURCE_POLICY_REVISION_CONFLICT = "SOURCE_POLICY_REVISION_CONFLICT";
+    /** The configured agent or preset cannot enforce the requested policy. */
+    public static final String SOURCE_POLICY_UNAVAILABLE = "SOURCE_POLICY_UNAVAILABLE";
     // 교내 IP requests (contract v0.27.0).
     /** The VM already has a live (REQUESTED/APPROVED/GRANTED) campus-IP request. */
     public static final String CAMPUS_IP_REQUEST_EXISTS = "CAMPUS_IP_REQUEST_EXISTS";

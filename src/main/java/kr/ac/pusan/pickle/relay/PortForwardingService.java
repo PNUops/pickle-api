@@ -18,6 +18,8 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.ipam.IpAddressResolver;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.relay.dto.CreatePortForwardingRequest;
 import kr.ac.pusan.pickle.relay.dto.PortForwardingView;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -78,6 +80,7 @@ public class PortForwardingService {
     private final NotificationService notificationService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final PublicSourcePolicyService sourcePolicies;
     private final SecureRandom random = new SecureRandom();
 
     public PortForwardingService(VmRepository vmRepository,
@@ -86,7 +89,8 @@ public class PortForwardingService {
             SettingsService settingsService, RateLimitService rateLimitService,
             IpAddressResolver ipAddressResolver, VmEventRepository vmEventRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
-            JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+            JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            PublicSourcePolicyService sourcePolicies) {
         this.vmRepository = vmRepository;
         this.vmAccessService = vmAccessService;
         this.relayRepository = relayRepository;
@@ -101,6 +105,7 @@ public class PortForwardingService {
         this.notificationService = notificationService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.sourcePolicies = sourcePolicies;
     }
 
     // ── list ─────────────────────────────────────────────────────────────────
@@ -110,6 +115,26 @@ public class PortForwardingService {
         Vm vm = requireVmMember(actor, publicVmId);
         List<PortMapping> mappings = portMappingRepository.findByVmIdOrderByIdAsc(vm.getId());
         return mappings.stream().map(this::toView).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public SourcePolicyView getSourcePolicy(AuthenticatedUser actor, UUID publicVmId,
+            UUID publicMappingId) {
+        Vm vm = requireVmMember(actor, publicVmId);
+        PortMapping mapping = requireMapping(vm.getId(), publicMappingId);
+        Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
+        return sourcePolicies.portMappingView(mapping, relay,
+                failedIds(relay).contains(mapping.getId()));
+    }
+
+    @Transactional
+    public SourcePolicyView updateSourcePolicy(AuthenticatedUser actor, UUID publicVmId,
+            UUID publicMappingId, long expectedRevision, List<String> allowedCidrs, String ip) {
+        Vm vm = requireVmOwnerOrEditor(actor, publicVmId);
+        PortMapping mapping = requireMapping(vm.getId(), publicMappingId);
+        Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
+        return sourcePolicies.updatePortMapping(mapping, relay, actor, expectedRevision,
+                allowedCidrs, failedIds(relay).contains(mapping.getId()), false, ip);
     }
 
     // ── create ───────────────────────────────────────────────────────────────
@@ -332,5 +357,11 @@ public class PortForwardingService {
     private static ApiException mappingNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", "해당 포트 포워딩이 존재하지 않습니다.");
+    }
+
+    private PortMapping requireMapping(long vmId, UUID mappingId) {
+        return portMappingRepository.findByPublicId(mappingId)
+                .filter(mapping -> mapping.getVmId() == vmId)
+                .orElseThrow(PortForwardingService::mappingNotFound);
     }
 }
