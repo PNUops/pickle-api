@@ -55,7 +55,10 @@ import tools.jackson.databind.ObjectMapper;
  * write, derived apply states, sudo-gated token issue, suspend/unsuspend,
  * tri-state guard PATCH, and the no-orphan-mapping teardown invariant.
  */
-@SpringBootTest(properties = "pickle.network-policy.enabled=true")
+@SpringBootTest(properties = {
+        "pickle.network-policy.enabled=true",
+        "pickle.relay-retirement.enabled=true"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Import(EmbeddedPostgresConfig.class)
@@ -82,6 +85,8 @@ class PortForwardingTest {
     private PortMappingTeardownService portMappingTeardown;
     @Autowired
     private TransactionTemplate transactionTemplate;
+    @Autowired
+    private RelayMappingRetirementStore retirementStore;
 
     private User owner;
     private User editor;
@@ -394,6 +399,195 @@ class PortForwardingTest {
     // ── token issue (sudo-gated) ────────────────────────────────────────────
 
     @Test
+    void managedCreateIsPendingUntilVmAllowAndRelayAck() throws Exception {
+        long relayId = soleRelay(10000, 10099);
+        UUID ledger = UUID.randomUUID();
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                       mark_namespace_ready = true, retirement_observed_at = now()
+                 where id = ?
+                """, ledger, relayId);
+        long vmId = runningVm();
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "a".repeat(64));
+
+        String body = create(vmId, ownerToken, "TCP", 8080)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.applyState").value("PENDING"))
+                .andReturn().getResponse().getContentAsString();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings",
+                UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select delivery_state, flow_mark, consumer_mapping_id
+                  from port_mappings where id = ?
+                """, mappingId);
+        assertThat(row.get("delivery_state")).isEqualTo("PENDING");
+        assertThat(((Number) row.get("flow_mark")).longValue()).isPositive();
+        assertThat(((Number) row.get("consumer_mapping_id")).longValue()).isPositive();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_network_path_operations
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                   and action = 'OPEN' and phase = 'POLICY_ADD'
+                """, Long.class, mappingId)).isEqualTo(1);
+    }
+
+    @Test
+    void managedDeleteKeepsTuplePathAndIpUntilExactRetirementReceipt() throws Exception {
+        long relayId = soleRelay(10100, 10199);
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                       mark_namespace_ready = true, retirement_observed_at = now()
+                 where id = ?
+                """, UUID.randomUUID(), relayId);
+        long vmId = runningVm();
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "c".repeat(64));
+        String body = create(vmId, ownerToken, "UDP", 5353)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings",
+                UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        jdbcTemplate.update("""
+                update port_mappings set status = 'ACTIVE', delivery_state = 'ACTIVE' where id = ?
+                """, mappingId);
+        jdbcTemplate.update("""
+                update vm_network_path_operations set phase = 'DONE' where owner_kind = 'PORT_MAPPING'
+                 and owner_id = ?
+                """, mappingId);
+
+        mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings/"
+                        + pub("port_mappings", mappingId))
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isAccepted());
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from relay_mapping_retirements where mapping_row_id = ?
+                """, Long.class, mappingId)).isEqualTo(1);
+        mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/port-forwardings")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("REMOVING"));
+        var retirement = retirementStore.begin(mappingId);
+
+        assertThat(retirement.cleared()).isFalse();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_network_derived_paths
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                """, Long.class, mappingId)).isEqualTo(1);
+        assertThatThrownBy(() -> portMappingTeardown.prepareForIpRelease(vmId))
+                .hasMessageContaining("retirement receipt");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from ip_allocations where vm_id = ?
+                """, String.class, vmId)).isEqualTo("ALLOCATED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from port_mappings where id = ?
+                """, String.class, mappingId)).isEqualTo("REMOVING");
+    }
+
+    @Test
+    void managedResumeKeepsPublicRowButAllocatesAFreshConsumerEpochAndMark() throws Exception {
+        long relayId = soleRelay(10200, 10299);
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                       mark_namespace_ready = true, retirement_observed_at = now()
+                 where id = ?
+                """, UUID.randomUUID(), relayId);
+        long vmId = runningVm();
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "d".repeat(64));
+        String body = create(vmId, ownerToken, "UDP", 5354)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings",
+                UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        Map<String, Object> firstEpoch = jdbcTemplate.queryForMap("""
+                select consumer_mapping_id, flow_mark from port_mappings where id = ?
+                """, mappingId);
+        jdbcTemplate.update("""
+                update port_mappings set status = 'SUSPENDED', delivery_state = 'SUSPENDED'
+                 where id = ?
+                """, mappingId);
+        jdbcTemplate.update("""
+                update vm_network_path_operations set phase = 'DONE'
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                """, mappingId);
+
+        mockMvc.perform(post("/api/v1/admin/port-mappings/"
+                        + pub("port_mappings", mappingId) + "/unsuspend")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+        Map<String, Object> resumed = jdbcTemplate.queryForMap("""
+                select consumer_mapping_id, flow_mark, delivery_state
+                  from port_mappings where id = ?
+                """, mappingId);
+        assertThat(((Number) resumed.get("consumer_mapping_id")).longValue())
+                .isGreaterThan(((Number) firstEpoch.get("consumer_mapping_id")).longValue());
+        assertThat(((Number) resumed.get("flow_mark")).longValue())
+                .isGreaterThan(((Number) firstEpoch.get("flow_mark")).longValue());
+        assertThat(resumed.get("delivery_state")).isEqualTo("PENDING");
+    }
+
+    @Test
+    void vmTeardownQueuesDeletionForAnAlreadyRetiredSuspendedMapping() throws Exception {
+        long relayId = soleRelay(10300, 10399);
+        jdbcTemplate.update("""
+                update relays set retirement_armed = true, retirement_ledger_id = ?,
+                       mark_namespace_ready = true, retirement_observed_at = now()
+                 where id = ?
+                """, UUID.randomUUID(), relayId);
+        long vmId = runningVm();
+        jdbcTemplate.update("""
+                insert into vm_network_policies
+                    (vm_id, revision, desired_generation, desired_hash, apply_state)
+                values (?, 0, 1, ?, 'PENDING')
+                """, vmId, "e".repeat(64));
+        String body = create(vmId, ownerToken, "TCP", 8081)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long mappingId = SeedFixtures.internalId(jdbcTemplate, "port_mappings",
+                UUID.fromString(objectMapper.readTree(body).get("id").asString()));
+        jdbcTemplate.update("""
+                update port_mappings set status = 'SUSPENDED', delivery_state = 'SUSPENDED'
+                 where id = ?
+                """, mappingId);
+        jdbcTemplate.update("""
+                update vm_network_path_operations set phase = 'DONE'
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                """, mappingId);
+        jdbcTemplate.update("""
+                delete from vm_network_derived_paths
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ?
+                """, mappingId);
+
+        transactionTemplate.executeWithoutResult(
+                ignored -> portMappingTeardown.deleteMappingsForVm(vmId));
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from port_mappings where id = ?", String.class, mappingId))
+                .isEqualTo("REMOVING");
+        assertThat(jdbcTemplate.queryForMap("""
+                select action::text, phase::text, old_path_id
+                  from vm_network_path_operations
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ? and phase <> 'DONE'
+                """, mappingId))
+                .containsEntry("action", "DELETE")
+                .containsEntry("phase", "POLICY_REMOVE")
+                .containsEntry("old_path_id", null);
+        transactionTemplate.executeWithoutResult(
+                ignored -> portMappingTeardown.deleteMappingsForVm(vmId));
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from vm_network_path_operations
+                 where owner_kind = 'PORT_MAPPING' and owner_id = ? and phase <> 'DONE'
+                """, Long.class, mappingId)).isEqualTo(1);
+    }
+
+    @Test
     void tokenIssueIsReauthGatedAndStoresOnlyTheHash() throws Exception {
         String sourceIp = "198.51.101." + SOURCE_SEQ.getAndIncrement();
         long relayId = jdbcTemplate.queryForObject("""
@@ -648,11 +842,18 @@ class PortForwardingTest {
 
         Long mappings = jdbcTemplate.queryForObject(
                 "select count(*) from port_mappings where vm_id = ?", Long.class, vmId);
-        assertThat(mappings).isZero(); // no orphan mapping survives the release
-        assertThat(mappingGeneration(relayId)).isEqualTo(generationBefore + 1);
+        assertThat(mappings).isOne(); // held until the durable delete worker retires the path
+        assertThat(mappingGeneration(relayId)).isEqualTo(generationBefore);
         String allocationStatus = jdbcTemplate.queryForObject(
                 "select status from ip_allocations where vm_id = ?", String.class, vmId);
-        assertThat(allocationStatus).isEqualTo("RELEASED");
+        assertThat(allocationStatus).isEqualTo("ALLOCATED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status::text from vms where id = ?", String.class, vmId))
+                .isEqualTo("DELETING");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from jobrunr_jobs
+                 where jobsignature like '%DeleteVmJob.deleteVm(%'
+                """, Long.class)).isPositive();
     }
 
     @Test

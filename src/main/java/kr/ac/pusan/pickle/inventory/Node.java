@@ -91,6 +91,10 @@ public class Node {
         return NodeVmNicRequirements.read(labels);
     }
 
+    public Optional<NodeVmFirewallPolicy> vmFirewallPolicy() {
+        return NodeVmFirewallPolicy.read(labels);
+    }
+
     /** New prepared nodes publish both placement and NIC facts before activation. */
     public void requireProvisioningReadiness(Instant observedAt) {
         boolean prepared = labels != null && (labels.containsKey("placement_capacity")

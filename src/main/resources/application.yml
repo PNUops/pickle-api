@@ -317,6 +317,24 @@ pickle:
     # under a platform root that point at the proxy and no live domain claims.
     # Off, it only logs what it would remove; on, it removes them.
     prune-orphans: ${PICKLE_DNS_PRUNE_ORPHANS:false}
+  vm-firewall:
+    # Default-off rollout. Enabling the process flag is insufficient by itself:
+    # a VM must already have a durable policy row and its node must carry the
+    # vm_firewall_policy schema_version=1 label.
+    enabled: ${PICKLE_VM_FIREWALL_ENABLED:false}
+    # Operator-preinstalled immutable IN/OUT DROP security group. The API has
+    # read/audit privilege for the group and never creates or changes it.
+    barrier-group: ${PICKLE_VM_FIREWALL_BARRIER_GROUP:}
+    # Explicit deployment inputs; no campus or internal network is trusted by
+    # default. Comma-separated IPv4 host addresses only.
+    ssh-gateway-source-ips: ${PICKLE_VM_FIREWALL_SSH_GATEWAY_SOURCE_IPS:}
+    terminal-source-ips: ${PICKLE_VM_FIREWALL_TERMINAL_SOURCE_IPS:}
+    proxy-source-ips: ${PICKLE_VM_FIREWALL_PROXY_SOURCE_IPS:}
+    relay-source-ips: ${PICKLE_VM_FIREWALL_RELAY_SOURCE_IPS:}
+  relay-retirement:
+    # Consumer-first rollout. Enabling still requires an armed relay row, fresh
+    # mapping-retirement-v1 ledger handshake and live mark-namespace approval.
+    enabled: ${PICKLE_RELAY_RETIREMENT_ENABLED:false}
   seed:
     # Passwords have no default: the seeder runs only under dev/test and refuses
     # to start on a blank value, so a reachable environment cannot end up with a

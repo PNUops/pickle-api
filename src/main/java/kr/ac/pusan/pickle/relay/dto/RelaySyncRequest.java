@@ -2,10 +2,12 @@ package kr.ac.pusan.pickle.relay.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Agent → api sync report (internal, not part of the public contract). All
@@ -27,8 +29,21 @@ public record RelaySyncRequest(
         @NotNull @Min(0) Long appliedGeneration,
         @Size(max = 128) String agentVersion,
         @Size(max = 32) List<@NotBlank @Size(max = 64) String> capabilities,
+        UUID retirementLedgerId,
+        @Min(0) Long mappingIdHighWater,
+        @Min(0) @Max(4294967295L) Long flowMarkHighWater,
+        @Min(0) Long managedGenerationHighWater,
+        @Min(0) Long retirementHighWater,
+        @Size(max = 65536) List<@Valid RetirementReceipt> retirementReceipts,
         @Size(max = 8) List<@Valid ReportedMappingError> lastError,
         List<@Valid ReportedMappingCounters> counters) {
+
+    public RelaySyncRequest(Long appliedGeneration, String agentVersion,
+            List<String> capabilities, List<ReportedMappingError> lastError,
+            List<ReportedMappingCounters> counters) {
+        this(appliedGeneration, agentVersion, capabilities, null, null, null, null, null,
+                null, lastError, counters);
+    }
 
     /** One agent-side apply failure; {@code mappingId} is optional. */
     public record ReportedMappingError(
@@ -47,5 +62,14 @@ public record RelaySyncRequest(
             Long rateDropped,
             Long connDropped,
             Long perSourceDropped) {
+    }
+
+    public record RetirementReceipt(
+            @NotNull UUID retirementId,
+            @NotNull @Min(1) Long generation,
+            @NotNull @Min(1) Long mappingId,
+            @NotNull @Min(1) @Max(4294967295L) Long flowMark,
+            @NotBlank @Size(min = 64, max = 64) String tupleHash,
+            @NotBlank String state) {
     }
 }

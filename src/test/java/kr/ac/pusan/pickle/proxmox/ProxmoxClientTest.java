@@ -92,11 +92,19 @@ class ProxmoxClientTest {
                 .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
         wm.server().stubFor(delete(urlPathEqualTo(base + "/rules/3"))
                 .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
+        wm.server().stubFor(post(urlPathEqualTo(base + "/ipset"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
+        wm.server().stubFor(post(urlPathEqualTo(base + "/ipset/ipfilter-net0"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
 
         client.setVmFirewallOptions(wm.apiHost(), NODE, 102, Map.of("enable", "1"), "observed-options");
         client.updateVmFirewallRule(wm.apiHost(), NODE, 102, 3,
                 Map.of("action", "DROP", "type", "in"), "observed-rules");
         client.deleteVmFirewallRule(wm.apiHost(), NODE, 102, 3, "new-rules");
+        client.createVmFirewallIpSet(wm.apiHost(), NODE, 102,
+                "ipfilter-net0", "pickle:vmfw:v1:ipfilter-net0");
+        client.createVmFirewallIpSetEntry(wm.apiHost(), NODE, 102, "ipfilter-net0",
+                "192.0.2.20/32", "pickle:vmfw:v1:ipfilter-net0");
 
         wm.server().verify(putRequestedFor(urlPathEqualTo(base + "/options"))
                 .withRequestBody(containing("digest=observed-options")));
@@ -104,6 +112,10 @@ class ProxmoxClientTest {
                 .withRequestBody(containing("digest=observed-rules")));
         wm.server().verify(deleteRequestedFor(urlPathEqualTo(base + "/rules/3"))
                 .withQueryParam("digest", equalTo("new-rules")));
+        wm.server().verify(postRequestedFor(urlPathEqualTo(base + "/ipset"))
+                .withRequestBody(containing("name=ipfilter-net0")));
+        wm.server().verify(postRequestedFor(urlPathEqualTo(base + "/ipset/ipfilter-net0"))
+                .withRequestBody(containing("cidr=192.0.2.20%2F32")));
     }
 
     @Test
@@ -118,6 +130,37 @@ class ProxmoxClientTest {
         assertThat(client.vmFirewallOptions(wm.apiHost(), NODE, 102)).containsEntry("digest", "options-digest");
         assertThat(client.vmFirewallRules(wm.apiHost(), NODE, 102).getFirst())
                 .containsEntry("pos", 0).containsEntry("digest", "rules-digest");
+    }
+
+    @Test
+    void firewallBarrierAndIpFilterReadsUseOnlyTheScopedEndpoints() {
+        String vmBase = "/api2/json/nodes/pve1/qemu/102/firewall";
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/firewall/options"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"enable\":1}}")));
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/nodes/pve1/firewall/options"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"nftables\":0}}")));
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/firewall/groups"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"group\":\"pickle-guard\"}]}")));
+        wm.server().stubFor(get(urlPathEqualTo(
+                "/api2/json/cluster/firewall/groups/pickle-guard"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"type\":\"in\",\"action\":\"DROP\"}]}")));
+        wm.server().stubFor(get(urlPathEqualTo(vmBase + "/ipset/ipfilter-net0"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"cidr\":\"192.0.2.20/32\"}]}")));
+
+        assertThat(client.clusterFirewallOptions(wm.apiHost())).containsEntry("enable", 1);
+        assertThat(client.nodeFirewallOptions(wm.apiHost(), NODE)).containsEntry("nftables", 0);
+        assertThat(client.clusterFirewallGroups(wm.apiHost())).singleElement()
+                .satisfies(group -> assertThat(group).containsEntry("group", "pickle-guard"));
+        assertThat(client.clusterFirewallGroupRules(wm.apiHost(), "pickle-guard"))
+                .singleElement().satisfies(rule -> assertThat(rule).containsEntry("action", "DROP"));
+        assertThat(client.vmFirewallIpSet(wm.apiHost(), NODE, 102, "ipfilter-net0"))
+                .singleElement().satisfies(entry -> assertThat(entry)
+                        .containsEntry("cidr", "192.0.2.20/32"));
     }
 
     @Test

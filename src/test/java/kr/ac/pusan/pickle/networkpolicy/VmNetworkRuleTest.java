@@ -29,9 +29,10 @@ class VmNetworkRuleTest {
     }
 
     @Test
-    void icmpRulesCarryTheCorrectAddressFamilyAndNoPorts() {
-        var rule = new VmNetworkRule(IN, ACCEPT, ICMPV6, CidrBlock.parse("2001:db8::/32"), null, null);
-        assertThat(rule.pveFields()).containsEntry("proto", "ipv6-icmp").doesNotContainKey("dport");
+    void icmpRulesAreIpv4OnlyAndCarryNoPorts() {
+        var rule = new VmNetworkRule(IN, ACCEPT, ICMP,
+                CidrBlock.parse("198.51.100.0/24"), null, null);
+        assertThat(rule.pveFields()).containsEntry("proto", "icmp").doesNotContainKey("dport");
         assertThatThrownBy(() -> new VmNetworkRule(IN, ACCEPT, ICMP,
                 CidrBlock.parse("::/0"), null, null)).isInstanceOf(IllegalArgumentException.class);
     }

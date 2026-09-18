@@ -407,7 +407,7 @@ class VmDeletionTest {
     }
 
     @Test
-    void errorVmIsDeletedImmediatelyWithIpRelease() throws Exception {
+    void errorVmDeletionHoldsTheIpForAsynchronousNetworkRetirement() throws Exception {
         long vmId = createVm(VmStatus.ERROR);
         long allocationId = allocateIp(vmId);
 
@@ -418,19 +418,18 @@ class VmDeletionTest {
                 .andExpect(jsonPath("$.kind").value("SELF"))
                 .andExpect(jsonPath("$.cancelable").value(false));
 
-        assertThat(statusOf(vmId)).isEqualTo("DELETED");
+        assertThat(statusOf(vmId)).isEqualTo("DELETING");
         assertThat(jdbcTemplate.queryForObject(
-                "select deleted_at is not null from vms where id = ?", Boolean.class, vmId)).isTrue();
+                "select deleted_at is null from vms where id = ?", Boolean.class, vmId)).isTrue();
         assertThat(jdbcTemplate.queryForObject(
                 "select status from ip_allocations where id = ?", String.class, allocationId))
-                .isEqualTo("RELEASED");
-        // acceptance + terminal purge event pair, both in the same tx
-        assertThat(eventTypes(vmId)).contains("SELF_DELETE", "DELETE");
+                .isEqualTo("ALLOCATED");
+        assertThat(eventTypes(vmId)).contains("SELF_DELETE").doesNotContain("DELETE");
         assertThat(auditCount("vm.self_delete", vmId)).isEqualTo(1);
-        // no pipeline: nothing enqueued for this VM
-        Long tasks = jdbcTemplate.queryForObject(
-                "select count(*) from provisioning_tasks where vm_id = ?", Long.class, vmId);
-        assertThat(tasks).isZero();
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from jobrunr_jobs
+                 where jobsignature like '%DeleteVmJob.deleteVm(%'
+                """, Long.class)).isPositive();
     }
 
     // ── admin scheduled delete ─────────────────────────────────────────────

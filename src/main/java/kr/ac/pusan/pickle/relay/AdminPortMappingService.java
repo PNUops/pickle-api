@@ -18,6 +18,7 @@ import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -77,6 +78,8 @@ public class AdminPortMappingService {
     private final VmEventRepository vmEventRepository;
     private final PortForwardingService portForwardingService;
     private final PublicSourcePolicyService sourcePolicies;
+    private final VmNetworkPathOperationStore networkPaths;
+    private final RelayMappingRetirementStore retirementStore;
 
     public AdminPortMappingService(PortMappingRepository portMappingRepository,
             RelayRepository relayRepository, VmRepository vmRepository,
@@ -84,7 +87,8 @@ public class AdminPortMappingService {
             RelayGenerations relayGenerations, NotificationService notificationService,
             AuditService auditService, AuditIds auditIds, VmEventRepository vmEventRepository,
             PortForwardingService portForwardingService,
-            PublicSourcePolicyService sourcePolicies) {
+            PublicSourcePolicyService sourcePolicies, VmNetworkPathOperationStore networkPaths,
+            RelayMappingRetirementStore retirementStore) {
         this.portMappingRepository = portMappingRepository;
         this.relayRepository = relayRepository;
         this.vmRepository = vmRepository;
@@ -96,6 +100,8 @@ public class AdminPortMappingService {
         this.vmEventRepository = vmEventRepository;
         this.portForwardingService = portForwardingService;
         this.sourcePolicies = sourcePolicies;
+        this.networkPaths = networkPaths;
+        this.retirementStore = retirementStore;
     }
 
     @Transactional(readOnly = true)
@@ -181,8 +187,14 @@ public class AdminPortMappingService {
         if (mapping.getStatus() != PortMappingStatus.ACTIVE) {
             throw mappingStateConflict("이미 정지된 매핑입니다.");
         }
-        long generation = relayGenerations.bump(mapping.getRelayId());
+        boolean managed = networkPaths.retirePort(mapping.getVmId(), mapping.getId(),
+                VmNetworkPathOperationStore.Action.SUSPEND);
+        long generation = managed ? retirementStore.findByMapping(mapping.getId()).generation()
+                : relayGenerations.bump(mapping.getRelayId());
         mapping.setStatus(PortMappingStatus.SUSPENDED);
+        if (managed) {
+            mapping.setDeliveryState(PortMappingDeliveryState.RETIRING);
+        }
         mapping.setSuspendedReason(reason);
         mapping.setSuspendedBy(actor.id());
         mapping.setLastChangeGeneration(generation);
@@ -210,8 +222,22 @@ public class AdminPortMappingService {
         if (mapping.getStatus() != PortMappingStatus.SUSPENDED) {
             throw mappingStateConflict("정지 상태의 매핑이 아닙니다.");
         }
-        long generation = relayGenerations.bump(mapping.getRelayId());
-        mapping.setStatus(PortMappingStatus.ACTIVE);
+        boolean managed = networkPaths.managed(mapping.getVmId());
+        long generation;
+        if (managed) {
+            RelayMappingRetirementStore.ConsumerEpoch epoch =
+                    retirementStore.allocateEpoch(mapping.getRelayId());
+            mapping.setFlowMark(epoch.flowMark());
+            mapping.setConsumerMappingId(epoch.mappingId());
+            mapping.setDeliveryState(PortMappingDeliveryState.PENDING);
+            mapping.setStatus(PortMappingStatus.PENDING);
+            generation = mapping.getLastChangeGeneration();
+            networkPaths.openPort(mapping.getVmId(), mapping.getId(), mapping.getProto().name(),
+                    mapping.getTargetPort(), VmNetworkPathOperationStore.Action.RESUME);
+        } else {
+            generation = relayGenerations.bump(mapping.getRelayId());
+            mapping.setStatus(PortMappingStatus.ACTIVE);
+        }
         mapping.setSuspendedReason(null);
         mapping.setSuspendedBy(null);
         mapping.setLastChangeGeneration(generation);
@@ -227,8 +253,19 @@ public class AdminPortMappingService {
     @Transactional
     public MessageResponse delete(AuthenticatedUser actor, UUID mappingId, String ip) {
         PortMapping mapping = requireMapping(mappingId);
-        relayGenerations.bump(mapping.getRelayId());
-        portMappingRepository.delete(mapping);
+        if (networkPaths.retirePort(mapping.getVmId(), mapping.getId(),
+                VmNetworkPathOperationStore.Action.DELETE)) {
+            mapping.setStatus(PortMappingStatus.REMOVING);
+            RelayMappingRetirementStore.Retirement retirement =
+                    retirementStore.findByMapping(mapping.getId());
+            if (retirement != null) {
+                mapping.setDeliveryState(PortMappingDeliveryState.RETIRING);
+                mapping.setLastChangeGeneration(retirement.generation());
+            }
+        } else {
+            relayGenerations.bump(mapping.getRelayId());
+            portMappingRepository.delete(mapping);
+        }
         vmEventRepository.save(new VmEvent(mapping.getVmId(), VmEventType.PORT_FORWARD_DELETE,
                 actor.id(), VmActorKind.ADMIN, "관리자 삭제 — " + mapping.getProto() + " " + mapping.getPublicPort()));
         // Same channel as an admin suspend: the owning workspace loses an external
@@ -374,6 +411,7 @@ public class AdminPortMappingService {
 
     private PortMapping requireMapping(UUID mappingId) {
         return portMappingRepository.findByPublicId(mappingId)
+                .filter(mapping -> mapping.getStatus() != PortMappingStatus.REMOVING)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
                         ErrorCodes.RESOURCE_NOT_FOUND, "리소스를 찾을 수 없습니다",
                         "해당 포트 매핑이 존재하지 않습니다."));

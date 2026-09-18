@@ -177,6 +177,7 @@ public class AuditService {
     public static final String DOMAIN_SOURCE_POLICY_UPDATE = "domain.source_policy_update";
     public static final String PORT_MAPPING_SOURCE_POLICY_UPDATE =
             "port_mapping.source_policy_update";
+    public static final String VM_NETWORK_POLICY_UPDATE = "vm.network_policy_update";
     /** Admin suspend, or the threshold auto-suspend (detail.auto=true, actor null). */
     public static final String PORT_MAPPING_SUSPEND = "port_mapping.suspend";
     public static final String PORT_MAPPING_UNSUSPEND = "port_mapping.unsuspend";

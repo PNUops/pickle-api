@@ -65,6 +65,16 @@ public class PortMapping {
     @Column(nullable = false)
     private PortMappingStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_state", nullable = false)
+    private PortMappingDeliveryState deliveryState = PortMappingDeliveryState.LEGACY;
+
+    @Column(name = "flow_mark")
+    private Long flowMark;
+
+    @Column(name = "consumer_mapping_id")
+    private Long consumerMappingId;
+
     @Column(name = "suspended_reason")
     private String suspendedReason;
 
@@ -141,6 +151,30 @@ public class PortMapping {
 
     public void setStatus(PortMappingStatus status) {
         this.status = status;
+    }
+
+    public PortMappingDeliveryState getDeliveryState() {
+        return deliveryState;
+    }
+
+    public void setDeliveryState(PortMappingDeliveryState deliveryState) {
+        this.deliveryState = deliveryState;
+    }
+
+    public Long getFlowMark() {
+        return flowMark;
+    }
+
+    public void setFlowMark(Long flowMark) {
+        this.flowMark = flowMark;
+    }
+
+    public Long getConsumerMappingId() {
+        return consumerMappingId;
+    }
+
+    public void setConsumerMappingId(Long consumerMappingId) {
+        this.consumerMappingId = consumerMappingId;
     }
 
     public String getSuspendedReason() {

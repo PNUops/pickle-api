@@ -10,7 +10,7 @@ public record VmNetworkRule(Direction direction, Action action, Protocol protoco
 
     public enum Direction { IN, OUT }
     public enum Action { ACCEPT, DROP }
-    public enum Protocol { ANY, TCP, UDP, ICMP, ICMPV6 }
+    public enum Protocol { ANY, TCP, UDP, ICMP }
 
     public VmNetworkRule {
         if (direction == null || action == null || protocol == null || peer == null) {
@@ -25,9 +25,8 @@ public record VmNetworkRule(Direction direction, Action action, Protocol protoco
         if (portStart != null && protocol != Protocol.TCP && protocol != Protocol.UDP) {
             throw new IllegalArgumentException("포트 범위는 TCP 또는 UDP 규칙에만 지정할 수 있습니다.");
         }
-        if ((protocol == Protocol.ICMP && peer.ipv6())
-                || (protocol == Protocol.ICMPV6 && !peer.ipv6())) {
-            throw new IllegalArgumentException("ICMP 프로토콜과 IP 주소 종류가 일치하지 않습니다.");
+        if (peer.ipv6()) {
+            throw new IllegalArgumentException("VM 통신 정책은 현재 IPv4만 지원합니다.");
         }
     }
 
@@ -39,8 +38,7 @@ public record VmNetworkRule(Direction direction, Action action, Protocol protoco
         fields.put("iface", "net0");
         fields.put(direction == Direction.IN ? "source" : "dest", peer.toString());
         if (protocol != Protocol.ANY) {
-            fields.put("proto", protocol == Protocol.ICMPV6 ? "ipv6-icmp"
-                    : protocol.name().toLowerCase(Locale.ROOT));
+            fields.put("proto", protocol.name().toLowerCase(Locale.ROOT));
         }
         if (portStart != null) {
             fields.put("dport", portStart.equals(portEnd) ? portStart.toString()

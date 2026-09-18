@@ -158,7 +158,85 @@ limit과 CPU·aggregate disk advisory 동작을 유지합니다. label 하나라
 유지하며, 저장 정책이나 activation marker가 있는 행은 생략으로 완화되지 않습니다. 교내 CIDR
 설정 `pickle.network-policy.campus-source-cidrs`에는 기본 허용 대역이 없습니다. Preset은 이
 설정의 확인된 CIDR을 snapshot으로 반환하고 정책에는 최종 CIDR 배열만 저장합니다. VM NIC의
-PVE 방화벽 정책은 별도 기능이며 아직 공개 CRUD와 applier를 제공하지 않습니다.
+PVE 방화벽 정책은 별도 기능입니다.
+
+VM 통신 정책 API는 `GET`/`PUT /api/v1/vms/{vmId}/network-policy`와 같은 관리자 경로를
+제공합니다. 조회는 VM 열람자, 변경은 VM 편집자 이상이며 관리 경로는 기관 범위와 시스템
+범위를 각각 검사합니다. 규칙은 IPv4 `ANY`/`TCP`/`UDP`/`ICMP`, `IN`/`OUT`,
+`ACCEPT`/`DROP`의 순서 있는 전체 교체이고 `expectedRevision`으로 동시 수정을 거부합니다.
+응답의 system rule은 목적만 설명하며 운영 source IP나 PVE group 이름을 노출하지 않습니다.
+
+기능은 `PICKLE_VM_FIREWALL_ENABLED=false`가 기본입니다. 켜려면 운영자가 20자 이하의 immutable
+IN/OUT DROP security group을 먼저 만들고 그 이름과 SSH gateway, 웹 터미널, proxy, relay의
+IPv4 source를 `PICKLE_VM_FIREWALL_BARRIER_GROUP`,
+`PICKLE_VM_FIREWALL_SSH_GATEWAY_SOURCE_IPS`,
+`PICKLE_VM_FIREWALL_TERMINAL_SOURCE_IPS`, `PICKLE_VM_FIREWALL_PROXY_SOURCE_IPS`,
+`PICKLE_VM_FIREWALL_RELAY_SOURCE_IPS`로 명시해야 합니다. API credential은 group을 조회할
+`Sys.Audit`와 VM 방화벽을 다룰 `VM.Audit`/`VM.Config.Network`만 사용하며 group 변경 권한은
+갖지 않습니다. 노드 label `vm_firewall_policy: {schema_version: 1}`과 기존 durable policy 행이
+모두 있는 VM만 갱신할 수 있습니다. 전역 기능과 `vm_firewall_policy`,
+`vm_nic_requirements` label이 모두 준비된 노드의 새 VM은 CONFIG 단계에서 durable policy 행을
+만듭니다. 이때 `onboot=0`을 유지하고 firewall options, `ipfilter-net0`, immutable control
+prefix와 초기 mutable policy의 exact readback을 `APPLIED`로 기록한 뒤에만 첫 START 직전
+`onboot=1`을 설정합니다. durable 행이 생긴 뒤에는 전역 설정이나 node label 소실을 legacy
+bypass로 바꾸지 않습니다. START가 접수된 뒤 task polling이나 QGA 확인에서 중단된 retry는
+정책 전체를 다시 검증하고 실제 VM이 이미 running이면 START를 재전송하지 않은 채 QGA 확인부터
+이어갑니다.
+
+사용자·관리자 START와 REBOOT worker도 durable 행이 있으면 최신 revision/generation/hash와
+node·VMID·allocated IP tuple, 실제 PVE config/rules/runtime을 전원 command 접수 직전에 다시
+확인합니다. 같은 VM의 policy PUT은 non-blocking advisory lock을 사용하고 CREATING, 진행 중인
+전원·장치 작업과 직렬화되며, 충돌하면 작성 중인 draft를 보존하도록 409를 반환합니다.
+SHUTDOWN과 FORCE_STOP은 이 시작 gate를 기다리지 않습니다.
+
+적용기는 cluster firewall enable과 노드의 legacy PVE firewall backend부터 확인합니다. 이어서
+net0 하나의 유효한 MAC, 승인된 bridge·MTU, `firewall=1`, VLAN tag/trunk 부재, 고정 control rule,
+`ipfilter-net0`, immutable group을 정확히 확인한 뒤 group barrier 아래에서 mutable rule을
+교체합니다. IPv6는 NDP를 끄고 net0의 IN/OUT DROP control rule로 닫습니다. 추가 `netN`, custom QEMU args,
+알 수 없는 enabled rule, IPSet `nomatch`/provider error, group drift는 자동 정리하지 않습니다. barrier가 실제로 enabled이고
+지원 NIC 전체와 immutable base를 재확인한 경우에만 `FAILED_CLOSED`로 표시하며, 이는 PVE의
+conntrack 때문에 기존 연결 종료가 아닌 새 연결 차단 상태를 뜻합니다. 그 밖의 불확실한 상태는
+`FAILED`로 남깁니다. `APPLIED`와 `FAILED_CLOSED`는 PVE 설정 readback 결과이며 실제 packet
+enforcement 확인을 대신하지 않습니다. 실행 중인 VM을 자동으로 중단하지 않습니다.
+
+HTTP/port 공개 경로는 durable operation으로 VM allow와 consumer 적용 순서를 지킵니다.
+HTTP 생성·포트 변경은 새 proxy target allow가 `APPLIED`된 뒤에만 DNS/proxy PRESENT를
+보내고, ABSENT ACK 뒤에 이전 allow를 제거합니다. Port mapping 생성·재개는 public
+`PENDING` 상태로 relay snapshot에서 제외한 채 VM allow를 먼저 적용하고 relay generation
+ACK 뒤 `ACTIVE`가 됩니다. 중단은 public `SUSPENDED`, 삭제는 `REMOVING`으로 즉시 의도를
+보이되, exact retirement receipt 전에는 VM allow·mapping tombstone·public port·IP allocation을
+유지합니다. after-commit enqueue는 정본이 아니며 15초 recurring coordinator가 DB operation을
+재시도합니다. 사용자 정책 revision은 그대로 두고 derived path 변화는 desired generation/hash만
+올립니다. Operation revision CAS가 close로 대체된 stale open/replace worker의 완료 기록과 path
+삭제를 거부하며, port activation의 relay generation·delivery 전환·operation phase 이동은 한 DB
+트랜잭션으로 커밋됩니다.
+
+Relay retirement producer는 `PICKLE_RELAY_RETIREMENT_ENABLED=false`가 기본입니다. 활성화에는
+relay의 fresh `mapping-retirement-v1` heartbeat, 고정된 durable ledger UUID, 역행하지 않는
+consumer-mapping-id/flow-mark/retirement high-watermark, live mark namespace 확인과 armed row가 모두 필요합니다.
+Managed mapping은 nonzero uint32 flow mark와 별도 consumer epoch id를 쓰며, restore된 API DB가
+consumer ledger에서 이미 퇴역한 mapping/mark를 다시 내보내면 sync를 fail-closed 합니다.
+Consumer는 마지막으로 수락한 managed generation과 typed snapshot의 canonical hash도 영구 보존해
+generation 역행과 같은 generation의 다른 내용을 거부합니다. API는 consumer가 보고한 managed
+generation보다 복원된 값이 낮으면 그 high-watermark보다 큰 generation으로만 다시 발급하고,
+active mapping·retirement·ACK content 변화도 같은 규칙으로 generation을 올립니다.
+Retirement이 armed된 relay에는 generation이 같아도 `mappings`(빈 배열 포함), `retirements`,
+`acknowledgedRetirementHighWater`를 모두 넣은 full managed snapshot을 응답합니다. Compact
+`{"generation": N}` 응답은 retirement이 armed되지 않은 legacy relay에만 사용합니다.
+퇴역 tuple hash는 `mappingId`, lowercase protocol, public port, canonical target IPv4, target port,
+flow mark를 각각 줄바꿈한 ASCII의 SHA-256입니다. Consumer는 DNAT 제거와 exact mark DROP fence를
+원자적으로 적용하고 readback한 뒤 native conntrack API로 original/reply exact tuple만 삭제하며,
+삭제 후 zero readback까지 성공한 경우에만 `CLEARED` receipt를 냅니다. Receipt는 retirement UUID,
+generation, mapping id, mark, tuple hash가 모두 일치해야 인정합니다. Generation ACK만으로는
+mapping 삭제나 IP 회수를 진행하지 않습니다. API는 앞선 retirement에 빈틈이 없는 CLEARED prefix만
+`acknowledgedRetirementHighWater`로 응답하고, consumer는 ACK 이하의 tuple/fence만 정리합니다.
+
+Consumer는 ACK된 tuple과 fence를 정리한 뒤에도 ledger UUID와 세 high-watermark를 영구 보존합니다.
+API도 완료된 tombstone을 정리하되 relay high-watermark는 보존하므로, stale DB가 이미 쓴 epoch나
+mark를 다시 발급할 수 없습니다. 중단 후 재개는 같은 public mapping에 새 consumer epoch와 mark를
+발급합니다. 한 번 armed된 relay는 retirement ledger를 이해하지 못하는 이전 바이너리로 롤백할 수
+없습니다. 일반 VM 정책 변경은 conntrack을 비우거나 세션을 끊지 않으며, 선택적 conntrack 삭제는
+mapping 중단·삭제와 VM 소유권 종료의 resource retirement에만 사용합니다.
 
 30초 상태 폴러와 10분 드리프트 리컨실러, 5분 삭제 스위퍼, 10분 고아 태스크 복구가
 데이터베이스와 Proxmox를 계속 맞춥니다. 드리프트 리컨실러는 어긋난 지점을 보고만 하고

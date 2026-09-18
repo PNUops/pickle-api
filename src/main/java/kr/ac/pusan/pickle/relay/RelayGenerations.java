@@ -30,7 +30,9 @@ public class RelayGenerations {
     public long bump(long relayId) {
         Long next = jdbcTemplate.queryForObject("""
                 update relays
-                   set mapping_generation = mapping_generation + 1, updated_at = now()
+                   set mapping_generation = greatest(mapping_generation,
+                           reported_managed_generation_high_water) + 1,
+                       updated_at = now()
                  where id = ?
                 returning mapping_generation
                 """, Long.class, relayId);

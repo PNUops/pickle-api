@@ -6,6 +6,8 @@ package kr.ac.pusan.pickle.relay;
  * on the server) and keep their public port reserved.
  */
 public enum PortMappingStatus {
+    PENDING,
     ACTIVE,
-    SUSPENDED
+    SUSPENDED,
+    REMOVING
 }

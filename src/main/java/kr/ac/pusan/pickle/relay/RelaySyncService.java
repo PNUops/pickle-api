@@ -17,6 +17,7 @@ import kr.ac.pusan.pickle.networkpolicy.NetworkPolicyCapability;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyProducer;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyActivationService;
 import kr.ac.pusan.pickle.networkpolicy.SourcePolicyWire;
+import kr.ac.pusan.pickle.networkpolicy.VmNetworkPathOperationStore;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.relay.dto.RelaySyncRequest;
@@ -52,6 +53,9 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class RelaySyncService {
 
+    static final String RETIREMENT_CAPABILITY = "mapping-retirement-v1";
+    static final long UINT32_MAX = 4_294_967_295L;
+
     /** Server-side cap on any agent-reported string persisted or audited. */
     static final int REPORTED_TEXT_MAX = 1024;
 
@@ -75,13 +79,19 @@ public class RelaySyncService {
      * ip_allocations row — never stored on the mapping.
      */
     private static final String SNAPSHOT_SQL = """
-            select r.mapping_generation, m.id, lower(m.proto) as proto,
+            select r.mapping_generation, r.retirement_armed,
+                   r.acknowledged_retirement_high_water, m.id as row_id,
+                   coalesce(m.consumer_mapping_id, m.id) as id, lower(m.proto) as proto,
                    m.public_port, m.target_port,
                    m.ct_max, m.new_conn_rate, m.new_conn_burst,
-                   m.per_source_rate, m.per_source_burst, m.source_policy_generation,
+                   m.per_source_rate, m.per_source_burst, m.source_policy_generation, m.flow_mark,
                    host(a.ip) as target_addr
               from relays r
-              left join port_mappings m on m.relay_id = r.id and m.status = 'ACTIVE'
+              left join port_mappings m on m.relay_id = r.id
+                   and ((not r.retirement_armed and m.delivery_state = 'LEGACY'
+                         and m.status = 'ACTIVE')
+                        or (r.retirement_armed and m.delivery_state = 'ACTIVE'
+                            and m.status in ('PENDING', 'ACTIVE')))
               left join vms v on v.id = m.vm_id
               left join ip_allocations a on a.id = v.ip_allocation_id and a.vm_id = v.id
                                         and a.status = 'ALLOCATED'
@@ -99,6 +109,7 @@ public class RelaySyncService {
     private final SourcePolicyProducer sourcePolicies;
     private final NetworkPolicyCapability networkPolicyCapability;
     private final SourcePolicyActivationService sourcePolicyActivation;
+    private final VmNetworkPathOperationStore networkPaths;
 
     public RelaySyncService(JdbcTemplate jdbcTemplate, RelayGenerations relayGenerations,
             SettingsService settingsService, NotificationService notificationService,
@@ -106,7 +117,8 @@ public class RelaySyncService {
             RelayCapabilityObservationService capabilityObservations,
             SourcePolicyProducer sourcePolicies,
             NetworkPolicyCapability networkPolicyCapability,
-            SourcePolicyActivationService sourcePolicyActivation) {
+            SourcePolicyActivationService sourcePolicyActivation,
+            VmNetworkPathOperationStore networkPaths) {
         this.jdbcTemplate = jdbcTemplate;
         this.relayGenerations = relayGenerations;
         this.settingsService = settingsService;
@@ -118,6 +130,7 @@ public class RelaySyncService {
         this.sourcePolicies = sourcePolicies;
         this.networkPolicyCapability = networkPolicyCapability;
         this.sourcePolicyActivation = sourcePolicyActivation;
+        this.networkPaths = networkPaths;
     }
 
     @Transactional
@@ -127,12 +140,13 @@ public class RelaySyncService {
         capabilityObservations.observe(relayId,
                 request.capabilities() == null ? List.of() : request.capabilities());
         sourcePolicyActivation.activateRelay(relayId);
+        processRetirementHandshake(relayId, request, currentCapabilities);
         GenerationState state = jdbcTemplate.queryForObject("""
                 select applied_generation, mapping_generation from relays where id = ?
                 """, (rs, rowNum) -> new GenerationState(rs.getLong(1), rs.getLong(2)), relayId);
 
         String agentVersion = Texts.sanitizeReported(request.agentVersion(), REPORTED_TEXT_MAX);
-        List<SanitizedError> errors = sanitizeErrors(request.lastError());
+        List<SanitizedError> errors = sanitizeErrors(relayId, request.lastError());
         String lastErrorJson = errors.isEmpty() ? null : objectMapper.writeValueAsString(errors);
 
         // appliedGeneration must stay in [stored, current] — anything else is
@@ -211,14 +225,22 @@ public class RelaySyncService {
         // A report row is only credited to a mapping this relay owns — one
         // batch read of the relay's OWN ids; foreign mappingIds never even
         // reach a query parameter, they simply miss this set.
-        java.util.Set<Long> ownedIds = new java.util.HashSet<>(jdbcTemplate.queryForList(
-                "select id from port_mappings where relay_id = ?", Long.class, relayId));
+        Map<Long, Long> ownedIds = jdbcTemplate.query("""
+                select coalesce(consumer_mapping_id, id), id
+                  from port_mappings where relay_id = ?
+                """, rs -> {
+            Map<Long, Long> result = new java.util.HashMap<>();
+            while (rs.next()) {
+                result.put(rs.getLong(1), rs.getLong(2));
+            }
+            return result;
+        }, relayId);
         Instant now = Instant.now();
         for (RelaySyncRequest.ReportedMappingCounters reportedRow : reportedRows) {
-            if (reportedRow.mappingId() == null || !ownedIds.contains(reportedRow.mappingId())) {
+            if (reportedRow.mappingId() == null || !ownedIds.containsKey(reportedRow.mappingId())) {
                 continue;
             }
-            long mappingId = reportedRow.mappingId();
+            long mappingId = ownedIds.get(reportedRow.mappingId());
             Raw raw = Raw.of(reportedRow);
             if (raw.beyondSanity()) {
                 // Insane magnitude (> 2^53): discard the whole reading like a
@@ -289,9 +311,24 @@ public class RelaySyncService {
     /** Threshold breach: suspend in THIS tx so the same response excludes it. */
     private void autoSuspend(long relayId, long mappingId, long connsPerMin, long mbytesPerMin,
             long connsLimit, long mbytesLimit) {
+        String currentStatus = jdbcTemplate.query("""
+                select status from port_mappings where id = ? and relay_id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, mappingId, relayId);
+        if (!"ACTIVE".equals(currentStatus)) {
+            // Late counters still contribute to observability, but a mapping
+            // already PENDING/SUSPENDED/REMOVING owns a different lifecycle
+            // transition. Never supersede or roll back its sync response.
+            return;
+        }
         String reason = "트래픽 임계값 초과로 자동 정지 (분당 신규 연결 " + connsPerMin
                 + "건, 분당 전송량 " + mbytesPerMin + "MB)";
-        long generation = relayGenerations.bump(relayId);
+        boolean managed = networkPaths.retirePort(
+                jdbcTemplate.queryForObject("select vm_id from port_mappings where id = ?",
+                        Long.class, mappingId),
+                mappingId, VmNetworkPathOperationStore.Action.SUSPEND);
+        long generation = managed ? jdbcTemplate.queryForObject(
+                "select last_change_generation from port_mappings where id = ?",
+                Long.class, mappingId) : relayGenerations.bump(relayId);
         int suspended = jdbcTemplate.update("""
                 update port_mappings
                    set status = 'SUSPENDED', suspended_reason = ?, suspended_by = null,
@@ -334,15 +371,177 @@ public class RelaySyncService {
                 java.util.UUID.class, relayId);
     }
 
+    private void processRetirementHandshake(long relayId, RelaySyncRequest request,
+            Set<String> capabilities) {
+        boolean capable = capabilities.contains(RETIREMENT_CAPABILITY);
+        RetirementRelay relay = jdbcTemplate.query("""
+                select retirement_armed, retirement_ledger_id, mapping_id_high_water,
+                       flow_mark_high_water, reported_mapping_id_high_water,
+                       reported_flow_mark_high_water,
+                       reported_managed_generation_high_water,
+                       reported_retirement_high_water, acknowledged_retirement_high_water,
+                       mark_namespace_ready
+                  from relays where id = ? for update
+                """, rs -> rs.next() ? new RetirementRelay(rs.getBoolean(1),
+                        rs.getObject(2, java.util.UUID.class), rs.getLong(3), rs.getLong(4),
+                        rs.getLong(5), rs.getLong(6), rs.getLong(7), rs.getLong(8),
+                        rs.getLong(9), rs.getBoolean(10)) : null, relayId);
+        if (relay == null) {
+            throw retirementUnavailable("릴레이 retirement 상태를 찾을 수 없습니다.");
+        }
+        if (!capable) {
+            if (relay.armed()) {
+                throw retirementUnavailable(
+                        "retirement이 활성화된 릴레이가 mapping-retirement-v1을 보고하지 않았습니다.");
+            }
+            return;
+        }
+        if (request.retirementLedgerId() == null || request.mappingIdHighWater() == null
+                || request.flowMarkHighWater() == null
+                || request.managedGenerationHighWater() == null
+                || request.retirementHighWater() == null
+                || request.retirementReceipts() == null) {
+            throw retirementUnavailable("retirement capability 보고가 완전하지 않습니다.");
+        }
+        if (relay.ledgerId() != null && !relay.ledgerId().equals(request.retirementLedgerId())) {
+            throw retirementUnavailable("릴레이 retirement ledger identity가 변경되었습니다.");
+        }
+        if (request.mappingIdHighWater() < relay.reportedMappingHighWater()
+                || request.flowMarkHighWater() < relay.reportedFlowHighWater()
+                || request.managedGenerationHighWater()
+                        < relay.reportedManagedGenerationHighWater()
+                || request.retirementHighWater() < relay.reportedRetirementHighWater()) {
+            throw retirementUnavailable("릴레이 retirement high-watermark가 역행했습니다.");
+        }
+        if (relay.armed() && !relay.namespaceReady()) {
+            throw retirementUnavailable("릴레이 conntrack mark namespace 확인이 완료되지 않았습니다.");
+        }
+        if (relay.armed()) {
+            Long legacy = jdbcTemplate.queryForObject("""
+                    select count(*) from port_mappings
+                     where relay_id = ? and delivery_state = 'LEGACY'
+                       and status <> 'REMOVING'
+                    """, Long.class, relayId);
+            if (legacy != null && legacy > 0) {
+                throw retirementUnavailable(
+                        "표시되지 않은 legacy mapping이 있어 retirement activation을 거부했습니다.");
+            }
+        }
+        long maxReceiptMark = 0;
+        long maxReceiptGeneration = 0;
+        long maxReceiptMappingId = 0;
+        for (RelaySyncRequest.RetirementReceipt receipt : request.retirementReceipts()) {
+            if (!"CLEARED".equals(receipt.state())
+                    || receipt.tupleHash() == null
+                    || !receipt.tupleHash().matches("[0-9a-f]{64}")) {
+                throw retirementUnavailable("retirement receipt 형식이 올바르지 않습니다.");
+            }
+            maxReceiptMark = Math.max(maxReceiptMark, receipt.flowMark());
+            maxReceiptGeneration = Math.max(maxReceiptGeneration, receipt.generation());
+            maxReceiptMappingId = Math.max(maxReceiptMappingId, receipt.mappingId());
+            int updated = jdbcTemplate.update("""
+                    update relay_mapping_retirements
+                       set cleared_at = coalesce(cleared_at, now()),
+                           receipt_generation = ?, updated_at = now()
+                     where id = ? and relay_id = ? and mapping_id = ?
+                       and generation = ? and flow_mark = ? and tuple_hash = ?
+                    """, receipt.generation(), receipt.retirementId(), relayId,
+                    receipt.mappingId(), receipt.generation(), receipt.flowMark(),
+                    receipt.tupleHash());
+            if (updated == 0) {
+                Long collision = jdbcTemplate.queryForObject("""
+                        select count(*) from port_mappings
+                         where relay_id = ? and status <> 'REMOVING'
+                           and (consumer_mapping_id = ? or flow_mark = ?)
+                        """, Long.class, relayId, receipt.mappingId(), receipt.flowMark());
+                if (collision != null && collision > 0) {
+                    throw retirementUnavailable(
+                            "복원된 DB가 consumer ledger에서 퇴역한 mapping/mark를 다시 활성화했습니다.");
+                }
+                log.warn("relay {} reports durable retirement {} absent from this DB; "
+                        + "high-watermark retained", relayId, receipt.retirementId());
+            }
+        }
+        if (request.mappingIdHighWater() < maxReceiptMappingId
+                || request.flowMarkHighWater() < maxReceiptMark
+                || request.retirementHighWater() < maxReceiptGeneration) {
+            throw retirementUnavailable("retirement receipt가 보고 high-watermark를 초과합니다.");
+        }
+        jdbcTemplate.update("""
+                update relays
+                   set retirement_ledger_id = coalesce(retirement_ledger_id, ?),
+                       mapping_id_high_water = greatest(mapping_id_high_water, ?),
+                       flow_mark_high_water = greatest(flow_mark_high_water, ?),
+                       reported_mapping_id_high_water = ?,
+                       reported_flow_mark_high_water = ?,
+                       reported_managed_generation_high_water = ?,
+                       reported_retirement_high_water = ?, retirement_observed_at = now(),
+                       mapping_generation = case
+                           when mapping_generation < ? then ? + 1
+                           else mapping_generation end,
+                       updated_at = now()
+                 where id = ?
+                """, request.retirementLedgerId(), request.mappingIdHighWater(),
+                request.flowMarkHighWater(), request.mappingIdHighWater(),
+                request.flowMarkHighWater(), request.managedGenerationHighWater(),
+                request.retirementHighWater(), request.managedGenerationHighWater(),
+                request.managedGenerationHighWater(), relayId);
+        advanceRetirementAcknowledgement(relayId, relay.acknowledgedRetirementHighWater());
+    }
+
+    /** Advances only across the ordered prefix for which every exact tuple is CLEARED. */
+    private void advanceRetirementAcknowledgement(long relayId, long previous) {
+        long acknowledged = previous;
+        for (RetirementClearance row : jdbcTemplate.query("""
+                select generation, cleared_at is not null
+                  from relay_mapping_retirements
+                 where relay_id = ? and generation > ?
+                 order by generation
+                """, (rs, ignored) -> new RetirementClearance(rs.getLong(1), rs.getBoolean(2)),
+                relayId, previous)) {
+            if (!row.cleared()) {
+                break;
+            }
+            acknowledged = row.generation();
+        }
+        if (acknowledged > previous) {
+            jdbcTemplate.update("""
+                    update relays set acknowledged_retirement_high_water = ?, updated_at = now()
+                     where id = ? and acknowledged_retirement_high_water = ?
+                    """, acknowledged, relayId, previous);
+            relayGenerations.bump(relayId);
+        }
+    }
+
+    private static ApiException retirementUnavailable(String detail) {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.SOURCE_POLICY_UNAVAILABLE,
+                "릴레이 retirement 상태를 확인할 수 없습니다", detail);
+    }
+
+    private record RetirementRelay(boolean armed, java.util.UUID ledgerId,
+            long mappingHighWater, long flowHighWater, long reportedMappingHighWater,
+            long reportedFlowHighWater, long reportedManagedGenerationHighWater,
+            long reportedRetirementHighWater,
+            long acknowledgedRetirementHighWater, boolean namespaceReady) {
+    }
+
+    private record RetirementClearance(long generation, boolean cleared) {
+    }
+
     // ── snapshot ─────────────────────────────────────────────────────────────
 
     private RelaySyncResponse readSnapshot(long relayId, long validatedApplied,
             boolean forceFull, Set<String> currentCapabilities) {
-        return jdbcTemplate.query(SNAPSHOT_SQL, rs -> {
+        SnapshotData snapshot = jdbcTemplate.query(SNAPSHOT_SQL, rs -> {
             long generation = 0;
+            boolean retirementArmed = false;
+            long acknowledgedRetirementHighWater = 0;
             List<RelaySyncResponse.MappingSnapshot> mappings = new ArrayList<>();
             while (rs.next()) {
                 generation = rs.getLong("mapping_generation");
+                retirementArmed = rs.getBoolean("retirement_armed");
+                acknowledgedRetirementHighWater =
+                        rs.getLong("acknowledged_retirement_high_water");
                 long mappingId = rs.getLong("id");
                 if (rs.wasNull()) {
                     continue; // left-join row of a relay with no active mapping
@@ -356,7 +555,8 @@ public class RelaySyncService {
                             mappingId);
                     continue;
                 }
-                SourcePolicyWire sourcePolicy = sourcePolicies.portMapping(mappingId,
+                long mappingRowId = rs.getLong("row_id");
+                SourcePolicyWire sourcePolicy = sourcePolicies.portMapping(mappingRowId,
                         rs.getObject("source_policy_generation") != null).orElse(null);
                 if (sourcePolicy != null
                         && !networkPolicyCapability.sourceAclAvailable(currentCapabilities)) {
@@ -365,6 +565,11 @@ public class RelaySyncService {
                             "릴레이 출발지 정책을 적용할 수 없습니다",
                             "현재 relay-agent가 source-acl-v1 기능을 보고하지 않았습니다.");
                 }
+                Long flowMark = rs.getObject("flow_mark", Long.class);
+                if (retirementArmed && (flowMark == null || flowMark <= 0
+                        || flowMark > UINT32_MAX)) {
+                    throw retirementUnavailable("managed mapping flowMark가 올바르지 않습니다.");
+                }
                 mappings.add(new RelaySyncResponse.MappingSnapshot(mappingId,
                         rs.getString("proto"), rs.getInt("public_port"), targetAddr,
                         rs.getInt("target_port"),
@@ -372,24 +577,61 @@ public class RelaySyncService {
                         rs.getObject("new_conn_rate", Integer.class),
                         rs.getObject("new_conn_burst", Integer.class),
                         rs.getObject("per_source_rate", Integer.class),
-                        rs.getObject("per_source_burst", Integer.class), sourcePolicy));
+                        rs.getObject("per_source_burst", Integer.class), sourcePolicy, flowMark));
             }
-            if (!forceFull && validatedApplied == generation) {
-                return new RelaySyncResponse(generation, null); // tiny answer
-            }
-            return new RelaySyncResponse(generation, mappings);
+            return new SnapshotData(generation, retirementArmed,
+                    acknowledgedRetirementHighWater, mappings);
         }, relayId);
+        boolean retirementCapable = currentCapabilities.contains(RETIREMENT_CAPABILITY);
+        List<RelaySyncResponse.RetirementSnapshot> retirements = snapshot.retirementArmed()
+                ? jdbcTemplate.query("""
+                        select id, mapping_id, generation, lower(protocol), public_port,
+                               host(target_addr), target_port, flow_mark, tuple_hash
+                          from relay_mapping_retirements
+                         where relay_id = ? and generation > ?
+                         order by retirement_sequence
+                        """, (rs, row) -> new RelaySyncResponse.RetirementSnapshot(
+                                rs.getObject(1, java.util.UUID.class), rs.getLong(2), rs.getLong(3),
+                                rs.getString(4), rs.getInt(5), rs.getString(6), rs.getInt(7),
+                                rs.getLong(8), rs.getString(9)), relayId,
+                        snapshot.acknowledgedRetirementHighWater())
+                : null;
+        if (snapshot.retirementArmed() && retirementCapable) {
+            // Managed consumers persist a canonical hash over the complete typed
+            // snapshot. Even at an unchanged generation, omission would make
+            // retirements/ACK look like a changed but incomplete snapshot.
+            return new RelaySyncResponse(snapshot.generation(), snapshot.mappings(),
+                    retirements, snapshot.acknowledgedRetirementHighWater());
+        }
+        if (!forceFull && validatedApplied == snapshot.generation()) {
+            return new RelaySyncResponse(snapshot.generation(), null, null, null);
+        }
+        return new RelaySyncResponse(snapshot.generation(), snapshot.mappings(), null, null);
     }
 
-    private List<SanitizedError> sanitizeErrors(
+    private record SnapshotData(long generation, boolean retirementArmed,
+            long acknowledgedRetirementHighWater,
+            List<RelaySyncResponse.MappingSnapshot> mappings) {
+    }
+
+    private List<SanitizedError> sanitizeErrors(long relayId,
             List<RelaySyncRequest.ReportedMappingError> reported) {
         if (reported == null || reported.isEmpty()) {
             return List.of();
         }
+        Boolean retirementArmed = jdbcTemplate.queryForObject(
+                "select retirement_armed from relays where id = ?", Boolean.class, relayId);
         List<SanitizedError> sanitized = new ArrayList<>(reported.size());
         for (RelaySyncRequest.ReportedMappingError error : reported) {
             String message = Texts.sanitizeReported(error.message(), REPORTED_TEXT_MAX);
-            sanitized.add(new SanitizedError(error.mappingId(),
+            Long mappingId = error.mappingId() == null ? null : jdbcTemplate.query("""
+                    select id from port_mappings
+                     where relay_id = ? and coalesce(consumer_mapping_id, id) = ?
+                    """, rs -> rs.next() ? rs.getLong(1) : null, relayId, error.mappingId());
+            if (mappingId == null && !Boolean.TRUE.equals(retirementArmed)) {
+                mappingId = error.mappingId();
+            }
+            sanitized.add(new SanitizedError(mappingId,
                     message == null ? "" : message));
         }
         return sanitized;
