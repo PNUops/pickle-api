@@ -174,6 +174,9 @@ public class AuditService {
     public static final String RELAY_TOKEN_ISSUE = "relay.token_issue";
     public static final String VM_PORT_FORWARD_CREATE = "vm.port_forward_create";
     public static final String VM_PORT_FORWARD_DELETE = "vm.port_forward_delete";
+    public static final String DOMAIN_SOURCE_POLICY_UPDATE = "domain.source_policy_update";
+    public static final String PORT_MAPPING_SOURCE_POLICY_UPDATE =
+            "port_mapping.source_policy_update";
     /** Admin suspend, or the threshold auto-suspend (detail.auto=true, actor null). */
     public static final String PORT_MAPPING_SUSPEND = "port_mapping.suspend";
     public static final String PORT_MAPPING_UNSUSPEND = "port_mapping.unsuspend";

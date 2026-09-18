@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.relay.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyWire;
 
 /**
  * api → agent sync answer. Unchanged state answers {@code {"generation": N}}
@@ -30,6 +31,7 @@ public record RelaySyncResponse(
             Integer newConnRate,
             Integer newConnBurst,
             Integer perSourceRate,
-            Integer perSourceBurst) {
+            Integer perSourceBurst,
+            SourcePolicyWire sourcePolicy) {
     }
 }

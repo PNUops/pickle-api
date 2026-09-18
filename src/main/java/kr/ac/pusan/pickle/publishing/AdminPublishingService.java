@@ -15,6 +15,8 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.workspace.Workspace;
 import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
@@ -72,6 +74,7 @@ public class AdminPublishingService {
     private final RouteApplyJob routeApplyJob;
     private final VmEventRepository vmEventRepository;
     private final NotificationService notificationService;
+    private final PublicSourcePolicyService sourcePolicies;
 
     public AdminPublishingService(RouteRepository routeRepository, DomainRecordRepository recordRepository, DomainRepository domainRepository,
             CertificateRepository certificateRepository, VmRepository vmRepository,
@@ -80,7 +83,7 @@ public class AdminPublishingService {
             ResyncRoutesJob resyncRoutesJob, PublishingService publishingService,
             DomainVerificationJob domainVerificationJob, RouteGenerations routeGenerations,
             RouteApplyJob routeApplyJob, VmEventRepository vmEventRepository,
-            NotificationService notificationService) {
+            NotificationService notificationService, PublicSourcePolicyService sourcePolicies) {
         this.routeRepository = routeRepository;
         this.recordRepository = recordRepository;
         this.domainRepository = domainRepository;
@@ -98,6 +101,28 @@ public class AdminPublishingService {
         this.routeApplyJob = routeApplyJob;
         this.vmEventRepository = vmEventRepository;
         this.notificationService = notificationService;
+        this.sourcePolicies = sourcePolicies;
+    }
+
+    @Transactional(readOnly = true)
+    public SourcePolicyView getRouteSourcePolicy(AuthenticatedUser actor, UUID routeId) {
+        Route route = routeRepository.findByPublicId(routeId)
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        Domain domain = domainRepository.findById(route.getDomainId())
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        requireScope(actor, domain, true);
+        return sourcePolicies.domainView(domain);
+    }
+
+    @Transactional
+    public SourcePolicyView updateRouteSourcePolicy(AuthenticatedUser actor, UUID routeId,
+            long expectedRevision, List<String> allowedCidrs, String ip) {
+        Route route = routeRepository.findByPublicId(routeId)
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        Domain domain = domainRepository.findById(route.getDomainId())
+                .orElseThrow(AdminPublishingService::routeNotFound);
+        requireScope(actor, domain);
+        return sourcePolicies.updateDomain(domain, actor, expectedRevision, allowedCidrs, true, ip);
     }
 
     @Transactional(readOnly = true)

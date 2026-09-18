@@ -75,6 +75,9 @@ public class PortMapping {
     @Column(name = "last_change_generation", nullable = false)
     private long lastChangeGeneration;
 
+    @Column(name = "source_policy_generation")
+    private Long sourcePolicyGeneration;
+
     @Column(name = "ct_max")
     private Integer ctMax;
 
@@ -162,6 +165,14 @@ public class PortMapping {
 
     public void setLastChangeGeneration(long lastChangeGeneration) {
         this.lastChangeGeneration = lastChangeGeneration;
+    }
+
+    public Long getSourcePolicyGeneration() {
+        return sourcePolicyGeneration;
+    }
+
+    public void setSourcePolicyGeneration(Long sourcePolicyGeneration) {
+        this.sourcePolicyGeneration = sourcePolicyGeneration;
     }
 
     public Integer getCtMax() {

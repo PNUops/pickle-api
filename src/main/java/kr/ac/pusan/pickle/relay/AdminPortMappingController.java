@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
+import kr.ac.pusan.pickle.networkpolicy.dto.UpdateSourcePolicyRequest;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.relay.dto.SuspendPortMappingRequest;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -95,5 +98,25 @@ public class AdminPortMappingController {
             @RequestBody tools.jackson.databind.JsonNode body, HttpServletRequest httpRequest) {
         return adminPortMappingService.updateGuards(principal, mappingId, body,
                 clientIp(httpRequest));
+    }
+
+    @GetMapping("/{mappingId}/source-policy")
+    @PreAuthorize("hasAnyRole('SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @io.swagger.v3.oas.annotations.Operation(operationId = "getAdminPortMappingSourcePolicy",
+            summary = "포트 매핑 출발지 정책 조회")
+    public SourcePolicyView getAdminPortMappingSourcePolicy(@PathVariable UUID mappingId) {
+        return adminPortMappingService.getSourcePolicy(mappingId);
+    }
+
+    @PutMapping("/{mappingId}/source-policy")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @io.swagger.v3.oas.annotations.Operation(operationId = "updateAdminPortMappingSourcePolicy",
+            summary = "포트 매핑 출발지 정책 저장")
+    public SourcePolicyView updateAdminPortMappingSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID mappingId,
+            @Valid @RequestBody UpdateSourcePolicyRequest request,
+            HttpServletRequest httpRequest) {
+        return adminPortMappingService.updateSourcePolicy(principal, mappingId,
+                request.expectedRevision(), request.allowedCidrs(), clientIp(httpRequest));
     }
 }

@@ -1,4 +1,4 @@
-# Operator-confirmed permission matrix (contract v0.82.0, 243 ops × 7 roles),
+# Operator-confirmed permission matrix (contract v0.83.0, 252 ops × 7 roles),
 # enforced 1:1 by PermissionMatrixTest. One entry per operationId. This file is
 # POLICY; PermissionMatrixTest asserts the live @PreAuthorize gates match it 1:1
 # and that the runtime op set equals this file exactly.
@@ -404,3 +404,15 @@ operations:
   - { id: reconcileGpu, method: POST, path: "/admin/gpu-allocations/{allocationId}/reconcile", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listGpuReclaimReviews, method: GET, path: "/admin/gpu-reclaim-reviews", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: decideGpuReclaimReview, method: POST, path: "/admin/gpu-reclaim-reviews/{reviewId}/decision", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+
+  # Public-path source allowlists. User writes follow the existing VM resource rung;
+  # admin route writes retain org scope, while port-mapping intervention is SYS-only.
+  - { id: getCampusSourcePolicyPreset, method: GET, path: "/source-policy-presets/campus", roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getDomainSourcePolicy, method: GET, path: "/domains/{domainId}/source-policy", roles: { USER: allow_resource_scoped:VIEWER, ORG_VIEWER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_VIEWER: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
+  - { id: updateDomainSourcePolicy, method: PUT, path: "/domains/{domainId}/source-policy", roles: { USER: allow_resource_scoped:EDITOR, ORG_VIEWER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_VIEWER: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
+  - { id: getPortForwardingSourcePolicy, method: GET, path: "/vms/{vmId}/port-forwardings/{portForwardingId}/source-policy", roles: { USER: allow_resource_scoped:VIEWER, ORG_VIEWER: allow_resource_scoped:VIEWER, ORG_MANAGER: allow_resource_scoped:VIEWER, ORG_ADMIN: allow_resource_scoped:VIEWER, SYS_VIEWER: allow_resource_scoped:VIEWER, SYS_MANAGER: allow_resource_scoped:VIEWER, SYS_ADMIN: allow_resource_scoped:VIEWER } }
+  - { id: updatePortForwardingSourcePolicy, method: PUT, path: "/vms/{vmId}/port-forwardings/{portForwardingId}/source-policy", roles: { USER: allow_resource_scoped:EDITOR, ORG_VIEWER: allow_resource_scoped:EDITOR, ORG_MANAGER: allow_resource_scoped:EDITOR, ORG_ADMIN: allow_resource_scoped:EDITOR, SYS_VIEWER: allow_resource_scoped:EDITOR, SYS_MANAGER: allow_resource_scoped:EDITOR, SYS_ADMIN: allow_resource_scoped:EDITOR } }
+  - { id: getAdminRouteSourcePolicy, method: GET, path: "/admin/routes/{routeId}/source-policy", roles: { USER: deny, ORG_VIEWER: allow_org_scoped, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminRouteSourcePolicy, method: PUT, path: "/admin/routes/{routeId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: allow_org_scoped, ORG_ADMIN: allow_org_scoped, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: getAdminPortMappingSourcePolicy, method: GET, path: "/admin/port-mappings/{mappingId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
+  - { id: updateAdminPortMappingSourcePolicy, method: PUT, path: "/admin/port-mappings/{mappingId}/source-policy", roles: { USER: deny, ORG_VIEWER: deny, ORG_MANAGER: deny, ORG_ADMIN: deny, SYS_VIEWER: deny, SYS_MANAGER: allow, SYS_ADMIN: allow } }

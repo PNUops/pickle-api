@@ -336,7 +336,17 @@ class ContractDriftTest {
             "PATCH /admin/notices/{noticeId}",
             "DELETE /admin/notices/{noticeId}",
             "POST /admin/notices/{noticeId}/images",
-            "DELETE /admin/notices/{noticeId}/images/{imageId}");
+            "DELETE /admin/notices/{noticeId}/images/{imageId}",
+
+            "GET /source-policy-presets/campus",
+            "GET /domains/{domainId}/source-policy",
+            "PUT /domains/{domainId}/source-policy",
+            "GET /vms/{vmId}/port-forwardings/{portForwardingId}/source-policy",
+            "PUT /vms/{vmId}/port-forwardings/{portForwardingId}/source-policy",
+            "GET /admin/routes/{routeId}/source-policy",
+            "PUT /admin/routes/{routeId}/source-policy",
+            "GET /admin/port-mappings/{mappingId}/source-policy",
+            "PUT /admin/port-mappings/{mappingId}/source-policy");
 
     /**
      * Design-contract operations not implemented yet. Design contract =

@@ -20,6 +20,8 @@ import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
 import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRenewalRequest;
 import kr.ac.pusan.pickle.publishing.dto.UpdateDomainRootRequest;
 import kr.ac.pusan.pickle.publishing.dto.AdminRouteView;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
+import kr.ac.pusan.pickle.networkpolicy.dto.UpdateSourcePolicyRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +29,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -174,5 +177,24 @@ public class AdminPublishingController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID routeId, HttpServletRequest httpRequest) {
         return adminPublishingService.applyRoute(principal, routeId, clientIp(httpRequest));
+    }
+
+    @GetMapping("/routes/{routeId}/source-policy")
+    @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @Operation(operationId = "getAdminRouteSourcePolicy", summary = "라우트 출발지 정책 조회")
+    public SourcePolicyView getAdminRouteSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID routeId) {
+        return adminPublishingService.getRouteSourcePolicy(principal, routeId);
+    }
+
+    @PutMapping("/routes/{routeId}/source-policy")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(operationId = "updateAdminRouteSourcePolicy", summary = "라우트 출발지 정책 저장")
+    public SourcePolicyView updateAdminRouteSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID routeId,
+            @Valid @RequestBody UpdateSourcePolicyRequest request,
+            HttpServletRequest httpRequest) {
+        return adminPublishingService.updateRouteSourcePolicy(principal, routeId,
+                request.expectedRevision(), request.allowedCidrs(), clientIp(httpRequest));
     }
 }

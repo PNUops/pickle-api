@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.publishing;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import kr.ac.pusan.pickle.networkpolicy.SourcePolicyActivationService;
 import kr.ac.pusan.pickle.publishing.agent.ApplyOutcome;
 import org.jobrunr.jobs.annotations.Job;
 import org.jobrunr.jobs.annotations.Recurring;
@@ -42,10 +43,13 @@ public class RouteReconcileJob {
 
     private final RouteRepository routeRepository;
     private final RouteApplyJob routeApplyJob;
+    private final SourcePolicyActivationService sourcePolicyActivation;
 
-    public RouteReconcileJob(RouteRepository routeRepository, RouteApplyJob routeApplyJob) {
+    public RouteReconcileJob(RouteRepository routeRepository, RouteApplyJob routeApplyJob,
+            SourcePolicyActivationService sourcePolicyActivation) {
         this.routeRepository = routeRepository;
         this.routeApplyJob = routeApplyJob;
+        this.sourcePolicyActivation = sourcePolicyActivation;
     }
 
     /**
@@ -57,6 +61,7 @@ public class RouteReconcileJob {
     @Recurring(id = JOB_ID, interval = "PT2M")
     @Job(name = JOB_ID, retries = 0)
     public void run() {
+        sourcePolicyActivation.activateRoutes();
         List<Long> routeIds = routeRepository.findUnconfirmedRouteIds(
                 Instant.now().minus(SETTLE_GRACE), PageRequest.of(0, MAX_ROUTES_PER_CYCLE));
         if (routeIds.isEmpty()) {

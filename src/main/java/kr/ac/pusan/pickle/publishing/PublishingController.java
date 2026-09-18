@@ -3,11 +3,14 @@ package kr.ac.pusan.pickle.publishing;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
+import kr.ac.pusan.pickle.networkpolicy.dto.UpdateSourcePolicyRequest;
 import kr.ac.pusan.pickle.publishing.dto.CreateVmDomainRequest;
 import kr.ac.pusan.pickle.publishing.dto.DomainDetailView;
 import kr.ac.pusan.pickle.publishing.dto.DomainSummaryView;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -80,6 +84,26 @@ public class PublishingController {
     public DomainDetailView getDomain(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID domainId) {
         return publishingService.getDomain(principal, domainId);
+    }
+
+    @GetMapping("/domains/{domainId}/source-policy")
+    @io.swagger.v3.oas.annotations.Operation(operationId = "getDomainSourcePolicy",
+            summary = "도메인 출발지 정책 조회")
+    public SourcePolicyView getDomainSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID domainId) {
+        return publishingService.getSourcePolicy(principal, domainId);
+    }
+
+    @PutMapping("/domains/{domainId}/source-policy")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @io.swagger.v3.oas.annotations.Operation(operationId = "updateDomainSourcePolicy",
+            summary = "도메인 출발지 정책 저장")
+    public SourcePolicyView updateDomainSourcePolicy(
+            @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID domainId,
+            @Valid @RequestBody UpdateSourcePolicyRequest request,
+            HttpServletRequest httpRequest) {
+        return publishingService.updateSourcePolicy(principal, domainId,
+                request.expectedRevision(), request.allowedCidrs(), clientIp(httpRequest));
     }
 
     @DeleteMapping("/domains/{domainId}")

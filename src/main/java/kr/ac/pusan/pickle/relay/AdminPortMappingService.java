@@ -17,6 +17,8 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
+import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
 import kr.ac.pusan.pickle.relay.dto.AdminPortMappingResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
@@ -74,13 +76,15 @@ public class AdminPortMappingService {
     private final AuditIds auditIds;
     private final VmEventRepository vmEventRepository;
     private final PortForwardingService portForwardingService;
+    private final PublicSourcePolicyService sourcePolicies;
 
     public AdminPortMappingService(PortMappingRepository portMappingRepository,
             RelayRepository relayRepository, VmRepository vmRepository,
             kr.ac.pusan.pickle.user.UserRepository userRepository,
             RelayGenerations relayGenerations, NotificationService notificationService,
             AuditService auditService, AuditIds auditIds, VmEventRepository vmEventRepository,
-            PortForwardingService portForwardingService) {
+            PortForwardingService portForwardingService,
+            PublicSourcePolicyService sourcePolicies) {
         this.portMappingRepository = portMappingRepository;
         this.relayRepository = relayRepository;
         this.vmRepository = vmRepository;
@@ -91,6 +95,25 @@ public class AdminPortMappingService {
         this.auditIds = auditIds;
         this.vmEventRepository = vmEventRepository;
         this.portForwardingService = portForwardingService;
+        this.sourcePolicies = sourcePolicies;
+    }
+
+    @Transactional(readOnly = true)
+    public SourcePolicyView getSourcePolicy(UUID mappingId) {
+        PortMapping mapping = requireMapping(mappingId);
+        Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
+        return sourcePolicies.portMappingView(mapping, relay,
+                portForwardingService.failedIds(relay).contains(mapping.getId()));
+    }
+
+    @Transactional
+    public SourcePolicyView updateSourcePolicy(AuthenticatedUser actor, UUID mappingId,
+            long expectedRevision, List<String> allowedCidrs, String ip) {
+        PortMapping mapping = requireMapping(mappingId);
+        Relay relay = relayRepository.findById(mapping.getRelayId()).orElseThrow();
+        return sourcePolicies.updatePortMapping(mapping, relay, actor, expectedRevision,
+                allowedCidrs, portForwardingService.failedIds(relay).contains(mapping.getId()),
+                true, ip);
     }
 
     // ── list ─────────────────────────────────────────────────────────────────

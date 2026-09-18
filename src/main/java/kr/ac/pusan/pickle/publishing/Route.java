@@ -59,6 +59,9 @@ public class Route {
     @Column(name = "applied_generation")
     private Long appliedGeneration;
 
+    @Column(name = "source_policy_generation")
+    private Long sourcePolicyGeneration;
+
     @Column(name = "applied_at")
     private Instant appliedAt;
 
@@ -125,6 +128,14 @@ public class Route {
 
     public Long getAppliedGeneration() {
         return appliedGeneration;
+    }
+
+    public Long getSourcePolicyGeneration() {
+        return sourcePolicyGeneration;
+    }
+
+    public void setSourcePolicyGeneration(Long sourcePolicyGeneration) {
+        this.sourcePolicyGeneration = sourcePolicyGeneration;
     }
 
     public void setAppliedGeneration(Long appliedGeneration) {
