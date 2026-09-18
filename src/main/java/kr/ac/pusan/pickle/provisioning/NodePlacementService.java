@@ -8,6 +8,7 @@ import kr.ac.pusan.pickle.inventory.NodeRepository;
 import kr.ac.pusan.pickle.inventory.NodeStatus;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.OsImage;
+import kr.ac.pusan.pickle.inventory.OsImageReplicaResolver;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.vm.Vm;
 import kr.ac.pusan.pickle.vm.VmRepository;
@@ -19,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Step-1 node placement: among ACTIVE nodes that host an
- * ACTIVE OS image of the same name, pick the one with the best headroom
+ * ACTIVE replica of the granted OS revision, pick the one with the best headroom
  * score; an admin-forced node (approval form {@code nodeId}) always wins.
  *
  * <p>Scoring is deliberately simple for the single-node cluster of today —
@@ -65,8 +66,10 @@ public class NodePlacementService {
             // same IllegalStateException the no-candidate path throws, so the
             // pipeline errors cleanly at the place step — instead of proceeding
             // to a clone that would fail on a node without the image.
-            if (!imageRepository.existsByNameAndNodeIdAndStatus(
-                    image.getName(), node.getId(), CatalogStatus.ACTIVE)) {
+            if (imageRepository.findByNameAndVersionAndNodeIdAndStatus(
+                            image.getName(), image.getVersion(), node.getId(), CatalogStatus.ACTIVE)
+                    .filter(candidate -> OsImageReplicaResolver.compatible(image, candidate))
+                    .isEmpty()) {
                 throw new IllegalStateException("관리자 지정 노드 " + node.getId()
                         + "에 OS 이미지 " + image.getName() + "이(가) 없습니다");
             }
@@ -74,11 +77,10 @@ public class NodePlacementService {
                     node.getName());
             return node;
         }
-        // Nodes hosting an ACTIVE image of the same name (image rows are
-        // per-node; a multi-node cluster clones the image under one name).
+        // A newer revision must not silently replace the one that was approved.
         Set<Long> imageNodeIds = imageRepository
                 .findByStatus(CatalogStatus.ACTIVE).stream()
-                .filter(candidate -> candidate.getName().equals(image.getName()))
+                .filter(candidate -> OsImageReplicaResolver.compatible(image, candidate))
                 .map(OsImage::getNodeId)
                 .collect(Collectors.toSet());
         return nodeRepository.findByStatusOrderByIdAsc(NodeStatus.ACTIVE).stream()

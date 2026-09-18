@@ -98,6 +98,35 @@ class NodePlacementServiceTest {
                 .hasMessageContaining(imageName);
     }
 
+    @Test
+    void forcedNodeHostingOnlyAnotherRevisionFailsPlacement() {
+        long imageNodeId = insertNode();
+        image = insertImage(imageNodeId, "ACTIVE");
+        long otherNodeId = insertNode();
+        jdbc.update("""
+                insert into os_images (name, display_name, os_family, os_version,
+                                       ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status)
+                values (?, 'Other revision', 'ubuntu', '24.04', 'ubuntu', 1013, ?, 2, 10, 'ACTIVE')
+                """, imageName, otherNodeId);
+
+        assertThatThrownBy(() -> placementService.place(vm(otherNodeId), image, otherNodeId))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining(imageName);
+    }
+
+    @Test
+    void autoPlacementDoesNotChooseMoreFreeCapacityWithTheWrongRevision() {
+        long imageNodeId = insertNode();
+        image = insertImage(imageNodeId, "ACTIVE");
+        long otherNodeId = insertNode();
+        jdbc.update("""
+                insert into os_images (name, display_name, os_family, os_version,
+                                       ssh_username, proxmox_vmid, node_id, version, min_disk_gb, status)
+                values (?, 'Other revision', 'ubuntu', '24.04', 'ubuntu', 1013, ?, 2, 10, 'ACTIVE')
+                """, imageName, otherNodeId);
+
+        assertThat(placementService.place(vm(imageNodeId), image, null).getId()).isEqualTo(imageNodeId);
+    }
+
     private long insertNode() {
         return jdbc.queryForObject("""
                 insert into nodes (name, api_host, cpu_threads, memory_mb, vm_bridge, storage)

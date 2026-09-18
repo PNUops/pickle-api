@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.admin;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,8 @@ import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.inventory.OsImage;
 import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.inventory.dto.VmFlavorResponse;
+import kr.ac.pusan.pickle.provisioning.VmNicConfiguration;
+import kr.ac.pusan.pickle.proxmox.ProxmoxClient;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -49,16 +52,18 @@ public class AdminInventoryService {
     private final NodeRepository nodeRepository;
     private final AdminNodeQueryService adminNodeQueryService;
     private final AuditService auditService;
+    private final ProxmoxClient proxmox;
 
     public AdminInventoryService(OsImageRepository osImageRepository,
             VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, AdminNodeQueryService adminNodeQueryService,
-            AuditService auditService) {
+            AuditService auditService, ProxmoxClient proxmox) {
         this.osImageRepository = osImageRepository;
         this.vmFlavorRepository = vmFlavorRepository;
         this.nodeRepository = nodeRepository;
         this.adminNodeQueryService = adminNodeQueryService;
         this.auditService = auditService;
+        this.proxmox = proxmox;
     }
 
     /** Contract {@code listAdminOsImages}: every OS image, retired revisions included. */
@@ -85,6 +90,13 @@ public class AdminInventoryService {
             UpdateOsImageStatusRequest request, String ip) {
         OsImage image = osImageRepository.findByPublicId(imageId)
                 .orElseThrow(() -> notFound("해당 OS 이미지가 존재하지 않습니다."));
+        if (image.getStatus() != request.status() && request.status() == CatalogStatus.ACTIVE) {
+            Node node = nodeRepository.findById(image.getNodeId())
+                    .orElseThrow(() -> notFound("OS 이미지가 속한 노드가 존재하지 않습니다."));
+            node.vmNicRequirements().ifPresent(requirements -> VmNicConfiguration.requirePrepared(
+                    nicConfig(proxmox.currentVmConfig(node.getApiHost(), node.getName(),
+                            image.getProxmoxVmid())), requirements));
+        }
         if (image.getStatus() != request.status()) {
             String fromStatus = image.getStatus().name();
             image.setStatus(request.status());
@@ -102,6 +114,10 @@ public class AdminInventoryService {
         Node node = nodeRepository.findByPublicId(publicNodeId)
                 .orElseThrow(() -> notFound("해당 노드가 존재하지 않습니다."));
         long nodeId = node.getId();
+        if (node.getStatus() != request.status()
+                && request.status() == kr.ac.pusan.pickle.inventory.NodeStatus.ACTIVE) {
+            node.requireProvisioningReadiness(Instant.now());
+        }
         if (node.getStatus() != request.status()) {
             String fromStatus = node.getStatus().name();
             node.setStatus(request.status());
@@ -211,5 +227,10 @@ public class AdminInventoryService {
     private static ApiException notFound(String detail) {
         return new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
                 "리소스를 찾을 수 없습니다", detail);
+    }
+
+    private static String nicConfig(Map<String, Object> config) {
+        Object value = config == null ? null : config.get("net0");
+        return value == null ? null : value.toString();
     }
 }

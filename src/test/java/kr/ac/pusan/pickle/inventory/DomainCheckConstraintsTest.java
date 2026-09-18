@@ -162,6 +162,60 @@ class DomainCheckConstraintsTest {
         assertThat(insertImage("rocky", "10", "rocky")).isEqualTo(1);
     }
 
+    @Test
+    void imageRevisionIsUniquePerNodeAndMayHaveAReplicaOnAnotherNode() {
+        String name = "chk-replica-" + UUID.randomUUID().toString().substring(0, 8);
+        long otherNode = jdbc.queryForObject("""
+                insert into nodes (name, api_host, status, cpu_threads, memory_mb, labels,
+                                   vm_bridge, storage, ip_pool_id, disk_capacity_gb)
+                select ?, api_host, status, cpu_threads, memory_mb, labels,
+                       vm_bridge, storage, ip_pool_id, disk_capacity_gb
+                  from nodes where id = ?
+                returning id
+                """, Long.class, name + "-node", nodeId);
+        insertReplica(name, nodeId, 1009);
+        assertThat(insertReplica(name, otherNode, 1010)).isEqualTo(1);
+        assertThatThrownBy(() -> insertReplica(name, nodeId, 1011))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("os_images_node_name_version_key");
+    }
+
+    @Test
+    void clonePinIsAllNullOrAnExactImageCoordinate() {
+        long requestId = insertRequest(1, 1024, 10);
+        String hostname = "chk-pin-" + UUID.randomUUID().toString().substring(0, 12);
+        long vmId = jdbc.queryForObject("""
+                insert into vms (node_id, workspace_id, org_id, request_id, name, hostname,
+                                 image_id, vcpu, memory_mb, disk_gb)
+                values (?, ?, ?, ?, ?, ?, ?, 1, 1024, 10)
+                returning id
+                """, Long.class, nodeId, workspaceId, orgId, requestId, hostname, hostname, imageId);
+        Integer templateVmid = jdbc.queryForObject(
+                "select proxmox_vmid from os_images where id = ?", Integer.class, imageId);
+        String hash = "a".repeat(64);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "update vms set clone_image_id = ? where id = ?", imageId, vmId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("vms_clone_pin_complete_check");
+        assertThatThrownBy(() -> jdbc.update("""
+                update vms set clone_image_id = ?, clone_node_id = ?, clone_template_vmid = ?,
+                               clone_revision_sha256 = ? where id = ?
+                """, imageId, nodeId, templateVmid + 1, hash, vmId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("vms_clone_image_coordinates_fkey");
+        assertThatThrownBy(() -> jdbc.update("""
+                update vms set clone_image_id = ?, clone_node_id = ?, clone_template_vmid = ?,
+                               clone_revision_sha256 = 'ABC' where id = ?
+                """, imageId, nodeId, templateVmid, vmId))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("vms_clone_revision_sha256_check");
+        assertThat(jdbc.update("""
+                update vms set clone_image_id = ?, clone_node_id = ?, clone_template_vmid = ?,
+                               clone_revision_sha256 = ? where id = ?
+                """, imageId, nodeId, templateVmid, hash, vmId)).isEqualTo(1);
+    }
+
     private int insertImage(String osFamily, String osVersion, String sshUsername) {
         return jdbc.update("""
                 insert into os_images (name, display_name, os_family, os_version, ssh_username,
@@ -169,6 +223,15 @@ class DomainCheckConstraintsTest {
                 values (?, '제약 테스트 이미지', ?, ?, ?, 1009, ?, 10, 'DISABLED'::catalog_status)
                 """, "chk-image-" + UUID.randomUUID().toString().substring(0, 8),
                 osFamily, osVersion, sshUsername, nodeId);
+    }
+
+    private int insertReplica(String name, long targetNodeId, int vmid) {
+        return jdbc.update("""
+                insert into os_images (name, display_name, os_family, os_version, ssh_username,
+                                       proxmox_vmid, node_id, version, min_disk_gb, status)
+                values (?, '복제 제약 테스트', 'ubuntu', '24.04', 'ubuntu', ?, ?, 1, 10,
+                        'ACTIVE'::catalog_status)
+                """, name, vmid, targetNodeId);
     }
 
     private long insertRequest(int vcpu, int memoryMb, int diskGb) {

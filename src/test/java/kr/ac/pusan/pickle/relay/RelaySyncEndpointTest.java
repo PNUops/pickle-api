@@ -212,6 +212,18 @@ class RelaySyncEndpointTest {
     // ── report sanitization ─────────────────────────────────────────────────
 
     @Test
+    void additionalAgentCapabilitiesRemainCompatibleWithTheExistingReportReceiver() throws Exception {
+        RelayFixture relay = newRelay("capabilities");
+        sync(relay.id(), relay.sourceIp(), relay.token(), Map.of(
+                "appliedGeneration", 0,
+                "agentVersion", "capability-report-test",
+                "capabilities", List.of("source-acl-v1")))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("select agent_version from relays where id = ?",
+                String.class, relay.id())).isEqualTo("capability-report-test");
+    }
+
+    @Test
     void reportedStringsAreControlStrippedAndTruncated() throws Exception {
         RelayFixture relay = newRelay("sanitize");
         String ansiVersion = "v1.2.3\u001b[31mRED\u001b[0m\r\n";

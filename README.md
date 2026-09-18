@@ -114,14 +114,45 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 지나갑니다.
 
 ```
-guard → 노드 배치 → IP 할당 → VMID 채번 → OS 이미지 clone
+guard → 승인 배치 확인 → IP 할당 → VMID 채번 → OS 이미지 clone
   → 설정(사양·cloud-init·고정 IP·protection=1) → 디스크 리사이즈
   → 기동 → qemu-agent 검증 → 호스트키 수집 → 완료(RUNNING, 알림)
 ```
 
 각 단계는 멱등이라 중간에서 다시 시작해도 안전합니다. 백오프 재시도로도 통과하지
-못하면 보상 로직이 만들어 둔 것을 정리하거나, VM을 NEEDS_ADMIN 상태로 두고 관리자
-콘솔에 띄웁니다. 어느 경로도 리소스를 자동으로 파괴하지 않습니다.
+못한 일반 생성 실패는 단계에 따라 반쯤 만들어진 VM과 IP를 정리하거나, VM을
+NEEDS_ADMIN 상태로 두고 관리자 콘솔에 띄웁니다. clone pin 누락·변경, 현재 노드 불일치,
+prepared NIC 조건 불일치처럼 자동 정리가 안전하지 않은 경우에는 VMID와 IP, 기존 guest와
+pin을 그대로 보존하고 NEEDS_ADMIN에서 멈춥니다.
+
+승인 트랜잭션은 이미지 revision과 후보 노드를 잠근 뒤 CPU, 메모리, 디스크 여유를 함께
+확인합니다. 선택한 노드와 clone 원본 행, template VMID, revision metadata hash는 VM에
+고정됩니다. 워커 재시도도 이 좌표만 사용하며 이미지 metadata나 위치가 바뀌면 관리자
+확인이 필요한 상태로 멈춥니다. 복구로 VM의 현재 노드가 바뀌어도 최초 clone 좌표는
+이력으로 남고, 다른 노드에서 clone을 다시 실행할 권한으로 사용되지 않습니다. pin이 없는
+기존 VM은 조회와 일반 lifecycle을 계속 지원하지만 CREATING 상태에서 새 clone을 시작하지
+않습니다. REINSTALL 파이프라인은 제공하지 않습니다.
+
+OS 이미지 행은 노드별 inventory이며 `(node_id, name, version)`이 유일합니다. 공개 목록은
+같은 `(name, version)`의 호환 replica를 하나로 묶고 가장 먼저 등록된 행의 UUID를 계속
+노출합니다. 이 원본 행이 비활성 상태여도 활성 노드에 metadata가 일치하는 활성 replica가
+있으면 선택할 수 있습니다. 신청과 승인, 실제 clone이 같은 revision 판정을 사용하므로
+카탈로그 표시와 생성 가능 여부가 어긋나지 않습니다.
+
+새로 준비한 노드는 `labels`에 `placement_capacity`와 `vm_nic_requirements`를 함께 등록합니다.
+첫 문서는 `schema_version`, 측정 시각, `physical`/`reserved`/`allocatable`의 `cpu_threads`,
+`memory_mb`, `disk_gb`를 담습니다. 세 축 모두 승인 시 hard limit으로 적용됩니다. NIC 문서는
+`schema_version: 1`, `mtu: 1370`, `firewall: true`만 허용합니다. 이미지 활성화와 clone 직전에
+template의 `net0`가 이 값과 일치하는지 확인하고, VM 설정에서는 MAC과 기존 NIC 속성을
+보존한 채 대상 bridge만 바꿉니다. 이 두 label이 모두 없는 기존 노드는 종전의 메모리 hard
+limit과 CPU·aggregate disk advisory 동작을 유지합니다. label 하나라도 등록한 노드는 두
+문서가 모두 유효해야 ACTIVE 전환을 통과합니다.
+
+CIDR 정책 렌더러와 PVE 방화벽 호출, 수동 VM 복구 guard는 내부 구현 준비 단계입니다.
+정책 CRUD와 agent 전달, VM 위치 변경에는 아직 연결되지 않았습니다.
+`pickle.network-policy.enabled`는 기본 false이며 이 값을 켜는 것만으로 방화벽이 적용되지
+않습니다. 교내 CIDR 설정 `pickle.network-policy.campus-source-cidrs`에는 기본 허용 대역이
+없습니다.
 
 30초 상태 폴러와 10분 드리프트 리컨실러, 5분 삭제 스위퍼, 10분 고아 태스크 복구가
 데이터베이스와 Proxmox를 계속 맞춥니다. 드리프트 리컨실러는 어긋난 지점을 보고만 하고
@@ -199,6 +230,24 @@ dev와 test 프로파일에서는 시더가 그 자리를 채웁니다. 런타�
 - 기관이 없으면 VM 신청이 대상 기관을 찾지 못해 거부됩니다.
 - 신청 화면의 OS 목록은 활성 상태인 카탈로그 행만 보여줍니다. 상태 전환은 관리자
   API가 담당합니다.
+
+### V127 순차 배포
+
+V127은 기존 OS 이미지의 전역 `(name, version)` unique를 노드 범위로 바꾸고 VM에 nullable
+clone pin 네 열과 제약을 추가합니다. 환경 행이나 replica는 삽입하지 않습니다. 배포 전에
+대상 데이터베이스의 전체 Flyway 이력이 성공 상태인지 확인하며, 특히 V125와 V126이 모두
+성공한 뒤에만 V127을 순서대로 적용합니다. out-of-order 적용은 지원하지 않습니다.
+
+V127 스키마만 적용하고 노드별 replica를 아직 등록하지 않은 단계에서는 이전 jar가 기존
+행을 계속 읽을 수 있습니다. 같은 `(name, version)` replica를 둘 이상의 노드에 등록한 뒤에는
+이 README의 카탈로그 중복 제거와 clone pin 규칙을 구현한 jar만 사용합니다. 기존 VM 행의 pin은
+backfill하지 않으며 null인 채 유지됩니다.
+
+jar를 이전 버전으로 교체해도 V127의 unique 범위와 clone pin 열은 되돌아가지 않습니다.
+노드별 replica 등록 뒤에는 기존 global catalog jar나 legacy writer를 rollback 경로로 사용하지
+않습니다. 등록과 신규 생성을 중지한 상태에서 호환 버전으로 복구하거나 별도로 검증한 DB
+복구 지점으로 돌아갑니다. 기존 이미지 행이나 UUID를 임의로 삭제해 전역 unique를 복원하지
+않습니다.
 
 그래서 운영 환경은 부트스트랩 절차를 마친 뒤에야 쓸 수 있습니다. `staging`과 `prod`는 이
 절차를 그대로 공유합니다.

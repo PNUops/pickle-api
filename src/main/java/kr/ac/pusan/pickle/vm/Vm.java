@@ -10,7 +10,9 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
+import kr.ac.pusan.pickle.inventory.CloneImagePin;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -64,6 +66,19 @@ public class Vm {
 
     @Column(name = "image_id", nullable = false)
     private Long imageId;
+
+    /** Immutable coordinates of the exact template used for the original clone. */
+    @Column(name = "clone_image_id")
+    private Long cloneImageId;
+
+    @Column(name = "clone_node_id")
+    private Long cloneNodeId;
+
+    @Column(name = "clone_template_vmid")
+    private Integer cloneTemplateVmid;
+
+    @Column(name = "clone_revision_sha256", length = 64)
+    private String cloneRevisionSha256;
 
     @Column(nullable = false)
     private int vcpu;
@@ -247,6 +262,34 @@ public class Vm {
 
     public Long getImageId() {
         return imageId;
+    }
+
+    public Optional<CloneImagePin> cloneImagePin() {
+        int present = (cloneImageId == null ? 0 : 1) + (cloneNodeId == null ? 0 : 1)
+                + (cloneTemplateVmid == null ? 0 : 1) + (cloneRevisionSha256 == null ? 0 : 1);
+        if (present == 0) {
+            return Optional.empty();
+        }
+        if (present != 4) {
+            throw new IllegalStateException("VM의 복제 이미지 고정 정보가 불완전합니다.");
+        }
+        return Optional.of(new CloneImagePin(cloneImageId, cloneNodeId, cloneTemplateVmid,
+                cloneRevisionSha256));
+    }
+
+    /** Approval may set the pin once; retries may only present the same coordinates. */
+    public void pinClone(CloneImagePin pin) {
+        Optional<CloneImagePin> existing = cloneImagePin();
+        if (existing.isPresent()) {
+            if (!existing.get().equals(pin)) {
+                throw new IllegalStateException("VM의 복제 이미지 고정 정보를 변경할 수 없습니다.");
+            }
+            return;
+        }
+        cloneImageId = pin.imageId();
+        cloneNodeId = pin.nodeId();
+        cloneTemplateVmid = pin.templateVmid();
+        cloneRevisionSha256 = pin.revisionSha256();
     }
 
     public int getVcpu() {

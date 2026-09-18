@@ -84,6 +84,54 @@ class ProxmoxClientTest {
     }
 
     @Test
+    void firewallMutationUsesTheObservedDigestAndNeverTargetsTheHostFirewall() {
+        String base = "/api2/json/nodes/pve1/qemu/102/firewall";
+        wm.server().stubFor(put(urlPathEqualTo(base + "/options"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
+        wm.server().stubFor(put(urlPathEqualTo(base + "/rules/3"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
+        wm.server().stubFor(delete(urlPathEqualTo(base + "/rules/3"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
+
+        client.setVmFirewallOptions(wm.apiHost(), NODE, 102, Map.of("enable", "1"), "observed-options");
+        client.updateVmFirewallRule(wm.apiHost(), NODE, 102, 3,
+                Map.of("action", "DROP", "type", "in"), "observed-rules");
+        client.deleteVmFirewallRule(wm.apiHost(), NODE, 102, 3, "new-rules");
+
+        wm.server().verify(putRequestedFor(urlPathEqualTo(base + "/options"))
+                .withRequestBody(containing("digest=observed-options")));
+        wm.server().verify(putRequestedFor(urlPathEqualTo(base + "/rules/3"))
+                .withRequestBody(containing("digest=observed-rules")));
+        wm.server().verify(deleteRequestedFor(urlPathEqualTo(base + "/rules/3"))
+                .withQueryParam("digest", equalTo("new-rules")));
+    }
+
+    @Test
+    void firewallRulesAreReadAsConfigurationWithoutClaimingEnforcement() {
+        String base = "/api2/json/nodes/pve1/qemu/102/firewall";
+        wm.server().stubFor(get(urlPathEqualTo(base + "/options"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"enable\":1,\"digest\":\"options-digest\"}}")));
+        wm.server().stubFor(get(urlPathEqualTo(base + "/rules"))
+                .willReturn(aResponse().withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":[{\"pos\":0,\"type\":\"in\",\"action\":\"DROP\",\"digest\":\"rules-digest\"}]}")));
+        assertThat(client.vmFirewallOptions(wm.apiHost(), NODE, 102)).containsEntry("digest", "options-digest");
+        assertThat(client.vmFirewallRules(wm.apiHost(), NODE, 102).getFirst())
+                .containsEntry("pos", 0).containsEntry("digest", "rules-digest");
+    }
+
+    @Test
+    void firewallUpdatesWithoutAReadbackDigestFailBeforeAnHttpWrite() {
+        assertThatThrownBy(() -> client.setVmFirewallOptions(wm.apiHost(), NODE, 102,
+                Map.of("enable", "1"), "")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.deleteVmFirewallRule(wm.apiHost(), NODE, 102, 0, null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.updateVmFirewallRule(wm.apiHost(), NODE, 102, -1,
+                Map.of("action", "DROP"), "digest")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(wm.server().getAllServeEvents()).isEmpty();
+    }
+
+    @Test
     void appliedConfigurationPendingConfigurationAndRuntimeStatusStaySeparate() {
         String base = "/api2/json/nodes/pve1/qemu/102";
         wm.server().stubFor(get(urlPathEqualTo(base + "/config")).withQueryParam("current", equalTo("1"))

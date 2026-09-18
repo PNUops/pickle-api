@@ -95,7 +95,8 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
 
     /** DB-intent capacity already granted on a node, for placement scoring. */
     @Query("""
-            select coalesce(sum(v.vcpu), 0) as vcpu, coalesce(sum(v.memoryMb), 0) as memoryMb
+            select coalesce(sum(v.vcpu), 0) as vcpu, coalesce(sum(v.memoryMb), 0) as memoryMb,
+                   coalesce(sum(v.diskGb), 0) as diskGb
               from Vm v
              where v.nodeId = :nodeId and v.deletedAt is null and v.status <> :deleted
             """)
@@ -105,6 +106,8 @@ public interface VmRepository extends JpaRepository<Vm, Long>, JpaSpecificationE
         long getVcpu();
 
         long getMemoryMb();
+
+        long getDiskGb();
     }
 
     /** VMs the status poller may look at: a Proxmox identity and a pollable status. */

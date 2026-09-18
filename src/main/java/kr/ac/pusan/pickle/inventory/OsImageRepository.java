@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
 
 public interface OsImageRepository extends JpaRepository<OsImage, Long> {
@@ -57,4 +58,13 @@ public interface OsImageRepository extends JpaRepository<OsImage, Long> {
      * placement uses.
      */
     boolean existsByNameAndNodeIdAndStatus(String name, Long nodeId, CatalogStatus status);
+
+    /** The selected node must host the granted revision, not merely the same OS name. */
+    Optional<OsImage> findByNameAndVersionAndNodeIdAndStatus(
+            String name, int version, Long nodeId, CatalogStatus status);
+
+    /** Locks one logical revision and all node replicas before approval picks a clone source. */
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from OsImage i where i.name = :name and i.version = :version order by i.id")
+    List<OsImage> findRevisionForUpdate(@Param("name") String name, @Param("version") int version);
 }

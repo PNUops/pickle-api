@@ -22,6 +22,8 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import kr.ac.pusan.pickle.ipam.IpamService;
+import kr.ac.pusan.pickle.inventory.CloneImagePin;
+import kr.ac.pusan.pickle.inventory.OsImageRepository;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
@@ -82,6 +84,9 @@ class ProvisionPipelineTest {
 
     @Autowired
     private VmRepository vmRepository;
+
+    @Autowired
+    private OsImageRepository imageRepository;
 
     @Autowired
     private IpamService ipamService;
@@ -618,6 +623,109 @@ class ProvisionPipelineTest {
         assertThat(vm.getProxmoxVmid()).isEqualTo(vmid).isGreaterThanOrEqualTo(100_000);
     }
 
+    @Test
+    void legacyUnpinnedCloneResumeParksWithoutTouchingExistingResources() {
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        int vmid = 120;
+        preassignVmid(vmId, vmid);
+        jdbc.update("""
+                update vms set clone_image_id = null, clone_node_id = null,
+                               clone_template_vmid = null, clone_revision_sha256 = null
+                 where id = ?
+                """, vmId);
+        pendingAtClone(vmId);
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(clusterResourcesWith(vmid, hostnameOf(vmId)))));
+
+        job.provisionVm(vmId);
+
+        assertSafetyParked(vmId, vmid, ip);
+        assertThat(vmRepository.findById(vmId).orElseThrow().cloneImagePin()).isEmpty();
+        assertNoDestructiveProvisioningCalls(vmid);
+    }
+
+    @Test
+    void clonePinDriftParksWithoutTouchingExistingResources() {
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        int vmid = 121;
+        preassignVmid(vmId, vmid);
+        String driftedHash = "b".repeat(64);
+        jdbc.update("update vms set clone_revision_sha256 = ? where id = ?", driftedHash, vmId);
+        pendingAtClone(vmId);
+        wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(clusterResourcesWith(vmid, hostnameOf(vmId)))));
+
+        job.provisionVm(vmId);
+
+        assertSafetyParked(vmId, vmid, ip);
+        assertThat(vmRepository.findById(vmId).orElseThrow().cloneImagePin())
+                .hasValueSatisfying(pin -> assertThat(pin.revisionSha256()).isEqualTo(driftedHash));
+        assertNoDestructiveProvisioningCalls(vmid);
+    }
+
+    @Test
+    void preparedTemplateNicMismatchParksWithoutCleanupOrClone() {
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        int vmid = 122;
+        preassignVmid(vmId, vmid);
+        pendingAtClone(vmId);
+        jdbc.update("""
+                update nodes set labels = cast(? as jsonb) where id = ?
+                """, """
+                {"placement_capacity":{"schema_version":1,"measured_at":"2026-09-18T00:00:00Z",
+                "physical":{"cpu_threads":32,"memory_mb":65536,"disk_gb":1000},
+                "reserved":{"cpu_threads":4,"memory_mb":8192,"disk_gb":200},
+                "allocatable":{"cpu_threads":28,"memory_mb":57344,"disk_gb":800}},
+                "vm_nic_requirements":{"schema_version":1,"mtu":1370,"firewall":true}}
+                """, nodeId);
+        try {
+            wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                    .willReturn(okFixture("03-cluster-resources")));
+            wm.server().stubFor(get(urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/config"))
+                    .willReturn(aResponse().withStatus(200)
+                            .withHeader("Content-Type", "application/json")
+                            .withBody("{\"data\":{\"net0\":\"virtio=02:00:00:00:00:03,"
+                                    + "bridge=vmbr2,mtu=1500,firewall=0\"}}")));
+
+            job.provisionVm(vmId);
+
+            assertSafetyParked(vmId, vmid, ip);
+            assertThat(vmRepository.findById(vmId).orElseThrow().cloneImagePin()).isPresent();
+            assertNoDestructiveProvisioningCalls(vmid);
+        } finally {
+            jdbc.update("update nodes set labels = '{}'::jsonb where id = ?", nodeId);
+        }
+    }
+
+    @Test
+    void nodeEnteringMaintenanceBeforeFirstCloneParksWithoutCleanup() {
+        long vmId = createVm();
+        String ip = preallocateIp(vmId);
+        int vmid = 123;
+        preassignVmid(vmId, vmid);
+        pendingAtClone(vmId);
+        jdbc.update("update nodes set status = 'MAINTENANCE'::node_status where id = ?", nodeId);
+        try {
+            wm.server().stubFor(get(urlPathEqualTo("/api2/json/cluster/resources"))
+                    .willReturn(okFixture("03-cluster-resources")));
+
+            job.provisionVm(vmId);
+
+            assertSafetyParked(vmId, vmid, ip);
+            assertThat(vmRepository.findById(vmId).orElseThrow().cloneImagePin()).isPresent();
+            assertNoDestructiveProvisioningCalls(vmid);
+        } finally {
+            jdbc.update("update nodes set status = 'ACTIVE'::node_status where id = ?", nodeId);
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /** Minimal request→vm graph, mirroring what an approval writes. */
@@ -637,6 +745,9 @@ class ProvisionPipelineTest {
         // that list is where the pipeline's notices look for an audience — a
         // fixture VM without it is one nobody is responsible for.
         AccessGrantFixtures.grantVmToUser(jdbc, vmId, adminUserId, "OWNER");
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        vm.pinClone(CloneImagePin.from(imageRepository.findById(imageId).orElseThrow()));
+        vmRepository.saveAndFlush(vm);
         return vmId;
     }
 
@@ -653,6 +764,32 @@ class ProvisionPipelineTest {
         return taskRepository.findByVmIdOrderByIdDesc(vmId).getFirst();
     }
 
+    private void pendingAtClone(long vmId) {
+        jdbc.update("""
+                insert into provisioning_tasks (vm_id, kind, current_step, status, attempts)
+                values (?, 'PROVISION', ?, 'PENDING', 0)
+                """, vmId, ProvisioningStep.CLONE.index());
+    }
+
+    private void assertSafetyParked(long vmId, int vmid, String ip) {
+        ProvisioningTask task = latestTask(vmId);
+        assertThat(task.getStatus()).isEqualTo(ProvisioningTaskStatus.NEEDS_ADMIN);
+        assertThat(task.getCurrentStep()).isEqualTo(ProvisioningStep.CLONE.index());
+        Vm vm = vmRepository.findById(vmId).orElseThrow();
+        assertThat(vm.getStatus()).isEqualTo(VmStatus.NEEDS_ADMIN);
+        assertThat(vm.getProxmoxVmid()).isEqualTo(vmid);
+        assertThat(jdbc.queryForObject(
+                "select host(ip) from ip_allocations where vm_id = ? and status = 'ALLOCATED'",
+                String.class, vmId)).isEqualTo(ip);
+    }
+
+    private void assertNoDestructiveProvisioningCalls(int vmid) {
+        wm.server().verify(0, postRequestedFor(
+                urlPathEqualTo(qemuPath(SeedFixtures.TEMPLATE_VMID) + "/clone")));
+        wm.server().verify(0, putRequestedFor(urlPathEqualTo(qemuPath(vmid) + "/config")));
+        wm.server().verify(0, deleteRequestedFor(urlPathEqualTo(qemuPath(vmid))));
+    }
+
     /** Pre-assigns the vmid, exercising the crash-guard path in assignVmid. */
     private void preassignVmid(long vmId, int vmid) {
         jdbc.update("update vms set proxmox_vmid = ? where id = ?", vmid, vmId);
@@ -665,6 +802,10 @@ class ProvisionPipelineTest {
     }
 
     private void stubConfig(int vmid) {
+        wm.server().stubFor(get(urlPathEqualTo(qemuPath(vmid) + "/config"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("{\"data\":{\"net0\":\"virtio=02:00:00:00:00:01,bridge=old\"}}")));
         wm.server().stubFor(put(urlPathEqualTo(qemuPath(vmid) + "/config"))
                 .willReturn(okFixture("20-config")));
     }

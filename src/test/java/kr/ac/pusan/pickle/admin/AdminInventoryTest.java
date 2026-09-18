@@ -105,6 +105,29 @@ class AdminInventoryTest {
                 .andExpect(jsonPath(byId(imageId)).doesNotExist());
     }
 
+    @Test
+    void publicCatalogKeepsTheFirstUuidWhenOnlyAnotherNodeReplicaIsAvailable() throws Exception {
+        long firstNode = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long secondNode = jdbcTemplate.queryForObject("""
+                insert into nodes (name, api_host, status, cpu_threads, memory_mb, labels,
+                                   vm_bridge, storage, ip_pool_id, disk_capacity_gb)
+                select ?, api_host, status, cpu_threads, memory_mb, labels,
+                       vm_bridge, storage, ip_pool_id, disk_capacity_gb
+                  from nodes where id = ?
+                returning id
+                """, Long.class, "ait-replica-" + suffix, firstNode);
+        String name = "ait-canonical-" + suffix;
+        long canonical = insertReplica(name, firstNode, 991001, "DISABLED");
+        long replica = insertReplica(name, secondNode, 991002, "ACTIVE");
+
+        mockMvc.perform(get("/api/v1/os-images")
+                        .header("Authorization", "Bearer " + sysAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(byId(canonical) + ".status").value("ACTIVE"))
+                .andExpect(jsonPath(byId(replica)).doesNotExist());
+    }
+
     /**
      * The admin catalog is the same catalog the wizard shows, so it is read in
      * the same order — the admin decides what students see and should not have
@@ -242,6 +265,16 @@ class AdminInventoryTest {
                 values (?, '정렬 확인용', ?, ?, ?, 990002, ?, 1, 10, cast(? as catalog_status))
                 """, name, family, version, family, nodeId, status);
         return name;
+    }
+
+    private long insertReplica(String name, long nodeId, int vmid, String status) {
+        return jdbcTemplate.queryForObject("""
+                insert into os_images (name, display_name, os_family, os_version, ssh_username,
+                                       proxmox_vmid, node_id, version, min_disk_gb, status)
+                values (?, '공개 카탈로그 복제 테스트', 'ubuntu', '24.04', 'ubuntu', ?, ?, 1, 10,
+                        cast(? as catalog_status))
+                returning id
+                """, Long.class, name, vmid, nodeId, status);
     }
 
     private long auditCount(String action, String table, long targetId) {
