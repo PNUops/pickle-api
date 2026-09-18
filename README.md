@@ -275,6 +275,23 @@ jar를 이전 버전으로 교체해도 V127의 unique 범위와 clone pin 열�
   거부합니다. UTF-8로 72바이트를 넘는 값도 거부합니다.
 - 문자 종류 조합 규칙은 없습니다. 길이와 차단목록이 판정 기준입니다.
 
+### 격리 검증 프로파일
+
+`isolated` 프로파일은 새 복구 환경의 schema와 인증 경로를 실제 jar로 확인할 때 사용합니다.
+개발용 시더는 실행되지 않고 메일은 SMTP로 나가거나 로컬 spool에 기록되지 않으며, DNS
+provider는 `none`입니다. JobRunr server/dashboard와 외부 정책 producer는 실행 unit에서도
+꺼야 합니다.
+
+최초 관리자는 일반 기동이 아니라 `isolated,isolated-bootstrap` one-shot으로만 만듭니다.
+`PICKLE_ISOLATED_BOOTSTRAP_ENABLED=true`와 별도 보호 파일의
+`PICKLE_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`를 함께 제공해야 합니다. 이 실행은 Flyway와
+JobRunr metadata를 제외한 애플리케이션 테이블이 모두 비어 있는지 같은 transaction의
+advisory lock 아래 확인합니다. V87이 넣는 endpoint/credential 없는 logical registry
+`llm_upstreams` 세 행(`openai`, `openrouter`, `dgx`)은 모든 tuple이 migration과 정확히
+같을 때만 허용합니다. 그 뒤 verified ACTIVE SYS_ADMIN 하나와 그 계정의 PERSONAL
+워크스페이스/OWNER membership만 만들고 종료합니다. 일반 `isolated` 기동은 계정을 만들지
+않습니다.
+
 ## 시작하기
 
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
@@ -348,6 +365,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_SSH_HOST` / `PICKLE_SSH_PORT` | 응답에 노출하는 SSH 접속 주소 | 없음 / `0` |
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 2FA 등록 강제 | `false` (prod `true`) |
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
+| `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 
 ### 내부 연동 (게이트웨이, 프록시, 터미널)

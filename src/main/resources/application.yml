@@ -325,6 +325,10 @@ pickle:
     sysadmin-password: ${PICKLE_SEED_SYSADMIN_PASSWORD:}
     orgadmin-email: ${PICKLE_SEED_ORGADMIN_EMAIL:orgadmin@pickle.local}
     orgadmin-password: ${PICKLE_SEED_ORGADMIN_PASSWORD:}
+  isolated-bootstrap:
+    # The normal isolated profile is seed-free. A guarded one-shot must opt in
+    # with this flag and the separate isolated-bootstrap profile.
+    enabled: ${PICKLE_ISOLATED_BOOTSTRAP_ENABLED:false}
 
 ---
 # dev: local/LXC development. Mock mail. No secret defaults here on purpose —
@@ -377,3 +381,17 @@ pickle:
     enforce-admin: ${PICKLE_MFA_ENFORCE_ADMIN:true}
   mail:
     from: ${PICKLE_MAIL_FROM:}
+
+---
+# Isolated recovery validation: real migrations and authentication, with no
+# dev fixtures, SMTP delivery, DNS writes or vendor credentials.
+spring:
+  config:
+    activate:
+      on-profile: isolated
+
+pickle:
+  mfa:
+    enforce-admin: false
+  dns:
+    provider: none

@@ -7,6 +7,7 @@ import kr.ac.pusan.pickle.security.MfaEnrollmentFilter;
 import kr.ac.pusan.pickle.security.ProblemAccessDeniedHandler;
 import kr.ac.pusan.pickle.security.ProblemAuthenticationEntryPoint;
 import kr.ac.pusan.pickle.security.RefreshCsrfFilter;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -31,6 +32,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     @Bean
+    @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
     SecurityFilterChain securityFilterChain(HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             MfaEnrollmentFilter mfaEnrollmentFilter,
