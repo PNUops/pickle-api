@@ -25,8 +25,6 @@ public final class ErrorCodes {
     public static final String AUTH_PASSWORD_MISMATCH = "AUTH_PASSWORD_MISMATCH";
     /** The account has never had a password, so it cannot supply one (409). */
     public static final String AUTH_PASSWORD_NOT_SET = "AUTH_PASSWORD_NOT_SET";
-    /** The account already has a password: change it, do not set it (409). */
-    public static final String AUTH_PASSWORD_ALREADY_SET = "AUTH_PASSWORD_ALREADY_SET";
     /** Unlinking would leave the account with no way to sign in (409). */
     public static final String IDENTITY_LAST_METHOD = "IDENTITY_LAST_METHOD";
 
@@ -42,8 +40,6 @@ public final class ErrorCodes {
     public static final String AUTH_OAUTH_REGISTRATION_EXPIRED = "AUTH_OAUTH_REGISTRATION_EXPIRED";
     /** That Google account is already attached to a different user (409). */
     public static final String AUTH_OAUTH_ALREADY_LINKED = "AUTH_OAUTH_ALREADY_LINKED";
-    /** Sudo-mode (v0.24.0): the endpoint demands a valid X-Reauth-Token. */
-    public static final String REAUTH_REQUIRED = "REAUTH_REQUIRED";
     public static final String AUTH_RESET_TOKEN_EXPIRED = "AUTH_RESET_TOKEN_EXPIRED";
     // 2FA (TOTP) — contract tag me/auth/admin, v0.9.0.
     public static final String AUTH_MFA_CODE_INVALID = "AUTH_MFA_CODE_INVALID";

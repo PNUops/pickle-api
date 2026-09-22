@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * rather than a fact. Not accepting one ends the argument.
  */
 public record OauthStartRequest(
-        /** Defaults to LOGIN. REVERIFY and LINK require a session. */
+        /** Defaults to LOGIN. LINK requires a session. */
         @Nullable OauthPurpose purpose,
         /** Internal console path to return to; validated before it is echoed back. */
         @Size(max = 512) @Nullable String redirectTo) {

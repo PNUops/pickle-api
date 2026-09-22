@@ -12,7 +12,6 @@ import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
 import kr.ac.pusan.pickle.access.dto.ResourceAccessListResponse;
 import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -49,7 +48,6 @@ public class GpuAccessGrantController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @RequireReauth
     @Operation(summary = "접근 권한 부여",
             description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 GPU의 접근 권한을 부여합니다. "
                     + "사용자는 이 GPU를 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
@@ -64,7 +62,6 @@ public class GpuAccessGrantController {
     }
 
     @PatchMapping("/{grantId}")
-    @RequireReauth
     @Operation(summary = "접근 권한 등급 변경")
     public ResourceAccessGrantView updateGpuAllocationAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -78,7 +75,6 @@ public class GpuAccessGrantController {
 
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @RequireReauth
     @Operation(summary = "접근 권한 회수",
             description = "접근 권한만 회수하며 연결된 가상머신은 재시작하지 않습니다.")
     public void removeGpuAllocationAccessGrant(

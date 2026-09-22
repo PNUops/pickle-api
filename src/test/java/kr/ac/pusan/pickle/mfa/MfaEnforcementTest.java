@@ -63,11 +63,15 @@ class MfaEnforcementTest {
     }
 
     @Test
-    void aPasswordlessAdminCanStillReachTheEndpointThatGivesItAPassword() throws Exception {
+    void aPasswordlessAdminCanStillReachThePathThatGivesItAPassword() throws Exception {
         // The lock-out this closes: enrolment needs a password, an account made
         // through Google has none, and the filter used to refuse the endpoint
         // that would give it one. Promoting a Google account to an admin role
         // was enough to reach that state, with no way back out.
+        //
+        // The route is now the reset mail rather than POST /me/password, which
+        // was retired with the sudo-mode gate that was its only authorization.
+        // What keeps the lock-out closed is the /api/v1/auth/ exemption.
         User admin = new User("mfa.enforce.google@pusan.ac.kr", null, "구글관리자");
         admin.setRole(UserRole.SYS_ADMIN);
         admin.setStatus(UserStatus.ACTIVE);
@@ -79,16 +83,14 @@ class MfaEnforcementTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
 
-        // Not 403 MFA_ENROLLMENT_REQUIRED: the filter lets it through and the
-        // reauthentication gate answers instead, which is the endpoint's own
-        // authorization and stays in force.
+        // Not 403 MFA_ENROLLMENT_REQUIRED: the filter lets this one through, so
+        // the account can still ask for the mail that gives it a password.
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .post("/api/v1/me/password")
+                        .post("/api/v1/auth/password-reset")
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"newPassword\":\"new-horse-battery-staple!\"}")
+                        .content("{\"email\":\"" + admin.getEmail() + "\"}")
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+                .andExpect(status().isAccepted());
     }
 
     @Test

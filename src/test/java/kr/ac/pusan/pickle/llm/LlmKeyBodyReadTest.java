@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -113,7 +112,7 @@ class LlmKeyBodyReadTest {
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + keyOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(keyOwner)))
+                        )
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 // The messages array comes back as an array, role by role.
@@ -140,8 +139,8 @@ class LlmKeyBodyReadTest {
         String preview = objectMapper.readTree(body)
                 .get("content").get(0).get("responsePreview").asString();
         assertThat(preview).hasSize(200).isEqualTo("\uac00".repeat(200));
-        // The list is a finding aid, not a reading surface: the tail stays behind
-        // the detail call, which is the one that asks for reauthentication.
+        // The list is a finding aid, not a reading surface: the tail stays
+        // behind the detail call.
         assertThat(body).doesNotContain(longAnswer);
     }
 
@@ -190,7 +189,7 @@ class LlmKeyBodyReadTest {
 
         mockMvc.perform(get(bodiesPath(mine) + "/" + theirBody)
                         .header("Authorization", "Bearer " + keyOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(keyOwner)))
+                        )
                 .andExpect(status().isNotFound());
 
         // And the list never crosses either.
@@ -210,7 +209,7 @@ class LlmKeyBodyReadTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + bystanderToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(bystander)))
+                        )
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get(bodiesPath(keyId))
@@ -232,16 +231,18 @@ class LlmKeyBodyReadTest {
     }
 
     @Test
-    void theFullRecordNeedsReauthAndTheListDoesNot() throws Exception {
-        long keyId = issuedKey("\uc7ac\uc778\uc99d \ud0a4");
+    void theKeyOwnerReadsBothTheListAndTheFullRecord() throws Exception {
+        long keyId = issuedKey("\ubcf8\ubb38 \uc5f4\ub78c \ud0a4");
         UUID bodyId = insertBody(keyId, "evt-1", PROMPT, ANSWER, false, false);
 
+        // The detail used to sit behind a sudo-mode token. What still decides
+        // it is who owns the key -- the case above has a non-owner refused --
+        // so the owner now reaches the tail in one call.
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + keyOwnerToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.response").value(ANSWER));
 
-        // Browsing must not train a password prompt, so the list stays open.
         mockMvc.perform(get(bodiesPath(keyId))
                         .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk());
@@ -255,7 +256,7 @@ class LlmKeyBodyReadTest {
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + keyOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(keyOwner)))
+                        )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestTruncated").value(true))
                 .andExpect(jsonPath("$.responseTruncated").value(false))
@@ -294,7 +295,7 @@ class LlmKeyBodyReadTest {
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + keyOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(keyOwner)))
+                        )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.readable").value(false));
     }
@@ -306,7 +307,7 @@ class LlmKeyBodyReadTest {
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
                         .header("Authorization", "Bearer " + keyOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(keyOwner)))
+                        )
                 .andExpect(status().isOk());
 
         // The target is the record, by its public id as a string -- what a
@@ -321,10 +322,6 @@ class LlmKeyBodyReadTest {
 
     private String bodiesPath(long keyId) {
         return "/api/v1/llm-keys/" + pub("llm_api_keys", keyId) + "/bodies";
-    }
-
-    private String reauthFor(User user) {
-        return ReauthTestSupport.seededReauthHeader(jdbcTemplate, user.getId());
     }
 
     private UUID insertBody(long keyId, String eventId, String requestJson, String response,
@@ -388,7 +385,6 @@ class LlmKeyBodyReadTest {
     private void addMember(String email) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + wsOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauthFor(wsOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", "MEMBER"))))

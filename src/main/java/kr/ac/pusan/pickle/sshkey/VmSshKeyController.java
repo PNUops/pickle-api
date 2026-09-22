@@ -5,7 +5,6 @@ import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.sshkey.dto.VmSshKeyIssueResponse;
 import kr.ac.pusan.pickle.sshkey.dto.VmSshKeyStatus;
 import org.springframework.http.HttpHeaders;
@@ -23,9 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The caller's SSH key for one VM (contract tag {@code vms}).
  *
- * <p>Resource MEMBER+ throughout, with a non-member getting 404. Everything that
- * hands the private key over is reauthenticated, as the account-wide key
- * operations were.</p>
+ * <p>Resource MEMBER+ throughout, with a non-member getting 404.</p>
  */
 @RestController
 @RequestMapping("/api/v1/vms/{vmId}/ssh-key")
@@ -46,7 +43,6 @@ public class VmSshKeyController {
 
     /** Issues the key and returns the private half once; never cached. */
     @PostMapping
-    @RequireReauth
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<VmSshKeyIssueResponse> issueVmSshKey(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
@@ -59,7 +55,6 @@ public class VmSshKeyController {
 
     /** Replaces the key, invalidating the previous one immediately; never cached. */
     @PostMapping("/reissue")
-    @RequireReauth
     public ResponseEntity<VmSshKeyIssueResponse> reissueVmSshKey(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
@@ -71,7 +66,6 @@ public class VmSshKeyController {
 
     /** Re-downloads the stored private key (every download audited); never cached. */
     @GetMapping("/private-key")
-    @RequireReauth
     public ResponseEntity<VmSshKeyIssueResponse> downloadVmSshKey(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
@@ -82,7 +76,6 @@ public class VmSshKeyController {
     }
 
     @DeleteMapping
-    @RequireReauth
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteVmSshKey(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID vmId, HttpServletRequest httpRequest) {

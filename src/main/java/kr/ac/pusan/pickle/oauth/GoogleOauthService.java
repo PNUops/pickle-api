@@ -10,7 +10,6 @@ import java.util.Optional;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.AuthService;
 import kr.ac.pusan.pickle.auth.RateLimitService;
-import kr.ac.pusan.pickle.auth.ReauthService;
 import kr.ac.pusan.pickle.auth.TokenHasher;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
@@ -66,7 +65,6 @@ public class GoogleOauthService {
     private final UserIdentityRepository identityRepository;
     private final UserRepository userRepository;
     private final AuthService authService;
-    private final ReauthService reauthService;
     private final MfaService mfaService;
     private final TermsService termsService;
     private final ProfileValidator profileValidator;
@@ -77,7 +75,7 @@ public class GoogleOauthService {
     public GoogleOauthService(GoogleOauthProperties properties, GoogleOidcClient client,
             OauthFlowRepository flowRepository, OauthRegistrationRepository registrationRepository,
             UserIdentityRepository identityRepository, UserRepository userRepository,
-            AuthService authService, ReauthService reauthService, MfaService mfaService,
+            AuthService authService, MfaService mfaService,
             TermsService termsService, ProfileValidator profileValidator,
             RateLimitService rateLimitService, AuditService auditService,
             NotificationService notificationService) {
@@ -88,7 +86,6 @@ public class GoogleOauthService {
         this.identityRepository = identityRepository;
         this.userRepository = userRepository;
         this.authService = authService;
-        this.reauthService = reauthService;
         this.mfaService = mfaService;
         this.termsService = termsService;
         this.profileValidator = profileValidator;
@@ -121,12 +118,7 @@ public class GoogleOauthService {
         flowRepository.save(new OauthFlow(TokenHasher.sha256Hex(state), nonce, codeVerifier, purpose,
                 initiatingUserId, internalPathOrNull(request.redirectTo()), expiresAt));
 
-        // prompt=login only for REVERIFY. Forcing it on ordinary sign-in would
-        // make people retype their Google password every time for no gain; not
-        // forcing it on REVERIFY would let an existing Google session satisfy a
-        // step-up that is supposed to prove presence.
-        String url = client.authorizationUrl(state, nonce,
-                pkceChallenge(codeVerifier), purpose == OauthPurpose.REVERIFY);
+        String url = client.authorizationUrl(state, nonce, pkceChallenge(codeVerifier));
         return new OauthStartResponse(url, state, expiresAt);
     }
 
@@ -153,7 +145,6 @@ public class GoogleOauthService {
         rateLimitService.hit("oauth_callback:acct", email, RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
 
         return switch (flow.getPurpose()) {
-            case REVERIFY -> reverify(flow, identity, ip);
             case LINK -> link(flow, identity, ip);
             case LOGIN -> login(identity, email, ip, userAgent);
         };
@@ -264,11 +255,6 @@ public class GoogleOauthService {
                 identity.name() == null ? "" : identity.name(), expiresAt);
     }
 
-    private Object reverify(OauthFlow flow, GoogleOidcClient.GoogleIdentity identity, String ip) {
-        User user = resolveInitiator(flow, identity);
-        return reauthService.issueVerified(user, ip);
-    }
-
     private Object link(OauthFlow flow, GoogleOidcClient.GoogleIdentity identity, String ip) {
         Long initiator = flow.getInitiatingUserId();
         if (initiator == null) {
@@ -287,27 +273,6 @@ public class GoogleOauthService {
         auditService.record(user.getId(), user.getRole().name(), AuditService.ACCOUNT_IDENTITY_LINKED,
                 "user", user.getPublicId(), Map.of("provider", "GOOGLE", "reason", "manual_link"), ip);
         return OauthLinkedResponse.of();
-    }
-
-    /**
-     * For the purposes that act on a live session: the Google account that came
-     * back must resolve to the very account that started the flow. Without this
-     * a step-up could be satisfied by authenticating as somebody else entirely.
-     */
-    private User resolveInitiator(OauthFlow flow, GoogleOidcClient.GoogleIdentity identity) {
-        Long initiator = flow.getInitiatingUserId();
-        if (initiator == null) {
-            throw stateGone();
-        }
-        Long linkedUserId = identityRepository
-                .findByProviderAndSubject(IdentityProvider.GOOGLE, identity.subject())
-                .map(UserIdentity::getUserId)
-                .orElse(null);
-        if (!initiator.equals(linkedUserId)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.AUTH_OAUTH_DOMAIN_NOT_ALLOWED,
-                    "다른 계정으로 인증했습니다", "현재 로그인한 계정의 구글 계정으로 다시 시도해 주세요.");
-        }
-        return userRepository.findById(initiator).orElseThrow(GoogleOauthService::stateGone);
     }
 
     // ------------------------------------------------------------- complete

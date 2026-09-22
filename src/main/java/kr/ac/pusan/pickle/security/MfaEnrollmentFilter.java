@@ -65,18 +65,16 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
      * Endpoints an unenrolled admin must still reach to enroll (and read their
      * own profile).
      *
-     * <p>{@code POST /me/password} is on the list because enrolment needs a
-     * password and an account made through Google has none. Without the
-     * exemption that account cannot enrol (no password to give
-     * {@code MfaService.begin}) and cannot obtain one (this filter refuses the
-     * endpoint that would give it), which is a permanent lock-out reachable by
-     * simply promoting a Google account to an admin role. The exemption grants
-     * nothing else: the endpoint still demands a reauthentication token, and
-     * the filter keeps refusing every other surface until 2FA is on.
+     * <p>The lock-out this list exists to prevent: enrolment needs a password
+     * and an account made through Google has none, so an admin promoted from a
+     * Google account must be able to obtain one while the filter is refusing
+     * everything else. {@code /api/v1/auth/} covers it — the reset mail is how
+     * such an account gets a password, and both legs of that flow live there.
+     * {@code POST /me/password} used to be listed alongside it and is gone;
+     * the exemption went with the endpoint rather than outliving it.
      */
     private static boolean isExempt(String uri) {
         return "/api/v1/me".equals(uri)
-                || "/api/v1/me/password".equals(uri)
                 || uri.startsWith("/api/v1/me/mfa/")
                 || uri.startsWith("/api/v1/auth/")
                 || uri.startsWith("/api/v1/meta/")

@@ -26,7 +26,6 @@ import kr.ac.pusan.pickle.inventory.VmFlavor;
 import kr.ac.pusan.pickle.inventory.VmFlavorRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -487,7 +486,7 @@ class VmAccessGrantApiTest {
         // removed by the workspace owner: both grants go, and the audit counts them
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId())
                         .header("Authorization", "Bearer " + workspaceOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken)))
+                        )
                 .andExpect(status().isNoContent());
         assertThat(userGrantCountInWorkspace(member.getId(), workspaceId)).isZero();
         assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
@@ -501,7 +500,7 @@ class VmAccessGrantApiTest {
         // a withdrawal of one's own accord is the same cleanup
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + viewer.getPublicId())
                         .header("Authorization", "Bearer " + viewerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(viewerToken)))
+                        )
                 .andExpect(status().isNoContent());
         assertThat(userGrantCountInWorkspace(viewer.getId(), workspaceId)).isZero();
         assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
@@ -525,7 +524,7 @@ class VmAccessGrantApiTest {
         long departedRequest = submitRequest(jwtService.createAccessToken(departing));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + departing.getPublicId())
                         .header("Authorization", "Bearer " + workspaceOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken)))
+                        )
                 .andExpect(status().isNoContent());
         approveRequest(departedRequest)
                 .andExpect(status().isConflict())
@@ -581,41 +580,31 @@ class VmAccessGrantApiTest {
     }
 
     /**
-     * Every edit of an access list is sudo-mode gated: authorization alone is
-     * not enough without a fresh proof of identity. Reading the list is not.
+     * Editing an access list takes authorization and nothing else. These three
+     * writes used to demand a sudo-mode token on top of the owner role; when
+     * that gate was removed the risk was the opposite of the one it guarded
+     * against — a write still refused because something downstream of the
+     * annotation kept asking. So the assertion is that each one goes through,
+     * and that the row afterwards says what the request asked for.
      */
     @Test
-    void theWriteOperationsNeedSudoMode() throws Exception {
+    void theWriteOperationsNeedOnlyAuthorization() throws Exception {
         long vmId = createVm();
         long grantId = addGrantId(vmOwnerToken, vmId, userGrant(member.getId(), "MEMBER"));
+        UUID grantPublicId = pub("resource_access_grants", grantId);
 
-        mockMvc.perform(post(accessPath(vmId))
-                        .header("Authorization", "Bearer " + vmOwnerToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(userGrant(viewer.getId(), "VIEWER"))))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"))
-                .andExpect(jsonPath("$.title").value("재인증이 필요합니다"));
-        mockMvc.perform(patch(accessPath(vmId) + "/" + grantId)
-                        .header("Authorization", "Bearer " + vmOwnerToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("role", "VIEWER"))))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
-        mockMvc.perform(delete(accessPath(vmId) + "/" + grantId)
-                        .header("Authorization", "Bearer " + vmOwnerToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
-        // a garbage header is no better than none
-        mockMvc.perform(delete(accessPath(vmId) + "/" + grantId)
-                        .header("Authorization", "Bearer " + vmOwnerToken)
-                        .header(ReauthTestSupport.HEADER, "not-a-token"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+        addGrant(vmOwnerToken, vmId, userGrant(viewer.getId(), "VIEWER"))
+                .andExpect(status().isCreated());
+        assertThat(grantCount(vmId)).isEqualTo(3);
 
-        // nothing changed, and reading the list never needed the header
-        assertThat(roleOfGrant(grantId)).isEqualTo("MEMBER");
+        updateGrant(vmOwnerToken, vmId, grantPublicId, "VIEWER")
+                .andExpect(status().isOk());
+        assertThat(roleOfGrant(grantId)).isEqualTo("VIEWER");
+
+        deleteGrant(vmOwnerToken, vmId, grantPublicId)
+                .andExpect(status().isNoContent());
         assertThat(grantCount(vmId)).isEqualTo(2);
+
         listGrants(vmOwnerToken, pub("vms", vmId)).andExpect(status().isOk());
     }
 
@@ -638,7 +627,6 @@ class VmAccessGrantApiTest {
             throws Exception {
         return mockMvc.perform(post(accessPath(vmId))
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }
@@ -655,7 +643,6 @@ class VmAccessGrantApiTest {
             throws Exception {
         return mockMvc.perform(patch(accessPath(vmId) + "/" + grantPublicId)
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("role", role))));
     }
@@ -663,7 +650,7 @@ class VmAccessGrantApiTest {
     private ResultActions deleteGrant(String token, long vmId, UUID grantPublicId) throws Exception {
         return mockMvc.perform(delete(accessPath(vmId) + "/" + grantPublicId)
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token)));
+                );
     }
 
     private Map<String, Object> userGrant(long userId, String role) {
@@ -679,11 +666,6 @@ class VmAccessGrantApiTest {
         body.put("granteeType", "WORKSPACE");
         body.put("role", role);
         return body;
-    }
-
-    /** Sudo-mode gate: mint the caller's own {@code X-Reauth-Token}. */
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
     // ── fixture helpers ────────────────────────────────────────────────────
@@ -763,7 +745,6 @@ class VmAccessGrantApiTest {
     private void addMember(long workspaceId, String email) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + workspaceOwnerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(workspaceOwnerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", "MEMBER"))))

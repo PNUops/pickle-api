@@ -14,7 +14,6 @@ import kr.ac.pusan.pickle.workspace.dto.WorkspaceSummaryResponse;
 import kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceMemberRequest;
 import kr.ac.pusan.pickle.workspace.dto.UpdateWorkspaceRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -76,7 +75,6 @@ public class WorkspaceController {
 
     @PostMapping("/{workspaceId}/members")
     @ResponseStatus(HttpStatus.CREATED)
-    @RequireReauth
     public WorkspaceMemberResponse addWorkspaceMember(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
@@ -86,7 +84,6 @@ public class WorkspaceController {
     }
 
     @PatchMapping("/{workspaceId}/members/{userId}")
-    @RequireReauth
     public WorkspaceMemberResponse updateWorkspaceMember(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
             @PathVariable UUID userId,
@@ -97,7 +94,6 @@ public class WorkspaceController {
 
     @DeleteMapping("/{workspaceId}/members/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @RequireReauth
     public void removeWorkspaceMember(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID workspaceId,
             @PathVariable UUID userId,

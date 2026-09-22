@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -59,7 +58,6 @@ class WorkspaceDeleteTest {
     private String ownerToken;
     private String plainMemberToken;
     private String outsiderToken;
-    private String ownerReauth;
     private long orgId;
     private long nodeId;
     private long imageId;
@@ -72,7 +70,6 @@ class WorkspaceDeleteTest {
         ownerToken = jwtService.createAccessToken(owner);
         plainMemberToken = jwtService.createAccessToken(plainMember);
         outsiderToken = jwtService.createAccessToken(outsider);
-        ownerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, owner.getId());
         orgId = SeedFixtures.seedOrgId(jdbcTemplate);
         nodeId = jdbcTemplate.queryForObject("select min(id) from nodes", Long.class);
         imageId = jdbcTemplate.queryForObject("select min(id) from os_images", Long.class);
@@ -211,7 +208,6 @@ class WorkspaceDeleteTest {
     private void addMember(long workspaceId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, ownerReauth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

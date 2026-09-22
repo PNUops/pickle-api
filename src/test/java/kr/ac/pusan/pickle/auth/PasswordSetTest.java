@@ -1,15 +1,20 @@
 package kr.ac.pusan.pickle.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import kr.ac.pusan.pickle.mail.AsyncMailDispatcher;
+import kr.ac.pusan.pickle.mail.MailMessage;
+import kr.ac.pusan.pickle.mail.MockMailSender;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -20,19 +25,25 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * {@code POST /me/password} — the first password on an account that has never
- * had one, i.e. every account made through Google.
+ * How an account made through Google — one that has never had a password —
+ * gets one.
  *
- * <p>Before this endpoint the only route was to mail a reset link to someone
- * who was already signed in and ask them to come back through it, which is
- * also why the six operations that ask for a current password were unreachable
- * for those accounts.
+ * <p>There used to be a {@code POST /me/password} for this. It could not ask
+ * for a current password, so the sudo-mode gate on the controller was the whole
+ * of its authorization, and when that gate was removed the endpoint was retired
+ * with it rather than be left resting on a session cookie alone. The route is
+ * the reset mail again, which proves control of the mailbox.
+ *
+ * <p>These tests pin that shape, not the old one: the endpoint is gone, a
+ * session alone plants nothing, and the mail route still reaches an account
+ * with a null hash. The last one is the load-bearing case — if the reset path
+ * ever started requiring an existing password, Google-only accounts would have
+ * no way to get one at all.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -40,14 +51,14 @@ import tools.jackson.databind.ObjectMapper;
 @Import(EmbeddedPostgresConfig.class)
 class PasswordSetTest {
 
+    private static final Pattern TOKEN_IN_LINK = Pattern.compile("[?&]token=([A-Za-z0-9_-]+)");
+    private static final String NEW_PASSWORD = "new-horse-battery-staple!";
+
     // A fresh address per test rather than deleting the previous one: a user
-    // row accumulates foreign keys (reverifications, refresh tokens,
-    // notifications, audit rows, a personal workspace) and a teardown that
-    // chases them is a list that goes stale every time one is added.
+    // row accumulates foreign keys (refresh tokens, notifications, audit rows,
+    // a personal workspace) and a teardown that chases them is a list that goes
+    // stale every time one is added.
     private String passwordless;
-    private String withPassword;
-    /** Same bcrypt fixture the other suites use; the cleartext is irrelevant. */
-    private static final String SOME_HASH = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO7uHhZ8mCEyXbNP9qhrPQicvBSl2Fx16";
 
     @Autowired
     private MockMvc mockMvc;
@@ -59,10 +70,13 @@ class PasswordSetTest {
     private UserRepository userRepository;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    private JwtService jwtService;
 
     @Autowired
-    private JwtService jwtService;
+    private MockMailSender mockMailSender;
+
+    @Autowired
+    private AsyncMailDispatcher mailDispatcher;
 
     /**
      * 요청 제한은 IP 로도 잡히고 그 창이 머신 전역 127.0.0.1 에 공유된다. 로그인
@@ -76,7 +90,6 @@ class PasswordSetTest {
     private String clientAddress;
     private String passwordlessToken;
     private long passwordlessId;
-    private String withPasswordToken;
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor fromThisCase() {
         return request -> {
@@ -86,110 +99,103 @@ class PasswordSetTest {
     }
 
     @BeforeEach
-    void seedBothShapes() {
+    void seedAGoogleOnlyAccount() {
         clientAddress = "10.98.0." + (ADDRESS.incrementAndGet() % 250 + 1);
         String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
         passwordless = "set.password.none." + suffix + "@pusan.ac.kr";
-        withPassword = "set.password.has." + suffix + "@pusan.ac.kr";
 
         User none = new User(passwordless, null, "구글가입");
         none.setStatus(UserStatus.ACTIVE);
         none = userRepository.saveAndFlush(none);
         passwordlessId = none.getId();
         passwordlessToken = jwtService.createAccessToken(none);
-
-        User has = new User(withPassword, SOME_HASH, "비밀번호있음");
-        has.setStatus(UserStatus.ACTIVE);
-        withPasswordToken = jwtService.createAccessToken(userRepository.saveAndFlush(has));
     }
 
     @Test
-    void aGoogleAccountSetsItsFirstPassword() throws Exception {
-        assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isFalse();
-
-        mockMvc.perform(setPassword(passwordlessToken,
-                        ReauthTestSupport.seededReauthHeader(jdbcTemplate, passwordlessId),
-                        "new-horse-battery-staple!"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.accessToken").isNotEmpty());
-
-        assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isTrue();
-    }
-
-    @Test
-    void everyOtherSessionDiesWithIt() throws Exception {
-        mockMvc.perform(setPassword(passwordlessToken,
-                        ReauthTestSupport.seededReauthHeader(jdbcTemplate, passwordlessId),
-                        "new-horse-battery-staple!"))
-                .andExpect(status().isOk());
-
-        // A password appearing on an account is a session-invalidating event
-        // whether or not one was there before: the bearer token that made the
-        // call is itself dead afterwards, and the caller continues on the pair
-        // the response carried.
-        mockMvc.perform(get("/api/v1/me").with(fromThisCase())
-                        .header("Authorization", "Bearer " + passwordlessToken))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void withoutReauthItIsRefused() throws Exception {
-        // The gate is the whole of the authorization here — no current password
-        // is asked for, so an access token alone must not be enough.
+    void theSetPasswordEndpointIsGone() throws Exception {
+        // A borrowed session must not be able to plant a credential. The
+        // request reaches /me/password, which still answers PUT (change), so
+        // the refusal is 405 rather than 404 — either way nothing is written.
         mockMvc.perform(post("/api/v1/me/password")
                         .with(fromThisCase())
                         .header("Authorization", "Bearer " + passwordlessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("newPassword", "new-horse-battery-staple!"))))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
+                                Map.of("newPassword", NEW_PASSWORD))))
+                .andExpect(status().isMethodNotAllowed());
 
         assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isFalse();
     }
 
     @Test
-    void anAccountThatAlreadyHasOneIsSentToTheChangeEndpoint() throws Exception {
-        long id = userRepository.findByEmail(withPassword).orElseThrow().getId();
-        mockMvc.perform(setPassword(withPasswordToken,
-                        ReauthTestSupport.seededReauthHeader(jdbcTemplate, id),
-                        "new-horse-battery-staple!"))
+    void changingIsRefusedWithNothingToCompareAgainst() throws Exception {
+        mockMvc.perform(put("/api/v1/me/password")
+                        .with(fromThisCase())
+                        .header("Authorization", "Bearer " + passwordlessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "currentPassword", "anything-at-all-1!",
+                                "newPassword", NEW_PASSWORD))))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_ALREADY_SET"));
+                .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_NOT_SET"));
+
+        assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isFalse();
     }
 
     @Test
-    void theSamePolicySignupAppliesIsApplied() throws Exception {
-        mockMvc.perform(setPassword(passwordlessToken,
-                        ReauthTestSupport.seededReauthHeader(jdbcTemplate, passwordlessId), "aaaaaaaa"))
-                .andExpect(status().isUnprocessableContent());
-
+    void theResetMailReachesAnAccountWithNoPassword() throws Exception {
         assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isFalse();
+
+        // The request path must not filter on "has a password": that filter is
+        // what would strand every Google-only account.
+        mockMvc.perform(post("/api/v1/auth/password-reset")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", passwordless))))
+                .andExpect(status().isAccepted());
+        assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10)))
+                .as("mail dispatcher drained").isTrue();
+
+        MailMessage mail = mockMailSender.lastMessageTo(passwordless);
+        assertThat(mail).as("reset mail for a password-less account").isNotNull();
+        Matcher matcher = TOKEN_IN_LINK.matcher(mail.textBody());
+        assertThat(matcher.find()).isTrue();
+
+        mockMvc.perform(post("/api/v1/auth/password-reset/confirm")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "token", matcher.group(1), "newPassword", NEW_PASSWORD))))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(passwordlessId).orElseThrow().hasPassword()).isTrue();
     }
 
     @Test
     void theNewPasswordThenWorksOnTheLoginForm() throws Exception {
-        mockMvc.perform(setPassword(passwordlessToken,
-                        ReauthTestSupport.seededReauthHeader(jdbcTemplate, passwordlessId),
-                        "new-horse-battery-staple!"))
+        mockMvc.perform(post("/api/v1/auth/password-reset")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("email", passwordless))))
+                .andExpect(status().isAccepted());
+        assertThat(mailDispatcher.awaitIdle(Duration.ofSeconds(10))).isTrue();
+
+        Matcher matcher = TOKEN_IN_LINK.matcher(
+                mockMailSender.lastMessageTo(passwordless).textBody());
+        assertThat(matcher.find()).isTrue();
+        mockMvc.perform(post("/api/v1/auth/password-reset/confirm")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "token", matcher.group(1), "newPassword", NEW_PASSWORD))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/auth/login")
                         .with(fromThisCase())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "email", passwordless, "password", "new-horse-battery-staple!"))))
+                                "email", passwordless, "password", NEW_PASSWORD))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty());
-    }
-
-    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder setPassword(
-            String accessToken, String reauthToken, String newPassword) throws Exception {
-        return post("/api/v1/me/password")
-                .with(fromThisCase())
-                .header("Authorization", "Bearer " + accessToken)
-                .header(ReauthTestSupport.HEADER, reauthToken)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("newPassword", newPassword)));
     }
 }

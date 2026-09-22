@@ -15,8 +15,8 @@ import java.util.stream.Stream;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.support.TokenHashes;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
@@ -77,9 +77,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>"Allowed" is asserted as <em>neither 403 nor 404</em>, as in the VM
  * suite; every expected 403 additionally asserts the
- * {@code WORKSPACE_ROLE_INSUFFICIENT} code so a {@code REAUTH_REQUIRED} can
- * never be mistaken for a rung refusal, and the sudo-gated ops always carry a
- * live reauth token. Every (op, scenario) pair builds its own key: several of
+ * {@code WORKSPACE_ROLE_INSUFFICIENT} code so a generic denial can never be
+ * mistaken for a rung refusal. Every (op, scenario) pair builds its own key: several of
  * these ops change what they touch, and a shared fixture would make the
  * outcome depend on execution order.
  */
@@ -106,11 +105,10 @@ class LlmKeyAccessScopingTest {
      * @param method   HTTP method
      * @param path     path under {@code /api/v1}, with fixture placeholders
      * @param required the rung the matrix says this op needs
-     * @param reauth   whether the endpoint is sudo-mode gated
      * @param body     request body template, or null for a bodiless request
      */
     private record ScopedOp(String id, HttpMethod method, String path, ResourceRole required,
-            boolean reauth, String body) {
+            String body) {
     }
 
     /** The five standings each op is driven with. */
@@ -126,7 +124,7 @@ class LlmKeyAccessScopingTest {
     private record Fixture(long keyId, long grantId) {
     }
 
-    /** Who is driving one case, and the reauth token they would need. */
+    /** Who is driving one case. */
     private record Requester(long userId, String token) {
     }
 
@@ -145,34 +143,30 @@ class LlmKeyAccessScopingTest {
             bodyOp("updateLlmKey", HttpMethod.PATCH, "/llm-keys/{keyId}", ResourceRole.EDITOR,
                     "{\"name\":\"스코프\"}"),
 
-            reauthOp("issueLlmKeyToken", HttpMethod.POST, "/llm-keys/{keyId}/token",
+            bodyOp("issueLlmKeyToken", HttpMethod.POST, "/llm-keys/{keyId}/token",
                     ResourceRole.OWNER, null),
-            reauthOp("revokeLlmKey", HttpMethod.POST, "/llm-keys/{keyId}/revoke",
+            bodyOp("revokeLlmKey", HttpMethod.POST, "/llm-keys/{keyId}/revoke",
                     ResourceRole.OWNER, null),
             op("listLlmKeyAccessGrants", HttpMethod.GET, "/llm-keys/{keyId}/access",
                     ResourceRole.OWNER),
-            reauthOp("addLlmKeyAccessGrant", HttpMethod.POST, "/llm-keys/{keyId}/access",
+            bodyOp("addLlmKeyAccessGrant", HttpMethod.POST, "/llm-keys/{keyId}/access",
                     ResourceRole.OWNER,
                     "{\"granteeType\":\"USER\",\"userId\":\"{spareUserId}\",\"role\":\"VIEWER\"}"),
-            reauthOp("updateLlmKeyAccessGrant", HttpMethod.PATCH,
+            bodyOp("updateLlmKeyAccessGrant", HttpMethod.PATCH,
                     "/llm-keys/{keyId}/access/{grantId}", ResourceRole.OWNER,
                     "{\"role\":\"VIEWER\"}"),
-            reauthOp("removeLlmKeyAccessGrant", HttpMethod.DELETE,
+            bodyOp("removeLlmKeyAccessGrant", HttpMethod.DELETE,
                     "/llm-keys/{keyId}/access/{grantId}", ResourceRole.OWNER, null));
 
     private static ScopedOp op(String id, HttpMethod method, String path, ResourceRole required) {
-        return new ScopedOp(id, method, path, required, false, null);
+        return new ScopedOp(id, method, path, required, null);
     }
 
     private static ScopedOp bodyOp(String id, HttpMethod method, String path,
             ResourceRole required, String body) {
-        return new ScopedOp(id, method, path, required, false, body);
+        return new ScopedOp(id, method, path, required, body);
     }
 
-    private static ScopedOp reauthOp(String id, HttpMethod method, String path,
-            ResourceRole required, String body) {
-        return new ScopedOp(id, method, path, required, true, body);
-    }
 
     /** Every (op, scenario) pair; the below-rung case has no meaning at the floor. */
     private static Stream<Arguments> cases() {
@@ -282,7 +276,7 @@ class LlmKeyAccessScopingTest {
         } else {
             assertThat(response.getStatus()).as("%s: below the declared rung must be refused",
                     where).isEqualTo(403);
-            // Pins the reason: a sudo-mode or generic denial answers 403 too,
+            // Pins the reason: a generic denial answers 403 too,
             // and would otherwise let this case pass without the rung being
             // consulted at all.
             assertThat(errorCode(response)).as("%s: 403 error code", where)
@@ -362,19 +356,19 @@ class LlmKeyAccessScopingTest {
         MockHttpServletResponse first = call(issueOp(), new Fixture(keyId, 0), requester(member));
         assertThat(first.getStatus()).as("first mint (body: %s)", body(first)).isEqualTo(200);
         String firstToken = objectMapper.readTree(body(first)).get("token").asString();
-        assertThat(tokenHash(keyId)).isEqualTo(ReauthTestSupport.sha256Hex(firstToken));
+        assertThat(tokenHash(keyId)).isEqualTo(TokenHashes.sha256Hex(firstToken));
         assertThat(status(keyId)).isEqualTo("ACTIVE");
 
         MockHttpServletResponse second = call(issueOp(), new Fixture(keyId, 0), requester(member));
         assertThat(second.getStatus()).as("rotation (body: %s)", body(second)).isEqualTo(200);
         String secondToken = objectMapper.readTree(body(second)).get("token").asString();
         assertThat(secondToken).isNotEqualTo(firstToken);
-        assertThat(tokenHash(keyId)).isEqualTo(ReauthTestSupport.sha256Hex(secondToken));
+        assertThat(tokenHash(keyId)).isEqualTo(TokenHashes.sha256Hex(secondToken));
         // The old secret authenticates nothing anywhere: its hash is not merely
         // replaced on this row, it exists on no row at all.
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from llm_api_keys where token_hash = ?", Long.class,
-                ReauthTestSupport.sha256Hex(firstToken))).isZero();
+                TokenHashes.sha256Hex(firstToken))).isZero();
         assertThat(status(keyId)).isEqualTo("ACTIVE");
     }
 
@@ -484,10 +478,6 @@ class LlmKeyAccessScopingTest {
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders
                 .request(scopedOp.method(), uri)
                 .header("Authorization", "Bearer " + requester.token());
-        if (scopedOp.reauth()) {
-            request = request.header(ReauthTestSupport.HEADER,
-                    ReauthTestSupport.seededReauthHeader(jdbcTemplate, requester.userId()));
-        }
         if (scopedOp.body() != null) {
             request = request.contentType(MediaType.APPLICATION_JSON)
                     .content(resolve(scopedOp.body(), fixture));

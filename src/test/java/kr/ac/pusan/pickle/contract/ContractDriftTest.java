@@ -102,7 +102,6 @@ class ContractDriftTest {
             "POST /auth/login",
             "POST /auth/refresh",
             "POST /auth/logout",
-            "POST /auth/reverify",
             "POST /auth/oauth/google/start",
             "POST /auth/oauth/google/callback",
             "POST /auth/oauth/google/complete",
@@ -248,7 +247,6 @@ class ContractDriftTest {
             "POST /me/withdraw",
             "PUT /me/password",
             // First-time password set for a Google account (contract v0.46.0).
-            "POST /me/password",
             // Admin user surface (contract v0.9.0).
             "GET /admin/users",
             "GET /admin/users/{userId}",

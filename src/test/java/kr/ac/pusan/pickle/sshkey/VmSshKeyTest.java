@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
@@ -88,9 +87,6 @@ class VmSshKeyTest {
     private String memberToken;
     private String viewerToken;
     private String strangerToken;
-    private String memberReauth;
-    private String viewerReauth;
-    private String strangerReauth;
 
     private long vmId;
     private UUID vmPublicId;
@@ -110,9 +106,6 @@ class VmSshKeyTest {
         memberToken = jwtService.createAccessToken(member);
         viewerToken = jwtService.createAccessToken(viewer);
         strangerToken = jwtService.createAccessToken(stranger);
-        memberReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, member.getId());
-        viewerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, viewer.getId());
-        strangerReauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, stranger.getId());
 
         workspaceId = createWorkspace();
         addMember(member.getId(), "MEMBER");
@@ -132,7 +125,7 @@ class VmSshKeyTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.key").doesNotExist());
 
-        String body = issue(memberToken, memberReauth)
+        String body = issue(memberToken)
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.fileName").value("pickle-" + hostname + ".pem"))
@@ -158,8 +151,8 @@ class VmSshKeyTest {
 
     @Test
     void issuingTwiceConflicts() throws Exception {
-        issue(memberToken, memberReauth).andExpect(status().isCreated());
-        issue(memberToken, memberReauth)
+        issue(memberToken).andExpect(status().isCreated());
+        issue(memberToken)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SSH_KEY_ALREADY_ISSUED"));
     }
@@ -171,9 +164,9 @@ class VmSshKeyTest {
     @Test
     void eachMemberGetsTheirOwnKeyForTheSameVm() throws Exception {
         grantVmToUser(jdbcTemplate, vmId, viewer.getId(), "MEMBER");
-        String first = fingerprintOf(issue(memberToken, memberReauth)
+        String first = fingerprintOf(issue(memberToken)
                 .andExpect(status().isCreated()));
-        String second = fingerprintOf(issue(viewerToken, viewerReauth)
+        String second = fingerprintOf(issue(viewerToken)
                 .andExpect(status().isCreated()));
         assertThat(first).isNotEqualTo(second);
         assertThat(repository.findByVmIdAndUserId(vmId, member.getId())).isPresent();
@@ -184,12 +177,12 @@ class VmSshKeyTest {
 
     @Test
     void redownloadsAnyNumberOfTimesAndAuditsEach() throws Exception {
-        issue(memberToken, memberReauth).andExpect(status().isCreated());
+        issue(memberToken).andExpect(status().isCreated());
 
         for (int i = 0; i < 2; i++) {
             mockMvc.perform(get(base() + "/private-key")
                             .header("Authorization", "Bearer " + memberToken)
-                            .header(ReauthTestSupport.HEADER, memberReauth))
+                            )
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.privateKey").value(
@@ -204,12 +197,12 @@ class VmSshKeyTest {
 
     @Test
     void reissueReplacesTheKeyAndRecordsWhatItRevoked() throws Exception {
-        String before = fingerprintOf(issue(memberToken, memberReauth)
+        String before = fingerprintOf(issue(memberToken)
                 .andExpect(status().isCreated()));
 
         String after = fingerprintOf(mockMvc.perform(post(base() + "/reissue")
                         .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, memberReauth))
+                        )
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store")));
 
@@ -232,29 +225,29 @@ class VmSshKeyTest {
     void reissueAndDownloadBeforeIssuingAreNotFound() throws Exception {
         mockMvc.perform(post(base() + "/reissue")
                         .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, memberReauth))
+                        )
                 .andExpect(status().isNotFound());
         mockMvc.perform(get(base() + "/private-key")
                         .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, memberReauth))
+                        )
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void deletesAndCanIssueAgain() throws Exception {
-        String first = fingerprintOf(issue(memberToken, memberReauth)
+        String first = fingerprintOf(issue(memberToken)
                 .andExpect(status().isCreated()));
 
         mockMvc.perform(delete(base())
                         .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, memberReauth))
+                        )
                 .andExpect(status().isNoContent());
         assertThat(repository.findByFingerprintSha256(first)).isEmpty();
 
         mockMvc.perform(get(base()).header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.key").doesNotExist());
-        issue(memberToken, memberReauth).andExpect(status().isCreated());
+        issue(memberToken).andExpect(status().isCreated());
     }
 
     @Test
@@ -262,7 +255,7 @@ class VmSshKeyTest {
         // The destroy pipeline deletes this VM's keys; letting a member mint a
         // fresh one afterwards would put the ciphertext straight back.
         jdbcTemplate.update("update vms set status = 'DELETED'::vm_status where id = ?", vmId);
-        issue(memberToken, memberReauth)
+        issue(memberToken)
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         // Cleaning up what you already hold stays open.
@@ -277,18 +270,18 @@ class VmSshKeyTest {
     void strangerGetsNotFoundEverywhere() throws Exception {
         mockMvc.perform(get(base()).header("Authorization", "Bearer " + strangerToken))
                 .andExpect(status().isNotFound());
-        issue(strangerToken, strangerReauth).andExpect(status().isNotFound());
+        issue(strangerToken).andExpect(status().isNotFound());
         mockMvc.perform(post(base() + "/reissue")
                         .header("Authorization", "Bearer " + strangerToken)
-                        .header(ReauthTestSupport.HEADER, strangerReauth))
+                        )
                 .andExpect(status().isNotFound());
         mockMvc.perform(get(base() + "/private-key")
                         .header("Authorization", "Bearer " + strangerToken)
-                        .header(ReauthTestSupport.HEADER, strangerReauth))
+                        )
                 .andExpect(status().isNotFound());
         mockMvc.perform(delete(base())
                         .header("Authorization", "Bearer " + strangerToken)
-                        .header(ReauthTestSupport.HEADER, strangerReauth))
+                        )
                 .andExpect(status().isNotFound());
     }
 
@@ -298,7 +291,7 @@ class VmSshKeyTest {
         mockMvc.perform(get(base()).header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
-        issue(viewerToken, viewerReauth).andExpect(status().isForbidden());
+        issue(viewerToken).andExpect(status().isForbidden());
     }
 
     /**
@@ -315,18 +308,17 @@ class VmSshKeyTest {
         User highId = userRepository.save(highIdUser());
         assertThat(highId.getId()).isGreaterThan(127L);
         String token = jwtService.createAccessToken(highId);
-        String reauth = ReauthTestSupport.seededReauthHeader(jdbcTemplate, highId.getId());
         try {
             addMember(highId.getId(), "MEMBER");
             grantVmToUser(jdbcTemplate, vmId, highId.getId(), "MEMBER");
 
-            String fingerprint = fingerprintOf(issue(token, reauth)
+            String fingerprint = fingerprintOf(issue(token)
                     .andExpect(status().isCreated()));
             // Reaching the stored key at all is the assertion: a failed ownership
             // comparison answers "no key issued" instead.
             mockMvc.perform(get(base() + "/private-key")
                             .header("Authorization", "Bearer " + token)
-                            .header(ReauthTestSupport.HEADER, reauth))
+                            )
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.key.fingerprint").value(fingerprint));
         } finally {
@@ -334,8 +326,6 @@ class VmSshKeyTest {
             jdbcTemplate.update("delete from resource_access_grants where user_id = ?",
                     highId.getId());
             jdbcTemplate.update("delete from workspace_members where user_id = ?", highId.getId());
-            jdbcTemplate.update("delete from auth_reverifications where user_id = ?",
-                    highId.getId());
             userRepository.deleteById(highId.getId());
         }
     }
@@ -348,7 +338,7 @@ class VmSshKeyTest {
      */
     @Test
     void issuedKeyRoundTripsThroughOpenssh(@TempDir Path dir) throws Exception {
-        String body = issue(memberToken, memberReauth)
+        String body = issue(memberToken)
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         String fingerprint = objectMapper.readTree(body).get("key").get("fingerprint").asString();
@@ -380,10 +370,9 @@ class VmSshKeyTest {
         return "/api/v1/vms/" + vmPublicId + "/ssh-key";
     }
 
-    private ResultActions issue(String token, String reauth) throws Exception {
+    private ResultActions issue(String token) throws Exception {
         return mockMvc.perform(post(base())
-                .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth));
+                .header("Authorization", "Bearer " + token));
     }
 
     private String fingerprintOf(ResultActions actions) throws Exception {

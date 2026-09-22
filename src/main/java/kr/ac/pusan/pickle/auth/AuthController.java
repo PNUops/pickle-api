@@ -17,8 +17,6 @@ import kr.ac.pusan.pickle.auth.dto.MfaLoginRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetConfirmRequest;
 import kr.ac.pusan.pickle.auth.dto.PasswordResetRequest;
 import kr.ac.pusan.pickle.auth.dto.ResendVerificationRequest;
-import kr.ac.pusan.pickle.auth.dto.ReverifyRequest;
-import kr.ac.pusan.pickle.auth.dto.ReverifyResponse;
 import kr.ac.pusan.pickle.auth.dto.SignupRequest;
 import kr.ac.pusan.pickle.auth.dto.VerifyEmailRequest;
 import org.springframework.http.HttpHeaders;
@@ -39,13 +37,10 @@ public class AuthController {
 
     private final AuthService authService;
     private final SessionCookies sessionCookies;
-    private final ReauthService reauthService;
 
-    public AuthController(AuthService authService, SessionCookies sessionCookies,
-            ReauthService reauthService) {
+    public AuthController(AuthService authService, SessionCookies sessionCookies) {
         this.authService = authService;
         this.sessionCookies = sessionCookies;
-        this.reauthService = reauthService;
     }
 
     @PostMapping("/signup")
@@ -120,17 +115,6 @@ public class AuthController {
             @Valid @RequestBody PasswordResetConfirmRequest request, HttpServletRequest httpRequest) {
         return authService.confirmPasswordReset(request.token(), request.newPassword(),
                 clientIp(httpRequest));
-    }
-
-    /** Sudo-mode issue (v0.24.0) — the raw token is bearer-equivalent; never cached. */
-    @PostMapping("/reverify")
-    public ResponseEntity<ReverifyResponse> reverify(
-            @org.springframework.security.core.annotation.AuthenticationPrincipal
-            kr.ac.pusan.pickle.security.AuthenticatedUser principal,
-            @Valid @RequestBody ReverifyRequest request, HttpServletRequest httpRequest) {
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CACHE_CONTROL, "no-store")
-                .body(reauthService.issue(principal, request.password(), clientIp(httpRequest)));
     }
 
     @Parameter(name = "X-Pickle-Csrf", in = ParameterIn.HEADER, required = true,

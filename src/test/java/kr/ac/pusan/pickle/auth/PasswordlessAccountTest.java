@@ -94,16 +94,6 @@ class PasswordlessAccountTest {
     }
 
     @Test
-    void sudoReverificationSaysThereIsNoPasswordRatherThanRejectingForever() throws Exception {
-        mockMvc.perform(post("/api/v1/auth/reverify")
-                        .header("Authorization", "Bearer " + issueAccessToken())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("password", "anything-at-all"))))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("AUTH_PASSWORD_NOT_SET"));
-    }
-
-    @Test
     void withdrawalSaysThereIsNoPassword() throws Exception {
         mockMvc.perform(post("/api/v1/me/withdraw")
                         .header("Authorization", "Bearer " + issueAccessToken())
