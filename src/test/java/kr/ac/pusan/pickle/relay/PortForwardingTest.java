@@ -597,8 +597,7 @@ class PortForwardingTest {
                 sourceIp);
 
         String body = mockMvc.perform(post("/api/v1/admin/relays/" + pub("relays", relayId) + "/token")
-                        .header("Authorization", "Bearer " + sysAdminToken)
-                        )
+                        .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         String token = objectMapper.readTree(body).get("token").asString();
@@ -831,8 +830,7 @@ class PortForwardingTest {
         jdbcTemplate.update("update vms set status = 'ERROR'::vm_status where id = ?", vmId);
 
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
 
         Long mappings = jdbcTemplate.queryForObject(

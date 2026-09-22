@@ -111,8 +111,7 @@ class LlmKeyBodyReadTest {
                 .andExpect(jsonPath("$.content[0].requestTruncated").value(false));
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
-                        .header("Authorization", "Bearer " + keyOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 // The messages array comes back as an array, role by role.
@@ -188,8 +187,7 @@ class LlmKeyBodyReadTest {
         UUID theirBody = insertBody(theirs, "evt-theirs", PROMPT, ANSWER, false, false);
 
         mockMvc.perform(get(bodiesPath(mine) + "/" + theirBody)
-                        .header("Authorization", "Bearer " + keyOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isNotFound());
 
         // And the list never crosses either.
@@ -208,8 +206,7 @@ class LlmKeyBodyReadTest {
                         .header("Authorization", "Bearer " + bystanderToken))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
-                        .header("Authorization", "Bearer " + bystanderToken)
-                        )
+                        .header("Authorization", "Bearer " + bystanderToken))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get(bodiesPath(keyId))
@@ -255,8 +252,7 @@ class LlmKeyBodyReadTest {
                 "\"[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"\uae34 \ud504\ub86c\"", ANSWER, true, false);
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
-                        .header("Authorization", "Bearer " + keyOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestTruncated").value(true))
                 .andExpect(jsonPath("$.responseTruncated").value(false))
@@ -294,8 +290,7 @@ class LlmKeyBodyReadTest {
                 .andExpect(jsonPath("$.content[0].requestPreview").doesNotExist());
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
-                        .header("Authorization", "Bearer " + keyOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.readable").value(false));
     }
@@ -306,8 +301,7 @@ class LlmKeyBodyReadTest {
         UUID bodyId = insertBody(keyId, "evt-1", PROMPT, ANSWER, false, false);
 
         mockMvc.perform(get(bodiesPath(keyId) + "/" + bodyId)
-                        .header("Authorization", "Bearer " + keyOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + keyOwnerToken))
                 .andExpect(status().isOk());
 
         // The target is the record, by its public id as a string -- what a

@@ -485,8 +485,7 @@ class VmAccessGrantApiTest {
 
         // removed by the workspace owner: both grants go, and the audit counts them
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId())
-                        .header("Authorization", "Bearer " + workspaceOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + workspaceOwnerToken))
                 .andExpect(status().isNoContent());
         assertThat(userGrantCountInWorkspace(member.getId(), workspaceId)).isZero();
         assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
@@ -499,8 +498,7 @@ class VmAccessGrantApiTest {
 
         // a withdrawal of one's own accord is the same cleanup
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + viewer.getPublicId())
-                        .header("Authorization", "Bearer " + viewerToken)
-                        )
+                        .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isNoContent());
         assertThat(userGrantCountInWorkspace(viewer.getId(), workspaceId)).isZero();
         assertThat(workspaceAuditDetail(AuditService.WORKSPACE_MEMBER_REMOVE, workspaceId, "revokedGrants"))
@@ -523,8 +521,7 @@ class VmAccessGrantApiTest {
         User departing = workspaceMember("vmacc.departing", "탈퇴신청자");
         long departedRequest = submitRequest(jwtService.createAccessToken(departing));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + departing.getPublicId())
-                        .header("Authorization", "Bearer " + workspaceOwnerToken)
-                        )
+                        .header("Authorization", "Bearer " + workspaceOwnerToken))
                 .andExpect(status().isNoContent());
         approveRequest(departedRequest)
                 .andExpect(status().isConflict())

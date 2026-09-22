@@ -111,8 +111,7 @@ class VmPasswordRegenerateTest {
                         .withHeader("Content-Type", "application/json").withBody("{\"data\":null}")));
 
         String body = mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/password/regenerate")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store"))
                 .andExpect(jsonPath("$.sshUsername").value("ubuntu"))
@@ -151,8 +150,7 @@ class VmPasswordRegenerateTest {
                         .withBody("{\"data\":null,\"message\":\"QEMU guest agent is not running\"}")));
 
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", vmId) + "/password/regenerate")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
 

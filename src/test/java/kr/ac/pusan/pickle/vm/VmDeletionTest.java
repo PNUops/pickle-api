@@ -182,8 +182,7 @@ class VmDeletionTest {
         Instant before = Instant.now();
 
         String body = mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.kind").value("SELF"))
                 .andExpect(jsonPath("$.requestedById").value(owner.getPublicId().toString()))
@@ -220,8 +219,7 @@ class VmDeletionTest {
 
         // stacking another deletion on top → 409
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"))
                 .andExpect(jsonPath("$.detail").value("이미 삭제가 접수되었거나 진행 중인 VM입니다."));
@@ -233,27 +231,23 @@ class VmDeletionTest {
 
         // MEMBER → 403 (owner-only), non-member → 404 (masked)
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + outsiderToken)
-                        )
+                        .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
 
         // ORG_ADMIN of another org → 404 (existence masked)
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + otherOrgAdminToken())
-                        )
+                        .header("Authorization", "Bearer " + otherOrgAdminToken()))
                 .andExpect(status().isNotFound());
 
         // state guards: CREATING / NEEDS_ADMIN / DELETED → 409
         for (VmStatus status : List.of(VmStatus.CREATING, VmStatus.NEEDS_ADMIN, VmStatus.DELETED)) {
             setStatus(vmId, status);
             mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                            .header("Authorization", "Bearer " + ownerToken)
-                            )
+                            .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         }
@@ -261,8 +255,7 @@ class VmDeletionTest {
         // ORG_ADMIN of the VM's org may delete
         setStatus(vmId, VmStatus.STOPPED);
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + orgAdminToken)
-                        )
+                        .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isAccepted());
 
         // …and that deletion is an intervention, however member-shaped the
@@ -290,8 +283,7 @@ class VmDeletionTest {
         AccessGrantFixtures.grantVmToUser(jdbcTemplate, vmId, orgAdmin.getId(), "OWNER");
 
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + orgAdminToken)
-                        )
+                        .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isAccepted());
 
         assertThat(jdbcTemplate.queryForObject(
@@ -338,8 +330,7 @@ class VmDeletionTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
@@ -391,15 +382,13 @@ class VmDeletionTest {
 
         // A member the list now names, but only as a viewer, still cannot destroy it.
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
 
         // The workspace owner, still named nowhere on the list, may.
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
     }
 
@@ -409,8 +398,7 @@ class VmDeletionTest {
         long allocationId = allocateIp(vmId);
 
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.kind").value("SELF"))
                 .andExpect(jsonPath("$.cancelable").value(false));
@@ -1106,8 +1094,7 @@ class VmDeletionTest {
 
         // self-delete, admin schedule-delete, and force-delete are all refused
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_DELETION_PROTECTED"));
         mockMvc.perform(post("/api/v1/admin/vms/" + pub("vms", vmId) + "/schedule-delete")

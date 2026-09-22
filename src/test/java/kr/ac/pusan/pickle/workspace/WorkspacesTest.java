@@ -308,8 +308,7 @@ class WorkspacesTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + peer.getPublicId())
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
 
@@ -320,8 +319,7 @@ class WorkspacesTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
 
@@ -355,14 +353,12 @@ class WorkspacesTest {
 
         // non-OWNER may leave on their own
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId())
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isNoContent());
 
         // the remaining owner removes the one who released ownership
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + peerToken)
-                        )
+                        .header("Authorization", "Bearer " + peerToken))
                 .andExpect(status().isNoContent());
 
         // role change for someone who is not a member → 404
@@ -404,8 +400,7 @@ class WorkspacesTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", personalWorkspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
     }

@@ -56,6 +56,20 @@ class MfaEnforcementTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.mfaEnabled").value(false));
 
+        // Changing an existing password is NOT one of them. The exemption that
+        // used to cover it matched on the path, so it let the change through
+        // alongside the retired first-time set; both went when the sudo-mode
+        // gate did. Changing a password is not a step in enrolling, so this is
+        // the restriction working rather than a lock-out.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/me/password")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"whatever-1!\","
+                                + "\"newPassword\":\"new-horse-battery-staple!\"}")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+
         // once enrolled, the same endpoint works
         enroll(admin.getId());
         mockMvc.perform(get("/api/v1/workspaces").header("Authorization", "Bearer " + token))

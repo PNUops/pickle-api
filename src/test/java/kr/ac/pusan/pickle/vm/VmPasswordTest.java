@@ -106,8 +106,7 @@ class VmPasswordTest {
         long vmId = createVm(VmStatus.RUNNING, PASSWORD);
         // default min-role MEMBER: a MEMBER may reveal
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk());
         // raise password_reveal_min_role to EDITOR → the MEMBER is now blocked
         jdbcTemplate.update("""
@@ -115,14 +114,12 @@ class VmPasswordTest {
                 values (?, 'password_reveal_min_role', '"EDITOR"'::jsonb, now())
                 """, vmId);
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         // the OWNER still can (OWNER ≥ EDITOR)
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk());
     }
 
@@ -131,19 +128,16 @@ class VmPasswordTest {
         // MEMBER/VIEWER are below EDITOR → 403; non-member → 404
         long running = createVm(VmStatus.RUNNING, PASSWORD);
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", running) + "/password/regenerate")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", running) + "/password/regenerate")
-                        .header("Authorization", "Bearer " + outsiderToken)
-                        )
+                        .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
         // OWNER on a non-RUNNING VM → 409 before any guest-agent call
         long stopped = createVm(VmStatus.STOPPED, PASSWORD);
         mockMvc.perform(post("/api/v1/vms/" + pub("vms", stopped) + "/password/regenerate")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
     }
@@ -154,8 +148,7 @@ class VmPasswordTest {
 
         for (int i = 0; i < 2; i++) {
             mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                            .header("Authorization", "Bearer " + ownerToken)
-                        )
+                            .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.password").value(PASSWORD))
@@ -195,8 +188,7 @@ class VmPasswordTest {
             jdbcTemplate.update("update vms set status = ?::vm_status where id = ?",
                     status.name(), vmId);
             mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                            .header("Authorization", "Bearer " + ownerToken)
-                            )
+                            .header("Authorization", "Bearer " + ownerToken))
                     .andExpect(status().isConflict())
                     .andExpect(jsonPath("$.code").value("VM_INVALID_STATE"));
         }
@@ -207,13 +199,11 @@ class VmPasswordTest {
         // VIEWER → 403, non-member → 404 (masked), unauthenticated → 401
         jdbcTemplate.update("update vms set status = 'RUNNING' where id = ?", vmId);
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + viewerToken)
-                        )
+                        .header("Authorization", "Bearer " + viewerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_ROLE_INSUFFICIENT"));
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password")
-                        .header("Authorization", "Bearer " + outsiderToken)
-                        )
+                        .header("Authorization", "Bearer " + outsiderToken))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", vmId) + "/password"))
                 .andExpect(status().isUnauthorized());
@@ -221,8 +211,7 @@ class VmPasswordTest {
         // a VM without a stored password (e.g. a mock-provisioned VM) → 410
         long mockVm = createVm(VmStatus.RUNNING, null);
         mockMvc.perform(get("/api/v1/vms/" + pub("vms", mockVm) + "/password")
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.code").value("VM_PASSWORD_ALREADY_VIEWED"));
     }

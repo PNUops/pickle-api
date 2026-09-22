@@ -70,8 +70,14 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
      * Google account must be able to obtain one while the filter is refusing
      * everything else. {@code /api/v1/auth/} covers it — the reset mail is how
      * such an account gets a password, and both legs of that flow live there.
-     * {@code POST /me/password} used to be listed alongside it and is gone;
-     * the exemption went with the endpoint rather than outliving it.
+     *
+     * <p>{@code /api/v1/me/password} was listed here until the sudo-mode gate
+     * was removed. The entry matched on path, so it exempted the {@code PUT}
+     * (change an existing password) as well as the retired {@code POST}, and
+     * dropping it means an unenrolled admin can no longer change a password
+     * they already have. That is the restriction working rather than a
+     * lock-out: changing a password is not a step in enrolling, and an account
+     * with no password still reaches the reset mail above.
      */
     private static boolean isExempt(String uri) {
         return "/api/v1/me".equals(uri)

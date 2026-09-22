@@ -42,7 +42,7 @@ public class IdentityService {
         if (!user.hasPassword() && repository.findByUserIdOrderByLinkedAtAsc(user.getId()).size() <= 1) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.IDENTITY_LAST_METHOD,
                     "유일한 로그인 수단입니다",
-                    "이 계정의 마지막 로그인 수단이라 해제할 수 없습니다. 먼저 비밀번호를 설정해 주세요.");
+                    "이 계정의 마지막 로그인 수단이라 해제할 수 없습니다. 비밀번호 재설정 메일로 비밀번호를 먼저 설정해 주세요.");
         }
 
         repository.delete(identity);

@@ -8,13 +8,13 @@
 --
 -- What did NOT rest on it is unaffected: the role gates, the resource-access
 -- rungs, and the five operations that carry the password (or a TOTP code) in
--- the request body -- password change, withdrawal, 2FA disable and recovery
--- code regeneration -- all still ask.
+-- the request body -- password change, withdrawal, 2FA enrol, 2FA disable and
+-- recovery code regeneration -- all still ask.
 
 drop table auth_reverifications;
 
 -- oauth_flows.purpose loses REVERIFY. The rows are single-use round trips that
--- live fifteen minutes, so deleting the outstanding ones strands nobody: the
+-- live ten minutes, so deleting the outstanding ones strands nobody: the
 -- console no longer starts such a flow, and any in flight has no callback left
 -- to answer it. The constraint has to be dropped and re-added rather than
 -- edited, since V89 that created it is already applied and immutable.

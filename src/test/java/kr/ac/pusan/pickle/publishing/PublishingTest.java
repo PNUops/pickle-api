@@ -1574,8 +1574,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("update vms set proxmox_vmid = null where id = ?", vmId);
         agent.resetAll();
@@ -1721,8 +1720,7 @@ class PublishingTest {
         // is nulled so the (unstubbed) Proxmox destroy step skips, and the
         // grace deadline is fast-forwarded — the pipeline refuses undue intents.
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("""
                 update vms set proxmox_vmid = null,
@@ -1807,8 +1805,7 @@ class PublishingTest {
         publish(vmId, "{\"port\":8080}").andExpect(status().isAccepted());
         routeApplyJob.apply(routeIdForVm(vmId));
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        )
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
         jdbcTemplate.update("""
                 update vms set proxmox_vmid = null,

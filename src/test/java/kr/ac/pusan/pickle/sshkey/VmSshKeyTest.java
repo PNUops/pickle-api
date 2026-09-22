@@ -181,8 +181,7 @@ class VmSshKeyTest {
 
         for (int i = 0; i < 2; i++) {
             mockMvc.perform(get(base() + "/private-key")
-                            .header("Authorization", "Bearer " + memberToken)
-                            )
+                            .header("Authorization", "Bearer " + memberToken))
                     .andExpect(status().isOk())
                     .andExpect(header().string("Cache-Control", "no-store"))
                     .andExpect(jsonPath("$.privateKey").value(
@@ -201,8 +200,7 @@ class VmSshKeyTest {
                 .andExpect(status().isCreated()));
 
         String after = fingerprintOf(mockMvc.perform(post(base() + "/reissue")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "no-store")));
 
@@ -224,12 +222,10 @@ class VmSshKeyTest {
     @Test
     void reissueAndDownloadBeforeIssuingAreNotFound() throws Exception {
         mockMvc.perform(post(base() + "/reissue")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get(base() + "/private-key")
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isNotFound());
     }
 
@@ -239,8 +235,7 @@ class VmSshKeyTest {
                 .andExpect(status().isCreated()));
 
         mockMvc.perform(delete(base())
-                        .header("Authorization", "Bearer " + memberToken)
-                        )
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isNoContent());
         assertThat(repository.findByFingerprintSha256(first)).isEmpty();
 
@@ -272,16 +267,13 @@ class VmSshKeyTest {
                 .andExpect(status().isNotFound());
         issue(strangerToken).andExpect(status().isNotFound());
         mockMvc.perform(post(base() + "/reissue")
-                        .header("Authorization", "Bearer " + strangerToken)
-                        )
+                        .header("Authorization", "Bearer " + strangerToken))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get(base() + "/private-key")
-                        .header("Authorization", "Bearer " + strangerToken)
-                        )
+                        .header("Authorization", "Bearer " + strangerToken))
                 .andExpect(status().isNotFound());
         mockMvc.perform(delete(base())
-                        .header("Authorization", "Bearer " + strangerToken)
-                        )
+                        .header("Authorization", "Bearer " + strangerToken))
                 .andExpect(status().isNotFound());
     }
 
@@ -317,8 +309,7 @@ class VmSshKeyTest {
             // Reaching the stored key at all is the assertion: a failed ownership
             // comparison answers "no key issued" instead.
             mockMvc.perform(get(base() + "/private-key")
-                            .header("Authorization", "Bearer " + token)
-                            )
+                            .header("Authorization", "Bearer " + token))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.key.fingerprint").value(fingerprint));
         } finally {
