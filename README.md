@@ -199,6 +199,67 @@ conntrack 때문에 기존 연결 종료가 아닌 새 연결 차단 상태를 �
 `FAILED`로 남깁니다. `APPLIED`와 `FAILED_CLOSED`는 PVE 설정 readback 결과이며 실제 packet
 enforcement 확인을 대신하지 않습니다. 실행 중인 VM을 자동으로 중단하지 않습니다.
 
+### 복구된 VM의 정책 단독 적용
+
+운영자가 이미 위치를 옮긴 VM 한 대의 정책을 적용할 때는
+`RecoveryPolicyMain`을 사용합니다. 전용 Spring 구성은 HTTP listener, JobRunr worker와
+recurring producer, Flyway, 시더, 일반 API runner를 생성하지 않습니다. DB와 PVE에 접근할
+설정은 일반 운영 API와 같아야 하며, API와 모든 다른 writer는 정지한 상태여야 합니다.
+원본과 대상 VM은 모두 stopped, `onboot=0`, 모든 NIC의 `link_down=1` 상태로 유지합니다.
+대상 VM에는 유일한 net0와 기존 immutable firewall options, `ipfilter-net0`, control rule,
+barrier group이 정확히 복원되어 있어야 합니다. 이 명령은 누락된 기반을 만들지 않습니다.
+
+DB 식별자는 **이 명령이 사용할 DB 계정과 연결로** 다음 SQL을 실행한 JSON 결과를 보호 파일에
+저장합니다. `pg_control_system()` 실행 권한이 없으면 명령은 실패합니다. 파일은 이 복구의
+DB 이름, 계정, 연결 방식, primary 여부와 PostgreSQL system identifier를 고정합니다.
+
+```sql
+select jsonb_build_object(
+    'database', current_database(), 'user', current_user,
+    'local_socket', inet_server_addr() is null,
+    'primary', not pg_is_in_recovery(),
+    'system_identifier', (select system_identifier::text from pg_control_system()));
+```
+
+위 결과를 담은 `DB_IDENTITY_FILE`과 복구 manifest, 위치 채택 뒤 생성된 작은 정책 proof를
+준비합니다. Manifest와 proof는 각각 root 소유 0600 일반 파일이어야 하며 심볼릭 링크는
+거부합니다. 두 파일의 실제 SHA-256을 별도 인자로 고정합니다. Proof는 operation ID,
+fencing token, DB system identifier, 원본·대상 node UUID/VMID/PVE digest, VM 신원과
+정책 revision/generation/hash를 담습니다. Manifest의 owner lease가 유효하고 적용 직전
+90초 이상 남아 있어야 하며 최종 DB commit 직전에도 만료되지 않아야 합니다. 파일 경로에는
+공백을 넣지 않습니다.
+
+작업 디렉터리는 이 API 레포지토리이고 Java 25와 Maven, 운영 DB/PVE 환경 변수가 준비되어
+있어야 합니다. `ATTEMPT_UUID`는 이 호출마다 새로 발급한 UUID입니다. 같은 operation의
+재시도에는 새 attempt ID와 앞선 명시적 실패 감사 행이 필요합니다.
+
+```bash
+./mvnw -q -DskipTests \
+  -Dspring-boot.run.main-class=kr.ac.pusan.pickle.networkpolicy.RecoveryPolicyMain \
+  "-Dspring-boot.run.arguments=$MANIFEST_FILE $MANIFEST_SHA256 $POLICY_PROOF_FILE $POLICY_PROOF_SHA256 $DB_IDENTITY_FILE $ATTEMPT_UUID" \
+  spring-boot:run
+```
+
+명령은 VM ID를 읽어 잠금 대상을 정한 뒤, 같은 JDBC session의 per-VM advisory lock 아래
+모든 보호 DB 조회를 수행합니다. 채택 감사 행과 proof, VM `STOPPED`/삭제 없음/채택 후
+`updated_at`, 작업 부재, 정책 revision/generation/hash와 IP·노드 정보를 대조합니다.
+원본과 대상의 실제 stopped, `onboot=0`, `link_down=1`, HA·진행 task 부재, hostname/MAC/
+cloud-init IP·gateway, bridge/MTU/firewall, PVE config digest와 변경 대기 설정 부재를
+확인합니다. 원본 description의 `pickle-recovery-owner:<operationId>:<fencingToken>`과 대상의
+`pickle-recovery-operation:<operationId>`도 정확한 한 줄로 대조합니다. Config digest는
+복원 디스크 설정을 포함한 PVE 현재 config를 고정하며 디스크 내용이나 fencing 자체의
+증거는 아닙니다.
+
+기존 정책 compiler/reconciler로 대상 규칙을 적용하고 PVE 최종 정책과 두 VM의 격리 상태를
+다시 읽습니다. 그 뒤 같은 JDBC session의 짧은 트랜잭션에서 VM·policy·IP·노드 행과
+채택 증거를 재검사하고 `APPLIED`와 `vm.recovery_policy_applied` 감사 행을 함께 commit합니다.
+DB commit 결과나 잠금 해제가 불확실하면 명령은 성공을 주장하지 않고 read-only 판정만
+표시합니다. `APPLIED_WITH_AUDIT`도 현재 DB tuple과 해당 attempt의 감사 행을 확인했다는
+뜻이며 PVE 방화벽 enforcement나 원본 fencing, VM 기동 허가는 아닙니다. 이때 두 VM을
+격리한 채 DB 상태와 PVE 상태를 직접 확인합니다. 이미 완료된 operation은 **같은 proof SHA와
+완료 attempt ID**를 다시 전달한 경우에만 PVE 쓰기 없이 정책과 감사 행을 조회합니다. 명령은 VM 기동이나 NIC 연결을
+수행하지 않습니다.
+
 HTTP/port 공개 경로는 durable operation으로 VM allow와 consumer 적용 순서를 지킵니다.
 HTTP 생성·포트 변경은 새 proxy target allow가 `APPLIED`된 뒤에만 DNS/proxy PRESENT를
 보내고, ABSENT ACK 뒤에 이전 allow를 제거합니다. Port mapping 생성·재개는 public

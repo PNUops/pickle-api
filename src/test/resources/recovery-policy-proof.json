@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "operation_id": "10000000-0000-4000-8000-000000000001",
+  "fencing_token": 7,
+  "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "restore_receipt_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "database": {"name": "pickle_example", "system_identifier": "7600000000000000001"},
+  "vm": {"public_id": "10000000-0000-4000-8000-000000000002", "updated_at": "2026-09-23T12:00:01+00:00", "status": "STOPPED"},
+  "source": {"node_public_id": "20000000-0000-4000-8000-000000000001", "name": "pve-example-a", "vmid": 100000, "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provider_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+  "target": {"node_public_id": "20000000-0000-4000-8000-000000000002", "name": "pve-example-b", "vmid": 100010, "config_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "provider_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+  "identity": {"hostname": "test-vm", "ip": "100.66.1.10", "mac": "02:00:00:00:00:10", "guest_bridge": "pguest", "ipconfig0": "ip=100.66.1.10/16,gw=100.66.0.1", "ssh_host_key_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "policy": {"revision": 2, "desired_generation": 4, "desired_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "applied_generation": 3, "applied_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "apply_state": "PENDING"},
+  "observed_at": "2026-09-23T12:00:00+00:00"
+}
