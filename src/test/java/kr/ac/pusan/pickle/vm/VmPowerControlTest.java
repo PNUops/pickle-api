@@ -27,7 +27,6 @@ import kr.ac.pusan.pickle.provisioning.VmPowerJobs;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.ProxmoxWireMockSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -437,15 +436,9 @@ class VmPowerControlTest {
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
-    /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
-    }
-
     private void addMember(long workspaceId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

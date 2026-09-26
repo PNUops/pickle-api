@@ -81,12 +81,9 @@ public class MeController {
      * Changes 이름, and fills in 직책·학번·소속 while they are empty.
      *
      * <p>Those three are write-once for the holder ({@code ProfileLock}) and
-     * an administrator moves them afterwards. Still not gated behind sudo-mode
-     * reauthentication, and the lock is why that reasoning holds rather than
-     * breaks: the fields grant nothing, so what the lock protects is not an
-     * authorization boundary but a value other people may come to rely on.
-     * The accounts that most need to fill these in are also the ones created
-     * through an external identity, which have no password to re-type.
+     * an administrator moves them afterwards. The fields grant nothing, so
+     * what the lock protects is not an authorization boundary but a value
+     * other people may come to rely on.
      *
      * <p>Every field is optional and presence-tracked, so a request that
      * carries only 이름 leaves the profile untouched. Validation runs against

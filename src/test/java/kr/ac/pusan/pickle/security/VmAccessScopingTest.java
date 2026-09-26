@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -82,11 +81,9 @@ import tools.jackson.databind.ObjectMapper;
  * <ul>
  *   <li>body validation can run before the access check, so every write is sent
  *       with a body the DTO accepts;</li>
- *   <li>sudo mode ({@code @RequireReauth}) answers 403 as well, which would
- *       make a denial pass for the wrong reason — the ops that need it are
- *       marked in the table and always carry a live token, and every expected
- *       403 additionally asserts the {@code WORKSPACE_ROLE_INSUFFICIENT} code so a
- *       {@code REAUTH_REQUIRED} can never be mistaken for it;</li>
+ *   <li>a generic denial answers 403 as well, which would make a refusal pass
+ *       for the wrong reason — so every expected 403 additionally asserts the
+ *       {@code WORKSPACE_ROLE_INSUFFICIENT} code;</li>
  *   <li>the web terminal's kill switch is read before authorization and answers
  *       503, so it is switched on for every case.</li>
  * </ul>
@@ -135,11 +132,10 @@ class VmAccessScopingTest {
      * @param method   HTTP method
      * @param path     path under {@code /api/v1}, with fixture placeholders
      * @param required the rung the matrix says this op needs
-     * @param reauth   whether the endpoint is sudo-mode gated
      * @param body     request body template, or null for a bodiless request
      */
     private record ScopedOp(String id, HttpMethod method, String path, ResourceRole required,
-            boolean reauth, String body) {
+            String body) {
     }
 
     /** The five standings each op is driven with. */
@@ -156,7 +152,7 @@ class VmAccessScopingTest {
             long grantId, String label) {
     }
 
-    /** Who is driving one case, and the reauth token they would need. */
+    /** Who is driving one case. */
     private record Requester(long userId, String token) {
     }
 
@@ -181,22 +177,22 @@ class VmAccessScopingTest {
             op("forceStopVm", HttpMethod.POST, "/vms/{vmId}/force-stop", ResourceRole.MEMBER),
             op("createTerminalSession", HttpMethod.POST, "/vms/{vmId}/terminal-sessions",
                     ResourceRole.MEMBER),
-            reauthOp("revealVmPassword", HttpMethod.GET, "/vms/{vmId}/password",
+            bodyOp("revealVmPassword", HttpMethod.GET, "/vms/{vmId}/password",
                     ResourceRole.MEMBER, null),
             op("getVmSshKey", HttpMethod.GET, "/vms/{vmId}/ssh-key", ResourceRole.MEMBER),
-            reauthOp("issueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key",
+            bodyOp("issueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key",
                     ResourceRole.MEMBER, null),
-            reauthOp("reissueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key/reissue",
+            bodyOp("reissueVmSshKey", HttpMethod.POST, "/vms/{vmId}/ssh-key/reissue",
                     ResourceRole.MEMBER, null),
-            reauthOp("downloadVmSshKey", HttpMethod.GET, "/vms/{vmId}/ssh-key/private-key",
+            bodyOp("downloadVmSshKey", HttpMethod.GET, "/vms/{vmId}/ssh-key/private-key",
                     ResourceRole.MEMBER, null),
-            reauthOp("deleteVmSshKey", HttpMethod.DELETE, "/vms/{vmId}/ssh-key",
+            bodyOp("deleteVmSshKey", HttpMethod.DELETE, "/vms/{vmId}/ssh-key",
                     ResourceRole.MEMBER, null),
 
             op("getVmSettings", HttpMethod.GET, "/vms/{vmId}/settings", ResourceRole.EDITOR),
-            reauthOp("updateVmSettings", HttpMethod.PATCH, "/vms/{vmId}/settings",
+            bodyOp("updateVmSettings", HttpMethod.PATCH, "/vms/{vmId}/settings",
                     ResourceRole.EDITOR, "{\"settings\":{\"display_name\":\"스코프\"}}"),
-            reauthOp("regenerateVmPassword", HttpMethod.POST, "/vms/{vmId}/password/regenerate",
+            bodyOp("regenerateVmPassword", HttpMethod.POST, "/vms/{vmId}/password/regenerate",
                     ResourceRole.EDITOR, null),
             bodyOp("createVmDomain", HttpMethod.POST, "/vms/{vmId}/domains", ResourceRole.EDITOR,
                     "{\"port\":80,\"subdomain\":\"{label}\"}"),
@@ -213,28 +209,24 @@ class VmAccessScopingTest {
             op("cancelVmCampusIpRequest", HttpMethod.DELETE,
                     "/vms/{vmId}/campus-ip-requests/{requestId}", ResourceRole.EDITOR),
 
-            reauthOp("deleteVm", HttpMethod.DELETE, "/vms/{vmId}", ResourceRole.OWNER, null),
+            bodyOp("deleteVm", HttpMethod.DELETE, "/vms/{vmId}", ResourceRole.OWNER, null),
             op("listVmAccessGrants", HttpMethod.GET, "/vms/{vmId}/access", ResourceRole.OWNER),
-            reauthOp("addVmAccessGrant", HttpMethod.POST, "/vms/{vmId}/access", ResourceRole.OWNER,
+            bodyOp("addVmAccessGrant", HttpMethod.POST, "/vms/{vmId}/access", ResourceRole.OWNER,
                     "{\"granteeType\":\"USER\",\"userId\":\"{spareUserId}\",\"role\":\"VIEWER\"}"),
-            reauthOp("updateVmAccessGrant", HttpMethod.PATCH, "/vms/{vmId}/access/{grantId}",
+            bodyOp("updateVmAccessGrant", HttpMethod.PATCH, "/vms/{vmId}/access/{grantId}",
                     ResourceRole.OWNER, "{\"role\":\"VIEWER\"}"),
-            reauthOp("removeVmAccessGrant", HttpMethod.DELETE, "/vms/{vmId}/access/{grantId}",
+            bodyOp("removeVmAccessGrant", HttpMethod.DELETE, "/vms/{vmId}/access/{grantId}",
                     ResourceRole.OWNER, null));
 
     private static ScopedOp op(String id, HttpMethod method, String path, ResourceRole required) {
-        return new ScopedOp(id, method, path, required, false, null);
+        return new ScopedOp(id, method, path, required, null);
     }
 
     private static ScopedOp bodyOp(String id, HttpMethod method, String path,
             ResourceRole required, String body) {
-        return new ScopedOp(id, method, path, required, false, body);
+        return new ScopedOp(id, method, path, required, body);
     }
 
-    private static ScopedOp reauthOp(String id, HttpMethod method, String path,
-            ResourceRole required, String body) {
-        return new ScopedOp(id, method, path, required, true, body);
-    }
 
     /** Every (op, scenario) pair; the below-rung case has no meaning at the floor. */
     private static Stream<Arguments> cases() {
@@ -337,7 +329,7 @@ class VmAccessScopingTest {
         } else {
             assertThat(response.getStatus()).as("%s: below the declared rung must be refused",
                     where).isEqualTo(403);
-            // Pins the reason: a sudo-mode or generic denial answers 403 too,
+            // Pins the reason: a generic denial answers 403 too,
             // and would otherwise let this case pass without the rung being
             // consulted at all.
             assertThat(errorCode(response)).as("%s: 403 error code", where)
@@ -433,10 +425,6 @@ class VmAccessScopingTest {
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders
                 .request(scopedOp.method(), uri)
                 .header("Authorization", "Bearer " + requester.token());
-        if (scopedOp.reauth()) {
-            request = request.header(ReauthTestSupport.HEADER,
-                    ReauthTestSupport.seededReauthHeader(jdbcTemplate, requester.userId()));
-        }
         if (scopedOp.body() != null) {
             request = request.contentType(MediaType.APPLICATION_JSON)
                     .content(resolve(scopedOp.body(), fixture));

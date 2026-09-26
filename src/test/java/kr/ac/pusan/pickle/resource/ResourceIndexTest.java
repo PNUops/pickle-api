@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
@@ -366,8 +365,6 @@ class ResourceIndexTest {
     private void addMember(long workspaceId, String email) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, ReauthTestSupport.seededReauthFor(
-                                jdbcTemplate, jwtService, ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", "MEMBER"))))

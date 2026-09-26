@@ -12,7 +12,6 @@ import kr.ac.pusan.pickle.access.dto.ResourceAccessGrantView;
 import kr.ac.pusan.pickle.access.dto.ResourceAccessListResponse;
 import kr.ac.pusan.pickle.access.dto.UpdateResourceAccessGrantRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -59,7 +58,6 @@ public class LlmKeyAccessGrantController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @RequireReauth
     @Operation(summary = "접근 권한 부여",
             description = "지정한 사용자 또는 소유 워크스페이스 전체에 이 키의 접근 권한을 부여합니다. "
                     + "사용자는 이 키를 소유한 워크스페이스의 구성원이어야 하고, 워크스페이스 전체에는 "
@@ -74,7 +72,6 @@ public class LlmKeyAccessGrantController {
     }
 
     @PatchMapping("/{grantId}")
-    @RequireReauth
     @Operation(summary = "접근 권한 등급 변경")
     public ResourceAccessGrantView updateLlmKeyAccessGrant(
             @AuthenticationPrincipal AuthenticatedUser principal,
@@ -88,7 +85,6 @@ public class LlmKeyAccessGrantController {
 
     @DeleteMapping("/{grantId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @RequireReauth
     @Operation(summary = "접근 권한 회수",
             description = "회수해도 발급 시 이미 확인한 키 평문은 회수되지 않습니다. "
                     + "필요하면 키를 재발급해 주세요.")

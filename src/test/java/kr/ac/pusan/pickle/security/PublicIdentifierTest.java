@@ -11,7 +11,6 @@ import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -118,8 +117,6 @@ class PublicIdentifierTest {
         mockMvc.perform(post("/api/v1/workspaces/"
                         + SeedFixtures.publicId(jdbcTemplate, "workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header("X-Reauth-Token", ReauthTestSupport.seededReauthFor(
-                                jdbcTemplate, jwtService, ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\": \"" + outsider.getEmail() + "\", \"role\": \"MEMBER\"}"))
                 .andExpect(status().isCreated());

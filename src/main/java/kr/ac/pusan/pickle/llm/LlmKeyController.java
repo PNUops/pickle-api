@@ -11,7 +11,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.web.PageResponse;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.llm.dto.IssuedLlmKeyResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBodyDetailResponse;
 import kr.ac.pusan.pickle.llm.dto.LlmKeyBodySummaryResponse;
@@ -130,12 +129,9 @@ public class LlmKeyController {
     }
 
     @GetMapping("/{keyId}/bodies/{bodyId}")
-    @RequireReauth
     @Operation(summary = "기록된 본문 상세",
             description = "기록 한 건의 전문입니다. `request`는 보통 보낸 messages 배열 "
-                    + "그대로이고, 길이 제한에 걸린 경우에는 앞부분을 담은 문자열입니다. "
-                    + "저장된 본문을 그대로 돌려주므로 **재인증이 필요합니다** "
-                    + "(X-Reauth-Token). 목록 조회에는 필요하지 않습니다.")
+                    + "그대로이고, 길이 제한에 걸린 경우에는 앞부분을 담은 문자열입니다.")
     public ResponseEntity<LlmKeyBodyDetailResponse> getLlmKeyBody(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID keyId,
@@ -147,7 +143,6 @@ public class LlmKeyController {
     }
 
     @PostMapping("/{keyId}/token")
-    @RequireReauth
     @Operation(summary = "LLM API 키 발급",
             description = "이 키의 평문을 만들어 **한 번만** 돌려줍니다. 서버에는 해시만 남으므로 "
                     + "다시 조회할 수 없고, 분실하면 이 호출을 다시 해서 재발급해야 합니다. "
@@ -159,7 +154,6 @@ public class LlmKeyController {
     }
 
     @PostMapping("/{keyId}/revoke")
-    @RequireReauth
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "LLM API 키 폐기",
             description = "이 키를 폐기합니다. 게이트웨이에는 폴링 주기 안에 반영되고, 이후 이 키로 "

@@ -11,7 +11,6 @@ import java.util.UUID;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -201,11 +200,6 @@ class ManagerRoleScopingTest {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    /** Sudo-mode gate: mint the caller's X-Reauth-Token for the protected call. */
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
-    }
-
     private ResultActions get(String uri, String token) throws Exception {
         return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .get(uri).header("Authorization", "Bearer " + token));
@@ -219,7 +213,7 @@ class ManagerRoleScopingTest {
     private ResultActions delete(String uri, String token) throws Exception {
         return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                 .delete(uri).header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token)));
+                );
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {

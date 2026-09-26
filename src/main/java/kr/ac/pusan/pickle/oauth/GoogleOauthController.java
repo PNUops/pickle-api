@@ -12,7 +12,6 @@ import kr.ac.pusan.pickle.auth.AuthService;
 import kr.ac.pusan.pickle.auth.SessionCookies;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.MfaChallengeResponse;
-import kr.ac.pusan.pickle.auth.dto.ReverifyResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthCallbackRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthCompleteRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthLinkedResponse;
@@ -65,24 +64,23 @@ public class GoogleOauthController {
     }
 
     /**
-     * Redeems the authorization code. Five outcomes across the three purposes
+     * Redeems the authorization code. Four outcomes across the two purposes
      * the flow can carry -- sign-in alone accounts for three of them -- and
      * every one is listed below: a shape the service can return but the
      * {@code oneOf} omits is a response no generated client can represent.
      * {@code LINKED} was exactly that until v0.45.0.
      *
-     * <p>Two of the five carry a {@code kind} discriminator and three do not.
-     * {@code AuthTokenResponse}, {@code MfaChallengeResponse} and
-     * {@code ReverifyResponse} all predate this endpoint and are reached
-     * through their own routes as well, so the console narrows those by field
-     * probing. Adding {@code kind} to them would change three published
-     * schemas to tidy one client branch.
+     * <p>Two of the four carry a {@code kind} discriminator and two do not.
+     * {@code AuthTokenResponse} and {@code MfaChallengeResponse} both predate
+     * this endpoint and are reached through their own routes as well, so the
+     * console narrows those by field probing. Adding {@code kind} to them would
+     * change two published schemas to tidy one client branch.
      */
     @ApiResponse(responseCode = "200",
-            description = "토큰 발급 / 2FA 챌린지 / 가입 필요 / 재인증 토큰 / 연동 완료",
+            description = "토큰 발급 / 2FA 챌린지 / 가입 필요 / 연동 완료",
             content = @Content(schema = @Schema(oneOf = {AuthTokenResponse.class,
                     MfaChallengeResponse.class, OauthRegistrationResponse.class,
-                    ReverifyResponse.class, OauthLinkedResponse.class})))
+                    OauthLinkedResponse.class})))
     @PostMapping("/callback")
     public ResponseEntity<Object> completeGoogleOauthCallback(
             @Valid @RequestBody OauthCallbackRequest request,

@@ -59,7 +59,7 @@ public class GoogleOidcClient {
      * this parameter as though it enforced anything is the classic mistake in
      * this flow.
      */
-    public String authorizationUrl(String state, String nonce, String codeChallenge, boolean forceLogin) {
+    public String authorizationUrl(String state, String nonce, String codeChallenge) {
         StringBuilder url = new StringBuilder(properties.authorizationUri())
                 .append("?response_type=code")
                 .append("&client_id=").append(enc(properties.clientId()))
@@ -70,11 +70,6 @@ public class GoogleOidcClient {
                 .append("&code_challenge=").append(enc(codeChallenge))
                 .append("&code_challenge_method=S256")
                 .append("&hd=").append(enc(properties.hostedDomain()));
-        if (forceLogin) {
-            // Sudo-mode: without this an existing Google session is accepted
-            // silently and the reverification proves nothing.
-            url.append("&prompt=login");
-        }
         return url.toString();
     }
 

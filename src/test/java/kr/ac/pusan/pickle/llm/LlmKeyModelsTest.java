@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -591,8 +590,6 @@ class LlmKeyModelsTest {
                 "select public_id from workspaces where id = ?", UUID.class, workspaceId);
         mockMvc.perform(post("/api/v1/workspaces/" + workspacePublicId + "/members")
                         .header("Authorization", "Bearer " + wsOwnerToken)
-                        .header(ReauthTestSupport.HEADER, ReauthTestSupport.seededReauthFor(
-                                jdbcTemplate, jwtService, wsOwnerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", "MEMBER"))))

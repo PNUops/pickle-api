@@ -1,5 +1,6 @@
 package kr.ac.pusan.pickle.relay;
 
+import kr.ac.pusan.pickle.support.TokenHashes;
 import kr.ac.pusan.pickle.support.RequestFixtures;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,7 +28,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.AccessGrantFixtures;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -588,7 +588,7 @@ class PortForwardingTest {
     }
 
     @Test
-    void tokenIssueIsReauthGatedAndStoresOnlyTheHash() throws Exception {
+    void tokenIssueStoresOnlyTheHash() throws Exception {
         String sourceIp = "198.51.101." + SOURCE_SEQ.getAndIncrement();
         long relayId = jdbcTemplate.queryForObject("""
                 insert into relays (name, source_ip, port_band_start, port_band_end)
@@ -596,14 +596,8 @@ class PortForwardingTest {
                 """, Long.class, "token-" + UUID.randomUUID().toString().substring(0, 8),
                 sourceIp);
 
-        mockMvc.perform(post("/api/v1/admin/relays/" + pub("relays", relayId) + "/token")
-                        .header("Authorization", "Bearer " + sysAdminToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("REAUTH_REQUIRED"));
-
         String body = mockMvc.perform(post("/api/v1/admin/relays/" + pub("relays", relayId) + "/token")
-                        .header("Authorization", "Bearer " + sysAdminToken)
-                        .header(ReauthTestSupport.HEADER, reauth(sysAdminToken)))
+                        .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         String token = objectMapper.readTree(body).get("token").asString();
@@ -611,7 +605,7 @@ class PortForwardingTest {
 
         String storedHash = jdbcTemplate.queryForObject(
                 "select token_hash from relays where id = ?", String.class, relayId);
-        assertThat(storedHash.strip()).isEqualTo(ReauthTestSupport.sha256Hex(token));
+        assertThat(storedHash.strip()).isEqualTo(TokenHashes.sha256Hex(token));
 
         // end-to-end: the freshly issued token authenticates a sync
         mockMvc.perform(post("/internal/relays/" + relayId + "/sync")
@@ -836,8 +830,7 @@ class PortForwardingTest {
         jdbcTemplate.update("update vms set status = 'ERROR'::vm_status where id = ?", vmId);
 
         mockMvc.perform(delete("/api/v1/vms/" + pub("vms", vmId))
-                        .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isAccepted());
 
         Long mappings = jdbcTemplate.queryForObject(
@@ -985,15 +978,10 @@ class PortForwardingTest {
     private void addMember(long workspaceId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());
-    }
-
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
     private User ensureUser(String email, String name) {

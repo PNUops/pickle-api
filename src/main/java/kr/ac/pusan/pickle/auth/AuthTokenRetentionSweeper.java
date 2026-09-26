@@ -14,10 +14,10 @@ import org.springframework.stereotype.Component;
  * {@code refresh_tokens} past their expiry (unusable — the reuse-detection
  * window has closed), {@code email_verifications} that were used or expired, and
  * {@code mfa_login_tokens} that were consumed or expired (single-use step-up
- * tokens with no post-expiry value), and {@code auth_reverifications} past
- * their 10-minute expiry (sudo-mode tokens, v0.24.0). Each is batched in a
- * bounded LIMIT loop to avoid long locks. Touches ONLY these four tables —
- * {@code audit_logs}/{@code vm_events} are permanent and must never be swept.
+ * tokens with no post-expiry value), and the two OAuth round-trip tables. Each
+ * is batched in a bounded LIMIT loop to avoid long locks. Touches ONLY these
+ * five tables — {@code audit_logs}/{@code vm_events} are permanent and must
+ * never be swept.
  */
 @Component
 public class AuthTokenRetentionSweeper {
@@ -57,12 +57,6 @@ public class AuthTokenRetentionSweeper {
                  where id in (select id from mfa_login_tokens
                                where consumed_at is not null or expires_at < ? order by id limit ?)
                 """, now);
-        // Expired sudo-mode reauthentication tokens (multi-use until expiry).
-        int reverifications = deleteBatched("""
-                delete from auth_reverifications
-                 where id in (select id from auth_reverifications
-                               where expires_at < ? order by id limit ?)
-                """, now);
         // Spent or expired OAuth round trips. Same lifetime shape as the MFA
         // step-up tokens above, so they ride the same sweep rather than growing
         // a scheduler of their own.
@@ -77,10 +71,8 @@ public class AuthTokenRetentionSweeper {
                                where consumed_at is not null or expires_at < ? order by id limit ?)
                 """, now);
         log.info("auth-token retention sweep deleted {} refresh token(s), {} email verification(s), "
-                + "{} mfa login token(s), {} reverification(s), {} oauth flow(s), "
-                + "{} oauth registration(s)",
-                tokens, verifications, mfaLoginTokens, reverifications, oauthFlows,
-                oauthRegistrations);
+                + "{} mfa login token(s), {} oauth flow(s), {} oauth registration(s)",
+                tokens, verifications, mfaLoginTokens, oauthFlows, oauthRegistrations);
     }
 
     private int deleteBatched(String sql, Timestamp bound) {

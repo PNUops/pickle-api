@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -82,11 +81,6 @@ class WorkspacesTest {
         peerToken = jwtService.createAccessToken(peer);
         memberToken = jwtService.createAccessToken(member);
         outsiderToken = jwtService.createAccessToken(outsider);
-    }
-
-    /** Member management is sudo-mode gated: mint the caller's X-Reauth-Token. */
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
     }
 
     @Test
@@ -314,8 +308,7 @@ class WorkspacesTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + peer.getPublicId())
-                        .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
 
@@ -326,8 +319,7 @@ class WorkspacesTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_SOLE_OWNER_REMOVAL"));
 
@@ -361,14 +353,12 @@ class WorkspacesTest {
 
         // non-OWNER may leave on their own
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId())
-                        .header("Authorization", "Bearer " + memberToken)
-                        .header(ReauthTestSupport.HEADER, reauth(memberToken)))
+                        .header("Authorization", "Bearer " + memberToken))
                 .andExpect(status().isNoContent());
 
         // the remaining owner removes the one who released ownership
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + peerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(peerToken)))
+                        .header("Authorization", "Bearer " + peerToken))
                 .andExpect(status().isNoContent());
 
         // role change for someone who is not a member → 404
@@ -410,8 +400,7 @@ class WorkspacesTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
         mockMvc.perform(delete("/api/v1/workspaces/" + pub("workspaces", personalWorkspaceId) + "/members/" + owner.getPublicId())
-                        .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken)))
+                        .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
     }
@@ -431,7 +420,6 @@ class WorkspacesTest {
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
         return mockMvc.perform(post(uri)
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }
@@ -439,7 +427,6 @@ class WorkspacesTest {
     private ResultActions patchJson(String uri, String token, Map<String, ?> body) throws Exception {
         return mockMvc.perform(patch(uri)
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body)));
     }

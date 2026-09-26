@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import kr.ac.pusan.pickle.access.ResourceRole;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
@@ -267,16 +266,10 @@ class VmSettingsTest {
 
     // ── helpers ────────────────────────────────────────────────────────────
 
-    /** Settings patch and member management are sudo-mode gated. */
-    private String reauth(String token) {
-        return ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService, token);
-    }
-
     private org.springframework.test.web.servlet.ResultActions patchSettings(String token,
             long vmId, Map<String, Object> settings) throws Exception {
         return mockMvc.perform(patch("/api/v1/vms/" + pub("vms", vmId) + "/settings")
                 .header("Authorization", "Bearer " + token)
-                .header(ReauthTestSupport.HEADER, reauth(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(Map.of("settings", settings))));
     }
@@ -312,7 +305,6 @@ class VmSettingsTest {
     private void addMember(long workspaceId, String email, String role) throws Exception {
         mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
                         .header("Authorization", "Bearer " + ownerToken)
-                        .header(ReauthTestSupport.HEADER, reauth(ownerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
                 .andExpect(status().isCreated());

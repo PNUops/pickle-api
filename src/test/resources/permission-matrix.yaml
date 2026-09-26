@@ -50,7 +50,6 @@ operations:
   - { id: login,                method: POST,   path: "/auth/login",                         roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: refresh,              method: POST,   path: "/auth/refresh",                       roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: logout,               method: POST,   path: "/auth/logout",                        roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
-  - { id: reverify,            method: POST,   path: "/auth/reverify",               roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: startGoogleOauth,                 method: POST,   path: "/auth/oauth/google/start",               roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: completeGoogleOauthCallback,      method: POST,   path: "/auth/oauth/google/callback",            roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
   - { id: completeGoogleOauthRegistration,  method: POST,   path: "/auth/oauth/google/complete",            roles: { USER: public, ORG_VIEWER: public, ORG_MANAGER: public, ORG_ADMIN: public, SYS_VIEWER: public, SYS_MANAGER: public, SYS_ADMIN: public } }
@@ -68,7 +67,6 @@ operations:
   - { id: unlinkIdentity,           method: DELETE, path: "/me/identities/{provider}",    roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: listMyActivity,              method: GET,    path: "/me/activity",                 roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: changePassword,            method: PUT,    path: "/me/password",                 roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
-  - { id: setPassword,               method: POST,   path: "/me/password",                 roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: withdraw,           method: POST,   path: "/me/withdraw",                 roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: begin,           method: POST,   path: "/me/mfa/totp",                 roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
   - { id: activate,             method: POST,   path: "/me/mfa/totp/activate",        roles: { USER: allow, ORG_VIEWER: allow, ORG_MANAGER: allow, ORG_ADMIN: allow, SYS_VIEWER: allow, SYS_MANAGER: allow, SYS_ADMIN: allow } }
@@ -124,7 +122,7 @@ operations:
   # createTerminalSession: workspace MEMBER+ mints a web-terminal ticket; non-members/VIEWER/missing → 404 mask (service-layer, no @PreAuthorize).
   - { id: createTerminalSession, method: POST, path: "/vms/{vmId}/terminal-sessions", roles: { USER: allow_resource_scoped:MEMBER, ORG_VIEWER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_VIEWER: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
   # Per-VM SSH keys (v0.42.0): resource MEMBER+ throughout, non-member 404 mask
-  # (service-layer, no @PreAuthorize). The four writes are re-authentication ops.
+  # (service-layer, no @PreAuthorize).
   - { id: getVmSshKey,         method: GET,    path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_VIEWER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_VIEWER: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
   - { id: issueVmSshKey,       method: POST,   path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_VIEWER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_VIEWER: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
   - { id: reissueVmSshKey,     method: POST,   path: "/vms/{vmId}/ssh-key/reissue",     roles: { USER: allow_resource_scoped:MEMBER, ORG_VIEWER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_VIEWER: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
@@ -132,8 +130,8 @@ operations:
   - { id: deleteVmSshKey,      method: DELETE, path: "/vms/{vmId}/ssh-key",             roles: { USER: allow_resource_scoped:MEMBER, ORG_VIEWER: allow_resource_scoped:MEMBER, ORG_MANAGER: allow_resource_scoped:MEMBER, ORG_ADMIN: allow_resource_scoped:MEMBER, SYS_VIEWER: allow_resource_scoped:MEMBER, SYS_MANAGER: allow_resource_scoped:MEMBER, SYS_ADMIN: allow_resource_scoped:MEMBER } }
 
   # ── 3.6a VM access list (resource OWNER; a workspace owner manages it too) ─────
-  # The three writes are re-authentication (sudo-mode) operations, same as the
-  # workspace-membership writes: both decide who reaches something.
+  # The three writes decide who reaches the VM, same as the workspace-membership
+  # writes.
   - { id: listVmAccessGrants, method: GET, path: "/vms/{vmId}/access", roles: { USER: allow_resource_scoped:OWNER, ORG_VIEWER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_VIEWER: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: addVmAccessGrant, method: POST, path: "/vms/{vmId}/access", roles: { USER: allow_resource_scoped:OWNER, ORG_VIEWER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_VIEWER: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }
   - { id: updateVmAccessGrant, method: PATCH, path: "/vms/{vmId}/access/{grantId}", roles: { USER: allow_resource_scoped:OWNER, ORG_VIEWER: allow_resource_scoped:OWNER, ORG_MANAGER: allow_resource_scoped:OWNER, ORG_ADMIN: allow_resource_scoped:OWNER, SYS_VIEWER: allow_resource_scoped:OWNER, SYS_MANAGER: allow_resource_scoped:OWNER, SYS_ADMIN: allow_resource_scoped:OWNER } }

@@ -10,9 +10,7 @@ import kr.ac.pusan.pickle.auth.SessionCookies;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.user.dto.ChangePasswordRequest;
-import kr.ac.pusan.pickle.user.dto.SetPasswordRequest;
 import kr.ac.pusan.pickle.user.dto.WithdrawRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -55,33 +53,14 @@ public class AccountController {
         return response.body(result.body());
     }
 
-    /**
-     * Sets a password on an account that has none, without asking for a
-     * current one. {@code @RequireReauth} is what stands in its place, and it
-     * is the only thing that does: an account created through Google reaches
-     * this by re-verifying with Google, and one that lost its password does
-     * not reach it at all (409 — the reset mail is that account's path).
-     *
-     * <p>Before v0.46.0 the only way to put a password on a Google account was
-     * to send the reset mail to someone who was already signed in and ask them
-     * to come back through it.
-     */
-    @PostMapping("/password")
-    @RequireReauth
-    public ResponseEntity<AuthTokenResponse> setPassword(
-            @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody SetPasswordRequest request,
-            @Parameter(hidden = true) @RequestHeader(value = HttpHeaders.USER_AGENT, required = false) String userAgent,
-            HttpServletRequest httpRequest) {
-        AuthService.AuthResult result = authService.setPassword(principal.id(), request.newPassword(),
-                clientIp(httpRequest), userAgent);
-        // Same as a change: this session keeps going on the fresh pair, every
-        // other one is already dead.
-        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
-        sessionCookies.issued(result.refreshToken())
-                .forEach(cookie -> response.header(HttpHeaders.SET_COOKIE, cookie));
-        return response.body(result.body());
-    }
+    // There is deliberately no endpoint here that sets a first password on an
+    // account that has none. Such a request cannot ask for a current password,
+    // so a session cookie alone would be the whole of its authorization, and a
+    // session is exactly what an attacker who borrows an unlocked browser
+    // already holds — they could plant a password and keep the account after
+    // the session is gone. The path for a Google-only account is the reset mail
+    // (POST /auth/password-reset), which proves control of the mailbox; that is
+    // how it worked before v0.46.0 and how it works again.
 
     @PostMapping("/withdraw")
     public ResponseEntity<MessageResponse> withdraw(

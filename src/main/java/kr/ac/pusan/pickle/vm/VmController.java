@@ -13,7 +13,6 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.proxmox.RrdTimeframe;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vm.dto.VmDetailResponse;
 import kr.ac.pusan.pickle.vm.dto.VmEventResponse;
@@ -78,7 +77,6 @@ public class VmController {
 
     @DeleteMapping("/{vmId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @RequireReauth
     public VmDeletionResponse deleteVm(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
@@ -134,7 +132,6 @@ public class VmController {
 
     /** Re-viewable reveal (GET since v0.7.0 — no side effect); never cached. */
     @GetMapping("/{vmId}/password")
-    @RequireReauth
     public ResponseEntity<VmPasswordResponse> revealVmPassword(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
@@ -147,7 +144,6 @@ public class VmController {
 
     /** Regenerates the password live via the guest agent (EDITOR+); never cached. */
     @PostMapping("/{vmId}/password/regenerate")
-    @RequireReauth
     public ResponseEntity<VmPasswordResponse> regenerateVmPassword(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             HttpServletRequest httpRequest) {
@@ -167,7 +163,6 @@ public class VmController {
 
     /** Atomic partial update; per-key required role (contract v0.8.0). */
     @PatchMapping("/{vmId}/settings")
-    @RequireReauth
     public List<VmSettingView> updateVmSettings(
             @AuthenticationPrincipal AuthenticatedUser principal, @PathVariable UUID vmId,
             @Valid @RequestBody VmSettingsUpdateRequest request, HttpServletRequest httpRequest) {

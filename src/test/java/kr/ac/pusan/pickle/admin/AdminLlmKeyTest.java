@@ -20,7 +20,6 @@ import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
-import kr.ac.pusan.pickle.support.ReauthTestSupport;
 import kr.ac.pusan.pickle.support.SeedFixtures;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
@@ -868,10 +867,7 @@ class AdminLlmKeyTest {
                 .get("content").get(0).get("id").asString());
 
         String issued = mockMvc.perform(post("/api/v1/llm-keys/" + keyId + "/token")
-                        .header("Authorization", "Bearer " + requesterToken)
-                        .header(ReauthTestSupport.HEADER,
-                                ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService,
-                                        requesterToken)))
+                        .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
@@ -893,10 +889,7 @@ class AdminLlmKeyTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
         mockMvc.perform(post("/api/v1/llm-keys/" + keyId + "/revoke")
-                        .header("Authorization", "Bearer " + requesterToken)
-                        .header(ReauthTestSupport.HEADER,
-                                ReauthTestSupport.seededReauthFor(jdbcTemplate, jwtService,
-                                        requesterToken)))
+                        .header("Authorization", "Bearer " + requesterToken))
                 .andExpect(status().isNoContent());
 
         String detail = mockMvc.perform(get("/api/v1/admin/llm/keys/" + keyId)

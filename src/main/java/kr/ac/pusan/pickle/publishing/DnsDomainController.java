@@ -13,7 +13,6 @@ import kr.ac.pusan.pickle.publishing.dto.DnsDomainView;
 import kr.ac.pusan.pickle.publishing.dto.DnsRecordSetView;
 import kr.ac.pusan.pickle.publishing.dto.ReplaceDnsRecordSetsRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
-import kr.ac.pusan.pickle.security.RequireReauth;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -91,7 +90,6 @@ public class DnsDomainController {
 
     @DeleteMapping("/{domainId}")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @RequireReauth
     @Operation(summary = "도메인 해제",
             description = "레코드를 지우고 이름을 해제합니다. 이름은 예약 기간 동안 이 워크스페이스에 "
                     + "남아 있다가 회수됩니다.")
