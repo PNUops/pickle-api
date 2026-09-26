@@ -212,6 +212,20 @@ public class ProxmoxClient {
                 CONFIG_RESPONSE);
     }
 
+    /** Current cluster HA registrations; recovery refuses any owner for either guest. */
+    public List<Map<String, Object>> clusterHaResources(String apiHost) {
+        return call(HttpMethod.GET, uri(apiHost, "cluster", "ha", "resources"), null,
+                new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+    }
+
+    /** Recovery refuses an active task on either guest's node. */
+    public List<Map<String, Object>> activeNodeTasks(String apiHost, String node) {
+        return call(HttpMethod.GET, baseBuilder(apiHost).pathSegment("nodes", node, "tasks")
+                .queryParam("source", "active").queryParam("limit", 500)
+                .build().encode().toUri(), null,
+                new TypeReference<Envelope<List<Map<String, Object>>>>() {});
+    }
+
     /** Reads desired PVE firewall configuration; this is not a kernel enforcement acknowledgment. */
     public Map<String, Object> vmFirewallOptions(String apiHost, String node, int vmid) {
         return call(HttpMethod.GET,
