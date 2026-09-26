@@ -76,6 +76,41 @@ class MfaEnforcementTest {
                 .andExpect(status().isOk());
     }
 
+    /**
+     * The console puts the profile form in front of the whole shell, and the
+     * enrolment screen is inside the shell. If this write were refused, an
+     * unenrolled admin with no profile could reach neither.
+     */
+    @Test
+    void anUnenrolledAdminCanStillAnswerTheProfileGate() throws Exception {
+        User admin = createUser("mfa.enforce.profile@pusan.ac.kr", UserRole.SYS_ADMIN);
+        String token = jwtService.createAccessToken(admin);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/v1/me/profile")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"position\":\"STAFF\",\"departmentOther\":\"플랫폼 운영\"}")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profileComplete").value(true));
+
+        // The terms gate stands in front of the profile gate, and its write is
+        // exempt for the same reason. Not 403 is what is asserted here: the
+        // body is empty, so the controller's own answer is a validation error.
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/v1/me/consents")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"consents\":[]}")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(result -> org.assertj.core.api.Assertions
+                        .assertThat(result.getResponse().getStatus()).isNotEqualTo(403));
+
+        // The exemption is those paths, not the /me/ prefix.
+        mockMvc.perform(get("/api/v1/me/activity").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("MFA_ENROLLMENT_REQUIRED"));
+    }
+
     @Test
     void aPasswordlessAdminCanStillReachThePathThatGivesItAPassword() throws Exception {
         // The lock-out this closes: enrolment needs a password, an account made

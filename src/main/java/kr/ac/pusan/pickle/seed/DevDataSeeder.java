@@ -449,7 +449,7 @@ public class DevDataSeeder implements ApplicationRunner {
                     + "/etc/pickle/api.env (there is no default: it would be public in git).");
         }
         userRepository.findByEmail(email).ifPresentOrElse(existing -> {
-            // Accounts seeded before the profile existed would meet the prompt on
+            // Accounts seeded before the profile existed would meet the gate on
             // every dev login. Filled only when empty, so a value set by hand in
             // a dev database survives the next boot.
             if (!existing.isProfileComplete()) {
@@ -468,8 +468,8 @@ public class DevDataSeeder implements ApplicationRunner {
             user.setRole(role);
             user.setStatus(UserStatus.ACTIVE);
             user.setEmailVerifiedAt(Instant.now());
-            // Filled in so the profile prompt does not greet every dev login:
-            // a prompt that is always on screen cannot be verified.
+            // Filled in so the profile gate does not stop every dev login:
+            // a seeded account that cannot reach the console verifies nothing.
             user.setProfile(UserPosition.STAFF, null, null, "플랫폼 운영");
             user = userRepository.save(user);
             personalWorkspaceService.ensurePersonalWorkspace(user);

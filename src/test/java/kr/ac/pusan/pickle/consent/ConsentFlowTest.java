@@ -50,7 +50,7 @@ class ConsentFlowTest {
     void signupRecordsConsentsSoNothingIsPending() throws Exception {
         postConsents("/api/v1/auth/signup", null, Map.of(
                 "email", "consent.signup@pusan.ac.kr", "password", PASSWORD, "name", "가입동의",
-                "position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                "position", "STUDENT_UNDERGRAD", "studentNo", "362012345",
                 "departmentCode", "COMPUTER_SCIENCE",
                 "consents", List.of(
                         Map.of("docType", "TERMS_OF_SERVICE", "version", 1),

@@ -18,6 +18,7 @@ import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
 import kr.ac.pusan.pickle.profile.ProfileLock;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
+import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserPosition;
@@ -25,6 +26,7 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
 import kr.ac.pusan.pickle.user.UserStatusChangeRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -46,12 +48,13 @@ public class AdminUserService {
     private final MfaService mfaService;
     private final RefreshTokenService refreshTokenService;
     private final ProfileValidator profileValidator;
+    private final StudentNoUniqueness studentNoUniqueness;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
             NotificationService notificationService, AdminUserQueryService adminUserQueryService,
             MfaService mfaService, RefreshTokenService refreshTokenService,
-            ProfileValidator profileValidator) {
+            ProfileValidator profileValidator, StudentNoUniqueness studentNoUniqueness) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
@@ -60,6 +63,7 @@ public class AdminUserService {
         this.mfaService = mfaService;
         this.refreshTokenService = refreshTokenService;
         this.profileValidator = profileValidator;
+        this.studentNoUniqueness = studentNoUniqueness;
     }
 
     /**
@@ -107,15 +111,26 @@ public class AdminUserService {
         boolean codeIsNew = request.isDepartmentCodeSet()
                 && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
         profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
+        // One account per 학번 binds the administrator too (V131). Correcting
+        // a number two accounts claim means clearing it on the wrong one first.
+        String storedStudentNo = ProfileValidator.normalizeStudentNo(position, studentNo);
+        studentNoUniqueness.requireAvailable(storedStudentNo, user.getId());
 
         UserPosition previousPosition = user.getPosition();
         String previousStudentNo = user.getStudentNo();
         String previousDepartmentCode = user.getDepartmentCode();
         boolean droppedStudentNo =
                 ProfileLock.positionChangeDropsStudentNo(previousPosition, position, previousStudentNo);
-        user.setProfile(position, ProfileValidator.normalizeStudentNo(position, studentNo),
+        user.setProfile(position, storedStudentNo,
                 departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
-        userRepository.save(user);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException e) {
+            if (StudentNoUniqueness.isViolation(e)) {
+                throw StudentNoUniqueness.taken();
+            }
+            throw e;
+        }
 
         // 학번 is recorded as set/not-set rather than as a value, matching the
         // holder's own entry: the audit log is not a second place to keep it.

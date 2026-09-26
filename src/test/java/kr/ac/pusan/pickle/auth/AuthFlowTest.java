@@ -52,7 +52,7 @@ class AuthFlowTest {
     /** Profile fields every signup needs; a case names only what it is about. */
     private static final Map<String, Object> SIGNUP_DEFAULTS = Map.of(
             "position", "STUDENT_UNDERGRAD",
-            "studentNo", "202012345",
+            "studentNo", "332012345",
             "departmentCode", "COMPUTER_SCIENCE");
 
     @Autowired

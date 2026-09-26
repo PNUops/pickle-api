@@ -2,9 +2,10 @@ package kr.ac.pusan.pickle.user;
 
 /**
  * 직책 — what the account holder is at the university (contract schema
- * {@code UserPosition}). Optional since v0.46.0: the console asks for it after
- * the account exists, in a prompt the holder can dismiss, and {@code PUT
- * /me/profile} is where it lands. Signup still accepts it.
+ * {@code UserPosition}). The console asks for it after the account exists, in
+ * a gate the holder passes before using the console (v0.87.0; a dismissable
+ * prompt from v0.46.0), and {@code PUT /me/profile} is where it lands. Signup
+ * still accepts it. The server does not require it: the gate is the console's.
  *
  * <p>The Korean label lives here rather than in the console because the
  * console renders whatever {@code GET /meta/profile-options} sends: one home

@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
+import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.auth.dto.AuthTokenResponse;
 import kr.ac.pusan.pickle.auth.dto.LoginRequest;
@@ -70,6 +71,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
     private final ProfileValidator profileValidator;
+    private final StudentNoUniqueness studentNoUniqueness;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
@@ -87,6 +89,7 @@ public class AuthService {
             PersonalWorkspaceService personalWorkspaceService,
             PasswordEncoder passwordEncoder,
             PasswordPolicy passwordPolicy, ProfileValidator profileValidator,
+            StudentNoUniqueness studentNoUniqueness,
             RateLimitService rateLimitService,
             AuditService auditService,
             NotificationService notificationService,
@@ -104,6 +107,7 @@ public class AuthService {
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
         this.profileValidator = profileValidator;
+        this.studentNoUniqueness = studentNoUniqueness;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -149,8 +153,26 @@ public class AuthService {
             return signupAccepted();
         }
         try {
-            transactionTemplate.executeWithoutResult(status -> createAccount(request, email, ip));
+            transactionTemplate.executeWithoutResult(status -> createAccount(request, email, ip, true));
         } catch (DataIntegrityViolationException integrityViolation) {
+            if (StudentNoUniqueness.isViolation(integrityViolation)) {
+                // Another account saved this 학번 after createAccount looked.
+                // Signup does not answer "taken" (see StudentNoUniqueness), so
+                // the account is created without the profile, as it would have
+                // been had the number already been held when it looked.
+                try {
+                    transactionTemplate.executeWithoutResult(
+                            status -> createAccount(request, email, ip, false));
+                } catch (DataIntegrityViolationException secondViolation) {
+                    // The address was taken in between, which answers exactly as
+                    // the unique-email race below does.
+                    if (!userRepository.existsByEmail(email)) {
+                        throw secondViolation;
+                    }
+                    sendAlreadyRegisteredNotice(email);
+                }
+                return signupAccepted();
+            }
             // Only the unique-email race answers 202; any other constraint failure
             // is a real fault and must not be dressed up as a completed signup.
             if (!userRepository.existsByEmail(email)) {
@@ -161,12 +183,12 @@ public class AuthService {
         return signupAccepted();
     }
 
-    private void createAccount(SignupRequest request, String email, String ip) {
+    private void createAccount(SignupRequest request, String email, String ip, boolean withProfile) {
         User user = new User(email, passwordEncoder.encode(request.password()), request.name().strip());
-        user.setProfile(request.position(),
-                ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
-                request.departmentCode(),
-                ProfileValidator.normalizeDepartmentOther(request.departmentOther()));
+        if (withProfile) {
+            studentNoUniqueness.applyAtSignup(user, request.position(), request.studentNo(),
+                    request.departmentCode(), request.departmentOther());
+        }
         user = userRepository.save(user);
         // Consent completeness is validated here (422 rolls the whole tx back, so
         // no verification mail is sent for an incomplete signup).

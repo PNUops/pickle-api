@@ -78,9 +78,20 @@ public class MfaEnrollmentFilter extends OncePerRequestFilter {
      * they already have. That is the restriction working rather than a
      * lock-out: changing a password is not a step in enrolling, and an account
      * with no password still reaches the reset mail above.
+     *
+     * <p>{@code /api/v1/me/profile} and {@code /api/v1/me/consents} are
+     * listed, exactly, because the console puts both gates in front of the
+     * whole shell (terms first, then the profile, v0.87.0) and the enrolment
+     * screen lives inside the shell. Without them an unenrolled admin is
+     * refused on the one write that would let them reach enrolment. Both are
+     * safe to leave open: accepting the current terms and filling 직책·학번·소속
+     * grant nothing. The profile write can also change 이름, which is a display
+     * string, and cannot move a stored 직책, 학번 or 소속.
      */
     private static boolean isExempt(String uri) {
         return "/api/v1/me".equals(uri)
+                || "/api/v1/me/profile".equals(uri)
+                || "/api/v1/me/consents".equals(uri)
                 || uri.startsWith("/api/v1/me/mfa/")
                 || uri.startsWith("/api/v1/auth/")
                 || uri.startsWith("/api/v1/meta/")

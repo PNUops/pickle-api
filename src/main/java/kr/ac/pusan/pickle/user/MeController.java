@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.auth.RateLimitService;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -18,8 +19,10 @@ import kr.ac.pusan.pickle.identity.UserIdentityRepository;
 import kr.ac.pusan.pickle.profile.ProfileOptionsService;
 import kr.ac.pusan.pickle.profile.ProfileLock;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
+import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.user.dto.UpdateProfileRequest;
 import kr.ac.pusan.pickle.user.dto.UserProfileResponse;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Contract tag {@code me}: GET /me — profile with workspace memberships,
- * linked identities and the 직책·소속 학과 the console's profile prompt reads —
+ * linked identities and the 직책·소속 학과 the console's profile gate reads —
  * and PUT /me/profile, which is how an account fills those in and renames
  * itself.
  */
@@ -49,6 +52,8 @@ public class MeController {
     private final ProfileOptionsService profileOptionsService;
     private final ProfileValidator profileValidator;
     private final ProfileLock profileLock;
+    private final StudentNoUniqueness studentNoUniqueness;
+    private final RateLimitService rateLimitService;
     private final AuditService auditService;
 
     public MeController(UserRepository userRepository,
@@ -57,7 +62,8 @@ public class MeController {
             MfaService mfaService, TermsService termsService,
             UserIdentityRepository userIdentityRepository,
             ProfileOptionsService profileOptionsService, ProfileValidator profileValidator,
-            ProfileLock profileLock,
+            ProfileLock profileLock, StudentNoUniqueness studentNoUniqueness,
+            RateLimitService rateLimitService,
             AuditService auditService) {
         this.userRepository = userRepository;
         this.managedOrgQueryService = managedOrgQueryService;
@@ -68,6 +74,8 @@ public class MeController {
         this.profileOptionsService = profileOptionsService;
         this.profileValidator = profileValidator;
         this.profileLock = profileLock;
+        this.studentNoUniqueness = studentNoUniqueness;
+        this.rateLimitService = rateLimitService;
         this.auditService = auditService;
     }
 
@@ -90,11 +98,19 @@ public class MeController {
      * the RESULT of the merge rather than against the request: whether 학번 is
      * required depends on the position, so a request that changes only the
      * position has to be judged against the 학번 already on the row.
+     *
+     * <p>A 학번 another account holds is refused on {@code studentNo} (V131).
+     * That answer is an oracle over a sequential value, which is why this path
+     * is rate-limited per account: the lock already stops an account asking
+     * again once its own 학번 is saved, and the limit bounds how many it can try
+     * before that.
      */
     @PutMapping("/profile")
     @Transactional
     public UserProfileResponse updateMyProfile(@AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody UpdateProfileRequest request, HttpServletRequest httpRequest) {
+        rateLimitService.hit("profile_update", "user:" + principal.id(),
+                RateLimitService.DEFAULT_LIMIT_PER_MINUTE);
         User user = loadUser(principal);
         if (request.isEmpty()) {
             throw ApiException.validationFailed(List.of(
@@ -122,6 +138,8 @@ public class MeController {
         boolean codeIsNew = request.isDepartmentCodeSet()
                 && !java.util.Objects.equals(user.getDepartmentCode(), departmentCode);
         profileValidator.validate(position, studentNo, departmentCode, departmentOther, codeIsNew);
+        String storedStudentNo = ProfileValidator.normalizeStudentNo(position, studentNo);
+        studentNoUniqueness.requireAvailable(storedStudentNo, user.getId());
 
         String previousName = user.getName();
         String previousStudentNo = user.getStudentNo();
@@ -129,7 +147,7 @@ public class MeController {
         if (request.isNameSet()) {
             user.setName(request.getName().strip());
         }
-        user.setProfile(position, ProfileValidator.normalizeStudentNo(position, studentNo),
+        user.setProfile(position, storedStudentNo,
                 departmentCode, ProfileValidator.normalizeDepartmentOther(departmentOther));
         // Audited like every other self-service write on /me. 학번 is a personal
         // identifier, and since v0.51.0 the holder writes it exactly once — so
@@ -150,7 +168,16 @@ public class MeController {
                         "previousStudentNoSet", String.valueOf(previousStudentNo != null),
                         "previousName", previousName),
                 clientIp(httpRequest));
-        return profileOf(userRepository.save(user));
+        try {
+            return profileOf(userRepository.saveAndFlush(user));
+        } catch (DataIntegrityViolationException e) {
+            // Lost the race the check above cannot close: another account
+            // saved the same 학번 between that read and this write.
+            if (StudentNoUniqueness.isViolation(e)) {
+                throw StudentNoUniqueness.taken();
+            }
+            throw e;
+        }
     }
 
     private User loadUser(AuthenticatedUser principal) {

@@ -232,7 +232,7 @@ class AccountLifecycleTest {
         // 202 every signup gets (consents present so nothing fails bean validation)
         postPublic("/api/v1/auth/signup",
                 Map.of("email", user.getEmail(), "password", NEW_PASSWORD, "name", "재가입시도",
-                        "position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                        "position", "STUDENT_UNDERGRAD", "studentNo", "402012345",
                         "departmentCode", "COMPUTER_SCIENCE",
                         "consents", List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),

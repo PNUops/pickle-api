@@ -34,8 +34,8 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>A code that is not in the catalogue is refused at the service layer, and
  * {@link #OTHER} is the safety net for a 소속 학과 the list does not name. A
  * missing or malformed resource fails startup rather than serving an empty
- * list: signup would survive that now, but the profile prompt would offer no
- * choices and there would be nothing on screen to say why.
+ * list: signup would survive that now, but the profile gate would offer no
+ * choices, and since it blocks the console, nobody could get past it.
  */
 @Component
 public class DepartmentCatalog {

@@ -43,9 +43,11 @@ public class ProfileValidator {
     /**
      * Throws 422 with one field error per broken rule.
      *
-     * <p>직책 and 소속 are both optional since v0.46.0 — an account that has
-     * filled in neither is an ordinary state, not an incomplete one — so every
-     * rule below is written to pass on null.
+     * <p>직책 and 소속 are optional as far as the server is concerned: the
+     * console's gate (v0.87.0) is what asks for them, and an account that has
+     * filled in neither still passes every API check — so every rule below is
+     * written to pass on null. That is also why a request that only changes
+     * 이름 can succeed on an account with no profile.
      *
      * <p>소속 has two shapes and the position picks between them. A student
      * belongs to a 학과 and chooses a catalogue code. A 교수, 연구원 or 직원 may
