@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountAllocationResponse;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountResponse;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterCredentialStateResponse;
+import kr.ac.pusan.pickle.admin.dto.RegisterOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.StageOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.audit.AuditService;
@@ -274,17 +275,110 @@ public class AdminOpenRouterAccountService {
         return response(account);
     }
 
+    /**
+     * Puts the first management credential on an account that has none, ACTIVE
+     * in one request. The staged-overlap lifecycle exists so a working
+     * credential keeps serving while its replacement is verified; with nothing
+     * to displace there is neither a credential to protect nor a state to roll
+     * back to, and the checks a separate activation would run are the ones
+     * this method has already run.
+     *
+     * <p>The body follows {@link #activate} rather than {@link #stage}: the
+     * vendor probes belong inside the advisory lock, because two first
+     * registrations of one vendor billing account cannot see each other
+     * through {@link #rejectSharedVendorAccount} — neither has an identity
+     * marker or a committed ACTIVE row for the other to find.
+     */
+    public OpenRouterAccountResponse registerCredential(AuthenticatedUser actor, UUID accountId,
+            RegisterOpenRouterCredentialRequest form, String ip) {
+        OpenRouterAccount snapshot = requireWritable(actor, accountId);
+        confirm(snapshot.getName(), form.confirmName());
+        requireActive(snapshot);
+        requireNoCredential(snapshot);
+        requireKeyringWritable();
+        AtomicReference<OpenRouterClient.CreatedKey> identityMarker = new AtomicReference<>();
+        AtomicReference<String> identitySecret = new AtomicReference<>();
+        OpenRouterAccountResponse result;
+        try {
+            result = tx.execute(status -> {
+                // Same lock id as activate(): both paths can turn a vendor
+                // billing account into an ACTIVE scope for the first time, and
+                // two different ids would let them race each other.
+                Object identityLock = entityManager.createNativeQuery(
+                        "select pg_try_advisory_xact_lock(6841807811705001)")
+                        .getSingleResult();
+                if (!Boolean.TRUE.equals(identityLock)) {
+                    throw credentialState(
+                            "다른 OpenRouter credential activation이 진행 중입니다. 다시 시도해 주세요.");
+                }
+                String secret = form.managementKey();
+                UUID workspaceId = validateCandidate(snapshot, secret);
+                rejectSharedVendorAccount(snapshot, secret);
+                // No same-secret guard and no cross-management probe: both
+                // compare against an ACTIVE secret, and there is none. Their
+                // absence here is the shape of the path, not an omission.
+                OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
+                requireActive(locked);
+                requireNoCredential(locked);
+                // Before the marker, never after: createIdentityMarker reads the
+                // account's vendor workspace, and on this path nothing has
+                // discovered it yet. Reversed, the marker creation fails on that
+                // null rather than landing anywhere useful.
+                resolveVendorWorkspace(locked, workspaceId);
+                Instant now = Instant.now();
+                // An account can reach this path holding a marker already: safe
+                // deletion of the last ACTIVE credential requires one, and leaves
+                // the account with no credential row. Minting a second marker
+                // there would be rejected by the immutability rule, so the
+                // account would have no way back to a usable state.
+                if (locked.getVendorIdentityKeyHash() == null) {
+                    OpenRouterClient.CreatedKey marker = createIdentityMarker(locked, secret);
+                    identityMarker.set(marker);
+                    identitySecret.set(secret);
+                    locked.establishVendorIdentityKey(marker.hash(), now);
+                }
+                OpenRouterAccountCredential credential = new OpenRouterAccountCredential(
+                        locked.getId(), credentialCipher.encrypt(locked.getPublicId(), secret),
+                        actor.id(), now);
+                // Before the first flush, so the row is inserted ACTIVE with
+                // activated_at set and occupies slot 0 outright. Nothing is
+                // swapped, so the slot constraint needs no deferral.
+                credential.activate(now);
+                credentialRepository.saveAndFlush(credential);
+                auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                        AuditService.OPENROUTER_CREDENTIAL_REGISTER, "openrouter_account",
+                        locked.getPublicId(),
+                        Map.of("verified", true, "identityEstablished", identityMarker.get() != null),
+                        ip);
+                return response(locked);
+            });
+            // Committed: the marker is live and must survive. Clearing the
+            // refs is what stops a later failure from deleting it.
+            identityMarker.set(null);
+            identitySecret.set(null);
+        } catch (RuntimeException e) {
+            cleanupIdentityMarker(snapshot, identitySecret.get(), identityMarker.get());
+            if (e instanceof DataIntegrityViolationException) {
+                // Serialization makes this unreachable in the reasoning above,
+                // so ask the database which of the two shapes it was rather
+                // than asserting a cause this path cannot know.
+                throw registrationConflict(snapshot);
+            }
+            throw e;
+        }
+        tx.executeWithoutResult(status ->
+                keyRepository.clearOpenrouterBackoffForAccount(snapshot.getId()));
+        creditRefreshScheduler.requestAfterCredentialChange(accountId);
+        return result;
+    }
+
     public OpenRouterAccountResponse stage(AuthenticatedUser actor, UUID accountId,
             StageOpenRouterCredentialRequest form, String ip) {
         OpenRouterAccount snapshot = requireWritable(actor, accountId);
         confirm(snapshot.getName(), form.confirmName());
         requireActive(snapshot);
-        if (!credentialCipher.configuredForWrite()) {
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
-                    ErrorCodes.OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE,
-                    "Credential keyring을 사용할 수 없습니다",
-                    "OpenRouter management credential 암호화 keyring을 먼저 구성해 주세요.");
-        }
+        requireRotatableCredential(snapshot);
+        requireKeyringWritable();
         UUID workspaceId = validateCandidate(snapshot, form.managementKey());
         rejectSharedVendorAccount(snapshot, form.managementKey());
         accountRepository.findByVendorWorkspaceId(workspaceId)
@@ -294,18 +388,20 @@ public class AdminOpenRouterAccountService {
             return tx.execute(status -> {
                 OpenRouterAccount locked = requireWritableWithLock(actor, accountId);
                 requireActive(locked);
-                if (credentialRepository.findByAccountIdOrderByIdAsc(locked.getId()).stream()
+                List<OpenRouterAccountCredential> existing =
+                        credentialRepository.findByAccountIdOrderByIdAsc(locked.getId());
+                // Rotation-in-progress first: an account holding only a STAGED
+                // row satisfies both conditions, and "finish the one you
+                // started" is the answer that names an action.
+                if (existing.stream()
                         .anyMatch(c -> c.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
                     throw credentialState("이미 진행 중인 credential rotation이 있습니다.");
                 }
-                if (locked.getVendorWorkspaceId() == null) {
-                    accountRepository.findByVendorWorkspaceId(workspaceId)
-                            .filter(other -> !other.getId().equals(locked.getId()))
-                            .ifPresent(other -> { throw workspaceConflict(); });
-                    locked.discoverVendorWorkspace(workspaceId, Instant.now());
-                } else if (!locked.getVendorWorkspaceId().equals(workspaceId)) {
-                    throw verificationFailed(OpenRouterCredentialError.VENDOR_REJECTED);
+                if (existing.stream()
+                        .noneMatch(c -> c.getStatus() == OpenRouterCredentialStatus.ACTIVE)) {
+                    throw noCredentialToRotate();
                 }
+                resolveVendorWorkspace(locked, workspaceId);
                 String encrypted = credentialCipher.encrypt(locked.getPublicId(),
                         form.managementKey());
                 credentialRepository.saveAndFlush(new OpenRouterAccountCredential(locked.getId(),
@@ -972,6 +1068,75 @@ public class AdminOpenRouterAccountService {
     private static void requireActive(OpenRouterAccount account) {
         if (account.getStatus() != OpenRouterAccountStatus.ACTIVE) {
             throw invalidState("보관된 account에는 credential을 등록할 수 없습니다.");
+        }
+    }
+
+    private void requireKeyringWritable() {
+        if (!credentialCipher.configuredForWrite()) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE,
+                    ErrorCodes.OPENROUTER_CREDENTIAL_KEYRING_UNAVAILABLE,
+                    "Credential keyring을 사용할 수 없습니다",
+                    "OpenRouter management credential 암호화 keyring을 먼저 구성해 주세요.");
+        }
+    }
+
+    /**
+     * Rejects a first registration on an account that already holds one, and
+     * does it before the vendor probes so a mis-aimed call costs no round trip.
+     * The authoritative repeat runs under the account row lock.
+     */
+    private void requireNoCredential(OpenRouterAccount account) {
+        if (!credentialRepository.findByAccountIdOrderByIdAsc(account.getId()).isEmpty()) {
+            throw credentialState("이미 등록된 credential이 있습니다. 교체는 대기 등록을 거칩니다.");
+        }
+    }
+
+    /**
+     * The mirror of the guard above, for the rotation-only staging path. Same
+     * order as the locked re-check: a started rotation is reported as one,
+     * rather than as an account with nothing to rotate.
+     */
+    private void requireRotatableCredential(OpenRouterAccount account) {
+        List<OpenRouterAccountCredential> existing =
+                credentialRepository.findByAccountIdOrderByIdAsc(account.getId());
+        if (existing.stream().anyMatch(c -> c.getStatus() != OpenRouterCredentialStatus.ACTIVE)) {
+            throw credentialState("이미 진행 중인 credential rotation이 있습니다.");
+        }
+        if (existing.stream().noneMatch(c -> c.getStatus() == OpenRouterCredentialStatus.ACTIVE)) {
+            throw noCredentialToRotate();
+        }
+    }
+
+    /**
+     * Integrity failure on the registration path. Two shapes reach here and
+     * they mean different things, so the answer is read from the database
+     * rather than assumed: another credential landed first, or the vendor
+     * workspace this key resolved to already belongs to another account.
+     */
+    private ApiException registrationConflict(OpenRouterAccount snapshot) {
+        if (!credentialRepository.findByAccountIdOrderByIdAsc(snapshot.getId()).isEmpty()) {
+            return credentialState("이미 등록된 credential이 있습니다. 교체는 대기 등록을 거칩니다.");
+        }
+        return workspaceConflict();
+    }
+
+    private static ApiException noCredentialToRotate() {
+        return credentialState("이 account에는 교체할 ACTIVE credential이 없습니다. 먼저 등록해 주세요.");
+    }
+
+    /**
+     * Pins the account to the vendor workspace the candidate key resolved to,
+     * or rejects a key from a different one. Mutates {@code locked}, so it runs
+     * before anything that reads {@code getVendorWorkspaceId()}.
+     */
+    private void resolveVendorWorkspace(OpenRouterAccount locked, UUID workspaceId) {
+        if (locked.getVendorWorkspaceId() == null) {
+            accountRepository.findByVendorWorkspaceId(workspaceId)
+                    .filter(other -> !other.getId().equals(locked.getId()))
+                    .ifPresent(other -> { throw workspaceConflict(); });
+            locked.discoverVendorWorkspace(workspaceId, Instant.now());
+        } else if (!locked.getVendorWorkspaceId().equals(workspaceId)) {
+            throw verificationFailed(OpenRouterCredentialError.VENDOR_REJECTED);
         }
     }
 

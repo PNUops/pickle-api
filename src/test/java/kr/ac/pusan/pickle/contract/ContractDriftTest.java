@@ -166,6 +166,7 @@ class ContractDriftTest {
             "GET /admin/llm/accounts/{accountId}",
             "GET /admin/llm/accounts/{accountId}/usage",
             "PATCH /admin/llm/accounts/{accountId}",
+            "POST /admin/llm/accounts/{accountId}/credentials",
             "POST /admin/llm/accounts/{accountId}/credentials/staged",
             "POST /admin/llm/accounts/{accountId}/credentials/staged/activate",
             "POST /admin/llm/accounts/{accountId}/credentials/staged/cancel",

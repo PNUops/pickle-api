@@ -16,6 +16,7 @@ import kr.ac.pusan.pickle.admin.dto.ConfirmOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountResponse;
+import kr.ac.pusan.pickle.admin.dto.RegisterOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.StageOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -104,11 +105,24 @@ public class AdminOpenRouterAccountController {
         return service.update(principal, accountId, request, clientIp(httpRequest));
     }
 
+    @PostMapping("/{accountId}/credentials")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize(WRITERS)
+    @Operation(summary = "OpenRouter 관리 credential 최초 등록",
+            description = "credential이 하나도 없는 account에 관리용 키를 등록합니다. account 이름 확인 뒤 management 전용 권한과 vendor workspace를 disposable key로 검증하고, 같은 요청에서 billing identity marker를 만들어 ACTIVE 상태로 저장합니다. 이미 credential이 있으면 거절하며 교체는 대기 등록을 거칩니다.")
+    public OpenRouterAccountResponse registerAdminLlmAccountCredential(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID accountId,
+            @Valid @RequestBody RegisterOpenRouterCredentialRequest request,
+            HttpServletRequest httpRequest) {
+        return service.registerCredential(principal, accountId, request, clientIp(httpRequest));
+    }
+
     @PostMapping("/{accountId}/credentials/staged")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize(WRITERS)
-    @Operation(summary = "OpenRouter 관리 credential 검증 및 대기 등록",
-            description = "account 이름 확인 뒤 management 전용 권한과 vendor workspace를 disposable key로 검증하고 STAGED 상태로 저장합니다. 평문과 credential 조각은 응답하지 않습니다.")
+    @Operation(summary = "OpenRouter 관리 credential 교체 대기 등록",
+            description = "쓰고 있는 ACTIVE credential을 교체할 후보를 등록합니다. account 이름 확인 뒤 management 전용 권한과 vendor workspace를 disposable key로 검증하고 STAGED 상태로 저장합니다. ACTIVE credential이 없으면 거절하며 최초 등록은 별도 경로를 씁니다. 평문과 credential 조각은 응답하지 않습니다.")
     public OpenRouterAccountResponse stageAdminLlmAccountCredential(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID accountId,

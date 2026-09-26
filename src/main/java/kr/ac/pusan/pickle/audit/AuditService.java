@@ -104,6 +104,7 @@ public class AuditService {
     public static final String LLM_KEY_RESUME = "llm_key.resume";
     public static final String OPENROUTER_ACCOUNT_CREATE = "openrouter_account.create";
     public static final String OPENROUTER_ACCOUNT_UPDATE = "openrouter_account.update";
+    public static final String OPENROUTER_CREDENTIAL_REGISTER = "openrouter_credential.register";
     public static final String OPENROUTER_CREDENTIAL_STAGE = "openrouter_credential.stage";
     public static final String OPENROUTER_CREDENTIAL_ACTIVATE = "openrouter_credential.activate";
     public static final String OPENROUTER_CREDENTIAL_CANCEL = "openrouter_credential.cancel";
