@@ -27,11 +27,13 @@ import kr.ac.pusan.pickle.oauth.dto.OauthRegistrationResponse;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartRequest;
 import kr.ac.pusan.pickle.oauth.dto.OauthStartResponse;
 import kr.ac.pusan.pickle.profile.ProfileValidator;
+import kr.ac.pusan.pickle.profile.StudentNoUniqueness;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.jspecify.annotations.Nullable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,6 +70,7 @@ public class GoogleOauthService {
     private final MfaService mfaService;
     private final TermsService termsService;
     private final ProfileValidator profileValidator;
+    private final StudentNoUniqueness studentNoUniqueness;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
     private final NotificationService notificationService;
@@ -77,6 +80,7 @@ public class GoogleOauthService {
             UserIdentityRepository identityRepository, UserRepository userRepository,
             AuthService authService, MfaService mfaService,
             TermsService termsService, ProfileValidator profileValidator,
+            StudentNoUniqueness studentNoUniqueness,
             RateLimitService rateLimitService, AuditService auditService,
             NotificationService notificationService) {
         this.properties = properties;
@@ -89,6 +93,7 @@ public class GoogleOauthService {
         this.mfaService = mfaService;
         this.termsService = termsService;
         this.profileValidator = profileValidator;
+        this.studentNoUniqueness = studentNoUniqueness;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
         this.notificationService = notificationService;
@@ -306,11 +311,21 @@ public class GoogleOauthService {
         // email_verified for an address in our own Workspace domain, which is the
         // same mailbox a verification mail would have gone to.
         User user = new User(registration.getEmail(), null, request.name().strip());
-        user.setProfile(request.position(),
-                ProfileValidator.normalizeStudentNo(request.position(), request.studentNo()),
-                request.departmentCode(),
-                ProfileValidator.normalizeDepartmentOther(request.departmentOther()));
-        user = userRepository.save(user);
+        // A 학번 another account holds is dropped with the rest of the profile
+        // rather than answered: see StudentNoUniqueness. The race this cannot
+        // see fails the insert and rolls the whole transaction back, the
+        // registration token's consumption included, so the answer below is
+        // true — starting over works, and finds the number taken.
+        studentNoUniqueness.applyAtSignup(user, request.position(), request.studentNo(),
+                request.departmentCode(), request.departmentOther());
+        try {
+            user = userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            if (StudentNoUniqueness.isViolation(e)) {
+                throw registrationGone();
+            }
+            throw e;
+        }
         // Same transaction as the user row, exactly as signup does it: an
         // incomplete consent set has to roll the account back, not leave one
         // behind that has agreed to nothing.

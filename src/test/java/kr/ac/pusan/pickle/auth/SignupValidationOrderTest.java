@@ -174,6 +174,34 @@ class SignupValidationOrderTest {
         org.assertj.core.api.Assertions.assertThat(created.getStudentNo()).isNull();
     }
 
+    /**
+     * A 학번 another account holds does not surface at signup. The response
+     * stays the uniform 202 and the account is created without the profile,
+     * which the console then asks for; answering "taken" here would hand an
+     * anonymous caller the oracle the authenticated path bounds with its lock.
+     */
+    @Test
+    void aTakenStudentNumberAtSignupAnswersTheSameAndStoresNoProfile() throws Exception {
+        String holderEmail = "order.holder@pusan.ac.kr";
+        String newcomer = "order.newcomer@pusan.ac.kr";
+        userRepository.findByEmail(newcomer).ifPresent(userRepository::delete);
+        if (userRepository.findByEmail(holderEmail).isEmpty()) {
+            User holder = new User(holderEmail, null, "먼저 등록");
+            holder.setStatus(UserStatus.ACTIVE);
+            holder.setProfile(kr.ac.pusan.pickle.user.UserPosition.STUDENT_UNDERGRAD, "359900010",
+                    "COMPUTER_SCIENCE", null);
+            userRepository.saveAndFlush(holder);
+        }
+
+        signup(newcomer, Map.of("studentNo", "359900010"), "10.96.0.31")
+                .andExpect(status().isAccepted());
+
+        User created = userRepository.findByEmail(newcomer).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(created.getPosition()).isNull();
+        org.assertj.core.api.Assertions.assertThat(created.getStudentNo()).isNull();
+        org.assertj.core.api.Assertions.assertThat(created.getDepartmentCode()).isNull();
+    }
+
     private org.springframework.test.web.servlet.ResultActions signup(String email,
             Map<String, ?> overrides) throws Exception {
         return signup(email, overrides, "10.96.0.7");
@@ -193,7 +221,7 @@ class SignupValidationOrderTest {
                 "password", PASSWORD,
                 "name", "순서검사",
                 "position", "STUDENT_UNDERGRAD",
-                "studentNo", "202012345",
+                "studentNo", "352012345",
                 "departmentCode", "COMPUTER_SCIENCE",
                 "consents", FULL_CONSENTS));
         body.putAll(overrides);

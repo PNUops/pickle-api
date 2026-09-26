@@ -83,12 +83,12 @@ class ProfileSurfaceTest {
 
     @Test
     void fillingTheProfileInCompletesItAndResolvesTheDepartmentName() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_GRADUATE", "studentNo", "202512345",
+        updateProfile(Map.of("position", "STUDENT_GRADUATE", "studentNo", "412512345",
                 "departmentCode", "COMPUTER_SCIENCE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.profileComplete").value(true))
                 .andExpect(jsonPath("$.position").value("STUDENT_GRADUATE"))
-                .andExpect(jsonPath("$.studentNo").value("202512345"))
+                .andExpect(jsonPath("$.studentNo").value("412512345"))
                 .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"))
                 // Resolved on read, so a renamed department needs no migration.
                 .andExpect(jsonPath("$.departmentName").value("정보컴퓨터공학부"));
@@ -96,7 +96,7 @@ class ProfileSurfaceTest {
 
     @Test
     void movingFromAStudentPositionIsRefusedOnceThePositionIsSet() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // Until 2026-08-27 this went through and dropped the 학번 with it. It is
@@ -109,7 +109,7 @@ class ProfileSurfaceTest {
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
                 .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("412012345"));
     }
 
     @Test
@@ -146,7 +146,7 @@ class ProfileSurfaceTest {
 
     @Test
     void sendingOnlyTheNameLeavesTheProfileAlone() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // The account screen changes the display name on its own. A full
@@ -157,7 +157,7 @@ class ProfileSurfaceTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("새 이름"))
                 .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
-                .andExpect(jsonPath("$.studentNo").value("202012345"))
+                .andExpect(jsonPath("$.studentNo").value("412012345"))
                 .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"))
                 .andExpect(jsonPath("$.profileComplete").value(true));
     }
@@ -166,7 +166,7 @@ class ProfileSurfaceTest {
     void aStudentNumberAddedLaterIsJudgedAgainstTheStoredPosition() throws Exception {
         // 직책 first, 학번 later — which the profile prompt produces when someone
         // fills half of it, closes it, and comes back.
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // Validation runs against the merge, not the request. Judged against
@@ -176,7 +176,7 @@ class ProfileSurfaceTest {
         updateProfile(Map.of("departmentCode", "COMPUTER_SCIENCE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("412012345"));
     }
 
     @Test
@@ -193,7 +193,7 @@ class ProfileSurfaceTest {
 
     @Test
     void resendingAStoredValueIsNotTreatedAsAChange() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // The console's profile modal opens prefilled and submits every field
@@ -202,22 +202,22 @@ class ProfileSurfaceTest {
         Map<String, Object> body = new HashMap<>();
         body.put("name", "같은 프로필 새 이름");
         body.put("position", "STUDENT_UNDERGRAD");
-        body.put("studentNo", "  202012345  ");
+        body.put("studentNo", "  412012345  ");
         body.put("departmentCode", "COMPUTER_SCIENCE");
         updateProfile(body)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("같은 프로필 새 이름"))
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("412012345"));
     }
 
     @Test
     void aStoredStudentNumberCannotBeReplacedOrCleared() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // The reason the lock exists: a 학번 that is not the holder's stops
         // being reachable by editing.
-        updateProfile(Map.of("studentNo", "202099999"))
+        updateProfile(Map.of("studentNo", "412099999"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
 
@@ -228,7 +228,7 @@ class ProfileSurfaceTest {
                 .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("412012345"));
     }
 
     @Test
@@ -281,7 +281,7 @@ class ProfileSurfaceTest {
 
     @Test
     void clearingAStoredPositionIsRefusedRatherThanCascading() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // This used to clear the 학번 along with the 직책 it belonged to, without
@@ -295,7 +295,7 @@ class ProfileSurfaceTest {
                 .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
 
         mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("412012345"));
     }
 
     @Test
@@ -312,7 +312,7 @@ class ProfileSurfaceTest {
 
     @Test
     void aStudentWhoseDepartmentIsUnlistedCarriesBoth() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "OTHER", "departmentOther", "융합학부"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.departmentCode").value("OTHER"))
@@ -398,7 +398,7 @@ class ProfileSurfaceTest {
 
     @Test
     void aStoredDepartmentCodeCannotBeReplacedByAnotherValidOne() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // The gap this closes: the only replacement the suite tried was an
@@ -433,7 +433,7 @@ class ProfileSurfaceTest {
 
     @Test
     void oneStudentPositionCannotBecomeTheOther() throws Exception {
-        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "412012345",
                 "departmentCode", "COMPUTER_SCIENCE")).andExpect(status().isOk());
 
         // 학부생 to 대학원생 keeps the 학번, so the drop-guard has nothing to
@@ -442,6 +442,66 @@ class ProfileSurfaceTest {
         updateProfile(Map.of("position", "STUDENT_GRADUATE"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.errors[?(@.field == 'position')]").exists());
+    }
+
+    /**
+     * One 학번, one account (V131). Answered on the field, like every other
+     * profile rule, and the holder's own number re-sent is not "taken".
+     */
+    @Test
+    void aStudentNumberAnotherAccountHoldsIsRefusedOnTheField() throws Exception {
+        String holderEmail = "profile.holder@pusan.ac.kr";
+        userRepository.findByEmail(holderEmail).ifPresent(existing -> {
+            userRepository.delete(existing);
+            userRepository.flush();
+        });
+        User holder = new User(holderEmail, null, "먼저 등록");
+        holder.setStatus(UserStatus.ACTIVE);
+        holder.setProfile(UserPosition.STUDENT_UNDERGRAD, "419900001", "COMPUTER_SCIENCE", null);
+        userRepository.saveAndFlush(holder);
+
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "419900001",
+                "departmentCode", "COMPUTER_SCIENCE"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+        // Nothing half-saved: the refusal rolls the whole profile back.
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.position").doesNotExist())
+                .andExpect(jsonPath("$.profileComplete").value(false));
+
+        // Letters are allowed, so case does not make a different number.
+        userRepository.findByEmail(holderEmail).ifPresent(h -> {
+            h.setProfile(UserPosition.STUDENT_UNDERGRAD, "EX41001", "COMPUTER_SCIENCE", null);
+            userRepository.saveAndFlush(h);
+        });
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "ex41001",
+                "departmentCode", "COMPUTER_SCIENCE"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+
+        updateProfile(Map.of("position", "STUDENT_UNDERGRAD", "studentNo", "419900002",
+                "departmentCode", "COMPUTER_SCIENCE"))
+                .andExpect(status().isOk());
+        // The console resends every field it shows; its own number is not a collision.
+        updateProfile(Map.of("name", "이름만 바꿈", "studentNo", "419900002"))
+                .andExpect(status().isOk());
+
+        userRepository.delete(userRepository.findByEmail(holderEmail).orElseThrow());
+    }
+
+    /**
+     * The "taken" answer above is an oracle over a sequential value, and this
+     * limit is one of the two things that bound it (the write-once lock is the
+     * other). Ten a minute per account, like the other self-service writes.
+     */
+    @Test
+    void profileWritesAreRateLimitedPerAccount() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            updateProfile(Map.of("name", "이름" + i)).andExpect(status().isOk());
+        }
+        updateProfile(Map.of("name", "열한번째"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
     private org.springframework.test.web.servlet.ResultActions updateProfile(Map<String, ?> body)

@@ -242,8 +242,10 @@ public class User {
     /**
      * Whether the account has filled in 직책·소속 (and 학번 where required).
      *
-     * <p>False is an ordinary state since v0.46.0, not an incomplete signup:
-     * the console reads this to decide whether to ask, not whether to allow.
+     * <p>The console gates on this (v0.87.0): an account reporting false is
+     * shown the profile form in place of the console until it answers. The
+     * server allows every operation either way, so false is a state the
+     * console acts on, not one the API refuses.
      *
      * <p>소속 is satisfied by <b>either</b> shape. Requiring the code alone
      * would leave every 교수 and 직원 permanently incomplete once 소속 became

@@ -56,7 +56,7 @@ class PreHijackTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "email", VICTIM, "password", ATTACKER_PASSWORD, "name", "공격자",
-                                "position", "STUDENT_UNDERGRAD", "studentNo", "202000000",
+                                "position", "STUDENT_UNDERGRAD", "studentNo", "392000000",
                                 "departmentCode", "COMPUTER_SCIENCE",
                                 "consents", List.of(
                                         Map.of("docType", "TERMS_OF_SERVICE", "version", 1),

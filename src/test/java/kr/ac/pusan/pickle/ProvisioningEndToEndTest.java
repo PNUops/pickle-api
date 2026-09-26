@@ -130,7 +130,7 @@ class ProvisioningEndToEndTest {
         // 1. signup + email verification (token comes from the mock mail)
         postJson("/api/v1/auth/signup", null,
                 Map.of("email", USER_EMAIL, "password", USER_PASSWORD, "name", "종단테스트학생",
-                        "position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                        "position", "STUDENT_UNDERGRAD", "studentNo", "312012345",
                         "departmentCode", "COMPUTER_SCIENCE",
                         "consents", java.util.List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),

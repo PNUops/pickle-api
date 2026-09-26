@@ -11,9 +11,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The other half of the write-once lock: 직책·학번·소속 stop moving for the
  * account holder, so someone has to be able to move them, and the first value
- * being permanent is what makes that necessary rather than convenient
- * ({@code V89} declined a unique constraint on 학번 for exactly this reason —
- * a typo would claim a real student's number with no way back).
+ * being permanent is what makes that necessary rather than convenient.
+ * {@code V89} declined a unique constraint on 학번 because a typo would claim
+ * a real student's number with no way back; this path is the way back, which
+ * is what let {@code V131} add the constraint.
  *
  * <p>Presence-tracked for the same reason {@code UpdateProfileRequest} is: an
  * administrator correcting 학번 alone must not blank 직책 and 소속 by omission.

@@ -37,7 +37,8 @@ import tools.jackson.databind.ObjectMapper;
  *
  * <p>Without it the lock is the trap {@code V89} described when it declined a
  * unique constraint on 학번: the first value entered is permanent, typo
- * included, with nobody able to correct it. These tests are what says the way
+ * included, with nobody able to correct it. {@code V131} added that constraint
+ * on the strength of this path. These tests are what says the way
  * back exists.
  */
 @SpringBootTest
@@ -75,7 +76,7 @@ class AdminUserProfileTest {
             return userRepository.save(user);
         });
         // The state the lock produces: a 학번 the holder can no longer touch.
-        target.setProfile(UserPosition.STUDENT_UNDERGRAD, "202012345", "COMPUTER_SCIENCE", null);
+        target.setProfile(UserPosition.STUDENT_UNDERGRAD, "322012345", "COMPUTER_SCIENCE", null);
         target = userRepository.saveAndFlush(target);
     }
 
@@ -85,7 +86,7 @@ class AdminUserProfileTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.position").value("STUDENT_UNDERGRAD"))
-                .andExpect(jsonPath("$.studentNo").value("202012345"))
+                .andExpect(jsonPath("$.studentNo").value("322012345"))
                 .andExpect(jsonPath("$.departmentCode").value("COMPUTER_SCIENCE"))
                 // Resolved, not stored: the screen shows a 학과 name.
                 .andExpect(jsonPath("$.departmentName").value("정보컴퓨터공학부"));
@@ -93,12 +94,32 @@ class AdminUserProfileTest {
 
     @Test
     void aMistypedStudentNumberCanBeCorrected() throws Exception {
-        updateProfile(Map.of("studentNo", "202054321", "reason", "본인 확인 후 학번 정정"))
+        updateProfile(Map.of("studentNo", "322054321", "reason", "본인 확인 후 학번 정정"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.studentNo").value("202054321"));
+                .andExpect(jsonPath("$.studentNo").value("322054321"));
 
         assertThat(userRepository.findByEmail(TARGET).orElseThrow().getStudentNo())
-                .isEqualTo("202054321");
+                .isEqualTo("322054321");
+    }
+
+    /**
+     * The administrator is bound by one-account-per-학번 too (V131): moving a
+     * number two accounts claim means clearing the wrong one first.
+     */
+    @Test
+    void theAdministratorCannotGiveANumberAnotherAccountHolds() throws Exception {
+        User other = ensureUser("aup.other@pusan.ac.kr", UserRole.USER, "다른계정");
+        other.setProfile(UserPosition.STUDENT_UNDERGRAD, "329900020", "COMPUTER_SCIENCE", null);
+        userRepository.saveAndFlush(other);
+
+        updateProfile(Map.of("studentNo", "329900020", "reason", "학번 정정"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'studentNo')]").exists());
+        assertThat(userRepository.findByEmail(TARGET).orElseThrow().getStudentNo())
+                .isEqualTo("322012345");
+
+        other.setProfile(UserPosition.STUDENT_UNDERGRAD, "329900021", "COMPUTER_SCIENCE", null);
+        userRepository.saveAndFlush(other);
     }
 
     @Test
@@ -131,7 +152,7 @@ class AdminUserProfileTest {
                 .contains("\"previousPosition\": \"STUDENT_UNDERGRAD\"")
                 // Never the value itself — the audit log is not a second place
                 // to keep a 학번.
-                .doesNotContain("202012345");
+                .doesNotContain("322012345");
     }
 
     @Test
@@ -155,7 +176,7 @@ class AdminUserProfileTest {
 
     @Test
     void theHolderIsToldTheirProfileWasChanged() throws Exception {
-        updateProfile(Map.of("studentNo", "202054321", "reason", "정정"))
+        updateProfile(Map.of("studentNo", "322054321", "reason", "정정"))
                 .andExpect(status().isOk());
 
         Integer notices = jdbcTemplate.queryForObject(
@@ -174,8 +195,8 @@ class AdminUserProfileTest {
         // Counted as a delta: the row survives the class, so an absolute count
         // would be reading what the other cases left behind.
         int before = profileNotices();
-        updateProfile(Map.of("studentNo", "202054321", "reason", "1차")).andExpect(status().isOk());
-        updateProfile(Map.of("studentNo", "202099999", "reason", "2차")).andExpect(status().isOk());
+        updateProfile(Map.of("studentNo", "322054321", "reason", "1차")).andExpect(status().isOk());
+        updateProfile(Map.of("studentNo", "322099999", "reason", "2차")).andExpect(status().isOk());
 
         assertThat(profileNotices() - before).isEqualTo(2);
     }
@@ -211,7 +232,7 @@ class AdminUserProfileTest {
         mockMvc.perform(patch("/api/v1/admin/users/" + target.getPublicId() + "/profile")
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(orgAdmin))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"studentNo\":\"202099999\"}"))
+                        .content("{\"studentNo\":\"322099999\"}"))
                 .andExpect(status().isForbidden());
     }
 
@@ -242,7 +263,7 @@ class AdminUserProfileTest {
         mockMvc.perform(get("/api/v1/admin/users/" + target.getPublicId())
                         .header("Authorization", "Bearer " + jwtService.createAccessToken(sysViewer)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.studentNo").value("202012345"));
+                .andExpect(jsonPath("$.studentNo").value("322012345"));
     }
 
     @Test

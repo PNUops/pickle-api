@@ -20,10 +20,14 @@ import org.springframework.stereotype.Component;
  * someone typing one — it stops them typing a second one, so what it really
  * buys is that the value stops moving once anyone might rely on it. That also
  * means <b>the first value is the one that sticks</b>, mistakes included, which
- * is why {@code V89} declined a unique constraint on 학번 (a typo would claim a
- * real student's number with no way back) and why the administrator path is
- * part of this change rather than a follow-up. Locking without it would be the
- * trap that comment describes.
+ * is why the administrator path is part of this change rather than a follow-up.
+ * {@code V89} declined a unique constraint on 학번 because a typo would claim a
+ * real student's number with no way back; locking without the administrator
+ * path would have been that trap. With it in place, {@code V131} added the
+ * constraint. This lock ends the oracle that constraint opens only at an
+ * account's first save that succeeds, which is its first miss: every probe
+ * that hits a taken number fails and saves nothing, so until then the
+ * per-account rate limit is the bound.
  *
  * <p>이름 is deliberately outside the lock: it is a display string that
  * identifies nobody, and v0.46.0 added the ability to change it.

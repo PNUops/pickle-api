@@ -30,10 +30,12 @@ public record SignupRequest(
         @Size(max = 50, message = "이름은 50자 이하여야 합니다.")
         String name,
 
-        // 직책·소속 학과 are optional since v0.46.0: signup asks for an account,
-        // and the console collects the profile afterwards in a prompt the holder
-        // can dismiss. They stay on this schema because the values are still
-        // accepted when a caller has them.
+        // 직책·소속 학과 are optional here since v0.46.0: signup asks for an
+        // account, and the console collects the profile afterwards in a gate the
+        // holder has to pass before using the console (v0.87.0). They stay on
+        // this schema because the values are still accepted when a caller has
+        // them, except that a 학번 another account holds drops the whole profile
+        // rather than being answered (StudentNoUniqueness).
         //
         // Whether 학번 is required depends on the position, so that rule and the
         // department lookup are ProfileValidator's — and they run before the

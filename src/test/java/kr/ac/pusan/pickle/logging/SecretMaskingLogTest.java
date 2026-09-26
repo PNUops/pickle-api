@@ -82,7 +82,7 @@ class SecretMaskingLogTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
                                 Map.of("email", email, "password", PASSWORD, "name", "마스킹",
-                                        "position", "STUDENT_UNDERGRAD", "studentNo", "202012345",
+                                        "position", "STUDENT_UNDERGRAD", "studentNo", "382012345",
                                         "departmentCode", "COMPUTER_SCIENCE",
                                         "consents", List.of(
                                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),

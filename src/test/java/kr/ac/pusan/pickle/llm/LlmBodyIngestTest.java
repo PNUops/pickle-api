@@ -42,7 +42,7 @@ class LlmBodyIngestTest {
 
     private static final String SOURCE = "172.30.1.40";
     private static final String TOKEN = "test-llm-gateway-token";
-    private static final String PROMPT_TEXT = "\ud559\ubc88\uc774 202012345\uc778\ub370 \uc131\uc801 \uc870\ud68c \ucf54\ub4dc \uc880";
+    private static final String PROMPT_TEXT = "\ud559\ubc88\uc774 372012345\uc778\ub370 \uc131\uc801 \uc870\ud68c \ucf54\ub4dc \uc880";
     private static final String ANSWER_TEXT = "\ub124, \uc774\ub807\uac8c \ud558\uc138\uc694";
 
     @DynamicPropertySource

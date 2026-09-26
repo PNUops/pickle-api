@@ -1,0 +1,43 @@
+-- One 학번, one account.
+--
+-- V89 declined this constraint on purpose, for two reasons. This file reverses
+-- that decision, so it has to answer both.
+--
+-- "One typo would permanently claim a real student's number with no admin path
+-- to correct it." The admin path exists now: PATCH /admin/users/{userId}/profile
+-- (SYS_ADMIN) sets or clears 학번 on any account, and it arrived together with
+-- the holder's write-once lock precisely so a first value that is wrong can be
+-- moved. A typo still claims a number, and the student whose number it is gets
+-- refused, but that is now a support request with an answer rather than a
+-- permanent state.
+--
+-- "The 409 it would answer with is an enumeration oracle over a sequential
+-- value." That remains true and is bounded rather than removed. Every probe
+-- that hits a taken number fails and saves nothing, so an account can keep
+-- asking until its first miss; the bound until then is the per-account rate
+-- limit on the profile endpoint, and after that save the write-once lock
+-- refuses before the constraint is consulted. The two signup paths never
+-- answer with it: a taken number there discards the profile and creates the
+-- account. That still leaks one step later, as an incomplete profile after
+-- sign-in, at the cost of one verified mailbox per probe.
+--
+-- The cost this adds: whoever saves a real student's number first holds it,
+-- and the console's profile gate then refuses the real student with no way
+-- past it on their own. The way out is the administrator's correction, and
+-- the gate shows the inquiry address for that reason.
+--
+-- Why it is worth that cost now: the workspace invitation that follows this
+-- change lets an owner name people by 학번, and an invitation that matches two
+-- accounts has no correct answer. A number that names one person is the
+-- premise of that feature.
+--
+-- Checked on the live dev database before writing this: no 학번 was held by
+-- two accounts (21 accounts had one).
+-- Case-insensitive: the format allows letters, and "a1234" and "A1234" naming
+-- two people would defeat the point. Hyphenated and plain forms of one number
+-- remain distinct; the format check does not normalise them and neither does
+-- this.
+create unique index users_student_no_key on users (upper(student_no));
+
+comment on column users.student_no is
+    '학번. 학생 직책에서만 필수이며 형식은 검증하지 않는다(편입·재입학·교환학생). 한 학번은 한 계정만 가진다(V131).';
