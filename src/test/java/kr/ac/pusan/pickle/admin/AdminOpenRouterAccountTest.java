@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -12,6 +13,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -30,6 +33,7 @@ import kr.ac.pusan.pickle.admin.dto.CreateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.admin.dto.FinalizeOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.OpenRouterAccountResponse;
+import kr.ac.pusan.pickle.admin.dto.RegisterOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.StageOpenRouterCredentialRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateOpenRouterAccountRequest;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -78,6 +82,7 @@ class AdminOpenRouterAccountTest {
     private static final UUID VENDOR_WORKSPACE =
             UUID.fromString("10000000-0000-4000-8000-000000000001");
     private static final String MANAGEMENT_KEY = "management-key-must-never-leave-request";
+    private static final String ROTATION_KEY = "rotation-management-key";
 
     @Autowired private AdminOpenRouterAccountService service;
     @Autowired private OpenRouterAccountRepository accountRepository;
@@ -85,7 +90,10 @@ class AdminOpenRouterAccountTest {
     @Autowired private OpenRouterAccountCredentialRepository credentialRepository;
     @Autowired private OpenRouterCredentialResolver credentialResolver;
     @Autowired private LlmApiKeyRepository keyRepository;
-    @Autowired private OpenRouterManagementCredentialCipher managementCipher;
+    // Spy rather than @Autowired: one test needs the write to fail after the
+    // identity marker exists, which is the only window the call site's own
+    // cleanup covers. Every other use delegates to the real cipher.
+    @MockitoSpyBean private OpenRouterManagementCredentialCipher managementCipher;
     @Autowired private AdminLlmKeyService adminLlmKeyService;
     @Autowired private LlmKeyRequestSupport requestSupport;
     @Autowired private RequestRepository requestRepository;
@@ -130,7 +138,7 @@ class AdminOpenRouterAccountTest {
     }
 
     @Test
-    void stagePersistsDiscoveredWorkspaceAndResponseNeverContainsCredentialMaterial() {
+    void registerLandsActiveAndResponseNeverContainsCredentialMaterial() {
         OpenRouterAccountResponse created = create("사업 A");
         assertThat(created.eligibleForBinding()).isFalse();
         assertThatThrownBy(() -> selectionService.select(orgId, BigDecimal.ONE, created.id()))
@@ -138,37 +146,270 @@ class AdminOpenRouterAccountTest {
                         assertThat(error.getErrors().getFirst().message())
                                 .contains("관리용 키"));
 
-        OpenRouterAccountResponse staged = service.stage(sysAdmin, created.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "사업 A"), "127.0.0.1");
+        OpenRouterAccountResponse active = service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "사업 A"), "127.0.0.1");
 
-        assertThat(staged.rotationCredential().status())
-                .isEqualTo(OpenRouterCredentialStatus.STAGED);
+        assertThat(active.activeCredential().status()).isEqualTo(OpenRouterCredentialStatus.ACTIVE);
+        assertThat(active.activeCredential().activatedAt()).isNotNull();
+        assertThat(active.activeCredential().verificationError()).isNull();
+        assertThat(active.rotationCredential()).isNull();
+        assertThat(active.eligibleForBinding()).isTrue();
         assertThat(jdbcTemplate.queryForObject(
                 "select vendor_workspace_id from openrouter_accounts where public_id = ?",
                 UUID.class, created.id())).isEqualTo(VENDOR_WORKSPACE);
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, created.id())).isNotBlank();
+        // One row, in the ACTIVE slot, with the column the check constraint
+        // requires. This is why the change needs no migration: the row is
+        // inserted ACTIVE rather than swapped into it.
+        assertThat(jdbcTemplate.queryForList(
+                "select credential_slot, status, activated_at"
+                        + " from openrouter_account_credentials"))
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(((Number) row.get("credential_slot")).intValue()).isZero();
+                    assertThat(row.get("status")).hasToString("ACTIVE");
+                    assertThat(row.get("activated_at")).isNotNull();
+                });
         String ciphertext = jdbcTemplate.queryForObject(
                 "select credential_enc from openrouter_account_credentials", String.class);
         assertThat(ciphertext).startsWith("or-mgmt-v1:").doesNotContain(MANAGEMENT_KEY);
-        assertThat(objectMapper.writeValueAsString(staged))
+        assertThat(objectMapper.writeValueAsString(active))
                 .doesNotContain(MANAGEMENT_KEY)
                 .doesNotContain("probe-runtime-secret")
-                .doesNotContain("credentialEnc")
-                .doesNotContain(VENDOR_WORKSPACE.toString());
-
-        OpenRouterAccountResponse active = service.activate(sysAdmin, created.id(),
-                new ConfirmOpenRouterAccountRequest("사업 A"), "127.0.0.1");
-        assertThat(active.activeCredential().status()).isEqualTo(OpenRouterCredentialStatus.ACTIVE);
-        assertThat(active.rotationCredential()).isNull();
-        assertThat(active.eligibleForBinding()).isTrue();
-        assertThat(objectMapper.writeValueAsString(active))
                 .doesNotContain("identity-runtime-secret")
-                .doesNotContain("vendorIdentityKey");
+                .doesNotContain("credentialEnc")
+                .doesNotContain("vendorIdentityKey")
+                .doesNotContain(VENDOR_WORKSPACE.toString());
         assertThat(selectionService.select(orgId, BigDecimal.ONE, null).getPublicId())
                 .isEqualTo(created.id());
     }
 
     @Test
-    void stageRejectsAnotherWorkspaceFromAnAlreadyRegisteredBillingAccount() {
+    void stageRefusesAnAccountWithNoActiveCredentialBeforeProbingTheVendor() {
+        OpenRouterAccountResponse created = create("빈 사업");
+
+        assertThatThrownBy(() -> service.stage(sysAdmin, created.id(),
+                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "빈 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    assertThat(error.getDetail()).contains("교체할 ACTIVE credential이 없습니다");
+                });
+        // The guard is worth nothing if it fires after the round trip: a
+        // rotation aimed at an empty account must cost the vendor nothing.
+        verify(client, never()).credits(anyString());
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_workspace_id from openrouter_accounts where public_id = ?",
+                UUID.class, created.id())).isNull();
+    }
+
+    @Test
+    void registerRefusesWhenAnyCredentialRowExists() {
+        OpenRouterAccountResponse created = create("중복 사업");
+        service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "중복 사업"), "127.0.0.1");
+
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "중복 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                });
+
+        service.stage(sysAdmin, created.id(),
+                new StageOpenRouterCredentialRequest(ROTATION_KEY, "중복 사업"), "127.0.0.1");
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "중복 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getCode()).isEqualTo("OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                });
+
+        service.activate(sysAdmin, created.id(),
+                new ConfirmOpenRouterAccountRequest("중복 사업"), "127.0.0.1");
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "중복 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다");
+                });
+    }
+
+    @Test
+    void reRegisteringAfterTheLastCredentialWasDeletedKeepsTheEstablishedIdentity() {
+        OpenRouterAccountResponse account = create("재등록 가능 사업");
+        service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "재등록 가능 사업"),
+                "127.0.0.1");
+        String identity = jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, account.id());
+        // Safe deletion demands proof that the key no longer works.
+        doThrow(new OpenRouterException(401, "revoked at the vendor"))
+                .when(client).credits(MANAGEMENT_KEY);
+        service.deleteActive(sysAdmin, account.id(),
+                new FinalizeOpenRouterCredentialRequest("재등록 가능 사업", true), "127.0.0.1");
+        assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
+                accountRepository.findByPublicId(account.id()).orElseThrow().getId())).isEmpty();
+
+        // Safe deletion requires an established marker and leaves no credential
+        // behind, so this state is reachable by design. Minting a second marker
+        // here is refused by the immutability rule, and refusing to reuse the
+        // established one would leave the account with no way back.
+        OpenRouterAccountResponse again = service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(ROTATION_KEY, "재등록 가능 사업"),
+                "127.0.0.1");
+
+        assertThat(again.activeCredential().status()).isEqualTo(OpenRouterCredentialStatus.ACTIVE);
+        assertThat(again.eligibleForBinding()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, account.id())).isEqualTo(identity);
+    }
+
+    @Test
+    void registerVerificationFailureLeavesNothingPersisted() {
+        OpenRouterAccountResponse created = create("실패 사업");
+        when(client.credits(MANAGEMENT_KEY)).thenThrow(new OpenRouterException(429, "throttled"));
+
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "실패 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(422);
+                    assertThat(error.getCode())
+                            .isEqualTo("OPENROUTER_CREDENTIAL_VERIFICATION_FAILED");
+                });
+
+        // There is no row to record the failure on, by design. What replaces
+        // that signal is this: the attempt left no trace at all, so a retry
+        // starts from the same place the first one did.
+        assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
+                accountRepository.findByPublicId(created.id()).orElseThrow().getId())).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_workspace_id from openrouter_accounts where public_id = ?",
+                UUID.class, created.id())).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, created.id())).isNull();
+        OpenRouterAccountResponse after = service.get(sysAdmin, created.id());
+        assertThat(after.activeCredential()).isNull();
+        assertThat(after.rotationCredential()).isNull();
+        // No trace means the vendor too: the probe never got far enough to
+        // mint an identity marker.
+        verify(client, never()).createKey(anyString(), any(), startsWith("pickle-billing-identity-"),
+                any(), any(), any());
+    }
+
+    @Test
+    void registerCleansUpTheIdentityMarkerWhenTheVendorRejectsIt() {
+        OpenRouterAccountResponse created = create("표식 사업");
+        // Only the marker: validateCandidate disables its own probe key first,
+        // and throwing there would fail before a marker ever exists.
+        doThrow(new OpenRouterException(500, "marker rejected"))
+                .when(client).setDisabled(any(), any(), startsWith("identity-"), eq(true));
+
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "표식 사업"),
+                "127.0.0.1")).isInstanceOf(ApiException.class);
+
+        // The marker key is minted at the vendor before anything of ours
+        // commits, so a failure after it has to hand the key back. deleteKey
+        // addresses a key by hash alone, so the assertion is on the hash.
+        verify(client).deleteKey(eq(MANAGEMENT_KEY), any(), startsWith("identity-"));
+        assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
+                accountRepository.findByPublicId(created.id()).orElseThrow().getId())).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, created.id())).isNull();
+    }
+
+    @Test
+    void registerHandsBackAMarkerItAlreadyMintedWhenTheWriteFails() {
+        OpenRouterAccountResponse created = create("적재 실패 사업");
+        // Fails after createIdentityMarker has returned, which is the only
+        // window the call site's own cleanup covers. The failure inside that
+        // method is handled by its own catch and proves nothing about this.
+        doThrow(new IllegalStateException("ciphertext write failed"))
+                .when(managementCipher).encrypt(eq(created.id()), eq(MANAGEMENT_KEY));
+
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "적재 실패 사업"),
+                "127.0.0.1")).isInstanceOf(RuntimeException.class);
+
+        verify(client).deleteKey(eq(MANAGEMENT_KEY), any(), startsWith("identity-"));
+        assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
+                accountRepository.findByPublicId(created.id()).orElseThrow().getId())).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select vendor_identity_key_hash from openrouter_accounts where public_id = ?",
+                String.class, created.id())).isNull();
+    }
+
+    @Test
+    void stageRejectsARotationCandidateFromAnAlreadyRegisteredBillingAccount() {
+        UUID otherWorkspace = UUID.fromString("10000000-0000-4000-8000-000000000004");
+        insertActiveAccount("남의 사업", otherWorkspace, "other-management-key");
+        // The probe key the duplicate check mints inside the other account.
+        // MANAGEMENT_KEY cannot read it (getKey stays unstubbed and answers
+        // null), so this account's own registration goes through; ROTATION_KEY
+        // can, which is what sharing one billing account looks like.
+        when(client.createKey(eq("other-management-key"), eq(otherWorkspace), anyString(),
+                eq(BigDecimal.ZERO), isNull(), any(Instant.class)))
+                .thenReturn(new OpenRouterClient.CreatedKey(
+                        "billing-probe", "billing-runtime", otherWorkspace));
+        when(client.getKey(ROTATION_KEY, otherWorkspace, "billing-probe"))
+                .thenReturn(new OpenRouterClient.ManagedKey(
+                        "billing-probe", "probe", false, BigDecimal.ZERO,
+                        null, true, BigDecimal.ZERO, otherWorkspace));
+        OpenRouterAccountResponse mine = create("내 사업");
+        service.registerCredential(sysAdmin, mine.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "내 사업"), "127.0.0.1");
+
+        // The rotation path runs the same cross-billing-account check as
+        // registration, and nothing else covers it from this side.
+        assertThatThrownBy(() -> service.stage(sysAdmin, mine.id(),
+                new StageOpenRouterCredentialRequest(ROTATION_KEY, "내 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
+                });
+    }
+
+    @Test
+    void anAccountLeftStagedBeforeThisChangeStillActivates() {
+        OpenRouterAccountResponse created = create("이월 사업");
+        OpenRouterAccount account = accountRepository.findByPublicId(created.id()).orElseThrow();
+        account.discoverVendorWorkspace(VENDOR_WORKSPACE, Instant.now());
+        accountRepository.saveAndFlush(account);
+        credentialRepository.saveAndFlush(new OpenRouterAccountCredential(account.getId(),
+                managementCipher.encrypt(created.id(), MANAGEMENT_KEY),
+                sysAdmin.id(), Instant.now()));
+
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, created.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "이월 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error ->
+                        assertThat(error.getDetail()).contains("이미 등록된 credential이 있습니다"));
+        // Both new guards match this state, and the one that names an action
+        // has to win: the row is a rotation someone started, not an account
+        // with nothing to rotate.
+        assertThatThrownBy(() -> service.stage(sysAdmin, created.id(),
+                new StageOpenRouterCredentialRequest(ROTATION_KEY, "이월 사업"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error ->
+                        assertThat(error.getDetail())
+                                .contains("이미 진행 중인 credential rotation이 있습니다"));
+
+        OpenRouterAccountResponse activated = service.activate(sysAdmin, created.id(),
+                new ConfirmOpenRouterAccountRequest("이월 사업"), "127.0.0.1");
+        assertThat(activated.activeCredential().status())
+                .isEqualTo(OpenRouterCredentialStatus.ACTIVE);
+        assertThat(activated.rotationCredential()).isNull();
+    }
+
+    @Test
+    void registerRejectsAnotherWorkspaceFromAnAlreadyRegisteredBillingAccount() {
         UUID existingWorkspace = UUID.fromString("10000000-0000-4000-8000-000000000002");
         insertActiveAccount("기존 사업", existingWorkspace, "existing-management-key");
         OpenRouterAccountResponse candidate = create("새 사업");
@@ -181,12 +422,17 @@ class AdminOpenRouterAccountTest {
                         "billing-probe", "probe", false, BigDecimal.ZERO,
                         null, true, BigDecimal.ZERO, existingWorkspace));
 
-        assertThatThrownBy(() -> service.stage(sysAdmin, candidate.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "새 사업"),
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, candidate.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "새 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo(
                             "OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    // The detail, not just the code: the rotation-only guard
+                    // added alongside this path answers with the same status
+                    // and the same code, and would keep this test green while
+                    // the cross-billing-account check never ran.
+                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
                 });
         assertThat(credentialRepository.findByAccountIdOrderByIdAsc(
                 accountRepository.findByPublicId(candidate.id()).orElseThrow().getId()))
@@ -209,12 +455,13 @@ class AdminOpenRouterAccountTest {
                         "reserved-identity-hash", "identity", true, BigDecimal.ZERO,
                         null, true, BigDecimal.ZERO, existingWorkspace));
 
-        assertThatThrownBy(() -> service.stage(sysAdmin, candidate.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "재등록 사업"),
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, candidate.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "재등록 사업"),
                 "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
                     assertThat(error.getStatus().value()).isEqualTo(409);
                     assertThat(error.getCode()).isEqualTo(
                             "OPENROUTER_CREDENTIAL_INVALID_STATE");
+                    assertThat(error.getDetail()).contains("같은 OpenRouter billing account");
                 });
     }
 
@@ -354,13 +601,18 @@ class AdminOpenRouterAccountTest {
     @Test
     void duplicateWorkspaceAndDuplicatePatchedNameAreRejected() {
         OpenRouterAccountResponse first = create("사업 A");
-        service.stage(sysAdmin, first.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "사업 A"), "127.0.0.1");
+        service.registerCredential(sysAdmin, first.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "사업 A"), "127.0.0.1");
         OpenRouterAccountResponse second = create("사업 B");
-        assertThatThrownBy(() -> service.stage(sysAdmin, second.id(),
-                new StageOpenRouterCredentialRequest("second-management-key", "사업 B"),
-                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class,
-                        error -> assertThat(error.getStatus().value()).isEqualTo(409));
+        assertThatThrownBy(() -> service.registerCredential(sysAdmin, second.id(),
+                new RegisterOpenRouterCredentialRequest("second-management-key", "사업 B"),
+                "127.0.0.1")).isInstanceOfSatisfying(ApiException.class, error -> {
+                    assertThat(error.getStatus().value()).isEqualTo(409);
+                    // The account code, not the credential one: this is the
+                    // workspace already belonging to another business account,
+                    // which is a different 409 from every guard around it.
+                    assertThat(error.getCode()).isEqualTo("OPENROUTER_ACCOUNT_INVALID_STATE");
+                });
 
         UpdateOpenRouterAccountRequest rename = new UpdateOpenRouterAccountRequest();
         rename.setName("사업 a");
@@ -370,14 +622,20 @@ class AdminOpenRouterAccountTest {
     }
 
     @Test
-    void activationVerificationAttemptRecordsFailureThenRefreshesOnSuccess() {
+    void rotationVerificationAttemptRecordsFailureOnTheStagedRowThenRefreshes() {
         OpenRouterAccountResponse account = create("검증 기록 사업");
+        service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "검증 기록 사업"),
+                "127.0.0.1");
+        // A different secret, because rotation rejects a candidate equal to
+        // the credential it would replace.
         OpenRouterAccountResponse staged = service.stage(sysAdmin, account.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "검증 기록 사업"),
+                new StageOpenRouterCredentialRequest(ROTATION_KEY, "검증 기록 사업"),
                 "127.0.0.1");
         Instant firstSuccess = staged.rotationCredential().verifiedAt();
 
-        when(client.credits(MANAGEMENT_KEY))
+        // Stubbed after the staging probe, which uses the same secret.
+        when(client.credits(ROTATION_KEY))
                 .thenThrow(new OpenRouterException(429, "vendor body must not persist"));
         assertThatThrownBy(() -> service.activate(sysAdmin, account.id(),
                 new ConfirmOpenRouterAccountRequest("검증 기록 사업"), "127.0.0.1"))
@@ -392,7 +650,7 @@ class AdminOpenRouterAccountTest {
                 .isCloseTo(firstSuccess, within(1, ChronoUnit.MICROS));
 
         doReturn(new OpenRouterClient.Credits(BigDecimal.TEN, BigDecimal.ZERO))
-                .when(client).credits(MANAGEMENT_KEY);
+                .when(client).credits(ROTATION_KEY);
         OpenRouterAccountResponse active = service.activate(sysAdmin, account.id(),
                 new ConfirmOpenRouterAccountRequest("검증 기록 사업"), "127.0.0.1");
         assertThat(active.activeCredential().verificationError()).isNull();
@@ -405,11 +663,9 @@ class AdminOpenRouterAccountTest {
     @Test
     void rollbackVerificationPersistsFailureAndThenSuccessMetadata() {
         OpenRouterAccountResponse account = create("rollback 검증 사업");
-        service.stage(sysAdmin, account.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "rollback 검증 사업"),
+        service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "rollback 검증 사업"),
                 "127.0.0.1");
-        service.activate(sysAdmin, account.id(),
-                new ConfirmOpenRouterAccountRequest("rollback 검증 사업"), "127.0.0.1");
         service.stage(sysAdmin, account.id(),
                 new StageOpenRouterCredentialRequest("new-management-key", "rollback 검증 사업"),
                 "127.0.0.1");
@@ -581,10 +837,8 @@ class AdminOpenRouterAccountTest {
     @Test
     void replacementRollbackFinalizeAndDeleteGuardsPreserveCiphertextUntilSafe() {
         OpenRouterAccountResponse account = create("회전 사업");
-        service.stage(sysAdmin, account.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "회전 사업"), "127.0.0.1");
-        service.activate(sysAdmin, account.id(), new ConfirmOpenRouterAccountRequest("회전 사업"),
-                "127.0.0.1");
+        service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "회전 사업"), "127.0.0.1");
         service.stage(sysAdmin, account.id(),
                 new StageOpenRouterCredentialRequest("new-management-key", "회전 사업"),
                 "127.0.0.1");
@@ -727,11 +981,11 @@ class AdminOpenRouterAccountTest {
     @Test
     void identicalStagedAndActiveSecretsAreRejectedAndRecorded() {
         OpenRouterAccountResponse account = create("동일 secret 사업");
-        service.stage(sysAdmin, account.id(),
-                new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "동일 secret 사업"),
+        service.registerCredential(sysAdmin, account.id(),
+                new RegisterOpenRouterCredentialRequest(MANAGEMENT_KEY, "동일 secret 사업"),
                 "127.0.0.1");
-        service.activate(sysAdmin, account.id(),
-                new ConfirmOpenRouterAccountRequest("동일 secret 사업"), "127.0.0.1");
+        // Staging the secret already in use is accepted; the guard that
+        // rejects it lives in activation, and this is what proves that.
         service.stage(sysAdmin, account.id(),
                 new StageOpenRouterCredentialRequest(MANAGEMENT_KEY, "동일 secret 사업"),
                 "127.0.0.1");

@@ -7862,6 +7862,23 @@ components:
       - "code"
       - "password"
       type: "object"
+    RegisterOpenRouterCredentialRequest:
+      properties:
+        confirmName:
+          description: "Account 이름과 정확히 같아야 하는 확인값"
+          maxLength: 120
+          minLength: 0
+          type: "string"
+        managementKey:
+          description: "OpenRouter management key. 응답에는 반환되지 않습니다."
+          maxLength: 4096
+          minLength: 0
+          type: "string"
+          writeOnly: true
+      required:
+      - "confirmName"
+      - "managementKey"
+      type: "object"
     RejectRequestRequest:
       properties:
         comment:
@@ -10453,7 +10470,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.85.0"
+  version: "0.86.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -11550,6 +11567,41 @@ paths:
       summary: "OpenRouter 사업 계정 정보 수정"
       tags:
       - "admin"
+  /admin/llm/accounts/{accountId}/credentials:
+    post:
+      description: "credential이 하나도 없는 account에 관리용 키를 등록합니다. account 이름 확인 뒤 management\
+        \ 전용 권한과 vendor workspace를 disposable key로 검증하고, 같은 요청에서 billing identity\
+        \ marker를 만들어 ACTIVE 상태로 저장합니다. 이미 credential이 있으면 거절하며 교체는 대기 등록을 거칩니다."
+      operationId: "registerAdminLlmAccountCredential"
+      parameters:
+      - in: "path"
+        name: "accountId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterOpenRouterCredentialRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OpenRouterAccountResponse"
+          description: "Created"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "OpenRouter 관리 credential 최초 등록"
+      tags:
+      - "admin"
   /admin/llm/accounts/{accountId}/credentials/active/delete:
     post:
       description: "연결된 key와 rotation이 없고 운영자가 vendor console 폐기를 확인한 경우에만 ACTIVE\
@@ -11654,8 +11706,9 @@ paths:
       - "admin"
   /admin/llm/accounts/{accountId}/credentials/staged:
     post:
-      description: "account 이름 확인 뒤 management 전용 권한과 vendor workspace를 disposable\
-        \ key로 검증하고 STAGED 상태로 저장합니다. 평문과 credential 조각은 응답하지 않습니다."
+      description: "쓰고 있는 ACTIVE credential을 교체할 후보를 등록합니다. account 이름 확인 뒤 management\
+        \ 전용 권한과 vendor workspace를 disposable key로 검증하고 STAGED 상태로 저장합니다. ACTIVE credential이\
+        \ 없으면 거절하며 최초 등록은 별도 경로를 씁니다. 평문과 credential 조각은 응답하지 않습니다."
       operationId: "stageAdminLlmAccountCredential"
       parameters:
       - in: "path"
@@ -11683,7 +11736,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
-      summary: "OpenRouter 관리 credential 검증 및 대기 등록"
+      summary: "OpenRouter 관리 credential 교체 대기 등록"
       tags:
       - "admin"
   /admin/llm/accounts/{accountId}/credentials/staged/activate:
