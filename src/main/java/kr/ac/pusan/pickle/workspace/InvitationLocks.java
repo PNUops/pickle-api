@@ -17,7 +17,11 @@ import org.springframework.stereotype.Component;
  * transaction, and the invitation row does not exist yet.</p>
  *
  * <p>Callers take several of these in ascending key order (emails before
- * 학번, each sorted), so two holders never wait on each other in a cycle.</p>
+ * 학번, each sorted). That alone does not rule out a cycle, because the owner's
+ * side also inserts memberships and the membership unique index is a second
+ * resource both sides touch; {@code InvitationClaimService} explains the
+ * extra rule (a 학번 claim takes the account's email lock first) that closes
+ * it.</p>
  */
 @Component
 public class InvitationLocks {

@@ -47,6 +47,24 @@ public interface WorkspaceInvitationRepository extends JpaRepository<WorkspaceIn
     Optional<UUID> findPendingIdByStudentNo(@Param("workspaceId") long workspaceId,
             @Param("studentNo") String studentNo);
 
+    /**
+     * Closes this workspace's open invitations that name an account which is
+     * now a member some other way. Without it a row addressed to the account's
+     * email or 학번 would sit in the owner's list forever: its trigger (the
+     * activation or the first 학번 save) has already fired.
+     */
+    @Modifying
+    @Query(value = """
+            update workspace_invitations
+               set status = 'ACCEPTED', accepted_user_id = :userId, accepted_at = now()
+             where workspace_id = :workspaceId and status = 'PENDING'
+               and (lower(invitee_email) = lower(:email)
+                    or (cast(:studentNo as text) is not null
+                        and upper(invitee_student_no) = upper(cast(:studentNo as text))))
+            """, nativeQuery = true)
+    int acceptPendingForMember(@Param("workspaceId") long workspaceId, @Param("userId") long userId,
+            @Param("email") String email, @Param("studentNo") @Nullable String studentNo);
+
     List<WorkspaceInvitation> findByWorkspaceIdAndStatusOrderByCreatedAtAscIdAsc(Long workspaceId,
             WorkspaceInvitationStatus status);
 

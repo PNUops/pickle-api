@@ -29,9 +29,16 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>Each claim first takes the {@link InvitationLocks} lock for its
  * identifier, the same one an owner's invitation takes, so an invitation
- * committed while the account was activating is still found. Activation
- * claims by email before 학번, which is the ascending key order the lock
- * requires.</p>
+ * committed while the account was activating is still found. A 학번 claim
+ * takes the account's email lock first, then the 학번 one: the owner's side
+ * inserts a membership for an ACTIVE account while holding that account's
+ * email or 학번 lock, and the membership's unique index is a second shared
+ * resource. Taking the email lock first means a 학번 claim never holds a
+ * lock the owner's email entry for the same account is waiting on.</p>
+ *
+ * <p>{@code actorId} names who caused the claim for the audit entry: the
+ * account itself at activation or its own profile save, the administrator on
+ * the correction path.</p>
  */
 @Service
 public class InvitationClaimService {
@@ -59,28 +66,39 @@ public class InvitationClaimService {
      */
     @Transactional
     public void claimByEmail(User user) {
+        claimByEmail(user, user.getId(), user.getRole().name());
+    }
+
+    @Transactional
+    public void claimByEmail(User user, long actorId, String actorRole) {
         if (user.getStatus() != UserStatus.ACTIVE) {
             return;
         }
         invitationLocks.lock(InvitationLocks.emailKey(user.getEmail()));
-        claimAll(user, invitationRepository.lockPendingByEmail(user.getEmail()));
+        claimAll(user, invitationRepository.lockPendingByEmail(user.getEmail()), actorId, actorRole);
     }
 
     /** Claims every open invitation addressed to the account's 학번, if it holds one. */
     @Transactional
     public void claimByStudentNo(User user) {
+        claimByStudentNo(user, user.getId(), user.getRole().name());
+    }
+
+    @Transactional
+    public void claimByStudentNo(User user, long actorId, String actorRole) {
         String studentNo = user.getStudentNo();
         if (user.getStatus() != UserStatus.ACTIVE || studentNo == null) {
             return;
         }
+        invitationLocks.lock(InvitationLocks.emailKey(user.getEmail()));
         invitationLocks.lock(InvitationLocks.studentNoKey(studentNo));
-        claimAll(user, invitationRepository.lockPendingByStudentNo(studentNo));
+        claimAll(user, invitationRepository.lockPendingByStudentNo(studentNo), actorId, actorRole);
     }
 
-    private void claimAll(User user, List<WorkspaceInvitation> invitations) {
+    private void claimAll(User user, List<WorkspaceInvitation> invitations, long actorId, String actorRole) {
         Instant now = Instant.now();
         for (WorkspaceInvitation invitation : invitations) {
-            claim(user, invitation, now);
+            claim(user, invitation, now, actorId, actorRole);
         }
     }
 
@@ -92,7 +110,8 @@ public class InvitationClaimService {
      * there is nothing to join, and the row records what the owner asked for
      * while the workspace existed.</p>
      */
-    private void claim(User user, WorkspaceInvitation invitation, Instant now) {
+    private void claim(User user, WorkspaceInvitation invitation, Instant now, long actorId,
+            String actorRole) {
         Workspace workspace = workspaceRepository.findByIdAndDeletedAtIsNull(invitation.getWorkspaceId())
                 .orElse(null);
         if (workspace == null) {
@@ -102,7 +121,7 @@ public class InvitationClaimService {
                 invitation.getRole().name());
         invitation.accept(user.getId(), now);
         if (inserted == 1) {
-            auditService.recordAfterCommit(user.getId(), user.getRole().name(),
+            auditService.recordAfterCommit(actorId, actorRole,
                     AuditService.WORKSPACE_MEMBER_ADD, "workspace", workspace.getPublicId(),
                     Map.of("userId", user.getPublicId(), "email", user.getEmail(),
                             "role", invitation.getRole().name(), "viaInvitation", true,

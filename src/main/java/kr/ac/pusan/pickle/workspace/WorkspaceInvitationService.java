@@ -154,6 +154,8 @@ public class WorkspaceInvitationService {
             User target = active.get();
             int inserted = workspaceMemberRepository.insertMemberIfAbsent(workspace.getId(), target.getId(),
                     WorkspaceMemberRole.MEMBER.name());
+            invitationRepository.acceptPendingForMember(workspace.getId(), target.getId(),
+                    target.getEmail(), target.getStudentNo());
             if (inserted == 0) {
                 return invitee.result(WorkspaceInvitationOutcome.ALREADY_MEMBER, null, null);
             }

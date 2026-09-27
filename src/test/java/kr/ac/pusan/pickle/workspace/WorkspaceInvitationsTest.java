@@ -405,6 +405,75 @@ class WorkspaceInvitationsTest {
         assertThat(pendingCount(workspace)).isZero();
     }
 
+    /**
+     * Re-enabling is the activation for an account that was disabled when the
+     * invitation answered INVITED; activateAccount is never reached again.
+     */
+    @Test
+    void reEnablingADisabledAccountClaimsItsInvitations() throws Exception {
+        UUID workspace = createWorkspace();
+        User target = activeUser("reenable");
+        String adminToken = jwtService.createAccessToken(
+                userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow());
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/disable")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("reason", "초대 시험"))))
+                .andExpect(status().isOk());
+        invite(workspace, List.of(Map.of("email", target.getEmail())))
+                .andExpect(jsonPath("$.results[0].outcome").value("INVITED"));
+
+        mockMvc.perform(post("/api/v1/admin/users/" + target.getPublicId() + "/enable")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk());
+
+        assertThat(isMember(workspace, target)).isTrue();
+        assertThat(pendingCount(workspace)).isZero();
+    }
+
+    /**
+     * An account that became a member another way closes the open invitations
+     * addressed to it in that workspace, instead of leaving them in the
+     * owner's list with a trigger that has already fired.
+     */
+    @Test
+    void addingAnAccountDirectlyClosesItsOpenInvitations() throws Exception {
+        UUID workspace = createWorkspace();
+        User target = user("late", UserStatus.PENDING_VERIFICATION);
+        invite(workspace, List.of(Map.of("email", target.getEmail())))
+                .andExpect(jsonPath("$.results[0].outcome").value("INVITED"));
+        // Activated by a path that did not claim (a direct status write here).
+        target.setStatus(UserStatus.ACTIVE);
+        userRepository.saveAndFlush(target);
+
+        invite(workspace, List.of(Map.of("email", target.getEmail())))
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
+        assertThat(pendingCount(workspace)).isZero();
+    }
+
+    @Test
+    void aClaimCausedByAnAdministratorNamesTheAdministratorInTheAudit() throws Exception {
+        UUID workspace = createWorkspace();
+        String number = studentNo();
+        invite(workspace, List.of(Map.of("studentNo", number))).andExpect(status().isOk());
+        User holder = activeUser("admin-actor");
+        User admin = userRepository.findByEmail(SeedFixtures.SYSADMIN_EMAIL).orElseThrow();
+
+        mockMvc.perform(patch("/api/v1/admin/users/" + holder.getPublicId() + "/profile")
+                        .header("Authorization", "Bearer " + jwtService.createAccessToken(admin))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "position", "STUDENT_GRADUATE", "studentNo", number, "reason", "학번 등록"))))
+                .andExpect(status().isOk());
+
+        Long actor = jdbcTemplate.queryForObject("""
+                select actor_id from audit_logs
+                 where action = 'workspace.member_add' and detail->>'userId' = ?
+                 order by id desc limit 1
+                """, Long.class, holder.getPublicId().toString());
+        assertThat(actor).isEqualTo(admin.getId());
+    }
+
     @Test
     void aClaimIsIdempotentAndSatisfiedByAnExistingMembership() throws Exception {
         UUID workspace = createWorkspace();

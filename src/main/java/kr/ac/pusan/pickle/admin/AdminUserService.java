@@ -140,7 +140,7 @@ public class AdminUserService {
         // an ACTIVE account claims; the service checks that itself.
         String storedNow = user.getStudentNo();
         if (storedNow != null && (previousStudentNo == null || !previousStudentNo.equalsIgnoreCase(storedNow))) {
-            invitationClaimService.claimByStudentNo(user);
+            invitationClaimService.claimByStudentNo(user, actor.id(), actor.role().name());
         }
 
         // 학번 is recorded as set/not-set rather than as a value, matching the
@@ -237,6 +237,15 @@ public class AdminUserService {
         user.clearDisabled();
         userStatusChangeRepository.save(new UserStatusChange(user.getId(), UserStatus.DISABLED,
                 restored, actor.id(), null));
+        // An invitation sent while the account was disabled answered INVITED,
+        // as it would for a missing account, and waits for an activation.
+        // Re-enabling is that activation for this account: activateAccount is
+        // never reached again, so without this the invitation stays open for
+        // good. A restored PENDING_VERIFICATION account claims later, at
+        // verification, like any other.
+        userRepository.flush();
+        invitationClaimService.claimByEmail(user, actor.id(), actor.role().name());
+        invitationClaimService.claimByStudentNo(user, actor.id(), actor.role().name());
 
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.USER_ENABLE,
                 "user", user.getPublicId(), Map.of("toStatus", restored.name()), ip);
