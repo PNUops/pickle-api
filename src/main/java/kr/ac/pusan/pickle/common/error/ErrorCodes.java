@@ -60,8 +60,8 @@ public final class ErrorCodes {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
     public static final String RESOURCE_NOT_FOUND = "RESOURCE_NOT_FOUND";
     public static final String WORKSPACE_MEMBER_MANAGE_FORBIDDEN = "WORKSPACE_MEMBER_MANAGE_FORBIDDEN";
-    public static final String WORKSPACE_MEMBER_USER_NOT_FOUND = "WORKSPACE_MEMBER_USER_NOT_FOUND";
-    public static final String WORKSPACE_MEMBER_ALREADY_EXISTS = "WORKSPACE_MEMBER_ALREADY_EXISTS";
+    /** No open invitation with this id in this workspace (unknown, answered or canceled). */
+    public static final String WORKSPACE_INVITATION_NOT_FOUND = "WORKSPACE_INVITATION_NOT_FOUND";
     public static final String WORKSPACE_SOLE_OWNER_REMOVAL = "WORKSPACE_SOLE_OWNER_REMOVAL";
     public static final String WORKSPACE_ROLE_INSUFFICIENT = "WORKSPACE_ROLE_INSUFFICIENT";
     /**

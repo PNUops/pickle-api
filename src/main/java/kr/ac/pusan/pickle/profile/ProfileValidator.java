@@ -139,6 +139,15 @@ public class ProfileValidator {
     }
 
     /**
+     * Whether a stripped value has the shape a stored 학번 may have. For callers
+     * that name a 학번 without writing one, such as a workspace invitation: a
+     * value no account can hold would wait forever.
+     */
+    public static boolean isStudentNoFormat(String studentNo) {
+        return STUDENT_NO.matcher(studentNo).matches();
+    }
+
+    /**
      * The value to store: blank becomes null so a non-student never carries an
      * empty string, and the CHECK constraint sees the same thing the rule did.
      *

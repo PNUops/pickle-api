@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -740,12 +741,14 @@ class VmAccessGrantApiTest {
 
     /** Adds a plain member: the workspace ladder has only OWNER and MEMBER left. */
     private void addMember(long workspaceId, String email) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/invitations")
                         .header("Authorization", "Bearer " + workspaceOwnerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("email", email, "role", "MEMBER"))))
-                .andExpect(status().isCreated());
+                                Map.of("entries", List.of(Map.of("email", email))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
     }
 
     private User ensureUser(String email, String name) {

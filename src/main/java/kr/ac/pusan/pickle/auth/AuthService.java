@@ -18,6 +18,7 @@ import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.config.AuthProperties;
 import kr.ac.pusan.pickle.consent.TermsService;
+import kr.ac.pusan.pickle.workspace.InvitationClaimService;
 import kr.ac.pusan.pickle.workspace.PersonalWorkspaceService;
 import kr.ac.pusan.pickle.mfa.MfaLoginToken;
 import kr.ac.pusan.pickle.mfa.MfaService;
@@ -68,6 +69,7 @@ public class AuthService {
     private final EmailVerificationRepository emailVerificationRepository;
     private final RefreshTokenService refreshTokenService;
     private final PersonalWorkspaceService personalWorkspaceService;
+    private final InvitationClaimService invitationClaimService;
     private final PasswordEncoder passwordEncoder;
     private final PasswordPolicy passwordPolicy;
     private final ProfileValidator profileValidator;
@@ -87,6 +89,7 @@ public class AuthService {
             EmailVerificationRepository emailVerificationRepository,
             RefreshTokenService refreshTokenService,
             PersonalWorkspaceService personalWorkspaceService,
+            InvitationClaimService invitationClaimService,
             PasswordEncoder passwordEncoder,
             PasswordPolicy passwordPolicy, ProfileValidator profileValidator,
             StudentNoUniqueness studentNoUniqueness,
@@ -104,6 +107,7 @@ public class AuthService {
         this.emailVerificationRepository = emailVerificationRepository;
         this.refreshTokenService = refreshTokenService;
         this.personalWorkspaceService = personalWorkspaceService;
+        this.invitationClaimService = invitationClaimService;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
         this.profileValidator = profileValidator;
@@ -236,6 +240,12 @@ public class AuthService {
      * account. {@code ensurePersonalWorkspace} is idempotent, but idempotence
      * does not help a path that forgets to call it: that account simply has no
      * workspace, and nothing notices until the user tries to use one.
+     *
+     * <p>The same reasoning puts the invitation claim here: an owner who
+     * invited this address, or a 학번 the signup carried, is waiting on the
+     * account becoming usable, and all three paths are that moment. The claim
+     * reads only the user's id, email and 학번, so it works on the instance
+     * the Google path has already detached.</p>
      */
     public void activateAccount(User user, Instant when) {
         if (user.getStatus() == UserStatus.PENDING_VERIFICATION) {
@@ -243,6 +253,8 @@ public class AuthService {
             user.setEmailVerifiedAt(when);
         }
         personalWorkspaceService.ensurePersonalWorkspace(user);
+        invitationClaimService.claimByEmail(user);
+        invitationClaimService.claimByStudentNo(user);
     }
 
     /**

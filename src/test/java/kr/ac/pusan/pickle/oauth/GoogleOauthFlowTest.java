@@ -74,6 +74,9 @@ class GoogleOauthFlowTest {
     @Autowired
     private kr.ac.pusan.pickle.security.JwtService jwtService;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
     /**
      * Its own client address per case. Every OAuth endpoint is rate limited per
      * IP at 10/min and this class runs fifteen round trips, so sharing one
@@ -176,6 +179,56 @@ class GoogleOauthFlowTest {
         // holder proves the address is theirs.
         assertThat(userRepository.findById(pending.getId()).orElseThrow().getStatus())
                 .isEqualTo(UserStatus.ACTIVE);
+    }
+
+    @Test
+    void aGoogleRegistrationClaimsInvitationsByAddressAndByTheStudentNumberItCarries() throws Exception {
+        long byAddress = invitation("invited.google@pusan.ac.kr", null);
+        long byNumber = invitation(null, "gg20260001");
+
+        Flow flow = start();
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims(
+                "sub-invited", "invited.google@pusan.ac.kr", flow.nonce()));
+        MvcResult result = callback(flow.state())
+                .andExpect(jsonPath("$.kind").value("REGISTRATION_REQUIRED"))
+                .andReturn();
+        String token = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("registrationToken").asString();
+        mockMvc.perform(post("/api/v1/auth/oauth/google/complete")
+                        .with(fromThisCase())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "registrationToken", token,
+                                "name", "초대받은학생",
+                                "position", "STUDENT_UNDERGRAD",
+                                "studentNo", "GG20260001",
+                                "departmentCode", "COMPUTER_SCIENCE",
+                                "consents", List.of(
+                                        Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
+                                        Map.of("docType", "PRIVACY_POLICY", "version", 1))))))
+                .andExpect(status().isOk());
+
+        User created = userRepository.findByEmail("invited.google@pusan.ac.kr").orElseThrow();
+        assertThat(invitationState(byAddress)).isEqualTo("ACCEPTED");
+        assertThat(invitationState(byNumber)).isEqualTo("ACCEPTED");
+        assertThat(memberships(created)).isEqualTo(2);
+    }
+
+    @Test
+    void aGoogleSignInThatActivatesAPendingAccountClaimsItsInvitations() throws Exception {
+        User pending = save("pending.invited@pusan.ac.kr", UserStatus.PENDING_VERIFICATION);
+        long invitation = invitation("Pending.Invited@pusan.ac.kr", null);
+
+        Flow flow = start();
+        GOOGLE.stubToken(GoogleOauthWireMockSupport.claims(
+                "sub-pending-invited", "pending.invited@pusan.ac.kr", flow.nonce()));
+        callback(flow.state()).andExpect(status().isOk());
+
+        // the activation survived the detach on this path, and so did the claim
+        assertThat(userRepository.findById(pending.getId()).orElseThrow().getStatus())
+                .isEqualTo(UserStatus.ACTIVE);
+        assertThat(invitationState(invitation)).isEqualTo("ACCEPTED");
+        assertThat(memberships(pending)).isEqualTo(1);
     }
 
     // ------------------------------------------- what a signature cannot say
@@ -468,6 +521,33 @@ class GoogleOauthFlowTest {
                         "consents", List.of(
                                 Map.of("docType", "TERMS_OF_SERVICE", "version", 1),
                                 Map.of("docType", "PRIVACY_POLICY", "version", 1))))));
+    }
+
+    /** An open invitation in a fresh project workspace owned by the seeded administrator. */
+    private long invitation(String email, String studentNo) {
+        Long inviter = jdbcTemplate.queryForObject("select id from users where email = ?", Long.class,
+                kr.ac.pusan.pickle.support.SeedFixtures.SYSADMIN_EMAIL);
+        Long workspace = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('PROJECT', 'google claim') returning id", Long.class);
+        jdbcTemplate.update("insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",
+                workspace, inviter);
+        return jdbcTemplate.queryForObject("""
+                insert into workspace_invitations (workspace_id, invitee_email, invitee_student_no, role, invited_by)
+                values (?, ?, ?, 'MEMBER', ?) returning id
+                """, Long.class, workspace, email, studentNo, inviter);
+    }
+
+    private String invitationState(long invitationId) {
+        return jdbcTemplate.queryForObject("select status from workspace_invitations where id = ?",
+                String.class, invitationId);
+    }
+
+    /** Memberships outside the personal workspace. */
+    private long memberships(User user) {
+        return jdbcTemplate.queryForObject("""
+                select count(*) from workspace_members m join workspaces w on w.id = m.workspace_id
+                 where m.user_id = ? and w.kind <> 'PERSONAL'
+                """, Long.class, user.getId());
     }
 
     private User save(String email, UserStatus status) {

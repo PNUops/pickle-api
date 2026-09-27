@@ -12,7 +12,6 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
-import kr.ac.pusan.pickle.workspace.dto.AddWorkspaceMemberRequest;
 import kr.ac.pusan.pickle.workspace.dto.CreateWorkspaceRequest;
 import kr.ac.pusan.pickle.workspace.dto.WorkspaceDetailResponse;
 import kr.ac.pusan.pickle.workspace.dto.WorkspaceMemberResponse;
@@ -25,14 +24,12 @@ import kr.ac.pusan.pickle.resource.ResourceTypeAdapter;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserRepository;
-import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.request.Request;
 import kr.ac.pusan.pickle.request.RequestRepository;
 import kr.ac.pusan.pickle.request.RequestStatus;
 import java.time.Instant;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Workspace management (contract tag {@code workspaces}). Authorization
  * is resolved in this layer from a single membership row per request:
- * OWNER edits workspace info, manages members and transfers ownership;
+ * OWNER edits workspace info, manages members and appoints owners;
  * PERSONAL workspaces have immutable membership.
  */
 @Service
@@ -164,43 +161,6 @@ public class WorkspaceService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_KIND_UPDATE,
                 "workspace", workspace.getPublicId(),
                 Map.of("previousKind", previous.name(), "kind", next.name()), ip);
-    }
-
-    @Transactional
-    public WorkspaceMemberResponse addMember(AuthenticatedUser actor, UUID publicWorkspaceId,
-            AddWorkspaceMemberRequest request, String ip) {
-        Workspace workspace = findWorkspace(publicWorkspaceId);
-        long workspaceId = workspace.getId();
-        requireOwnerForMemberManagement(workspace, actor, "워크스페이스 소유자(OWNER)만 구성원을 추가할 수 있습니다.",
-                "PERSONAL 워크스페이스에는 구성원을 추가할 수 없습니다.");
-        if (request.role() == WorkspaceMemberRole.OWNER) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("role",
-                    "OWNER 역할은 구성원 추가로 부여할 수 없습니다. 구성원으로 추가한 뒤 역할 변경으로 "
-                            + "소유자를 지정해 주세요.")));
-        }
-
-        User target = userRepository.findByEmail(Texts.normalizeEmail(request.email()))
-                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND,
-                        ErrorCodes.WORKSPACE_MEMBER_USER_NOT_FOUND, "사용자를 찾을 수 없습니다",
-                        "해당 이메일로 가입된 사용자가 없습니다. 가입 후 다시 시도해 주세요."));
-        if (workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, target.getId()).isPresent()) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_MEMBER_ALREADY_EXISTS,
-                    "이미 워크스페이스 구성원입니다", "해당 사용자는 이미 이 워크스페이스의 구성원입니다.");
-        }
-
-        WorkspaceMember member;
-        try {
-            member = workspaceMemberRepository.save(new WorkspaceMember(workspace, target.getId(), request.role()));
-        } catch (DataIntegrityViolationException raceWithConcurrentAdd) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_MEMBER_ALREADY_EXISTS,
-                    "이미 워크스페이스 구성원입니다", "해당 사용자는 이미 이 워크스페이스의 구성원입니다.");
-        }
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_MEMBER_ADD,
-                "workspace", workspace.getPublicId(),
-                Map.of("userId", target.getPublicId(), "email", target.getEmail(),
-                        "role", member.getRole().name()), ip);
-        return WorkspaceMemberResponse.from(member, target);
     }
 
     @Transactional
@@ -363,11 +323,13 @@ public class WorkspaceService {
     }
 
     /**
-     * Member-management gate (add/role-change): actor must be OWNER and the
-     * workspace must not be PERSONAL — both violations render 403
-     * {@code WORKSPACE_MEMBER_MANAGE_FORBIDDEN} per contract.
+     * Member-management gate (invitations/role-change): actor must be OWNER and
+     * the workspace must not be PERSONAL — both violations render 403
+     * {@code WORKSPACE_MEMBER_MANAGE_FORBIDDEN} per contract. Package-private
+     * so {@link WorkspaceInvitationService} applies the same gate; it locks the
+     * actor's membership row and so must run inside the caller's transaction.
      */
-    private WorkspaceMember requireOwnerForMemberManagement(Workspace workspace, AuthenticatedUser actor,
+    WorkspaceMember requireOwnerForMemberManagement(Workspace workspace, AuthenticatedUser actor,
             String notOwnerDetail, String personalDetail) {
         if (workspace.getKind() == WorkspaceKind.PERSONAL) {
             throw memberManageForbidden("구성원을 관리할 권한이 없습니다", personalDetail);
@@ -388,7 +350,7 @@ public class WorkspaceService {
     }
 
     /** All read/manage paths exclude soft-deleted workspaces — a deleted workspace answers 404. */
-    private Workspace findWorkspace(UUID publicWorkspaceId) {
+    Workspace findWorkspace(UUID publicWorkspaceId) {
         return workspaceRepository.findByPublicIdAndDeletedAtIsNull(publicWorkspaceId)
                 .orElseThrow(WorkspaceService::workspaceNotFound);
     }

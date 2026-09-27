@@ -842,12 +842,14 @@ class RequestTest {
     }
 
     private void addMember(String token, long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/invitations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("email", email, "role", role))))
-                .andExpect(status().isCreated());
+                                Map.of("entries", List.of(Map.of("email", email))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {

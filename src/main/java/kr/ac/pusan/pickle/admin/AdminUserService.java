@@ -26,6 +26,7 @@ import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserStatus;
 import kr.ac.pusan.pickle.user.UserStatusChange;
 import kr.ac.pusan.pickle.user.UserStatusChangeRepository;
+import kr.ac.pusan.pickle.workspace.InvitationClaimService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -49,12 +50,14 @@ public class AdminUserService {
     private final RefreshTokenService refreshTokenService;
     private final ProfileValidator profileValidator;
     private final StudentNoUniqueness studentNoUniqueness;
+    private final InvitationClaimService invitationClaimService;
 
     public AdminUserService(UserRepository userRepository,
             UserStatusChangeRepository userStatusChangeRepository, AuditService auditService,
             NotificationService notificationService, AdminUserQueryService adminUserQueryService,
             MfaService mfaService, RefreshTokenService refreshTokenService,
-            ProfileValidator profileValidator, StudentNoUniqueness studentNoUniqueness) {
+            ProfileValidator profileValidator, StudentNoUniqueness studentNoUniqueness,
+            InvitationClaimService invitationClaimService) {
         this.userRepository = userRepository;
         this.userStatusChangeRepository = userStatusChangeRepository;
         this.auditService = auditService;
@@ -64,6 +67,7 @@ public class AdminUserService {
         this.refreshTokenService = refreshTokenService;
         this.profileValidator = profileValidator;
         this.studentNoUniqueness = studentNoUniqueness;
+        this.invitationClaimService = invitationClaimService;
     }
 
     /**
@@ -130,6 +134,13 @@ public class AdminUserService {
                 throw StudentNoUniqueness.taken();
             }
             throw e;
+        }
+        // A 학번 this correction introduces, whether the account had none or a
+        // different one, may be what an open invitation is waiting for. Only
+        // an ACTIVE account claims; the service checks that itself.
+        String storedNow = user.getStudentNo();
+        if (storedNow != null && (previousStudentNo == null || !previousStudentNo.equalsIgnoreCase(storedNow))) {
+            invitationClaimService.claimByStudentNo(user);
         }
 
         // 학번 is recorded as set/not-set rather than as a value, matching the

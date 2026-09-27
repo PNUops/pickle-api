@@ -437,11 +437,13 @@ class VmPowerControlTest {
     }
 
     private void addMember(long workspaceId, String email, String role) throws Exception {
-        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members")
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
+        mockMvc.perform(post("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/invitations")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("email", email, "role", role))))
-                .andExpect(status().isCreated());
+                        .content(objectMapper.writeValueAsString(Map.of("entries", List.of(Map.of("email", email))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
     }
 
     private User ensureUser(String email, String name) {
