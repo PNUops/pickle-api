@@ -11,6 +11,7 @@ import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.consent.TermsService;
+import kr.ac.pusan.pickle.workspace.InvitationClaimService;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.mfa.MfaService;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
@@ -55,6 +56,7 @@ public class MeController {
     private final StudentNoUniqueness studentNoUniqueness;
     private final RateLimitService rateLimitService;
     private final AuditService auditService;
+    private final InvitationClaimService invitationClaimService;
 
     public MeController(UserRepository userRepository,
             ManagedOrgQueryService managedOrgQueryService,
@@ -64,7 +66,8 @@ public class MeController {
             ProfileOptionsService profileOptionsService, ProfileValidator profileValidator,
             ProfileLock profileLock, StudentNoUniqueness studentNoUniqueness,
             RateLimitService rateLimitService,
-            AuditService auditService) {
+            AuditService auditService,
+            InvitationClaimService invitationClaimService) {
         this.userRepository = userRepository;
         this.managedOrgQueryService = managedOrgQueryService;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -77,6 +80,7 @@ public class MeController {
         this.studentNoUniqueness = studentNoUniqueness;
         this.rateLimitService = rateLimitService;
         this.auditService = auditService;
+        this.invitationClaimService = invitationClaimService;
     }
 
     @GetMapping
@@ -168,8 +172,9 @@ public class MeController {
                         "previousStudentNoSet", String.valueOf(previousStudentNo != null),
                         "previousName", previousName),
                 clientIp(httpRequest));
+        User saved;
         try {
-            return profileOf(userRepository.saveAndFlush(user));
+            saved = userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException e) {
             // Lost the race the check above cannot close: another account
             // saved the same 학번 between that read and this write.
@@ -178,6 +183,13 @@ public class MeController {
             }
             throw e;
         }
+        // The holder writes a 학번 once, so this is the moment invitations
+        // naming it can find their account. After the flush, so a number the
+        // unique index refuses never claims anything.
+        if (previousStudentNo == null && saved.getStudentNo() != null) {
+            invitationClaimService.claimByStudentNo(saved);
+        }
+        return profileOf(saved);
     }
 
     private User loadUser(AuthenticatedUser principal) {

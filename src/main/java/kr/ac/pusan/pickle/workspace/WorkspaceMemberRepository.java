@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -40,6 +41,21 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
             @Param("userId") Long userId);
 
     List<WorkspaceMember> findByWorkspaceIdOrderByIdAsc(Long workspaceId);
+
+    /**
+     * Adds a membership row unless the person already belongs. Returns 0 when the
+     * (workspace_id, user_id) key is taken, including by a concurrent insert:
+     * the statement absorbs the conflict, so a race answers "already a member"
+     * without aborting the surrounding transaction.
+     */
+    @Modifying
+    @Query(value = """
+            insert into workspace_members (workspace_id, user_id, role)
+            values (:workspaceId, :userId, cast(:role as workspace_member_role))
+            on conflict (workspace_id, user_id) do nothing
+            """, nativeQuery = true)
+    int insertMemberIfAbsent(@Param("workspaceId") long workspaceId, @Param("userId") long userId,
+            @Param("role") String role);
 
     long countByWorkspaceIdAndRole(Long workspaceId, WorkspaceMemberRole role);
 

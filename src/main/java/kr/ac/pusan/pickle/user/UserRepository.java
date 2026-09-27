@@ -23,6 +23,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     boolean existsByStudentNoIgnoreCase(String studentNo);
 
+    /** The one account holding this 학번, ignoring case as the V131 index does. */
+    Optional<User> findByStudentNoIgnoreCase(String studentNo);
+
     /** All users holding a global role (SYS_ADMIN notification fan-out). */
     List<User> findByRole(UserRole role);
 }

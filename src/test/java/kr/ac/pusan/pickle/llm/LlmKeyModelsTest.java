@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -586,14 +587,16 @@ class LlmKeyModelsTest {
     }
 
     private void addMember(String email) throws Exception {
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
         UUID workspacePublicId = jdbcTemplate.queryForObject(
                 "select public_id from workspaces where id = ?", UUID.class, workspaceId);
-        mockMvc.perform(post("/api/v1/workspaces/" + workspacePublicId + "/members")
+        mockMvc.perform(post("/api/v1/workspaces/" + workspacePublicId + "/invitations")
                         .header("Authorization", "Bearer " + wsOwnerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                Map.of("email", email, "role", "MEMBER"))))
-                .andExpect(status().isCreated());
+                                Map.of("entries", List.of(Map.of("email", email))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
     }
 
     private User ensureUser(String email, String name) {

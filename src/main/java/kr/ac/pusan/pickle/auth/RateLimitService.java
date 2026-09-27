@@ -124,6 +124,54 @@ public class RateLimitService {
     }
 
     /**
+     * Hourly budget counted in units rather than calls: a request worth
+     * {@code weight} units is admitted only if the window total plus that
+     * weight stays within {@code limitPerHour}, and a rejected request records
+     * nothing, so asking for too much at once does not also spend what is left.
+     * Same 15-minute buckets and 60-minute window as {@link #hitHourly}.
+     *
+     * <p>Check and record are two statements, so concurrent requests on one
+     * subject are serialized with a transaction-scoped advisory lock; without
+     * it two requests could each read a total below the budget and both land
+     * above it.</p>
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void hitHourly(String scope, String subject, int limitPerHour, int weight) {
+        if (weight < 1) {
+            throw new IllegalArgumentException("weight must be positive: " + weight);
+        }
+        jdbcTemplate.queryForList("select pg_advisory_xact_lock(hashtext(?))", scope + "|" + subject);
+        jdbcTemplate.update("""
+                delete from auth_rate_limits
+                 where scope = ? and subject = ? and window_start <= now() - interval '120 minutes'
+                """, scope, subject);
+        WindowState window = jdbcTemplate.queryForObject("""
+                select coalesce(sum(request_count), 0) as total, min(window_start) as oldest
+                  from auth_rate_limits
+                 where scope = ? and subject = ? and window_start > now() - interval '60 minutes'
+                """,
+                (rs, rowNum) -> new WindowState(rs.getLong("total"),
+                        rs.getObject("oldest", OffsetDateTime.class)),
+                scope, subject);
+        if (window.total() + weight > limitPerHour) {
+            // An empty window means this request alone exceeds the budget;
+            // waiting cannot help, so the hint is the whole window.
+            long retryAfter = window.oldest() == null
+                    ? Duration.ofMinutes(60).toSeconds()
+                    : Math.max(1, Duration.between(Instant.now(),
+                            window.oldest().toInstant().plus(Duration.ofMinutes(75))).toSeconds());
+            throw ApiException.rateLimited(retryAfter);
+        }
+        jdbcTemplate.update("""
+                insert into auth_rate_limits (scope, subject, window_start, request_count)
+                values (?, ?, date_bin(interval '15 minutes', now(), timestamptz 'epoch'), ?)
+                on conflict (scope, subject, window_start)
+                do update set request_count = auth_rate_limits.request_count + excluded.request_count,
+                              updated_at = now()
+                """, scope, subject, weight);
+    }
+
+    /**
      * Throws 429 when this account is under an escalating login lockout <em>from
      * this client address</em>. The lock is keyed on the pair rather than the
      * account alone because this check runs before the password is verified:

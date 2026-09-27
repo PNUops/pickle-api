@@ -114,12 +114,14 @@ class PublicIdentifierTest {
     void noAuditDetailNamesSomethingByItsRowNumber() throws Exception {
         // an audited action whose detail carries an id-shaped key, so the sweep
         // below can never pass by having nothing to look at
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
         mockMvc.perform(post("/api/v1/workspaces/"
-                        + SeedFixtures.publicId(jdbcTemplate, "workspaces", workspaceId) + "/members")
+                        + SeedFixtures.publicId(jdbcTemplate, "workspaces", workspaceId) + "/invitations")
                         .header("Authorization", "Bearer " + ownerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\": \"" + outsider.getEmail() + "\", \"role\": \"MEMBER\"}"))
-                .andExpect(status().isCreated());
+                        .content("{\"entries\": [{\"email\": \"" + outsider.getEmail() + "\"},"
+                                + " {\"email\": \"nobody-yet.pubid@pusan.ac.kr\"}]}"))
+                .andExpect(status().isOk());
 
         Long inspected = jdbcTemplate.queryForObject("""
                 select count(*) from audit_logs a, lateral jsonb_each(a.detail) kv

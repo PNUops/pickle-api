@@ -68,18 +68,6 @@ components:
       - "granteeType"
       - "role"
       type: "object"
-    AddWorkspaceMemberRequest:
-      properties:
-        email:
-          format: "email"
-          minLength: 1
-          type: "string"
-        role:
-          $ref: "#/components/schemas/WorkspaceMemberRole"
-      required:
-      - "email"
-      - "role"
-      type: "object"
     AdminCampusIpRequestView:
       properties:
         adminNote:
@@ -3422,6 +3410,28 @@ components:
       enum:
       - "GOOGLE"
       type: "string"
+    InviteWorkspaceMembersRequest:
+      properties:
+        entries:
+          description: "초대할 사람 목록. 1명에서 200명까지이며, 한 항목에는 이메일과 학번 중 하나만 씁니다."
+          items:
+            $ref: "#/components/schemas/WorkspaceInvitationEntry"
+          maxItems: 200
+          minItems: 1
+          type: "array"
+      required:
+      - "entries"
+      type: "object"
+    InviteWorkspaceMembersResponse:
+      properties:
+        results:
+          description: "요청 항목마다 한 건씩, 요청과 같은 순서입니다."
+          items:
+            $ref: "#/components/schemas/WorkspaceInvitationResult"
+          type: "array"
+      required:
+      - "results"
+      type: "object"
     IpAllocationResponse:
       properties:
         allocatedAt:
@@ -10367,6 +10377,107 @@ components:
       - "myRole"
       - "name"
       type: "object"
+    WorkspaceInvitationEntry:
+      properties:
+        email:
+          description: "초대할 사람의 이메일. 학번과 함께 쓸 수 없습니다."
+          example: "student@pusan.ac.kr"
+          maxLength: 254
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        studentNo:
+          description: "초대할 사람의 학번. 학번은 학생 직책 계정에만 등록되므로 교수·연구원·직원은 이메일로 초대합니다. 이메\
+            일과 함께 쓸 수 없습니다."
+          example: "202612345"
+          type:
+          - "string"
+          - "null"
+      type: "object"
+    WorkspaceInvitationInviter:
+      properties:
+        id:
+          description: "계정 공개 식별자"
+          format: "uuid"
+          type: "string"
+        name:
+          description: "이름"
+          type: "string"
+      required:
+      - "id"
+      - "name"
+      type: "object"
+    WorkspaceInvitationOutcome:
+      enum:
+      - "ADDED"
+      - "INVITED"
+      - "ALREADY_MEMBER"
+      - "ALREADY_INVITED"
+      - "DUPLICATE_IN_REQUEST"
+      type: "string"
+    WorkspaceInvitationResponse:
+      properties:
+        email:
+          description: "초대한 이메일. 학번으로 초대했으면 null입니다."
+          type:
+          - "string"
+          - "null"
+        id:
+          description: "초대 식별자"
+          format: "uuid"
+          type: "string"
+        invitedAt:
+          description: "초대한 시각"
+          format: "date-time"
+          type: "string"
+        invitedBy:
+          $ref: "#/components/schemas/WorkspaceInvitationInviter"
+          description: "초대한 사람"
+        role:
+          $ref: "#/components/schemas/WorkspaceMemberRole"
+          description: "구성원이 되었을 때 받을 역할"
+        studentNo:
+          description: "초대한 학번. 이메일로 초대했으면 null입니다."
+          type:
+          - "string"
+          - "null"
+      required:
+      - "id"
+      - "invitedAt"
+      - "invitedBy"
+      - "role"
+      type: "object"
+    WorkspaceInvitationResult:
+      properties:
+        email:
+          description: "요청에 쓴 이메일(정규화한 값). 학번 항목이면 null입니다."
+          type:
+          - "string"
+          - "null"
+        invitationId:
+          description: "대기 중인 초대의 식별자. INVITED와 ALREADY_INVITED일 때만 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+        outcome:
+          $ref: "#/components/schemas/WorkspaceInvitationOutcome"
+          description: "처리 결과."
+        studentNo:
+          description: "요청에 쓴 학번(앞뒤 공백 제거). 이메일 항목이면 null입니다."
+          type:
+          - "string"
+          - "null"
+        userId:
+          description: "구성원이 된 계정의 공개 식별자. ADDED일 때만 있습니다."
+          format: "uuid"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "outcome"
+      type: "object"
     WorkspaceKind:
       enum:
       - "PERSONAL"
@@ -10470,7 +10581,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.87.0"
+  version: "0.88.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -18099,9 +18210,41 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "workspace-controller"
-  /workspaces/{workspaceId}/members:
+  /workspaces/{workspaceId}/invitations:
+    get:
+      description: "아직 받지 않은 초대만 오래된 순서로 돌려줍니다. 소유자(OWNER)만 볼 수 있습니다."
+      operationId: "listWorkspaceInvitations"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                items:
+                  $ref: "#/components/schemas/WorkspaceInvitationResponse"
+                type: "array"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "대기 중인 초대 목록"
+      tags:
+      - "workspace-controller"
     post:
-      operationId: "addWorkspaceMember"
+      description: "이메일이나 학번으로 한 번에 1명에서 200명까지 초대합니다. 활성 계정이 있으면 바로 구성원(MEMBER)이\
+        \ 되고, 없으면 초대가 대기하다가 그 사람이 가입하거나 학번을 등록하면 자동으로 구성원이 됩니다. 초대는 만료되지 않으며 소유자가\
+        \ 취소할 수 있습니다. 결과는 항목마다 요청과 같은 순서로 옵니다. 소유자(OWNER)만 호출할 수 있고 개인 워크스페이스에는 초대\
+        할 수 없습니다."
+      operationId: "inviteWorkspaceMembers"
       parameters:
       - in: "path"
         name: "workspaceId"
@@ -18113,21 +18256,52 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AddWorkspaceMemberRequest"
+              $ref: "#/components/schemas/InviteWorkspaceMembersRequest"
         required: true
       responses:
-        "201":
+        "200":
           content:
             '*/*':
               schema:
-                $ref: "#/components/schemas/WorkspaceMemberResponse"
-          description: "Created"
+                $ref: "#/components/schemas/InviteWorkspaceMembersResponse"
+          description: "OK"
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "구성원 초대"
+      tags:
+      - "workspace-controller"
+  /workspaces/{workspaceId}/invitations/{invitationId}:
+    delete:
+      description: "대기 중인 초대를 취소합니다. 이미 받았거나 취소한 초대는 찾을 수 없음(404)으로 답합니다. 소유자(OWNER)만\
+        \ 호출할 수 있습니다."
+      operationId: "cancelWorkspaceInvitation"
+      parameters:
+      - in: "path"
+        name: "workspaceId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      - in: "path"
+        name: "invitationId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      responses:
+        "204":
+          description: "No Content"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "초대 취소"
       tags:
       - "workspace-controller"
   /workspaces/{workspaceId}/members/{userId}:

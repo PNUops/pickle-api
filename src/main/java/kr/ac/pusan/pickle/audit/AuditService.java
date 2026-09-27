@@ -31,6 +31,13 @@ public class AuditService {
     public static final String WORKSPACE_MEMBER_ADD = "workspace.member_add";
     public static final String WORKSPACE_MEMBER_UPDATE = "workspace.member_update";
     public static final String WORKSPACE_MEMBER_REMOVE = "workspace.member_remove";
+    /**
+     * An owner opened an invitation. The detail names the kind of identifier
+     * (email or studentNo) and never its value: the detail reaches the actor's
+     * own activity feed, and a 학번 is recorded only as presence elsewhere.
+     */
+    public static final String WORKSPACE_INVITATION_CREATE = "workspace.invitation_create";
+    public static final String WORKSPACE_INVITATION_CANCEL = "workspace.invitation_cancel";
     public static final String REQUEST_CREATE = "request.create";
     public static final String REQUEST_CANCEL = "request.cancel";
     public static final String REQUEST_APPROVE = "request.approve";

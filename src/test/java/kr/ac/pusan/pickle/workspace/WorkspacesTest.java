@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -72,6 +73,7 @@ class WorkspacesTest {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("delete from auth_rate_limits where scope like 'workspace_invite%'");
         owner = ensureUser("grp.owner@pusan.ac.kr", "워크스페이스장", UserStatus.ACTIVE);
         peer = ensureUser("grp.peer@pusan.ac.kr", "동료", UserStatus.ACTIVE);
         member = ensureUser("grp.member@pusan.ac.kr", "멤버", UserStatus.ACTIVE);
@@ -143,46 +145,37 @@ class WorkspacesTest {
     void memberManagementIsOwnerOnly() throws Exception {
         long workspaceId = createWorkspace(ownerToken, "grp-members-x1");
 
-        // OWNER adds members: MEMBER is the only rung an addition may name
-        addMember(ownerToken, workspaceId, peer.getEmail(), "MEMBER")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.userId").value(peer.getPublicId().toString()))
-                .andExpect(jsonPath("$.role").value("MEMBER"));
-        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
+        // OWNER adds ACTIVE accounts by invitation: they join at once as MEMBER
+        addMember(ownerToken, workspaceId, peer.getEmail())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"))
+                .andExpect(jsonPath("$.results[0].userId").value(peer.getPublicId().toString()));
+        addMember(ownerToken, workspaceId, member.getEmail())
+                .andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
 
-        // EDITOR and VIEWER belong to the per-resource access list, not to the
-        // workspace axis, so the workspace API no longer knows the words → 422
-        addMember(ownerToken, workspaceId, outsider.getEmail(), "EDITOR")
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
-        addMember(ownerToken, workspaceId, outsider.getEmail(), "VIEWER")
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        // an existing member answers per entry rather than failing the request
+        addMember(ownerToken, workspaceId, member.getEmail())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("ALREADY_MEMBER"));
 
-        // duplicate member → 409
-        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_ALREADY_EXISTS"));
+        // an address with no account, or with one that is not ACTIVE, is invited
+        // and waits: both answer the same way
+        addMember(ownerToken, workspaceId, "no.such.user@pusan.ac.kr")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("INVITED"));
+        addMember(ownerToken, workspaceId, "grp.pending@pusan.ac.kr")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].outcome").value("INVITED"));
 
-        // unknown email → 404 WORKSPACE_MEMBER_USER_NOT_FOUND
-        addMember(ownerToken, workspaceId, "no.such.user@pusan.ac.kr", "MEMBER")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_USER_NOT_FOUND"));
-
-        // non-ACTIVE users cannot be added → same 404
-        addMember(ownerToken, workspaceId, "grp.pending@pusan.ac.kr", "MEMBER")
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_USER_NOT_FOUND"));
-
-        // a plain member cannot add members → 403 WORKSPACE_MEMBER_MANAGE_FORBIDDEN
-        addMember(peerToken, workspaceId, outsider.getEmail(), "MEMBER")
+        // a plain member cannot invite → 403 WORKSPACE_MEMBER_MANAGE_FORBIDDEN
+        addMember(peerToken, workspaceId, outsider.getEmail())
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
 
-        // OWNER is appointed by a role change, never by an addition → 422
-        addMember(ownerToken, workspaceId, outsider.getEmail(), "OWNER")
-                .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.errors[0].field").value("role"));
+        // the membership an invitation creates is MEMBER; OWNER is appointed by a role change
+        mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId)).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(jsonPath("$.members[?(@.userId == \'%s\')].role".formatted(peer.getPublicId()))
+                        .value(org.hamcrest.Matchers.contains("MEMBER")));
 
         // detail is member-only: member sees everyone, outsider gets 403
         mockMvc.perform(get("/api/v1/workspaces/" + pub("workspaces", workspaceId)).header("Authorization", "Bearer " + memberToken))
@@ -200,8 +193,8 @@ class WorkspacesTest {
     @Test
     void workspaceInfoUpdateIsOwnerOnly() throws Exception {
         long workspaceId = createWorkspace(ownerToken, "grp-update-x1");
-        addMember(ownerToken, workspaceId, peer.getEmail(), "MEMBER").andExpect(status().isCreated());
-        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
+        addMember(ownerToken, workspaceId, peer.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
+        addMember(ownerToken, workspaceId, member.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
 
         // OWNER may edit name/description
         patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId), ownerToken, Map.of("name", "새 이름"))
@@ -232,7 +225,7 @@ class WorkspacesTest {
     @Test
     void ownerReclassifiesTheWorkspaceAndPersonalStaysPut() throws Exception {
         long workspaceId = createWorkspace(ownerToken, "grp-kind-x1");
-        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
+        addMember(ownerToken, workspaceId, member.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
         String workspace = pub("workspaces", workspaceId).toString();
 
         // every creatable kind round-trips through the update path
@@ -299,8 +292,8 @@ class WorkspacesTest {
     @Test
     void ownerAppointmentAndLastOwnerProtection() throws Exception {
         long workspaceId = createWorkspace(ownerToken, "grp-owner-x1");
-        addMember(ownerToken, workspaceId, peer.getEmail(), "MEMBER").andExpect(status().isCreated());
-        addMember(ownerToken, workspaceId, member.getEmail(), "MEMBER").andExpect(status().isCreated());
+        addMember(ownerToken, workspaceId, peer.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
+        addMember(ownerToken, workspaceId, member.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
 
         // plain members cannot change roles or remove others
         patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + member.getPublicId(), peerToken,
@@ -336,8 +329,7 @@ class WorkspacesTest {
                         .value(org.hamcrest.Matchers.contains("OWNER")));
 
         // appointing somebody costs the appointer nothing — they still manage
-        addMember(ownerToken, workspaceId, outsider.getEmail(), "MEMBER")
-                .andExpect(status().isCreated());
+        addMember(ownerToken, workspaceId, outsider.getEmail()).andExpect(jsonPath("$.results[0].outcome").value("ADDED"));
 
         // with a second owner in place the first may now release ownership
         patchJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members/" + owner.getPublicId(), ownerToken,
@@ -392,7 +384,7 @@ class WorkspacesTest {
         }
         assertThat(personalWorkspaceId).isPositive();
 
-        addMember(ownerToken, personalWorkspaceId, peer.getEmail(), "MEMBER")
+        addMember(ownerToken, personalWorkspaceId, peer.getEmail())
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("WORKSPACE_MEMBER_MANAGE_FORBIDDEN"));
         patchJson("/api/v1/workspaces/" + pub("workspaces", personalWorkspaceId) + "/members/" + owner.getPublicId(), ownerToken,
@@ -413,8 +405,10 @@ class WorkspacesTest {
         return SeedFixtures.internalId(jdbcTemplate, "workspaces", UUID.fromString(objectMapper.readTree(body).get("id").asString()));
     }
 
-    private ResultActions addMember(String token, long workspaceId, String email, String role) throws Exception {
-        return postJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/members", token, Map.of("email", email, "role", role));
+    /** Adding one person is an invitation with one entry. */
+    private ResultActions addMember(String token, long workspaceId, String email) throws Exception {
+        return postJson("/api/v1/workspaces/" + pub("workspaces", workspaceId) + "/invitations", token,
+                Map.of("entries", List.of(Map.of("email", email))));
     }
 
     private ResultActions postJson(String uri, String token, Map<String, ?> body) throws Exception {
