@@ -64,9 +64,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class LlmKeyUsageService {
 
     /**
-     * The status vocabulary is the gateway's, from the internal contract.
-     * Anything outside it lands in {@code failed} rather than vanishing — a
-     * status this query does not know about is still a request that happened.
+     * Gateway status {@code OK} counts as success and {@code RATE_LIMITED}
+     * has its own count. Any other non-null status counts as failed rather
+     * than disappearing from the daily series.
      */
     private static final String TREND_SQL = """
             select d::date as day,
