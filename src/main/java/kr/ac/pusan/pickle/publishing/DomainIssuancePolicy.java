@@ -26,9 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
  * through {@code POST /vms/&#123;vmId&#125;/domains}, which is a direct call with
  * no request behind it and therefore nothing for a reviewer to approve; routing
  * it through a policy that can say "wait" would take away a VM owner's only way
- * to publish and offer nothing in its place. Widening this is a round of its
- * own — the two shapes it could take are in the DNS design document — and until
- * then the administrator's screen says what the value currently covers.</p>
+ * to publish and offer nothing in its place. The administrator's screen
+ * describes the value as covering external name issuance.</p>
  */
 @Service
 public class DomainIssuancePolicy {

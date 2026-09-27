@@ -343,10 +343,10 @@ TypeScript 타입도 이 파일에서 만듭니다. 엔드포인트가 바뀌면
 mvn test -Dtest=ContractDriftTest -Dcontract.update=true
 ```
 
-갱신하지 않으면 `ContractDriftTest`가 빌드를 실패시킵니다. 환경 변수
-`PICKLE_CONTRACT_MASTER`에 수기로 쓴 설계 명세 YAML 경로를 주면 설계 표면과 구현 표면의
-집합 대조에 더해, 두 문서가 함께 가진 오퍼레이션의 `operationId`와 설계 명세가 붙인
-스키마명이 생성본과 같은지까지 대조합니다.
+갱신하지 않으면 `ContractDriftTest`가 빌드를 실패시킵니다. 이 테스트는 실행 중인
+API의 경로와 HTTP 메서드를 구현 목록과 대조하고, 생성한 YAML 전체가 커밋된 명세와
+바이트 단위로 일치하는지도 확인합니다. 모든 오퍼레이션의 `operationId`가 비어 있지 않고
+서로 다른지도 검사합니다.
 
 실행 중인 서버도 같은 스펙을 제공합니다: https://pickle.pusan.ac.kr/api/v1/openapi
 
