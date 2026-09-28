@@ -81,6 +81,18 @@ final class NullabilityOpenApiCustomizer {
             if (schema == null || schema.getEnum() != null || schema.getProperties() == null) {
                 continue;
             }
+            // @Schema(nullable = true) on an enum or object property renders as
+            // "$ref" plus a sibling "type: null", which JSON Schema reads as
+            // both at once and generated clients drop; rewrite it to the same
+            // anyOf wrapper the @Nullable path emits.
+            for (Map.Entry<String, Schema> entry : List.copyOf(
+                    ((Map<String, Schema>) schema.getProperties()).entrySet())) {
+                Schema<?> prop = entry.getValue();
+                if (prop.get$ref() != null && prop.getTypes() != null
+                        && prop.getTypes().contains("null")) {
+                    markNullable(prop, schema, entry.getKey());
+                }
+            }
             List<Class<?>> candidates = index.getOrDefault(
                     name.startsWith(PAGE_PREFIX) ? PAGE_PREFIX : name, List.of());
             if (candidates.size() == 1 && candidates.get(0).isRecord()) {
