@@ -1,23 +1,40 @@
 package kr.ac.pusan.pickle.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.sql.DataSource;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
+import org.jobrunr.server.BackgroundJobServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.ReadinessState;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.mock.env.MockEnvironment;
 
 /**
  * Daily token quotas: the api counts, the gateway refuses.
@@ -76,6 +93,15 @@ class LlmDailyQuotaTest {
 
     @Autowired
     private Clock clock;
+
+    @Autowired
+    private DataSource dataSource;
+
+    @Autowired
+    private ObjectProvider<BackgroundJobServer> backgroundServer;
+
+    @Autowired
+    private ApplicationEventPublisher events;
 
     private long keyId;
 
@@ -224,6 +250,167 @@ class LlmDailyQuotaTest {
         assertThat(quotaService.refresh()).isEqualTo(1);
         assertThat(exhausted(closed)).isTrue();
         assertThat(exhausted(keyId)).isFalse();
+    }
+
+    @Test
+    void directSchedulerReleasesYesterdayQuotaOnStartupAndRejectsAnotherOwner() throws Exception {
+        recordUsage(keyId, 1_200, 0, NOON_KST);
+        quotaService.refresh();
+        long before = generation();
+        ((MutableClock) clock).set(Instant.parse("2026-08-11T15:01:00Z"));
+        var workerOff = new MockEnvironment()
+                .withProperty("jobrunr.background-job-server.enabled", "false");
+
+        try (var first = new LlmDirectQuotaScheduler(dataSource, quotaService,
+                workerOff, backgroundServer, events, clock)) {
+            first.run(new DefaultApplicationArguments(new String[0]));
+            assertThat(exhausted(keyId)).isFalse();
+            assertThat(generation()).isGreaterThan(before);
+            try (var second = new LlmDirectQuotaScheduler(dataSource, quotaService,
+                    workerOff, backgroundServer, events, clock)) {
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> second.run(new DefaultApplicationArguments(new String[0])))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("another LLM direct quota scheduler");
+            }
+            assertThat(generation()).isEqualTo(before + 1);
+        }
+        try (var replacement = new LlmDirectQuotaScheduler(dataSource, quotaService,
+                workerOff, backgroundServer, events, clock)) {
+            replacement.run(new DefaultApplicationArguments(new String[0]));
+            assertThat(generation()).isEqualTo(before + 1);
+        }
+    }
+
+    @Test
+    void directSchedulerRefusesToStartWhenJobRunrWorkerIsEnabled() throws Exception {
+        var workerOn = new MockEnvironment()
+                .withProperty("jobrunr.background-job-server.enabled", "true");
+        try (var scheduler = new LlmDirectQuotaScheduler(dataSource, quotaService,
+                workerOn, backgroundServer, events, clock)) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                    () -> scheduler.run(new DefaultApplicationArguments(new String[0])))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("JobRunr worker");
+        }
+    }
+
+    @Test
+    void shutdownKeepsTheOwnerLockUntilAnInFlightRefreshFinishes() throws Exception {
+        LlmQuotaService blockingQuota = mock(LlmQuotaService.class);
+        ApplicationEventPublisher notices = mock(ApplicationEventPublisher.class);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+        when(blockingQuota.refresh()).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() > 1) {
+                entered.countDown();
+                if (!finish.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("synthetic refresh did not finish");
+                }
+            }
+            return 0;
+        });
+        var workerOff = new MockEnvironment()
+                .withProperty("jobrunr.background-job-server.enabled", "false");
+        var first = new LlmDirectQuotaScheduler(dataSource, blockingQuota,
+                workerOff, backgroundServer, notices, clock, Duration.ofMillis(20));
+        Thread refreshThread = null;
+        Thread closeThread = null;
+        try {
+            first.run(new DefaultApplicationArguments(new String[0]));
+            refreshThread = Thread.ofPlatform().start(first::refreshOnSchedule);
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+            closeThread = Thread.ofPlatform().start(() -> {
+                try {
+                    first.close();
+                } catch (Exception failure) {
+                    closeFailure.set(failure);
+                }
+            });
+            verify(notices, org.mockito.Mockito.timeout(1_000))
+                    .publishEvent(org.mockito.ArgumentMatchers.any(AvailabilityChangeEvent.class));
+            assertThat(closeThread.isAlive()).isTrue();
+            try (var contender = new LlmDirectQuotaScheduler(dataSource, blockingQuota,
+                    workerOff, backgroundServer, notices, clock)) {
+                org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> contender.run(new DefaultApplicationArguments(new String[0])))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("another LLM direct quota scheduler");
+            }
+        } finally {
+            finish.countDown();
+            if (refreshThread != null) {
+                refreshThread.join(5_000);
+            }
+            if (closeThread != null) {
+                closeThread.join(5_000);
+            }
+            first.close();
+        }
+        assertThat(closeThread).isNotNull();
+        assertThat(closeThread.isAlive()).isFalse();
+        assertThat(closeFailure.get()).isNull();
+        try (var replacement = new LlmDirectQuotaScheduler(dataSource, blockingQuota,
+                workerOff, backgroundServer, notices, clock)) {
+            replacement.run(new DefaultApplicationArguments(new String[0]));
+        }
+    }
+
+    @Test
+    void ownershipLossDuringQuotaFailureRefusesReadiness() throws Exception {
+        LlmQuotaService failingQuota = mock(LlmQuotaService.class);
+        ApplicationEventPublisher notices = mock(ApplicationEventPublisher.class);
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<LlmDirectQuotaScheduler> current = new AtomicReference<>();
+        when(failingQuota.refresh()).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() > 1) {
+                var ownerPid = LlmDirectQuotaScheduler.class.getDeclaredField("ownerBackendPid");
+                ownerPid.setAccessible(true);
+                ownerPid.setInt(current.get(), ownerPid.getInt(current.get()) + 1);
+                throw new IllegalStateException("synthetic quota failure");
+            }
+            return 0;
+        });
+        var workerOff = new MockEnvironment()
+                .withProperty("jobrunr.background-job-server.enabled", "false");
+        try (var scheduler = new LlmDirectQuotaScheduler(dataSource, failingQuota,
+                workerOff, backgroundServer, notices, clock)) {
+            current.set(scheduler);
+            scheduler.run(new DefaultApplicationArguments(new String[0]));
+            scheduler.refreshOnSchedule();
+            var refusal = org.mockito.ArgumentCaptor.forClass(AvailabilityChangeEvent.class);
+            verify(notices).publishEvent(refusal.capture());
+            assertThat(refusal.getValue().getState()).isEqualTo(ReadinessState.REFUSING_TRAFFIC);
+        }
+    }
+
+    @Test
+    void repeatedQuotaFailuresRefuseReadinessAfterFifteenMinutes() throws Exception {
+        LlmQuotaService failingQuota = mock(LlmQuotaService.class);
+        ApplicationEventPublisher notices = mock(ApplicationEventPublisher.class);
+        AtomicInteger calls = new AtomicInteger();
+        when(failingQuota.refresh()).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() > 1) {
+                throw new IllegalStateException("synthetic transient quota failure");
+            }
+            return 0;
+        });
+        var workerOff = new MockEnvironment()
+                .withProperty("jobrunr.background-job-server.enabled", "false");
+        try (var scheduler = new LlmDirectQuotaScheduler(dataSource, failingQuota,
+                workerOff, backgroundServer, notices, clock)) {
+            scheduler.run(new DefaultApplicationArguments(new String[0]));
+            ((MutableClock) clock).set(NOON_KST.plus(Duration.ofMinutes(10)));
+            scheduler.refreshOnSchedule();
+            verifyNoInteractions(notices);
+            ((MutableClock) clock).set(NOON_KST.plus(Duration.ofMinutes(15)));
+            scheduler.refreshOnSchedule();
+            var refusal = org.mockito.ArgumentCaptor.forClass(AvailabilityChangeEvent.class);
+            verify(notices).publishEvent(refusal.capture());
+            assertThat(refusal.getValue().getState()).isEqualTo(ReadinessState.REFUSING_TRAFFIC);
+        }
     }
 
     private long insertKeyWithDailyLimit(Long dailyTokens) {

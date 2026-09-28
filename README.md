@@ -70,6 +70,12 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **잡 큐가 데이터베이스에 있습니다.** JobRunr가 잡을 PostgreSQL 테이블에 저장하므로
   최소 1회 실행과 백오프 재시도, 진행 상황 대시보드가 따라옵니다. 워커는 API와 같은 JVM에서
   돌고, 부하가 늘면 같은 jar를 `--worker-only` 모드로 다른 호스트에 띄울 수 있습니다.
+- **일일 LLM 토큰 한도를 별도로 갱신할 수 있습니다.** 공유 JobRunr 워커를 끈 API에서
+  명시적으로 활성화하면 기동 직후와 이후 5분마다 기존 한도 갱신 서비스를 직접 실행합니다.
+  같은 데이터베이스의 두 직접 스케줄러가 동시에 시작되면 뒤에 시작한 인스턴스는 기동을
+  거부합니다. 이 기능은 OpenRouter 계정 조회·신규 키 발급, 사용량 집계, 알림 발송을
+  실행하지 않습니다. 서로 다른 데이터베이스의 쓰기 소유권은 배포 순서에서 별도로
+  확정해야 합니다.
 - **민감한 작업에는 인증이 한 겹 더 있습니다.** 비밀번호 열람이나 키 다운로드처럼
   되돌리기 어려운 작업은 로그인 상태여도 짧은 유효기간의 재인증 토큰을 다시 요구하며,
   인터셉터가 대상 작업 전체에 일괄 적용합니다. 회원가입 비밀번호는 유출 이력 차단목록과
@@ -431,6 +437,23 @@ advisory lock 아래 확인합니다. V87이 넣는 endpoint/credential 없는 l
 워크스페이스/OWNER membership만 만들고 종료합니다. 일반 `isolated` 기동은 계정을 만들지
 않습니다.
 
+### 공유 워커를 끈 LLM 일일 한도 갱신
+
+기존 LLM 키의 일일 토큰 한도를 유지하면서 공유 JobRunr 작업을 실행하지 않아야 하는
+후보 API에서 `PICKLE_LLM_QUOTA_DIRECT_ENABLED=true`와
+`--jobrunr.background-job-server.enabled=false`를 함께 설정합니다. 한쪽만 설정하면
+직접 갱신이 실행되지 않거나 API 기동이 거부됩니다. 첫 갱신은 API 기동 중에 완료되어야
+하며 실패하면 기동이 중단됩니다. 이후 5분 간격의 실패는 로그에 남기고 다음 주기에
+재시도합니다. 마지막 성공 뒤 15분 동안 갱신하지 못했거나 소유한 PostgreSQL 세션을
+잃으면 직접 스케줄러를 중지하고 readiness를 거부 상태로 바꿉니다. 자동으로 readiness를
+되살리지 않으므로 원인을 확인한 뒤 재기동해야 합니다. 종료 중 갱신이 길어지면
+작업이 끝나거나 프로세스가 종료될 때까지 advisory lock을 유지합니다.
+
+동일한 데이터베이스의 직접 스케줄러 둘은 advisory lock으로 충돌을 막습니다. 서로 다른
+데이터베이스에는 이 잠금이 통하지 않으므로 원본 API와 게이트웨이의 쓰기·사용량 전송을
+멈춘 뒤 새 실행 주체를 활성화해야 합니다. OpenRouter 계정 잔액 조회·키 상태 대사,
+신규 유상 키 발급, 알림 발송과 사용량 집계는 이 설정으로 실행되지 않습니다.
+
 ## 시작하기
 
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
@@ -506,6 +529,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 2FA 등록 강제 | `false` (prod `true`) |
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
+| `PICKLE_LLM_QUOTA_DIRECT_ENABLED` | JobRunr 워커를 끈 후보 API에서만 일일 LLM 토큰 한도를 직접 갱신합니다. 워커가 켜져 있으면 기동을 거부합니다. 기동 직후 한 번 실행하고 이후 완료 시점부터 5분 간격으로 재실행합니다. 같은 DB의 중복 인스턴스는 PostgreSQL advisory lock으로 거부합니다 | `false` |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 
 ### 내부 연동 (게이트웨이, 프록시, 터미널)
