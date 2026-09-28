@@ -267,8 +267,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // so the record says what was still outstanding when this decision was
         // made. After the generation bump, never before: that row lock is the
         // serialization point, and a read in front of it sees the queue it
-        // skipped. (The account row itself is only locked when the approver
-        // named an account; auto-selection does not lock it.)
+        // skipped. (The account rows are locked either way: a named account
+        // by its lookup, auto-selection through the listing it chooses from.)
         Map<String, Object> allocationRecord = account == null ? Map.of()
                 : allocationQuery.grantRecord(account.getId(), commitmentDelta);
 

@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -66,28 +67,67 @@ public class VmPeriodService {
     public VmDetailResponse updatePeriod(AuthenticatedUser actor, UUID publicVmId,
             VmPeriodUpdateRequest request, String ip) {
         Vm vm = adminVmAccess.requireWritableVm(actor, publicVmId);
-        long vmId = vm.getId();
         LocalDate newStart = request.startDate() != null ? request.startDate() : vm.getStartDate();
         LocalDate newEnd = resolveEndDate(request, newStart);
-        requireNotDeletionBound(vm);
+        ApiException refusal = changePeriod(actor, vm, newStart, newEnd, null, ip);
+        if (refusal != null) {
+            throw refusal;
+        }
+        // Admin period edit is org-scoped, not workspace-membership-scoped, so the
+        // requester holds no grant on this VM → myResourceRole null.
+        return vmQueryService.detailOf(vmRepository.findById(vm.getId()).orElseThrow(), null);
+    }
+
+    /**
+     * Lands a new period on a VM the caller may already write, and says why
+     * not instead of throwing: the bulk change runs this for many VMs inside
+     * one transaction, where an exception would mark the whole batch for
+     * rollback. Null means the period changed.
+     *
+     * <p>The dates are the caller's to have validated; what is judged here is
+     * the VM's state, twice: once on the row as loaded and once by the CAS,
+     * which is what catches a schedule-delete that raced in between.
+     */
+    public @Nullable ApiException changePeriod(AuthenticatedUser actor, Vm vm, LocalDate newStart,
+            @Nullable LocalDate newEnd, @Nullable UUID batchId, String ip) {
+        long vmId = vm.getId();
+        if (isDeletionBound(vm)) {
+            return deletionBound();
+        }
         if (vmRepository.updatePeriod(vmId, newStart, newEnd, EXCLUDED_STATUSES,
                 Instant.now()) == 0) {
             // raced with a schedule-delete/delete accept — same 409 as the pre-check
-            throw deletionBound();
+            return deletionBound();
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.PERIOD_UPDATE, actor.id(), VmActorKind.ADMIN,
                 "기간 변경: %s ~ %s → %s ~ %s".formatted(
                         vm.getStartDate(), vm.getEndDate(), newStart, periodLabel(newEnd))));
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("old", Map.of("startDate", String.valueOf(vm.getStartDate()),
+                "endDate", String.valueOf(vm.getEndDate())));
+        detail.put("new", Map.of("startDate", String.valueOf(newStart),
+                "endDate", String.valueOf(newEnd)));
+        if (batchId != null) {
+            detail.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_PERIOD_UPDATE, "vm", vm.getPublicId(),
-                Map.of("old", Map.of("startDate", String.valueOf(vm.getStartDate()),
-                                "endDate", String.valueOf(vm.getEndDate())),
-                        "new", Map.of("startDate", String.valueOf(newStart),
-                                "endDate", String.valueOf(newEnd))),
-                ip);
-        // Admin period edit is org-scoped, not workspace-membership-scoped, so the
-        // requester holds no grant on this VM → myResourceRole null.
-        return vmQueryService.detailOf(vmRepository.findById(vmId).orElseThrow(), null);
+                AuditService.VM_PERIOD_UPDATE, "vm", vm.getPublicId(), detail, ip);
+        return null;
+    }
+
+    /** A VM on its way out keeps the period it has. */
+    public static boolean isDeletionBound(Vm vm) {
+        return EXCLUDED_STATUSES.contains(vm.getStatus()) || vm.getDeleteScheduledFor() != null
+                || vm.getDeleteRequestedAt() != null;
+    }
+
+    /** The one date rule that depends on the VM: an end before its start. */
+    public static @Nullable FieldValidationError endBeforeStart(LocalDate endDate,
+            @Nullable LocalDate startDate) {
+        if (startDate != null && endDate.isBefore(startDate)) {
+            return new FieldValidationError("endDate", "종료일은 시작일보다 이르면 안 됩니다.");
+        }
+        return null;
     }
 
     /** 감사와 이벤트 본문에서 종료일 없는 기간을 부르는 말. */
@@ -120,22 +160,22 @@ public class VmPeriodService {
     }
 
     private void validateDates(LocalDate endDate, @Nullable LocalDate startDate) {
-        LocalDate today = ClockConfig.todayKst(clock);
-        if (endDate.isBefore(today)) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
-                    "종료일은 오늘(KST) 이후여야 합니다.")));
+        FieldValidationError tooEarly = beforeToday(endDate, clock);
+        if (tooEarly != null) {
+            throw ApiException.validationFailed(List.of(tooEarly));
         }
-        if (startDate != null && endDate.isBefore(startDate)) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("endDate",
-                    "종료일은 시작일보다 이르면 안 됩니다.")));
+        FieldValidationError beforeStart = endBeforeStart(endDate, startDate);
+        if (beforeStart != null) {
+            throw ApiException.validationFailed(List.of(beforeStart));
         }
     }
 
-    private void requireNotDeletionBound(Vm vm) {
-        if (EXCLUDED_STATUSES.contains(vm.getStatus()) || vm.getDeleteScheduledFor() != null
-                || vm.getDeleteRequestedAt() != null) {
-            throw deletionBound();
+    /** The date rule that depends on nothing but the calendar. */
+    public static @Nullable FieldValidationError beforeToday(LocalDate endDate, Clock clock) {
+        if (endDate.isBefore(ClockConfig.todayKst(clock))) {
+            return new FieldValidationError("endDate", "종료일은 오늘(KST) 이후여야 합니다.");
         }
+        return null;
     }
 
     private static ApiException deletionBound() {

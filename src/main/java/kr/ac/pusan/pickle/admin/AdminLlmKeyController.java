@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.UUID;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyDetailResponse;
+import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyExpiryRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyLimitsRequest;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeySummaryResponse;
 import kr.ac.pusan.pickle.admin.dto.AdminLlmKeyUsageResponse;
@@ -25,6 +26,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -113,6 +115,23 @@ public class AdminLlmKeyController {
             @Valid @RequestBody AdminLlmKeyLimitsRequest request,
             HttpServletRequest httpRequest) {
         return service.replaceLimits(principal, keyId, request, clientIp(httpRequest));
+    }
+
+    @PatchMapping("/{keyId}/expiry")
+    @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
+    @Operation(summary = "관리자 LLM API 키 만료일 변경",
+            description = "키가 만료되는 날을 바꿉니다. 종료일은 KST 기준 그날까지 포함이고 승인 때와 같은 계산입니다. "
+                    + "이미 만료된 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키는 바꿀 수 없고, "
+                    + "OpenRouter 키가 발급된 키는 만료일을 앞당기는 것만 할 수 있습니다.")
+    @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
+            content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
+    public AdminLlmKeyDetailResponse updateAdminLlmKeyExpiry(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID keyId,
+            @Valid @RequestBody AdminLlmKeyExpiryRequest request,
+            HttpServletRequest httpRequest) {
+        return service.updateExpiry(principal, keyId, request.endDate(), clientIp(httpRequest));
     }
 
     @PostMapping("/{keyId}/suspend")

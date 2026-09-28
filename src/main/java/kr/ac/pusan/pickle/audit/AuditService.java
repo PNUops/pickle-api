@@ -112,6 +112,15 @@ public class AuditService {
     public static final String LLM_KEY_LIMITS_UPDATE = "llm_key.limits_update";
     public static final String LLM_KEY_SUSPEND = "llm_key.suspend";
     public static final String LLM_KEY_RESUME = "llm_key.resume";
+    /** An administrator moved when a key stops working; detail carries old and new. */
+    public static final String LLM_KEY_EXPIRY_UPDATE = "llm_key.expiry_update";
+    /**
+     * One administrator change applied to many targets at once. The per-target
+     * rows keep their single-path action names and carry the same
+     * {@code batchId}; this row is the summary: what was asked and how many
+     * targets ended in each result. Its target is the batch itself.
+     */
+    public static final String ADMIN_BULK_CHANGE = "admin.bulk_change";
     public static final String OPENROUTER_ACCOUNT_CREATE = "openrouter_account.create";
     public static final String OPENROUTER_ACCOUNT_UPDATE = "openrouter_account.update";
     public static final String OPENROUTER_CREDENTIAL_REGISTER = "openrouter_credential.register";

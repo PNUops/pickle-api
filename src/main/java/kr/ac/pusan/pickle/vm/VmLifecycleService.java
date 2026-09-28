@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.vm;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,6 +20,7 @@ import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,11 +92,8 @@ public class VmLifecycleService {
         long id = vm.getId();
         // Expiry guard: a past end date (KST, inclusive end) refuses start
         // even from STOPPED — only PATCH /admin/vms/{vmId}/period lifts it.
-        if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
-                    "사용 기간이 만료된 VM입니다",
-                    "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 관리자에게 기간 연장을 요청해 주세요."
-                            .formatted(vm.getEndDate()));
+        if (isExpired(vm)) {
+            throw expired(vm, "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 관리자에게 기간 연장을 요청해 주세요.");
         }
         claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
                 "STOPPED 상태의 VM만 시작할 수 있습니다.");
@@ -147,59 +146,109 @@ public class VmLifecycleService {
 
     @Transactional
     public MessageResponse adminStart(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
-        long id = vm.getId();
-        // Same expiry guard as the member path: extend the period first.
-        if (vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock))) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
-                    "사용 기간이 만료된 VM입니다",
-                    "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 먼저 기간을 연장해 주세요."
-                            .formatted(vm.getEndDate()));
-        }
-        claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
-                "STOPPED 상태의 VM만 시작할 수 있습니다.");
-        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, ip);
-        long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, true));
-        return new MessageResponse("VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return adminIntent(actor, vmId, VmPowerAction.START, ip);
     }
 
     @Transactional
     public MessageResponse adminShutdown(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
-        long id = vm.getId();
-        claimPowerAction(id, PowerAction.SHUTDOWN, List.of(VmStatus.RUNNING),
-                "RUNNING 상태의 VM만 종료할 수 있습니다.");
-        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, ip);
-        long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, true));
-        return new MessageResponse("VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return adminIntent(actor, vmId, VmPowerAction.SHUTDOWN, ip);
     }
 
     @Transactional
     public MessageResponse adminReboot(AuthenticatedUser actor, UUID vmId, String ip) {
-        Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
-        long id = vm.getId();
-        if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING, Instant.now()) == 0) {
-            throw powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
-        }
-        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, ip);
-        long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, true));
-        return new MessageResponse("VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        return adminIntent(actor, vmId, VmPowerAction.REBOOT, ip);
     }
 
     @Transactional
     public MessageResponse adminForceStop(AuthenticatedUser actor, UUID vmId, String ip) {
+        return adminIntent(actor, vmId, VmPowerAction.FORCE_STOP, ip);
+    }
+
+    private MessageResponse adminIntent(AuthenticatedUser actor, UUID vmId, VmPowerAction action,
+            String ip) {
         Vm vm = adminVmAccess.requireWritableVm(actor, vmId);
+        ApiException refusal = adminPower(actor, vm, action, null, ip);
+        if (refusal != null) {
+            throw refusal;
+        }
+        return new MessageResponse(switch (action) {
+            case START -> "VM 시작 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
+            case SHUTDOWN -> "VM 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
+            case REBOOT -> "VM 재부팅 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
+            case FORCE_STOP -> "VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.";
+        });
+    }
+
+    /**
+     * Places one admin power intent on a VM the caller may already write, and
+     * answers with the refusal rather than throwing it: the bulk change runs
+     * this for many VMs inside one transaction, where an exception would mark
+     * the whole batch for rollback. Null means the intent was claimed, its
+     * audit row registered, and its worker queued for after commit.
+     */
+    public @Nullable ApiException adminPower(AuthenticatedUser actor, Vm vm, VmPowerAction action,
+            @Nullable UUID batchId, String ip) {
         long id = vm.getId();
-        claimPowerAction(id, PowerAction.FORCE_STOP,
-                List.of(VmStatus.RUNNING, VmStatus.REBOOTING),
-                "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
-        recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, ip);
         long actorId = actor.id();
-        enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, true));
-        return new MessageResponse("VM 강제 종료 요청을 접수했습니다. 잠시 후 상태가 갱신됩니다.");
+        switch (action) {
+            case START -> {
+                // Same expiry guard as the member path: extend the period first.
+                if (isExpired(vm)) {
+                    return expired(vm, "사용 기간(종료일 %s)이 만료되어 시작할 수 없습니다. 먼저 기간을 연장해 주세요.");
+                }
+                if (vmRepository.claimPowerAction(id, PowerAction.START, List.of(VmStatus.STOPPED),
+                        Instant.now()) == 0) {
+                    return powerConflict(id, "STOPPED 상태의 VM만 시작할 수 있습니다.");
+                }
+                recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_START, batchId, ip);
+                enqueueAfterCommit(() -> vmPowerJobs.start(id, actorId, true));
+            }
+            case SHUTDOWN -> {
+                if (vmRepository.claimPowerAction(id, PowerAction.SHUTDOWN,
+                        List.of(VmStatus.RUNNING), Instant.now()) == 0) {
+                    return powerConflict(id, "RUNNING 상태의 VM만 종료할 수 있습니다.");
+                }
+                recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_SHUTDOWN, batchId, ip);
+                enqueueAfterCommit(() -> vmPowerJobs.shutdown(id, actorId, true));
+            }
+            case REBOOT -> {
+                if (vmRepository.claimReboot(id, VmStatus.RUNNING, VmStatus.REBOOTING,
+                        Instant.now()) == 0) {
+                    return powerConflict(id, "RUNNING 상태의 VM만 재부팅할 수 있습니다.");
+                }
+                recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_REBOOT, batchId, ip);
+                enqueueAfterCommit(() -> vmPowerJobs.reboot(id, actorId, true));
+            }
+            case FORCE_STOP -> {
+                if (vmRepository.claimPowerAction(id, PowerAction.FORCE_STOP,
+                        List.of(VmStatus.RUNNING, VmStatus.REBOOTING), Instant.now()) == 0) {
+                    return powerConflict(id,
+                            "RUNNING 또는 REBOOTING 상태의 VM만 강제 종료할 수 있습니다.");
+                }
+                recordAdminPowerAudit(actor, vm, AuditService.VM_ADMIN_FORCE_STOP, batchId, ip);
+                enqueueAfterCommit(() -> vmPowerJobs.forceStop(id, actorId, true));
+            }
+        }
+        return null;
+    }
+
+    /** The states one power intent may start from, as the claim allows them. */
+    public static List<VmStatus> allowedSources(VmPowerAction action) {
+        return switch (action) {
+            case START -> List.of(VmStatus.STOPPED);
+            case SHUTDOWN, REBOOT -> List.of(VmStatus.RUNNING);
+            case FORCE_STOP -> List.of(VmStatus.RUNNING, VmStatus.REBOOTING);
+        };
+    }
+
+    /** A past end date (KST, inclusive end) refuses start until the period is extended. */
+    public boolean isExpired(Vm vm) {
+        return vm.getEndDate() != null && vm.getEndDate().isBefore(ClockConfig.todayKst(clock));
+    }
+
+    private static ApiException expired(Vm vm, String detail) {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_EXPIRED,
+                "사용 기간이 만료된 VM입니다", detail.formatted(vm.getEndDate()));
     }
 
     /**
@@ -207,9 +256,15 @@ public class VmLifecycleService {
      * itself is written by the worker with the admin as actor, same as the
      * member path). Reads are not audited, matching the other admin surfaces.
      */
-    private void recordAdminPowerAudit(AuthenticatedUser actor, Vm vm, String action, String ip) {
+    private void recordAdminPowerAudit(AuthenticatedUser actor, Vm vm, String action,
+            @Nullable UUID batchId, String ip) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("fromStatus", vm.getStatus().name());
+        if (batchId != null) {
+            detail.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), action, "vm", vm.getPublicId(),
-                Map.of("fromStatus", vm.getStatus().name()), ip);
+                detail, ip);
     }
 
     /**

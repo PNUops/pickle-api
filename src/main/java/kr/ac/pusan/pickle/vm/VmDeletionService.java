@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,7 @@ import kr.ac.pusan.pickle.vm.dto.VmDeletionResponse;
 import kr.ac.pusan.pickle.vmsettings.VmSettingsService;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
+import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -171,54 +173,104 @@ public class VmDeletionService {
     public VmDeletionResponse scheduleDeletion(AuthenticatedUser actor, UUID publicVmId,
             ScheduleVmDeletionRequest request, String ip) {
         Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
+        ScheduleOutcome outcome = scheduleAdminDeletion(actor, vm, request.scheduledFor(),
+                request.reason(), null, ip);
+        if (outcome.refusal() != null) {
+            throw outcome.refusal();
+        }
+        return outcome.response();
+    }
+
+    /** What {@link #scheduleAdminDeletion} came to: the acceptance, or the refusal. */
+    public record ScheduleOutcome(@Nullable VmDeletionResponse response,
+            @Nullable ApiException refusal) {
+    }
+
+    /**
+     * Schedules an administrator's deletion of a VM the caller may already
+     * administer, answering with the refusal rather than throwing it: the bulk
+     * change runs this for many VMs inside one transaction, where an exception
+     * would mark the whole batch for rollback.
+     */
+    public ScheduleOutcome scheduleAdminDeletion(AuthenticatedUser actor, Vm vm,
+            Instant scheduledFor, String rawReason, @Nullable UUID batchId, String ip) {
         long vmId = vm.getId();
-        requireNoPendingDeletion(vm);
+        if (vm.getDeleteKind() != null) {
+            return new ScheduleOutcome(null, alreadyPendingDeletion());
+        }
         // CREATING is deliberately accepted (unlike self-delete): the schedule
         // is intent-only, and the sweeper waits for a sweepable power state —
         // so a schedule placed mid-provision simply defers until the VM lands.
-        requireStatusOutside(vm, Set.of(VmStatus.DELETING, VmStatus.DELETED, VmStatus.NEEDS_ADMIN,
-                VmStatus.ERROR), "현재 상태에서는 삭제를 접수할 수 없습니다.");
-        requireNotDeletionProtected(vmId);
+        if (SCHEDULE_FORBIDDEN_STATUSES.contains(vm.getStatus())) {
+            return new ScheduleOutcome(null, invalidState(vm,
+                    "현재 상태에서는 삭제를 접수할 수 없습니다."));
+        }
+        if (isDeletionProtected(vmId)) {
+            return new ScheduleOutcome(null, deletionProtected(
+                    "삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "
+                            + "삭제 보호를 해제한 뒤 다시 시도해 주세요."));
+        }
 
         Instant now = Instant.now();
-        if (!request.scheduledFor().isAfter(now)) {
-            throw ApiException.validationFailed(List.of(new FieldValidationError("scheduledFor",
-                    "삭제 예정일은 미래 시각이어야 합니다.")));
+        if (!scheduledFor.isAfter(now)) {
+            return new ScheduleOutcome(null, ApiException.validationFailed(List.of(
+                    new FieldValidationError("scheduledFor", "삭제 예정일은 미래 시각이어야 합니다."))));
         }
-        String reason = request.reason().strip();
-        if (vmRepository.scheduleAdminDeletion(vmId, request.scheduledFor(), actor.id(),
-                reason, now) == 0) {
-            throw alreadyPendingDeletion();
+        String reason = rawReason.strip();
+        if (vmRepository.scheduleAdminDeletion(vmId, scheduledFor, actor.id(), reason, now) == 0) {
+            return new ScheduleOutcome(null, alreadyPendingDeletion());
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.SCHEDULE_DELETE, actor.id(), VmActorKind.ADMIN,
-                "관리자 삭제 접수 — " + KST.format(request.scheduledFor()) + " (KST), 사유: " + reason));
+                "관리자 삭제 접수 — " + KST.format(scheduledFor) + " (KST), 사유: " + reason));
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", vm.getName());
+        detail.put("orgId", auditIds.org(vm.getOrgId()));
+        detail.put("workspaceId", auditIds.workspace(vm.getWorkspaceId()));
+        detail.put("scheduledFor", scheduledFor.toString());
+        detail.put("reason", reason);
+        if (batchId != null) {
+            detail.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SCHEDULE_DELETE,
-                "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
-                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()),
-                        "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
+                "vm", vm.getPublicId(), detail, ip);
         notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_SCHEDULED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "reason", reason,
-                        "scheduledFor", request.scheduledFor()), null);
-        return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.publicId(),
-                reason, true);
+                        "scheduledFor", scheduledFor), null);
+        return new ScheduleOutcome(new VmDeletionResponse(VmDeleteKind.ADMIN, scheduledFor, now,
+                actor.publicId(), reason, true), null);
     }
+
+    /** The states an admin schedule refuses; CREATING is deliberately not among them. */
+    public static final Set<VmStatus> SCHEDULE_FORBIDDEN_STATUSES = Set.of(VmStatus.DELETING,
+            VmStatus.DELETED, VmStatus.NEEDS_ADMIN, VmStatus.ERROR);
 
     // ── admin cancel (the only cancellation path — users have none) ─────
 
     @Transactional
     public MessageResponse cancelScheduledDeletion(AuthenticatedUser actor, UUID publicVmId, String ip) {
         Vm vm = adminVmAccess.requireAdministeredVm(actor, publicVmId);
+        ApiException refusal = cancelDeletion(actor, vm, null, ip);
+        if (refusal != null) {
+            throw refusal;
+        }
+        return new MessageResponse("삭제가 취소되었습니다.");
+    }
+
+    /**
+     * Cancels the pending deletion of a VM the caller may already administer,
+     * answering with the refusal rather than throwing it, for the same reason
+     * as {@link #scheduleAdminDeletion}. Null means the schedule is gone.
+     */
+    public @Nullable ApiException cancelDeletion(AuthenticatedUser actor, Vm vm,
+            @Nullable UUID batchId, String ip) {
         long vmId = vm.getId();
         Instant now = Instant.now();
         if (vm.getDeleteKind() == VmDeleteKind.SELF) {
             // SELF: the VM entered DELETING at acceptance — cancel restores
             // STOPPED and is valid only inside the grace window.
-            boolean cancelable = vm.getStatus() != VmStatus.DELETED
-                    && vm.getDeleteScheduledFor() != null
-                    && vm.getDeleteScheduledFor().isAfter(now);
-            if (!cancelable || vmRepository.transitionStatus(vmId, VmStatus.DELETING,
+            if (!isCancelable(vm, now) || vmRepository.transitionStatus(vmId, VmStatus.DELETING,
                     VmStatus.STOPPED, null, now) == 0) {
-                throw notCancelable();
+                return notCancelable();
             }
             vmRepository.clearDeletion(vmId, now);
         } else if (vm.getDeleteKind() == VmDeleteKind.ADMIN) {
@@ -227,22 +279,45 @@ public class VmDeletionService {
             // destruction-not-started (the CAS refuses once DELETING), not on
             // the wall clock.
             if (vmRepository.cancelAdminDeletion(vmId, now) == 0) {
-                throw notCancelable();
+                return notCancelable();
             }
         } else {
-            throw notCancelable(); // FORCE (immediate) or no pending deletion
+            return notCancelable(); // FORCE (immediate) or no pending deletion
         }
         vmEventRepository.save(new VmEvent(vmId, VmEventType.CANCEL_SCHEDULED_DELETE, actor.id(), VmActorKind.ADMIN,
                 vm.getDeleteKind() == VmDeleteKind.SELF
                         ? "본인 삭제 취소 — VM은 STOPPED 상태로 유지"
                         : "관리자 삭제 취소"));
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("name", vm.getName());
+        detail.put("orgId", auditIds.org(vm.getOrgId()));
+        detail.put("workspaceId", auditIds.workspace(vm.getWorkspaceId()));
+        detail.put("canceledKind", vm.getDeleteKind().name());
+        if (batchId != null) {
+            detail.put("batchId", batchId);
+        }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vm.getPublicId(),
-                Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
-                        "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "canceledKind", vm.getDeleteKind().name()), ip);
+                AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vm.getPublicId(), detail, ip);
         notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_CANCELED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
-        return new MessageResponse("삭제가 취소되었습니다.");
+        return null;
+    }
+
+    /**
+     * Whether the pending deletion, as the row shows it, can still be called
+     * off: a SELF deletion inside its grace window, or an ADMIN schedule whose
+     * destruction has not started. The CAS behind {@link #cancelDeletion} is
+     * the authority; this is the same question asked of a snapshot.
+     */
+    public static boolean isCancelable(Vm vm, Instant now) {
+        if (vm.getDeleteKind() == VmDeleteKind.SELF) {
+            return vm.getStatus() != VmStatus.DELETED && vm.getDeleteScheduledFor() != null
+                    && vm.getDeleteScheduledFor().isAfter(now);
+        }
+        if (vm.getDeleteKind() == VmDeleteKind.ADMIN) {
+            return vm.getStatus() != VmStatus.DELETING && vm.getStatus() != VmStatus.DELETED;
+        }
+        return false;
     }
 
     // ── force delete (SYS_ADMIN, immediate, not cancelable) ────────────────
@@ -392,9 +467,14 @@ public class VmDeletionService {
         }
     }
 
+    /** Whether {@code deletion_protection} is on, which refuses any delete acceptance. */
+    public boolean isDeletionProtected(long vmId) {
+        return vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION);
+    }
+
     /** Refuses any delete acceptance while {@code deletion_protection} is on. */
     private void requireNotDeletionProtected(long vmId) {
-        if (vmSettingsService.bool(vmId, VmSettingsService.DELETION_PROTECTION)) {
+        if (isDeletionProtected(vmId)) {
             throw deletionProtected("삭제 보호가 켜져 있어 삭제할 수 없습니다. 소유자가 VM 설정에서 "
                     + "삭제 보호를 해제한 뒤 다시 시도해 주세요.");
         }
@@ -407,10 +487,14 @@ public class VmDeletionService {
 
     private void requireStatusOutside(Vm vm, Set<VmStatus> forbidden, String baseDetail) {
         if (forbidden.contains(vm.getStatus())) {
-            throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
-                    "현재 상태에서는 수행할 수 없는 작업입니다",
-                    baseDetail + " (현재 상태 " + vm.getStatus() + ")");
+            throw invalidState(vm, baseDetail);
         }
+    }
+
+    private static ApiException invalidState(Vm vm, String baseDetail) {
+        return new ApiException(HttpStatus.CONFLICT, ErrorCodes.VM_INVALID_STATE,
+                "현재 상태에서는 수행할 수 없는 작업입니다",
+                baseDetail + " (현재 상태 " + vm.getStatus() + ")");
     }
 
     private static ApiException alreadyPendingDeletion() {

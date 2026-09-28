@@ -1014,8 +1014,11 @@ class AdminLlmKeyTest {
         // spent on without moving the amount, so a record holding the numbers
         // and not this one cannot answer who opened image generation. The
         // recorded value is the normalized one, not what the form sent.
-        assertThat(auditDetail(key.publicId(), "llm_key.limits_update")
-                .get("passthroughEndpoints")).isEqualTo(java.util.List.of("images", "embeddings"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> recorded = (Map<String, Object>) auditDetail(key.publicId(),
+                "llm_key.limits_update").get("new");
+        assertThat(recorded.get("passthroughEndpoints"))
+                .isEqualTo(java.util.List.of("images", "embeddings"));
     }
 
     /**
