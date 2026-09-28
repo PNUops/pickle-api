@@ -42,16 +42,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * such transaction first takes one transaction-scoped advisory lock: two runs
  * (the minute schedule and a trigger after an approval) would otherwise both
  * count the VMs in creation, both see room, and together start more than the
- * setting allows. The lock is always the first thing taken, before the
- * recipient row and before anything the resource creation locks (the gateway
- * generation row for a key, the image revision and node rows for a VM), and
- * nothing else takes it, so it adds no ordering between those.</p>
+ * setting allows. The lock is always the first thing taken and nothing else
+ * takes it, so it adds no ordering between the rest.</p>
  *
- * <p>The recipient row is locked before the generation row here, the reverse
- * of an approval, which takes the generation row and then its own request's
- * recipients. The two never meet on the same rows: this only touches
- * recipients of requests already committed as APPROVED, and an approval only
- * touches the recipients of the one request it is still deciding.</p>
+ * <p>After it: the workspace row, then the recipient row, then whatever the
+ * resource creation locks (the gateway generation row for a key, the image
+ * revision and node rows for a VM). Workspace before recipient is the order a
+ * workspace deletion uses; recipient before generation is the order an
+ * approval uses for its own recipients, and the two never meet on the same
+ * recipient rows anyway, because this only touches requests already committed
+ * as APPROVED.</p>
  *
  * <p>VMs are started only while fewer of this path's VMs are still CREATING
  * than {@value #CONCURRENCY_SETTING} allows (default {@value #DEFAULT_CONCURRENCY}),
@@ -208,6 +208,20 @@ public class RequestRecipientMaterializer {
 
     private Outcome createOne(long recipientId) {
         lock();
+        // The workspace row before the recipient row, the order a workspace
+        // deletion takes them in (workspace, then that workspace's recipients).
+        // Holding it until commit is what lets the deletion's count of live
+        // resources see this one, or this one see the deletion: without it the
+        // count runs under read committed while this insert is still invisible.
+        Long workspaceId = jdbcTemplate.query("""
+                select r.workspace_id from request_recipients rr join requests r on r.id = rr.request_id
+                 where rr.id = ?
+                """, rs -> rs.next() ? rs.getLong(1) : null, recipientId);
+        if (workspaceId == null) {
+            return Outcome.NOT_APPLICABLE;
+        }
+        boolean workspaceLive = workspaceRepository.findByIdForUpdate(workspaceId)
+                .map(workspace -> workspace.getDeletedAt() == null).orElse(false);
         RequestRecipient recipient = recipientRepository.findWithLockById(recipientId).orElse(null);
         if (recipient == null || recipient.getStatus() != RequestRecipientStatus.QUEUED) {
             return Outcome.NOT_APPLICABLE;
@@ -220,7 +234,7 @@ public class RequestRecipientMaterializer {
         if (handler == null || !handler.supportsRecipients()) {
             throw new IllegalStateException("request " + request.getId() + " cannot make resources per recipient");
         }
-        if (workspaceRepository.findByIdAndDeletedAtIsNull(request.getWorkspaceId()).isEmpty()) {
+        if (!workspaceLive) {
             recipient.mark(RequestRecipientStatus.SKIPPED_INELIGIBLE, REASON_WORKSPACE_GONE);
             return Outcome.SKIPPED;
         }

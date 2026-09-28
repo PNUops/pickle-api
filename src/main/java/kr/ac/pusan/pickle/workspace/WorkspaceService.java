@@ -308,6 +308,16 @@ public class WorkspaceService {
         // and the workspace is soft-deleted around a live resource. Taking the
         // locks first means an approval that won the race has committed by the
         // time this count runs, and read-committed sees it.
+        //
+        // The workspace row is locked after the request rows and before the
+        // count. After, because issuing a name takes the request row and then
+        // the workspace row, and taking them the other way round here would
+        // deadlock against it. Before the count, because a many-person request
+        // makes its resources outside any request lock: its materializer holds
+        // this row while it creates one, so this count either sees that
+        // resource committed or runs first and the materializer then finds the
+        // workspace deleted and its recipients closed.
+        workspaceRepository.findByIdForUpdate(workspaceId).orElseThrow(WorkspaceService::workspaceNotFound);
         if (resourceAdapters.stream()
                 .anyMatch(adapter -> adapter.countLiveInWorkspace(workspaceId) > 0)) {
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.WORKSPACE_HAS_ACTIVE_VMS,
@@ -318,6 +328,9 @@ public class WorkspaceService {
         // Recipients are resolved before the soft-delete flips visibility; the
         // membership rows themselves are kept (only the workspace row is stamped).
         List<Long> recipients = notificationService.workspaceMemberIds(workspaceId);
+        // Approved many-person requests may still have people waiting for a
+        // resource here, queued or not yet joined; none will be made now.
+        recipientService.closeForDeletedWorkspace(workspaceId);
         workspace.softDelete(actor.id(), Instant.now());
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_DELETE,
                 "workspace", workspace.getPublicId(),

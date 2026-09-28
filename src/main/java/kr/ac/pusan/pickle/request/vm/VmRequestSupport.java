@@ -226,13 +226,15 @@ public class VmRequestSupport implements RequestTypeHandler {
      * placed yet — each recipient's VM reserves its own when it is made.
      */
     @Override
-    public void recordGrant(Request request, ApproveRequestRequest form) {
+    public Map<String, Object> recordGrant(Request request, ApproveRequestRequest form,
+            int resourceCount) {
         ApproveVmRequestSpec spec = form.vm();
         OsImage image = imageCatalog.requireSelectable(spec.grantedImageId());
         Long forcedNodeId = spec.nodeId() == null ? null
                 : nodeRepository.findByPublicId(spec.nodeId()).map(Node::getId).orElseThrow();
         detail(request).grant(spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
                 image.getId(), forcedNodeId);
+        return Map.of();
     }
 
     /**

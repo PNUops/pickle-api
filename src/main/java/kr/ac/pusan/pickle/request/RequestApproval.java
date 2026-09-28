@@ -74,12 +74,12 @@ public class RequestApproval {
      * access grant exist yet, because each belongs to a recipient and is made
      * in that recipient's own transaction.
      */
-    public void applyForRecipients(Request request, RequestTypeHandler handler,
-            ApproveRequestRequest form, @Nullable Long reviewerId) {
+    public java.util.Map<String, Object> applyForRecipients(Request request, RequestTypeHandler handler,
+            ApproveRequestRequest form, @Nullable Long reviewerId, int resourceCount) {
         reviewRepository.save(RequestReview.approve(request.getId(), reviewerId,
                 kr.ac.pusan.pickle.common.text.Texts.blankToNull(form.comment()),
                 form.grantedStartDate(), form.grantedEndDate()));
         request.setStatus(RequestStatus.APPROVED);
-        handler.recordGrant(request, form);
+        return handler.recordGrant(request, form, resourceCount);
     }
 }

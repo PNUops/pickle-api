@@ -187,7 +187,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     public Materialized materialize(Request request, ApproveRequestRequest form,
             AuthenticatedUser actor) {
         ApproveLlmKeyRequestSpec spec = form.llmKey();
-        Recorded recorded = record(request, spec);
+        Recorded recorded = record(request, spec, spec.grantedCreditLimit());
         return issueKey(request, form.grantedEndDate(), spec.grantedRpm(), spec.grantedTpm(),
                 spec.grantedConcurrency(), spec.grantedDailyTokens(), spec.grantedCreditLimit(),
                 spec.grantedCreditLimitReset(), recorded.accountId(), recorded.accountPublicId(),
@@ -207,8 +207,22 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
      * the approver is looking, so every recipient's key bills the same one.
      */
     @Override
-    public void recordGrant(Request request, ApproveRequestRequest form) {
-        record(request, form.llmKey());
+    public Map<String, Object> recordGrant(Request request, ApproveRequestRequest form,
+            int resourceCount) {
+        ApproveLlmKeyRequestSpec spec = form.llmKey();
+        // Every key this grant will make carries the full limit, so the
+        // account's commitment grows by the limit once per key, and that is the
+        // figure its over-allocation record has to be measured with. Warned
+        // about in the audit exactly as a single approval is, never refused.
+        java.math.BigDecimal delta = spec.grantedCreditLimit() == null ? null
+                : spec.grantedCreditLimit().multiply(java.math.BigDecimal.valueOf(resourceCount));
+        Recorded recorded = record(request, spec, delta);
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
+        auditArgs.put("keysExpected", resourceCount);
+        auditArgs.put("openrouterAccountId", recorded.accountPublicId());
+        auditArgs.putAll(recorded.allocationRecord());
+        return auditArgs;
     }
 
     /**
@@ -241,7 +255,8 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
             String creditDeniedModels, String passthroughEndpoints) {
     }
 
-    private Recorded record(Request request, ApproveLlmKeyRequestSpec spec) {
+    private Recorded record(Request request, ApproveLlmKeyRequestSpec spec,
+            java.math.@Nullable BigDecimal commitmentDelta) {
         // The generation row is the global lock for every gateway-document
         // write. Take it before the account row, matching first limits binding,
         // so concurrent approval and limits replacement cannot deadlock.
@@ -255,7 +270,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // skipped. (The account row itself is only locked when the approver
         // named an account; auto-selection does not lock it.)
         Map<String, Object> allocationRecord = account == null ? Map.of()
-                : allocationQuery.grantRecord(account.getId(), spec.grantedCreditLimit());
+                : allocationQuery.grantRecord(account.getId(), commitmentDelta);
 
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         // Re-normalized rather than carried from validation: this is the value

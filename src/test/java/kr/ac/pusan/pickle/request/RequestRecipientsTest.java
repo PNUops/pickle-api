@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -81,6 +82,12 @@ class RequestRecipientsTest {
 
     @Autowired
     private InvitationClaimService invitationClaimService;
+
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
+    @Autowired
+    private kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher managementCipher;
 
     private Org org;
     private OsImage image;
@@ -498,6 +505,154 @@ class RequestRecipientsTest {
         assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("SKIPPED_EXPIRED");
         materializer.run();
         assertThat(keyCount(requestId)).isZero();
+    }
+
+    // ------------------------------------------------ closing what waits
+
+    @Test
+    void deletingAWorkspaceClosesTheRecipientsStillWaitingInIt() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User member = addMember(workspace, "deleted-ws");
+        UUID invitation = invite(workspace, email("deleted-ws-invitee"));
+        long requestId = approvedKeyRequestFor(workspace, List.of(
+                Map.of("userId", member.getPublicId()), Map.of("invitationId", invitation)));
+
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspace).header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(jdbcTemplate.queryForList(
+                "select status from request_recipients where request_id = ? order by id", String.class, requestId))
+                .containsExactly("CANCELED", "CANCELED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select reason from request_recipients where request_id = ? and user_id = ?",
+                String.class, requestId, member.getId())).isEqualTo("워크스페이스가 삭제되었습니다.");
+        materializer.run();
+        assertThat(keyCount(requestId)).isZero();
+    }
+
+    /**
+     * A deletion and a creation serialize on the workspace row. The deletion is
+     * played here by a transaction that locks the row, stamps it deleted and
+     * commits a moment later; a materializer run started meanwhile has to wait
+     * for it and then find the workspace gone, rather than insert beside it.
+     */
+    @Test
+    void theMaterializerWaitsForAWorkspaceDeletionHoldingTheRow() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User member = addMember(workspace, "held-ws");
+        long requestId = approvedKeyRequest(workspace, List.of(member));
+        long workspaceId = SeedFixtures.internalId(jdbcTemplate, "workspaces", workspace);
+
+        java.util.concurrent.CountDownLatch locked = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<?> deletion = pool.submit(() -> transactionTemplate.executeWithoutResult(tx -> {
+                jdbcTemplate.queryForObject("select id from workspaces where id = ? for update", Long.class, workspaceId);
+                locked.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                jdbcTemplate.update("update workspaces set deleted_at = now(), deleted_by = ? where id = ?",
+                        owner.getId(), workspaceId);
+            }));
+            assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            java.util.concurrent.Future<?> run = pool.submit(materializer::run);
+            Thread.sleep(500);
+            assertThat(run.isDone()).isFalse();
+            assertThat(keyCount(requestId)).isZero();
+            release.countDown();
+            deletion.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            run.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+        assertThat(keyCount(requestId)).isZero();
+        assertThat(recipientStatus(requestId, member.getId())).isEqualTo("SKIPPED_INELIGIBLE");
+    }
+
+    @Test
+    void cancelingAnInvitationClosesTheRecipientWaitingForIt() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        UUID invitation = invite(workspace, email("canceled-invitee"));
+        long requestId = approvedKeyRequestFor(workspace, List.of(Map.of("invitationId", invitation)));
+
+        mockMvc.perform(delete("/api/v1/workspaces/" + workspace + "/invitations/" + invitation)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().is2xxSuccessful());
+        assertThat(recipientStatusByInvitation(requestId, invitation)).isEqualTo("CANCELED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select reason from request_recipients where request_id = ?", String.class, requestId))
+                .isEqualTo("초대가 취소되었습니다.");
+    }
+
+    // ------------------------------------------------------------ money
+
+    @Test
+    void aBulkKeyApprovalRecordsTheAllocationForEveryKeyItWillMake() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User first = addMember(workspace, "credit-1");
+        User second = addMember(workspace, "credit-2");
+        UUID invitation = invite(workspace, email("credit-invitee"));
+        long account = jdbcTemplate.queryForObject("""
+                insert into openrouter_accounts (org_id, name, created_by) values (?, ?, ?) returning id
+                """, Long.class, org.getId(), "대상자 금액 사업 " + UUID.randomUUID(), owner.getId());
+        jdbcTemplate.update("""
+                insert into openrouter_account_credentials (account_id, status, credential_enc,
+                                                            created_by, activated_at, verified_at)
+                values (?, 'ACTIVE'::openrouter_credential_status, ?, ?, now(), now())
+                """, account, managementCipher.encrypt(SeedFixtures.publicId(jdbcTemplate, "openrouter_accounts", account),
+                "management-credential-fixture"), owner.getId());
+
+        Map<String, Object> body = common(workspace, "LLM_API_KEY");
+        body.put("llmKey", Map.of("useCommercialModels", true));
+        body.put("recipients", List.of(Map.of("userId", first.getPublicId()),
+                Map.of("userId", second.getPublicId()), Map.of("invitationId", invitation)));
+        JsonNode submitted = created(postJson("/api/v1/requests", ownerToken, body));
+        Map<String, Object> approval = new HashMap<>();
+        approval.put("llmKey", Map.of("grantedCreditLimit", "2.00",
+                "openrouterAccountId", SeedFixtures.publicId(jdbcTemplate, "openrouter_accounts", account)));
+        postJson("/api/v1/admin/requests/" + submitted.get("id").asString() + "/approve", orgAdminToken, approval)
+                .andExpect(status().isOk());
+
+        Map<String, Object> audit = jdbcTemplate.queryForMap("""
+                select detail ->> 'keysExpected' as keys,
+                       detail ->> 'accountProjectedRemainingCommitment' as projected,
+                       detail ->> 'accountRemainingCommitment' as remaining
+                  from audit_logs where action = 'request.approve' and target_id = ?
+                """, submitted.get("id").asString());
+        assertThat(audit.get("keys")).isEqualTo("3");
+        assertThat(new java.math.BigDecimal((String) audit.get("projected"))
+                .subtract(new java.math.BigDecimal((String) audit.get("remaining"))))
+                .isEqualByComparingTo("6.00");
+    }
+
+    // ------------------------------------------------ outside the workspace
+
+    @Test
+    void anApproverCannotFileIntoAPersonalWorkspace() throws Exception {
+        long personal = jdbcTemplate.queryForObject(
+                "insert into workspaces (kind, name) values ('PERSONAL', ?) returning id", Long.class,
+                "개인 " + UUID.randomUUID());
+        jdbcTemplate.update("insert into workspace_members (workspace_id, user_id, role) values (?, ?, 'OWNER')",
+                personal, owner.getId());
+        UUID workspace = SeedFixtures.publicId(jdbcTemplate, "workspaces", personal);
+        Map<String, Object> body = vmBody(workspace, List.of(Map.of("userId", owner.getPublicId())));
+        body.put("approval", vmApproval(2048));
+        postJson("/api/v1/requests", orgAdminToken, body)
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anApproverOutsideTheWorkspaceFilesOnlyForOthers() throws Exception {
+        UUID workspace = linkedWorkspace();
+        Map<String, Object> body = vmBody(workspace, null);
+        body.put("approval", vmApproval(2048));
+        postJson("/api/v1/requests", orgAdminToken, body)
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.errors[?(@.field == 'recipients')]").exists());
     }
 
     // ---------------------------------------------------------------- helpers

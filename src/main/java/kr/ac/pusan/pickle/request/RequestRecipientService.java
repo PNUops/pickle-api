@@ -51,6 +51,8 @@ public class RequestRecipientService {
     static final String REASON_NOT_MEMBER = "워크스페이스의 활성 구성원이 아닙니다.";
     static final String REASON_INVITATION_CLOSED = "초대가 취소되어 더 이상 가입을 기다리지 않습니다.";
     static final String REASON_DUPLICATE = "같은 사람이 이 신청의 대상자로 이미 들어 있습니다.";
+    static final String REASON_WORKSPACE_DELETED = "워크스페이스가 삭제되었습니다.";
+    static final String REASON_INVITATION_CANCELED = "초대가 취소되었습니다.";
     static final String REASON_EXPIRED = "가입했을 때 사용 기간이 이미 끝나 만들지 않았습니다.";
 
     /** A recipient as validated at submission: exactly one of the two ids. */
@@ -212,6 +214,26 @@ public class RequestRecipientService {
                     || recipient.getStatus() == RequestRecipientStatus.PENDING_JOIN) {
                 recipient.mark(RequestRecipientStatus.CANCELED, null);
             }
+        }
+    }
+
+    /**
+     * A workspace is being deleted: nothing more is made in it, for anyone.
+     * The caller holds the workspace row, so a materializer run that has not
+     * yet taken it will find these rows closed.
+     */
+    public void closeForDeletedWorkspace(long workspaceId) {
+        for (RequestRecipient recipient : recipientRepository.findWithLockByWorkspaceIdAndStatusIn(
+                workspaceId, List.of(RequestRecipientStatus.QUEUED, RequestRecipientStatus.PENDING_JOIN))) {
+            recipient.mark(RequestRecipientStatus.CANCELED, REASON_WORKSPACE_DELETED);
+        }
+    }
+
+    /** The invitation was canceled, so its invitee will not join through it. */
+    public void onInvitationCanceled(WorkspaceInvitation invitation) {
+        for (RequestRecipient recipient : recipientRepository.findWithLockByInvitationIdAndStatus(
+                invitation.getId(), RequestRecipientStatus.PENDING_JOIN)) {
+            recipient.mark(RequestRecipientStatus.CANCELED, REASON_INVITATION_CANCELED);
         }
     }
 

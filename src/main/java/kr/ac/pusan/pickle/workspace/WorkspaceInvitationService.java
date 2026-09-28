@@ -65,10 +65,14 @@ public class WorkspaceInvitationService {
     private final AuditService auditService;
     private final InvitationLocks invitationLocks;
 
+    private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
+
     public WorkspaceInvitationService(WorkspaceService workspaceService,
             WorkspaceInvitationRepository invitationRepository,
             WorkspaceMemberRepository workspaceMemberRepository, UserRepository userRepository,
-            RateLimitService rateLimitService, AuditService auditService, InvitationLocks invitationLocks) {
+            RateLimitService rateLimitService, AuditService auditService, InvitationLocks invitationLocks,
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+        this.recipientService = recipientService;
         this.workspaceService = workspaceService;
         this.invitationRepository = invitationRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -229,6 +233,8 @@ public class WorkspaceInvitationService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.WORKSPACE_INVITATION_NOT_FOUND,
                         "초대를 찾을 수 없습니다", "대기 중인 초대가 아닙니다. 이미 수락되었거나 취소되었을 수 있습니다."));
         invitation.cancel(actor.id(), Instant.now());
+        // A request that reserved a resource for this invitee stops waiting.
+        recipientService.onInvitationCanceled(invitation);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.WORKSPACE_INVITATION_CANCEL,
                 "workspace", workspace.getPublicId(),
                 Map.of("invitationId", invitation.getPublicId(),

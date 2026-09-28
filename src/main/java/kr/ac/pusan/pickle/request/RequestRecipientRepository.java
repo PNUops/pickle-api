@@ -39,4 +39,15 @@ public interface RequestRecipientRepository extends JpaRepository<RequestRecipie
             """)
     List<RequestRecipient> findWithLockByInvitationIdAndStatus(@Param("invitationId") Long invitationId,
             @Param("status") RequestRecipientStatus status);
+
+    /** A workspace's recipients still waiting for something, locked (workspace deletion). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select rr from RequestRecipient rr
+             where rr.requestId in (select r.id from Request r where r.workspaceId = :workspaceId)
+               and rr.status in :statuses
+             order by rr.id
+            """)
+    List<RequestRecipient> findWithLockByWorkspaceIdAndStatusIn(@Param("workspaceId") Long workspaceId,
+            @Param("statuses") Collection<RequestRecipientStatus> statuses);
 }

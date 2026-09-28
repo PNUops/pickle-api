@@ -128,8 +128,13 @@ public interface RequestTypeHandler {
      * per recipient later. Creates nothing. Runs inside the approval
      * transaction, like {@link #materialize}, and is the half of it that is
      * about the decision rather than the resource.
+     *
+     * @param resourceCount how many resources the grant is expected to make:
+     *                      the recipients that are queued or waiting to join
+     * @return what the approval audit should record beyond the common fields
      */
-    default void recordGrant(Request request, ApproveRequestRequest form) {
+    default Map<String, Object> recordGrant(Request request, ApproveRequestRequest form,
+            int resourceCount) {
         throw new UnsupportedOperationException(type() + " does not make resources per recipient");
     }
 

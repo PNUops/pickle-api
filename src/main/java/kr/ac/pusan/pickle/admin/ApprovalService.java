@@ -213,9 +213,15 @@ public class ApprovalService {
         if (perRecipient) {
             // The decision and the grant, once. Every recipient's resource is
             // made after this commits, each in its own transaction.
-            requestApproval.applyForRecipients(request, handler, form, actor.id());
+            // Recipients are placed first so the grant can be sized by how many
+            // resources it will actually make. Lock order stays request row,
+            // then this request's recipients, then whatever the kind's grant
+            // takes (the gateway generation row for a key); the materializer
+            // never holds a recipient of a request that is still undecided.
             kr.ac.pusan.pickle.request.RequestRecipientService.Settlement settled =
                     recipientService.settleAtApproval(request);
+            auditArgs.putAll(requestApproval.applyForRecipients(request, handler, form, actor.id(),
+                    settled.queued() + settled.pendingJoin()));
             auditArgs.put("recipientsQueued", settled.queued());
             auditArgs.put("recipientsPendingJoin", settled.pendingJoin());
             auditArgs.put("recipientsSkipped", settled.skipped());

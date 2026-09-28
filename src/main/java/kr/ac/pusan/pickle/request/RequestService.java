@@ -130,6 +130,12 @@ public class RequestService {
             throw notWorkspaceMember();
         }
         if (membership == null) {
+            // A personal workspace belongs to one person and is nobody's to file
+            // into from outside; it answers as if it were not there, like any
+            // other workspace beyond the approver's reach.
+            if (workspace.getKind() == kr.ac.pusan.pickle.workspace.WorkspaceKind.PERSONAL) {
+                throw notFound("해당 워크스페이스가 존재하지 않습니다.");
+            }
             // "Any workspace of an organisation they approve for" is the same
             // scope the admin workspace and invitation reads use, so an approver
             // can file only where the admin screens already let them look.
@@ -147,6 +153,13 @@ public class RequestService {
         }
 
         List<FieldValidationError> errors = new ArrayList<>();
+        // An approver outside the workspace files only for its members: a
+        // request for themselves would make them the owner of a resource in a
+        // workspace they do not belong to, which approval then refuses.
+        if (membership == null && !form.hasRecipients()) {
+            errors.add(new FieldValidationError("recipients",
+                    "워크스페이스 구성원이 아니면 대상자를 지정해야 합니다. 본인 리소스는 구성원인 워크스페이스에서만 신청할 수 있습니다."));
+        }
         List<RequestRecipientService.Resolved> recipients = List.of();
         if (form.hasRecipients()) {
             if (!handler.supportsRecipients()) {
