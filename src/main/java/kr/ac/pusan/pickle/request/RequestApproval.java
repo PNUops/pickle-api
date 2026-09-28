@@ -66,4 +66,20 @@ public class RequestApproval {
         });
         return created;
     }
+
+    /**
+     * Writes the decision and what was granted for a request whose resources
+     * are made per recipient afterwards. The review and the grant are the
+     * same rows a single approval writes, written once; no resource and no
+     * access grant exist yet, because each belongs to a recipient and is made
+     * in that recipient's own transaction.
+     */
+    public java.util.Map<String, Object> applyForRecipients(Request request, RequestTypeHandler handler,
+            ApproveRequestRequest form, @Nullable Long reviewerId, int resourceCount) {
+        reviewRepository.save(RequestReview.approve(request.getId(), reviewerId,
+                kr.ac.pusan.pickle.common.text.Texts.blankToNull(form.comment()),
+                form.grantedStartDate(), form.grantedEndDate()));
+        request.setStatus(RequestStatus.APPROVED);
+        return handler.recordGrant(request, form, resourceCount);
+    }
 }

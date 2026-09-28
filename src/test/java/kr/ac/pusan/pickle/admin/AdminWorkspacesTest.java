@@ -28,7 +28,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * Admin workspace read surface (contract v0.19.0): the option list's additive
  * {@code kind}/{@code createdAt} fields and the new inspection detail —
  * members listed regardless of account status, non-DELETED VM count, and the
- * admin 404 mask (unknown / soft-deleted / cross-org all identical).
+ * admin 404 mask (unknown and soft-deleted identical; since 2026-09-28 every
+ * admin role reads every live workspace).
  */
 @SpringBootTest(properties = "jobrunr.background-job-server.enabled=false")
 @AutoConfigureMockMvc
@@ -109,7 +110,7 @@ class AdminWorkspacesTest {
     }
 
     @Test
-    void unknownDeletedAndCrossOrgWorkspacesAnswerTheSame404() throws Exception {
+    void unknownAndDeletedWorkspacesAnswer404AndOthersAreRead() throws Exception {
         mockMvc.perform(get("/api/v1/admin/workspaces/" + SeedFixtures.UNKNOWN_ID)
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
@@ -124,15 +125,16 @@ class AdminWorkspacesTest {
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isNotFound());
 
-        // a workspace with no request/VM in the admin's org → 404 for the org tier
+        // a workspace with no request/VM in the admin's org is still read by the
+        // org tier: every admin role reads every workspace (2026-09-28)
         String foreignSlug = "agr-for-" + UUID.randomUUID().toString().substring(0, 8);
         long unlinked = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('PROJECT', ?) returning id",
                 Long.class, foreignSlug);
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + orgAdminToken))
-                .andExpect(status().isNotFound());
-        // ...but the sys tier still sees it
+                .andExpect(status().isOk());
+        // ...and so does the sys tier
         mockMvc.perform(get("/api/v1/admin/workspaces/{id}", pub("workspaces", unlinked))
                         .header("Authorization", "Bearer " + sysAdminToken))
                 .andExpect(status().isOk());

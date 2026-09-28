@@ -52,6 +52,17 @@ public class SettingsService {
     public static final String DOMAIN_RENEWAL_NOTICE_DAYS = "domain_renewal_notice_days";
     public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
+    /**
+     * How many VMs of many-person requests may be in creation at once. Read
+     * with a code default of 4 when the key is absent; editable once seeded.
+     *
+     * <p>Capped at 8: every VM is a full clone, so the disk is the bottleneck.
+     * Measured on the test node, eight at once took about 75% longer per VM
+     * than four (median 151 s against 86 s) for about 14% more throughput, and
+     * pushed iowait to 77%, load that lands on the disks of VMs already
+     * running there.
+     */
+    public static final String BULK_PROVISION_CONCURRENCY = "bulk_provision_concurrency";
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
     public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";
     public static final String VM_DELETE_GRACE_HOURS = "vm_delete_grace_hours";
@@ -297,6 +308,7 @@ public class SettingsService {
             }
             return List.of();
         }));
+        map.put(BULK_PROVISION_CONCURRENCY, new Editable(SettingValueType.INTEGER, intInRange(1, 8)));
         map.put(VCPU_OVERCOMMIT_WARN, new Editable(SettingValueType.NUMBER,
                 numberInRangeExclusiveMin(0, 10)));
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,

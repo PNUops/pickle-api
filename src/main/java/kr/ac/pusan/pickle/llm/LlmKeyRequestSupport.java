@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -11,6 +12,7 @@ import kr.ac.pusan.pickle.llm.dto.ApproveLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccount;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountRepository;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAccountSelectionService;
 import kr.ac.pusan.pickle.llm.openrouter.OpenRouterAllocationQuery;
 import kr.ac.pusan.pickle.request.Request;
@@ -18,6 +20,7 @@ import kr.ac.pusan.pickle.request.RequestTypeHandler;
 import kr.ac.pusan.pickle.request.dto.CreateRequestRequest;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.jobrunr.scheduling.JobScheduler;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -45,12 +48,15 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     private final ObjectMapper objectMapper;
     private final LlmOpenRouterProvisioner provisioner;
     private final JobScheduler jobScheduler;
+    private final OpenRouterAccountRepository accountRepository;
 
     public LlmKeyRequestSupport(LlmKeyRequestDetailRepository detailRepository,
             LlmApiKeyRepository keyRepository, LlmGatewayGenerations generations,
             OpenRouterAccountSelectionService accountSelection,
             OpenRouterAllocationQuery allocationQuery, ObjectMapper objectMapper,
-            LlmOpenRouterProvisioner provisioner, JobScheduler jobScheduler) {
+            LlmOpenRouterProvisioner provisioner, JobScheduler jobScheduler,
+            OpenRouterAccountRepository accountRepository) {
+        this.accountRepository = accountRepository;
         this.detailRepository = detailRepository;
         this.keyRepository = keyRepository;
         this.generations = generations;
@@ -181,7 +187,76 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
     public Materialized materialize(Request request, ApproveRequestRequest form,
             AuthenticatedUser actor) {
         ApproveLlmKeyRequestSpec spec = form.llmKey();
+        Recorded recorded = record(request, spec, spec.grantedCreditLimit());
+        return issueKey(request, form.grantedEndDate(), spec.grantedRpm(), spec.grantedTpm(),
+                spec.grantedConcurrency(), spec.grantedDailyTokens(), spec.grantedCreditLimit(),
+                spec.grantedCreditLimitReset(), recorded.accountId(), recorded.accountPublicId(),
+                recorded.allocationRecord(), recorded.creditAllowedModels(),
+                recorded.creditDeniedModels(), recorded.passthroughEndpoints(),
+                request.getRequesterId());
+    }
 
+    @Override
+    public boolean supportsRecipients() {
+        return true;
+    }
+
+    /**
+     * The decision half of {@link #materialize}: the limits, the lists and the
+     * account, stored once on the request. The account is chosen here, while
+     * the approver is looking, so every recipient's key bills the same one.
+     */
+    @Override
+    public Map<String, Object> recordGrant(Request request, ApproveRequestRequest form,
+            int resourceCount) {
+        ApproveLlmKeyRequestSpec spec = form.llmKey();
+        // Every key this grant will make carries the full limit, so the
+        // account's commitment grows by the limit once per key, and that is the
+        // figure its over-allocation record has to be measured with. Warned
+        // about in the audit exactly as a single approval is, never refused.
+        java.math.BigDecimal delta = spec.grantedCreditLimit() == null ? null
+                : spec.grantedCreditLimit().multiply(java.math.BigDecimal.valueOf(resourceCount));
+        Recorded recorded = record(request, spec, delta);
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
+        auditArgs.put("keysExpected", resourceCount);
+        auditArgs.put("openrouterAccountId", recorded.accountPublicId());
+        auditArgs.putAll(recorded.allocationRecord());
+        return auditArgs;
+    }
+
+    /**
+     * One recipient's key, from the stored grant. Takes the gateway generation
+     * lock first, as every key write does, and only then reads the account's
+     * standing commitment for the audit record.
+     */
+    @Override
+    public Materialized createFor(Request request, kr.ac.pusan.pickle.request.RequestReview review,
+            long ownerId) {
+        generations.bump();
+        LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
+        Long accountId = detail.getGrantedOpenrouterAccountId();
+        OpenRouterAccount account = accountId == null ? null
+                : accountRepository.findById(accountId).orElseThrow();
+        Map<String, Object> allocationRecord = account == null ? Map.of()
+                : allocationQuery.grantRecord(account.getId(), detail.getGrantedCreditLimit());
+        return issueKey(request, review.getGrantedEndDate(), detail.getGrantedRpm(),
+                detail.getGrantedTpm(), detail.getGrantedConcurrency(),
+                detail.getGrantedDailyTokens(), detail.getGrantedCreditLimit(),
+                detail.getGrantedCreditLimitReset(), accountId,
+                account == null ? null : account.getPublicId(), allocationRecord,
+                detail.getGrantedCreditAllowedModels(), detail.getGrantedCreditDeniedModels(),
+                detail.getGrantedPassthroughEndpoints(), ownerId);
+    }
+
+    /** What recording a grant settled, for the key that may follow it in the same transaction. */
+    private record Recorded(@Nullable Long accountId, @Nullable UUID accountPublicId,
+            Map<String, Object> allocationRecord, String creditAllowedModels,
+            String creditDeniedModels, String passthroughEndpoints) {
+    }
+
+    private Recorded record(Request request, ApproveLlmKeyRequestSpec spec,
+            java.math.@Nullable BigDecimal commitmentDelta) {
         // The generation row is the global lock for every gateway-document
         // write. Take it before the account row, matching first limits binding,
         // so concurrent approval and limits replacement cannot deadlock.
@@ -195,7 +270,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         // skipped. (The account row itself is only locked when the approver
         // named an account; auto-selection does not lock it.)
         Map<String, Object> allocationRecord = account == null ? Map.of()
-                : allocationQuery.grantRecord(account.getId(), spec.grantedCreditLimit());
+                : allocationQuery.grantRecord(account.getId(), commitmentDelta);
 
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         // Re-normalized rather than carried from validation: this is the value
@@ -217,7 +292,22 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
                 creditAllowedModels, creditDeniedModels);
         detail.grantPassthroughEndpoints(passthroughEndpoints);
+        return new Recorded(account == null ? null : account.getId(),
+                account == null ? null : account.getPublicId(), allocationRecord,
+                creditAllowedModels, creditDeniedModels, passthroughEndpoints);
+    }
 
+    /**
+     * The resource half: one PENDING key owned by {@code ownerId}. The caller
+     * holds the generation lock already.
+     */
+    private Materialized issueKey(Request request, java.time.@Nullable LocalDate grantedEndDate,
+            @Nullable Integer rpm, @Nullable Integer tpm, @Nullable Integer concurrency,
+            @Nullable Long dailyTokens, java.math.@Nullable BigDecimal creditLimit,
+            @Nullable CreditLimitReset creditLimitReset, @Nullable Long accountId,
+            @Nullable UUID accountPublicId, Map<String, Object> allocationRecord,
+            String creditAllowedModels, String creditDeniedModels, String passthroughEndpoints,
+            long ownerId) {
         // The key lands PENDING, so nothing servable changes yet, but it still
         // follows the same generation-before-document-write discipline.
         LlmApiKey key = new LlmApiKey(request.getWorkspaceId(),
@@ -225,13 +315,11 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
                 // 발급되는 키의 용도는 신청서의 사용 목적이다. 종류마다 용도를 따로
                 // 묻던 칸을 없앴다 — 같은 질문을 연달아 두 번 하고 있었다.
                 request.getPurpose(),
-                form.grantedEndDate() == null ? null
-                        : form.grantedEndDate().plusDays(1).atStartOfDay(
+                grantedEndDate == null ? null
+                        : grantedEndDate.plusDays(1).atStartOfDay(
                                 java.time.ZoneId.of("Asia/Seoul")).toInstant(),
-                spec.grantedRpm(), spec.grantedTpm(), spec.grantedConcurrency(),
-                spec.grantedDailyTokens(), spec.grantedCreditLimit(),
-                spec.grantedCreditLimitReset(), account == null ? null : account.getId(),
-                request.getRequesterId());
+                rpm, tpm, concurrency, dailyTokens, creditLimit, creditLimitReset, accountId,
+                ownerId);
         // Set before the insert, not after it. Setting it afterwards left the
         // value to dirty checking, so the row the gateway serves came out empty
         // — unrestricted — wherever the flush did not happen to follow. Every
@@ -247,12 +335,12 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("llmKeyId", key.getPublicId());
-        auditArgs.put("grantedRpm", spec.grantedRpm());
-        auditArgs.put("grantedTpm", spec.grantedTpm());
-        auditArgs.put("grantedConcurrency", spec.grantedConcurrency());
-        auditArgs.put("grantedDailyTokens", spec.grantedDailyTokens());
-        auditArgs.put("grantedCreditLimit", spec.grantedCreditLimit());
-        auditArgs.put("grantedCreditLimitReset", spec.grantedCreditLimitReset());
+        auditArgs.put("grantedRpm", rpm);
+        auditArgs.put("grantedTpm", tpm);
+        auditArgs.put("grantedConcurrency", concurrency);
+        auditArgs.put("grantedDailyTokens", dailyTokens);
+        auditArgs.put("grantedCreditLimit", creditLimit);
+        auditArgs.put("grantedCreditLimitReset", creditLimitReset);
         // The resolved list, not what the form sent: an approval prefilled from
         // an account default has to leave behind what was actually granted,
         // because the default it came from can change later.
@@ -265,7 +353,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
         auditArgs.put("grantedPassthroughEndpoints",
                 PassthroughEndpoints.fromJson(objectMapper, passthroughEndpoints,
                         "llm key " + key.getPublicId()));
-        auditArgs.put("openrouterAccountId", account == null ? null : account.getPublicId());
+        auditArgs.put("openrouterAccountId", accountPublicId);
         auditArgs.putAll(allocationRecord);
         // A money budget is useless until its OpenRouter key exists, and the
         // sweep that creates one runs every five minutes — long enough that a

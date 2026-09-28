@@ -42,6 +42,9 @@ public class AuditService {
     public static final String REQUEST_CANCEL = "request.cancel";
     public static final String REQUEST_APPROVE = "request.approve";
     public static final String REQUEST_REJECT = "request.reject";
+    public static final String REQUEST_RECIPIENT_RETRY = "request.recipient_retry";
+    /** A resource made for one recipient of an approved request, by the platform. */
+    public static final String REQUEST_RECIPIENT_CREATE = "request.recipient_create";
     public static final String ORG_CREATE = "org.create";
     public static final String ORG_UPDATE = "org.update";
     public static final String USER_ROLE_UPDATE = "user.role_update";
@@ -239,6 +242,8 @@ public class AuditService {
     public static final String ACTOR_ROLE_RELAY = "RELAY";
     /** Actor role stamped on LLM-gateway-originated audits (no user identity). */
     public static final String ACTOR_ROLE_LLM_GATEWAY = "LLM_GATEWAY";
+    /** The platform's own background work, acting on a decision a person already made. */
+    public static final String ACTOR_ROLE_SYSTEM = "SYSTEM";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;

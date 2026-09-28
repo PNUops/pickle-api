@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.admin;
 
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -95,5 +96,16 @@ public class AdminRequestController {
             @Valid @RequestBody RejectRequestRequest request,
             HttpServletRequest httpRequest) {
         return approvalService.reject(principal, requestId, request, clientIp(httpRequest));
+    }
+
+    @PostMapping("/{requestId}/recipients/{recipientId}/retry")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'ORG_MANAGER', 'SYS_ADMIN')")
+    @Operation(summary = "대상자 생성 다시 시도",
+            description = "여러 사람에게 리소스를 만드는 신청에서 생성에 실패한 대상자를 다시 생성 대기로 돌립니다. "
+                    + "실패한 대상자만 다시 시도할 수 있습니다.")
+    public RequestDetailResponse retryRequestRecipient(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID requestId, @PathVariable UUID recipientId,
+            HttpServletRequest httpRequest) {
+        return approvalService.retryRecipient(principal, requestId, recipientId, clientIp(httpRequest));
     }
 }
