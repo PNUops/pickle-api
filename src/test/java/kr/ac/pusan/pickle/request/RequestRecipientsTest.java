@@ -280,14 +280,15 @@ class RequestRecipientsTest {
     }
 
     @Test
-    void anApproverFilesOnlyWhereTheAdminScreensReach() throws Exception {
-        // A workspace with nothing of this organisation in it is outside the
-        // approver's scope, the same 404 the admin workspace reads give.
-        UUID unlinked = createWorkspace(ownerToken);
-        Map<String, Object> body = vmBody(unlinked, null);
+    void anApproverFilesIntoAWorkspaceTheOrganisationHasNeverUsed() throws Exception {
+        // A course workspace a professor has just created has no request or VM
+        // in any organisation yet. An org approver reaches it all the same
+        // (operator decision, 2026-09-28), which is the case bulk requests exist for.
+        UUID fresh = createWorkspace(ownerToken);
+        Map<String, Object> body = vmBody(fresh, List.of(Map.of("userId", owner.getPublicId())));
         body.put("approval", vmApproval(2048));
         postJson("/api/v1/requests", orgAdminToken, body)
-                .andExpect(status().isNotFound());
+                .andExpect(status().isCreated());
     }
 
     @Test
@@ -305,9 +306,13 @@ class RequestRecipientsTest {
                 .andExpect(status().isOk());
         mockMvc.perform(get(uri).header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isForbidden());
+        // Every admin role reads every workspace's invitations (2026-09-28).
         mockMvc.perform(get(uri).header("Authorization", "Bearer " + otherOrgAdminToken()))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/admin/workspaces/" + createWorkspace(ownerToken) + "/invitations")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/admin/workspaces/" + SeedFixtures.UNKNOWN_ID + "/invitations")
                         .header("Authorization", "Bearer " + orgAdminToken))
                 .andExpect(status().isNotFound());
 
@@ -632,7 +637,7 @@ class RequestRecipientsTest {
     // ------------------------------------------------ outside the workspace
 
     @Test
-    void anApproverCannotFileIntoAPersonalWorkspace() throws Exception {
+    void anApproverMayFileIntoAPersonalWorkspace() throws Exception {
         long personal = jdbcTemplate.queryForObject(
                 "insert into workspaces (kind, name) values ('PERSONAL', ?) returning id", Long.class,
                 "개인 " + UUID.randomUUID());
@@ -641,8 +646,9 @@ class RequestRecipientsTest {
         UUID workspace = SeedFixtures.publicId(jdbcTemplate, "workspaces", personal);
         Map<String, Object> body = vmBody(workspace, List.of(Map.of("userId", owner.getPublicId())));
         body.put("approval", vmApproval(2048));
+        // PERSONAL included (operator decision, 2026-09-28).
         postJson("/api/v1/requests", orgAdminToken, body)
-                .andExpect(status().isNotFound());
+                .andExpect(status().isCreated());
     }
 
     @Test

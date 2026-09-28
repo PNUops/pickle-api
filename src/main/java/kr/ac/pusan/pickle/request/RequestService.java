@@ -130,15 +130,10 @@ public class RequestService {
             throw notWorkspaceMember();
         }
         if (membership == null) {
-            // A personal workspace belongs to one person and is nobody's to file
-            // into from outside; it answers as if it were not there, like any
-            // other workspace beyond the approver's reach.
-            if (workspace.getKind() == kr.ac.pusan.pickle.workspace.WorkspaceKind.PERSONAL) {
-                throw notFound("해당 워크스페이스가 존재하지 않습니다.");
-            }
-            // "Any workspace of an organisation they approve for" is the same
-            // scope the admin workspace and invitation reads use, so an approver
-            // can file only where the admin screens already let them look.
+            // Any live workspace, PERSONAL included (operator decision,
+            // 2026-09-28): the same reach the admin workspace and invitation
+            // reads have. What the approver still needs is the right to decide
+            // for the request's organisation, checked below.
             adminWorkspaceQueryService.requireOperated(actor, workspace.getPublicId());
         }
         boolean workspaceOwner = membership != null && membership.getRole() == WorkspaceMemberRole.OWNER;

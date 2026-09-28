@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.admin;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import java.util.List;
 import kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse;
 import java.util.UUID;
@@ -36,8 +37,11 @@ public class AdminWorkspaceController {
     @PreAuthorize("hasAnyRole('ORG_VIEWER', 'ORG_MANAGER', 'ORG_ADMIN', 'SYS_VIEWER', 'SYS_MANAGER', 'SYS_ADMIN')")
     public List<AdminWorkspaceOptionResponse> listAdminWorkspaces(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) UUID orgId) {
-        return adminWorkspaceQueryService.list(principal, orgId);
+            @RequestParam(required = false) UUID orgId,
+            @Parameter(description = "true면 기관 필터와 무관하게 삭제되지 않은 모든 워크스페이스를 돌려줍니다. "
+                    + "관리자가 대상자를 골라 신청할 워크스페이스를 고를 때 씁니다.")
+            @RequestParam(required = false, defaultValue = "false") boolean all) {
+        return adminWorkspaceQueryService.list(principal, all ? null : orgId, all);
     }
 
     @GetMapping("/{workspaceId}")

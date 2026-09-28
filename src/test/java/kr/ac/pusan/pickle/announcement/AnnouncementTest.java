@@ -304,6 +304,12 @@ class AnnouncementTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists())
                 .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", mixedWorkspaceId) + "\')]").doesNotExist());
+        // all=true: every live workspace for the org tier too (the admin request
+        // screen); the default above stays the announcement picker's scope
+        mockMvc.perform(get("/api/v1/admin/workspaces?all=true")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id==\'" + pub("workspaces", foreignWorkspaceId) + "\')]").exists());
         // users → 403
         mockMvc.perform(get("/api/v1/admin/workspaces")
                         .header("Authorization", "Bearer " + userToken))

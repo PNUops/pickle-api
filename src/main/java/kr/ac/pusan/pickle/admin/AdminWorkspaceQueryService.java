@@ -47,9 +47,21 @@ public class AdminWorkspaceQueryService {
         this.invitationService = invitationService;
     }
 
+    /**
+     * The workspace picker. By default the org tier sees the workspaces linked
+     * to the organisations it operates (the announcement picker relies on this:
+     * posting is still limited to those), and the sys tier sees every one.
+     *
+     * <p>{@code all} returns every live workspace to any admin role (operator
+     * decision, 2026-09-28). It is what the admin request screen asks for: a
+     * workspace has no organisation of its own, and the linked scope meant an
+     * org administrator could not reach a course workspace a professor had just
+     * created and filled with invitations, which is the case bulk requests
+     * exist for. It follows the admin user list, unscoped since 2026-09-16.
+     */
     @Transactional(readOnly = true)
-    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId) {
-        OrgScope scope = scopeOrgId(actor, orgId);
+    public List<AdminWorkspaceOptionResponse> list(AuthenticatedUser actor, UUID orgId, boolean all) {
+        OrgScope scope = all ? OrgScope.unrestricted() : scopeOrgId(actor, orgId);
         String select = """
                 select g.public_id, g.name, g.kind, g.created_at,
                        (select count(*) from workspace_members gm
@@ -83,9 +95,10 @@ public class AdminWorkspaceQueryService {
 
     /**
      * Contract {@code GET /admin/workspaces/{workspaceId}} (v0.19.0): admin inspection
-     * detail. Unknown, soft-deleted, and (for the org tier) other-org workspaces
-     * all answer the same 404 — the admin masking convention, unlike the
-     * user-facing workspace detail's member-only 403.
+     * detail. Unknown and soft-deleted workspaces answer 404, the admin masking
+     * convention, unlike the user-facing workspace detail's member-only 403.
+     * Every admin role reads every workspace (operator decision, 2026-09-28;
+     * see {@link #list}).
      */
     @Transactional(readOnly = true)
     public AdminWorkspaceDetailResponse get(AuthenticatedUser actor, UUID publicWorkspaceId) {
@@ -93,18 +106,6 @@ public class AdminWorkspaceQueryService {
                 rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
         if (workspaceId == null) {
             throw workspaceNotFound();
-        }
-        OrgScope scope = scopeOrgId(actor, null);
-        if (!scope.isUnrestricted()) {
-            List<Object> params = new ArrayList<>(scope.orgIds());
-            params.addAll(scope.orgIds());
-            Boolean linked = jdbcTemplate.queryForObject(
-                    "select " + OrgMembershipSql.workspaceLinkedToOrg(
-                            String.valueOf(workspaceId), scope),
-                    Boolean.class, params.toArray());
-            if (!Boolean.TRUE.equals(linked)) {
-                throw workspaceNotFound();
-            }
         }
         List<AdminWorkspaceDetailResponse> rows = jdbcTemplate.query("""
                 select g.public_id, g.kind, g.name, g.description, g.created_at,
@@ -160,10 +161,10 @@ public class AdminWorkspaceQueryService {
     }
 
     /**
-     * The internal id of a live workspace the actor may act in as an approver:
-     * any, for the sys tier; one linked to an organisation it operates, for the
-     * org tier. Unknown, deleted and out-of-scope workspaces answer the same
-     * 404.
+     * The internal id of a live workspace, for an admin role acting on it as
+     * an approver. Any live workspace, PERSONAL included, for every admin role
+     * (operator decision, 2026-09-28; see {@link #list}). Unknown and deleted
+     * workspaces answer 404.
      */
     @Transactional(readOnly = true)
     public long requireOperated(AuthenticatedUser actor, UUID publicWorkspaceId) {
@@ -172,17 +173,6 @@ public class AdminWorkspaceQueryService {
                 rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
         if (workspaceId == null) {
             throw workspaceNotFound();
-        }
-        OrgScope scope = AdminOrgScope.operated(actor, null, null);
-        if (!scope.isUnrestricted()) {
-            List<Object> params = new ArrayList<>(scope.orgIds());
-            params.addAll(scope.orgIds());
-            Boolean linked = jdbcTemplate.queryForObject(
-                    "select " + OrgMembershipSql.workspaceLinkedToOrg(String.valueOf(workspaceId), scope),
-                    Boolean.class, params.toArray());
-            if (!Boolean.TRUE.equals(linked)) {
-                throw workspaceNotFound();
-            }
         }
         return workspaceId;
     }
