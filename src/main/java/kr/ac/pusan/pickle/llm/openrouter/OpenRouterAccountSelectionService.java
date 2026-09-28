@@ -61,10 +61,10 @@ public class OpenRouterAccountSelectionService {
 
     /**
      * The account a positive money grant lands on when none is named: the
-     * institution's one eligible account. Answers through {@code errors}
-     * rather than by throwing, because the bulk change asks this for many keys
-     * inside one transaction, where an exception thrown through this proxy
-     * would mark the whole batch for rollback.
+     * institution's one eligible account, its row locked. Answers through
+     * {@code errors} rather than by throwing, because the bulk change asks
+     * this inside one transaction, where an exception thrown through this
+     * proxy would mark the whole batch for rollback.
      */
     @Transactional
     public @Nullable OpenRouterAccount selectDefault(long orgId, @Nullable BigDecimal creditLimit,
@@ -72,8 +72,29 @@ public class OpenRouterAccountSelectionService {
         if (creditLimit == null || creditLimit.signum() <= 0) {
             return null;
         }
-        List<OpenRouterAccount> eligible = repository.findByOrgIdAndStatusOrderByNameAsc(
-                orgId, OpenRouterAccountStatus.ACTIVE).stream().filter(this::eligible).toList();
+        return theOneEligible(repository.findByOrgIdAndStatusOrderByNameAsc(orgId,
+                OpenRouterAccountStatus.ACTIVE), errors);
+    }
+
+    /**
+     * {@link #selectDefault} without the lock: what a judgment reads before
+     * the write step locks the account it settled on. A preview must not lock
+     * inside its read-only transaction, and a bulk apply must not lock an
+     * account before it has taken the generation.
+     */
+    @Transactional(readOnly = true)
+    public @Nullable OpenRouterAccount peekDefault(long orgId, @Nullable BigDecimal creditLimit,
+            List<FieldValidationError> errors) {
+        if (creditLimit == null || creditLimit.signum() <= 0) {
+            return null;
+        }
+        return theOneEligible(repository.peekByOrgIdAndStatusOrderByNameAsc(orgId,
+                OpenRouterAccountStatus.ACTIVE), errors);
+    }
+
+    private @Nullable OpenRouterAccount theOneEligible(List<OpenRouterAccount> candidates,
+            List<FieldValidationError> errors) {
+        List<OpenRouterAccount> eligible = candidates.stream().filter(this::eligible).toList();
         if (eligible.isEmpty()) {
             errors.add(new FieldValidationError("openrouterAccountId",
                     "유료 모델을 승인하려면 이 기관에 사업 계정이 필요합니다."));

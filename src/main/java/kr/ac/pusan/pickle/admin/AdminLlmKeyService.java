@@ -727,9 +727,11 @@ public class AdminLlmKeyService {
 
     /**
      * The account a limits write on this key would settle on, answered without
-     * throwing: the bulk change judges two hundred keys inside one transaction,
-     * where an exception thrown through a transactional proxy would mark the
-     * whole batch for rollback.
+     * throwing and without locking: the bulk change judges two hundred keys
+     * inside one transaction, where an exception thrown through a transactional
+     * proxy would mark the whole batch for rollback, and it judges before it
+     * has taken the generation, which is where every account lock must queue.
+     * The write step locks the account it was handed ({@link #lockAccount}).
      *
      * <p>Never asks for a specific account. Binding is not part of the bulk
      * change, so an unbound key takes the institution's one eligible account
@@ -746,7 +748,7 @@ public class AdminLlmKeyService {
         }
         if (firstBindingEligible(key)) {
             List<FieldValidationError> errors = new ArrayList<>();
-            OpenRouterAccount account = accountSelection.selectDefault(key.getOrgId(),
+            OpenRouterAccount account = accountSelection.peekDefault(key.getOrgId(),
                     creditLimit, errors);
             return errors.isEmpty() ? AccountResolution.of(account)
                     : AccountResolution.refused(errors.getFirst());
@@ -756,6 +758,16 @@ public class AdminLlmKeyService {
                     "사업 계정 없이 발급된 키에는 금액 한도를 둘 수 없습니다."));
         }
         return AccountResolution.of(null);
+    }
+
+    /**
+     * Locks the account a judgment settled on, re-read under the lock, and
+     * says whether it is still eligible. Null when it no longer is, which the
+     * caller reports rather than binding to.
+     */
+    public @Nullable OpenRouterAccount lockAccount(OpenRouterAccount account) {
+        OpenRouterAccount locked = accountRepository.findWithLockById(account.getId()).orElse(null);
+        return locked != null && accountSelection.eligible(locked) ? locked : null;
     }
 
     /** What {@link #resolveAccountQuietly} settled on: an account (possibly none) or a refusal. */

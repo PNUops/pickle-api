@@ -21,6 +21,7 @@ import kr.ac.pusan.pickle.llm.LlmSyncService;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
 import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
+import kr.ac.pusan.pickle.llm.openrouter.OpenRouterManagementCredentialCipher;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -83,6 +84,8 @@ class AdminBulkChangeTest {
     private LlmSyncService llmSyncService;
     @Autowired
     private LlmOpenRouterProvisioner provisioner;
+    @Autowired
+    private OpenRouterManagementCredentialCipher managementCipher;
 
     private Org orgA;
     private Org orgB;
@@ -304,6 +307,47 @@ class AdminBulkChangeTest {
         assertThat(item(again, first.publicId()).get("result").asString()).isEqualTo("UNCHANGED");
         assertThat(item(again, second.publicId()).get("result").asString()).isEqualTo("UNCHANGED");
         assertThat(generation()).isEqualTo(before + 1);
+    }
+
+    /**
+     * First money on a key with no account. The preview runs read-only and so
+     * must judge without locking the institution's accounts; the apply binds
+     * the one eligible account, taking its lock only in the write step.
+     */
+    @Test
+    void firstMoneyOnAnUnboundKeyBindsTheInstitutionsOneAccount() throws Exception {
+        Org orgC = org("일괄 변경 테스트 기관 C");
+        long account = jdbcTemplate.queryForObject("""
+                insert into openrouter_accounts (org_id, name, created_by)
+                values (?, '일괄 결제 사업', ?)
+                on conflict (org_id, lower(name)) do update set name = excluded.name
+                returning id
+                """, Long.class, orgC.getId(), requester.getId());
+        jdbcTemplate.update("delete from openrouter_account_credentials where account_id = ?",
+                account);
+        jdbcTemplate.update("""
+                insert into openrouter_account_credentials (account_id, status, credential_enc,
+                                                            created_by, activated_at, verified_at)
+                values (?, 'ACTIVE'::openrouter_credential_status, ?, ?, now(), now())
+                """, account, managementCipher.encrypt(pub("openrouter_accounts", account),
+                        "management-credential-fixture"), requester.getId());
+        Key unbound = unboundKey(orgC.getId(), workspaceA, "최초 금액 키");
+        Map<String, Object> body = request("LLM_KEY", List.of(unbound.publicId()),
+                limits(Map.of("creditLimit", "2.00")));
+
+        JsonNode previewed = item(previewJson(sysAdminToken, body), unbound.publicId());
+        assertThat(previewed.get("applicable").asBoolean()).isTrue();
+        assertThat(previewed.get("fields").get(0).get("field").asString()).isEqualTo("creditLimit");
+
+        JsonNode apply = applyJson(sysAdminToken, body);
+        assertThat(item(apply, unbound.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        Map<String, Object> row = jdbcTemplate.queryForMap("select openrouter_account_id, "
+                + "credit_limit from llm_api_keys where id = ?", unbound.id());
+        assertThat(row.get("openrouter_account_id")).isEqualTo(account);
+        assertThat(new java.math.BigDecimal(row.get("credit_limit").toString()))
+                .isEqualByComparingTo("2.00");
+        assertThat(auditDetail(unbound.publicId(), "llm_key.limits_update")
+                .get("openrouterAccountId")).isEqualTo(pub("openrouter_accounts", account).toString());
     }
 
     // ── LLM key status ─────────────────────────────────────────────────────
@@ -837,6 +881,29 @@ class AdminBulkChangeTest {
                 expiresAt == null ? null : OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC),
                 accountId, requester.getId(),
                 "REVOKED".equals(status) ? OffsetDateTime.now(ZoneOffset.UTC) : null);
+        return new Key(id, pub("llm_api_keys", id));
+    }
+
+    /** A key with the money axis closed and no account, ready for a first binding. */
+    private Key unboundKey(long orgId, long workspaceId, String name) {
+        long requestId = jdbcTemplate.queryForObject("""
+                insert into requests (resource_type, workspace_id, org_id, requester_id,
+                                      purpose, display_name)
+                values ('LLM_API_KEY', ?, ?, ?, '테스트', ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requester.getId(), name + " 신청");
+        jdbcTemplate.update("insert into llm_key_request_details (request_id) values (?)", requestId);
+        String hash = (UUID.randomUUID().toString() + UUID.randomUUID()).replace("-", "");
+        long id = jdbcTemplate.queryForObject("""
+                insert into llm_api_keys (workspace_id, org_id, request_id, name, purpose,
+                                          token_hash, token_prefix, status,
+                                          rpm, tpm, concurrency, daily_tokens, credit_limit,
+                                          created_by)
+                values (?, ?, ?, ?, '테스트', ?, ?, 'ACTIVE'::llm_api_key_status,
+                        60, 1000, 4, 10000, 0, ?)
+                returning id
+                """, Long.class, workspaceId, orgId, requestId, name, hash,
+                "pickle-" + hash.substring(0, 6), requester.getId());
         return new Key(id, pub("llm_api_keys", id));
     }
 

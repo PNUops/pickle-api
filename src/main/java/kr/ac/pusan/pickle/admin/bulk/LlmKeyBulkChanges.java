@@ -171,13 +171,15 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
     @Override
     Map<String, Object> fingerprintValues(LlmApiKey key, AdminBulkChangeSpec change) {
         Map<String, Object> values = new LinkedHashMap<>();
+        // Every kind judges on the status, and expiry is part of it, so both
+        // are in every fingerprint: a key that lapsed or was revoked between
+        // the load and the lock reads as changed, not as writable.
+        values.put("status", key.getStatus().name());
+        values.put("expiresAt", BulkFingerprints.plain(key.getExpiresAt()));
         if (change.kind() == AdminBulkChangeKind.LLM_KEY_LIMITS) {
             keyService.currentLimits(key).asAuditFields()
                     .forEach((field, value) -> values.put(field, BulkFingerprints.plain(value)));
-            return values;
         }
-        values.put("status", key.getStatus().name());
-        values.put("expiresAt", BulkFingerprints.plain(key.getExpiresAt()));
         return values;
     }
 
@@ -329,7 +331,17 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
         switch (change.kind()) {
             case LLM_KEY_LIMITS -> {
                 LimitsPlan plan = (LimitsPlan) judgement.plan();
-                keyService.writeLimits(actor, key, plan.current(), plan.next(), plan.account(),
+                OpenRouterAccount account = plan.account();
+                if (plan.bindingChanged()) {
+                    // The judgment read the account without a lock; take it
+                    // now, after the generation and this key's row, which is
+                    // the order the single paths lock in.
+                    account = keyService.lockAccount(account);
+                    if (account == null) {
+                        return AdminBulkChangeReason.VALIDATION;
+                    }
+                }
+                keyService.writeLimits(actor, key, plan.current(), plan.next(), account,
                         plan.bindingChanged(), batchId, ip);
             }
             case LLM_KEY_STATUS -> {

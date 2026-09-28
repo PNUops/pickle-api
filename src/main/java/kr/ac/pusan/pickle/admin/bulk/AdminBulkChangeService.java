@@ -136,17 +136,21 @@ public class AdminBulkChangeService {
                 .filter(targets::containsKey)
                 .sorted(Comparator.comparingLong(id -> handler.orderKey(targets.get(id))))
                 .toList();
+        // Only what the actor may reach is judged or locked: a row outside
+        // their scope is reported without ever being touched.
+        List<UUID> reachable = order.stream()
+                .filter(id -> handler.accessRefusal(actor, targets.get(id), change) == null)
+                .toList();
         if (handler.bumpsGateway()) {
             // Spend the generation only when something will be written, and
-            // before any target row is locked: the generation row is the
+            // before any row is locked: the generation row is the
             // serialization point every document write queues on, and taking
-            // a target lock first would invert the order the single paths use.
+            // any other lock first would invert the order the single paths
+            // use. The judgment itself holds no lock, which is what lets it
+            // run here.
             boolean anyWrite = false;
-            for (UUID targetId : order) {
+            for (UUID targetId : reachable) {
                 T target = targets.get(targetId);
-                if (handler.accessRefusal(actor, target, change) != null) {
-                    continue;
-                }
                 if (!fingerprints.get(targetId).equals(BulkFingerprints.of(objectMapper,
                         handler.fingerprintValues(target, change)))) {
                     continue;
@@ -160,7 +164,7 @@ public class AdminBulkChangeService {
                 generations.bump();
             }
         }
-        for (UUID targetId : order) {
+        for (UUID targetId : reachable) {
             handler.lock(targets.get(targetId));
         }
         Instant now = clock.instant();
