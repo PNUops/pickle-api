@@ -301,7 +301,7 @@ public class PortForwardingService {
             return;
         }
         int bucket = percent / 5 * 5;
-        notificationService.publish(notificationService.sysAdminIds(),
+        notificationService.publishToAdmins(notificationService.sysAdminIds(),
                 NotificationEvent.RELAY_BAND_USAGE_HIGH,
                 Map.of("relayId", relay.getId(), "relayName", relay.getName(),
                         "usagePercent", percent, "thresholdPercent", threshold),

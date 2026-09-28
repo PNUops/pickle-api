@@ -168,9 +168,8 @@ public class RequestService {
         notificationService.publish(actor.id(), NotificationEvent.REQUEST_SUBMITTED,
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name()), null);
-        notificationService.publish(
-                notificationService.orgAdminIds(org.getId()).stream()
-                        .filter(adminId -> !adminId.equals(actor.id())).toList(),
+        notificationService.publishToAdmins(
+                notificationService.requestMailRecipientIds(org.getId(), actor.id()),
                 NotificationEvent.REQUEST_SUBMITTED,
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);

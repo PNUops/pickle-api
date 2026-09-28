@@ -908,7 +908,7 @@ public class ProvisionVmJob implements ProvisioningService {
                     NotificationEvent.VM_CREATE_FAILED, args, "vm_create_failed:" + vmId);
             Map<String, Object> adminArgs = new LinkedHashMap<>(args);
             adminArgs.put("admin", true);
-            notificationService.publish(notificationService.sysAdminIds(),
+            notificationService.publishToAdmins(notificationService.sysAdminIds(),
                     NotificationEvent.VM_CREATE_FAILED, adminArgs, "vm_create_failed:" + vmId);
         } catch (RuntimeException e) {
             log.error("provision vm {}: failure notification failed", vmId, e);

@@ -494,6 +494,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_SMTP_HOST` / `_USERNAME` / `_PASSWORD` | SMTP 접속. staging/prod 전용, 미설정이면 기동 실패 | 없음 |
 | `PICKLE_SMTP_PORT` | SMTP 포트(STARTTLS) | `587` |
 | `PICKLE_MAIL_FROM` | 수신함에 표시할 발신자. `Pickle <주소>` 형식을 권장합니다. staging/prod 전용이고 **필수입니다** — 비어 있거나 주소 모양이 아니면 기동을 거부합니다. SMTP 사용자 이름으로 대신하지 않습니다(발송 서비스를 쓰면 그 값은 주소가 아니라 자격증명입니다) | 없음 |
+| `PICKLE_NOTIFICATION_ADMIN_BUNDLE_WINDOW` | 관리자에게 가는 메일을 수신자마다 이 창에 한 통으로 모읍니다. 조용하던 중의 첫 메일은 바로 가고, 창 안에 생긴 나머지는 창이 닫힐 때 요약 한 통으로 갑니다. 긴급(HIGH) 알림과 사용자 본인에게 가는 메일은 묶지 않습니다. ISO-8601 기간 | `PT60M` |
 
 ### Proxmox / 프로비저닝
 

@@ -39,6 +39,9 @@ public class UserOrgRole {
     @Column(nullable = false, columnDefinition = "user_role")
     private UserRole role;
 
+    @Column(name = "request_mail", nullable = false)
+    private boolean requestMail;
+
     protected UserOrgRole() {
     }
 
@@ -60,8 +63,29 @@ public class UserOrgRole {
         return role;
     }
 
+    /**
+     * Changes the role. A role that may not approve requests cannot be the
+     * one the organisation's request mail goes to, so the choice is dropped
+     * with it rather than left for the check constraint to refuse.
+     */
     public void setRole(UserRole role) {
         this.role = role;
+        if (!mayReceiveRequestMail(role)) {
+            this.requestMail = false;
+        }
+    }
+
+    public boolean isRequestMail() {
+        return requestMail;
+    }
+
+    public void setRequestMail(boolean requestMail) {
+        this.requestMail = requestMail;
+    }
+
+    /** The roles that may approve a request, and so may be mailed about one (V133). */
+    public static boolean mayReceiveRequestMail(UserRole role) {
+        return role == UserRole.ORG_ADMIN || role == UserRole.ORG_MANAGER;
     }
 
     /** Composite key: one row per (account, organisation). */

@@ -108,6 +108,11 @@ pickle:
     # Console origin the notification mails link back to (no path, no trailing
     # slash): the stored link_path is appended to it.
     base-url: ${PICKLE_CONSOLE_BASE_URL:https://pickle.pusan.ac.kr}
+  notification:
+    # Mail to an administrator is sent at most once per this window per
+    # recipient: the first after a quiet spell goes at once, and what arrives
+    # inside the window follows as one summary when it closes.
+    admin-bundle-window: ${PICKLE_NOTIFICATION_ADMIN_BUNDLE_WINDOW:PT60M}
   auth:
     refresh-token-ttl: 14d
     verification-token-ttl: 24h

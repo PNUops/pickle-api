@@ -71,12 +71,16 @@ public class AdminNotificationService {
                 (int) ((total + size - 1) / size));
     }
 
-    /** CAS FAILED→PENDING due now; anything else answers 409 (404 when absent). */
+    /**
+     * CAS FAILED→PENDING due now; anything else answers 409 (404 when absent).
+     * A resent row is no longer held for an administrator's summary mail: the
+     * operator asked for this one to go now.
+     */
     @Transactional
     public MessageResponse resend(AuthenticatedUser actor, UUID notificationId, String ip) {
         int updated = jdbcTemplate.update("""
                 update notifications
-                   set status = 'PENDING', next_attempt_at = now()
+                   set status = 'PENDING', next_attempt_at = now(), bundle = false
                  where public_id = ? and status = 'FAILED'
                 """, notificationId);
         if (updated == 0) {

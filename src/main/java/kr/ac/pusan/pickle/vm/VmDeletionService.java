@@ -142,8 +142,8 @@ public class VmDeletionService {
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
         enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
-        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_ACCEPTED,
-                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor), null);
+        publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_ACCEPTED,
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor));
         return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.publicId(), null, true);
     }
 
@@ -196,7 +196,7 @@ public class VmDeletionService {
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()),
                         "scheduledFor", request.scheduledFor().toString(), "reason", reason), ip);
-        notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_SCHEDULED,
+        notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_SCHEDULED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "reason", reason,
                         "scheduledFor", request.scheduledFor()), null);
         return new VmDeletionResponse(VmDeleteKind.ADMIN, request.scheduledFor(), now, actor.publicId(),
@@ -240,7 +240,7 @@ public class VmDeletionService {
                 AuditService.VM_CANCEL_SCHEDULED_DELETE, "vm", vm.getPublicId(),
                 Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "canceledKind", vm.getDeleteKind().name()), ip);
-        notificationService.publish(recipients(vm, false), NotificationEvent.VM_DELETE_CANCELED,
+        notificationService.publish(recipients(vm), NotificationEvent.VM_DELETE_CANCELED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
         return new MessageResponse("삭제가 취소되었습니다.");
     }
@@ -288,8 +288,8 @@ public class VmDeletionService {
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "overrodeProtection", overrodeProtection), ip);
         enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
-        notificationService.publish(recipients(vm, true), NotificationEvent.VM_DELETE_FORCE,
-                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()), null);
+        publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_FORCE,
+                Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()));
         return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
     }
 
@@ -428,17 +428,26 @@ public class VmDeletionService {
 
     /**
      * Everyone this VM concerns — its grantees and the owners of the workspace that
-     * owns it — optionally plus the org's admins (ACTIVE only).
+     * owns it (ACTIVE only).
      * Notifications are INSERTed in the deletion transaction itself, so they
      * exist iff the deletion intent committed; email leaves asynchronously via
      * the dispatcher.
      */
-    private List<Long> recipients(Vm vm, boolean includeOrgAdmins) {
-        Set<Long> userIds = new LinkedHashSet<>(notificationService.vmAudienceIds(vm));
-        if (includeOrgAdmins) {
-            userIds.addAll(notificationService.orgAdminIds(vm.getOrgId()));
-        }
-        return List.copyOf(userIds);
+    private List<Long> recipients(Vm vm) {
+        return notificationService.vmAudienceIds(vm);
+    }
+
+    /**
+     * The VM's audience, plus the org's admins as administrators — their mail
+     * may be held and sent together. An admin who is also in the audience is
+     * told once, as a member of it.
+     */
+    private void publishWithOrgAdmins(Vm vm, NotificationEvent event, Map<String, Object> args) {
+        List<Long> audience = recipients(vm);
+        Set<Long> admins = new LinkedHashSet<>(notificationService.orgAdminIds(vm.getOrgId()));
+        admins.removeAll(audience);
+        notificationService.publish(audience, event, args, null);
+        notificationService.publishToAdmins(admins, event, args, null);
     }
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */

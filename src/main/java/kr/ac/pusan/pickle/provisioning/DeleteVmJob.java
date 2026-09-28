@@ -438,7 +438,7 @@ public class DeleteVmJob {
     /** Contract: the final destruction is notified to the org's admins. */
     private void notifyOrgAdmins(Vm vm) {
         List<Long> admins = notificationService.orgAdminIds(vm.getOrgId());
-        notificationService.publish(admins, NotificationEvent.VM_DELETE_COMPLETED,
+        notificationService.publishToAdmins(admins, NotificationEvent.VM_DELETE_COMPLETED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()),
                 "vm_delete_completed:" + vm.getId());
     }

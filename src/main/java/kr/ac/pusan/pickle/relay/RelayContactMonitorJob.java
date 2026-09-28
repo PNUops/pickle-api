@@ -74,7 +74,7 @@ public class RelayContactMonitorJob {
         for (Map<String, Object> relay : lost) {
             log.warn("relay {} ({}) contact lost — last sync {}", relay.get("id"),
                     relay.get("name"), relay.get("last_contact_at"));
-            notificationService.publish(notificationService.sysAdminIds(),
+            notificationService.publishToAdmins(notificationService.sysAdminIds(),
                     NotificationEvent.RELAY_CONTACT_LOST,
                     // the raw timestamp, so the composer can render it in KST —
                     // the update's `is not null` guard keeps Map.of from seeing null
@@ -108,7 +108,7 @@ public class RelayContactMonitorJob {
             boolean tokenIssued = Boolean.TRUE.equals(relay.get("token_issued"));
             log.warn("relay {} ({}) has never synced (token issued: {})", relay.get("id"),
                     relay.get("name"), tokenIssued);
-            notificationService.publish(notificationService.sysAdminIds(),
+            notificationService.publishToAdmins(notificationService.sysAdminIds(),
                     NotificationEvent.RELAY_NEVER_CONTACTED,
                     Map.of("relayId", relay.get("id"), "relayName", relay.get("name"),
                             "tokenIssued", tokenIssued),
