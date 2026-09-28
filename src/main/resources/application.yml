@@ -100,6 +100,10 @@ pickle:
     # AES-256-GCM key (base64 32 bytes) for reversible credential storage
     # (VM initial passwords). Same fail-fast policy as the JWT secret.
     encryption-key: ${PICKLE_CREDENTIALS_KEY:}
+  llm:
+    usage-rollup-direct:
+      # Candidate-only in-process rollup while the shared JobRunr worker is off.
+      enabled: ${PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED:false}
   mfa:
     # Enforce 2FA enrollment for admin-tier accounts (scope-restrict the
     # unenrolled). Off in dev/test; the prod profile turns it on.

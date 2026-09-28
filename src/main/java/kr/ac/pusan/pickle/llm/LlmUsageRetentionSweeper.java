@@ -7,26 +7,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Deletes raw usage events past the configured retention (04:40 KST), in
- * bounded batches so a large backlog never holds a long lock.
+ * Freezes complete KST days before deleting their raw events in bounded
+ * batches (04:40 KST). Rollup and retention share a session lock, while raw
+ * ingestion waits only for the short freeze transaction's commit fence.
  *
- * <p>Does nothing until an operator configures a retention — see
- * {@link LlmUsageRetentionPolicy}. Two conditions guard every delete:
- *
- * <ul>
- *   <li>the event's day is past the cutoff, and</li>
- *   <li>the event is at or below the rollup watermark, so its counts already
- *       live in the daily rollup. Without this an event could be deleted
- *       between arriving and being aggregated, and it would then exist in no
- *       record at all.</li>
- * </ul>
- *
- * <p>What this costs, stated plainly: after a day is swept, its aggregate can
- * no longer be recomputed from raw rows, and the statistics that read raw
- * events — latency percentiles, the hour-of-week distribution, per-upstream
- * diagnostics — stop reaching back past the cutoff.
+ * <p>Nothing runs until retention is configured. Once a day is frozen, a late
+ * re-sent fragment cannot repaint its complete daily aggregate; its raw row
+ * is removed by a later retention pass. The raw-only diagnostics stop reaching
+ * back past the configured cutoff as rows are physically removed.</p>
  */
 @Component
 public class LlmUsageRetentionSweeper {
@@ -40,36 +33,20 @@ public class LlmUsageRetentionSweeper {
             delete from llm_usage_events
              where id in (select id from llm_usage_events
                            where requested_at < ?::date::timestamp at time zone 'Asia/Seoul'
-                             and id <= ?
+                             and requested_at < ?::date::timestamp at time zone 'Asia/Seoul'
                            order by id limit ?)
             """;
 
-    /**
-     * The oldest KST day still holding a raw event below the cutoff, or null
-     * when the sweep left nothing behind down there.
-     *
-     * <p>The delete is bounded by the rollup's watermark and the mark must be
-     * bounded by the same reality, or the two disagree in the one direction
-     * that loses data: a day whose events survived the delete (because the
-     * rollup has not reached them yet) would be marked gone, the rollup would
-     * skip it as frozen while advancing its watermark past those events, and
-     * the next sweep — no longer blocked by that watermark — would delete
-     * events that were never counted anywhere. Marking only up to what is
-     * actually empty keeps every surviving event rebuildable.
-     */
-    private static final String OLDEST_SURVIVOR_SQL = """
+    /** The first expired KST day with an event not yet in the rollup. */
+    private static final String FIRST_UNROLLED_DAY_SQL = """
             select min((requested_at at time zone 'Asia/Seoul')::date)
               from llm_usage_events
              where requested_at < ?::date::timestamp at time zone 'Asia/Seoul'
+               and id > ?
             """;
 
-    /**
-     * Records how far the sweep has actually reached, so the rollup knows which
-     * days it can no longer rebuild. **Only ever forward** — shortening or
-     * disabling retention does not put deleted events back, and a mark that
-     * moved backwards would un-freeze days whose raw rows are gone.
-     */
-    private static final String MARK_SWEPT_SQL = """
+    /** Only forward: a crash may leave raw rows inside the frozen prefix. */
+    private static final String MARK_FROZEN_SQL = """
             insert into llm_usage_rollup_state (id, swept_before, updated_at)
             values (true, ?, now())
             on conflict (id) do update
@@ -81,13 +58,19 @@ public class LlmUsageRetentionSweeper {
 
     private final JdbcTemplate jdbcTemplate;
     private final LlmUsageRetentionPolicy retentionPolicy;
-    private final LlmUsageRollupService rollupService;
+    private final LlmUsageRollupLock rollupLock;
+    private final LlmUsageCommitFence commitFence;
+    private final TransactionTemplate boundaryTransaction;
 
     public LlmUsageRetentionSweeper(JdbcTemplate jdbcTemplate,
-            LlmUsageRetentionPolicy retentionPolicy, LlmUsageRollupService rollupService) {
+            LlmUsageRetentionPolicy retentionPolicy, LlmUsageRollupLock rollupLock,
+            LlmUsageCommitFence commitFence, PlatformTransactionManager transactionManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.retentionPolicy = retentionPolicy;
-        this.rollupService = rollupService;
+        this.rollupLock = rollupLock;
+        this.commitFence = commitFence;
+        this.boundaryTransaction = new TransactionTemplate(transactionManager);
+        this.boundaryTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /** One sweep. Public and argument-free for JobRunr; tests call it directly. */
@@ -98,24 +81,44 @@ public class LlmUsageRetentionSweeper {
         if (cutoff == null) {
             return;
         }
-        long watermark = rollupService.currentWatermark();
+        rollupLock.run(() -> deleteFrozenPrefix(cutoff)).orElseThrow(() -> {
+            log.warn("llm usage retention could not acquire the shared rollup lock");
+            return new IllegalStateException("llm usage retention must retry after lock contention");
+        });
+    }
+
+    private int deleteFrozenPrefix(LocalDate cutoff) {
+        LocalDate frozenBefore = boundaryTransaction.execute(status -> {
+            // Hold F only for the snapshot and mark. Ingest continues while
+            // bounded deletions run under the longer-lived R session lock.
+            commitFence.lockInTransaction();
+            long watermark = jdbcTemplate.queryForObject(
+                    "select coalesce(max(last_event_id), 0) from llm_usage_rollup_state",
+                    Long.class);
+            LocalDate firstUnrolled = jdbcTemplate.queryForObject(
+                    FIRST_UNROLLED_DAY_SQL, LocalDate.class, cutoff, watermark);
+            LocalDate existing = jdbcTemplate.queryForObject(
+                    "select max(swept_before) from llm_usage_rollup_state", LocalDate.class);
+            LocalDate eligible = firstUnrolled == null ? cutoff : firstUnrolled;
+            LocalDate mark = existing == null || existing.isBefore(eligible) ? eligible : existing;
+            jdbcTemplate.update(MARK_FROZEN_SQL, mark);
+            return mark;
+        });
+        if (frozenBefore == null) {
+            throw new IllegalStateException("llm usage retention could not freeze its date prefix");
+        }
         int deleted = 0;
         int affected;
         do {
-            affected = jdbcTemplate.update(DELETE_SQL, cutoff, watermark, BATCH_SIZE);
+            // Keep both predicates: an operator may lengthen retention after
+            // a prior freeze, so frozen raw in the new keep-window survives.
+            affected = jdbcTemplate.update(DELETE_SQL, cutoff, frozenBefore, BATCH_SIZE);
             deleted += affected;
         } while (affected == BATCH_SIZE);
-        // Marked whether or not anything was deleted — a day past the cutoff
-        // with no rows left is equally unrebuildable — but never past what is
-        // actually empty. Anything still sitting below the cutoff survived
-        // because the rollup has not reached it, and freezing it would strand
-        // it (see OLDEST_SURVIVOR_SQL).
-        LocalDate survivor = jdbcTemplate.queryForObject(
-                OLDEST_SURVIVOR_SQL, LocalDate.class, cutoff);
-        LocalDate mark = survivor == null ? cutoff : survivor;
-        jdbcTemplate.update(MARK_SWEPT_SQL, mark);
         if (deleted > 0) {
-            log.info("llm usage retention sweep deleted {} event(s) before {}", deleted, cutoff);
+            log.info("llm usage retention deleted {} event(s) before frozen date {}",
+                    deleted, frozenBefore);
         }
+        return deleted;
     }
 }
