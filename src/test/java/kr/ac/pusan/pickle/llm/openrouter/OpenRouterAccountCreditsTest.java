@@ -38,6 +38,7 @@ class OpenRouterAccountCreditsTest {
     @Autowired private OpenRouterAccountCredentialRepository credentialRepository;
     @Autowired private OpenRouterManagementCredentialCipher cipher;
     @Autowired private OpenRouterPollRepository polls;
+    @Autowired private OpenRouterCredentialResolver credentialResolver;
     @Autowired private OpenRouterSpendRecorder spendRecorder;
     @Autowired private LlmUsageService usageService;
     @Autowired private OpenRouterPollDispatcher dispatcher;
@@ -71,8 +72,12 @@ class OpenRouterAccountCreditsTest {
     @Test
     void firstPairThenTenMinuteCreditsAndThirtyMinutePairStayOnOneCadence() {
         AccountFixture fixture = activeAccount("사업 A");
+        AccountFixture other = activeAccount("사업 B scoped query");
 
         assertThat(polls.dueAccountIds(NOW)).contains(fixture.account().getId());
+        var scopedDue = polls.dueAccountIds(NOW, fixture.account().getPublicId());
+        assertThat(scopedDue).containsExactly(fixture.account().getId());
+        assertThat(scopedDue).doesNotContain(other.account().getId());
         OpenRouterPollRepository.Claim first = polls.claim(fixture.account().getId(), NOW);
         assertThat(first.kind()).isEqualTo(OpenRouterPollRepository.PollKind.PAIR);
         assertThat(first.credentialId()).isEqualTo(fixture.credential().getId());
@@ -100,6 +105,41 @@ class OpenRouterAccountCreditsTest {
         OpenRouterPollRepository.Claim third = polls.claim(
                 fixture.account().getId(), thirtyMinutes);
         assertThat(third.kind()).isEqualTo(OpenRouterPollRepository.PollKind.PAIR);
+    }
+
+    @Test
+    void directPollReadinessRequiresAnActiveAccountAndVerifiedActiveCredential() {
+        AccountFixture fixture = activeAccount("direct readiness");
+
+        assertThat(polls.directPollAccountReady(fixture.account().getPublicId())).isTrue();
+        OpenRouterManagementAccess access = credentialResolver
+                .forAccount(fixture.account().getPublicId()).orElseThrow();
+        assertThat(access.accountPublicId()).isEqualTo(fixture.account().getPublicId());
+        assertThat(access.credentialId()).isEqualTo(fixture.credential().getId());
+        OpenRouterPollRepository.DirectPollHealth initial =
+                polls.directPollHealth(fixture.account().getPublicId());
+        assertThat(initial).isNotNull();
+        assertThat(initial.creditsLastSuccessAt()).isNull();
+        assertThat(initial.keysLastSuccessAt()).isNull();
+
+        jdbcTemplate.update("""
+                update openrouter_account_credentials set verified_at = null where id = ?
+                """, fixture.credential().getId());
+        assertThat(polls.directPollAccountReady(fixture.account().getPublicId())).isFalse();
+
+        jdbcTemplate.update("""
+                update openrouter_account_credentials
+                   set status = 'STAGED'::openrouter_credential_status,
+                       verified_at = ?
+                 where id = ?
+                """, java.sql.Timestamp.from(NOW), fixture.credential().getId());
+        assertThat(polls.directPollAccountReady(fixture.account().getPublicId())).isFalse();
+
+        jdbcTemplate.update("""
+                update openrouter_accounts set status = 'ARCHIVED'::openrouter_account_status
+                 where id = ?
+                """, fixture.account().getId());
+        assertThat(polls.directPollAccountReady(fixture.account().getPublicId())).isFalse();
     }
 
     @Test

@@ -73,6 +73,12 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **LLM 사용량 일별 집계를 직접 갱신할 수 있습니다.** 공유 JobRunr 워커를 끈 후보 API에서
   명시적으로 활성화하면 기존 집계 서비스로 기동 중 누락분을 채우고 이후 5분마다 실행합니다.
   관리자 사용량 화면이 읽는 일별 집계의 성공 시각과 원시 이벤트 ID 경계를 별도로 감시합니다.
+- **일일 LLM 토큰 한도를 별도로 갱신할 수 있습니다.** 공유 JobRunr 워커를 끈 API에서
+  명시적으로 활성화하면 기동 직후와 이후 5분마다 기존 한도 갱신 서비스를 직접 실행합니다.
+  같은 데이터베이스의 두 직접 스케줄러가 동시에 시작되면 뒤에 시작한 인스턴스는 기동을
+  거부합니다. 이 기능은 OpenRouter 계정 조회·신규 키 발급, 사용량 집계, 알림 발송을
+  실행하지 않습니다. 서로 다른 데이터베이스의 쓰기 소유권은 배포 순서에서 별도로
+  확정해야 합니다.
 - **민감한 작업에는 인증이 한 겹 더 있습니다.** 비밀번호 열람이나 키 다운로드처럼
   되돌리기 어려운 작업은 로그인 상태여도 짧은 유효기간의 재인증 토큰을 다시 요구하며,
   인터셉터가 대상 작업 전체에 일괄 적용합니다. 회원가입 비밀번호는 유출 이력 차단목록과
@@ -488,6 +494,23 @@ JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원�
 키별 원시 사용량 조회도 바꾸지 않습니다. 두 데이터베이스 복사본은 advisory lock을 공유하지
 않으므로 실제 사용량 전송과 API 쓰기를 한 환경으로 옮기는 절차는 별도로 확인해야 합니다.
 
+### 공유 워커를 끈 LLM 일일 한도 갱신
+
+기존 LLM 키의 일일 토큰 한도를 유지하면서 공유 JobRunr 작업을 실행하지 않아야 하는
+후보 API에서 `PICKLE_LLM_QUOTA_DIRECT_ENABLED=true`와
+`--jobrunr.background-job-server.enabled=false`를 함께 설정합니다. 한쪽만 설정하면
+직접 갱신이 실행되지 않거나 API 기동이 거부됩니다. 첫 갱신은 API 기동 중에 완료되어야
+하며 실패하면 기동이 중단됩니다. 이후 5분 간격의 실패는 로그에 남기고 다음 주기에
+재시도합니다. 마지막 성공 뒤 15분 동안 갱신하지 못했거나 소유한 PostgreSQL 세션을
+잃으면 직접 스케줄러를 중지하고 readiness를 거부 상태로 바꿉니다. 자동으로 readiness를
+되살리지 않으므로 원인을 확인한 뒤 재기동해야 합니다. 종료 중 갱신이 길어지면
+작업이 끝나거나 프로세스가 종료될 때까지 advisory lock을 유지합니다.
+
+동일한 데이터베이스의 직접 스케줄러 둘은 advisory lock으로 충돌을 막습니다. 서로 다른
+데이터베이스에는 이 잠금이 통하지 않으므로 원본 API와 게이트웨이의 쓰기·사용량 전송을
+멈춘 뒤 새 실행 주체를 활성화해야 합니다. OpenRouter 계정 잔액 조회·키 상태 대사,
+신규 유상 키 발급, 알림 발송과 사용량 집계는 이 설정으로 실행되지 않습니다.
+
 ## 시작하기
 
 JDK 25와 Maven, 로컬 PostgreSQL 18이 필요합니다.
@@ -564,6 +587,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
 | `PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED` | 공유 JobRunr 워커가 꺼진 후보 API의 LLM 일별 사용량 집계를 직접 실행합니다. 기동 중 누락분을 채우고 이후 5분마다 실행하며, 마지막 성공과 watermark를 별도로 감시합니다 | `false` |
+| `PICKLE_LLM_QUOTA_DIRECT_ENABLED` | JobRunr 워커를 끈 후보 API에서만 일일 LLM 토큰 한도를 직접 갱신합니다. 워커가 켜져 있으면 기동을 거부합니다. 기동 직후 한 번 실행하고 이후 완료 시점부터 5분 간격으로 재실행합니다. 같은 DB의 중복 인스턴스는 PostgreSQL advisory lock으로 거부합니다 | `false` |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 
 ### 내부 연동 (게이트웨이, 프록시, 터미널)
@@ -596,6 +620,9 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_LLM_{SYNC,USAGE,BODIES}_RATE_LIMIT` | `/internal/llm` 하위 경로별 분당 한도(버킷 분리) | `60` / `120` / `120` |
 | `PICKLE_LLM_MAX_{SYNC,USAGE,BODIES}_BODY_BYTES` | `/internal/llm` 하위 경로별 요청 본문 상한 | `65536` / `4194304` / `8388608` |
 | `PICKLE_OPENROUTER_URL` | OpenRouter 관리 API 주소 | `https://openrouter.ai/api/v1` |
+| `PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED` | 후보 전용 GET polling 경로. 켜면 일반 JobRunr worker가 꺼져 있어야 합니다 | `false` |
+| `PICKLE_OPENROUTER_DIRECT_POLLING_ACCOUNT_PUBLIC_IDS` | 직접 polling할 account public UUID allowlist. 쉼표로 구분하며 활성화할 때 비어 있으면 기동을 거부합니다 | 없음 |
+| `PICKLE_OPENROUTER_DIRECT_POLLING_FIXED_DELAY` | allowlist account 확인 간격. 최소 `PT1M`이며 더 짧으면 기동을 거부합니다 | `PT1M` |
 | `PICKLE_LLM_BODY_WRITE_KEY_ID` | 기록된 프롬프트·응답 본문을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 **본문을 저장하지 않고 배치를 통째로 버립니다** | 없음 |
 | `PICKLE_LLM_BODY_READ_KEYS` | `keyId=base64-32-byte-key`를 쉼표로 나열한 본문 전용 복호화 keyring. write key도 반드시 포함 | 없음 |
 | `PICKLE_OPENROUTER_CREDENTIAL_WRITE_KEY_ID` | DB에 저장할 account별 management credential을 암호화하는 현재 key id. 비어 있으면 API는 기동하지만 credential 쓰기는 거부 | 없음 |
@@ -647,6 +674,28 @@ V100 배포와 함께 `jobrunr_recurring_jobs`에서 삭제합니다. JobRunr는
 V98 jar가 새 account poll dispatcher recurring row나 poll job을 한 번이라도 등록한 뒤에는 V97 jar로
 rollback하지 않습니다. V97에는 새 JobRunr target class가 없어 영속 recurring·queued job을 실행할 수
 없기 때문입니다. 문제 발생 시 V98 forward-fix 또는 DB restore로 복구합니다.
+
+후보 실행에서는 `PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED=true`와 명시적인 account public UUID
+allowlist를 함께 설정하면 전용 scheduler가 기존 DB due/claim 경로를 사용해 account poll을
+직접 실행합니다. 이때 API는 일반 JobRunr background worker가 켜져 있으면 기동을 거부하고,
+시작할 때 allowlist의 각 account가 ACTIVE이고 검증된 ACTIVE credential 암호문을 현재 keyring으로
+실제 복호화할 수 있는지도 확인합니다. 하나라도 맞지 않으면 polling을 시작하지 않으며, 평문과
+암호문 값은 로그에 남기지 않습니다. refresh 요청은 JobRunr enqueue 없이 DB에
+기록되어 다음 직접 poll에서 처리됩니다. 직접 경로의
+provider client 타입은 `GET /credits`와 workspace-filtered `GET /keys`만 제공합니다. 대사 결과,
+사용액 snapshot, drift finding, credential 사용·확인 시각과 cadence/backoff는 기존 테이블에
+기록하지만 provider `POST`, `PATCH`, `DELETE`는 실행하지 않습니다. provider drift는 자동 복구하지
+않고 finding으로 남깁니다. 예상치 못한 계정별 polling 오류가 발생해도 다음 allowlist 계정은
+계속 처리합니다. 오류 난 claim은 기존 10분 lease 만료까지 유지해 즉시 반복 실행을 막습니다.
+성공 관측이 30분을 넘으면 계정 UUID와 관측 지연·저장된 오류 범주를
+민감값 없이 로그에 남깁니다. allowlist 밖 account의 refresh 요청은 DB에 기록되지만 직접 scheduler가
+처리하지 않습니다. 이 동작은 key provisioning이나 기타 JobRunr 작업을 실행하지 않습니다.
+
+Poll claim은 연결한 PostgreSQL 데이터베이스 안에서만 서로 배타적입니다. 동일한 provider account를
+가리키는 독립 DB 복사본은 서로 claim을 공유하지 않아 중복 GET과 서로 다른 cache 상태가 생길 수
+있으므로, 한 account allowlist에는 한 시점에 하나의 authoritative DB/runtime만 직접 polling을
+활성화합니다. 일반 dispatcher와 provisioner를 처리하는 JobRunr worker는 직접 polling과 함께 켜지
+않습니다.
 
 미관리 지출 baseline은 첫 정상 paired observation에서 확정합니다. Key usage reset은 key별
 누적 ledger로 이어 붙이고 vendor key가 삭제돼도 그 누계를 보존하므로, 현재 `/keys` 합계를 단순히

@@ -104,6 +104,10 @@ pickle:
     usage-rollup-direct:
       # Candidate-only in-process rollup while the shared JobRunr worker is off.
       enabled: ${PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED:false}
+    quota-direct:
+      # Candidate-only fallback while the shared JobRunr worker is disabled.
+      # Keep opt-in separate from the ordinary API profile and worker switch.
+      enabled: ${PICKLE_LLM_QUOTA_DIRECT_ENABLED:false}
   mfa:
     # Enforce 2FA enrollment for admin-tier accounts (scope-restrict the
     # unenrolled). Off in dev/test; the prod profile turns it on.
@@ -234,6 +238,11 @@ pickle:
     base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.ai/api/v1}
     connect-timeout: 5s
     read-timeout: 30s
+    direct-polling:
+      # Candidate-only GET polling. It is independent of the generic JobRunr worker.
+      enabled: ${PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED:false}
+      account-public-ids: ${PICKLE_OPENROUTER_DIRECT_POLLING_ACCOUNT_PUBLIC_IDS:}
+      fixed-delay: ${PICKLE_OPENROUTER_DIRECT_POLLING_FIXED_DELAY:PT1M}
   openrouter-credential-keyring:
     # Dedicated AES-256-GCM keyring for DB-stored management credentials.
     # READ_KEYS is comma-separated keyId=base64(32 bytes). Empty is allowed at
