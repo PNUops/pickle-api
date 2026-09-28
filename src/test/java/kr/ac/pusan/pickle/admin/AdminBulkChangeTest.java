@@ -20,6 +20,7 @@ import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.LlmSyncService;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncResponse;
+import kr.ac.pusan.pickle.llm.openrouter.LlmOpenRouterProvisioner;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
 import kr.ac.pusan.pickle.security.JwtService;
@@ -80,6 +81,8 @@ class AdminBulkChangeTest {
     private WorkspaceRepository workspaceRepository;
     @Autowired
     private LlmSyncService llmSyncService;
+    @Autowired
+    private LlmOpenRouterProvisioner provisioner;
 
     private Org orgA;
     private Org orgB;
@@ -362,7 +365,8 @@ class AdminBulkChangeTest {
         Key single = key(orgA.getId(), workspaceA, "만료일 단일 키", "ACTIVE", yesterday);
         Key bulk = key(orgA.getId(), workspaceA, "만료일 일괄 키", "ACTIVE", yesterday);
         Key revoked = key(orgA.getId(), workspaceA, "만료일 폐기 키", "REVOKED", null);
-        Key provisioned = key(orgA.getId(), workspaceA, "만료일 발급 키", "ACTIVE", null);
+        Key provisioned = key(orgA.getId(), workspaceA, "만료일 발급 키", "ACTIVE",
+                today.plusDays(61).atStartOfDay(ClockConfig.KST).toInstant());
         // The hash and the ciphertext are a pair the schema checks together.
         jdbcTemplate.update("update llm_api_keys set openrouter_key_hash = 'or-hash-bulk', "
                 + "openrouter_key_enc = 'enc-bulk' where public_id = ?", provisioned.publicId());
@@ -386,14 +390,20 @@ class AdminBulkChangeTest {
         assertThat(((Map<?, ?>) detail.get("old")).get("expiresAt").toString())
                 .startsWith(yesterday.toString().substring(0, 19));
         assertThat(((Map<?, ?>) detail.get("new")).get("expiresAt")).isEqualTo(expected.toString());
+        // A key with a vendor half may be shortened but not extended: the
+        // vendor fixes its expiry at creation, and the gateway enforces ours.
         mockMvc.perform(patch("/api/v1/admin/llm/keys/" + provisioned.publicId() + "/expiry")
                         .header("Authorization", "Bearer " + orgManagerToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"endDate\": \"" + endDate + "\"}"))
+                        .content("{\"endDate\": \"" + today.plusDays(90) + "\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("LLM_KEY_INVALID_STATE"));
 
         List<UUID> targets = List.of(bulk.publicId(), revoked.publicId(), provisioned.publicId());
+        Map<String, Object> extend = Map.of("kind", "LLM_KEY_EXPIRY",
+                "llmKeyExpiry", Map.of("endDate", today.plusDays(90).toString()));
+        assertThat(item(previewJson(orgManagerToken, request("LLM_KEY", targets, extend)),
+                provisioned.publicId()).get("reason").asString()).isEqualTo("INELIGIBLE");
         Map<String, Object> change = Map.of("kind", "LLM_KEY_EXPIRY",
                 "llmKeyExpiry", Map.of("endDate", endDate.toString()));
         JsonNode preview = previewJson(orgManagerToken, request("LLM_KEY", targets, change));
@@ -405,17 +415,25 @@ class AdminBulkChangeTest {
         assertThat(revived.get("fields").get(1).get("newValue").asString()).isEqualTo("ACTIVE");
         assertThat(item(preview, revoked.publicId()).get("reason").asString())
                 .isEqualTo("INVALID_STATE");
-        assertThat(item(preview, provisioned.publicId()).get("reason").asString())
-                .isEqualTo("INELIGIBLE");
+        assertThat(item(preview, provisioned.publicId()).get("applicable").asBoolean()).isTrue();
 
         long generation = generation();
         JsonNode apply = applyJson(orgManagerToken, request("LLM_KEY", targets, change));
         assertThat(item(apply, bulk.publicId()).get("result").asString()).isEqualTo("APPLIED");
         assertThat(item(apply, revoked.publicId()).get("reason").asString())
                 .isEqualTo("INVALID_STATE");
-        assertThat(item(apply, provisioned.publicId()).get("reason").asString())
-                .isEqualTo("INELIGIBLE");
+        assertThat(item(apply, provisioned.publicId()).get("result").asString())
+                .isEqualTo("APPLIED");
         assertThat(generation()).isEqualTo(generation + 1);
+        // The shortened key keeps its vendor half: the provisioning path only
+        // serves keys that have none, so it leaves this one alone.
+        provisioner.provision(provisioned.id());
+        Map<String, Object> vendorHalf = jdbcTemplate.queryForMap("select openrouter_key_hash, "
+                + "openrouter_last_error, openrouter_attempt_count from llm_api_keys where id = ?",
+                provisioned.id());
+        assertThat(vendorHalf.get("openrouter_key_hash")).isEqualTo("or-hash-bulk");
+        assertThat(vendorHalf.get("openrouter_last_error")).isNull();
+        assertThat(vendorHalf.get("openrouter_attempt_count")).isEqualTo(0);
         assertThat(auditDetail(bulk.publicId(), "llm_key.expiry_update").get("batchId"))
                 .isEqualTo(apply.get("batchId").asString());
 

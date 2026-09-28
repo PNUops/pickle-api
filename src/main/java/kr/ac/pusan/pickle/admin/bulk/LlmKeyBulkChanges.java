@@ -289,12 +289,12 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
             return Judgement.refused(AdminBulkChangeReason.INVALID_STATE);
         }
-        if (AdminLlmKeyService.expiryRefusal(key) != null) {
-            // A key with an OpenRouter half: the vendor fixes its expiry at
-            // creation, so moving ours alone is refused rather than drifted.
+        Instant next = AdminLlmKeyService.expiresAtFor(endDate, clock);
+        if (AdminLlmKeyService.extendsProvisionedKey(key, next)) {
+            // A key with an OpenRouter half may only be shortened: the vendor
+            // fixes its expiry at creation, so extending ours alone would drift.
             return Judgement.refused(AdminBulkChangeReason.INELIGIBLE);
         }
-        Instant next = AdminLlmKeyService.expiresAtFor(endDate, clock);
         if (next.equals(key.getExpiresAt())) {
             return Judgement.unchanged();
         }

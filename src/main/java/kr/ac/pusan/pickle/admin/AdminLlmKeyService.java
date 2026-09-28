@@ -412,10 +412,17 @@ public class AdminLlmKeyService {
      *
      * <p>A key that has already lapsed may be given a future date and works
      * again from that moment; the gateway reads the expiry off the document,
-     * so the generation is bumped like every other document write. A key with
-     * an OpenRouter half is refused for now: the vendor fixes a key's expiry at
-     * creation, and moving ours alone would leave the two disagreeing about
-     * when the money stops.
+     * so the generation is bumped like every other document write.
+     *
+     * <p>A key with an OpenRouter half may only be shortened (operator,
+     * 2026-09-28). The vendor fixes a key's expiry at creation and its update
+     * call has no expiry field, so extending ours alone would leave the paid
+     * models dying at the old date while the platform says the key is live;
+     * shortening is harmless because the gateway enforces the platform expiry
+     * itself and the vendor key merely outlives it unused. Nothing on the
+     * provisioning side reacts: the sweep only picks keys that have no vendor
+     * key yet, and the reconciler reads the expiry only to disable a lapsed
+     * key, which is the right answer to a shortened one.
      */
     @Transactional
     public AdminLlmKeyDetailResponse updateExpiry(AuthenticatedUser actor, UUID keyId,
@@ -424,7 +431,7 @@ public class AdminLlmKeyService {
         LlmApiKey key = requireWritable(actor, keyId);
         generations.bump();
         entityManager.refresh(key);
-        ApiException refusal = expiryRefusal(key);
+        ApiException refusal = expiryRefusal(key, newExpiresAt);
         if (refusal != null) {
             throw refusal;
         }
@@ -446,18 +453,24 @@ public class AdminLlmKeyService {
         return endDate.plusDays(1).atStartOfDay(ClockConfig.KST).toInstant();
     }
 
-    /** Why this key's expiry may not move, or null when it may. */
-    public static @Nullable ApiException expiryRefusal(LlmApiKey key) {
+    /** Why this key's expiry may not move to {@code newExpiresAt}, or null when it may. */
+    public static @Nullable ApiException expiryRefusal(LlmApiKey key, Instant newExpiresAt) {
         if (key.getStatus() == LlmApiKeyStatus.REVOKED) {
             return invalidState("폐기된 키의 만료일은 바꿀 수 없습니다.");
         }
-        if (key.getOpenrouterKeyHash() != null) {
+        if (extendsProvisionedKey(key, newExpiresAt)) {
             return new ApiException(HttpStatus.CONFLICT, ErrorCodes.LLM_KEY_INVALID_STATE,
                     "키 상태가 올바르지 않습니다",
-                    "OpenRouter 키가 발급된 키의 만료일은 바꿀 수 없습니다. 공급자가 키의 만료일을 "
-                            + "발급 시점에 고정하기 때문입니다.");
+                    "유료 모델 키의 만료 연장은 아직 지원하지 않습니다. 공급자가 키의 만료일을 발급 시점에 "
+                            + "고정하기 때문이며, 앞당기는 것은 가능합니다.");
         }
         return null;
+    }
+
+    /** True when the key has a vendor half and the new date is later than the one it has. */
+    public static boolean extendsProvisionedKey(LlmApiKey key, Instant newExpiresAt) {
+        return key.getOpenrouterKeyHash() != null && key.getExpiresAt() != null
+                && newExpiresAt.isAfter(key.getExpiresAt());
     }
 
     /** Lands a new expiry on a key the caller has locked and cleared. */
@@ -465,14 +478,31 @@ public class AdminLlmKeyService {
             @Nullable UUID batchId, String ip) {
         Instant old = key.getExpiresAt();
         key.changeExpiry(newExpiresAt, Instant.now());
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("expiresAt", old == null ? null : old.toString());
         Map<String, Object> args = new LinkedHashMap<>();
-        args.put("old", Map.of("expiresAt", old == null ? "" : old.toString()));
+        args.put("old", before);
         args.put("new", Map.of("expiresAt", newExpiresAt.toString()));
         if (batchId != null) {
             args.put("batchId", batchId);
         }
         auditService.recordAfterCommit(actor.id(), actor.role().name(),
                 AuditService.LLM_KEY_EXPIRY_UPDATE, "llm_key", key.getPublicId(), args, ip);
+        if (key.getOpenrouterKeyHash() == null && key.getCreditLimit().signum() > 0) {
+            // A funded key whose vendor half is still to come. A provisioning
+            // attempt in flight captured the old expiry and will strand its
+            // key on seeing this one, and the sweep would only return in a
+            // few minutes; queue the attempt now, as the limits path does.
+            long internalKeyId = key.getId();
+            afterCommit(() -> {
+                try {
+                    jobScheduler.enqueue(() -> provisioner.provision(internalKeyId));
+                } catch (RuntimeException e) {
+                    log.warn("could not enqueue OpenRouter provisioning after an expiry change; "
+                            + "the sweep will pick it up", e);
+                }
+            });
+        }
     }
 
     /** Suspends a key the caller has locked and found ACTIVE. */
