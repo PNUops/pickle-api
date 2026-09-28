@@ -73,6 +73,22 @@ public final class LlmKeyLimitRules {
     }
 
     public static Outcome check(Limits limits) {
+        return check(limits, true, true, true);
+    }
+
+    private static List<String> stored(@Nullable List<String> list) {
+        return list == null ? List.of() : List.copyOf(list);
+    }
+
+    /**
+     * The same rules with a list left as it is stored where the change did not
+     * touch it. A stored list was normalized when it was written, and
+     * re-reading it through today's normalizer would let a pattern the rules
+     * have since tightened turn an rpm-only change into a refusal. The
+     * cross-field rules still see every list, untouched ones included.
+     */
+    public static Outcome check(Limits limits, boolean normalizeAllowed, boolean normalizeDenied,
+            boolean normalizePassthrough) {
         if (limits.creditLimit() == null) {
             return Outcome.refused("creditLimit",
                     "금액 한도는 null일 수 없습니다. 유료 모델을 닫으려면 0을 보내 주세요.");
@@ -84,12 +100,18 @@ public final class LlmKeyLimitRules {
             return Outcome.refused("creditLimit", "리셋 창을 두려면 0보다 큰 금액 한도가 필요합니다.");
         }
         List<FieldValidationError> listErrors = new ArrayList<>();
-        List<String> allowedModels = CreditModelPatterns.normalize(limits.creditAllowedModels(),
-                "creditAllowedModels", listErrors);
-        List<String> deniedModels = CreditModelPatterns.normalize(limits.creditDeniedModels(),
-                "creditDeniedModels", listErrors);
-        List<String> passthroughEndpoints = PassthroughEndpoints.normalize(
-                limits.passthroughEndpoints(), "passthroughEndpoints", listErrors);
+        List<String> allowedModels = normalizeAllowed
+                ? CreditModelPatterns.normalize(limits.creditAllowedModels(),
+                        "creditAllowedModels", listErrors)
+                : stored(limits.creditAllowedModels());
+        List<String> deniedModels = normalizeDenied
+                ? CreditModelPatterns.normalize(limits.creditDeniedModels(),
+                        "creditDeniedModels", listErrors)
+                : stored(limits.creditDeniedModels());
+        List<String> passthroughEndpoints = normalizePassthrough
+                ? PassthroughEndpoints.normalize(limits.passthroughEndpoints(),
+                        "passthroughEndpoints", listErrors)
+                : stored(limits.passthroughEndpoints());
         if (!listErrors.isEmpty()) {
             return new Outcome(null, List.copyOf(listErrors));
         }

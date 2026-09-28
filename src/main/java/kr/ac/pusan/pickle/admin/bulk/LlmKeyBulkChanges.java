@@ -213,7 +213,9 @@ class LlmKeyBulkChanges extends BulkChangeHandler<LlmApiKey> {
                         : current.creditLimitReset(),
                 merge(limits.getCreditAllowedModels(), current.creditAllowedModels(), true),
                 merge(limits.getCreditDeniedModels(), current.creditDeniedModels(), true),
-                merge(limits.getPassthroughEndpoints(), current.passthroughEndpoints(), false)));
+                merge(limits.getPassthroughEndpoints(), current.passthroughEndpoints(), false)),
+                limits.getCreditAllowedModels() != null, limits.getCreditDeniedModels() != null,
+                limits.getPassthroughEndpoints() != null);
         if (!outcome.valid()) {
             return Judgement.refused(AdminBulkChangeReason.VALIDATION);
         }

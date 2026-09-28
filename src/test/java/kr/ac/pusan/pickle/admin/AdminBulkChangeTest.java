@@ -141,7 +141,9 @@ class AdminBulkChangeTest {
     @Test
     void absentLimitFieldsStayAsTheyAre() throws Exception {
         Key key = key(orgA.getId(), workspaceA, "한 필드만 바꾸는 키", "ACTIVE", null);
-        setLists(key, "[\"openai/*\"]", "[]", "[\"images\"]");
+        setLists(key, "[\"openai/*\"]", "[\"openai/o1-pro\"]", "[\"images\"]");
+        jdbcTemplate.update("update llm_api_keys set credit_limit_reset = 'MONTHLY' where id = ?",
+                key.id());
 
         JsonNode preview = previewJson(sysAdminToken,
                 request("LLM_KEY", List.of(key.publicId()), limits(Map.of("rpm", 90))));
@@ -161,8 +163,14 @@ class AdminBulkChangeTest {
         assertThat(row.get("rpm")).isEqualTo(90);
         assertThat(row.get("tpm")).isEqualTo(1000);
         assertThat(row.get("concurrency")).isEqualTo(4);
+        assertThat(row.get("daily_tokens")).isEqualTo(10000L);
+        assertThat(new java.math.BigDecimal(row.get("credit_limit").toString()))
+                .isEqualByComparingTo("1.00");
+        assertThat(row.get("credit_limit_reset")).isEqualTo("MONTHLY");
         assertThat(models(key, "credit_allowed_models")).containsExactly("openai/*");
+        assertThat(models(key, "credit_denied_models")).containsExactly("openai/o1-pro");
         assertThat(models(key, "passthrough_endpoints")).containsExactly("images");
+
 
         Map<String, Object> detail = auditDetail(key.publicId(), "llm_key.limits_update");
         assertThat(((Map<?, ?>) detail.get("old")).get("rpm")).isEqualTo(60);
@@ -170,6 +178,17 @@ class AdminBulkChangeTest {
         assertThat(((Map<?, ?>) detail.get("new")).get("passthroughEndpoints"))
                 .isEqualTo(List.of("images"));
         assertThat(detail.get("batchId")).isEqualTo(apply.get("batchId").asString());
+
+        // Sent as null is not the same as not sent: the first is a value.
+        Map<String, Object> explicitNull = new java.util.HashMap<>();
+        explicitNull.put("dailyTokens", null);
+        JsonNode cleared = applyJson(sysAdminToken,
+                request("LLM_KEY", List.of(key.publicId()), limits(explicitNull)));
+        assertThat(item(cleared, key.publicId()).get("result").asString()).isEqualTo("APPLIED");
+        assertThat(item(cleared, key.publicId()).get("fields").get(0).get("newValue").isNull())
+                .isTrue();
+        assertThat(keyRow(key).get("daily_tokens")).isNull();
+        assertThat(keyRow(key).get("rpm")).isEqualTo(90);
     }
 
     @Test
@@ -365,6 +384,14 @@ class AdminBulkChangeTest {
         assertThat(item(suspend, suspended.publicId()).get("result").asString())
                 .isEqualTo("UNCHANGED");
         assertThat(keyRow(active).get("status")).isEqualTo("SUSPENDED");
+        // A lapsed key reads as EXPIRED whatever its stored status says, and
+        // there is nothing to suspend in it.
+        Key lapsed = key(orgA.getId(), workspaceA, "상태 키 만료", "ACTIVE",
+                Instant.now().minus(1, ChronoUnit.DAYS));
+        assertThat(item(previewJson(orgManagerToken, request("LLM_KEY", List.of(lapsed.publicId()),
+                Map.of("kind", "LLM_KEY_STATUS", "llmKeyStatus",
+                        Map.of("action", "SUSPEND", "reason", "만료 키 정지")))), lapsed.publicId())
+                .get("reason").asString()).isEqualTo("INVALID_STATE");
         Map<String, Object> detail = auditDetail(active.publicId(), "llm_key.suspend");
         assertThat(((Map<?, ?>) detail.get("old")).get("status")).isEqualTo("ACTIVE");
         assertThat(((Map<?, ?>) detail.get("new")).get("status")).isEqualTo("SUSPENDED");
@@ -915,7 +942,8 @@ class AdminBulkChangeTest {
 
     private Map<String, Object> keyRow(Key key) {
         return jdbcTemplate.queryForMap("select rpm, tpm, concurrency, daily_tokens, "
-                + "credit_limit, status::text as status from llm_api_keys where id = ?", key.id());
+                + "credit_limit, credit_limit_reset, status::text as status "
+                + "from llm_api_keys where id = ?", key.id());
     }
 
     private List<String> models(Key key, String column) {
