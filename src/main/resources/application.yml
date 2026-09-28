@@ -101,6 +101,9 @@ pickle:
     # (VM initial passwords). Same fail-fast policy as the JWT secret.
     encryption-key: ${PICKLE_CREDENTIALS_KEY:}
   llm:
+    usage-rollup-direct:
+      # Candidate-only in-process rollup while the shared JobRunr worker is off.
+      enabled: ${PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED:false}
     quota-direct:
       # Candidate-only fallback while the shared JobRunr worker is disabled.
       # Keep opt-in separate from the ordinary API profile and worker switch.

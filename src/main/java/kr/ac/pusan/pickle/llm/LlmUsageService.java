@@ -79,12 +79,15 @@ public class LlmUsageService {
     private final JdbcTemplate jdbcTemplate;
     private final LlmQuotaService quotaService;
     private final OpenRouterCreditRefreshScheduler creditRefreshScheduler;
+    private final LlmUsageCommitFence commitFence;
 
     public LlmUsageService(JdbcTemplate jdbcTemplate, LlmQuotaService quotaService,
-            OpenRouterCreditRefreshScheduler creditRefreshScheduler) {
+            OpenRouterCreditRefreshScheduler creditRefreshScheduler,
+            LlmUsageCommitFence commitFence) {
         this.jdbcTemplate = jdbcTemplate;
         this.quotaService = quotaService;
         this.creditRefreshScheduler = creditRefreshScheduler;
+        this.commitFence = commitFence;
     }
 
     @Transactional
@@ -98,6 +101,7 @@ public class LlmUsageService {
         int accepted = 0;
         int duplicates = 0;
         int rejected = 0;
+        boolean fenced = false;
         for (LlmUsageRequest.UsageEvent event : events) {
             if (event == null) {
                 rejected++;
@@ -116,6 +120,13 @@ public class LlmUsageService {
             // are kept with a null key: they are the only trace of a client
             // looping on a bad key.
             Long keyId = event.keyId() == null ? null : keyIds.get(event.keyId().strip());
+            if (!fenced) {
+                // The xact lock is held through the usage and quota commit.
+                // A rollup snapshot waits for lower IDs from this batch to
+                // become visible before it chooses its high watermark.
+                commitFence.lockInTransaction();
+                fenced = true;
+            }
             Long insertedId = tryInsert(event, eventId, status, errorType, requestedAt, keyId);
             if (insertedId == null) {
                 duplicates++;

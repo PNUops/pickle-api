@@ -1,9 +1,17 @@
 package kr.ac.pusan.pickle.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import javax.sql.DataSource;
 import kr.ac.pusan.pickle.settings.SettingsService;
 import kr.ac.pusan.pickle.support.EmbeddedPostgresConfig;
 import kr.ac.pusan.pickle.support.SeedFixtures;
@@ -29,6 +37,8 @@ class LlmUsageRetentionSweeperTest {
     private LlmUsageRollupService rollupService;
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private DataSource dataSource;
 
     private long keyId;
 
@@ -92,6 +102,201 @@ class LlmUsageRetentionSweeperTest {
     }
 
     @Test
+    void aLateEventKeepsItsEntireExpiredDayUntilRollupRebuildsIt() {
+        configureRetention(90);
+        insertEvent("2019-01-01T03:00:00Z");
+        rollupService.refresh();
+        insertEvent("2019-01-01T04:00:00Z");
+
+        sweeper.sweep();
+
+        assertThat(eventCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "select swept_before from llm_usage_rollup_state", java.time.LocalDate.class))
+                .isEqualTo(java.time.LocalDate.of(2019, 1, 1));
+        rollupService.refresh();
+        assertThat(dailyRequests()).isEqualTo(2);
+
+        sweeper.sweep();
+        assertThat(eventCount()).isZero();
+        assertThat(dailyRequests()).isEqualTo(2);
+    }
+
+    @Test
+    void frozenPrefixSurvivesASecondBatchFailureAndAnOldDayResend() {
+        configureRetention(90);
+        jdbcTemplate.update("""
+                insert into llm_usage_events (event_id, key_id, public_model_name, status,
+                        input_tokens, output_tokens, requested_at)
+                select gen_random_uuid()::text, ?, 'pickle-general', 'OK', 1, 1,
+                       '2019-01-01T03:00:00Z'::timestamptz
+                  from generate_series(1, 1205)
+                """, keyId);
+        long tail = jdbcTemplate.queryForObject("select max(id) from llm_usage_events", Long.class);
+        rollupService.refresh();
+        assertThat(dailyRequests()).isEqualTo(1205);
+        jdbcTemplate.execute("""
+                create function fail_tail_usage_delete() returns trigger language plpgsql as $$
+                begin
+                  if old.id = %d then
+                    raise exception 'synthetic second batch failure';
+                  end if;
+                  return old;
+                end $$
+                """.formatted(tail));
+        jdbcTemplate.execute("""
+                create trigger fail_tail_usage_delete before delete on llm_usage_events
+                for each row execute function fail_tail_usage_delete()
+                """);
+        try {
+            assertThatThrownBy(sweeper::sweep).isInstanceOf(RuntimeException.class);
+            assertThat(eventCount()).isEqualTo(205);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select swept_before from llm_usage_rollup_state", java.time.LocalDate.class))
+                    .isAfter(java.time.LocalDate.of(2019, 1, 1));
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_tail_usage_delete on llm_usage_events");
+            jdbcTemplate.execute("drop function if exists fail_tail_usage_delete()");
+        }
+        insertEvent("2019-01-01T05:00:00Z");
+        rollupService.refresh();
+        assertThat(dailyRequests()).isEqualTo(1205);
+        sweeper.sweep();
+        assertThat(eventCount()).isZero();
+        assertThat(dailyRequests()).isEqualTo(1205);
+    }
+
+    @Test
+    void lockContentionIsAVisibleFailureWithoutFreezeOrDelete() throws Exception {
+        configureRetention(90);
+        insertEvent("2019-01-01T03:00:00Z");
+        rollupService.refresh();
+        insertEvent("2019-01-01T04:00:00Z");
+        try (Connection owner = dataSource.getConnection()) {
+            advisory(owner, "select pg_advisory_lock(?)", 0x50_4B_55_52L);
+            try {
+                assertThat(rollupService.refresh()).isZero();
+                assertThatThrownBy(sweeper::sweep)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("must retry after lock contention");
+                assertThat(eventCount()).isEqualTo(2);
+                assertThat(dailyRequests()).isEqualTo(1);
+                assertThat(jdbcTemplate.queryForObject(
+                        "select swept_before from llm_usage_rollup_state", java.time.LocalDate.class))
+                        .isNull();
+            } finally {
+                advisory(owner, "select pg_advisory_unlock(?)", 0x50_4B_55_52L);
+            }
+        }
+        rollupService.refresh();
+        sweeper.sweep();
+        assertThat(dailyRequests()).isEqualTo(2);
+        assertThat(eventCount()).isZero();
+    }
+
+    @Test
+    void freezeWaitsForAnIngestCommitFence() throws Exception {
+        configureRetention(90);
+        insertEvent("2019-01-01T03:00:00Z");
+        rollupService.refresh();
+        var executor = Executors.newSingleThreadExecutor();
+        try (Connection ingest = dataSource.getConnection()) {
+            ingest.setAutoCommit(false);
+            advisory(ingest, "select pg_advisory_xact_lock(?)", 0x504b555345564e54L);
+            var sweep = executor.submit(sweeper::sweep);
+            try {
+                assertThatThrownBy(() -> sweep.get(300, TimeUnit.MILLISECONDS))
+                        .isInstanceOf(TimeoutException.class);
+                assertThat(eventCount()).isEqualTo(1);
+                assertThat(jdbcTemplate.queryForObject(
+                        "select swept_before from llm_usage_rollup_state", java.time.LocalDate.class))
+                        .isNull();
+            } finally {
+                ingest.commit();
+            }
+            sweep.get(5, TimeUnit.SECONDS);
+            assertThat(eventCount()).isZero();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void boundedDeletionReleasesTheIngestFenceAfterTheFreezeMark() throws Exception {
+        configureRetention(90);
+        insertEvent("2019-01-01T03:00:00Z");
+        rollupService.refresh();
+        jdbcTemplate.execute("""
+                create function delay_usage_delete() returns trigger language plpgsql as $$
+                begin
+                  perform pg_sleep(2);
+                  return old;
+                end $$
+                """);
+        jdbcTemplate.execute("""
+                create trigger delay_usage_delete before delete on llm_usage_events
+                for each row execute function delay_usage_delete()
+                """);
+        var executor = Executors.newSingleThreadExecutor();
+        var sweep = executor.submit(sweeper::sweep);
+        try {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (jdbcTemplate.queryForObject("select max(swept_before) "
+                    + "from llm_usage_rollup_state", java.time.LocalDate.class) == null
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+            assertThat(jdbcTemplate.queryForObject("select max(swept_before) "
+                    + "from llm_usage_rollup_state", java.time.LocalDate.class)).isNotNull();
+            try (Connection ingest = dataSource.getConnection()) {
+                ingest.setAutoCommit(false);
+                assertThat(tryFence(ingest)).isTrue();
+                ingest.commit();
+            }
+            sweep.get(5, TimeUnit.SECONDS);
+            assertThat(eventCount()).isZero();
+        } finally {
+            executor.shutdownNow();
+            try {
+                sweep.get(5, TimeUnit.SECONDS);
+            } finally {
+                jdbcTemplate.execute("drop trigger if exists delay_usage_delete on llm_usage_events");
+                jdbcTemplate.execute("drop function if exists delay_usage_delete()");
+            }
+        }
+    }
+
+    @Test
+    void lengtheningOrDisablingRetentionDoesNotDeleteSurvivingFrozenRaw() {
+        configureRetention(90);
+        insertEvent(Instant.now().minus(java.time.Duration.ofDays(100)).toString());
+        rollupService.refresh();
+        jdbcTemplate.execute("""
+                create function fail_all_usage_delete() returns trigger language plpgsql as $$
+                begin
+                  raise exception 'synthetic deletion interruption';
+                end $$
+                """);
+        jdbcTemplate.execute("""
+                create trigger fail_all_usage_delete before delete on llm_usage_events
+                for each row execute function fail_all_usage_delete()
+                """);
+        try {
+            assertThatThrownBy(sweeper::sweep).isInstanceOf(RuntimeException.class);
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists fail_all_usage_delete on llm_usage_events");
+            jdbcTemplate.execute("drop function if exists fail_all_usage_delete()");
+        }
+        assertThat(eventCount()).isEqualTo(1);
+        configureRetention(365);
+        sweeper.sweep();
+        assertThat(eventCount()).isEqualTo(1);
+        configureRetention(0);
+        sweeper.sweep();
+        assertThat(eventCount()).isEqualTo(1);
+    }
+
+    @Test
     void aValueBelowTheFloorIsReadAsTheFloorRatherThanObeyed() {
         // The settings validator refuses these, so one can only arrive by hand.
         // Obeying it would delete events the gateway may still re-send, which
@@ -114,6 +319,28 @@ class LlmUsageRetentionSweeperTest {
 
     private long eventCount() {
         return jdbcTemplate.queryForObject("select count(*) from llm_usage_events", Long.class);
+    }
+
+    private long dailyRequests() {
+        return jdbcTemplate.queryForObject(
+                "select coalesce(sum(requests), 0) from llm_usage_daily", Long.class);
+    }
+
+    private static void advisory(Connection connection, String sql, long key) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setLong(1, key);
+            statement.execute();
+        }
+    }
+
+    private static boolean tryFence(Connection connection) throws Exception {
+        try (PreparedStatement statement =
+                connection.prepareStatement("select pg_try_advisory_xact_lock(?)")) {
+            statement.setLong(1, 0x504b555345564e54L);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && result.getBoolean(1);
+            }
+        }
     }
 
     private void insertEvent(String requestedAt) {

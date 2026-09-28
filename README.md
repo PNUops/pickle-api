@@ -70,6 +70,9 @@ fat jar 하나로 동작합니다. 상태는 데이터베이스 한 곳에서 �
 - **잡 큐가 데이터베이스에 있습니다.** JobRunr가 잡을 PostgreSQL 테이블에 저장하므로
   최소 1회 실행과 백오프 재시도, 진행 상황 대시보드가 따라옵니다. 워커는 API와 같은 JVM에서
   돌고, 부하가 늘면 같은 jar를 `--worker-only` 모드로 다른 호스트에 띄울 수 있습니다.
+- **LLM 사용량 일별 집계를 직접 갱신할 수 있습니다.** 공유 JobRunr 워커를 끈 후보 API에서
+  명시적으로 활성화하면 기존 집계 서비스로 기동 중 누락분을 채우고 이후 5분마다 실행합니다.
+  관리자 사용량 화면이 읽는 일별 집계의 성공 시각과 원시 이벤트 ID 경계를 별도로 감시합니다.
 - **일일 LLM 토큰 한도를 별도로 갱신할 수 있습니다.** 공유 JobRunr 워커를 끈 API에서
   명시적으로 활성화하면 기동 직후와 이후 5분마다 기존 한도 갱신 서비스를 직접 실행합니다.
   같은 데이터베이스의 두 직접 스케줄러가 동시에 시작되면 뒤에 시작한 인스턴스는 기동을
@@ -437,6 +440,60 @@ advisory lock 아래 확인합니다. V87이 넣는 endpoint/credential 없는 l
 워크스페이스/OWNER membership만 만들고 종료합니다. 일반 `isolated` 기동은 계정을 만들지
 않습니다.
 
+### 공유 워커를 끈 LLM 사용량 일별 집계
+
+후보 API에서 `PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED=true`와
+`--jobrunr.background-job-server.enabled=false`를 함께 지정합니다. 직접 집계는 기본적으로
+꺼져 있고 일반 JobRunr 서버가 켜져 있거나 실제 서버 bean이 있으면 기동을 거부합니다.
+기동 중 기존 `LlmUsageRollupService.refresh()`를 한 번 실행하고, 기동 전 확인한 원시 이벤트
+최고 ID까지 watermark가 진행해야 준비를 완료합니다. 이후 집계가 끝난 시점부터 5분 간격으로
+다시 실행합니다. 기존 집계 서비스의 PostgreSQL advisory lock이 같은 데이터베이스에서
+겹친 실행을 건너뛰게 합니다. 시작 시 누락분이 남는 잠금 경합은 기동 실패로 드러나며,
+정기 실행의 경합은 뒤처진 ID와 성공 시각을 기록합니다. 원시 이벤트가 없는 상태에서
+같은 DB의 직접 스케줄러 둘이 모두 기동할 수는 있으며, 잠금은 실행 겹침만 막습니다.
+실행 주체 한 곳을 정하는 운영 절차를 대신하지 않습니다.
+
+원시 사용량 배치는 첫 이벤트를 넣기 전에 별도 transaction advisory lock을 얻고 commit까지
+유지합니다. 집계기는 같은 잠금을 watermark·최고 이벤트 ID·대상 날짜를 읽는 짧은
+transaction에서만 얻고, 날짜별 재집계 작업 전에 놓습니다. PostgreSQL의 이벤트 ID 할당
+순서와 commit 순서가 어긋나도 미커밋의 낮은 ID를 건너뛰지 않기 위한 경계입니다. 이 때문에
+동시 사용량 배치는 잠금 앞에서 직렬화될 수 있으며, DB `lock_timeout`을 넘으면 해당 전송은
+실패해 게이트웨이가 재시도합니다. 오래 걸리는 날짜별 재집계 동안에는 이 잠금을 잡지 않습니다.
+
+사용량 원시 기록의 보존 기간을 설정하면 일별 집계와 보존 작업이 같은 session advisory lock을
+사용합니다. 보존 작업은 그 잠금을 잡은 뒤 짧은 transaction에서 위 commit 잠금, 집계
+watermark와 아직 집계되지 않은 만료 이벤트의 첫 KST 날짜를 확인합니다. 집계가 완료된
+**온전한 날짜의 prefix**만 `swept_before`에 먼저 동결하고 transaction을 끝낸 뒤, session
+잠금을 유지한 채 1,000행씩 원시 기록을 삭제합니다. 삭제 중 실패하면 동결 경계는 남고
+다음 보존 실행이 삭제를 재시도합니다. 동결 뒤 늦게 재전송된 해당 날짜의 이벤트는 일별
+집계를 다시 그리지 않으며, 다음 보존 실행에서 원시 행이 삭제됩니다. 잠금 경합은 경고와
+JobRunr 작업 실패로 드러납니다. 기본 보존 설정은 0으로, 원시 기록은 삭제하지 않습니다.
+동결 경계는 원시 행이 이미 모두 삭제됐다는 뜻이 아닙니다.
+
+이 협조 잠금은 이를 사용하는 기록·집계·보존 실행기에만 유효합니다. 이전 버전의 API와
+보존 작업, 수동 SQL·별도 배치의 `llm_usage_events` INSERT를 같은 DB에서 새 버전과
+동시에 실행하지 마세요. 모든 raw writer를 중지하고 단일 writer를 확인한 뒤 새 집계를
+시작해야 합니다. 커밋 순서 테스트도 이 잠금에 참여하는 writer만 증명합니다.
+이미 동결되거나 원시 기록이 삭제된 날짜는 DB의 현재 원시
+행만으로 완전하게 재집계할 수 없으므로 보호 백업을 확인하고 별도 복구 절차를 마련해야
+합니다.
+
+이 경계는 새로 기록되는 배치에 적용됩니다. 이전 버전에서 이미 watermark 아래로 빠진
+원시 이벤트가 있다면 정기 집계만으로는 복구되지 않습니다. 원시 이벤트가 남아 있는
+날짜를 보호 백업과 조용한 작업 시간에 별도로 재집계해야 합니다. 보존 작업으로 원시
+이벤트를 지운 날짜는 그 DB만으로 복구할 수 없습니다.
+
+별도 관측 작업은 매분 데이터베이스의 `last_success_at`, watermark와 원시 이벤트 최고 ID를
+읽습니다. 마지막 성공이 15분 이상 지났거나 같은 원시 이벤트 ID를 15분 동안 집계하지
+못하면 readiness를 거부하고 직접 스케줄러를 멈춥니다. DB를 읽지 못할 때는 마지막으로
+정상 관측한 시각부터 15분을 잽니다. 자동으로 readiness를 되살리지 않으므로 원인을
+확인한 뒤 재기동해야 합니다. 애플리케이션과 데이터베이스가 함께 멈춘 경우처럼 관측
+작업 자체가 실행되지 못할 때는 이 경고가 발생하지 않으므로 외부 서비스 감시도 필요합니다.
+
+이 경로는 JobRunr 대기열의 다른 작업을 실행하지 않습니다. `llm_usage_events` 적재와
+키별 원시 사용량 조회도 바꾸지 않습니다. 두 데이터베이스 복사본은 advisory lock을 공유하지
+않으므로 실제 사용량 전송과 API 쓰기를 한 환경으로 옮기는 절차는 별도로 확인해야 합니다.
+
 ### 공유 워커를 끈 LLM 일일 한도 갱신
 
 기존 LLM 키의 일일 토큰 한도를 유지하면서 공유 JobRunr 작업을 실행하지 않아야 하는
@@ -529,6 +586,7 @@ scripts/verify.sh        # checkstyle + mvn verify(전체 테스트) + 의존성
 | `PICKLE_MFA_ENFORCE_ADMIN` | 관리자 2FA 등록 강제 | `false` (prod `true`) |
 | `PICKLE_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` | staging/prod 최초 SYS_ADMIN. 12자 이상과 비밀번호 정책을 통과해야 기동 | 없음 |
 | `PICKLE_ISOLATED_BOOTSTRAP_ENABLED` | `isolated-bootstrap` one-shot 명시 opt-in. 일반 `isolated`에서는 항상 false로 둠 | `false` |
+| `PICKLE_LLM_USAGE_ROLLUP_DIRECT_ENABLED` | 공유 JobRunr 워커가 꺼진 후보 API의 LLM 일별 사용량 집계를 직접 실행합니다. 기동 중 누락분을 채우고 이후 5분마다 실행하며, 마지막 성공과 watermark를 별도로 감시합니다 | `false` |
 | `PICKLE_LLM_QUOTA_DIRECT_ENABLED` | JobRunr 워커를 끈 후보 API에서만 일일 LLM 토큰 한도를 직접 갱신합니다. 워커가 켜져 있으면 기동을 거부합니다. 기동 직후 한 번 실행하고 이후 완료 시점부터 5분 간격으로 재실행합니다. 같은 DB의 중복 인스턴스는 PostgreSQL advisory lock으로 거부합니다 | `false` |
 | `PICKLE_JOBRUNR_DASH_*` | JobRunr 대시보드 노출과 basic auth. 활성 상태에서 자격이 비면 기동 거부 | `false` |
 

@@ -1,12 +1,7 @@
 package kr.ac.pusan.pickle.llm;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
-import javax.sql.DataSource;
 import org.jobrunr.jobs.annotations.Job;
 import org.jspecify.annotations.Nullable;
 import org.jobrunr.jobs.annotations.Recurring;
@@ -14,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -29,18 +26,19 @@ import org.springframework.transaction.support.TransactionTemplate;
  * it is interrupted.
  *
  * <p>Which days are affected comes from a watermark over the events' primary
- * key, not from a timestamp: {@code id} is assigned at insert, so every row
- * this service has not yet seen is above it, whatever {@code requested_at}
- * says. <b>There is no seeded state row</b> — its absence reads as watermark
+ * key, not from a timestamp. Ingest and the rollup snapshot share a short
+ * transaction lock, so an uncommitted lower ID cannot be left behind when
+ * the watermark advances, whatever {@code requested_at} says. <b>There is
+ * no seeded state row</b> — its absence reads as watermark
  * zero, and a refresh from zero is the backfill. A fresh database and one with
  * a year of events take the same path.
  *
  * <p>This job touches only the events (read), the rollup, and its own state
- * row. It never writes {@code llm_api_keys} or the generation counter, so it
- * stands outside the ingest path's lock order entirely and cannot join that
- * cycle. What it does need is protection from itself: two overlapping runs
- * would delete and re-insert the same day, so a session advisory lock makes
- * the second run a no-op rather than a lost race.
+ * row. It never writes {@code llm_api_keys} or the generation counter. It
+ * acquires the ingest commit fence only for its short snapshot transaction,
+ * after the shared rollup/retention session lock; ingest acquires only the
+ * commit fence. Two overlapping runs would delete and re-insert the same day,
+ * so the session lock makes the second run a no-op rather than a lost race.
  */
 @Service
 public class LlmUsageRollupService {
@@ -48,14 +46,6 @@ public class LlmUsageRollupService {
     private static final Logger log = LoggerFactory.getLogger(LlmUsageRollupService.class);
 
     static final String JOB_ID = "llm-usage-rollup";
-
-    /**
-     * Arbitrary but stable key namespacing this lock (ASCII "PKUR" ~ pickle
-     * usage rollup). Advisory locks share one namespace per database, so it
-     * must differ from every other one here — the web terminal's guard holds
-     * "PKTM".
-     */
-    private static final long ADVISORY_LOCK_KEY = 0x50_4B_55_52L;
 
     /**
      * The KST days carrying at least one event the rollup has not seen. Bounded
@@ -164,13 +154,19 @@ public class LlmUsageRollupService {
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate transactionTemplate;
-    private final DataSource dataSource;
+    private final TransactionTemplate snapshotTransaction;
+    private final LlmUsageRollupLock rollupLock;
+    private final LlmUsageCommitFence commitFence;
 
     public LlmUsageRollupService(JdbcTemplate jdbcTemplate, TransactionTemplate transactionTemplate,
-            DataSource dataSource) {
+            LlmUsageRollupLock rollupLock, PlatformTransactionManager transactionManager,
+            LlmUsageCommitFence commitFence) {
         this.jdbcTemplate = jdbcTemplate;
         this.transactionTemplate = transactionTemplate;
-        this.dataSource = dataSource;
+        this.snapshotTransaction = new TransactionTemplate(transactionManager);
+        this.snapshotTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.rollupLock = rollupLock;
+        this.commitFence = commitFence;
     }
 
     /** One refresh. Public and argument-free for JobRunr; tests call it directly. */
@@ -184,71 +180,51 @@ public class LlmUsageRollupService {
      * @return how many day buckets were rebuilt; zero when nothing new arrived.
      */
     public int refresh() {
-        // The lock is taken on a connection this method holds open for its whole
-        // duration, NOT through the pooled template. A session-level advisory
-        // lock belongs to the connection that took it, so acquiring one through
-        // a pooled call and releasing it through another pooled call is a
-        // coin flip: the release can land on a different connection, silently
-        // fail, and leave the lock held by an idle connection until the pool
-        // retires it — after which every run for the next half hour reports
-        // contention that does not exist. The web terminal's single-instance
-        // guard documents the same trap.
-        try (Connection connection = dataSource.getConnection()) {
-            if (!tryLock(connection)) {
-                // A refresh is already running — very likely a backfill.
-                // Returning is right: the running one covers these events too.
-                log.info("usage rollup refresh already in progress, skipping this run");
-                return 0;
-            }
-            try {
-                return rebuildAffectedDays();
-            } finally {
-                unlock(connection);
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("usage rollup could not hold its advisory lock", e);
-        }
+        return rollupLock.run(() -> rebuildAffectedDays(captureSnapshot()))
+                .orElseGet(() -> {
+                    // Another rollup or retention pass owns this database.
+                    log.info("usage rollup refresh already in progress, skipping this run");
+                    return 0;
+                });
     }
 
-    private boolean tryLock(Connection connection) throws SQLException {
-        try (PreparedStatement statement =
-                connection.prepareStatement("select pg_try_advisory_lock(?)")) {
-            statement.setLong(1, ADVISORY_LOCK_KEY);
-            try (ResultSet rs = statement.executeQuery()) {
-                return rs.next() && rs.getBoolean(1);
-            }
+    private RollupSnapshot captureSnapshot() {
+        RollupSnapshot snapshot = snapshotTransaction.execute(status -> {
+            // The lock is held only until this short transaction commits.
+            // Every raw writer that obtained an ID before this point has
+            // committed, and new writers cannot obtain an ID until it ends.
+            commitFence.lockInTransaction();
+            long watermark = currentWatermark();
+            Long highest = jdbcTemplate.queryForObject(
+                    "select max(id) from llm_usage_events", Long.class);
+            List<LocalDate> days = highest == null || highest <= watermark
+                    ? List.of() : jdbcTemplate.queryForList(
+                            AFFECTED_DAYS_SQL, LocalDate.class, watermark, highest);
+            return new RollupSnapshot(watermark, highest, days);
+        });
+        if (snapshot == null) {
+            throw new IllegalStateException("LLM usage rollup could not capture its ID snapshot");
         }
+        return snapshot;
     }
 
-    private void unlock(Connection connection) throws SQLException {
-        try (PreparedStatement statement =
-                connection.prepareStatement("select pg_advisory_unlock(?)")) {
-            statement.setLong(1, ADVISORY_LOCK_KEY);
-            statement.execute();
-        }
-    }
-
-    private int rebuildAffectedDays() {
-        long watermark = currentWatermark();
-        Long highest = jdbcTemplate.queryForObject(
-                "select max(id) from llm_usage_events", Long.class);
+    private int rebuildAffectedDays(RollupSnapshot snapshot) {
+        long watermark = snapshot.watermark();
+        Long highest = snapshot.highest();
         if (highest == null || highest <= watermark) {
             jdbcTemplate.update(MARK_NOOP_SUCCESS_SQL);
             return 0;
         }
-        List<LocalDate> days = jdbcTemplate.queryForList(
-                AFFECTED_DAYS_SQL, LocalDate.class, watermark, highest);
+        List<LocalDate> days = snapshot.days();
         LocalDate frozenBefore = sweptBefore();
         int rebuilt = 0;
         for (LocalDate day : days) {
             if (frozenBefore != null && day.isBefore(frozenBefore)) {
-                // The raw events of this day have been swept, so its rollup row
-                // is now the only record of it. These events are the tail of a
-                // re-send after a lost checkpoint: recomputing from what little
-                // survived the sweep would overwrite a complete bucket with a
-                // fragment. The retention sweep deletes them again on its next
-                // run.
-                log.info("usage rollup skipping {}: raw events for that day have been swept", day);
+                // This day is frozen even if physical raw deletion is delayed.
+                // Rebuilding from a partial raw set would overwrite a complete
+                // bucket with a fragment. Retention deletes a late raw resend
+                // during a later pass.
+                log.info("usage rollup skipping frozen day {}", day);
                 continue;
             }
             // One transaction per day: the backfill may touch every day the
@@ -271,6 +247,9 @@ public class LlmUsageRollupService {
         return rebuilt;
     }
 
+    private record RollupSnapshot(long watermark, @Nullable Long highest, List<LocalDate> days) {
+    }
+
     /** The watermark, or zero when no state row exists yet (a fresh database). */
     long currentWatermark() {
         Long stored = jdbcTemplate.queryForObject(
@@ -279,16 +258,10 @@ public class LlmUsageRollupService {
     }
 
     /**
-     * The boundary the sweep actually reached, or null when it has never
-     * deleted anything.
-     *
-     * <p>Read from the stored mark rather than derived from the retention
-     * setting, because the two answer different questions. The setting says
-     * what <i>would</i> be swept from now on; only the mark says what
-     * <i>has</i> been. Turning retention off, or lengthening it, does not put
-     * deleted events back — and a freeze computed from the setting would
-     * un-freeze those days, at which point one re-sent event would rebuild a
-     * complete day from the fragment that came back.
+     * The exclusive KST-day freeze boundary, or null before the first sweep.
+     * Physical deletion may lag this mark after a crash between bounded
+     * batches. A frozen day's rollup must never be rebuilt from those raw
+     * leftovers or from a later re-sent fragment.
      */
     @Nullable
     LocalDate sweptBefore() {
