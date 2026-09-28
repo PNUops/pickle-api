@@ -68,6 +68,388 @@ components:
       - "granteeType"
       - "role"
       type: "object"
+    AdminBulkAccessAction:
+      enum:
+      - "GRANT"
+      - "CHANGE"
+      - "REVOKE"
+      type: "string"
+    AdminBulkAccessChange:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminBulkAccessAction"
+          description: "GRANT는 없는 권한을 만들고, CHANGE는 있는 권한의 등급을 바꾸며, REVOKE는 권한을 지웁니\
+            다."
+        role:
+          anyOf:
+          - $ref: "#/components/schemas/ResourceRole"
+          - type: "null"
+          description: "부여하거나 바꿀 등급. GRANT와 CHANGE에서 필수입니다."
+        userId:
+          description: "접근 권한을 받거나 잃을 사용자"
+          format: "uuid"
+          type: "string"
+      required:
+      - "action"
+      - "userId"
+      type: "object"
+    AdminBulkChangeApplyItem:
+      properties:
+        fields:
+          description: "APPLIED면 바뀐 필드, 아니면 빈 배열"
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeFieldDiff"
+          type: "array"
+        name:
+          description: "대상 이름. 범위 밖이면 없습니다."
+          type:
+          - "string"
+          - "null"
+        reason:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeReason"
+          - type: "null"
+          description: "SKIPPED인 이유"
+        result:
+          $ref: "#/components/schemas/AdminBulkChangeResult"
+        targetId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "fields"
+      - "result"
+      - "targetId"
+      type: "object"
+    AdminBulkChangeApplyResponse:
+      properties:
+        batchId:
+          description: "이 적용의 식별자. 대상별 감사 기록과 요약 기록이 같은 값을 담습니다."
+          format: "uuid"
+          type: "string"
+        items:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeApplyItem"
+          type: "array"
+      required:
+      - "batchId"
+      - "items"
+      type: "object"
+    AdminBulkChangeFieldDiff:
+      properties:
+        field:
+          description: "필드 이름"
+          type: "string"
+        newValue:
+          description: "바뀔 값. 문자열이나 숫자, 배열, null입니다."
+        oldValue:
+          description: "현재 값. 문자열이나 숫자, 배열, null입니다."
+      required:
+      - "field"
+      - "newValue"
+      - "oldValue"
+      type: "object"
+    AdminBulkChangeKind:
+      enum:
+      - "LLM_KEY_LIMITS"
+      - "LLM_KEY_STATUS"
+      - "LLM_KEY_EXPIRY"
+      - "VM_PERIOD"
+      - "VM_POWER"
+      - "VM_DELETION"
+      - "ACCESS"
+      type: "string"
+    AdminBulkChangePreviewItem:
+      properties:
+        applicable:
+          description: "true면 적용할 수 있습니다. fields가 비어 있으면 이미 그 값이라 바뀌지 않습니다."
+          type: "boolean"
+        fields:
+          description: "바뀔 필드만"
+          items:
+            $ref: "#/components/schemas/AdminBulkChangeFieldDiff"
+          type: "array"
+        fingerprint:
+          description: "이 대상의 현재 값을 요약한 값. 적용 요청에 그대로 돌려보냅니다."
+          type: "string"
+        name:
+          description: "대상 이름. 범위 밖이면 없습니다."
+          type:
+          - "string"
+          - "null"
+        reason:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkChangeReason"
+          - type: "null"
+          description: "applicable이 false인 이유"
+        targetId:
+          format: "uuid"
+          type: "string"
+      required:
+      - "applicable"
+      - "fields"
+      - "fingerprint"
+      - "targetId"
+      type: "object"
+    AdminBulkChangePreviewResponse:
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/AdminBulkChangePreviewItem"
+          type: "array"
+      required:
+      - "items"
+      type: "object"
+    AdminBulkChangeReason:
+      description: "대상 하나가 변경되지 않은 이유. NOT_FOUND: 대상이 없거나 이 계정의 범위 밖입니다. FORBIDDEN:\
+        \ 이 역할은 이 변경을 할 수 없습니다. INVALID_STATE: 현재 상태에서는 할 수 없는 변경입니다. EXPIRED: 사용\
+        \ 기간이 만료되어 먼저 기간을 연장해야 합니다. PROTECTED: 삭제 보호가 켜져 있습니다. INELIGIBLE: 대상이나 지정\
+        한 사용자가 이 변경의 대상이 될 수 없습니다. NOT_MEMBER: 지정한 사용자가 소유 워크스페이스의 구성원이 아닙니다. NO_GRANT:\
+        \ 지정한 사용자에게 바꾸거나 회수할 접근 권한이 없습니다. ALREADY_GRANTED: 지정한 사용자가 이미 다른 등급의 접근 권\
+        한을 갖고 있습니다. VALIDATION: 합쳐진 결과가 한도 규칙에 어긋납니다."
+      enum:
+      - "NOT_FOUND"
+      - "FORBIDDEN"
+      - "INVALID_STATE"
+      - "EXPIRED"
+      - "PROTECTED"
+      - "INELIGIBLE"
+      - "NOT_MEMBER"
+      - "NO_GRANT"
+      - "ALREADY_GRANTED"
+      - "VALIDATION"
+      type: "string"
+    AdminBulkChangeRequest:
+      properties:
+        change:
+          $ref: "#/components/schemas/AdminBulkChangeSpec"
+        fingerprints:
+          additionalProperties:
+            type: "string"
+          description: "적용에서만 씁니다. 미리보기가 준 대상별 fingerprint를 전부 담습니다. 서버는 적용 시점의 값을\
+            \ 다시 계산해 다른 대상은 STALE로 답하고 쓰지 않습니다."
+          type:
+          - "object"
+          - "null"
+        targetIds:
+          description: "대상의 공개 ID. 1개 이상 200개 이하, 중복 없이."
+          items:
+            format: "uuid"
+            type: "string"
+          maxItems: 200
+          minItems: 1
+          type: "array"
+        targetType:
+          $ref: "#/components/schemas/AdminBulkChangeTargetType"
+          description: "대상의 종류. 변경 종류와 맞아야 합니다."
+      required:
+      - "change"
+      - "targetIds"
+      - "targetType"
+      type: "object"
+    AdminBulkChangeResult:
+      description: "APPLIED: 변경됨. UNCHANGED: 이미 그 값이라 쓰지 않음. SKIPPED: reason의 이유로\
+        \ 건너뜀. STALE: 미리보기 뒤 대상이 바뀌어 쓰지 않음."
+      enum:
+      - "APPLIED"
+      - "UNCHANGED"
+      - "SKIPPED"
+      - "STALE"
+      type: "string"
+    AdminBulkChangeSpec:
+      properties:
+        access:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkAccessChange"
+          - type: "null"
+          description: "kind가 ACCESS일 때"
+        kind:
+          $ref: "#/components/schemas/AdminBulkChangeKind"
+          description: "변경 종류. 같은 이름의 멤버 하나만 채웁니다."
+        llmKeyExpiry:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkLlmKeyExpiryChange"
+          - type: "null"
+          description: "kind가 LLM_KEY_EXPIRY일 때"
+        llmKeyLimits:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkLlmKeyLimitsChange"
+          - type: "null"
+          description: "kind가 LLM_KEY_LIMITS일 때"
+        llmKeyStatus:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkLlmKeyStatusChange"
+          - type: "null"
+          description: "kind가 LLM_KEY_STATUS일 때"
+        vmDeletion:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkVmDeletionChange"
+          - type: "null"
+          description: "kind가 VM_DELETION일 때"
+        vmPeriod:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkVmPeriodChange"
+          - type: "null"
+          description: "kind가 VM_PERIOD일 때"
+        vmPower:
+          anyOf:
+          - $ref: "#/components/schemas/AdminBulkVmPowerChange"
+          - type: "null"
+          description: "kind가 VM_POWER일 때"
+      required:
+      - "kind"
+      type: "object"
+    AdminBulkChangeTargetType:
+      enum:
+      - "LLM_KEY"
+      - "VM"
+      - "DOMAIN"
+      - "GPU_ALLOCATION"
+      type: "string"
+    AdminBulkListChange:
+      properties:
+        op:
+          $ref: "#/components/schemas/AdminBulkListOp"
+          description: "REPLACE는 목록을 통째로 바꾸고, ADD는 없는 값을 더하며, REMOVE는 있는 값을 뺍니다. 비\
+            우려면 REPLACE에 빈 배열을 보냅니다."
+        values:
+          description: "적용할 값. 각 키의 현재 목록과 합친 결과가 단일 변경과 같은 규칙으로 검사됩니다."
+          items:
+            type: "string"
+          maxItems: 50
+          minItems: 0
+          type: "array"
+      required:
+      - "op"
+      - "values"
+      type: "object"
+    AdminBulkListOp:
+      enum:
+      - "REPLACE"
+      - "ADD"
+      - "REMOVE"
+      type: "string"
+    AdminBulkLlmKeyExpiryChange:
+      properties:
+        endDate:
+          description: "새 종료일(KST, 이 날까지 포함). 키는 다음 날 0시에 만료됩니다. 오늘 이후여야 합니다."
+          format: "date"
+          type: "string"
+      required:
+      - "endDate"
+      type: "object"
+    AdminBulkLlmKeyLimitsChange:
+      properties:
+        concurrency:
+          description: "동시 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          maximum: 100
+          minimum: 1
+          type: "integer"
+        creditAllowedModels:
+          $ref: "#/components/schemas/AdminBulkListChange"
+          description: "유료 모델 허용 목록에 적용할 변경. 생략하면 그대로 둡니다."
+        creditDeniedModels:
+          $ref: "#/components/schemas/AdminBulkListChange"
+          description: "유료 모델 차단 목록에 적용할 변경. 생략하면 그대로 둡니다."
+        creditLimit:
+          description: "금액 한도(USD 크레딧). 생략하면 그대로 둡니다. null은 허용하지 않고, 유료 모델을 닫으려면 0을\
+            \ 보냅니다."
+          minimum: 0
+          type: "number"
+        creditLimitReset:
+          $ref: "#/components/schemas/CreditLimitReset"
+          description: "금액 한도 리셋 창. 생략하면 그대로 두고, null이면 리셋 없는 총액 상한입니다."
+        dailyTokens:
+          description: "일일 토큰 한도. 생략하면 그대로 두고, null이면 무제한이며 0이면 토큰 축을 닫습니다."
+          format: "int64"
+          minimum: 0
+          type: "integer"
+        passthroughEndpoints:
+          $ref: "#/components/schemas/AdminBulkListChange"
+          description: "기능 권한 목록에 적용할 변경. 생략하면 그대로 둡니다. 값은 images와 embeddings입니다."
+        rpm:
+          description: "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          maximum: 10000
+          minimum: 1
+          type: "integer"
+        tpm:
+          description: "분당 토큰 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다."
+          format: "int32"
+          minimum: 1
+          type: "integer"
+      type: "object"
+    AdminBulkLlmKeyStatusAction:
+      enum:
+      - "SUSPEND"
+      - "RESUME"
+      - "REVOKE"
+      type: "string"
+    AdminBulkLlmKeyStatusChange:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminBulkLlmKeyStatusAction"
+          description: "SUSPEND는 활성 키를 정지하고, RESUME은 정지된 키를 되살리며, REVOKE는 폐기합니다. 이\
+            미 그 상태인 키는 UNCHANGED로 답합니다."
+        reason:
+          description: "정지 사유. SUSPEND에서는 필수이고 감사 기록에 남습니다."
+          maxLength: 500
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+      required:
+      - "action"
+      type: "object"
+    AdminBulkVmDeletionAction:
+      enum:
+      - "SCHEDULE"
+      - "CANCEL"
+      type: "string"
+    AdminBulkVmDeletionChange:
+      properties:
+        action:
+          $ref: "#/components/schemas/AdminBulkVmDeletionAction"
+          description: "SCHEDULE은 관리자 삭제를 예약하고, CANCEL은 접수된 삭제를 취소합니다."
+        reason:
+          description: "삭제 사유. SCHEDULE에서는 필수이고 워크스페이스에 안내됩니다."
+          maxLength: 2000
+          minLength: 0
+          type:
+          - "string"
+          - "null"
+        scheduledFor:
+          description: "삭제 예정 시각. SCHEDULE에서는 필수이고 미래여야 합니다."
+          format: "date-time"
+          type:
+          - "string"
+          - "null"
+      required:
+      - "action"
+      type: "object"
+    AdminBulkVmPeriodChange:
+      properties:
+        clearEndDate:
+          description: "true면 종료일을 지워 무기한으로 만듭니다. endDate와 함께 보낼 수 없습니다."
+          type:
+          - "boolean"
+          - "null"
+        endDate:
+          description: "새 종료일(KST, 이 날까지 포함). 무기한으로 바꾸려면 clearEndDate를 씁니다."
+          format: "date"
+          type:
+          - "string"
+          - "null"
+      type: "object"
+    AdminBulkVmPowerChange:
+      properties:
+        action:
+          $ref: "#/components/schemas/VmPowerAction"
+          description: "관리자 전원 개입과 같은 네 가지입니다. 시작은 STOPPED에서만, 종료와 재부팅은 RUNNING에서만\
+            , 강제 종료는 RUNNING 또는 REBOOTING에서만 받습니다."
+      required:
+      - "action"
+      type: "object"
     AdminCampusIpRequestView:
       properties:
         adminNote:
@@ -530,6 +912,15 @@ components:
       - "quotaExhausted"
       - "status"
       - "workspaceName"
+      type: "object"
+    AdminLlmKeyExpiryRequest:
+      properties:
+        endDate:
+          description: "새 종료일(KST, 이 날까지 포함). 키는 다음 날 0시에 만료됩니다. 오늘 이후여야 합니다."
+          format: "date"
+          type: "string"
+      required:
+      - "endDate"
       type: "object"
     AdminLlmKeyLimitsRequest:
       properties:
@@ -10158,6 +10549,13 @@ components:
           - "string"
           - "null"
       type: "object"
+    VmPowerAction:
+      enum:
+      - "START"
+      - "SHUTDOWN"
+      - "REBOOT"
+      - "FORCE_STOP"
+      type: "string"
     VmRequestSpecResponse:
       properties:
         desiredSlug:
@@ -10683,7 +11081,7 @@ info:
   description: "부산대학교 클라우드 플랫폼 Pickle의 REST API. 인증은 JWT Bearer, 오류 응답은 RFC 9457 problem+json(Problem\
     \ 스키마)을 따릅니다."
   title: "Pickle API"
-  version: "0.90.0"
+  version: "0.91.0"
 openapi: "3.1.0"
 paths:
   /admin/announcements:
@@ -10819,6 +11217,63 @@ paths:
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       tags:
       - "admin-audit-controller"
+  /admin/bulk-changes:
+    post:
+      description: "미리보기와 같은 본문에 fingerprint를 더해 적용합니다. 서버는 미리보기를 믿지 않고 적용 시점에 대상마\
+        다 다시 판정하며, 미리보기 뒤 바뀐 대상은 STALE로 답하고 쓰지 않습니다. 한 대상의 실패가 다른 대상을 되돌리지 않고, 되돌리\
+        기는 없습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 남고 같은 batchId를 담습니다."
+      operationId: "applyAdminBulkChange"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminBulkChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangeApplyResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 일괄 변경 적용"
+      tags:
+      - "admin"
+  /admin/bulk-changes/preview:
+    post:
+      description: "여러 대상에 한 가지 변경을 적용하면 어떻게 되는지 대상마다 답합니다. 아무것도 쓰지 않습니다. 범위 밖이거나\
+        \ 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 applicable=false로, 이미 그 값인 대상은\
+        \ 바뀔 필드 없이 applicable=true로 답합니다. 대상마다 fingerprint를 주며 적용 요청에 그대로 돌려보냅니다.\
+        \ 대상은 최대 200개입니다."
+      operationId: "previewAdminBulkChange"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminBulkChangeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AdminBulkChangePreviewResponse"
+          description: "OK"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 일괄 변경 미리보기"
+      tags:
+      - "admin"
   /admin/campus-ip-requests:
     get:
       operationId: "listAdminCampusIpRequests"
@@ -12160,6 +12615,40 @@ paths:
                 $ref: "#/components/schemas/Problem"
           description: "오류 — 상태 코드와 무관하게 Problem 형태"
       summary: "관리자 LLM API 키 상세"
+      tags:
+      - "admin"
+  /admin/llm/keys/{keyId}/expiry:
+    patch:
+      description: "키가 만료되는 날을 바꿉니다. 종료일은 KST 기준 그날까지 포함이고 승인 때와 같은 계산입니다. 이미 만료된\
+        \ 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키와 OpenRouter 키가 발급된 키는 바꿀 수 없습니다."
+      operationId: "updateAdminLlmKeyExpiry"
+      parameters:
+      - in: "path"
+        name: "keyId"
+        required: true
+        schema:
+          format: "uuid"
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLlmKeyExpiryRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLlmKeyDetailResponse"
+          description: "변경된 LLM API 키 상세"
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+          description: "오류 — 상태 코드와 무관하게 Problem 형태"
+      summary: "관리자 LLM API 키 만료일 변경"
       tags:
       - "admin"
   /admin/llm/keys/{keyId}/limits:
