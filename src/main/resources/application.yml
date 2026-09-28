@@ -235,6 +235,11 @@ pickle:
     base-url: ${PICKLE_OPENROUTER_URL:https://openrouter.ai/api/v1}
     connect-timeout: 5s
     read-timeout: 30s
+    direct-polling:
+      # Candidate-only GET polling. It is independent of the generic JobRunr worker.
+      enabled: ${PICKLE_OPENROUTER_DIRECT_POLLING_ENABLED:false}
+      account-public-ids: ${PICKLE_OPENROUTER_DIRECT_POLLING_ACCOUNT_PUBLIC_IDS:}
+      fixed-delay: ${PICKLE_OPENROUTER_DIRECT_POLLING_FIXED_DELAY:PT1M}
   openrouter-credential-keyring:
     # Dedicated AES-256-GCM keyring for DB-stored management credentials.
     # READ_KEYS is comma-separated keyId=base64(32 bytes). Empty is allowed at

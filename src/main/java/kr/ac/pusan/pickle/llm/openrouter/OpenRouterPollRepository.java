@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
@@ -28,11 +29,60 @@ public class OpenRouterPollRepository {
     }
 
     public List<Long> dueAccountIds(Instant now) {
+        return queryDueAccountIds(now, null);
+    }
+
+    /** Due account selection limited to one explicitly configured public identity. */
+    public List<Long> dueAccountIds(Instant now, UUID accountPublicId) {
+        return queryDueAccountIds(now, accountPublicId);
+    }
+
+    /** True only for a configured account with an ACTIVE, verified management credential. */
+    public boolean directPollAccountReady(UUID accountPublicId) {
+        Boolean ready = jdbcTemplate.queryForObject("""
+                select exists (
+                    select 1
+                      from openrouter_accounts a
+                     where a.public_id = ?
+                       and a.status = 'ACTIVE'::openrouter_account_status
+                       and exists (
+                           select 1 from openrouter_account_credentials c
+                            where c.account_id = a.id
+                              and c.status = 'ACTIVE'::openrouter_credential_status
+                              and c.verified_at is not null))
+                """, Boolean.class, accountPublicId);
+        return Boolean.TRUE.equals(ready);
+    }
+
+    /** Cached success/error fields used for direct-poll age warnings. */
+    public @Nullable DirectPollHealth directPollHealth(UUID accountPublicId) {
+        return jdbcTemplate.query("""
+                select credits_last_success_at, keys_last_success_at,
+                       credits_error::text, keys_error::text
+                  from openrouter_accounts
+                 where public_id = ?
+                """, rs -> rs.next() ? new DirectPollHealth(
+                        instant(rs.getTimestamp(1)), instant(rs.getTimestamp(2)),
+                        rs.getString(3), rs.getString(4)) : null, accountPublicId);
+    }
+
+    private List<Long> queryDueAccountIds(Instant now, @Nullable UUID accountPublicId) {
+        String scope = accountPublicId == null ? "" : "and a.public_id = ?";
+        List<Object> arguments = new ArrayList<>();
+        Timestamp at = Timestamp.from(now);
+        arguments.add(at);
+        if (accountPublicId != null) {
+            arguments.add(accountPublicId);
+        }
+        for (int index = 0; index < 5; index++) {
+            arguments.add(at);
+        }
         return jdbcTemplate.queryForList("""
                 select a.id
                   from openrouter_accounts a
                  where a.status = 'ACTIVE'::openrouter_account_status
                    and (a.poll_claim_token is null or a.poll_claim_until <= ?)
+                   %s
                    and exists (
                        select 1 from openrouter_account_credentials c
                         where c.account_id = a.id
@@ -51,8 +101,7 @@ public class OpenRouterPollRepository {
                                 or a.credits_not_before_at <= ?)))
                  order by a.id
                  limit 100
-                """, Long.class, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now),
-                Timestamp.from(now), Timestamp.from(now), Timestamp.from(now));
+                """.formatted(scope), Long.class, arguments.toArray());
     }
 
     /** Atomically chooses CREDITS or PAIR and binds the job to the current ACTIVE credential. */
@@ -540,6 +589,11 @@ public class OpenRouterPollRepository {
     public record Claim(long accountId, UUID accountPublicId, UUID token, long credentialId,
             PollKind kind, Instant windowStartedAt, @Nullable Instant creditsRequestAt,
             @Nullable Instant fullRequestAt) {
+    }
+
+    public record DirectPollHealth(@Nullable Instant creditsLastSuccessAt,
+            @Nullable Instant keysLastSuccessAt, @Nullable String creditsError,
+            @Nullable String keysError) {
     }
 
     private static @Nullable Instant instant(@Nullable Timestamp value) {

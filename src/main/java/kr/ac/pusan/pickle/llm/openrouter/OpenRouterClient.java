@@ -39,7 +39,7 @@ import tools.jackson.databind.json.JsonMapper;
  * code and locally generated text; vendor response bodies are discarded.</p>
  */
 @Component
-public class OpenRouterClient {
+public class OpenRouterClient implements OpenRouterReadClient, OpenRouterKeyMutationClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenRouterClient.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -147,6 +147,7 @@ public class OpenRouterClient {
     }
 
     /** {@code PATCH /keys/{hash}} — flip the disabled flag. */
+    @Override
     public void setDisabled(String managementSecret, @Nullable UUID workspaceId,
             String hash, boolean disabled) {
         exchange(managementSecret, HttpMethod.PATCH, keyPath(hash),
@@ -164,6 +165,7 @@ public class OpenRouterClient {
      * bounding anything the moment a provider key is attached to the account:
      * the ceiling still shows in our console and governs nothing.
      */
+    @Override
     public void updateLimit(String managementSecret, @Nullable UUID workspaceId,
             String hash, BigDecimal limit, @Nullable CreditLimitReset reset) {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -189,6 +191,7 @@ public class OpenRouterClient {
      * {@code GET /keys} — every managed key, walking the offset pagination to
      * the end. The reconciler's raw material: what OpenRouter believes exists.
      */
+    @Override
     public List<ManagedKey> listKeys(String managementSecret, @Nullable UUID workspaceId) {
         List<ManagedKey> keys = new ArrayList<>();
         int offset = 0;
@@ -251,6 +254,7 @@ public class OpenRouterClient {
                         ? data.path("limit_remaining").decimalValue() : null);
     }
 
+    @Override
     public Credits credits(String managementSecret) {
         JsonNode node = exchange(managementSecret, HttpMethod.GET, "/credits", null, 200);
         JsonNode data = node.path("data");

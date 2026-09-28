@@ -27,16 +27,19 @@ public class OpenRouterReconciler {
     private static final Logger log = LoggerFactory.getLogger(OpenRouterReconciler.class);
 
     private final LlmApiKeyRepository keyRepository;
-    private final OpenRouterClient client;
+    private final OpenRouterReadClient readClient;
+    private final OpenRouterKeyMutationClient mutationClient;
     private final DriftFindingRepository findings;
     private final OpenRouterSpendRecorder spendRecorder;
     private final OpenRouterCredentialResolver credentialResolver;
 
-    public OpenRouterReconciler(LlmApiKeyRepository keyRepository, OpenRouterClient client,
+    public OpenRouterReconciler(LlmApiKeyRepository keyRepository,
+            OpenRouterReadClient readClient, OpenRouterKeyMutationClient mutationClient,
             DriftFindingRepository findings, OpenRouterSpendRecorder spendRecorder,
             OpenRouterCredentialResolver credentialResolver) {
         this.keyRepository = keyRepository;
-        this.client = client;
+        this.readClient = readClient;
+        this.mutationClient = mutationClient;
         this.findings = findings;
         this.spendRecorder = spendRecorder;
         this.credentialResolver = credentialResolver;
@@ -50,10 +53,29 @@ public class OpenRouterReconciler {
     public ScopeObservation reconcileAccount(OpenRouterManagementAccess access,
             OpenRouterPollRepository.Claim claim, Instant now, boolean baselineExists,
             Clock clock) {
+        return reconcileAccount(access, claim, now, baselineExists, clock,
+                readClient, mutationClient);
+    }
+
+    /**
+     * Observe and persist one account using a read-only provider capability.
+     * This entry point has no reference to the provider mutation interface.
+     */
+    public ScopeObservation reconcileAccountReadOnly(OpenRouterManagementAccess access,
+            OpenRouterPollRepository.Claim claim, Instant now, boolean baselineExists,
+            Clock clock, OpenRouterReadClient readOnlyClient) {
+        return reconcileAccount(access, claim, now, baselineExists, clock,
+                readOnlyClient, null);
+    }
+
+    private ScopeObservation reconcileAccount(OpenRouterManagementAccess access,
+            OpenRouterPollRepository.Claim claim, Instant now, boolean baselineExists,
+            Clock clock, OpenRouterReadClient reads,
+            @Nullable OpenRouterKeyMutationClient mutations) {
         if (access.accountId() == null) {
             throw new IllegalArgumentException("account reconciliation requires an account scope");
         }
-        ScopeResult result = reconcileScope(access, now);
+        ScopeResult result = reconcileScope(access, now, reads, mutations);
         Instant observedAt = Instant.now(clock);
         OpenRouterSpendRecorder.AccountRecordResult recorded = spendRecorder.recordAccount(
                 result.spends(), observedAt, baselineExists, claim, () -> {
@@ -73,8 +95,9 @@ public class OpenRouterReconciler {
                 recorded.resetBoundary() || result.managedBoundary(), observedAt);
     }
 
-    private ScopeResult reconcileScope(OpenRouterManagementAccess access, Instant now) {
-        List<OpenRouterClient.ManagedKey> remote = client.listKeys(
+    private ScopeResult reconcileScope(OpenRouterManagementAccess access, Instant now,
+            OpenRouterReadClient reads, @Nullable OpenRouterKeyMutationClient mutations) {
+        List<OpenRouterClient.ManagedKey> remote = reads.listKeys(
                 access.secret(), access.workspaceId());
         if (access.workspaceId() != null && remote.stream().anyMatch(key ->
                 !access.workspaceId().equals(key.workspaceId()))) {
@@ -129,9 +152,9 @@ public class OpenRouterReconciler {
                     || (local.getExpiresAt() != null && local.getExpiresAt().isBefore(now));
             String divergence = over ? null : limitDivergence(local, managed);
             boolean limitReapplied = false;
-            if (divergence != null) {
+            if (divergence != null && mutations != null) {
                 try {
-                    client.updateLimit(access.secret(), access.workspaceId(), managed.hash(),
+                    mutations.updateLimit(access.secret(), access.workspaceId(), managed.hash(),
                             local.getCreditLimit(), local.getCreditLimitReset());
                     limitReapplied = true;
                 } catch (OpenRouterException e) {
@@ -143,9 +166,9 @@ public class OpenRouterReconciler {
             boolean statusDiverged = shouldBeDisabled != managed.disabled()
                     && (shouldBeDisabled || local.getStatus() == LlmApiKeyStatus.ACTIVE);
             boolean statusRepaired = false;
-            if (statusDiverged) {
+            if (statusDiverged && mutations != null) {
                 try {
-                    client.setDisabled(access.secret(), access.workspaceId(), managed.hash(),
+                    mutations.setDisabled(access.secret(), access.workspaceId(), managed.hash(),
                             shouldBeDisabled);
                     statusRepaired = true;
                 } catch (OpenRouterException e) {
@@ -162,10 +185,12 @@ public class OpenRouterReconciler {
                 detail.put("limitReapplied", limitReapplied);
                 detail.put("expectedDisabled", shouldBeDisabled);
                 detail.put("statusRepaired", statusRepaired);
+                detail.put("providerRepairDeferred", mutations == null);
                 findingObservations.add(new FindingObservation(
                         DriftFindingKind.OPENROUTER_STALE,
                         staleSummary(divergence, limitReapplied, statusDiverged,
-                                statusRepaired, local.getStatus(), over, shouldBeDisabled),
+                                statusRepaired, local.getStatus(), over, shouldBeDisabled,
+                                mutations == null),
                         json(detail), dedup));
             }
         }
@@ -217,25 +242,30 @@ public class OpenRouterReconciler {
 
     private static String staleSummary(@Nullable String divergence, boolean limitReapplied,
             boolean status, boolean statusRepaired, LlmApiKeyStatus localStatus,
-            boolean over, boolean shouldBeDisabled) {
+            boolean over, boolean shouldBeDisabled, boolean providerRepairDeferred) {
         String limit = divergence == null ? null
                 : (limitReapplied ? "OpenRouter 금액 한도를 다시 적용했습니다(" :
-                        "OpenRouter 금액 한도를 다시 적용하지 못했습니다(")
+                        providerRepairDeferred ? "OpenRouter 금액 한도 차이를 확인했습니다(" :
+                                "OpenRouter 금액 한도를 다시 적용하지 못했습니다(")
                         + divergence + ")";
         String statusText = null;
         if (status) {
             if (over) {
                 statusText = statusRepaired
                         ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있어 비활성화했습니다"
-                        : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다";
+                        : providerRepairDeferred
+                                ? "폐기·만료된 키의 OpenRouter 키가 아직 살아 있습니다"
+                                : "폐기·만료된 키의 OpenRouter 키가 살아 있는데 비활성화하지 못했습니다";
             } else if (shouldBeDisabled || localStatus == LlmApiKeyStatus.SUSPENDED) {
                 statusText = statusRepaired
                         ? "정지된 키의 OpenRouter 키를 비활성화했습니다"
-                        : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다";
+                        : providerRepairDeferred ? "정지된 키의 OpenRouter 키가 활성 상태입니다"
+                                : "정지된 키의 OpenRouter 키를 비활성화하지 못했습니다";
             } else {
                 statusText = statusRepaired
                         ? "활성 키의 OpenRouter 키를 다시 활성화했습니다"
-                        : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다";
+                        : providerRepairDeferred ? "활성 키의 OpenRouter 키가 비활성 상태입니다"
+                                : "활성 키의 OpenRouter 키를 다시 활성화하지 못했습니다";
             }
         }
         return limit != null && statusText != null ? limit + "; " + statusText
