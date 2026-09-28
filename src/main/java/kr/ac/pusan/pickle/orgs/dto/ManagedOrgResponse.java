@@ -15,5 +15,6 @@ import kr.ac.pusan.pickle.user.UserRole;
 public record ManagedOrgResponse(
         @Schema(description = "기관 ID") UUID orgId,
         @Schema(description = "기관 이름") String orgName,
-        @Schema(description = "이 기관에서의 역할") UserRole role) {
+        @Schema(description = "이 기관에서의 역할") UserRole role,
+        @Schema(description = "이 기관의 신청 접수 메일을 받는 담당자인지") boolean requestMail) {
 }

@@ -16,8 +16,11 @@ import kr.ac.pusan.pickle.common.error.FieldValidationError;
 import kr.ac.pusan.pickle.common.text.Texts;
 import kr.ac.pusan.pickle.orgs.Org;
 import kr.ac.pusan.pickle.orgs.OrgRepository;
+import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserOrgRole;
+import kr.ac.pusan.pickle.user.UserOrgRoleRepository;
 import kr.ac.pusan.pickle.user.UserOrgRoleService;
 import kr.ac.pusan.pickle.user.UserRepository;
 import kr.ac.pusan.pickle.user.UserRole;
@@ -38,14 +41,17 @@ public class AdminService {
 
     private final OrgRepository orgRepository;
     private final UserOrgRoleService userOrgRoleService;
+    private final UserOrgRoleRepository userOrgRoleRepository;
     private final UserRepository userRepository;
     private final AuditService auditService;
 
     public AdminService(OrgRepository orgRepository, UserRepository userRepository,
-            UserOrgRoleService userOrgRoleService, AuditService auditService) {
+            UserOrgRoleService userOrgRoleService, UserOrgRoleRepository userOrgRoleRepository,
+            AuditService auditService) {
         this.orgRepository = orgRepository;
         this.userRepository = userRepository;
         this.userOrgRoleService = userOrgRoleService;
+        this.userOrgRoleRepository = userOrgRoleRepository;
         this.auditService = auditService;
     }
 
@@ -191,6 +197,44 @@ public class AdminService {
                 Map.of("previousRole", previousRole.name(), "role", user.getRole().name(),
                         "revokedOrgId", String.valueOf(orgId)), ip);
         return UserSummaryResponse.from(user);
+    }
+
+    /**
+     * Marks or clears the account as one of the org's request-mail recipients.
+     * 404 when the account holds no role in the org — the path names a row
+     * that is not there; 422 when the role there may not approve a request.
+     */
+    @Transactional
+    public ManagedOrgResponse updateOrgRequestMail(AuthenticatedUser actor, UUID userId,
+            UUID orgId, boolean enabled, String ip) {
+        Org org = orgRepository.findByPublicId(orgId).orElseThrow(AdminService::orgNotFound);
+        requireGrantableOrg(actor, orgId);
+        User user = userRepository.findByPublicId(userId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "사용자를 찾을 수 없습니다", "해당 ID의 사용자가 존재하지 않습니다."));
+        UserOrgRole row = userOrgRoleRepository.findByUserIdAndOrgId(user.getId(), org.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                        "리소스를 찾을 수 없습니다", "이 기관에서 역할이 없는 사용자입니다."));
+        if (enabled && !UserOrgRole.mayReceiveRequestMail(row.getRole())) {
+            throw ApiException.validationFailed(List.of(new FieldValidationError("enabled",
+                    "신청 접수 메일은 신청을 승인할 수 있는 기관 관리자와 기관 운영자만 받을 수 있습니다.")));
+        }
+        boolean previous = row.isRequestMail();
+        if (!userOrgRoleService.setRequestMail(user.getId(), org.getId(), enabled)) {
+            // The row changed under us between the read and the write: revoked,
+            // or turned into a role that may not approve. Answer what it is now.
+            userOrgRoleRepository.findByUserIdAndOrgId(user.getId(), org.getId())
+                    .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, ErrorCodes.RESOURCE_NOT_FOUND,
+                            "리소스를 찾을 수 없습니다", "이 기관에서 역할이 없는 사용자입니다."));
+            throw ApiException.validationFailed(List.of(new FieldValidationError("enabled",
+                    "신청 접수 메일은 신청을 승인할 수 있는 기관 관리자와 기관 운영자만 받을 수 있습니다.")));
+        }
+        if (previous != enabled) {
+            auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                    AuditService.USER_ROLE_UPDATE, "user", user.getPublicId(),
+                    Map.of("requestMailOrgId", String.valueOf(orgId), "requestMail", enabled), ip);
+        }
+        return new ManagedOrgResponse(org.getPublicId(), org.getName(), row.getRole(), enabled);
     }
 
     /** The org the grant names, if this actor may hand out roles in it. */

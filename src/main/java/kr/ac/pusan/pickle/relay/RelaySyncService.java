@@ -355,7 +355,7 @@ public class RelaySyncService {
         Map<String, Object> args = new LinkedHashMap<>(context);
         args.remove("mappingPublicId");
         args.put("reason", reason);
-        notificationService.publish(notificationService.sysAdminIds(),
+        notificationService.publishToAdmins(notificationService.sysAdminIds(),
                 NotificationEvent.PORT_MAPPING_SUSPENDED, args, "pm_auto_suspend:" + mappingId);
         auditService.recordAfterCommit(null, AuditService.ACTOR_ROLE_RELAY, AuditService.PORT_MAPPING_SUSPEND,
                 "port_mapping", mappingPublicId, Map.of("auto", true, "relayId", relayPublicId(relayId),

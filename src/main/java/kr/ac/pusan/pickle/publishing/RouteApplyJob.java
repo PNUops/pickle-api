@@ -587,7 +587,7 @@ public class RouteApplyJob {
         if (status == CertificateStatus.FAILED) {
             // Operators watch cert issuance/renewal — HIGH to every SYS_ADMIN,
             // deduped per domain so repeated failed applies stay quiet.
-            notificationService.publish(notificationService.sysAdminIds(),
+            notificationService.publishToAdmins(notificationService.sysAdminIds(),
                     NotificationEvent.CERT_FAILURE,
                     Map.of("fqdn", domain.getFqdn(),
                             "reason", error != null ? error : "원인 미상 (에이전트 응답 없음)"),

@@ -17,7 +17,7 @@ public class GpuNotices {
                 NotificationEvent.GPU_UPDATE, Map.of("allocationId", a.publicId(), "title", title, "message", message), dedup);
     }
     public void administrators(String message, String dedup) {
-        notices.publish(notices.sysAdminIds(), NotificationEvent.GPU_REVIEW,
+        notices.publishToAdmins(notices.sysAdminIds(), NotificationEvent.GPU_REVIEW,
                 Map.of("message", message), dedup);
     }
 }

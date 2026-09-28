@@ -90,7 +90,11 @@ public final class SeedFixtures {
         }
         jdbcTemplate.update("insert into user_org_roles (user_id, org_id, role)"
                 + " values (?, ?, ?::user_role)"
-                + " on conflict (user_id, org_id) do update set role = excluded.role",
+                // A role that may not approve cannot keep the request-mail
+                // choice (V133's check), just as the service drops it.
+                + " on conflict (user_id, org_id) do update set role = excluded.role,"
+                + " request_mail = user_org_roles.request_mail"
+                + " and excluded.role::text in ('ORG_ADMIN', 'ORG_MANAGER')",
                 userId, orgId, role.name());
     }
 

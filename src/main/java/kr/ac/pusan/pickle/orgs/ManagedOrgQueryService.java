@@ -43,14 +43,15 @@ public class ManagedOrgQueryService {
         String placeholders = "?, ".repeat(ids.size() - 1) + "?";
         Map<Long, List<ManagedOrgResponse>> byUser = new LinkedHashMap<>();
         jdbcTemplate.query(
-                "select uor.user_id, o.public_id, o.name, uor.role::text"
+                "select uor.user_id, o.public_id, o.name, uor.role::text, uor.request_mail"
                         + " from user_org_roles uor join orgs o on o.id = uor.org_id"
                         + " where uor.user_id in (" + placeholders + ")"
                         + " order by o.name, o.id",
                 rs -> {
                     byUser.computeIfAbsent(rs.getLong(1), key -> new ArrayList<>())
                             .add(new ManagedOrgResponse(rs.getObject(2, UUID.class),
-                                    rs.getString(3), UserRole.valueOf(rs.getString(4))));
+                                    rs.getString(3), UserRole.valueOf(rs.getString(4)),
+                                    rs.getBoolean(5)));
                 },
                 ids.toArray());
         return byUser;

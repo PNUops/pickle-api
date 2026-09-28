@@ -119,7 +119,7 @@ public class CampusIpRequestService {
             // create — the loser gets the same 409 as the pre-check.
             throw liveRequestExists();
         }
-        notificationService.publish(notificationService.sysAdminIds(),
+        notificationService.publishToAdmins(notificationService.sysAdminIds(),
                 NotificationEvent.CAMPUS_IP_REQUESTED,
                 Map.of("requestId", created.getPublicId(), "vmId", vm.getPublicId(), "vmName", vm.getName(),
                         "purpose", purpose),

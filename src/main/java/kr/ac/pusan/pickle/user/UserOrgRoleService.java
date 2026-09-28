@@ -55,6 +55,19 @@ public class UserOrgRoleService {
     }
 
     /**
+     * Marks or clears the account as one of the people the organisation mails
+     * about new requests, writing that column alone (see
+     * {@link UserOrgRoleRepository#updateRequestMail}). False when no row
+     * changed: the account holds no role there, or — turning it on — holds
+     * one that may not approve. Not a role change, so the effective role and
+     * the tokens are left alone.
+     */
+    @Transactional
+    public boolean setRequestMail(Long userId, Long orgId, boolean enabled) {
+        return userOrgRoleRepository.updateRequestMail(userId, orgId, enabled) == 1;
+    }
+
+    /**
      * Removes the account's role in one organisation. When it was the last one,
      * the account is no longer org-tier and falls to {@code USER}.
      */

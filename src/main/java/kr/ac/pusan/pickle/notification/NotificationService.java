@@ -48,8 +48,9 @@ public class NotificationService {
 
     private static final String INSERT_SQL = """
             insert into notifications
-                (user_id, event, title, body, link_path, importance, payload, dedup_key, status)
-            values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status)
+                (user_id, event, title, body, link_path, importance, payload, dedup_key, status,
+                 bundle)
+            values (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::notification_status, ?)
             on conflict (user_id, dedup_key) where dedup_key is not null do nothing
             """;
 
@@ -92,6 +93,26 @@ public class NotificationService {
      */
     public void publish(Collection<Long> recipientUserIds, NotificationEvent event,
             Map<String, Object> args, String dedupKey) {
+        insert(recipientUserIds, event, args, dedupKey, false);
+    }
+
+    /**
+     * {@link #publish(Collection, NotificationEvent, Map, String)} for
+     * recipients who are told because they administer something. Their mail
+     * may wait and go out together with others ({@link NotificationDispatchJob});
+     * the inbox row is there at once all the same.
+     *
+     * <p>Decided per row, not per event: {@code request.submitted} reaches the
+     * requester too, and the requester's mail must not wait. A HIGH notice is
+     * never held — what it reports is something to act on now.</p>
+     */
+    public void publishToAdmins(Collection<Long> recipientUserIds, NotificationEvent event,
+            Map<String, Object> args, String dedupKey) {
+        insert(recipientUserIds, event, args, dedupKey, true);
+    }
+
+    private void insert(Collection<Long> recipientUserIds, NotificationEvent event,
+            Map<String, Object> args, String dedupKey, boolean toAdmins) {
         if (recipientUserIds.isEmpty()) {
             return;
         }
@@ -99,10 +120,11 @@ public class NotificationService {
         String payloadJson = composed.payload() == null ? null
                 : objectMapper.writeValueAsString(composed.payload());
         String status = NotificationStatus.PENDING.name();
+        boolean bundle = toAdmins && composed.importance() == NotificationImportance.NORMAL;
         for (Long userId : recipientUserIds) {
             jdbcTemplate.update(INSERT_SQL, userId, composed.eventId(), composed.title(),
                     composed.body(), composed.linkPath(), composed.importance().name(),
-                    payloadJson, dedupKey, status);
+                    payloadJson, dedupKey, status, bundle);
         }
     }
 
@@ -202,6 +224,26 @@ public class NotificationService {
                 .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .map(User::getId)
                 .toList();
+    }
+
+    /**
+     * Who is mailed about a new request in the org, the requester aside: the
+     * ACTIVE holders the org has chosen, among the roles that may approve one.
+     * With nobody chosen — or nobody chosen still active, or the only one
+     * chosen being the requester — every other org admin is, as before the
+     * choice existed (V133). Falling back rather than mailing nobody: a request
+     * no approver hears about waits for somebody to open the queue by chance.
+     */
+    public List<Long> requestMailRecipientIds(long orgId, long requesterId) {
+        List<Long> chosenIds = userOrgRoleRepository.findByOrgIdAndRequestMailTrue(orgId).stream()
+                .filter(row -> UserOrgRole.mayReceiveRequestMail(row.getRole()))
+                .map(UserOrgRole::getUserId)
+                .filter(id -> id != requesterId)
+                .toList();
+        List<Long> chosen = activeAmong(chosenIds);
+        return chosen.isEmpty()
+                ? orgAdminIds(orgId).stream().filter(id -> id != requesterId).toList()
+                : chosen;
     }
 
     /** All ACTIVE SYS_ADMINs. */

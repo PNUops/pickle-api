@@ -1,8 +1,12 @@
 package kr.ac.pusan.pickle.notification;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.mail.MailHtmlLayout;
 import kr.ac.pusan.pickle.mail.MailMessage;
 import kr.ac.pusan.pickle.mail.MailSender;
@@ -23,6 +27,13 @@ import org.springframework.stereotype.Component;
  * log resends from there). Per-row errors are swallowed — one bad recipient
  * never stalls the batch.
  *
+ * <p>Rows marked {@code bundle} (mail to an administrator, V133) are sent per
+ * recipient instead: when the recipient's last such mail is older than the
+ * bundle window, or there was none, everything waiting for them goes out as
+ * one mail. So the first one after a quiet spell leaves on the next run and
+ * whatever follows waits for the window to close. A single waiting row is
+ * sent as it would have been; several become one summary.</p>
+ *
  * <p>The HTML part is built here, at send time; what the row stores stays the
  * plain text the console inbox shows.</p>
  */
@@ -32,6 +43,10 @@ public class NotificationDispatchJob {
     static final String JOB_ID = "notification-dispatcher";
     static final int MAX_ATTEMPTS = 3;
     static final int BATCH_SIZE = 100;
+    /** Rows folded into one summary mail; the rest wait for the next window. */
+    static final int BUNDLE_MAX_ROWS = 200;
+    /** Distinct lines a summary lists before counting the remainder. */
+    static final int BUNDLE_MAX_LINES = 20;
 
     private static final Logger log = LoggerFactory.getLogger(NotificationDispatchJob.class);
 
@@ -40,7 +55,7 @@ public class NotificationDispatchJob {
 
     private static final String MAIL_FOOTER = "\n\n" + MailHtmlLayout.TEXT_SIGNATURE + "\n";
 
-    private record PendingMail(long id, int attempts, String event, String title, String body,
+    record PendingMail(long id, int attempts, String event, String title, String body,
                                String linkPath, String email, String userStatus) {
     }
 
@@ -68,83 +83,252 @@ public class NotificationDispatchJob {
 
     private static final String DEFAULT_CTA_LABEL = "콘솔에서 확인";
 
+    private static final String PENDING_MAIL_COLUMNS = """
+            select n.id, n.attempts, n.event, n.title, n.body, n.link_path,
+                   u.email, u.status as user_status
+              from notifications n
+              join users u on u.id = n.user_id
+            """;
+
     private final JdbcTemplate jdbcTemplate;
     private final MailSender mailSender;
     private final String consoleBaseUrl;
+    private final Duration bundleWindow;
 
     public NotificationDispatchJob(JdbcTemplate jdbcTemplate, MailSender mailSender,
-            @Value("${pickle.console.base-url:https://pickle.pusan.ac.kr}") String consoleBaseUrl) {
+            @Value("${pickle.console.base-url:https://pickle.pusan.ac.kr}") String consoleBaseUrl,
+            @Value("${pickle.notification.admin-bundle-window:PT60M}") Duration bundleWindow) {
         this.jdbcTemplate = jdbcTemplate;
         this.mailSender = mailSender;
         String base = consoleBaseUrl == null || consoleBaseUrl.isBlank()
                 ? "https://pickle.pusan.ac.kr" : consoleBaseUrl;
         this.consoleBaseUrl = base.replaceAll("/+$", ""); // link paths start with '/'
+        this.bundleWindow = bundleWindow;
     }
 
     @Recurring(id = JOB_ID, interval = "PT1M")
     @Job(name = JOB_ID, retries = 0)
     public void dispatch() {
-        List<PendingMail> due = jdbcTemplate.query("""
-                select n.id, n.attempts, n.event, n.title, n.body, n.link_path,
-                       u.email, u.status as user_status
-                  from notifications n
-                  join users u on u.id = n.user_id
-                 where n.status = 'PENDING' and n.next_attempt_at <= now()
+        List<PendingMail> due = jdbcTemplate.query(PENDING_MAIL_COLUMNS + """
+                 where n.status = 'PENDING' and not n.bundle and n.next_attempt_at <= now()
                  order by n.next_attempt_at
                  limit %d
-                """.formatted(BATCH_SIZE),
-                (rs, rowNum) -> new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
-                        rs.getString("event"), rs.getString("title"), rs.getString("body"),
-                        rs.getString("link_path"), rs.getString("email"),
-                        rs.getString("user_status")));
+                """.formatted(BATCH_SIZE), NotificationDispatchJob::mapPending);
         for (PendingMail mail : due) {
-            // Recipient deactivated between enqueue and send (publish resolves
-            // ACTIVE at insert time) — never mail a closed account; SKIPPED
-            // keeps the delivery log honest instead of an eternal PENDING.
-            if (!"ACTIVE".equals(mail.userStatus())) {
-                jdbcTemplate.update("""
-                        update notifications
-                           set status = 'SKIPPED', last_error = '수신자 계정 비활성(발송 생략)'
-                         where id = ? and status = 'PENDING'
-                        """, mail.id());
+            if (skipIfInactive(mail)) {
                 continue;
             }
             // CAS claim — a concurrent run (or a resend) that got here first wins.
-            if (jdbcTemplate.update("""
-                    update notifications set attempts = attempts + 1
-                     where id = ? and status = 'PENDING'
-                    """, mail.id()) == 0) {
+            if (claim(List.of(mail)).isEmpty()) {
                 continue;
             }
-            int attempt = mail.attempts() + 1;
-            try {
-                mailSender.send(new MailMessage(mail.email(), "[Pickle] " + mail.title(),
-                        textPart(mail), htmlPart(mail)));
+            send(List.of(mail), mail.email(), "[Pickle] " + mail.title(), textPart(mail),
+                    htmlPart(mail));
+        }
+        dispatchBundles();
+    }
+
+    /**
+     * One mail per recipient whose window has closed. The window is measured
+     * from the last bundled mail actually sent to that recipient, so a burst
+     * costs them the first mail at once and one more when the window ends.
+     */
+    private void dispatchBundles() {
+        List<Long> recipients = jdbcTemplate.queryForList("""
+                select n.user_id
+                  from notifications n
+                 where n.status = 'PENDING' and n.bundle and n.next_attempt_at <= now()
+                   and not exists (
+                       select 1 from notifications s
+                        where s.user_id = n.user_id and s.bundle
+                          and s.sent_at > now() - ?::interval)
+                 group by n.user_id
+                 order by min(n.next_attempt_at)
+                 limit %d
+                """.formatted(BATCH_SIZE), Long.class, bundleWindow.toSeconds() + " seconds");
+        for (Long userId : recipients) {
+            List<PendingMail> waiting = jdbcTemplate.query(PENDING_MAIL_COLUMNS + """
+                     where n.user_id = ? and n.status = 'PENDING' and n.bundle
+                       and n.next_attempt_at <= now()
+                     order by n.created_at, n.id
+                     limit %d
+                    """.formatted(BUNDLE_MAX_ROWS), NotificationDispatchJob::mapPending, userId);
+            if (waiting.isEmpty()) {
+                continue;
+            }
+            if (!"ACTIVE".equals(waiting.getFirst().userStatus())) {
+                waiting.forEach(this::skipIfInactive);
+                continue;
+            }
+            List<PendingMail> claimed = claim(waiting);
+            if (claimed.isEmpty()) {
+                continue;
+            }
+            String email = claimed.getFirst().email();
+            if (claimed.size() == 1) {
+                PendingMail mail = claimed.getFirst();
+                send(claimed, email, "[Pickle] " + mail.title(), textPart(mail), htmlPart(mail));
+            } else {
+                Bundle bundle = bundle(claimed);
+                send(claimed, email, "[Pickle] " + bundle.title(), bundleText(bundle),
+                        bundleHtml(bundle, claimed));
+            }
+        }
+    }
+
+    private static PendingMail mapPending(java.sql.ResultSet rs, int rowNum)
+            throws java.sql.SQLException {
+        return new PendingMail(rs.getLong("id"), rs.getInt("attempts"),
+                rs.getString("event"), rs.getString("title"), rs.getString("body"),
+                rs.getString("link_path"), rs.getString("email"),
+                rs.getString("user_status"));
+    }
+
+    /**
+     * Recipient deactivated between enqueue and send (publish resolves ACTIVE
+     * at insert time) — never mail a closed account; SKIPPED keeps the
+     * delivery log honest instead of an eternal PENDING.
+     */
+    private boolean skipIfInactive(PendingMail mail) {
+        if ("ACTIVE".equals(mail.userStatus())) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                update notifications
+                   set status = 'SKIPPED', last_error = '수신자 계정 비활성(발송 생략)'
+                 where id = ? and status = 'PENDING'
+                """, mail.id());
+        return true;
+    }
+
+    /**
+     * CAS claim of the given rows: {@code attempts++} guarded on PENDING and on
+     * the attempt count this run read. The status alone is not a guard — a
+     * claim leaves it PENDING, so an overlapping run would re-match the row
+     * after the first commits and send it again. Returns the rows this run
+     * won, in the order given; a concurrent run or a resend that got to one
+     * first keeps it.
+     */
+    private List<PendingMail> claim(List<PendingMail> rows) {
+        String placeholders = "(?, ?), ".repeat(rows.size() - 1) + "(?, ?)";
+        Object[] args = rows.stream()
+                .flatMap(row -> java.util.stream.Stream.of(row.id(), row.attempts()))
+                .toArray();
+        Set<Long> won = Set.copyOf(jdbcTemplate.queryForList("""
+                update notifications set attempts = attempts + 1
+                 where (id, attempts) in (%s) and status = 'PENDING'
+                returning id
+                """.formatted(placeholders), Long.class, args));
+        return rows.stream().filter(row -> won.contains(row.id())).toList();
+    }
+
+    /**
+     * Sends one mail on behalf of the given claimed rows and records the
+     * outcome on every one of them: all SENT together, or each backed off (or
+     * parked FAILED) by its own attempt count.
+     */
+    private void send(List<PendingMail> rows, String email, String subject, String text,
+            String html) {
+        try {
+            mailSender.send(new MailMessage(email, subject, text, html));
+            for (PendingMail row : rows) {
                 jdbcTemplate.update("""
                         update notifications set status = 'SENT', sent_at = now(), last_error = null
                          where id = ?
-                        """, mail.id());
-            } catch (RuntimeException e) {
-                String error = summarize(e);
+                        """, row.id());
+            }
+        } catch (RuntimeException e) {
+            String error = summarize(e);
+            for (PendingMail row : rows) {
+                int attempt = row.attempts() + 1;
                 if (attempt >= MAX_ATTEMPTS) {
                     jdbcTemplate.update("""
                             update notifications set status = 'FAILED', last_error = ?
                              where id = ?
-                            """, error, mail.id());
+                            """, error, row.id());
                     log.warn("notification {} failed permanently after {} attempts: {}",
-                            mail.id(), attempt, error);
+                            row.id(), attempt, error);
                 } else {
                     Duration backoff = BACKOFFS.get(Math.min(attempt, BACKOFFS.size()) - 1);
                     jdbcTemplate.update("""
                             update notifications
                                set next_attempt_at = now() + ?::interval, last_error = ?
                              where id = ?
-                            """, backoff.toSeconds() + " seconds", error, mail.id());
+                            """, backoff.toSeconds() + " seconds", error, row.id());
                     log.info("notification {} send failed (attempt {}), retrying in {}: {}",
-                            mail.id(), attempt, backoff, error);
+                            row.id(), attempt, backoff, error);
                 }
             }
         }
+    }
+
+    /** A summary mail's content: its title, its lines and where its button goes. */
+    record Bundle(String title, int count, List<String> lines, int unlisted, String linkPath,
+                  String ctaLabel) {
+    }
+
+    /**
+     * Folds several waiting rows into one summary. Rows with the same title
+     * share a line with their count — a class filing thirty requests reads as
+     * one line, not thirty — in the order the first of each arrived.
+     *
+     * <p>Titles are folded to one line before they are listed: some carry a
+     * name a user chose, and a newline in one must not start a list item of
+     * its own in the HTML part.</p>
+     *
+     * <p>The button goes to the admin request queue when every row is a
+     * request, and to the notification inbox otherwise, where each row is
+     * listed with its own link.</p>
+     */
+    static Bundle bundle(List<PendingMail> rows) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (PendingMail row : rows) {
+            counts.merge(oneLine(row.title()), 1, Integer::sum);
+        }
+        List<String> lines = new ArrayList<>();
+        int unlisted = 0;
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (lines.size() < BUNDLE_MAX_LINES) {
+                lines.add(entry.getKey() + " " + entry.getValue() + "건");
+            } else {
+                unlisted += entry.getValue();
+            }
+        }
+        boolean allRequests = rows.stream().allMatch(row -> row.linkPath() != null
+                && row.linkPath().startsWith("/admin/requests/"));
+        return allRequests
+                ? new Bundle("관리자 알림 " + rows.size() + "건", rows.size(), lines, unlisted,
+                        "/admin/requests", "신청 확인하기")
+                : new Bundle("관리자 알림 " + rows.size() + "건", rows.size(), lines, unlisted,
+                        "/console/notifications", "알림 확인하기");
+    }
+
+    static String bundleBody(Bundle bundle) {
+        String list = bundle.lines().stream().map(line -> "- " + line)
+                .collect(Collectors.joining("\n"));
+        String rest = bundle.unlisted() > 0
+                ? "\n\n이 밖의 알림 " + bundle.unlisted() + "건은 콘솔 알림에서 확인할 수 있습니다."
+                : "";
+        return "관리자 알림 " + bundle.count() + "건을 한 통으로 모았습니다.\n\n" + list + rest;
+    }
+
+    private String bundleText(Bundle bundle) {
+        return bundleBody(bundle) + "\n\n" + consoleBaseUrl + bundle.linkPath() + MAIL_FOOTER;
+    }
+
+    private String bundleHtml(Bundle bundle, List<PendingMail> rows) {
+        try {
+            return MailHtmlLayout.render(bundle.title(), bundleBody(bundle),
+                    new MailHtmlLayout.Cta(bundle.ctaLabel(), consoleBaseUrl + bundle.linkPath()));
+        } catch (RuntimeException e) {
+            log.warn("bundled mail for notifications {} html render failed, sending text only: {}",
+                    rows.stream().map(PendingMail::id).toList(), e.toString());
+            return null;
+        }
+    }
+
+    private static String oneLine(String value) {
+        return value == null ? "" : value.replaceAll("\\s+", " ").strip();
     }
 
     /**

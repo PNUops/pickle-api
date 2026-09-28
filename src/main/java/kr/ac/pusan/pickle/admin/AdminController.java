@@ -10,8 +10,10 @@ import kr.ac.pusan.pickle.admin.dto.CreateOrgRequest;
 import kr.ac.pusan.pickle.admin.dto.GrantOrgRoleRequest;
 import kr.ac.pusan.pickle.admin.dto.OrgDetailResponse;
 import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequest;
+import kr.ac.pusan.pickle.admin.dto.UpdateOrgRequestMailRequest;
 import kr.ac.pusan.pickle.admin.dto.UpdateUserAdminRequest;
 import kr.ac.pusan.pickle.auth.dto.UserSummaryResponse;
+import kr.ac.pusan.pickle.orgs.dto.ManagedOrgResponse;
 import kr.ac.pusan.pickle.security.AuthenticatedUser;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -95,6 +97,23 @@ public class AdminController {
             @Valid @RequestBody GrantOrgRoleRequest request,
             HttpServletRequest httpRequest) {
         return adminService.grantOrgRole(principal, userId, orgId, request, clientIp(httpRequest));
+    }
+
+    /**
+     * Whether the account is mailed about the organisation's new requests.
+     * Unlike the role grant an actor may set this on itself: it changes what
+     * lands in a mailbox, not what anyone may do. The organisation-level check
+     * is the same as the grant's.
+     */
+    @PutMapping("/users/{userId}/org-roles/{orgId}/request-mail")
+    @PreAuthorize("hasAnyRole('ORG_ADMIN', 'SYS_ADMIN')")
+    public ManagedOrgResponse updateOrgRequestMail(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID userId, @PathVariable UUID orgId,
+            @Valid @RequestBody UpdateOrgRequestMailRequest request,
+            HttpServletRequest httpRequest) {
+        return adminService.updateOrgRequestMail(principal, userId, orgId, request.enabled(),
+                clientIp(httpRequest));
     }
 
     /** Takes an account's role in one organisation away, leaving the others. */

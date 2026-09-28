@@ -211,7 +211,7 @@ public class AdminUserService {
         notificationService.publish(user.getId(), NotificationEvent.ACCOUNT_DISABLED, args, dedupKey);
         Map<String, Object> adminArgs = new LinkedHashMap<>(args);
         adminArgs.put("admin", true);
-        notificationService.publish(
+        notificationService.publishToAdmins(
                 notificationService.sysAdminIds().stream().filter(id -> !id.equals(user.getId())).toList(),
                 NotificationEvent.ACCOUNT_DISABLED, adminArgs, dedupKey);
 
