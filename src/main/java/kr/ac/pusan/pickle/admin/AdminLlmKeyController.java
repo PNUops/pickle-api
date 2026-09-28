@@ -121,8 +121,8 @@ public class AdminLlmKeyController {
     @PreAuthorize("hasAnyRole('ORG_MANAGER', 'ORG_ADMIN', 'SYS_MANAGER', 'SYS_ADMIN')")
     @Operation(summary = "관리자 LLM API 키 만료일 변경",
             description = "키가 만료되는 날을 바꿉니다. 종료일은 KST 기준 그날까지 포함이고 승인 때와 같은 계산입니다. "
-                    + "이미 만료된 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키와 OpenRouter 키가 "
-                    + "발급된 키는 바꿀 수 없습니다.")
+                    + "이미 만료된 키에 앞날의 종료일을 주면 다시 활성화됩니다. 폐기된 키는 바꿀 수 없고, "
+                    + "OpenRouter 키가 발급된 키는 만료일을 앞당기는 것만 할 수 있습니다.")
     @ApiResponse(responseCode = "200", description = "변경된 LLM API 키 상세",
             content = @Content(mediaType = "application/json",
                     schema = @Schema(implementation = AdminLlmKeyDetailResponse.class)))
