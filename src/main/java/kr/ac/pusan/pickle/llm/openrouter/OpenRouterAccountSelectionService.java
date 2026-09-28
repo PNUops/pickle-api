@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.llm.openrouter;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.common.error.ApiException;
@@ -50,15 +51,38 @@ public class OpenRouterAccountSelectionService {
             }
             return account;
         }
+        List<FieldValidationError> errors = new ArrayList<>();
+        OpenRouterAccount account = selectDefault(orgId, creditLimit, errors);
+        if (!errors.isEmpty()) {
+            throw ApiException.validationFailed(errors);
+        }
+        return account;
+    }
+
+    /**
+     * The account a positive money grant lands on when none is named: the
+     * institution's one eligible account. Answers through {@code errors}
+     * rather than by throwing, because the bulk change asks this for many keys
+     * inside one transaction, where an exception thrown through this proxy
+     * would mark the whole batch for rollback.
+     */
+    @Transactional
+    public @Nullable OpenRouterAccount selectDefault(long orgId, @Nullable BigDecimal creditLimit,
+            List<FieldValidationError> errors) {
+        if (creditLimit == null || creditLimit.signum() <= 0) {
+            return null;
+        }
         List<OpenRouterAccount> eligible = repository.findByOrgIdAndStatusOrderByNameAsc(
                 orgId, OpenRouterAccountStatus.ACTIVE).stream().filter(this::eligible).toList();
         if (eligible.isEmpty()) {
-            throw validation("openrouterAccountId",
-                    "유료 모델을 승인하려면 이 기관에 사업 계정이 필요합니다.");
+            errors.add(new FieldValidationError("openrouterAccountId",
+                    "유료 모델을 승인하려면 이 기관에 사업 계정이 필요합니다."));
+            return null;
         }
         if (eligible.size() > 1) {
-            throw validation("openrouterAccountId",
-                    "어느 사업 계정으로 결제할지 선택해 주세요.");
+            errors.add(new FieldValidationError("openrouterAccountId",
+                    "어느 사업 계정으로 결제할지 선택해 주세요."));
+            return null;
         }
         return eligible.getFirst();
     }

@@ -520,6 +520,21 @@ public class LlmApiKey {
         updatedAt = when;
     }
 
+    /**
+     * Moves when the key stops working. The effective status is derived from
+     * this column, so a lapsed key given a future date works again at the
+     * gateway's next poll with no other write. A row stamped EXPIRED by hand
+     * would otherwise stay lapsed whatever the date said, so that stamp is
+     * lifted here: back to ACTIVE if a secret exists, PENDING if none does.
+     */
+    public void changeExpiry(@Nullable Instant expiresAt, Instant when) {
+        this.expiresAt = expiresAt;
+        if (status == LlmApiKeyStatus.EXPIRED) {
+            this.status = tokenHash == null ? LlmApiKeyStatus.PENDING : LlmApiKeyStatus.ACTIVE;
+        }
+        this.updatedAt = when;
+    }
+
     public void suspend(Instant when) {
         this.status = LlmApiKeyStatus.SUSPENDED;
         this.updatedAt = when;
