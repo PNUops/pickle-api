@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.admin.bulk;
 import static kr.ac.pusan.pickle.common.web.ClientIps.clientIp;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -41,6 +42,7 @@ public class AdminBulkChangeController {
                     + "범위 밖이거나 역할이 허용하지 않는 대상, 현재 상태에서 할 수 없는 대상은 이유와 함께 "
                     + "applicable=false로, 이미 그 값인 대상은 바뀔 필드 없이 applicable=true로 답합니다. "
                     + "대상마다 fingerprint를 주며 적용 요청에 그대로 돌려보냅니다. 대상은 최대 200개입니다.")
+    @ApiResponse(responseCode = "200", description = "대상별 판정과 fingerprint")
     public AdminBulkChangePreviewResponse previewAdminBulkChange(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AdminBulkChangeRequest request) {
@@ -53,6 +55,7 @@ public class AdminBulkChangeController {
                     + "대상마다 다시 판정하며, 미리보기 뒤 바뀐 대상은 STALE로 답하고 쓰지 않습니다. 한 대상의 실패가 "
                     + "다른 대상을 되돌리지 않고, 되돌리기는 없습니다. 대상별 감사 기록은 단일 변경과 같은 이름으로 "
                     + "남고 같은 batchId를 담습니다.")
+    @ApiResponse(responseCode = "200", description = "대상별 결과와 이 적용의 batchId")
     public AdminBulkChangeApplyResponse applyAdminBulkChange(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AdminBulkChangeRequest request,

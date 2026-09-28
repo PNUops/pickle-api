@@ -61,7 +61,7 @@ public class AdminBulkLlmKeyLimitsChange {
     @Valid
     private @Nullable AdminBulkListChange passthroughEndpoints;
 
-    @Schema(description = "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "분당 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getRpm() {
         return rpm;
     }
@@ -71,7 +71,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.rpmSet = true;
     }
 
-    @Schema(description = "분당 토큰 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "분당 토큰 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getTpm() {
         return tpm;
     }
@@ -81,7 +81,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.tpmSet = true;
     }
 
-    @Schema(description = "동시 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
+    @Schema(nullable = true, description = "동시 요청 한도. 생략하면 그대로 두고, null이면 서비스 기본값을 따릅니다.")
     public @Nullable Integer getConcurrency() {
         return concurrency;
     }
@@ -91,7 +91,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.concurrencySet = true;
     }
 
-    @Schema(description = "일일 토큰 한도. 생략하면 그대로 두고, null이면 무제한이며 0이면 토큰 축을 닫습니다.")
+    @Schema(nullable = true, description = "일일 토큰 한도. 생략하면 그대로 두고, null이면 무제한이며 0이면 토큰 축을 닫습니다.")
     public @Nullable Long getDailyTokens() {
         return dailyTokens;
     }
@@ -111,7 +111,7 @@ public class AdminBulkLlmKeyLimitsChange {
         this.creditLimitSet = true;
     }
 
-    @Schema(description = "금액 한도 리셋 창. 생략하면 그대로 두고, null이면 리셋 없는 총액 상한입니다.")
+    @Schema(nullable = true, description = "금액 한도 리셋 창. 생략하면 그대로 두고, null이면 리셋 없는 총액 상한입니다.")
     public @Nullable CreditLimitReset getCreditLimitReset() {
         return creditLimitReset;
     }
