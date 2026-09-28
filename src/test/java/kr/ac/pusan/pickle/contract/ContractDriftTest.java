@@ -140,6 +140,7 @@ class ContractDriftTest {
             "PUT /admin/vms/{vmId}/network-policy",
             "POST /admin/requests/{requestId}/approve",
             "POST /admin/requests/{requestId}/reject",
+            "POST /admin/requests/{requestId}/recipients/{recipientId}/retry",
             "GET /admin/llm/keys",
             "GET /admin/llm/keys/{keyId}",
             "GET /admin/llm/keys/{keyId}/models",
@@ -204,6 +205,7 @@ class ContractDriftTest {
             "GET /admin/announcements",
             "GET /admin/workspaces",
             "GET /admin/workspaces/{workspaceId}",
+            "GET /admin/workspaces/{workspaceId}/invitations",
             "GET /me/activity",
             "GET /admin/audit",
             // Ops dashboards, drift, tasks, expiry (contract v0.5.0).

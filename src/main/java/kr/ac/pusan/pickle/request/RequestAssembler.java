@@ -58,6 +58,7 @@ public class RequestAssembler {
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final ObjectMapper objectMapper;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final RequestRecipientService recipientService;
 
     public RequestAssembler(kr.ac.pusan.pickle.gpu.GpuStore gpuStore, RequestReviewRepository reviewRepository,
             VmRequestDetailRepository vmDetailRepository,
@@ -67,7 +68,9 @@ public class RequestAssembler {
             OsImageRepository osImageRepository, VmFlavorRepository vmFlavorRepository,
             NodeRepository nodeRepository, RequestPeriodPresetRepository periodPresetRepository,
             ObjectMapper objectMapper,
-            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+            org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+            RequestRecipientService recipientService) {
+        this.recipientService = recipientService;
         this.gpuStore = gpuStore;
         this.objectMapper = objectMapper;
         this.jdbcTemplate = jdbcTemplate;
@@ -97,10 +100,33 @@ public class RequestAssembler {
         return toDetails(List.of(request)).getFirst();
     }
 
+    public RequestDetailResponse toDetail(Request request, kr.ac.pusan.pickle.security.@Nullable AuthenticatedUser viewer) {
+        return toDetails(List.of(request), viewer).getFirst();
+    }
+
+    /** Without a viewer nobody is shown where an invitation was sent. */
     public List<RequestDetailResponse> toDetails(List<Request> requests) {
+        return toDetails(requests, null);
+    }
+
+    /**
+     * The details as {@code viewer} may see them. The only part that depends
+     * on who is looking is where each invitation of a many-person request was
+     * sent: the requester, the workspace's owners and the organisation's
+     * approvers see it, everyone else sees only that somebody is invited.
+     */
+    public List<RequestDetailResponse> toDetails(List<Request> requests,
+            kr.ac.pusan.pickle.security.@Nullable AuthenticatedUser viewer) {
         if (requests.isEmpty()) {
             return List.of();
         }
+        Set<Long> ownedWorkspaces = viewer == null ? Set.of() : ownedWorkspaceIds(viewer.id(),
+                ids(requests.stream().map(Request::getWorkspaceId)));
+        Map<Long, List<kr.ac.pusan.pickle.request.dto.RequestRecipientResponse>> recipients =
+                recipientService.responses(requests, request -> viewer != null
+                        && (viewer.id().equals(request.getRequesterId())
+                                || ownedWorkspaces.contains(request.getWorkspaceId())
+                                || RequestApprovers.mayApprove(viewer, request.getOrgId())));
         Map<Long, RequestReview> reviews = reviewRepository
                 .findByRequestIdIn(requests.stream().map(Request::getId).toList())
                 .stream()
@@ -187,9 +213,21 @@ public class RequestAssembler {
                                     "request " + request.getPublicId())) : null,
                     request.getResourceType() == ResourceType.GPU ? gpuStore.requestSpec(request.getId()) : null,
                     domainSpecs.get(request.getId()),
-                    request.getCreatedAt(), request.getUpdatedAt()));
+                    request.getCreatedAt(), request.getUpdatedAt(),
+                    recipients.getOrDefault(request.getId(), List.of())));
         }
         return details;
+    }
+
+    private Set<Long> ownedWorkspaceIds(Long userId, Set<Long> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return Set.of();
+        }
+        return Set.copyOf(jdbcTemplate.queryForList("""
+                select workspace_id from workspace_members
+                 where user_id = ? and role::text = 'OWNER' and workspace_id in (%s)
+                """.formatted(workspaceIds.stream().map(id -> "?").collect(Collectors.joining(","))),
+                Long.class, Stream.concat(Stream.of(userId), workspaceIds.stream()).toArray()));
     }
 
     private Map<Long, DomainRequestSpecResponse> domainSpecs(List<Long> requestIds) {

@@ -13,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface WorkspaceInvitationRepository extends JpaRepository<WorkspaceInvitation, Long> {
 
+    Optional<WorkspaceInvitation> findByPublicId(UUID publicId);
+
+
     /**
      * Opens a PENDING invitation unless one is already open for the same person
      * in the same workspace. Returns 0 when the partial unique index already

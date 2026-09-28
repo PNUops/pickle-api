@@ -39,9 +39,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AdminWorkspaceQueryService {
     private final JdbcTemplate jdbcTemplate;
+    private final kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService;
 
-    public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate) {
+    public AdminWorkspaceQueryService(JdbcTemplate jdbcTemplate,
+            kr.ac.pusan.pickle.workspace.WorkspaceInvitationService invitationService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.invitationService = invitationService;
     }
 
     @Transactional(readOnly = true)
@@ -141,6 +144,47 @@ public class AdminWorkspaceQueryService {
                 workspaceId);
         return new AdminWorkspaceDetailResponse(base.id(), base.kind(), base.name(),
                 base.description(), base.createdAt(), base.memberCount(), base.vmCount(), members);
+    }
+
+    /**
+     * Contract {@code GET /admin/workspaces/{workspaceId}/invitations}: the
+     * open invitations of a workspace, for an approver naming the people a
+     * request is for. Scoped like a decision, not like a read: the org tier
+     * sees the workspaces linked to an organisation it operates, because the
+     * only use of this list is to act. Anything outside answers 404.
+     */
+    @Transactional(readOnly = true)
+    public List<kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse> listInvitations(
+            AuthenticatedUser actor, UUID publicWorkspaceId) {
+        return invitationService.pending(requireOperated(actor, publicWorkspaceId));
+    }
+
+    /**
+     * The internal id of a live workspace the actor may act in as an approver:
+     * any, for the sys tier; one linked to an organisation it operates, for the
+     * org tier. Unknown, deleted and out-of-scope workspaces answer the same
+     * 404.
+     */
+    @Transactional(readOnly = true)
+    public long requireOperated(AuthenticatedUser actor, UUID publicWorkspaceId) {
+        Long workspaceId = jdbcTemplate.query(
+                "select id from workspaces where public_id = ? and deleted_at is null",
+                rs -> rs.next() ? rs.getLong(1) : null, publicWorkspaceId);
+        if (workspaceId == null) {
+            throw workspaceNotFound();
+        }
+        OrgScope scope = AdminOrgScope.operated(actor, null, null);
+        if (!scope.isUnrestricted()) {
+            List<Object> params = new ArrayList<>(scope.orgIds());
+            params.addAll(scope.orgIds());
+            Boolean linked = jdbcTemplate.queryForObject(
+                    "select " + OrgMembershipSql.workspaceLinkedToOrg(String.valueOf(workspaceId), scope),
+                    Boolean.class, params.toArray());
+            if (!Boolean.TRUE.equals(linked)) {
+                throw workspaceNotFound();
+            }
+        }
+        return workspaceId;
     }
 
     private static ApiException workspaceNotFound() {

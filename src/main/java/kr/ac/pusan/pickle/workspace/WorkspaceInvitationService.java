@@ -193,8 +193,19 @@ public class WorkspaceInvitationService {
     public List<WorkspaceInvitationResponse> list(AuthenticatedUser actor, UUID publicWorkspaceId) {
         Workspace workspace = workspaceService.findWorkspace(publicWorkspaceId);
         requireOwner(workspace, actor);
+        return pending(workspace.getId());
+    }
+
+    /**
+     * A workspace's open invitations, oldest first, with no gate of its own.
+     * For callers that have already decided the reader may see them: the
+     * owner path above, and the admin read an approver uses to name invitees
+     * as the recipients of a request.
+     */
+    @Transactional(readOnly = true)
+    public List<WorkspaceInvitationResponse> pending(long workspaceId) {
         List<WorkspaceInvitation> pending = invitationRepository
-                .findByWorkspaceIdAndStatusOrderByCreatedAtAscIdAsc(workspace.getId(),
+                .findByWorkspaceIdAndStatusOrderByCreatedAtAscIdAsc(workspaceId,
                         WorkspaceInvitationStatus.PENDING);
         Map<Long, User> inviters = userRepository
                 .findAllById(pending.stream().map(WorkspaceInvitation::getInvitedBy).distinct().toList())

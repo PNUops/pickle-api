@@ -53,10 +53,14 @@ public class WorkspaceService {
     private final NotificationService notificationService;
     private final List<ResourceTypeAdapter> resourceAdapters;
 
+    private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
+
     public WorkspaceService(WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             RequestRepository requestRepository, AuditService auditService, AuditIds auditIds,
-            NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters) {
+            NotificationService notificationService, List<ResourceTypeAdapter> resourceAdapters,
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+        this.recipientService = recipientService;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.grantRepository = grantRepository;
@@ -292,6 +296,7 @@ public class WorkspaceService {
                 continue;
             }
             locked.setStatus(RequestStatus.CANCELED);
+            recipientService.closeUndecided(locked);
             auditService.recordAfterCommit(actor.id(), actor.role().name(),
                     AuditService.REQUEST_CANCEL, "request", locked.getPublicId(),
                     Map.of("workspaceId", workspace.getPublicId(), "reason", "workspace_deleted"), ip);

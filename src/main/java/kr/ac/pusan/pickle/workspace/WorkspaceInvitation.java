@@ -111,6 +111,10 @@ public class WorkspaceInvitation {
         return status;
     }
 
+    public @Nullable Long getAcceptedUserId() {
+        return acceptedUserId;
+    }
+
     public Long getInvitedBy() {
         return invitedBy;
     }

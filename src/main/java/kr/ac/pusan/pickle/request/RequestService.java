@@ -70,12 +70,21 @@ public class RequestService {
     private final NotificationService notificationService;
     private final RequestPeriodPresetRepository periodPresetRepository;
     private final Clock clock;
+    private final RequestRecipientService recipientService;
+    private final kr.ac.pusan.pickle.admin.ApprovalService approvalService;
+    private final kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService;
 
     public RequestService(RequestRepository requestRepository, RequestAssembler assembler, RequestApproval requestApproval,
             List<RequestTypeHandler> handlers, WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository workspaceMemberRepository, OrgRepository orgRepository,
             AuditService auditService, AuditIds auditIds, NotificationService notificationService,
-            RequestPeriodPresetRepository periodPresetRepository, Clock clock) {
+            RequestPeriodPresetRepository periodPresetRepository, Clock clock,
+            RequestRecipientService recipientService,
+            kr.ac.pusan.pickle.admin.ApprovalService approvalService,
+            kr.ac.pusan.pickle.admin.AdminWorkspaceQueryService adminWorkspaceQueryService) {
+        this.adminWorkspaceQueryService = adminWorkspaceQueryService;
+        this.recipientService = recipientService;
+        this.approvalService = approvalService;
         this.requestRepository = requestRepository;
         this.assembler = assembler;
         this.requestApproval = requestApproval;
@@ -110,10 +119,49 @@ public class RequestService {
         // Any member may ask. The rung that used to gate this was really about
         // reaching VMs, which is now the access list's business, and asking is
         // not the step that costs anything — approval is.
-        workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), actor.id())
-                .orElseThrow(RequestService::notWorkspaceMember);
+        //
+        // One exception: an approver of the organisation may file into a
+        // workspace they are not in, but only when deciding it in the same step.
+        // Filing a request somebody else then has to decide would let anyone
+        // with an admin role put work into any workspace's queue.
+        WorkspaceMember membership = workspaceMemberRepository
+                .findByWorkspaceIdAndUserId(workspace.getId(), actor.id()).orElse(null);
+        if (membership == null && form.approval() == null) {
+            throw notWorkspaceMember();
+        }
+        if (membership == null) {
+            // "Any workspace of an organisation they approve for" is the same
+            // scope the admin workspace and invitation reads use, so an approver
+            // can file only where the admin screens already let them look.
+            adminWorkspaceQueryService.requireOperated(actor, workspace.getPublicId());
+        }
+        boolean workspaceOwner = membership != null && membership.getRole() == WorkspaceMemberRole.OWNER;
+        // Checked before the form's contents so a refusal does not first teach
+        // the caller which of their recipients are members. Only the kinds that
+        // take the organisation from the form can be answered this early; the
+        // rest are answered once the organisation is known, below.
+        if (!handler.derivesOrgId()) {
+            boolean approver = form.orgId() != null && orgRepository.findByPublicId(form.orgId())
+                    .map(found -> RequestApprovers.mayApprove(actor, found.getId())).orElse(false);
+            requireMaySubmitAs(form, workspaceOwner, approver);
+        }
 
         List<FieldValidationError> errors = new ArrayList<>();
+        List<RequestRecipientService.Resolved> recipients = List.of();
+        if (form.hasRecipients()) {
+            if (!handler.supportsRecipients()) {
+                errors.add(new FieldValidationError("recipients",
+                        "대상자는 VM과 LLM API 키 신청에만 지정할 수 있습니다."));
+            } else {
+                // Every recipient's VM is named from the display name with a
+                // random suffix; one chosen name cannot be several hosts.
+                if (form.vm() != null && Texts.blankToNull(form.vm().desiredSlug()) != null) {
+                    errors.add(new FieldValidationError("vm.desiredSlug",
+                            "대상자가 여러 명인 신청에는 호스트 이름을 정할 수 없습니다."));
+                }
+                recipients = recipientService.resolve(workspace, form.recipients(), errors);
+            }
+        }
         // Asked here rather than by an annotation, because whether the field is
         // required is the kind's answer. Asked *before* the kind validates so
         // that a form missing this and something else gets told both at once:
@@ -141,6 +189,8 @@ public class RequestService {
         // domain that turns out not to exist would answer with that failure
         // instead of the field error the applicant needs to see.
         Org org = resolveOrg(handler, form);
+        boolean approver = RequestApprovers.mayApprove(actor, org.getId());
+        requireMaySubmitAs(form, workspaceOwner, approver);
 
         Request saved = requestRepository.save(new Request(form.type(), workspace.getId(),
                 org.getId(),
@@ -148,6 +198,15 @@ public class RequestService {
                 Texts.blankToNull(form.extraNote()), period.endDate(), period.presetId(),
                 form.displayName().strip()));
         handler.saveDetail(saved, form);
+        recipientService.saveAtSubmission(saved, recipients);
+
+        // An approver deciding what they submit, in this transaction and
+        // through the approve endpoint's own code. Anything that refuses the
+        // approval rolls the submission back with it.
+        if (form.approval() != null) {
+            return submitAndApprove(actor, saved, handler, workspace, org.getPublicId(),
+                    form.approval(), recipients.size(), ip);
+        }
 
         // A kind whose policy issues without a reviewer is approved here, in
         // this transaction, through the same code an approving reviewer runs.
@@ -162,6 +221,9 @@ public class RequestService {
         auditArgs.put("workspaceId", workspace.getPublicId());
         auditArgs.put("orgId", org.getPublicId());
         auditArgs.putAll(handler.submitAuditArgs(saved));
+        if (!recipients.isEmpty()) {
+            auditArgs.put("recipients", recipients.size());
+        }
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
                 "request", saved.getPublicId(), auditArgs, ip);
         // In-tx inserts: the notices exist iff the request row committed.
@@ -173,7 +235,48 @@ public class RequestService {
                 NotificationEvent.REQUEST_SUBMITTED,
                 Map.of("requestId", saved.getPublicId(), "workspaceName", workspace.getName(),
                         "purpose", saved.getPurpose(), "type", form.type().name(), "admin", true), null);
-        return assembler.toDetail(saved);
+        return assembler.toDetail(saved, actor);
+    }
+
+    /**
+     * Who may send what. Recipients are for a workspace owner or an approver
+     * of the organisation; a same-step approval is for an approver only.
+     */
+    private static void requireMaySubmitAs(CreateRequestRequest form, boolean workspaceOwner,
+            boolean approver) {
+        if (form.approval() != null && !approver) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
+                    "접근 권한이 없습니다", "이 기관의 신청을 승인할 수 있는 관리자만 제출과 동시에 승인할 수 있습니다.");
+        }
+        if (form.hasRecipients() && !workspaceOwner && !approver) {
+            throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.REQUEST_RECIPIENTS_FORBIDDEN,
+                    "대상자를 지정할 권한이 없습니다",
+                    "다른 사람을 대상자로 지정하는 신청은 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 낼 수 있습니다.");
+        }
+    }
+
+    /**
+     * Files and approves in one step. Both audit rows are written, after
+     * commit, so a refused approval leaves no record of a submission that did
+     * not happen either. The organisation's approvers are not told: the one
+     * who would act on it already has.
+     */
+    private RequestDetailResponse submitAndApprove(AuthenticatedUser actor, Request saved,
+            RequestTypeHandler handler, Workspace workspace, UUID orgPublicId,
+            ApproveRequestRequest approval, int recipientCount, String ip) {
+        Map<String, Object> submitArgs = new LinkedHashMap<>();
+        submitArgs.put("type", saved.getResourceType().name());
+        submitArgs.put("workspaceId", workspace.getPublicId());
+        submitArgs.put("orgId", orgPublicId);
+        submitArgs.putAll(handler.submitAuditArgs(saved));
+        submitArgs.put("submittedByReviewer", true);
+        if (recipientCount > 0) {
+            submitArgs.put("recipients", recipientCount);
+        }
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_CREATE,
+                "request", saved.getPublicId(), submitArgs, ip);
+        approvalService.approveOnSubmission(actor, saved, approval, ip);
+        return assembler.toDetail(saved, actor);
     }
 
     /**
@@ -225,7 +328,7 @@ public class RequestService {
         notifyArgs.put("automatic", true);
         notifyArgs.putAll(created.notificationArgs());
         notificationService.publish(actor.id(), NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
-        return assembler.toDetail(saved);
+        return assembler.toDetail(saved, actor);
     }
 
     @Transactional(readOnly = true)
@@ -253,7 +356,7 @@ public class RequestService {
             spec = spec.and(RequestSpecs.type(type));
         }
         Page<Request> result = requestRepository.findAll(spec, newestFirst(page, size));
-        return PageResponse.of(assembler.toDetails(result.getContent()), result);
+        return PageResponse.of(assembler.toDetails(result.getContent(), actor), result);
     }
 
     @Transactional(readOnly = true)
@@ -266,7 +369,7 @@ public class RequestService {
             throw new ApiException(HttpStatus.FORBIDDEN, ErrorCodes.ACCESS_DENIED,
                     "접근 권한이 없습니다", "신청자 또는 워크스페이스 구성원만 조회할 수 있습니다.");
         }
-        return assembler.toDetail(request);
+        return assembler.toDetail(request, actor);
     }
 
     @Transactional
@@ -288,10 +391,11 @@ public class RequestService {
                     "이미 처리된 신청입니다", "이미 승인 또는 반려된 신청은 취소할 수 없습니다.");
         }
         request.setStatus(RequestStatus.CANCELED);
+        recipientService.closeUndecided(request);
         auditService.record(actor.id(), actor.role().name(), AuditService.REQUEST_CANCEL,
                 "request", request.getPublicId(),
                 Map.of("workspaceId", auditIds.workspace(request.getWorkspaceId())), ip);
-        return assembler.toDetail(request);
+        return assembler.toDetail(request, actor);
     }
 
     private static Pageable newestFirst(int page, int size) {

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.request.RequestRecipientService;
 import kr.ac.pusan.pickle.user.User;
 import kr.ac.pusan.pickle.user.UserStatus;
 import org.springframework.stereotype.Service;
@@ -48,10 +49,13 @@ public class InvitationClaimService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final AuditService auditService;
     private final InvitationLocks invitationLocks;
+    private final RequestRecipientService recipientService;
 
     public InvitationClaimService(WorkspaceInvitationRepository invitationRepository,
             WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
-            AuditService auditService, InvitationLocks invitationLocks) {
+            AuditService auditService, InvitationLocks invitationLocks,
+            RequestRecipientService recipientService) {
+        this.recipientService = recipientService;
         this.invitationRepository = invitationRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -120,6 +124,10 @@ public class InvitationClaimService {
         int inserted = workspaceMemberRepository.insertMemberIfAbsent(workspace.getId(), user.getId(),
                 invitation.getRole().name());
         invitation.accept(user.getId(), now);
+        // Resources a many-person request reserved for this invitee are made
+        // now that they are a member, unless the period they were granted for
+        // has already ended.
+        recipientService.onInvitationClaimed(invitation, user.getId());
         if (inserted == 1) {
             auditService.recordAfterCommit(actorId, actorRole,
                     AuditService.WORKSPACE_MEMBER_ADD, "workspace", workspace.getPublicId(),

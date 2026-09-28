@@ -3,6 +3,7 @@ package kr.ac.pusan.pickle.request.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.gpu.dto.GpuRequestSpecResponse;
@@ -48,5 +49,7 @@ public record RequestDetailResponse(
         /** Present when {@code type} is DOMAIN, null otherwise. */
         @Nullable DomainRequestSpecResponse domain,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        @Schema(description = "여러 사람에게 리소스를 만드는 신청의 대상자. 신청자 본인이 받는 일반 신청은 빈 배열입니다.")
+        List<RequestRecipientResponse> recipients) {
 }

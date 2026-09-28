@@ -107,6 +107,44 @@ public interface RequestTypeHandler {
     Materialized materialize(Request request, ApproveRequestRequest form, AuthenticatedUser actor);
 
     /**
+     * Whether one approval of this kind may make a resource for each of many
+     * people. Default false: a kind that says nothing keeps one resource per
+     * request, owned by its requester.
+     */
+    default boolean supportsRecipients() {
+        return false;
+    }
+
+    /**
+     * Approval-form checks that only apply when the request has recipients:
+     * a field that names one resource cannot be applied to many.
+     */
+    default void validateApproveForRecipients(Request request, ApproveRequestRequest form,
+            List<FieldValidationError> errors) {
+    }
+
+    /**
+     * Records what was granted, once, for a request whose resources are made
+     * per recipient later. Creates nothing. Runs inside the approval
+     * transaction, like {@link #materialize}, and is the half of it that is
+     * about the decision rather than the resource.
+     */
+    default void recordGrant(Request request, ApproveRequestRequest form) {
+        throw new UnsupportedOperationException(type() + " does not make resources per recipient");
+    }
+
+    /**
+     * Makes one resource of an approved request for {@code ownerId}, from the
+     * grant {@link #recordGrant} stored and the period on {@code review}. The
+     * caller seeds the owner's grant and runs the after-commit hook; this runs
+     * inside the caller's transaction and may throw, in which case the caller
+     * rolls it back.
+     */
+    default Materialized createFor(Request request, RequestReview review, long ownerId) {
+        throw new UnsupportedOperationException(type() + " does not make resources per recipient");
+    }
+
+    /**
      * The approved resource, as the common approval flow needs to see it.
      *
      * @param resourceId the new resource's id, for its first access grant

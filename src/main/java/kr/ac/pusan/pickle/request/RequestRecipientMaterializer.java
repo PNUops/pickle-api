@@ -1,0 +1,299 @@
+package kr.ac.pusan.pickle.request;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import kr.ac.pusan.pickle.access.ResourceAccessGrant;
+import kr.ac.pusan.pickle.access.ResourceAccessGrantRepository;
+import kr.ac.pusan.pickle.access.ResourceRole;
+import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.audit.AuditService;
+import kr.ac.pusan.pickle.config.ClockConfig;
+import kr.ac.pusan.pickle.notification.NotificationEvent;
+import kr.ac.pusan.pickle.notification.NotificationService;
+import kr.ac.pusan.pickle.provisioning.VmCloneReservationService;
+import kr.ac.pusan.pickle.settings.SettingsService;
+import kr.ac.pusan.pickle.user.User;
+import kr.ac.pusan.pickle.user.UserRepository;
+import kr.ac.pusan.pickle.user.UserStatus;
+import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
+import kr.ac.pusan.pickle.workspace.WorkspaceRepository;
+import org.jobrunr.jobs.annotations.Job;
+import org.jobrunr.jobs.annotations.Recurring;
+import org.jobrunr.scheduling.JobScheduler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
+
+/**
+ * Makes the resources of approved many-person requests, one recipient at a
+ * time.
+ *
+ * <p>Each recipient gets its own transaction, so one that fails rolls back
+ * alone and is marked FAILED in a second one, while the rest carry on. Every
+ * such transaction first takes one transaction-scoped advisory lock: two runs
+ * (the minute schedule and a trigger after an approval) would otherwise both
+ * count the VMs in creation, both see room, and together start more than the
+ * setting allows. The lock is always the first thing taken, before the
+ * recipient row and before anything the resource creation locks (the gateway
+ * generation row for a key, the image revision and node rows for a VM), and
+ * nothing else takes it, so it adds no ordering between those.</p>
+ *
+ * <p>The recipient row is locked before the generation row here, the reverse
+ * of an approval, which takes the generation row and then its own request's
+ * recipients. The two never meet on the same rows: this only touches
+ * recipients of requests already committed as APPROVED, and an approval only
+ * touches the recipients of the one request it is still deciding.</p>
+ *
+ * <p>VMs are started only while fewer of this path's VMs are still CREATING
+ * than {@value #CONCURRENCY_SETTING} allows (default {@value #DEFAULT_CONCURRENCY}),
+ * because each one is a full clone on a shared node and the provisioning
+ * workers and database pool are shared with everything else. Keys cost only a
+ * database write each, so they are capped per run instead.</p>
+ */
+@Component
+public class RequestRecipientMaterializer {
+
+    private static final Logger log = LoggerFactory.getLogger(RequestRecipientMaterializer.class);
+
+    public static final String JOB_ID = "request-recipient-materializer";
+    static final String CONCURRENCY_SETTING = SettingsService.BULK_PROVISION_CONCURRENCY;
+    static final int DEFAULT_CONCURRENCY = 4;
+    static final int LLM_KEYS_PER_RUN = 20;
+    /** How many queued rows one run looks at. */
+    private static final int SCAN_LIMIT = 500;
+    /** Arbitrary but fixed key for the run-wide advisory lock. */
+    private static final long ADVISORY_LOCK_KEY = 0x5049434b52435054L;
+
+    static final String REASON_WORKSPACE_GONE = "워크스페이스가 삭제되어 만들지 않았습니다.";
+    static final String REASON_EXPIRED = "사용 기간이 이미 끝나 만들지 않았습니다.";
+    static final String REASON_FAILED = "리소스를 만들지 못했습니다. 관리자가 다시 시도할 수 있습니다.";
+
+    enum Outcome { CREATED, SKIPPED, AT_CAPACITY, FAILED, NOT_APPLICABLE }
+
+    private final RequestRecipientRepository recipientRepository;
+    private final RequestRepository requestRepository;
+    private final RequestReviewRepository reviewRepository;
+    private final Map<ResourceType, RequestTypeHandler> handlers;
+    private final ResourceAccessGrantRepository grantRepository;
+    private final WorkspaceRepository workspaceRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final UserRepository userRepository;
+    private final SettingsService settingsService;
+    private final NotificationService notificationService;
+    private final AuditService auditService;
+    private final JdbcTemplate jdbcTemplate;
+    private final TransactionTemplate tx;
+    private final JobScheduler jobScheduler;
+    private final Clock clock;
+
+    public RequestRecipientMaterializer(RequestRecipientRepository recipientRepository,
+            RequestRepository requestRepository, RequestReviewRepository reviewRepository,
+            List<RequestTypeHandler> handlers, ResourceAccessGrantRepository grantRepository,
+            WorkspaceRepository workspaceRepository, WorkspaceMemberRepository workspaceMemberRepository,
+            UserRepository userRepository, SettingsService settingsService,
+            NotificationService notificationService, AuditService auditService,
+            JdbcTemplate jdbcTemplate, TransactionTemplate tx, JobScheduler jobScheduler, Clock clock) {
+        this.recipientRepository = recipientRepository;
+        this.requestRepository = requestRepository;
+        this.reviewRepository = reviewRepository;
+        this.handlers = handlers.stream()
+                .collect(Collectors.toMap(RequestTypeHandler::type, Function.identity()));
+        this.grantRepository = grantRepository;
+        this.workspaceRepository = workspaceRepository;
+        this.workspaceMemberRepository = workspaceMemberRepository;
+        this.userRepository = userRepository;
+        this.settingsService = settingsService;
+        this.notificationService = notificationService;
+        this.auditService = auditService;
+        this.jdbcTemplate = jdbcTemplate;
+        this.tx = tx;
+        this.jobScheduler = jobScheduler;
+        this.clock = clock;
+    }
+
+    private RequestTypeHandler handler(ResourceType type) {
+        return handlers.get(type);
+    }
+
+    /**
+     * Asks for a run once the current transaction commits. Enqueue failures
+     * are swallowed: the minute schedule is the retry, and an approval that
+     * already committed must not answer 500 because of it.
+     */
+    public void triggerAfterCommit() {
+        Runnable enqueue = () -> {
+            try {
+                jobScheduler.<RequestRecipientMaterializer>enqueue(materializer -> materializer.run());
+            } catch (RuntimeException e) {
+                log.warn("could not enqueue a recipient materializer run; the schedule will pick it up", e);
+            }
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            enqueue.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                enqueue.run();
+            }
+        });
+    }
+
+    @Recurring(id = JOB_ID, interval = "PT1M")
+    @Job(name = JOB_ID, retries = 0)
+    public void run() {
+        List<Map<String, Object>> queued = jdbcTemplate.queryForList("""
+                select rr.id, r.resource_type
+                  from request_recipients rr
+                  join requests r on r.id = rr.request_id
+                 where rr.status = 'QUEUED' and r.status = 'APPROVED'
+                 order by rr.id
+                 limit ?
+                """, SCAN_LIMIT);
+        boolean vmFull = false;
+        int keys = 0;
+        for (Map<String, Object> row : queued) {
+            long id = ((Number) row.get("id")).longValue();
+            ResourceType type = ResourceType.valueOf(String.valueOf(row.get("resource_type")));
+            if (type == ResourceType.VM) {
+                if (vmFull) {
+                    continue;
+                }
+                if (processOne(id) == Outcome.AT_CAPACITY) {
+                    vmFull = true;
+                }
+            } else if (type == ResourceType.LLM_API_KEY) {
+                if (keys >= LLM_KEYS_PER_RUN) {
+                    continue;
+                }
+                Outcome outcome = processOne(id);
+                if (outcome == Outcome.CREATED || outcome == Outcome.FAILED) {
+                    keys++;
+                }
+            }
+            if (vmFull && keys >= LLM_KEYS_PER_RUN) {
+                break;
+            }
+        }
+    }
+
+    /** One recipient: create in one transaction, or record the failure in another. */
+    Outcome processOne(long recipientId) {
+        try {
+            Outcome outcome = tx.execute(status -> createOne(recipientId));
+            return outcome == null ? Outcome.NOT_APPLICABLE : outcome;
+        } catch (RuntimeException e) {
+            log.warn("request recipient {}: creation failed", recipientId, e);
+            String reason = e instanceof VmCloneReservationService.NoCapacityException
+                    && e.getMessage() != null ? e.getMessage() : REASON_FAILED;
+            tx.executeWithoutResult(status -> {
+                lock();
+                recipientRepository.findWithLockById(recipientId)
+                        .filter(recipient -> recipient.getStatus() == RequestRecipientStatus.QUEUED)
+                        .ifPresent(recipient -> recipient.failed(reason));
+            });
+            return Outcome.FAILED;
+        }
+    }
+
+    private Outcome createOne(long recipientId) {
+        lock();
+        RequestRecipient recipient = recipientRepository.findWithLockById(recipientId).orElse(null);
+        if (recipient == null || recipient.getStatus() != RequestRecipientStatus.QUEUED) {
+            return Outcome.NOT_APPLICABLE;
+        }
+        Request request = requestRepository.findById(recipient.getRequestId()).orElseThrow();
+        if (request.getStatus() != RequestStatus.APPROVED) {
+            return Outcome.NOT_APPLICABLE;
+        }
+        RequestTypeHandler handler = handler(request.getResourceType());
+        if (handler == null || !handler.supportsRecipients()) {
+            throw new IllegalStateException("request " + request.getId() + " cannot make resources per recipient");
+        }
+        if (workspaceRepository.findByIdAndDeletedAtIsNull(request.getWorkspaceId()).isEmpty()) {
+            recipient.mark(RequestRecipientStatus.SKIPPED_INELIGIBLE, REASON_WORKSPACE_GONE);
+            return Outcome.SKIPPED;
+        }
+        Long userId = recipient.getUserId();
+        User user = userId == null ? null : userRepository.findById(userId).orElse(null);
+        if (user == null || user.getStatus() != UserStatus.ACTIVE
+                || workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(), userId).isEmpty()) {
+            recipient.mark(RequestRecipientStatus.SKIPPED_INELIGIBLE, RequestRecipientService.REASON_NOT_MEMBER);
+            return Outcome.SKIPPED;
+        }
+        RequestReview review = reviewRepository.findByRequestId(request.getId()).orElseThrow();
+        LocalDate end = review.getGrantedEndDate();
+        if (end != null && end.isBefore(ClockConfig.todayKst(clock))) {
+            recipient.mark(RequestRecipientStatus.SKIPPED_EXPIRED, REASON_EXPIRED);
+            return Outcome.SKIPPED;
+        }
+        if (request.getResourceType() == ResourceType.VM && vmsInCreation() >= concurrency()) {
+            return Outcome.AT_CAPACITY;
+        }
+
+        RequestTypeHandler.Materialized created = handler.createFor(request, review, userId);
+        // The resource belongs to the recipient and to nobody else, the same
+        // first grant a single approval gives its requester.
+        grantRepository.save(ResourceAccessGrant.forUser(request.getResourceType(),
+                created.resourceId(), userId, ResourceRole.OWNER));
+        recipient.created(created.resourceId());
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                created.afterCommit().run();
+            }
+        });
+
+        Map<String, Object> auditArgs = new LinkedHashMap<>();
+        auditArgs.put("type", request.getResourceType().name());
+        auditArgs.put("recipientId", recipient.getPublicId());
+        auditArgs.put("ownerId", user.getPublicId());
+        auditArgs.putAll(created.auditArgs());
+        auditService.recordAfterCommit(null, AuditService.ACTOR_ROLE_SYSTEM,
+                AuditService.REQUEST_RECIPIENT_CREATE, "request", request.getPublicId(), auditArgs, null);
+        // A VM tells its owner when provisioning finishes (the creation notice
+        // goes to the VM's owners). A key has no such later moment: it exists
+        // now and waits for its owner to issue the secret, which is what the
+        // approval notice for a key says.
+        if (request.getResourceType() == ResourceType.LLM_API_KEY) {
+            Map<String, Object> notifyArgs = new LinkedHashMap<>();
+            notifyArgs.put("requestId", request.getPublicId());
+            notifyArgs.put("type", request.getResourceType().name());
+            notifyArgs.put("resourceName", created.resourceName());
+            notifyArgs.putAll(created.notificationArgs());
+            notificationService.publish(userId, NotificationEvent.REQUEST_APPROVED, notifyArgs, null);
+        }
+        return Outcome.CREATED;
+    }
+
+    private void lock() {
+        jdbcTemplate.queryForObject("select pg_advisory_xact_lock(?)::text", String.class, ADVISORY_LOCK_KEY);
+    }
+
+    /** VMs this path made that are still being created. */
+    private long vmsInCreation() {
+        Long count = jdbcTemplate.queryForObject("""
+                select count(*)
+                  from request_recipients rr
+                  join requests r on r.id = rr.request_id
+                  join vms v on v.id = rr.resource_id
+                 where rr.status = 'CREATED' and r.resource_type = 'VM'
+                   and v.status = 'CREATING' and v.deleted_at is null
+                """, Long.class);
+        return count == null ? 0 : count;
+    }
+
+    private int concurrency() {
+        return Math.max(1, settingsService.integer(CONCURRENCY_SETTING, DEFAULT_CONCURRENCY));
+    }
+}

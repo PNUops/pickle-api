@@ -52,6 +52,11 @@ public class SettingsService {
     public static final String DOMAIN_RENEWAL_NOTICE_DAYS = "domain_renewal_notice_days";
     public static final String PROFANITY_SUBDOMAINS = "profanity_subdomains";
     public static final String VCPU_OVERCOMMIT_WARN = "vcpu_overcommit_warn";
+    /**
+     * How many VMs of many-person requests may be in creation at once. Read
+     * with a code default of 4 when the key is absent; editable once seeded.
+     */
+    public static final String BULK_PROVISION_CONCURRENCY = "bulk_provision_concurrency";
     public static final String MEMORY_USAGE_WARN = "memory_usage_warn";
     public static final String IP_QUARANTINE_HOURS = "ip_quarantine_hours";
     public static final String VM_DELETE_GRACE_HOURS = "vm_delete_grace_hours";
@@ -297,6 +302,7 @@ public class SettingsService {
             }
             return List.of();
         }));
+        map.put(BULK_PROVISION_CONCURRENCY, new Editable(SettingValueType.INTEGER, intInRange(1, 16)));
         map.put(VCPU_OVERCOMMIT_WARN, new Editable(SettingValueType.NUMBER,
                 numberInRangeExclusiveMin(0, 10)));
         map.put(MEMORY_USAGE_WARN, new Editable(SettingValueType.NUMBER,

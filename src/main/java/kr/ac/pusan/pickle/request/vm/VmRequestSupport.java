@@ -199,10 +199,77 @@ public class VmRequestSupport implements RequestTypeHandler {
         detail.grant(spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
                 image.getId(), forcedNodeId);
 
+        return createVm(request, reservation, spec.grantedVcpu(), spec.grantedMemoryMb(),
+                spec.grantedDiskGb(), form.grantedStartDate(), form.grantedEndDate(),
+                Texts.blankToNull(spec.grantedSlug()));
+    }
+
+    @Override
+    public boolean supportsRecipients() {
+        return true;
+    }
+
+    @Override
+    public void validateApproveForRecipients(Request request, ApproveRequestRequest form,
+            List<FieldValidationError> errors) {
+        // One name cannot belong to several VMs; each recipient's VM takes the
+        // display name plus a random suffix, as an unnamed approval does.
+        if (form.vm() != null && Texts.blankToNull(form.vm().grantedSlug()) != null) {
+            errors.add(new FieldValidationError("vm.grantedSlug",
+                    "대상자가 여러 명인 신청에는 호스트 이름을 정할 수 없습니다. 비워 두면 VM마다 자동으로 정합니다."));
+        }
+    }
+
+    /**
+     * The decision half of {@link #materialize}: what was granted, stored once
+     * on the request. No capacity is reserved here, because nothing is being
+     * placed yet — each recipient's VM reserves its own when it is made.
+     */
+    @Override
+    public void recordGrant(Request request, ApproveRequestRequest form) {
+        ApproveVmRequestSpec spec = form.vm();
+        OsImage image = imageCatalog.requireSelectable(spec.grantedImageId());
+        Long forcedNodeId = spec.nodeId() == null ? null
+                : nodeRepository.findByPublicId(spec.nodeId()).map(Node::getId).orElseThrow();
+        detail(request).grant(spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
+                image.getId(), forcedNodeId);
+    }
+
+    /**
+     * One recipient's VM, from the stored grant. Placement happens now, under
+     * the same node locks an approval takes, so a batch cannot overcommit a
+     * node any more than a run of single approvals can.
+     *
+     * @throws VmCloneReservationService.NoCapacityException when no node fits
+     */
+    @Override
+    public Materialized createFor(Request request, kr.ac.pusan.pickle.request.RequestReview review,
+            long ownerId) {
+        VmRequestDetail detail = detail(request);
+        OsImage granted = imageRepository.findById(detail.getGrantedImageId()).orElseThrow(
+                () -> new IllegalStateException("granted image of request " + request.getId() + " is gone"));
+        UUID forcedNode = detail.getNodeId() == null ? null
+                : nodeRepository.findById(detail.getNodeId()).map(Node::getPublicId).orElseThrow();
+        VmCloneReservationService.Reservation reservation = cloneReservations.reserve(
+                granted.getPublicId(), forcedNode,
+                new NodePlacementBudget.VmPlacementResources(detail.getGrantedVcpu(),
+                        detail.getGrantedMemoryMb(), detail.getGrantedDiskGb()));
+        return createVm(request, reservation, detail.getGrantedVcpu(), detail.getGrantedMemoryMb(),
+                detail.getGrantedDiskGb(), review.getGrantedStartDate(), review.getGrantedEndDate(), null);
+    }
+
+    /**
+     * The resource half: one CREATING VM on the reserved node and its
+     * provisioning job after commit. Shared by a single approval and by each
+     * recipient of a many-person one.
+     */
+    private Materialized createVm(Request request, VmCloneReservationService.Reservation reservation,
+            int vcpu, int memoryMb, int diskGb, java.time.@Nullable LocalDate startDate,
+            java.time.@Nullable LocalDate endDate, @Nullable String grantedSlug) {
+        OsImage image = reservation.canonical();
         // Approval already reserved the exact node and clone source while holding
         // their database locks, so the worker only verifies this persisted choice.
         Long nodeId = reservation.node().getId();
-        String grantedSlug = Texts.blankToNull(spec.grantedSlug());
         String hostname = grantedSlug != null ? grantedSlug
                 : generateHostname(VmSlugPolicy.sanitizeSeed(request.getDisplayName(),
                         request.getWorkspaceId()), request.getWorkspaceId());
@@ -210,8 +277,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         // distribution ships its own), never from a platform-wide constant.
         Vm vm = new Vm(nodeId, request.getWorkspaceId(), request.getOrgId(),
                 request.getId(), hostname, hostname, image.getId(), image.getSshUsername(),
-                spec.grantedVcpu(), spec.grantedMemoryMb(), spec.grantedDiskGb(),
-                form.grantedStartDate(), form.grantedEndDate());
+                vcpu, memoryMb, diskGb, startDate, endDate);
         vm.pinClone(reservation.pin());
         vm = vmRepository.save(vm);
         // Requester-chosen display name (request form) — seeded as the
@@ -227,9 +293,9 @@ public class VmRequestSupport implements RequestTypeHandler {
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("vmId", vm.getPublicId());
         auditArgs.put("hostname", hostname);
-        auditArgs.put("grantedVcpu", spec.grantedVcpu());
-        auditArgs.put("grantedMemoryMb", spec.grantedMemoryMb());
-        auditArgs.put("grantedDiskGb", spec.grantedDiskGb());
+        auditArgs.put("grantedVcpu", vcpu);
+        auditArgs.put("grantedMemoryMb", memoryMb);
+        auditArgs.put("grantedDiskGb", diskGb);
         auditArgs.put("nodeId", nodeRepository.findById(nodeId)
                 .map(kr.ac.pusan.pickle.inventory.Node::getPublicId).orElse(null));
         if (storedDisplayName != null) {

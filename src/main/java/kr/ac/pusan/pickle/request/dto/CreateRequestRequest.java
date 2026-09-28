@@ -6,8 +6,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import kr.ac.pusan.pickle.access.ResourceType;
+import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.gpu.dto.CreateGpuRequestSpec;
 import kr.ac.pusan.pickle.llm.dto.CreateLlmKeyRequestSpec;
 import kr.ac.pusan.pickle.publishing.dto.CreateDomainRequestSpec;
@@ -98,5 +100,39 @@ public record CreateRequestRequest(
          * by its own renewal deadline. The screen does not show either control
          * for this kind, and the service overwrites whatever arrives.</p>
          */
-        @Valid @Nullable CreateDomainRequestSpec domain) {
+        @Valid @Nullable CreateDomainRequestSpec domain,
+
+        /**
+         * The people to make the resource for, when it is not the requester.
+         * Absent or empty is the ordinary request. Only for kinds that can be
+         * made many times from one decision (VM, LLM API key).
+         */
+        @Schema(description = "리소스를 받을 대상자. 비우면 신청자 본인이 받는 일반 신청입니다. "
+                + "VM과 LLM API 키에만 쓸 수 있고, 워크스페이스 소유자나 이 기관의 신청을 승인할 수 있는 관리자만 지정할 수 있습니다. "
+                + "대상자마다 리소스를 하나씩 만들며, 가입 전인 초대 대상자는 가입할 때 만듭니다.")
+        @Size(max = 200, message = "대상자는 한 번에 200명까지 지정할 수 있습니다.")
+        @Nullable List<CreateRequestRecipient> recipients,
+
+        /**
+         * Present when the submitter is an approver who decides in the same
+         * step: the same form the approve endpoint takes.
+         */
+        @Schema(description = "제출과 동시에 승인할 때의 승인 내용. 이 기관의 신청을 승인할 수 있는 관리자만 보낼 수 있습니다. "
+                + "승인 화면에서 보내는 내용과 같습니다.")
+        @Valid @Nullable ApproveRequestRequest approval) {
+
+    /** The form as it was before recipients and same-step approval existed. */
+    public CreateRequestRequest(ResourceType type, UUID workspaceId, @Nullable UUID orgId,
+            String purpose, @Nullable String extraNote, @Nullable UUID periodPresetId,
+            @Nullable LocalDate reqEndDate, @Nullable Boolean reqIndefinite, String displayName,
+            @Nullable CreateVmRequestSpec vm, @Nullable CreateLlmKeyRequestSpec llmKey,
+            @Nullable CreateGpuRequestSpec gpu, @Nullable CreateDomainRequestSpec domain) {
+        this(type, workspaceId, orgId, purpose, extraNote, periodPresetId, reqEndDate,
+                reqIndefinite, displayName, vm, llmKey, gpu, domain, null, null);
+    }
+
+    /** Whether this names people other than the requester. */
+    public boolean hasRecipients() {
+        return recipients != null && !recipients.isEmpty();
+    }
 }

@@ -72,6 +72,7 @@ public class ApprovalService {
     private final AuditService auditService;
     private final AuditIds auditIds;
     private final NotificationService notificationService;
+    private final kr.ac.pusan.pickle.request.RequestRecipientService recipientService;
 
     public ApprovalService(RequestRepository requestRepository, RequestReviewRepository reviewRepository,
             kr.ac.pusan.pickle.request.RequestApproval requestApproval,
@@ -80,7 +81,9 @@ public class ApprovalService {
             WorkspaceRepository workspaceRepository,
             ResourceAccessGrantRepository grantRepository, UserRepository userRepository,
             OrgRepository orgRepository,
-            AuditService auditService, AuditIds auditIds, NotificationService notificationService) {
+            AuditService auditService, AuditIds auditIds, NotificationService notificationService,
+            kr.ac.pusan.pickle.request.RequestRecipientService recipientService) {
+        this.recipientService = recipientService;
         this.requestRepository = requestRepository;
         this.reviewRepository = reviewRepository;
         this.requestApproval = requestApproval;
@@ -113,18 +116,44 @@ public class ApprovalService {
             spec = spec.and(RequestSpecs.type(type));
         }
         Page<Request> result = requestRepository.findAll(spec, pageable);
-        return PageResponse.of(assembler.toDetails(result.getContent()), result);
+        return PageResponse.of(assembler.toDetails(result.getContent(), actor), result);
     }
 
     @Transactional(readOnly = true)
     public RequestDetailResponse get(AuthenticatedUser actor, UUID requestId) {
-        return assembler.toDetail(findReadable(actor, requestId));
+        return assembler.toDetail(findReadable(actor, requestId), actor);
     }
 
     @Transactional
     public RequestDetailResponse approve(AuthenticatedUser actor, UUID requestId,
             ApproveRequestRequest form, String ip) {
         Request request = findWritableWithLock(actor, requestId);
+        decide(actor, request, form, ip, false, "");
+        return assembler.toDetail(request, actor);
+    }
+
+    /**
+     * Approves a request its approver has just submitted, in the submission's
+     * transaction: the same decision the approve endpoint makes, run by the
+     * same code, so that "submitted and approved at once" cannot drift from
+     * "approved". The caller has already established that {@code actor} may
+     * decide in the request's organisation.
+     *
+     * <p>Field errors come back under {@code approval.}, where the form put
+     * them.</p>
+     */
+    @Transactional
+    public void approveOnSubmission(AuthenticatedUser actor, Request request,
+            ApproveRequestRequest form, String ip) {
+        decide(actor, request, form, ip, true, "approval.");
+    }
+
+    /**
+     * The approval decision, for a request the caller holds (row-locked, or
+     * created in this transaction).
+     */
+    private void decide(AuthenticatedUser actor, Request request, ApproveRequestRequest form,
+            String ip, boolean submittedByReviewer, String fieldPrefix) {
         requireSubmitted(request);
         // Approval creates a resource inside the workspace, so the workspace has
         // to still be there. Deleting a workspace cancels its in-flight requests,
@@ -137,6 +166,7 @@ public class ApprovalService {
                     "삭제된 워크스페이스에는 리소스를 만들 수 없습니다. 이 신청은 반려해 주세요.");
         }
         RequestTypeHandler handler = handlerFor(request);
+        boolean perRecipient = recipientService.hasRecipients(request);
 
         List<FieldValidationError> errors = new ArrayList<>();
         if (form.grantedStartDate() != null && form.grantedEndDate() != null
@@ -144,46 +174,78 @@ public class ApprovalService {
             errors.add(new FieldValidationError("grantedEndDate", "종료일은 시작일 이후여야 합니다."));
         }
         handler.validateApprove(request, form, errors);
-        // The resource is created with its requester as its owner, so approval
-        // needs that person to still be someone who can hold a grant here. If
-        // they left the workspace or the platform meanwhile, the request is no
-        // longer approvable and the reviewer rejects it instead — inventing a
-        // different owner would be the platform guessing whose resource this is.
-        if (workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(),
+        if (perRecipient) {
+            if (!handler.supportsRecipients()) {
+                throw new IllegalStateException("request " + request.getId()
+                        + " has recipients but its kind makes one resource");
+            }
+            handler.validateApproveForRecipients(request, form, errors);
+        } else if (workspaceMemberRepository.findByWorkspaceIdAndUserId(request.getWorkspaceId(),
                 request.getRequesterId()).isEmpty()
                 || userRepository.findById(request.getRequesterId())
                         .filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
+            // The resource is created with its requester as its owner, so approval
+            // needs that person to still be someone who can hold a grant here. If
+            // they left the workspace or the platform meanwhile, the request is no
+            // longer approvable and the reviewer rejects it instead — inventing a
+            // different owner would be the platform guessing whose resource this is.
+            // A request with recipients owns nothing through its requester, so
+            // the check is each recipient's instead, made when theirs is created.
             throw new ApiException(HttpStatus.CONFLICT, ErrorCodes.REQUEST_REQUESTER_INELIGIBLE,
                     "신청자가 더 이상 이 워크스페이스의 활성 구성원이 아닙니다",
                     "승인하면 이 리소스의 소유자가 될 사람이 없습니다. 이 신청은 반려해 주세요.");
         }
         if (!errors.isEmpty()) {
-            throw ApiException.validationFailed(errors);
+            throw ApiException.validationFailed(fieldPrefix.isEmpty() ? errors : errors.stream()
+                    .map(error -> new FieldValidationError(fieldPrefix + error.field(), error.message()))
+                    .toList());
         }
-
-        // The decision, the resource and its first grant, shared with the path
-        // that approves without a reviewer.
-        RequestTypeHandler.Materialized created =
-                requestApproval.apply(request, handler, form, actor.id(), actor);
 
         Map<String, Object> auditArgs = new LinkedHashMap<>();
         auditArgs.put("type", request.getResourceType().name());
-        auditArgs.putAll(created.auditArgs());
-        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
-                "request", request.getPublicId(), auditArgs, ip);
-        // In-tx insert: the notice exists iff the approval committed.
+        if (submittedByReviewer) {
+            // The same person asked and decided. Not "automatic": a person
+            // decided, and the reviewer on the record is that person.
+            auditArgs.put("submittedByReviewer", true);
+        }
         Map<String, Object> notifyArgs = new LinkedHashMap<>();
         notifyArgs.put("requestId", request.getPublicId());
-        notifyArgs.put("type", request.getResourceType().name());
-        notifyArgs.put("resourceName", created.resourceName());
-        notifyArgs.putAll(created.notificationArgs());
+        if (perRecipient) {
+            // The decision and the grant, once. Every recipient's resource is
+            // made after this commits, each in its own transaction.
+            requestApproval.applyForRecipients(request, handler, form, actor.id());
+            kr.ac.pusan.pickle.request.RequestRecipientService.Settlement settled =
+                    recipientService.settleAtApproval(request);
+            auditArgs.put("recipientsQueued", settled.queued());
+            auditArgs.put("recipientsPendingJoin", settled.pendingJoin());
+            auditArgs.put("recipientsSkipped", settled.skipped());
+            // No type on the notice: the per-kind wording speaks to the owner
+            // of the one resource ("generation starts", "issue your key"), and
+            // the requester of a many-person request owns none of them.
+            notifyArgs.put("resourceName", request.getDisplayName());
+        } else {
+            // The decision, the resource and its first grant, shared with the path
+            // that approves without a reviewer.
+            RequestTypeHandler.Materialized created =
+                    requestApproval.apply(request, handler, form, actor.id(), actor);
+            auditArgs.putAll(created.auditArgs());
+            notifyArgs.put("type", request.getResourceType().name());
+            notifyArgs.put("resourceName", created.resourceName());
+            notifyArgs.putAll(created.notificationArgs());
+        }
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_APPROVE,
+                "request", request.getPublicId(), auditArgs, ip);
         String reviewComment = Texts.blankToNull(form.comment());
         if (reviewComment != null) {
             notifyArgs.put("comment", reviewComment);
         }
-        notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_APPROVED,
-                notifyArgs, null);
-        return assembler.toDetail(request);
+        // In-tx insert: the notice exists iff the approval committed. A request
+        // submitted and approved in one step has nobody to tell: the requester
+        // is the person who just decided.
+        if (!submittedByReviewer) {
+            notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_APPROVED,
+                    notifyArgs, null);
+        }
     }
 
     @Transactional
@@ -193,13 +255,30 @@ public class ApprovalService {
         requireSubmitted(request);
         reviewRepository.save(RequestReview.reject(request.getId(), actor.id(), form.comment().strip()));
         request.setStatus(RequestStatus.REJECTED);
+        recipientService.closeUndecided(request);
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_REJECT,
                 "request", request.getPublicId(),
                 Map.of("workspaceId", auditIds.workspace(request.getWorkspaceId())), ip);
         notificationService.publish(request.getRequesterId(), NotificationEvent.REQUEST_REJECTED,
                 Map.of("requestId", request.getPublicId(), "comment", form.comment().strip(),
                         "type", request.getResourceType().name()), null);
-        return assembler.toDetail(request);
+        return assembler.toDetail(request, actor);
+    }
+
+    /**
+     * Queues a recipient whose creation failed for another attempt. Same
+     * lookup and scope as a decision: the org tier acts where it operates, and
+     * a request outside answers 404.
+     */
+    @Transactional
+    public RequestDetailResponse retryRecipient(AuthenticatedUser actor, UUID requestId,
+            UUID recipientId, String ip) {
+        Request request = findWritableWithLock(actor, requestId);
+        kr.ac.pusan.pickle.request.RequestRecipient recipient = recipientService.retry(request, recipientId);
+        auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.REQUEST_RECIPIENT_RETRY,
+                "request", request.getPublicId(),
+                Map.of("recipientId", recipient.getPublicId(), "attempts", recipient.getAttempts()), ip);
+        return assembler.toDetail(request, actor);
     }
 
     /** Read scope for the request queue. */
