@@ -150,9 +150,10 @@ public class AdminWorkspaceQueryService {
     /**
      * Contract {@code GET /admin/workspaces/{workspaceId}/invitations}: the
      * open invitations of a workspace, for an approver naming the people a
-     * request is for. Scoped like a decision, not like a read: the org tier
-     * sees the workspaces linked to an organisation it operates, because the
-     * only use of this list is to act. Anything outside answers 404.
+     * request is for. The role gate is the approving roles (the only use of
+     * this list is to act); the workspace itself is not narrowed by
+     * organisation (operator decision, 2026-09-28, see {@link #list}).
+     * Unknown and deleted workspaces answer 404.
      */
     @Transactional(readOnly = true)
     public List<kr.ac.pusan.pickle.workspace.dto.WorkspaceInvitationResponse> listInvitations(
