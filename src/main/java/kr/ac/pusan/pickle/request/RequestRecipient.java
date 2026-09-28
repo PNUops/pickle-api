@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 import org.jspecify.annotations.Nullable;
 
 /**
- * One person a request asks a resource for (V133). A request without any of
+ * One person a request asks a resource for (V134). A request without any of
  * these is the ordinary request whose requester owns the result.
  */
 @Entity
