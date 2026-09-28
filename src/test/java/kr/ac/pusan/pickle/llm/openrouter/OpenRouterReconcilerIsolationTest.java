@@ -3,6 +3,8 @@ package kr.ac.pusan.pickle.llm.openrouter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -48,7 +50,8 @@ class OpenRouterReconcilerIsolationTest {
 
         // The worker above this call is what classifies and records the
         // failure; the reconciler's job is to not pretend it finished.
-        assertThatThrownBy(() -> new OpenRouterReconciler(keys, client, findings, spends, resolver)
+        assertThatThrownBy(() -> new OpenRouterReconciler(keys, client, client,
+                findings, spends, resolver)
                 .reconcileAccount(access, claim(9L), NOW, true, Clock.systemUTC()))
                 .isInstanceOf(OpenRouterException.class);
 
@@ -66,7 +69,8 @@ class OpenRouterReconcilerIsolationTest {
         OpenRouterManagementAccess accountless = new OpenRouterManagementAccess(
                 "no-account", null, null, null, null, "secret", null);
 
-        assertThatThrownBy(() -> new OpenRouterReconciler(keys, client, findings, spends, resolver)
+        assertThatThrownBy(() -> new OpenRouterReconciler(keys, client, client,
+                findings, spends, resolver)
                 .reconcileAccount(accountless, claim(1L), NOW, true, Clock.systemUTC()))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -100,7 +104,7 @@ class OpenRouterReconcilerIsolationTest {
         when(keys.findByOpenrouterAccountId(12L)).thenReturn(List.of(localB));
         persistedRecorder(spends);
         OpenRouterReconciler reconciler =
-                new OpenRouterReconciler(keys, client, findings, spends, resolver);
+                new OpenRouterReconciler(keys, client, client, findings, spends, resolver);
 
         reconciler.reconcileAccount(first, claim(11L), NOW, true, Clock.systemUTC());
         reconciler.reconcileAccount(second, claim(12L), NOW, true, Clock.systemUTC());
@@ -123,6 +127,39 @@ class OpenRouterReconcilerIsolationTest {
                 org.mockito.ArgumentMatchers.anyCollection(), any());
         assertThat(prefixes.getAllValues()).contains(
                 "account:account-a:key:", "account:account-b:key:");
+    }
+
+    @Test
+    void readOnlyObservationRecordsDriftWithoutProviderMutationCapability() {
+        LlmApiKeyRepository keys = mock(LlmApiKeyRepository.class);
+        OpenRouterReadClient reads = mock(OpenRouterReadClient.class);
+        OpenRouterKeyMutationClient mutations = mock(OpenRouterKeyMutationClient.class);
+        DriftFindingRepository findings = mock(DriftFindingRepository.class);
+        OpenRouterSpendRecorder spends = mock(OpenRouterSpendRecorder.class);
+        OpenRouterCredentialResolver resolver = mock(OpenRouterCredentialResolver.class);
+        UUID accountPublicId = UUID.randomUUID();
+        OpenRouterManagementAccess access = new OpenRouterManagementAccess(
+                "read-only-account", 14L, accountPublicId, null, null, "secret", 140L);
+        LlmApiKey local = local(141L);
+        when(local.getOpenrouterKeyHash()).thenReturn("managed-hash");
+        when(keys.findByOpenrouterAccountId(14L)).thenReturn(List.of(local));
+        when(reads.listKeys("secret", null)).thenReturn(List.of(
+                new OpenRouterClient.ManagedKey("managed-hash", "key", false,
+                        new BigDecimal("2"), null, true, BigDecimal.ONE)));
+        persistedRecorder(spends);
+        OpenRouterReconciler reconciler = new OpenRouterReconciler(
+                keys, reads, mutations, findings, spends, resolver);
+
+        OpenRouterReconciler.ScopeObservation observation = reconciler.reconcileAccountReadOnly(
+                access, claim(14L), NOW, true, Clock.systemUTC(), reads);
+
+        assertThat(observation.persisted()).isTrue();
+        verify(reads).listKeys("secret", null);
+        verifyNoInteractions(mutations);
+        ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+        verify(findings).observe(any(DriftFindingKind.class), isNull(), isNull(), isNull(),
+                anyString(), detail.capture(), anyString(), any());
+        assertThat(detail.getValue()).contains("providerRepairDeferred");
     }
 
     /** Records everything and runs the caller's protected writes. */
