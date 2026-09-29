@@ -407,8 +407,12 @@ class RequestRecipientsTest {
                 Long.class, requestId, second.getId()))).isEqualTo(second.getId());
     }
 
+    /**
+     * Also pins the intended spill onto a GPU node: GPU nodes rank last, but
+     * one is used as soon as the node ahead of it is at the limit.
+     */
     @Test
-    void theConcurrencyLimitAppliesToEachNodeSeparately() throws Exception {
+    void theConcurrencyLimitAppliesToEachNodeAndSpillsOntoAGpuNode() throws Exception {
         long[] nodes = twoNodeImage();
         try {
             UUID workspace = createWorkspace(ownerToken);
@@ -419,8 +423,8 @@ class RequestRecipientsTest {
                     insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
                     """);
 
-            // The first node is preferred, so the first VM lands there; with
-            // that node at the limit the second still starts, on the other.
+            // The CPU node is preferred, so the first VM lands there; with
+            // that node at the limit the second still starts, on the GPU node.
             materializer.run();
             assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[1]);
 

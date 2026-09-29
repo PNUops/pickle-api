@@ -47,6 +47,10 @@ public class VmCloneReservationService {
      * failures stay apart: no node fits at all is {@link NoCapacityException},
      * while some node would fit but every such node is excluded is
      * {@link ExcludedNodesOnlyException}, which a caller can wait out.
+     *
+     * <p>Exclusion applies after the ranking, so GPU nodes stay last in
+     * preference but are used once every earlier node is excluded: a GPU
+     * node is not left idle while CPU nodes are at the caller's limit.</p>
      */
     @Transactional
     public Reservation reserve(UUID imagePublicId, @Nullable UUID forcedNodePublicId,

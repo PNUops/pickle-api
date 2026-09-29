@@ -60,7 +60,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * clone and the node's disk is the bottleneck. Nodes at the limit are handed
  * to placement as exclusions, so a recipient that some other node can take
  * goes there, and one that only a node at the limit could take stays QUEUED
- * for a later run rather than failing. Only this path's VMs are counted: a
+ * for a later run rather than failing. GPU nodes are still placement's last
+ * choice, but once the nodes ahead of them are at the limit a VM goes to a GPU
+ * node rather than waiting. Only this path's VMs are counted: a
  * single-person approval clones on its own and neither counts nor waits.
  * Keys cost only a database write each, so they are capped per run
  * instead.</p>
