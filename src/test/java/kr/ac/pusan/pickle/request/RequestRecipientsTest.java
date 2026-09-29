@@ -440,7 +440,7 @@ class RequestRecipientsTest {
             materializer.run();
             assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[0], nodes[1]);
         } finally {
-            jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where id in (?, ?)", nodes[0], nodes[1]);
+            retireTwoNodeImage(nodes);
         }
     }
 
@@ -808,6 +808,18 @@ class RequestRecipientsTest {
         imageRepository.saveAndFlush(new OsImage(name, "Bulk OS", "ubuntu", "24.04", "ubuntu",
                 vmid + 1, second, 1, 10, CatalogStatus.ACTIVE, null));
         return new long[] {first, second};
+    }
+
+    /**
+     * Takes what {@link #twoNodeImage} added out of every listing another test
+     * could read: the nodes leave ACTIVE, their image copies are disabled, and
+     * any VM still CREATING on them stops holding a slot of the limit.
+     */
+    private void retireTwoNodeImage(long[] nodes) {
+        jdbcTemplate.update("update os_images set status = 'DISABLED' where node_id in (?, ?)", nodes[0], nodes[1]);
+        jdbcTemplate.update("update vms set status = 'RUNNING' where status = 'CREATING' and node_id in (?, ?)",
+                nodes[0], nodes[1]);
+        jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where id in (?, ?)", nodes[0], nodes[1]);
     }
 
     private long insertNode(String name, String extraLabels, long poolId) {
