@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.Node;
 import kr.ac.pusan.pickle.inventory.NodeRepository;
@@ -80,12 +81,12 @@ class VmCloneReservationServiceTest {
     void excludingEveryFittingNodeIsToldApartFromNoCapacity() {
         NodePlacementBudget.VmPlacementResources small = new NodePlacementBudget.VmPlacementResources(1, 1024, 10);
         assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null, small,
-                java.util.Set.of(second.getId())))
+                Set.of(second.getId())))
                 .isInstanceOf(VmCloneReservationService.ExcludedNodesOnlyException.class);
 
         when(vms.sumActiveByNodeId(second.getId(), VmStatus.DELETED)).thenReturn(allocated(27, 57000, 790));
         assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null, small,
-                java.util.Set.of(second.getId())))
+                Set.of(second.getId())))
                 .isInstanceOf(VmCloneReservationService.NoCapacityException.class);
     }
 
