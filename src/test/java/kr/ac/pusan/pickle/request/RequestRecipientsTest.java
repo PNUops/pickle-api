@@ -449,6 +449,32 @@ class RequestRecipientsTest {
     }
 
     @Test
+    void aVmStillInCreationDoesNotHoldRecipientsWhenNoNodeIsActive() throws Exception {
+        UUID workspace = createWorkspace(ownerToken);
+        User first = addMember(workspace, "inactive-1");
+        User second = addMember(workspace, "inactive-2");
+        long requestId = approvedVmRequest(workspace, List.of(first, second), 2048);
+        jdbcTemplate.update("""
+                insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                """);
+        materializer.run();
+        assertThat(vmCount(requestId)).isEqualTo(1);
+
+        List<Long> active = jdbcTemplate.queryForList("select id from nodes where status = 'ACTIVE'", Long.class);
+        try {
+            jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where status = 'ACTIVE'");
+            materializer.run();
+            // The leftover CREATING VM's node is at the limit, but no node can
+            // take anything, so the recipient fails as it would with none.
+            assertThat(recipientStatus(requestId, second.getId())).isEqualTo("FAILED");
+        } finally {
+            for (Long nodeId : active) {
+                jdbcTemplate.update("update nodes set status = 'ACTIVE' where id = ?", nodeId);
+            }
+        }
+    }
+
+    @Test
     void aPassedEndDateOrADepartedMemberCreatesNothing() throws Exception {
         UUID workspace = createWorkspace(ownerToken);
         User expired = addMember(workspace, "expired");

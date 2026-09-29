@@ -271,7 +271,10 @@ public class RequestRecipientMaterializer {
         Set<Long> nodesAtLimit = Set.of();
         if (request.getResourceType() == ResourceType.VM) {
             nodesAtLimit = nodesAtLimit();
-            if (!nodesAtLimit.isEmpty() && nodesAtLimit.containsAll(activeNodeIds())) {
+            // With no active node at all there is nothing to wait for: placement
+            // fails with no capacity, as it does when nothing is in creation.
+            Set<Long> active = activeNodeIds();
+            if (!active.isEmpty() && nodesAtLimit.containsAll(active)) {
                 return Outcome.AT_CAPACITY;
             }
         }
