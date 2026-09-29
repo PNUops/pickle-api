@@ -1,6 +1,7 @@
 package kr.ac.pusan.pickle.common.tx;
 
 import java.util.function.Supplier;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -26,18 +27,23 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public final class AfterCommit {
 
     private static final Logger log = LoggerFactory.getLogger(AfterCommit.class);
-    private static final ThreadLocal<Boolean> ISOLATING = new ThreadLocal<>();
+    /** The isolating caller's context (a bulk batch, say), or absent when not isolating. */
+    private static final ThreadLocal<String> ISOLATING = new ThreadLocal<>();
 
     private AfterCommit() {
     }
 
-    /** Runs {@code action} after the current transaction commits. */
-    public static void run(Runnable action) {
-        boolean isolated = Boolean.TRUE.equals(ISOLATING.get());
+    /**
+     * Runs {@code action} after the current transaction commits.
+     * {@code label} names the work for the log line an isolated failure
+     * leaves, such as {@code "audit vm.admin_start <publicId>"}.
+     */
+    public static void run(String label, Runnable action) {
+        @Nullable String context = ISOLATING.get();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                if (!isolated) {
+                if (context == null) {
                     action.run();
                     return;
                 }
@@ -46,7 +52,8 @@ public final class AfterCommit {
                 } catch (RuntimeException e) {
                     // The transaction has committed; all that is left is to
                     // say so and let the remaining callbacks run.
-                    log.error("after-commit action failed; the remaining ones still run", e);
+                    log.error("after-commit {} failed ({}); the remaining ones still run",
+                            label, context, e);
                 }
             }
         });
@@ -54,11 +61,13 @@ public final class AfterCommit {
 
     /**
      * Runs {@code body} with every after-commit callback it registers
-     * isolated from the others.
+     * isolated from the others. {@code context} goes into each isolated
+     * failure's log line, such as {@code "batch <batchId>"}. The previous
+     * mode is restored however {@code body} ends.
      */
-    public static <T> T isolating(Supplier<T> body) {
-        Boolean previous = ISOLATING.get();
-        ISOLATING.set(Boolean.TRUE);
+    public static <T> T isolating(String context, Supplier<T> body) {
+        @Nullable String previous = ISOLATING.get();
+        ISOLATING.set(context);
         try {
             return body.get();
         } finally {

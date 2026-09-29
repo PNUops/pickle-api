@@ -1,6 +1,9 @@
 package kr.ac.pusan.pickle.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.audit.AuditService;
 import kr.ac.pusan.pickle.config.ClockConfig;
 import kr.ac.pusan.pickle.llm.LlmSyncService;
 import kr.ac.pusan.pickle.llm.dto.LlmSyncRequest;
@@ -46,8 +50,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -92,6 +96,9 @@ class AdminBulkChangeTest {
     // Spied so one domain's enqueue can be made to fail; unstubbed it delegates.
     @MockitoSpyBean
     private DomainVerificationJob domainVerificationJob;
+    // Spied so the summary insert can be made to fail; unstubbed it delegates.
+    @MockitoSpyBean
+    private AuditService auditService;
 
     private Org orgA;
     private Org orgB;
@@ -977,9 +984,54 @@ class AdminBulkChangeTest {
         assertThat(verifyJobCount()).isEqualTo(before + 1);
         assertThat(auditCount(pub("domains", failing), "domain.admin_verify")).isEqualTo(1);
         assertThat(auditCount(pub("domains", fine), "domain.admin_verify")).isEqualTo(1);
+        JsonNode summary = objectMapper.readTree(jdbcTemplate.queryForObject("""
+                select detail::text from audit_logs
+                 where action = 'admin.bulk_change' and target_id = ?
+                """, String.class, apply.get("batchId").asString()));
+        assertThat(summary.get("targets").asInt()).isEqualTo(2);
+        assertThat(summary.get("counts").get("APPLIED").asInt()).isEqualTo(2);
+        assertThat(summary.get("counts").get("SKIPPED").asInt()).isZero();
+    }
+
+    @Test
+    void aFailedSummaryInsertLeavesEveryTargetsWorkInPlace() throws Exception {
+        long first = customDomain(orgA.getId(), workspaceA);
+        long second = customDomain(orgA.getId(), workspaceA);
+        doThrow(new IllegalStateException("audit storage unavailable"))
+                .when(auditService).record(any(), anyString(), eq(AuditService.ADMIN_BULK_CHANGE),
+                        anyString(), any(), any(), any());
+        Map<String, Object> body = request("DOMAIN",
+                List.of(pub("domains", first), pub("domains", second)),
+                Map.of("kind", "DOMAIN_VERIFY", "domainVerify", Map.of()));
+        long before = verifyJobCount();
+
+        // Answered as a success: the change committed, and the summary is the
+        // only thing lost.
+        JsonNode apply = applyJson(orgAdminToken, body);
+
+        assertThat(verifyJobCount()).isEqualTo(before + 2);
+        assertThat(auditCount(pub("domains", first), "domain.admin_verify")).isEqualTo(1);
+        assertThat(auditCount(pub("domains", second), "domain.admin_verify")).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from audit_logs where action = 'admin.bulk_change' and target_id = ?",
-                Long.class, apply.get("batchId").asString())).isEqualTo(1);
+                Long.class, apply.get("batchId").asString())).isZero();
+    }
+
+    /**
+     * Outside a bulk change nothing is isolated: a single re-verification
+     * whose enqueue fails after the commit still fails the request, and the
+     * audit row registered after it is not written, as before.
+     */
+    @Test
+    void aSinglePathStillPropagatesItsAfterCommitFailure() throws Exception {
+        long domain = customDomain(orgA.getId(), workspaceA);
+        doThrow(new IllegalStateException("job storage unavailable"))
+                .when(domainVerificationJob).requestVerify(domain);
+
+        mockMvc.perform(post("/api/v1/admin/domains/" + pub("domains", domain) + "/verify")
+                        .header("Authorization", "Bearer " + orgAdminToken))
+                .andExpect(status().is5xxServerError());
+        assertThat(auditCount(pub("domains", domain), "domain.admin_verify")).isZero();
     }
 
     /**

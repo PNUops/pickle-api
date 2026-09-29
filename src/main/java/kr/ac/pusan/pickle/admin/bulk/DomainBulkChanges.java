@@ -230,8 +230,8 @@ class DomainBulkChanges extends BulkChangeHandler<Domain> {
         if (Objects.equals(domain.getRenewDueAt(), renewal.renewDueAt())) {
             return Judgement.unchanged();
         }
-        // The plan is the instant the request was validated at, so the write
-        // judges the deadline against the same moment.
+        // The plan is the instant this judgment was made at, so the write
+        // tests the deadline against the same moment.
         return Judgement.change(List.of(diff(objectMapper, "renewDueAt", domain.getRenewDueAt(),
                 renewal.renewDueAt())), now);
     }

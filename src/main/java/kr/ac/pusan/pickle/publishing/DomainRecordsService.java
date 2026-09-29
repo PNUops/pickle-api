@@ -1,12 +1,12 @@
 package kr.ac.pusan.pickle.publishing;
 
-import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.publishing.DomainRecordPolicy.DesiredSet;
 import org.jobrunr.jobs.lambdas.JobLambda;
 import org.jobrunr.scheduling.JobScheduler;
@@ -116,7 +116,8 @@ public class DomainRecordsService {
         if (changed) {
             locked.setRecordsGeneration(locked.getRecordsGeneration() + 1);
             long domainId = locked.getId();
-            enqueueAfterCommit(() -> applyJob.apply(domainId));
+            enqueueAfterCommit("enqueue record apply domain #" + domainId,
+                    () -> applyJob.apply(domainId));
         }
         return recordRepository.findByDomainIdAndStatusNotOrderByIdAsc(locked.getId(),
                 DomainRecordStatus.REMOVED);
@@ -145,7 +146,8 @@ public class DomainRecordsService {
         }
         if (changed) {
             locked.setRecordsGeneration(locked.getRecordsGeneration() + 1);
-            enqueueAfterCommit(() -> applyJob.apply(domainId));
+            enqueueAfterCommit("enqueue record apply domain #" + domainId,
+                    () -> applyJob.apply(domainId));
         }
     }
 
@@ -205,11 +207,11 @@ public class DomainRecordsService {
      * unreachable provider becomes a slow save rather than a record that is
      * owed a write.
      */
-    private void enqueueAfterCommit(JobLambda job) {
-        afterCommit(() -> jobScheduler.enqueue(job));
+    private void enqueueAfterCommit(String label, JobLambda job) {
+        afterCommit(label, () -> jobScheduler.enqueue(job));
     }
 
-    private static void afterCommit(Runnable action) {
-        AfterCommit.run(action);
+    private static void afterCommit(String label, Runnable action) {
+        AfterCommit.run(label, action);
     }
 }

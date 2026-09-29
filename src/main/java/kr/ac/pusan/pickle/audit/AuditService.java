@@ -1,8 +1,8 @@
 package kr.ac.pusan.pickle.audit;
 
-import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.util.Map;
 import java.util.UUID;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -311,7 +311,7 @@ public class AuditService {
             record(actorId, actorRole, action, targetType, targetId, detail, ip);
             return;
         }
-        AfterCommit.run(() -> self.getObject().record(actorId, actorRole, action, targetType,
+        AfterCommit.run("audit " + action + " " + targetId, () -> self.getObject().record(actorId, actorRole, action, targetType,
                 targetId, detail, ip));
     }
 }

@@ -1,6 +1,5 @@
 package kr.ac.pusan.pickle.vm;
 
-import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -21,6 +20,7 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.workspace.WorkspaceMemberRepository;
 import kr.ac.pusan.pickle.notification.NotificationEvent;
 import kr.ac.pusan.pickle.notification.NotificationService;
@@ -142,7 +142,7 @@ public class VmDeletionService {
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "scheduledFor", scheduledFor.toString()), ip);
 
         // Best-effort graceful shutdown; its failure never touches the schedule.
-        enqueueAfterCommit(() -> deleteVmJob.gracefulShutdown(vmId));
+        enqueueAfterCommit("enqueue vm gracefulShutdown #" + vmId, () -> deleteVmJob.gracefulShutdown(vmId));
         publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_ACCEPTED,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName(), "scheduledFor", scheduledFor));
         return new VmDeletionResponse(VmDeleteKind.SELF, scheduledFor, now, actor.publicId(), null, true);
@@ -162,7 +162,7 @@ public class VmDeletionService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_SELF_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "immediate", true), ip);
-        enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
+        enqueueAfterCommit("enqueue vm deleteVm #" + vmId, () -> deleteVmJob.deleteVm(vmId));
         return new VmDeletionResponse(VmDeleteKind.SELF, now, now, actor.publicId(), null, false);
     }
 
@@ -361,7 +361,7 @@ public class VmDeletionService {
         auditService.recordAfterCommit(actor.id(), actor.role().name(), AuditService.VM_FORCE_DELETE,
                 "vm", vm.getPublicId(), Map.of("name", vm.getName(), "orgId", auditIds.org(vm.getOrgId()),
                         "workspaceId", auditIds.workspace(vm.getWorkspaceId()), "overrodeProtection", overrodeProtection), ip);
-        enqueueAfterCommit(() -> deleteVmJob.deleteVm(vmId));
+        enqueueAfterCommit("enqueue vm deleteVm #" + vmId, () -> deleteVmJob.deleteVm(vmId));
         publishWithOrgAdmins(vm, NotificationEvent.VM_DELETE_FORCE,
                 Map.of("vmId", vm.getPublicId(), "vmName", vm.getName()));
         return new MessageResponse("강제 삭제를 접수했습니다. VM이 즉시 강제 종료되고 파기됩니다.");
@@ -534,7 +534,7 @@ public class VmDeletionService {
     }
 
     /** Same after-commit trade-off as ApprovalService/VmLifecycleService. */
-    private void enqueueAfterCommit(JobLambda job) {
-        AfterCommit.run(() -> jobScheduler.enqueue(job));
+    private void enqueueAfterCommit(String label, JobLambda job) {
+        AfterCommit.run(label, () -> jobScheduler.enqueue(job));
     }
 }

@@ -60,8 +60,9 @@ abstract class BulkChangeHandler<T> {
     /**
      * Request-level checks that hold for every target alike (a date before
      * today, a missing reason). Added to {@code errors}; the caller answers
-     * 422 with all of them. {@code now} is the one instant the whole call is
-     * judged at, the same one {@link #judge} is given.
+     * 422 with all of them. {@code now} is the one instant the request is
+     * validated at; an apply judges its targets at a later reading, taken
+     * once the rows are locked.
      */
     abstract void validate(AdminBulkChangeRequest request, List<FieldValidationError> errors,
             Instant now);

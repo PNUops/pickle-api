@@ -83,16 +83,17 @@ public class AdminBulkChangeService {
         Instant now = clock.instant();
         BulkChangeHandler<?> handler = validate(request, true, now);
         UUID batchId = UUID.randomUUID();
-        // The summary is registered before any target's work, and filled in
-        // after it: after-commit callbacks run in registration order, so no
-        // target's callback, however it fails, can come before it.
         Map<String, Object> summary = new LinkedHashMap<>();
-        auditService.recordAfterCommit(actor.id(), actor.role().name(),
-                AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
-        // Every target's after-commit work is isolated from the others', so
-        // one failed enqueue or push does not drop the rest.
-        List<AdminBulkChangeApplyItem> items = AfterCommit.isolating(
-                () -> apply(handler, actor, request, batchId, ip, now));
+        // Every after-commit callback of this call is isolated from the
+        // others, the summary's included, so one failed enqueue, push or
+        // audit insert does not drop the rest. The summary is registered
+        // first and filled in after the targets: callbacks run in
+        // registration order, and it holds the counts only once they exist.
+        List<AdminBulkChangeApplyItem> items = AfterCommit.isolating("batch " + batchId, () -> {
+            auditService.recordAfterCommit(actor.id(), actor.role().name(),
+                    AuditService.ADMIN_BULK_CHANGE, "bulk_change", batchId, summary, ip);
+            return apply(handler, actor, request, batchId, ip, now);
+        });
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (AdminBulkChangeResult result : AdminBulkChangeResult.values()) {
             counts.put(result.name(), 0);
@@ -137,7 +138,7 @@ public class AdminBulkChangeService {
 
     private <T> List<AdminBulkChangeApplyItem> apply(BulkChangeHandler<T> handler,
             AuthenticatedUser actor, AdminBulkChangeRequest request, UUID batchId, String ip,
-            Instant now) {
+            Instant validatedAt) {
         AdminBulkChangeSpec change = request.change();
         Map<UUID, String> fingerprints = request.fingerprints();
         Map<UUID, T> targets = handler.load(request);
@@ -164,7 +165,7 @@ public class AdminBulkChangeService {
                         handler.fingerprintValues(target, change)))) {
                     continue;
                 }
-                if (handler.judge(actor, target, change, now).writes()) {
+                if (handler.judge(actor, target, change, validatedAt).writes()) {
                     anyWrite = true;
                     break;
                 }
@@ -176,6 +177,10 @@ public class AdminBulkChangeService {
         for (UUID targetId : reachable) {
             handler.lock(targets.get(targetId));
         }
+        // Judged at the moment the rows are held, not the moment the request
+        // arrived: a lock wait may have been long. The request-level checks
+        // keep the earlier instant, the one they were answered at.
+        Instant now = clock.instant();
         Map<UUID, AdminBulkChangeApplyItem> results = new LinkedHashMap<>();
         for (UUID targetId : order) {
             T target = targets.get(targetId);

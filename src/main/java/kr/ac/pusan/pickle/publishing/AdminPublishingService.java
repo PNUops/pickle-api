@@ -1,8 +1,7 @@
 package kr.ac.pusan.pickle.publishing;
 
-import kr.ac.pusan.pickle.common.tx.AfterCommit;
-import java.util.Collection;
 import java.time.Clock;
+import java.util.Collection;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -16,6 +15,7 @@ import kr.ac.pusan.pickle.auth.dto.MessageResponse;
 import kr.ac.pusan.pickle.common.error.ApiException;
 import kr.ac.pusan.pickle.common.error.ErrorCodes;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
+import kr.ac.pusan.pickle.common.tx.AfterCommit;
 import kr.ac.pusan.pickle.common.web.PageResponse;
 import kr.ac.pusan.pickle.networkpolicy.PublicSourcePolicyService;
 import kr.ac.pusan.pickle.networkpolicy.dto.SourcePolicyView;
@@ -297,8 +297,8 @@ public class AdminPublishingService {
      * transaction being marked for rollback.
      *
      * <p>{@code now} is the instant the deadline is judged against: the single
-     * path's clock reading, or the one a bulk change validated its request at,
-     * so both judge the same moment. {@code batchId} is the bulk change this
+     * path's clock reading, or the one a bulk change judged this domain at,
+     * so the write tests the deadline against the moment it was judged. {@code batchId} is the bulk change this
      * write belongs to, and null on the single path.</p>
      */
     public @Nullable ApiException changeRenewal(AuthenticatedUser actor, Domain domain,
@@ -482,7 +482,8 @@ public class AdminPublishingService {
                     "검증할 수 없는 도메인입니다", "플랫폼 서브도메인은 소유권 검증이 필요하지 않습니다.");
         }
         long domainId = domain.getId();
-        runAfterCommit(() -> domainVerificationJob.requestVerify(domainId));
+        runAfterCommit("enqueue verify " + domain.getPublicId(),
+                () -> domainVerificationJob.requestVerify(domainId));
         Map<String, Object> args = new java.util.LinkedHashMap<>();
         args.put("fqdn", domain.getFqdn());
         Map<String, Object> old = new java.util.LinkedHashMap<>();
@@ -608,8 +609,8 @@ public class AdminPublishingService {
         }
     }
 
-    private void runAfterCommit(Runnable action) {
-        AfterCommit.run(action);
+    private void runAfterCommit(String label, Runnable action) {
+        AfterCommit.run(label, action);
     }
 
     private static ApiException domainNotFound() {
