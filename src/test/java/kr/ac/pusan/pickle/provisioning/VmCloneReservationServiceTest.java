@@ -77,6 +77,19 @@ class VmCloneReservationServiceTest {
     }
 
     @Test
+    void excludingEveryFittingNodeIsToldApartFromNoCapacity() {
+        NodePlacementBudget.VmPlacementResources small = new NodePlacementBudget.VmPlacementResources(1, 1024, 10);
+        assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null, small,
+                java.util.Set.of(second.getId())))
+                .isInstanceOf(VmCloneReservationService.ExcludedNodesOnlyException.class);
+
+        when(vms.sumActiveByNodeId(second.getId(), VmStatus.DELETED)).thenReturn(allocated(27, 57000, 790));
+        assertThatThrownBy(() -> service.reserve(canonical.getPublicId(), null, small,
+                java.util.Set.of(second.getId())))
+                .isInstanceOf(VmCloneReservationService.NoCapacityException.class);
+    }
+
+    @Test
     void mutableRevisionMetadataCannotBecomeAnEligibleReplica() {
         ReflectionTestUtils.setField(replica, "sshUsername", "another-user");
 

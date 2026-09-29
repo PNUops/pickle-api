@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import kr.ac.pusan.pickle.inventory.CatalogStatus;
 import kr.ac.pusan.pickle.inventory.CloneImagePin;
@@ -37,6 +38,19 @@ public class VmCloneReservationService {
     @Transactional
     public Reservation reserve(UUID imagePublicId, @Nullable UUID forcedNodePublicId,
             NodePlacementBudget.VmPlacementResources requested) {
+        return reserve(imagePublicId, forcedNodePublicId, requested, Set.of());
+    }
+
+    /**
+     * Places on the best node that fits, skipping {@code excludedNodeIds}.
+     * The exclusion is the caller's own limit, not a capacity fact, so the two
+     * failures stay apart: no node fits at all is {@link NoCapacityException},
+     * while some node would fit but every such node is excluded is
+     * {@link ExcludedNodesOnlyException}, which a caller can wait out.
+     */
+    @Transactional
+    public Reservation reserve(UUID imagePublicId, @Nullable UUID forcedNodePublicId,
+            NodePlacementBudget.VmPlacementResources requested, Set<Long> excludedNodeIds) {
         OsImage preRead = images.findByPublicId(imagePublicId)
                 .orElseThrow(() -> new IllegalStateException("승인할 OS 이미지가 존재하지 않습니다."));
         List<OsImage> revision = images.findRevisionForUpdate(preRead.getName(), preRead.getVersion());
@@ -67,7 +81,12 @@ public class VmCloneReservationService {
                         .thenComparing(Comparator.comparingDouble(Candidate::score).reversed())
                         .thenComparing(value -> value.node().getId()))
                 .toList();
-        Candidate selected = candidates.stream().findFirst().orElseThrow(() -> noCapacity(canonical));
+        if (candidates.isEmpty()) {
+            throw noCapacity(canonical);
+        }
+        Candidate selected = candidates.stream()
+                .filter(value -> !excludedNodeIds.contains(value.node().getId()))
+                .findFirst().orElseThrow(ExcludedNodesOnlyException::new);
         CloneImagePin pin = CloneImagePin.from(selected.replica());
         return new Reservation(canonical, selected.replica(), selected.node(), pin);
     }
@@ -103,6 +122,14 @@ public class VmCloneReservationService {
 
         private NoCapacityException(String message) {
             super(message);
+        }
+    }
+
+    /** Some node fits, but every node that does was excluded by the caller. */
+    public static final class ExcludedNodesOnlyException extends RuntimeException {
+
+        private ExcludedNodesOnlyException() {
+            super("every node that fits was excluded");
         }
     }
 }

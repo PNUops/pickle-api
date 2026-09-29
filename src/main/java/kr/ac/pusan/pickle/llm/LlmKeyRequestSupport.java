@@ -232,7 +232,7 @@ public class LlmKeyRequestSupport implements RequestTypeHandler {
      */
     @Override
     public Materialized createFor(Request request, kr.ac.pusan.pickle.request.RequestReview review,
-            long ownerId) {
+            long ownerId, java.util.Set<Long> excludedNodeIds) {
         generations.bump();
         LlmKeyRequestDetail detail = detailRepository.findByRequestId(request.getId()).orElseThrow();
         Long accountId = detail.getGrantedOpenrouterAccountId();

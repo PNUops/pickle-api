@@ -2,6 +2,7 @@ package kr.ac.pusan.pickle.request;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import kr.ac.pusan.pickle.access.ResourceType;
 import kr.ac.pusan.pickle.admin.dto.ApproveRequestRequest;
 import kr.ac.pusan.pickle.common.error.FieldValidationError;
@@ -144,8 +145,12 @@ public interface RequestTypeHandler {
      * caller seeds the owner's grant and runs the after-commit hook; this runs
      * inside the caller's transaction and may throw, in which case the caller
      * rolls it back.
+     *
+     * @param excludedNodeIds nodes the resource must not be placed on; a kind
+     *                        that is not placed on a node ignores it
      */
-    default Materialized createFor(Request request, RequestReview review, long ownerId) {
+    default Materialized createFor(Request request, RequestReview review, long ownerId,
+            Set<Long> excludedNodeIds) {
         throw new UnsupportedOperationException(type() + " does not make resources per recipient");
     }
 

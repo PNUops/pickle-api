@@ -243,10 +243,12 @@ public class VmRequestSupport implements RequestTypeHandler {
      * node any more than a run of single approvals can.
      *
      * @throws VmCloneReservationService.NoCapacityException when no node fits
+     * @throws VmCloneReservationService.ExcludedNodesOnlyException when a node
+     *         fits but every one that does is in {@code excludedNodeIds}
      */
     @Override
     public Materialized createFor(Request request, kr.ac.pusan.pickle.request.RequestReview review,
-            long ownerId) {
+            long ownerId, java.util.Set<Long> excludedNodeIds) {
         VmRequestDetail detail = detail(request);
         OsImage granted = imageRepository.findById(detail.getGrantedImageId()).orElseThrow(
                 () -> new IllegalStateException("granted image of request " + request.getId() + " is gone"));
@@ -255,7 +257,7 @@ public class VmRequestSupport implements RequestTypeHandler {
         VmCloneReservationService.Reservation reservation = cloneReservations.reserve(
                 granted.getPublicId(), forcedNode,
                 new NodePlacementBudget.VmPlacementResources(detail.getGrantedVcpu(),
-                        detail.getGrantedMemoryMb(), detail.getGrantedDiskGb()));
+                        detail.getGrantedMemoryMb(), detail.getGrantedDiskGb()), excludedNodeIds);
         return createVm(request, reservation, detail.getGrantedVcpu(), detail.getGrantedMemoryMb(),
                 detail.getGrantedDiskGb(), review.getGrantedStartDate(), review.getGrantedEndDate(), null);
     }

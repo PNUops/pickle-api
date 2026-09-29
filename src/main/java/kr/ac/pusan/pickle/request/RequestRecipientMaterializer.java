@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import kr.ac.pusan.pickle.access.ResourceAccessGrant;
@@ -53,11 +54,16 @@ import org.springframework.transaction.support.TransactionTemplate;
  * recipient rows anyway, because this only touches requests already committed
  * as APPROVED.</p>
  *
- * <p>VMs are started only while fewer of this path's VMs are still CREATING
- * than {@value #CONCURRENCY_SETTING} allows (default {@value #DEFAULT_CONCURRENCY}),
- * because each one is a full clone on a shared node and the provisioning
- * workers and database pool are shared with everything else. Keys cost only a
- * database write each, so they are capped per run instead.</p>
+ * <p>VMs are limited per node: a VM is placed only on a node where fewer of
+ * this path's VMs are still CREATING than {@value #CONCURRENCY_SETTING}
+ * allows (default {@value #DEFAULT_CONCURRENCY}), because each one is a full
+ * clone and the node's disk is the bottleneck. Nodes at the limit are handed
+ * to placement as exclusions, so a recipient that some other node can take
+ * goes there, and one that only a node at the limit could take stays QUEUED
+ * for a later run rather than failing. Only this path's VMs are counted: a
+ * single-person approval clones on its own and neither counts nor waits.
+ * Keys cost only a database write each, so they are capped per run
+ * instead.</p>
  */
 @Component
 public class RequestRecipientMaterializer {
@@ -77,7 +83,12 @@ public class RequestRecipientMaterializer {
     static final String REASON_EXPIRED = "사용 기간이 이미 끝나 만들지 않았습니다.";
     static final String REASON_FAILED = "리소스를 만들지 못했습니다. 관리자가 다시 시도할 수 있습니다.";
 
-    enum Outcome { CREATED, SKIPPED, AT_CAPACITY, FAILED, NOT_APPLICABLE }
+    /**
+     * AT_CAPACITY: every active node is at the VM limit, so no VM recipient
+     * can start this run. WAITING: this recipient's nodes are at the limit,
+     * but another recipient's may not be.
+     */
+    enum Outcome { CREATED, SKIPPED, AT_CAPACITY, WAITING, FAILED, NOT_APPLICABLE }
 
     private final RequestRecipientRepository recipientRepository;
     private final RequestRepository requestRepository;
@@ -192,6 +203,10 @@ public class RequestRecipientMaterializer {
         try {
             Outcome outcome = tx.execute(status -> createOne(recipientId));
             return outcome == null ? Outcome.NOT_APPLICABLE : outcome;
+        } catch (VmCloneReservationService.ExcludedNodesOnlyException atLimit) {
+            // Only the per-node limit stood in the way: nothing was written,
+            // and the recipient stays QUEUED for the next run.
+            return Outcome.WAITING;
         } catch (RuntimeException e) {
             log.warn("request recipient {}: creation failed", recipientId, e);
             String reason = e instanceof VmCloneReservationService.NoCapacityException
@@ -251,11 +266,15 @@ public class RequestRecipientMaterializer {
             recipient.mark(RequestRecipientStatus.SKIPPED_EXPIRED, REASON_EXPIRED);
             return Outcome.SKIPPED;
         }
-        if (request.getResourceType() == ResourceType.VM && vmsInCreation() >= concurrency()) {
-            return Outcome.AT_CAPACITY;
+        Set<Long> nodesAtLimit = Set.of();
+        if (request.getResourceType() == ResourceType.VM) {
+            nodesAtLimit = nodesAtLimit();
+            if (!nodesAtLimit.isEmpty() && nodesAtLimit.containsAll(activeNodeIds())) {
+                return Outcome.AT_CAPACITY;
+            }
         }
 
-        RequestTypeHandler.Materialized created = handler.createFor(request, review, userId);
+        RequestTypeHandler.Materialized created = handler.createFor(request, review, userId, nodesAtLimit);
         // The resource belongs to the recipient and to nobody else, the same
         // first grant a single approval gives its requester.
         grantRepository.save(ResourceAccessGrant.forUser(request.getResourceType(),
@@ -294,17 +313,23 @@ public class RequestRecipientMaterializer {
         jdbcTemplate.queryForObject("select pg_advisory_xact_lock(?)::text", String.class, ADVISORY_LOCK_KEY);
     }
 
-    /** VMs this path made that are still being created. */
-    private long vmsInCreation() {
-        Long count = jdbcTemplate.queryForObject("""
-                select count(*)
+    /** Nodes where this path already has as many VMs CREATING as the limit allows. */
+    private Set<Long> nodesAtLimit() {
+        return Set.copyOf(jdbcTemplate.queryForList("""
+                select v.node_id
                   from request_recipients rr
                   join requests r on r.id = rr.request_id
                   join vms v on v.id = rr.resource_id
                  where rr.status = 'CREATED' and r.resource_type = 'VM'
                    and v.status = 'CREATING' and v.deleted_at is null
-                """, Long.class);
-        return count == null ? 0 : count;
+                 group by v.node_id
+                having count(*) >= ?
+                """, Long.class, concurrency()));
+    }
+
+    private Set<Long> activeNodeIds() {
+        return Set.copyOf(jdbcTemplate.queryForList(
+                "select id from nodes where status = 'ACTIVE'", Long.class));
     }
 
     private int concurrency() {

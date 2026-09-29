@@ -395,6 +395,8 @@ class RequestRecipientsTest {
         assertThat(vmCount(requestId)).isEqualTo(1);
         materializer.run();
         assertThat(vmCount(requestId)).isEqualTo(1);
+        // Held back by the limit, not failed.
+        assertThat(recipientStatus(requestId, second.getId())).isEqualTo("QUEUED");
 
         // Once the first leaves creation, the next one starts.
         jdbcTemplate.update("update vms set status = 'RUNNING' where request_id = ?", requestId);
@@ -403,6 +405,43 @@ class RequestRecipientsTest {
         assertThat(ownerOf("VM", jdbcTemplate.queryForObject(
                 "select resource_id from request_recipients where request_id = ? and user_id = ?",
                 Long.class, requestId, second.getId()))).isEqualTo(second.getId());
+    }
+
+    @Test
+    void theConcurrencyLimitAppliesToEachNodeSeparately() throws Exception {
+        long[] nodes = twoNodeImage();
+        try {
+            UUID workspace = createWorkspace(ownerToken);
+            List<User> recipients = List.of(addMember(workspace, "node-1"), addMember(workspace, "node-2"),
+                    addMember(workspace, "node-3"));
+            long requestId = approvedVmRequest(workspace, recipients, 1024);
+            jdbcTemplate.update("""
+                    insert into settings (key, value, description) values ('bulk_provision_concurrency', '1'::jsonb, 'test')
+                    """);
+
+            // The first node is preferred, so the first VM lands there; with
+            // that node at the limit the second still starts, on the other.
+            materializer.run();
+            assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[1]);
+
+            // Both nodes at the limit: the third recipient waits, it does not fail.
+            materializer.run();
+            assertThat(vmCount(requestId)).isEqualTo(2);
+            Map<String, Object> waiting = jdbcTemplate.queryForMap("""
+                    select status, reason from request_recipients
+                     where request_id = ? and resource_id is null
+                    """, requestId);
+            assertThat(waiting.get("status")).isEqualTo("QUEUED");
+            assertThat(waiting.get("reason")).isNull();
+
+            // The first node's VM leaves creation, and the third starts there.
+            jdbcTemplate.update("update vms set status = 'RUNNING' where request_id = ? and node_id = ?",
+                    requestId, nodes[0]);
+            materializer.run();
+            assertThat(vmNodes(requestId)).containsExactlyInAnyOrder(nodes[0], nodes[0], nodes[1]);
+        } finally {
+            jdbcTemplate.update("update nodes set status = 'MAINTENANCE' where id in (?, ?)", nodes[0], nodes[1]);
+        }
     }
 
     @Test
@@ -750,6 +789,45 @@ class RequestRecipientsTest {
         List<String> out = new ArrayList<>();
         detail.get("recipients").forEach(node -> out.add(node.get("status").asString()));
         return out;
+    }
+
+    /**
+     * Two fresh nodes, each holding a copy of a fresh image that becomes this
+     * test's {@link #image}. The second is labelled a GPU node, which
+     * placement ranks last, so a VM goes there only when the first is ruled out.
+     */
+    private long[] twoNodeImage() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long poolId = jdbcTemplate.queryForObject("select min(id) from ip_pools", Long.class);
+        long first = insertNode("bulk-a-" + suffix, "{}", poolId);
+        long second = insertNode("bulk-b-" + suffix, "{\"gpu\":true}", poolId);
+        String name = "bulk-os-" + suffix;
+        int vmid = 991000 + (int) Math.floorMod(suffix.hashCode(), 8000);
+        image = imageRepository.saveAndFlush(new OsImage(name, "Bulk OS", "ubuntu", "24.04", "ubuntu",
+                vmid, first, 1, 10, CatalogStatus.ACTIVE, null));
+        imageRepository.saveAndFlush(new OsImage(name, "Bulk OS", "ubuntu", "24.04", "ubuntu",
+                vmid + 1, second, 1, 10, CatalogStatus.ACTIVE, null));
+        return new long[] {first, second};
+    }
+
+    private long insertNode(String name, String extraLabels, long poolId) {
+        return jdbcTemplate.queryForObject("""
+                insert into nodes (name, api_host, status, cpu_threads, memory_mb, labels,
+                                   vm_bridge, storage, ip_pool_id, disk_capacity_gb)
+                values (?, 'https://127.0.0.1:8006', 'ACTIVE', 32, 57344,
+                        cast(? as jsonb) || cast(? as jsonb), 'vmbr2', 'local-lvm', ?, 1000)
+                returning id
+                """, Long.class, name, """
+                {"placement_capacity":{"schema_version":1,"measured_at":"2026-09-18T00:00:00Z",
+                "physical":{"cpu_threads":32,"memory_mb":65536,"disk_gb":1000},
+                "reserved":{"cpu_threads":4,"memory_mb":8192,"disk_gb":200},
+                "allocatable":{"cpu_threads":28,"memory_mb":57344,"disk_gb":800}},
+                "vm_nic_requirements":{"schema_version":1,"mtu":1370,"firewall":true}}
+                """, extraLabels, poolId);
+    }
+
+    private List<Long> vmNodes(long requestId) {
+        return jdbcTemplate.queryForList("select node_id from vms where request_id = ?", Long.class, requestId);
     }
 
     private long vmCount(long requestId) {
